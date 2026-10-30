@@ -140,7 +140,7 @@ export function SidebarProviderUpdatePill() {
 
   return (
     <div
-      className={`group/provider-update relative flex min-h-7 w-full shrink-0 items-center overflow-hidden rounded-lg text-2xs leading-4 font-medium transform-gpu transition-all duration-180 ease-drawer will-change-transform ${
+      className={`group/provider-update relative flex min-h-7 w-full shrink-0 items-center overflow-hidden rounded-md text-2xs leading-4 font-medium transform-gpu transition-all duration-180 ease-drawer will-change-transform ${
         PROVIDER_UPDATE_PILL_STYLES[displayedView.tone]
       } ${
         exitingKey === displayedView.key
@@ -162,7 +162,7 @@ export function SidebarProviderUpdatePill() {
           }
         />
       ) : null}
-      <div className="pointer-events-none absolute inset-0 rounded-lg transition-colors" />
+      <div className="pointer-events-none absolute inset-0 rounded-md transition-colors" />
       <Tooltip>
         <TooltipTrigger
           render={
@@ -208,3 +208,4 @@ export function SidebarProviderUpdatePill() {
     </div>
   );
 }
+

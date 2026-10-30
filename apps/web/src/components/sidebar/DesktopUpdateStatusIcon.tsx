@@ -1,8 +1,8 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { CheckIcon, CircleArrowUpIcon, DownloadIcon, RotateCwIcon } from "lucide-react";
+import { ArrowUpIcon, CircleArrowUpIcon } from "lucide-react";
 import type { AnimationEventHandler } from "react";
 
-const DOWNLOAD_PROGRESS_RADIUS = 14;
+const DOWNLOAD_PROGRESS_RADIUS = 6;
 const DOWNLOAD_PROGRESS_CIRCUMFERENCE = 2 * Math.PI * DOWNLOAD_PROGRESS_RADIUS;
 
 export type DesktopUpdateStatusIconState =
@@ -41,15 +41,7 @@ export function shouldContinueDesktopUpdateCheckAnimation({
 }
 
 function DesktopUpdateAvailableIcon() {
-  return (
-    <span className="relative grid size-4 place-items-center">
-      <DownloadIcon className="size-4" />
-      <span
-        aria-hidden="true"
-        className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-current ring-2 ring-sidebar-control-surface"
-      />
-    </span>
-  );
+  return <ArrowUpIcon className="size-3.5" strokeWidth={1.7} />;
 }
 
 function DesktopUpdateDownloadingIcon({ percent }: { readonly percent: number | null }) {
@@ -57,47 +49,32 @@ function DesktopUpdateDownloadingIcon({ percent }: { readonly percent: number | 
   const progressOffset = DOWNLOAD_PROGRESS_CIRCUMFERENCE * (1 - normalizedPercent / 100);
 
   return (
-    <span className="relative grid size-8 place-items-center">
-      <svg
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 size-full -rotate-90"
-        viewBox="0 0 32 32"
-      >
-        <circle
-          cx="16"
-          cy="16"
-          r={DOWNLOAD_PROGRESS_RADIUS}
-          fill="none"
-          className="stroke-current/22"
-          strokeWidth="1.5"
-        />
-        <circle
-          cx="16"
-          cy="16"
-          r={DOWNLOAD_PROGRESS_RADIUS}
-          fill="none"
-          stroke="currentColor"
-          strokeDasharray={DOWNLOAD_PROGRESS_CIRCUMFERENCE}
-          strokeDashoffset={progressOffset}
-          strokeLinecap="round"
-          strokeWidth="1.5"
-          className="transition-[stroke-dashoffset] duration-300 ease-out motion-reduce:transition-none"
-        />
-      </svg>
-      <DownloadIcon className="size-4" />
-    </span>
+    <svg aria-hidden="true" className="size-3.5 -rotate-90" viewBox="0 0 16 16">
+      <circle
+        cx="8"
+        cy="8"
+        r={DOWNLOAD_PROGRESS_RADIUS}
+        fill="none"
+        className="stroke-current/25"
+        strokeWidth="2"
+      />
+      <circle
+        cx="8"
+        cy="8"
+        r={DOWNLOAD_PROGRESS_RADIUS}
+        fill="none"
+        stroke="currentColor"
+        strokeDasharray={DOWNLOAD_PROGRESS_CIRCUMFERENCE}
+        strokeDashoffset={progressOffset}
+        strokeWidth="2"
+        className="transition-[stroke-dashoffset] duration-300 ease-out motion-reduce:transition-none"
+      />
+    </svg>
   );
 }
 
 function DesktopUpdateDownloadedIcon() {
-  return (
-    <span className="relative grid size-4 place-items-center">
-      <RotateCwIcon className="size-4" />
-      <span className="absolute -right-1 -bottom-1 grid size-2.5 place-items-center rounded-full bg-foreground text-background ring-2 ring-background">
-        <CheckIcon className="size-2" strokeWidth={3} />
-      </span>
-    </span>
-  );
+  return <span className="mx-1 size-1.5 shrink-0 rounded-full bg-current" />;
 }
 
 export function DesktopUpdateStatusIcon({
@@ -116,11 +93,11 @@ export function DesktopUpdateStatusIcon({
     return <DesktopUpdateDownloadingIcon percent={downloadPercent ?? null} />;
   }
   if (status === "downloaded") return <DesktopUpdateDownloadedIcon />;
-  if (status === "everything") return <CircleArrowUpIcon className="size-4" />;
+  if (status === "everything") return <CircleArrowUpIcon className="size-3.5" strokeWidth={1.7} />;
 
   return (
     <RefreshIcon
-      className="size-4"
+      className="size-3.5"
       refreshing={status === "checking" && isCheckAnimating === true}
       onAnimationIteration={onCheckAnimationIteration}
     />
