@@ -36,8 +36,13 @@ import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
-import { mayHoldT3Tools, reviewPrompt } from "./sideThreads.ts";
-import { makeHarness, runWith, withoutReadOnlyRun, withReadOnlyRun } from "./sideThreads.testkit.ts";
+import { layerNoReadOnlyThreads, mayHoldT3Tools, reviewPrompt } from "./sideThreads.ts";
+import {
+  makeHarness,
+  runWith,
+  withoutReadOnlyRun,
+  withReadOnlyRun,
+} from "./sideThreads.testkit.ts";
 
 const NO_DIFF = "No diff is recorded for this turn.";
 const marker = (shown: number, total: number) =>
@@ -50,7 +55,10 @@ describe("the review prompt", () => {
     const diff = "diff --git a/src/parse.ts b/src/parse.ts\n+keep empty tokens\n";
     const prompt = reviewPrompt({ request, report, diff });
     const at = [prompt.indexOf(request), prompt.indexOf(report), prompt.indexOf(diff)];
-    assert.isTrue(at.every((index) => index >= 0), JSON.stringify(at));
+    assert.isTrue(
+      at.every((index) => index >= 0),
+      JSON.stringify(at),
+    );
     assert.isBelow(at[0]!, at[1]!);
     assert.isBelow(at[1]!, at[2]!);
     assert.include(prompt, "Do not change any files");
@@ -215,6 +223,7 @@ const resolveWith = (
         RuntimePolicy.layerReadOnlySideThreads.pipe(
           Layer.provide(base),
           Layer.provide(layerRegistry),
+          Layer.provide(layerNoReadOnlyThreads),
         ),
       ),
     );
@@ -331,6 +340,7 @@ const layerServerRuntimePolicy = RuntimeLayer.layerRuntimePolicyProvided.pipe(
     }),
   ),
   Layer.provide(SqlitePersistence.layerMemory),
+  Layer.provide(layerNoReadOnlyThreads),
 );
 
 describe("the server's side-thread policy", () => {
@@ -360,7 +370,10 @@ describe("the server's side-thread policy", () => {
             runtimePolicy: policy,
             modelSelection: thread.modelSelection,
           });
-          assert.deepEqual(start.sandboxPolicy, { type: "readOnly", networkAccess: false } as never);
+          assert.deepEqual(start.sandboxPolicy, {
+            type: "readOnly",
+            networkAccess: false,
+          } as never);
           assert.equal(start.approvalPolicy, "never");
         }
       }

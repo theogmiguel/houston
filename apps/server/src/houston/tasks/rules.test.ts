@@ -1,4 +1,5 @@
 // The outcome rules of the Tasks backlog on literal values.
+import type { OrchestrationV2RunStatus } from "@t3tools/contracts";
 import {
   HoustonTaskError,
   type HoustonTaskRunState,
@@ -10,7 +11,10 @@ import {
   OPEN_RUN_STATES,
   blockerCycle,
   blockerFinished,
+  branchSlug,
+  buildBrief,
   checkAcceptance,
+  checkFindings,
   checkComment,
   checkCommentCount,
   checkDescription,
@@ -20,7 +24,10 @@ import {
   parentCycle,
   queueOf,
   readiness,
+  reviewTrigger,
   rollupDelivery,
+  taskBranch,
+  taskRunStateOf,
   v1PathMatches,
 } from "./rules.ts";
 
@@ -438,5 +445,207 @@ describe("v1 workspace paths match project roots per platform", () => {
     expect(v1PathMatches("/dev/x", "/dev/X", "linux")).toBe(false);
     expect(v1PathMatches("/dev/x/", "/dev/x", "linux")).toBe(true);
     expect(v1PathMatches("/", "/", "linux")).toBe(true);
+  });
+});
+
+describe("branch slugs are short lowercase ascii", () => {
+  it("keeps letters and digits, joined by single dashes", () => {
+    expect(branchSlug("Fix the Login, page!")).toBe("fix-the-login-page");
+    expect(taskBranch(7, "Fix the Login, page!")).toBe("houston/task/hou-7-fix-the-login-page");
+  });
+
+  it("cuts a long title to 40 characters without a trailing dash", () => {
+    const title = `${"abcdefghi ".repeat(12)}`.trim();
+    expect(title.length).toBeGreaterThanOrEqual(119);
+    const slug = branchSlug(`${title}x`);
+    expect(slug.length).toBeLessThanOrEqual(40);
+    expect(slug.endsWith("-")).toBe(false);
+    expect(slug).toBe("abcdefghi-abcdefghi-abcdefghi-abcdefghi");
+    expect(branchSlug("Ünïcode — only ✓")).toBe("ncode-only");
+  });
+
+  it("a title with no ascii letter or digit still names a branch", () => {
+    expect(taskBranch(3, "✓✓✓")).toBe("houston/task/hou-3");
+  });
+});
+
+describe("the brief wraps task data in markers", () => {
+  const brief = buildBrief({
+    key: "HOU-7",
+    title: "Fix the login page",
+    description: "The button does nothing.",
+    acceptance: ["clicking logs in", "errors show"],
+    links: ["https://example.test/issue/7"],
+    initiative: {
+      name: "Auth",
+      trackerDescription: "Rewrite auth (from the tracker)",
+      localDecisions: ["keep the old cookie name"],
+    },
+  });
+
+  it("holds every task field between the two markers", () => {
+    const open = brief.indexOf("<<<HOUSTON-TASK-DATA");
+    const close = brief.indexOf("HOUSTON-TASK-DATA>>>");
+    expect(open).toBeGreaterThanOrEqual(0);
+    expect(close).toBeGreaterThan(open);
+    const data = brief.slice(open, close);
+    for (const text of [
+      "HOU-7",
+      "Fix the login page",
+      "The button does nothing.",
+      "clicking logs in",
+      "errors show",
+      "https://example.test/issue/7",
+      "Rewrite auth (from the tracker)",
+      "keep the old cookie name",
+    ]) {
+      expect(data).toContain(text);
+    }
+  });
+
+  it("labels the tracker description unverified and keeps local decisions apart", () => {
+    const tracker = brief.indexOf("Rewrite auth (from the tracker)");
+    const decisions = brief.indexOf("keep the old cookie name");
+    const label = brief.lastIndexOf("unverified", tracker);
+    expect(label).toBeGreaterThanOrEqual(0);
+    expect(brief.slice(label, tracker).split("\n").length).toBeLessThanOrEqual(2);
+    const decisionsHeading = brief.lastIndexOf("Local decisions", decisions);
+    expect(decisionsHeading).toBeGreaterThan(tracker);
+  });
+
+  it("appends review findings for a retry", () => {
+    const retry = buildBrief({
+      key: "HOU-7",
+      title: "t",
+      description: "",
+      acceptance: ["a"],
+      links: [],
+      initiative: null,
+      findings: [
+        { path: "src/a.ts", line: 3, severity: "high", category: "bug", message: "off by one" },
+      ],
+    });
+    expect(retry).toContain("src/a.ts:3");
+    expect(retry).toContain("off by one");
+    expect(retry.indexOf("off by one")).toBeLessThan(retry.indexOf("HOUSTON-TASK-DATA>>>"));
+  });
+});
+
+describe("every thread run status maps to one task run state", () => {
+  const cases: ReadonlyArray<[OrchestrationV2RunStatus, HoustonTaskRunState]> = [
+    ["preparing", "preparing"],
+    ["queued", "preparing"],
+    ["starting", "preparing"],
+    ["running", "running"],
+    ["waiting", "waiting_for_input"],
+    ["completed", "waiting_for_input"],
+    ["failed", "failed"],
+    ["interrupted", "interrupted"],
+    ["cancelled", "interrupted"],
+    ["rolled_back", "interrupted"],
+  ];
+  it.each(cases)("%s -> %s", (status, state) => {
+    expect(taskRunStateOf(status)).toBe(state);
+  });
+  it("covers all 10 statuses", () => {
+    expect(new Set(cases.map(([status]) => status)).size).toBe(10);
+  });
+});
+
+describe("review triggers follow the mode", () => {
+  const events = [
+    { name: "handback", event: { type: "handback" } },
+    { name: "new head", event: { type: "push", headSha: "b2" } },
+  ] as const;
+  const expected: Record<string, Record<string, boolean>> = {
+    manual: { handback: false, "new head": false },
+    handback: { handback: true, "new head": false },
+    every_push: { handback: false, "new head": true },
+  };
+  for (const mode of ["manual", "handback", "every_push"] as const) {
+    for (const { name, event } of events) {
+      it(`${mode} on ${name}`, () => {
+        expect(reviewTrigger({ mode, event, reviewOpen: false, reviewedHeads: ["a1"] })).toBe(
+          expected[mode]?.[name],
+        );
+      });
+      it(`${mode} on ${name} while a review is open`, () => {
+        expect(reviewTrigger({ mode, event, reviewOpen: true, reviewedHeads: ["a1"] })).toBe(
+          mode === "handback" && name === "handback",
+        );
+      });
+    }
+  }
+  it("every_push starts once per head", () => {
+    expect(
+      reviewTrigger({
+        mode: "every_push",
+        event: { type: "push", headSha: "a1" },
+        reviewOpen: false,
+        reviewedHeads: ["a1"],
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("review findings are bounded and name a wrong field", () => {
+  const finding = {
+    path: "src/a.ts",
+    line: 1,
+    severity: "high",
+    category: "bug",
+    message: "m",
+  };
+  const fieldOf = (value: unknown) => {
+    expect(value).toBeInstanceOf(HoustonTaskError);
+    return (value as HoustonTaskError).message;
+  };
+
+  it("accepts 100 findings and refuses 101 as a limit", () => {
+    expect(
+      checkFindings(
+        "op",
+        Array.from({ length: 100 }, () => finding),
+      ),
+    ).toHaveLength(100);
+    const refused = refusal(
+      checkFindings(
+        "op",
+        Array.from({ length: 101 }, () => finding),
+      ),
+    );
+    expect(refused.kind).toBe("limit");
+    expect(refused.limit).toBe(100);
+    expect(refused.actual).toBe(101);
+  });
+
+  it("bounds the path at 512 characters and refuses absolute, drive and parent paths", () => {
+    expect(checkFindings("op", [{ ...finding, path: "a".repeat(512) }])).toHaveLength(1);
+    for (const path of ["a".repeat(513), "/etc/passwd", "C:\\x\\y.ts", "c:/x.ts", "src/../x.ts"]) {
+      expect(fieldOf(checkFindings("op", [{ ...finding, path }]))).toMatch(/findings\[0\]\.path/);
+    }
+  });
+
+  it("accepts each severity and category and refuses others", () => {
+    for (const severity of ["high", "medium", "low", "nit"]) {
+      expect(checkFindings("op", [{ ...finding, severity }])).toHaveLength(1);
+    }
+    for (const category of ["bug", "security", "performance", "other"]) {
+      expect(checkFindings("op", [{ ...finding, category }])).toHaveLength(1);
+    }
+    expect(fieldOf(checkFindings("op", [{ ...finding, severity: "critical" }]))).toMatch(
+      /findings\[0\]\.severity/,
+    );
+    expect(fieldOf(checkFindings("op", [{ ...finding, category: "style" }]))).toMatch(
+      /findings\[0\]\.category/,
+    );
+  });
+
+  it("bounds the message at 2,000 characters and needs a line", () => {
+    expect(checkFindings("op", [{ ...finding, message: "m".repeat(2000) }])).toHaveLength(1);
+    expect(
+      fieldOf(checkFindings("op", [finding, { ...finding, message: "m".repeat(2001) }])),
+    ).toMatch(/findings\[1\]\.message/);
+    expect(fieldOf(checkFindings("op", [{ ...finding, line: -1 }]))).toMatch(/findings\[0\]\.line/);
   });
 });

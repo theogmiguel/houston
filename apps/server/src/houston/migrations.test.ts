@@ -18,7 +18,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [1, "ReviewFilesViewed"],
   [2, "TasksBacklog"],
   [3, "TaskSources"],
-  // 4 is Tasks runs' `TaskRunsCursor`, which lands on v2 first.
+  [4, "TaskRunsCursor"],
   [5, "MergeQueue"],
 ];
 const TASK_TABLES = [
@@ -32,6 +32,7 @@ const TASK_TABLES = [
   "houston_task_initiatives",
   "houston_task_planning",
   "houston_task_runs",
+  "houston_task_runs_cursor",
   "houston_task_settings",
   "houston_tasks",
 ];

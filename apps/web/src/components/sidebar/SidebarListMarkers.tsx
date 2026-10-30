@@ -1,5 +1,6 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { useSortable } from "@dnd-kit/sortable";
+import { ChevronDownIcon } from "lucide-react";
 import { CSS } from "@dnd-kit/utilities";
 import { type ReactNode, useLayoutEffect } from "react";
 import { cn } from "~/lib/utils";
@@ -117,8 +118,40 @@ export function SidebarShelfHeader(props: {
   count: number;
   dragging?: boolean;
   isDropTarget?: boolean;
+  variant?: "default" | "rail";
   toggle: { expanded: boolean; onToggle: () => void };
 }) {
+  if (props.variant === "rail") {
+    return (
+      <button
+        type="button"
+        role="treeitem"
+        tabIndex={-1}
+        data-sidebar-row={`shelf:${props.shelf}`}
+        data-testid={`grid-${props.shelf}-shelf-toggle`}
+        onClick={props.toggle.onToggle}
+        aria-expanded={props.toggle.expanded}
+        className={cn(
+          "flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-left text-xs font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+          props.isDropTarget
+            ? "bg-(--accent-muted) text-primary"
+            : props.dragging
+              ? "text-sidebar-foreground/80"
+              : "text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-secondary-foreground",
+        )}
+      >
+        <ChevronDownIcon
+          aria-hidden
+          className={cn(
+            "size-3 shrink-0 transition-transform",
+            !props.toggle.expanded && "-rotate-90",
+          )}
+        />
+        <span className="shrink-0">{props.label}</span>
+        <span className="ml-auto font-normal tabular-nums">{props.count}</span>
+      </button>
+    );
+  }
   return (
     <CollapsibleSectionHeader
       role="treeitem"

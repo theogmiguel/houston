@@ -112,6 +112,7 @@ import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as HoustonReviewState from "./houston/reviewState.ts";
 import * as HoustonTaskProjectSweep from "./houston/tasks/ProjectSweep.ts";
+import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskStore from "./houston/tasks/TaskStore.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
@@ -518,6 +519,13 @@ const layerProviderInstallationRefresh = Layer.effectDiscard(
   }),
 );
 
+/** The task store and the read-only record of planners and reviewers, which the runtime policy
+ * and the MCP credential read. Exported so the task-run tests build over the server's own. */
+export const layerHoustonTaskPersistence = Layer.empty.pipe(
+  Layer.provideMerge(HoustonTaskRuns.layerReadOnlyThreads),
+  Layer.provideMerge(HoustonTaskStore.layer),
+);
+
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   layerThreadSettlementWorker,
   layerIdleCompactionWorker,
@@ -561,6 +569,14 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
   Layer.effectDiscard(HoustonTaskProjectSweep.sweep),
   Layer.effectDiscard(HoustonTaskSourceStore.sweep),
+  HoustonTaskRuns.layer.pipe(
+    Layer.provide(
+      Layer.merge(
+        RuntimeLayer.layerEventSink,
+        ProviderAdapterRegistry.layerFromProviderInstanceRegistry,
+      ),
+    ),
+  ),
 ).pipe(
   // The merge queue reads through the PR page's own service and GitHub client.
   Layer.provideMerge(
@@ -584,7 +600,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   // Below the orchestration runtime so its ProjectService sees the store on project deletion.
   Layer.provideMerge(Layer.merge(HoustonTaskSourceStore.layer, HoustonMergeQueueStore.layer)),
   Layer.provideMerge(HoustonKeychain.layerLive),
-  Layer.provideMerge(HoustonTaskStore.layer),
+  Layer.provideMerge(layerHoustonTaskPersistence),
   Layer.provideMerge(layerPersistence),
   Layer.provideMerge(
     Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),

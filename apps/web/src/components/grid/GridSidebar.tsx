@@ -4,11 +4,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import {
-  scopedThreadKey,
-  scopeProjectRef,
-  scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
@@ -20,6 +16,7 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   AlarmClockIcon,
   AlarmClockOffIcon,
+  CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   ClockIcon,
@@ -67,9 +64,10 @@ import {
   type GridThreadState,
   type ThreadSelection,
 } from "../../grid/sidebar";
+import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { GridShelves } from "./GridShelves";
 import { preorderThreads } from "../../grid/tree";
-import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
+import { useOpenGridDraft } from "../../grid/useOpenGridDraft";
 import { useQuietThreadShells, useProjects } from "../../state/entities";
 import { registerSettleAndAdvance } from "../../settleAndAdvance";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
@@ -99,7 +97,6 @@ import { resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { Button } from "../ui/button";
 import {
   Menu,
-  MenuCheckboxItem,
   MenuItem,
   MenuPopup,
   MenuSeparator,
@@ -896,7 +893,7 @@ function WorkspaceGroup({
           onClick={onToggle}
           aria-expanded={!collapsed}
           className={cn(
-            "flex h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-(--r-ctl) px-3 text-left text-sm font-semibold text-sidebar-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+            "flex h-7 w-full min-w-0 cursor-pointer items-center gap-2 rounded-(--r-ctl) px-2 text-left text-headline font-semibold text-sidebar-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
             isDropTarget && "bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset",
           )}
         >
@@ -1071,7 +1068,6 @@ function GridRow({
   onDragLeave: () => void;
   readDragged: (event: ReactDragEvent) => DraggedThread | null;
 }) {
-  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(grid.name);
@@ -1080,7 +1076,7 @@ function GridRow({
   const unpinGrid = useGridStore((store) => store.unpinGrid);
   const setGridHidden = useGridStore((store) => store.setGridHidden);
   const deleteGrid = useGridStore((store) => store.deleteGrid);
-  const handleNewThread = useNewThreadHandler();
+  const openGridDraft = useOpenGridDraft();
   const isDropTarget = dropTarget === `grid:${grid.id}`;
   const readyThreads = threads.filter(
     (thread) => resolveGridThreadState(thread, nowIso) === "ready",
@@ -1090,19 +1086,11 @@ function GridRow({
   };
 
   const createThread = () => {
-    void (async () => {
-      const created = await handleNewThread(
-        scopeProjectRef(grid.environmentId as never, grid.projectId as never),
-        { replace: true },
-      );
-      if (created === null) return;
-      useGridStore.getState().addThread(grid.id, created.threadId, created.draftId);
-      void navigate({ to: "/grid/$gridId", params: { gridId: grid.id } });
-    })();
+    void openGridDraft({ gridId: grid.id, focusedThreadId: grid.focusedThreadId });
   };
 
   return (
-    <div className="flex flex-col gap-px">
+    <div className="mt-1 flex flex-col gap-px">
       <div
         className="group/grid relative flex items-center"
         onDragOver={(event) => {
@@ -1168,24 +1156,31 @@ function GridRow({
             >
               <HighlightedText text={grid.name} query={query} />
             </span>
-            <span
-              className="inline-grid size-5 shrink-0 place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 group-focus-within/grid:opacity-100"
-              role="button"
-              tabIndex={0}
-              aria-label={`New thread in ${grid.name}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                createThread();
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") return;
-                event.preventDefault();
-                event.stopPropagation();
-                createThread();
-              }}
-            >
-              <PlusIcon aria-hidden className="size-3" />
-            </span>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span
+                    className="inline-grid size-5 shrink-0 place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 group-focus-within/grid:opacity-100"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`New thread in ${grid.name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      createThread();
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      createThread();
+                    }}
+                  />
+                }
+              >
+                <PlusIcon aria-hidden className="size-3" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">New thread · T</TooltipPopup>
+            </Tooltip>
           </button>
         )}
         <Menu>
@@ -1341,7 +1336,7 @@ function StateIcon({ state }: { state: GridThreadState }) {
   );
 }
 
-function ThreadCard({
+export function ThreadCard({
   gridId,
   thread,
   query,
@@ -1396,6 +1391,9 @@ function ThreadCard({
 }) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(thread.title);
+  const [actionsHovered, setActionsHovered] = useState(false);
+  const [holdMenuOpen, setHoldMenuOpen] = useState(false);
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const nowMinute = useNowMinute();
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -1412,6 +1410,8 @@ function ThreadCard({
   );
   const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
   const modelLabel = thread.modelSelection?.model ?? null;
+  const autoCloseEnabled = thread.autoSettleDisabledAt == null;
+  const actionsVisible = actionsHovered || holdMenuOpen || actionsMenuOpen;
 
   const applyPreset = (preset: Pick<SnoozePreset, "snoozedUntil"> | undefined) => {
     if (preset !== undefined) onHold(preset);
@@ -1422,7 +1422,7 @@ function ThreadCard({
   };
 
   return (
-    <Tooltip>
+    <Tooltip disabled={actionsHovered || holdMenuOpen || actionsMenuOpen}>
       <TooltipTrigger
         render={
           <div
@@ -1523,7 +1523,7 @@ function ThreadCard({
               >
                 <HighlightedText text={thread.title} query={query} />
               </span>
-              <span className="shrink-0 group-hover/th:invisible">
+              <span className="shrink-0 group-hover/th:hidden">
                 {timeLabel !== null ? (
                   <span className="text-xs text-secondary-label tabular-nums">{timeLabel}</span>
                 ) : state === "idle" ? (
@@ -1536,7 +1536,14 @@ function ThreadCard({
               </span>
             </button>
           )}
-          <span className="absolute top-[5px] right-2 hidden items-center gap-0.5 group-hover/th:flex">
+          <span
+            className={cn(
+              "shrink-0 items-center gap-0.5",
+              actionsVisible ? "flex" : "hidden group-hover/th:flex",
+            )}
+            onMouseEnter={() => setActionsHovered(true)}
+            onMouseLeave={() => setActionsHovered(false)}
+          >
             {shelf !== null ? (
               <button
                 type="button"
@@ -1558,7 +1565,7 @@ function ThreadCard({
               </button>
             ) : (
               <>
-                <Menu>
+                <Menu onOpenChange={setHoldMenuOpen}>
                   <MenuTrigger
                     render={
                       <button
@@ -1587,7 +1594,7 @@ function ThreadCard({
                   <XIcon aria-hidden className="size-3.5" />
                   Close
                 </button>
-                <Menu>
+                <Menu onOpenChange={setActionsMenuOpen}>
                   <MenuTrigger
                     render={
                       <button
@@ -1635,15 +1642,12 @@ function ThreadCard({
                       {closeShortcut ? <MenuShortcut>{closeShortcut}</MenuShortcut> : null}
                     </MenuItem>
                     <MenuSeparator />
-                    <MenuCheckboxItem
-                      checked={thread.autoSettleDisabledAt == null}
-                      onCheckedChange={(checked) => onSetAutoClose(Boolean(checked))}
-                    >
+                    <MenuItem onClick={() => onSetAutoClose(!autoCloseEnabled)}>
                       Auto-close on merge
-                      {thread.autoSettleDisabledAt == null ? (
-                        <span className="ml-auto text-2xs text-secondary-label">On</span>
+                      {autoCloseEnabled ? (
+                        <CheckIcon aria-hidden className="ml-auto size-3.5 text-(--accent-ink)" />
                       ) : null}
-                    </MenuCheckboxItem>
+                    </MenuItem>
                   </MenuPopup>
                 </Menu>
               </>
@@ -1664,9 +1668,9 @@ function ThreadCard({
             </span>
           ) : null}
           {pullRequestNumber !== null ? (
-            <span className="inline-flex shrink-0 items-center gap-0.5 tabular-nums">
-              <span aria-hidden>#</span>
-              {pullRequestNumber}
+            <span className="inline-flex shrink-0 items-center gap-0.75 tabular-nums">
+              <PullRequestGlyph.pullRequest aria-hidden className="size-3 shrink-0" />
+              <span>#{pullRequestNumber}</span>
             </span>
           ) : null}
           <span className="inline-grid size-3.5 shrink-0 place-items-center">
