@@ -263,6 +263,77 @@ describe("linked pages outside the filter refresh three at a time", () => {
       }),
     ),
   );
+
+  it.effect("a linked page that fails is skipped and named, and the refresh continues", () =>
+    withSources(({ notion }) =>
+      Effect.gen(function* () {
+        const projectId = yield* createProject("refresh-gone");
+        const sources = yield* HoustonTaskSourceService;
+        const poller = yield* HoustonTaskSourcePoller;
+        yield* sources.setCredential({
+          projectId,
+          provider: "notion",
+          token: Redacted.make("ntn_gone"),
+        });
+        const pages = Array.from({ length: 5 }, (_, index) => notionPage(index + 1));
+        let inFilter: ReadonlyArray<string> = pages.map((page) => page.id);
+        let gone = false;
+        notionServes(notion, () => pages, {
+          extra: (request) => {
+            if (request.method === "POST") {
+              return {
+                body: {
+                  object: "list",
+                  results: pages.filter((page) => inFilter.includes(page.id)),
+                  has_more: false,
+                  next_cursor: null,
+                },
+              };
+            }
+            // Page 1 was deleted or unshared: Notion answers 404.
+            if (gone && request.method === "GET" && request.path === `/v1/pages/${pageId(1)}`) {
+              return { status: 404, body: { object: "error", code: "object_not_found" } };
+            }
+            return null;
+          },
+        });
+        yield* sources.setSettings({ projectId, provider: "notion", settings: notionSettings() });
+        yield* poller.poll(projectId, "notion");
+        inFilter = [];
+        gone = true;
+        const refreshed = () =>
+          notion.requests
+            .filter((request) => request.method === "GET" && request.path.startsWith("/v1/pages/"))
+            .map((request) => request.path.slice("/v1/pages/".length));
+        notion.requests.length = 0;
+        const errors: Array<string | null> = [];
+        for (let poll = 0; poll < 4; poll++) {
+          errors.push((yield* poller.poll(projectId, "notion"))?.error ?? null);
+        }
+        // Every page is still reached; page 1 is skipped each time it comes round.
+        assert.deepEqual(refreshed(), [
+          pageId(4),
+          pageId(5),
+          pageId(1),
+          pageId(2),
+          pageId(3),
+          pageId(4),
+          pageId(5),
+          pageId(1),
+          pageId(2),
+          pageId(3),
+        ]);
+        assert.isNull(errors[0]);
+        assert.include(errors[1] ?? "", pageId(1));
+        assert.include(errors[1] ?? "", "404");
+        assert.isNull(errors[2]);
+        assert.include(errors[3] ?? "", pageId(1));
+        const [, notionAfter] = yield* sources.getSettings({ projectId });
+        assert.include(notionAfter?.lastError ?? "", pageId(1));
+        assert.notInclude(notionAfter?.lastError ?? "", pageId(2));
+      }),
+    ),
+  );
 });
 
 describe("a remote change becomes a conflict and leaves the task", () => {

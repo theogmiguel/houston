@@ -148,7 +148,7 @@ const make = Effect.gen(function* () {
     });
   });
 
-  /** Refreshes up to three linked pages the poll did not return, continuing on the next poll. */
+  /** Refreshes up to three linked pages the poll did not return; a failing page is skipped. */
   const refreshLinked = Effect.fnUntraced(function* (
     projectId: ProjectId,
     settings: StoredSettings,
@@ -166,9 +166,10 @@ const make = Effect.gen(function* () {
     const skipped: Array<string> = [];
     for (const id of ids) {
       if (seen.has(id)) continue;
-      const record = yield* withNotion(retrievePage(token, settings, schema, id));
-      if (typeof record === "string") skipped.push(record);
-      else skipped.push(...(yield* applyAll(projectId, "notion", [record])));
+      const read = yield* Effect.result(withNotion(retrievePage(token, settings, schema, id)));
+      if (read._tag === "Failure") skipped.push(`linked page ${id}: ${read.failure}`);
+      else if (typeof read.success === "string") skipped.push(read.success);
+      else skipped.push(...(yield* applyAll(projectId, "notion", [read.success])));
     }
     return {
       skipped,
