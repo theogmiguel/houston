@@ -397,4 +397,4 @@ jobs:
       - name: Workspace package tests (web and server excluded)
         continue-on-error: ${{ matrix.os == 'windows-latest' }}
         if: ${{ !cancelled() }}
-        run: pnpm -r --no-bail --no-sort --filter "!@t3tools/web" --filter "!t3" --filter "!@t3tools/scripts" test
+        run: pnpm -r --no-bail --no-sort --filter "!@t3tools/web" --filter "!houston" --filter "!@t3tools/scripts" test
