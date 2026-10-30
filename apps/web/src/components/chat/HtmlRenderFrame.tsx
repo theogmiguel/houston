@@ -5,7 +5,7 @@ import {
   htmlRenderFrameHeight,
   type HtmlRenderReference,
 } from "@t3tools/shared/htmlRender";
-import { Maximize2Icon } from "lucide-react";
+import { CircleAlertIcon, CodeXmlIcon, Maximize2Icon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useAssetUrlRefresh } from "~/assets/assetUrls";
@@ -19,6 +19,7 @@ import { HtmlRenderDialog } from "./HtmlRenderDialog";
 import { observeResize } from "~/lib/observeResize";
 
 const MIN_URL_LIFE_MS = 5 * 60_000;
+const FRAME_HEAD_HEIGHT = 32;
 
 export function HtmlRenderFrame(props: {
   readonly environmentId: EnvironmentId;
@@ -66,60 +67,73 @@ export function HtmlRenderFrame(props: {
     return () => onFullscreenChange?.(false);
   }, [expanded, onFullscreenChange]);
 
+  const openFullScreen = async () => {
+    const url =
+      loaded !== null && loaded.expiresAt - Date.now() > MIN_URL_LIFE_MS
+        ? src
+        : await refresh().catch(() => null);
+    if (url !== null) setExpandedSrc(url);
+    else
+      toastManager.add({
+        type: "error",
+        title: "Page unavailable",
+        description: "Reconnect to the environment and try again.",
+      });
+  };
+
   return (
-    <div ref={observeBox} className="group/html-render relative" style={{ height }}>
-      {src !== null ? (
-        <>
-          <HtmlRenderDocument
-            src={src}
-            title={title}
-            threadRef={props.threadRef}
-            className="block size-full"
-            onContentHeight={setContentHeight}
-            onFullscreenChange={onFullscreenChange}
-          />
-          <div className="absolute end-2 top-2 flex gap-1 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover/html-render:opacity-100 pointer-coarse:opacity-100">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    aria-label="Open full screen"
-                    size="icon-xs"
-                    variant="glass"
-                    onClick={async () => {
-                      const url =
-                        loaded !== null && loaded.expiresAt - Date.now() > MIN_URL_LIFE_MS
-                          ? src
-                          : await refresh().catch(() => null);
-                      if (url !== null) setExpandedSrc(url);
-                      else
-                        toastManager.add({
-                          type: "error",
-                          title: "Page unavailable",
-                          description: "Reconnect to the environment and try again.",
-                        });
-                    }}
-                  />
-                }
-              >
-                <Maximize2Icon className="size-3.5" />
-              </TooltipTrigger>
-              <TooltipPopup side="left">Open full screen</TooltipPopup>
-            </Tooltip>
-          </div>
-          {expandedSrc !== null ? (
-            <HtmlRenderDialog
-              src={expandedSrc}
+    <div ref={observeBox} className="relative" style={{ height: height + FRAME_HEAD_HEIGHT }}>
+      <div className="flex size-full flex-col overflow-hidden rounded-lg border border-border bg-(--terminal-background)">
+        <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border bg-code px-2.5 text-muted-foreground">
+          <CodeXmlIcon aria-hidden className="size-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate font-mono text-xs">{fileName}</span>
+          <span className="inline-flex h-[18px] shrink-0 items-center rounded-sm bg-secondary px-1.5 font-medium text-2xs text-secondary-foreground">
+            Interactive
+          </span>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  aria-label="Open full screen"
+                  size="icon"
+                  variant="ghost"
+                  onClick={openFullScreen}
+                />
+              }
+            >
+              <Maximize2Icon />
+            </TooltipTrigger>
+            <TooltipPopup side="left">Open full screen</TooltipPopup>
+          </Tooltip>
+        </div>
+        {src !== null ? (
+          <div className="relative min-h-0 flex-1">
+            <HtmlRenderDocument
+              src={src}
               title={title}
               threadRef={props.threadRef}
-              onClose={() => setExpandedSrc(null)}
+              className="block size-full"
+              onContentHeight={setContentHeight}
+              onFullscreenChange={onFullscreenChange}
             />
-          ) : null}
-        </>
-      ) : failed ? (
-        <p className="flex size-full items-center justify-center text-muted-foreground text-xs">
-          Unable to load {title}
-        </p>
+          </div>
+        ) : failed ? (
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-3 py-8 text-center">
+            <CircleAlertIcon aria-hidden className="size-4 text-muted-foreground" />
+            <span className="font-medium text-sm">Page unavailable</span>
+            <span className="text-muted-foreground text-xs">
+              Reconnect to the environment and try again.
+            </span>
+          </div>
+        ) : null}
+      </div>
+      {expandedSrc !== null ? (
+        <HtmlRenderDialog
+          src={expandedSrc}
+          title={title}
+          threadRef={props.threadRef}
+          onClose={() => setExpandedSrc(null)}
+        />
       ) : null}
     </div>
   );

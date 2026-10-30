@@ -1,10 +1,15 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
+import { htmlRenderFileName } from "@t3tools/shared/htmlRender";
 import { MinusIcon, PlusIcon, XIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { HtmlRenderDocument } from "../files/BrowserDocumentFrame";
 import { Button } from "../ui/button";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
+
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 2;
+const ZOOM_STEP = 0.25;
 
 export function HtmlRenderDialog(props: {
   readonly src: string;
@@ -14,6 +19,7 @@ export function HtmlRenderDialog(props: {
 }) {
   const [zoom, setZoom] = useState(1);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const fileName = htmlRenderFileName(props.title);
   return (
     <Dialog open onOpenChange={(open) => !open && props.onClose()}>
       <DialogPopup
@@ -24,18 +30,46 @@ export function HtmlRenderDialog(props: {
         initialFocus={closeButtonRef}
       >
         <DialogTitle className="sr-only">Expanded {props.title} preview</DialogTitle>
-        <div className="relative w-[92vw]">
-          <Button
-            ref={closeButtonRef}
-            aria-label="Close"
-            size="icon-xs"
-            variant="media-close"
-            className="absolute right-0 -top-10 z-20"
-            onClick={props.onClose}
-          >
-            <XIcon />
-          </Button>
-          <div className="h-[min(86vh,calc(100vh-160px))] overflow-auto overscroll-contain rounded-lg bg-background p-4 shadow-2xl ring-1 ring-border/70 [container-type:size]">
+        <div className="dialog-glass flex w-[min(92vw,72rem)] flex-col overflow-hidden rounded-xl border">
+          <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3.5 text-muted-foreground">
+            <span className="min-w-0 flex-1 truncate font-mono text-xs">{fileName}</span>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <Button
+                aria-label="Zoom out"
+                size="icon-sm"
+                variant="ghost"
+                disabled={zoom === MIN_ZOOM}
+                onClick={() => setZoom((value) => Math.max(MIN_ZOOM, value - ZOOM_STEP))}
+              >
+                <MinusIcon />
+              </Button>
+              <span className="w-9 text-center font-mono text-xs tabular-nums">
+                {Math.round(zoom * 100)}%
+              </span>
+              <Button
+                aria-label="Zoom in"
+                size="icon-sm"
+                variant="ghost"
+                disabled={zoom === MAX_ZOOM}
+                onClick={() => setZoom((value) => Math.min(MAX_ZOOM, value + ZOOM_STEP))}
+              >
+                <PlusIcon />
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setZoom(1)}>
+                Reset zoom
+              </Button>
+            </div>
+            <Button
+              ref={closeButtonRef}
+              aria-label="Close"
+              size="icon-sm"
+              variant="ghost"
+              onClick={props.onClose}
+            >
+              <XIcon />
+            </Button>
+          </div>
+          <div className="h-[min(86vh,calc(100vh-160px))] overflow-auto overscroll-contain bg-(--terminal-background) p-4 [container-type:size]">
             <div className="h-[100cqh] w-[100cqw]" style={{ zoom }}>
               <HtmlRenderDocument
                 src={props.src}
@@ -43,37 +77,6 @@ export function HtmlRenderDialog(props: {
                 threadRef={props.threadRef}
                 className="block size-full"
               />
-            </div>
-          </div>
-          <div className="mt-2 flex min-w-0 items-center justify-center gap-3 text-xs text-white/80">
-            <span className="truncate">{props.title}</span>
-            <div className="flex shrink-0 items-center gap-1">
-              <Button
-                aria-label="Zoom out"
-                size="icon-sm"
-                variant="overlay"
-                disabled={zoom === 0.5}
-                onClick={() => setZoom((value) => value - 0.25)}
-              >
-                <MinusIcon />
-              </Button>
-              <Button
-                aria-label="Reset zoom"
-                size="sm"
-                variant="overlay"
-                onClick={() => setZoom(1)}
-              >
-                {Math.round(zoom * 100)}%
-              </Button>
-              <Button
-                aria-label="Zoom in"
-                size="icon-sm"
-                variant="overlay"
-                disabled={zoom === 2}
-                onClick={() => setZoom((value) => value + 0.25)}
-              >
-                <PlusIcon />
-              </Button>
             </div>
           </div>
         </div>
