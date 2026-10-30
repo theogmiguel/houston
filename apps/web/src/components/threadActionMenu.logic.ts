@@ -19,7 +19,6 @@ export type ThreadActionMenuId =
   | "rename"
   | "regenerate-title"
   | "mark-unread"
-  | "share-guest"
   | "copy"
   | "copy-path"
   | "copy-branch"
@@ -89,8 +88,6 @@ export interface ThreadActionMenuState {
     readonly titleRegeneration: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
-  /** Guest links need their own grant, so the caller checks it instead of `canOperate`. */
-  readonly canShareWithGuest?: boolean;
   /** A No project thread with its own folder, on a server that can promote it. */
   readonly canTurnIntoProject?: boolean;
 }
@@ -101,7 +98,6 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
     "new-thread-on-branch",
     "project-settings",
     "mark-unread",
-    "share-guest",
     "copy",
     "copy-path",
     "copy-branch",
@@ -172,9 +168,6 @@ export function buildThreadActionMenuItems(
         ]
       : []),
     { id: "mark-unread", label: "Mark unread", icon: "mail-open" },
-    ...(state.canShareWithGuest
-      ? [{ id: "share-guest" as const, label: "Share with guest", icon: "user-plus" }]
-      : []),
     ...(state.projectFilter
       ? [
           {

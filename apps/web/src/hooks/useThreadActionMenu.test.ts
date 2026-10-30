@@ -154,7 +154,6 @@ const createMenu = () =>
     threadRef: target,
     projectCwd: "/project",
     onStartRename: () => recordEffect("rename"),
-    canShareWithGuest: false,
   });
 
 beforeEach(() => {

@@ -51,13 +51,7 @@ it.layer(NodeServices.layer)("replayMarkers", (it) => {
           .pipe(Effect.andThen(setAge(`${name}.bin`, age)));
 
       const justExpired = Duration.sum(REPLAY_MARKER_MAX_AGE, Duration.seconds(1));
-      const expiredMarkers = [
-        "dpop-proof-old",
-        "cloud-mint-jti-old",
-        "cloud-mint-nonce-old",
-        "cloud-health-jti-old",
-        "cloud-health-nonce-old",
-      ];
+      const expiredMarkers = ["dpop-proof-old"];
       for (const name of expiredMarkers) yield* writeAged(name, justExpired);
       yield* writeAged("dpop-proof-at-max-age", REPLAY_MARKER_MAX_AGE);
       for (const name of REAL_SECRET_NAMES) yield* writeAged(name, Duration.days(30));

@@ -102,7 +102,6 @@ describe("createInboxReturnTracker", () => {
     { hasPendingUserInput: true },
     { pendingSubagentRequest: "approval" as const },
     { pendingSubagentRequest: "user_input" as const },
-    { pendingGuestMessageCount: 1 },
     { interactionMode: "plan" as const, hasActionableProposedPlan: true },
     { runtime: { ...thread("a", true).runtime!, status: "failed" as const, lastError: "failed" } },
     { pinnedAt: "2026-06-01T00:00:01Z" },
