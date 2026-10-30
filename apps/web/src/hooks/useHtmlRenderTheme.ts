@@ -5,6 +5,7 @@ import { appearanceFontStack } from "../appearanceFonts";
 import {
   getStandardThemeColors,
   getThemeColorsForMode,
+  getCustomThemesRevision,
   getThemeDefinition,
   resolveThemeHalf,
   subscribeToCustomThemes,
@@ -30,11 +31,10 @@ function resolveActiveThemeColors(
 export function useHtmlRenderTheme() {
   const { theme, resolvedTheme, themeHalves } = useTheme();
   // Custom and published palettes can be edited in place, under an unchanged preference.
-  const colors = useSyncExternalStore(
-    subscribeToCustomThemes,
-    () => resolveActiveThemeColors(theme, themeHalves, resolvedTheme),
-    () => getStandardThemeColors(resolvedTheme),
-  );
+  // The snapshot is a revision number: deriving the colours inside getSnapshot returned
+  // a fresh object each read and looped the store.
+  useSyncExternalStore(subscribeToCustomThemes, getCustomThemesRevision, getCustomThemesRevision);
+  const colors = resolveActiveThemeColors(theme, themeHalves, resolvedTheme);
   const sans = useClientSettings((settings) => settings.fontFamilySans);
   const mono = useClientSettings((settings) => settings.fontFamilyCode);
   return htmlRenderTheme(
