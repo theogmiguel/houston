@@ -63,7 +63,15 @@
     "t3.json",
     ".task-cache.json",
     ".vercelignore",
-    ".env.example"
+    ".env.example",
+    "apps/server/src/telemetry/AnalyticsService.test.ts",
+    "apps/server/src/telemetry/DelegatedTaskAnalytics.ts",
+    "apps/server/src/telemetry/FeatureUsage.test.ts",
+    "apps/server/src/telemetry/FeatureUsage.ts",
+    "apps/server/src/telemetry/Identify.test.ts",
+    "apps/server/src/telemetry/Identify.ts",
+    "apps/server/src/telemetry/ProviderDimensions.test.ts",
+    "apps/server/src/telemetry/ProviderDimensions.ts"
   ],
   "added": [
     "apps/server/src/vcs/GitVcsDriverCore.gitfile.test.ts",
