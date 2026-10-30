@@ -28,6 +28,7 @@ import {
   isProviderNativeSubagentThread,
   MessageId,
   type NodeId,
+  PROVIDER_DISPLAY_NAMES,
   type ModelSelection,
   OrchestrationV2Command,
   type OrchestrationV2InternalCommand,
@@ -169,6 +170,24 @@ import { planThreadDeletion } from "./ThreadDeletion.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
 import { acceptedDelivery, nextDelivery } from "../houston/messageDelivery.ts";
+import {
+  ASIDE_NEEDS_FINISHED_TURN,
+  asideSourceRun,
+  finalAssistantText,
+  ONLY_FINISHED_REVIEW_SENDS,
+  REVIEW_ALREADY_SENT,
+  REVIEW_NEEDS_ANOTHER_PROVIDER,
+  REVIEW_NEEDS_COMPLETED_TURN,
+  reviewPrompt,
+  sentReviewText,
+  SIDE_RESULT_ONLY_THROUGH_SEND,
+  SIDE_THREAD_READ_ONLY,
+  sideMessageId,
+} from "../houston/sideThreads.ts";
+import type { HoustonSideThread } from "@t3tools/contracts/houston/sideThreads";
+import * as CheckpointDiffQuery from "../checkpointing/CheckpointDiffQuery.ts";
+import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
+import * as Crypto from "effect/Crypto";
 import type { MessageDelivery } from "@t3tools/contracts/houston/messageDelivery";
 
 const isMessageQuestionAnswer = Schema.is(
@@ -548,6 +567,12 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.fork":
     case "thread.merge_back":
       return command.targetThreadId;
+    case "houston.aside.start":
+      return command.asideThreadId;
+    case "houston.second-opinion.request":
+      return command.reviewThreadId;
+    case "houston.side-thread.send":
+      return command.sideThreadId;
   }
 }
 
@@ -1033,6 +1058,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const projects = yield* ProjectStore.ProjectStoreV2;
   const projectionStore = yield* ProjectionStoreV2;
   const effectOutbox = yield* EffectOutbox.EffectOutboxV2;
+  const checkpointStore = yield* CheckpointStore.CheckpointStore;
+  const crypto = yield* Crypto.Crypto;
   const nextTurnItemOrdinal = (
     projection: Pick<OrchestrationV2ThreadProjection, "thread"> &
       Partial<Pick<OrchestrationV2ThreadProjection, "turnItems">>,
@@ -4369,6 +4396,310 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       occurredAt: now,
       payload: transfer,
     });
+  });
+
+  // Houston: asides, second opinions and Send to thread (sideThreads.ts holds the rules).
+  const refuseSideCommand = (command: OrchestrationV2ServerCommand, cause: string) =>
+    Effect.fail(
+      new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause,
+      }),
+    );
+
+  const readThread = (threadId: ThreadId) =>
+    projectionStore
+      .getThread(threadId)
+      .pipe(Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })));
+
+  /** Refuses, by the provider's name, a side thread on a provider that cannot run read-only. */
+  const ensureReadOnlyProvider = Effect.fn("Orchestrator.ensureReadOnlyProvider")(function* (
+    command: OrchestrationV2ServerCommand,
+    threadId: ThreadId,
+    providerInstanceId: ProviderInstanceId,
+  ) {
+    const adapter = yield* providerAdapters.get(providerInstanceId).pipe(mapDispatchError(command));
+    const capabilities = yield* adapter.getCapabilities().pipe(mapDispatchError(command));
+    yield* mapDispatchError(command)(
+      commandPolicy.ensureReadOnlyRun({
+        commandId: command.commandId,
+        threadId,
+        providerInstanceId,
+        capabilities,
+      }),
+    );
+  });
+
+  /** Marks the thread a command just created as a side thread. */
+  const markSideThread = (
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    threadId: ThreadId,
+    side: HoustonSideThread,
+  ) =>
+    Ref.update(events, (pending) =>
+      pending.map((event) =>
+        event.type === "thread.created" && event.threadId === threadId
+          ? { ...event, payload: { ...event.payload, side } }
+          : event,
+      ),
+    );
+
+  const ensureNewThread = Effect.fn("Orchestrator.ensureNewThread")(function* (
+    command: OrchestrationV2ServerCommand,
+    threadId: ThreadId,
+  ) {
+    const existing = yield* projectionStore.getThread(threadId).pipe(
+      Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(null) }),
+      Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })),
+    );
+    if (existing !== null) {
+      return yield* new OrchestratorThreadAlreadyExistsError({
+        commandId: command.commandId,
+        threadId,
+      });
+    }
+  });
+
+  const dispatchAsideStart = Effect.fn("orchestrationV2.dispatch.asideStart")(function* (
+    command: Extract<OrchestrationV2Command, { readonly type: "houston.aside.start" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    const source = yield* projectionStore
+      .getThreadRecords(command.sourceThreadId, ["runs"])
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.sourceThreadId, cause }),
+        ),
+      );
+    yield* ensureNewThread(command, command.asideThreadId);
+    yield* ensureReadOnlyProvider(
+      command,
+      command.asideThreadId,
+      source.thread.modelSelection.instanceId,
+    );
+    const sourceRun = asideSourceRun(source.runs);
+    if (sourceRun === undefined)
+      return yield* refuseSideCommand(command, ASIDE_NEEDS_FINISHED_TURN);
+    yield* dispatchThreadFork(
+      {
+        type: "thread.fork",
+        createdBy: command.createdBy,
+        creationSource: command.creationSource,
+        commandId: command.commandId,
+        sourceThreadId: command.sourceThreadId,
+        targetThreadId: command.asideThreadId,
+        sourcePoint: { type: "run", runId: sourceRun.id },
+      },
+      events,
+    );
+    yield* markSideThread(events, command.asideThreadId, {
+      kind: "aside",
+      sourceThreadId: command.sourceThreadId,
+      sourceRunId: sourceRun.id,
+    });
+    return yield* dispatchMessage(
+      {
+        type: "message.dispatch",
+        createdBy: command.createdBy,
+        creationSource: command.creationSource,
+        commandId: command.commandId,
+        threadId: command.asideThreadId,
+        messageId: command.messageId,
+        text: command.text,
+        attachments: command.attachments,
+        dispatchMode: { type: "start_immediately" },
+      },
+      events,
+      effects,
+    );
+  });
+
+  const dispatchSecondOpinionRequest = Effect.fn("orchestrationV2.dispatch.secondOpinion")(
+    function* (
+      command: Extract<OrchestrationV2Command, { readonly type: "houston.second-opinion.request" }>,
+      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+      effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+    ) {
+      const source = yield* projectionStore
+        .getThreadRecords(command.sourceThreadId, ["runs", "messages", "turnItems"], {
+          messageRoles: ["user"],
+          turnItemRunId: command.runId,
+          turnItemTypes: ["assistant_message"],
+        })
+        .pipe(
+          Effect.mapError(
+            (cause) => new OrchestratorProjectionError({ threadId: command.sourceThreadId, cause }),
+          ),
+        );
+      const run = source.runs.find((candidate) => candidate.id === command.runId);
+      if (run === undefined || run.status !== "completed") {
+        return yield* refuseSideCommand(command, REVIEW_NEEDS_COMPLETED_TURN);
+      }
+      yield* ensureNewThread(command, command.reviewThreadId);
+      yield* ensureReadOnlyProvider(
+        command,
+        command.reviewThreadId,
+        command.modelSelection.instanceId,
+      );
+      const reviewer = yield* providerAdapters
+        .get(command.modelSelection.instanceId)
+        .pipe(mapDispatchError(command));
+      const reviewed = yield* providerAdapters
+        .get(run.providerInstanceId)
+        .pipe(mapDispatchError(command));
+      if (reviewer.driver === reviewed.driver) {
+        return yield* refuseSideCommand(command, REVIEW_NEEDS_ANOTHER_PROVIDER);
+      }
+      const turnDiff = CheckpointDiffQuery.makeTurnDiff({
+        getCheckpointContext: (threadId) => projectionStore.getCheckpointContext(threadId),
+        checkpointStore,
+        crypto,
+      });
+      const diff = yield* turnDiff({
+        threadId: command.sourceThreadId,
+        fromTurnCount: run.ordinal - 1,
+        toTurnCount: run.ordinal,
+      }).pipe(
+        Effect.map((result): string | null => result.diff),
+        Effect.orElseSucceed(() => null),
+      );
+      const request = source.messages.find((message) => message.id === run.userMessageId);
+      const prompt = reviewPrompt({
+        request: request?.text ?? "",
+        report: finalAssistantText(source.turnItems, run.id) ?? "",
+        diff,
+      });
+      yield* dispatchThreadCreate(
+        {
+          type: "thread.create",
+          createdBy: command.createdBy,
+          creationSource: command.creationSource,
+          commandId: command.commandId,
+          threadId: command.reviewThreadId,
+          projectId: source.thread.projectId,
+          title: `Second opinion: ${source.thread.title}`,
+          modelSelection: command.modelSelection,
+          runtimeMode: source.thread.runtimeMode,
+          interactionMode: "default",
+          branch: source.thread.branch,
+          worktreePath: source.thread.worktreePath,
+        },
+        events,
+      );
+      yield* markSideThread(events, command.reviewThreadId, {
+        kind: "secondOpinion",
+        sourceThreadId: command.sourceThreadId,
+        sourceRunId: run.id,
+      });
+      return yield* dispatchMessage(
+        {
+          type: "message.dispatch",
+          createdBy: command.createdBy,
+          creationSource: command.creationSource,
+          commandId: command.commandId,
+          threadId: command.reviewThreadId,
+          messageId: yield* mapDispatchError(command)(
+            idAllocator.allocate.message({ threadId: command.reviewThreadId, ordinal: 1 }),
+          ),
+          text: prompt,
+          attachments: [],
+          modelSelection: command.modelSelection,
+          dispatchMode: { type: "start_immediately" },
+        },
+        events,
+        effects,
+      );
+    },
+  );
+
+  const dispatchSideThreadSend = Effect.fn("orchestrationV2.dispatch.sideThreadSend")(function* (
+    command: Extract<OrchestrationV2Command, { readonly type: "houston.side-thread.send" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    const review = yield* projectionStore
+      .getThreadRecords(command.sideThreadId, ["runs", "turnItems"], {
+        turnItemRunId: command.runId,
+        turnItemTypes: ["assistant_message"],
+      })
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.sideThreadId, cause }),
+        ),
+      );
+    const side = review.thread.side;
+    const run = review.runs.find((candidate) => candidate.id === command.runId);
+    const text =
+      run === undefined ? undefined : finalAssistantText(review.turnItems, command.runId);
+    if (
+      side?.kind !== "secondOpinion" ||
+      run === undefined ||
+      run.status !== "completed" ||
+      text === undefined
+    ) {
+      return yield* refuseSideCommand(command, ONLY_FINISHED_REVIEW_SENDS);
+    }
+    const source = yield* projectionStore
+      .getThreadRecords(side.sourceThreadId, ["runs", "messages"], { messageRoles: ["user"] })
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: side.sourceThreadId, cause }),
+        ),
+      );
+    const messageId = sideMessageId(command.runId);
+    if (source.messages.some((message) => message.id === messageId)) {
+      return yield* refuseSideCommand(command, REVIEW_ALREADY_SENT);
+    }
+    const reviewedRun = source.runs.find((candidate) => candidate.id === side.sourceRunId);
+    if (reviewedRun === undefined)
+      return yield* refuseSideCommand(command, ONLY_FINISHED_REVIEW_SENDS);
+    const reviewer = yield* providerAdapters
+      .get(run.providerInstanceId)
+      .pipe(mapDispatchError(command));
+    const active = source.runs.some(
+      (candidate) =>
+        candidate.status === "preparing" ||
+        candidate.status === "starting" ||
+        candidate.status === "running" ||
+        candidate.status === "waiting",
+    );
+    return yield* dispatchMessage(
+      {
+        type: "message.dispatch",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: command.commandId,
+        threadId: side.sourceThreadId,
+        messageId,
+        text: sentReviewText({
+          provider: PROVIDER_DISPLAY_NAMES[reviewer.driver] ?? reviewer.driver,
+          ordinal: reviewedRun.ordinal,
+          review: text,
+        }),
+        attachments: [],
+        dispatchMode: active ? { type: "queue_after_active" } : { type: "start_immediately" },
+      },
+      events,
+      effects,
+    );
+  });
+
+  /** A source's live side threads, deleted with it. */
+  const sideThreadsOf = Effect.fn("Orchestrator.sideThreadsOf")(function* (
+    thread: OrchestrationV2AppThread,
+  ) {
+    if (thread.side !== undefined) return [];
+    const snapshots = yield* Effect.forEach(["active", "archive"] as const, (location) =>
+      projectionStore.getShellSnapshot({ location, projectId: thread.projectId }),
+    ).pipe(
+      Effect.mapError((cause) => new OrchestratorProjectionError({ threadId: thread.id, cause })),
+    );
+    return snapshots
+      .flatMap((snapshot) => [...snapshot.threads, ...snapshot.archivedThreads])
+      .filter((shell) => shell.side?.sourceThreadId === thread.id && shell.deletedAt === null)
+      .map((shell) => shell.id);
   });
 
   const dispatchSteerIntoRun = Effect.fn("Orchestrator.dispatchSteerIntoRun")(function* (input: {
@@ -12602,31 +12933,47 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       }
       case "thread.delete": {
-        const projection = yield* projectionStore
-          .getThreadRecords(command.threadId, [
-            "runs",
-            "attempts",
-            "nodes",
-            "runtimeRequests",
-            "subagents",
-            "providerSessions",
-          ])
-          .pipe(
-            Effect.mapError(
-              (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
-            ),
+        const now = yield* DateTime.now;
+        const planDeletion = Effect.fn("orchestrationV2.dispatch.planThreadDeletion")(function* (
+          threadId: ThreadId,
+        ) {
+          const projection = yield* projectionStore
+            .getThreadRecords(threadId, [
+              "runs",
+              "attempts",
+              "nodes",
+              "runtimeRequests",
+              "subagents",
+              "providerSessions",
+            ])
+            .pipe(Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })));
+          const plan = yield* mapDispatchError(command)(
+            planThreadDeletion({
+              command: { ...command, threadId },
+              projection,
+              attachmentIds: yield* projectionStore
+                .getThreadAttachmentIds(threadId)
+                .pipe(mapDispatchError(command)),
+              now,
+              idAllocator,
+            }),
           );
-        return yield* mapDispatchError(command)(
-          planThreadDeletion({
-            command,
-            projection,
-            attachmentIds: yield* projectionStore
-              .getThreadAttachmentIds(command.threadId)
-              .pipe(mapDispatchError(command)),
-            now: yield* DateTime.now,
-            idAllocator,
-          }),
+          return { projection, plan };
+        });
+        const deleted = yield* planDeletion(command.threadId);
+        // Houston: side threads are shown only inside their source; they go with it.
+        const sides = yield* Effect.forEach(yield* sideThreadsOf(deleted.projection.thread), (id) =>
+          planDeletion(id).pipe(Effect.map(({ plan }) => ({ id, plan }))),
         );
+        return {
+          events: [...deleted.plan.events, ...sides.flatMap(({ plan }) => plan.events)],
+          effects: [
+            ...deleted.plan.effects,
+            ...sides.flatMap(({ id, plan }) =>
+              plan.effects.map((effect) => ({ ...effect, id: `${effect.id}:${id}` })),
+            ),
+          ],
+        };
       }
       case "thread.archive":
       case "thread.unarchive":
@@ -12651,6 +12998,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.interaction-mode.set":
       case "thread.model-selection.set":
       case "provider.switch":
+        if (command.type === "thread.model-selection.set" || command.type === "provider.switch") {
+          // Houston: a side thread stays on a provider that enforces read-only.
+          if ((yield* readThread(command.threadId)).side !== undefined) {
+            yield* ensureReadOnlyProvider(
+              command,
+              command.threadId,
+              command.modelSelection.instanceId,
+            );
+          }
+        }
         yield* dispatchThreadMutation(command, events, effects);
         break;
       case "thread.pull-request-watch.sync":
@@ -12683,6 +13040,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             commandId: command.commandId,
             threadId: command.threadId,
           });
+        }
+        if (thread.side !== undefined && command.modelSelection !== undefined) {
+          yield* ensureReadOnlyProvider(
+            command,
+            command.threadId,
+            command.modelSelection.instanceId,
+          );
         }
         const guestSend =
           command.guestMessageId === undefined
@@ -12852,6 +13216,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         yield* dispatchQueuedRunEdit(command, events);
         break;
       case "checkpoint.rollback":
+        if ((yield* readThread(command.threadId)).side !== undefined) {
+          return yield* refuseSideCommand(command, SIDE_THREAD_READ_ONLY);
+        }
         yield* dispatchCheckpointRollback(command, events, effects);
         break;
       case "checkpoint.rollback.fail":
@@ -12864,12 +13231,22 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         yield* dispatchBackgroundWorkSettle(command, events, effects);
         break;
       case "thread.fork":
+        // Houston: a fork of a side thread would keep its worktree without its read-only run.
+        if ((yield* readThread(command.sourceThreadId)).side !== undefined) {
+          return yield* refuseSideCommand(command, SIDE_THREAD_READ_ONLY);
+        }
         yield* dispatchThreadFork(command, events);
         break;
       case "thread.merge_back":
+        if ((yield* readThread(command.sourceThreadId)).side !== undefined) {
+          return yield* refuseSideCommand(command, SIDE_RESULT_ONLY_THROUGH_SEND);
+        }
         yield* dispatchThreadMergeBack(command, events);
         break;
       case "delegated_task.request":
+        if ((yield* readThread(command.parentThreadId)).side !== undefined) {
+          return yield* refuseSideCommand(command, SIDE_THREAD_READ_ONLY);
+        }
         yield* dispatchDelegatedTaskRequest(command, events, effects);
         break;
       case "delegated_task.remote.request":
@@ -12897,6 +13274,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "link_request.record":
         yield* dispatchLinkRequestRecord(command, events, effects);
+        break;
+      case "houston.aside.start":
+        cancelUnsettledEffects = yield* dispatchAsideStart(command, events, effects);
+        break;
+      case "houston.second-opinion.request":
+        cancelUnsettledEffects = yield* dispatchSecondOpinionRequest(command, events, effects);
+        break;
+      case "houston.side-thread.send":
+        cancelUnsettledEffects = yield* dispatchSideThreadSend(command, events, effects);
         break;
       default:
         return yield* dispatchUnsupported(command);
@@ -13138,6 +13524,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       commandThreadId(command),
       dispatchWithReceiptEffect(command),
     );
+    // Houston: a send writes to the review's source thread; take its lock first.
+    if (command.type === "houston.side-thread.send") {
+      const side = yield* projectionStore.getThread(command.sideThreadId).pipe(
+        Effect.map((thread) => thread.side),
+        Effect.orElseSucceed(() => undefined),
+      );
+      return yield* side === undefined
+        ? dispatch
+        : threadDispatch.withLock(side.sourceThreadId, dispatch);
+    }
     // Answering a message-mode question can also start a follow-up.
     if (
       command.type !== "runtime-request.respond" &&
@@ -13594,6 +13990,8 @@ export const layer: Layer.Layer<
   OrchestratorV2,
   never,
   | CheckpointServiceV2
+  | CheckpointStore.CheckpointStore
+  | Crypto.Crypto
   | FileSystem.FileSystem
   | Path.Path
   | CommandPolicyV2

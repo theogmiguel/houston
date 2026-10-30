@@ -421,6 +421,16 @@ export const layerWithOptions = (
           : mcpPrepareLock.withLock(
               threadId,
               Effect.gen(function* () {
+                // Houston: a side thread gets no T3 MCP tools; they act outside its sandbox.
+                const sideThread = yield* projectionStore.getThread(threadId).pipe(
+                  Effect.map((thread) => thread.side !== undefined),
+                  Effect.orElseSucceed(() => false),
+                );
+                if (sideThread) {
+                  yield* mcpSessionRegistry.revokeThread(threadId);
+                  yield* mcpSessions.clear(threadId);
+                  return { mcpCredentialId: undefined, issued: false };
+                }
                 // Live providers build MCP clients once; reuse credentials across workspace handoffs.
                 const { browser: browserToolsAvailable, device: deviceToolsAvailable } =
                   yield* agentAccessSettings(threadId);

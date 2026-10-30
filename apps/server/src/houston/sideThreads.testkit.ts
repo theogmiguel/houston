@@ -21,6 +21,7 @@ import {
   type ProviderInteractionMode,
   type RuntimeMode,
 } from "@t3tools/contracts";
+import type * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
@@ -89,7 +90,7 @@ export interface StartedTurn {
   readonly driver: string;
   readonly input: ProviderAdapter.ProviderAdapterV2TurnInput;
   /** The T3 MCP credential the session held for this thread when the turn started. */
-  readonly mcp: McpProviderSessions.McpProviderSessionConfig | undefined;
+  readonly mcp: McpProviderSession.McpProviderSessionConfig | undefined;
 }
 
 export interface Script {
@@ -357,7 +358,9 @@ export const makeHarness = Effect.fn("sideThreadsHarness")(function* (
         get: (instanceId) => {
           const spec = specs.find((candidate) => candidate.driver === instanceId);
           return spec === undefined
-            ? Effect.fail(new ProviderAdapterRegistry.ProviderAdapterRegistryLookupError({ instanceId }))
+            ? Effect.fail(
+                new ProviderAdapterRegistry.ProviderAdapterRegistryLookupError({ instanceId }),
+              )
             : Effect.succeed(adapters.get(spec.driver) ?? remember(spec, mcpSessions));
         },
         list: () => Effect.succeed(specs.map((spec) => ProviderInstanceId.make(spec.driver))),
@@ -390,18 +393,22 @@ export const selection = (driver: string, model = "test-model"): ModelSelection 
 
 /** The orchestration runtime around the doubles, with T3 MCP credentials issued as in production. */
 export const harnessLayer = (harness: Harness, options: { readonly databasePath?: string } = {}) =>
-  ProviderReplayHarness.layerWithRegistry({ name: `side-threads-${harness.name}` }, harness.registry, {
-    runEffectWorker: false,
-    configureMcp: true,
-    mcpSessionRegistry: recordingMcpRegistry(harness.log),
-    ...(options.databasePath === undefined
-      ? {}
-      : {
-          databaseLayer: SqlitePersistence.layerFromPath(options.databasePath).pipe(
-            Layer.provide(NodeServices.layer),
-          ),
-        }),
-  });
+  ProviderReplayHarness.layerWithRegistry(
+    { name: `side-threads-${harness.name}` },
+    harness.registry,
+    {
+      runEffectWorker: false,
+      configureMcp: true,
+      mcpSessionRegistry: recordingMcpRegistry(harness.log),
+      ...(options.databasePath === undefined
+        ? {}
+        : {
+            databaseLayer: SqlitePersistence.layerFromPath(options.databasePath).pipe(
+              Layer.provide(NodeServices.layer),
+            ),
+          }),
+    },
+  );
 
 export interface Context {
   readonly orchestrator: Orchestrator.OrchestratorV2["Service"];
@@ -429,7 +436,7 @@ export interface Context {
   ) => Effect.Effect<void, HarnessError>;
   readonly dispatch: (
     command: OrchestrationV2Command,
-  ) => Effect.Effect<unknown, Orchestrator.OrchestratorV2Error>;
+  ) => Effect.Effect<void, Orchestrator.OrchestratorV2Error>;
 }
 
 export const runWith = <A, E, R>(
@@ -456,7 +463,8 @@ export const runWith = <A, E, R>(
         yield* TestClock.adjust("1 minute");
       }
     });
-    const dispatch: Context["dispatch"] = (command) => orchestrator.dispatch(command);
+    const dispatch: Context["dispatch"] = (command) =>
+      orchestrator.dispatch(command).pipe(Effect.asVoid);
     const createThread: Context["createThread"] = (input) =>
       Effect.gen(function* () {
         const threadId = ThreadId.make(input.threadId);
@@ -492,7 +500,15 @@ export const runWith = <A, E, R>(
         .pipe(Effect.asVoid);
     const turn: Context["turn"] = (threadId, messageId, text) =>
       send(threadId, messageId, text).pipe(Effect.andThen(settle));
-    const result = yield* body({ orchestrator, events, settle, createThread, send, turn, dispatch });
+    const result = yield* body({
+      orchestrator,
+      events,
+      settle,
+      createThread,
+      send,
+      turn,
+      dispatch,
+    });
     yield* Fiber.interrupt(recorder);
     return result;
   }).pipe(

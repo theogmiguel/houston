@@ -12,8 +12,10 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
+import { hasReadOnlyRun, readOnlyPolicy } from "../houston/sideThreads.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProjectStore from "./ProjectStore.ts";
+import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 
 export class RuntimePolicyResolveError extends Schema.TaggedError<RuntimePolicyResolveError>()(
   "RuntimePolicyResolveError",
@@ -124,6 +126,8 @@ export const layerFromProjectStore: Layer.Layer<
 
 export function layerWithOverride(
   override: RuntimePolicyV2Override,
+  // Houston: limits the override to these threads, so a replay can leave others unchanged.
+  options: { readonly threadIds?: ReadonlyArray<string> } = {},
 ): Layer.Layer<RuntimePolicyV2, never, RuntimePolicyV2> {
   return Layer.effect(
     RuntimePolicyV2,
@@ -131,24 +135,61 @@ export function layerWithOverride(
       const base = yield* RuntimePolicyV2;
       return {
         resolve: (input) =>
-          base.resolve(input).pipe(
-            Effect.map((policy) =>
-              ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-                ...policy,
-                ...(override.cwd === undefined ? {} : { cwd: override.cwd }),
-                ...(override.approvalPolicy === undefined
-                  ? {}
-                  : { approvalPolicy: override.approvalPolicy }),
-                ...(override.sandboxPolicy === undefined
-                  ? {}
-                  : { sandboxPolicy: override.sandboxPolicy }),
-                ...(override.reasoningEffort === undefined
-                  ? {}
-                  : { reasoningEffort: override.reasoningEffort }),
-              }),
-            ),
-          ),
+          options.threadIds !== undefined && !options.threadIds.includes(input.thread.id)
+            ? base.resolve(input)
+            : base.resolve(input).pipe(
+                Effect.map((policy) =>
+                  ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+                    ...policy,
+                    ...(override.cwd === undefined ? {} : { cwd: override.cwd }),
+                    ...(override.approvalPolicy === undefined
+                      ? {}
+                      : { approvalPolicy: override.approvalPolicy }),
+                    ...(override.sandboxPolicy === undefined
+                      ? {}
+                      : { sandboxPolicy: override.sandboxPolicy }),
+                    ...(override.reasoningEffort === undefined
+                      ? {}
+                      : { reasoningEffort: override.reasoningEffort }),
+                  }),
+                ),
+              ),
       } satisfies RuntimePolicyV2Shape;
     }),
   );
 }
+
+/** Houston: a side thread resolves read-only, or fails on a provider that cannot enforce it. */
+export const layerReadOnlySideThreads: Layer.Layer<
+  RuntimePolicyV2,
+  never,
+  RuntimePolicyV2 | ProviderAdapterRegistry.ProviderAdapterRegistryV2
+> = Layer.effect(
+  RuntimePolicyV2,
+  Effect.gen(function* () {
+    const base = yield* RuntimePolicyV2;
+    const adapters = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
+    return RuntimePolicyV2.of({
+      resolve: Effect.fn("RuntimePolicyV2.resolveSideThread")(function* (input) {
+        const policy = yield* base.resolve(input);
+        if (input.thread.side === undefined) return policy;
+        const refuse = (cause: unknown) =>
+          new RuntimePolicyResolveError({
+            projectId: input.thread.projectId,
+            providerInstanceId: input.modelSelection.instanceId,
+            cause,
+          });
+        const capabilities = yield* adapters.get(input.modelSelection.instanceId).pipe(
+          Effect.flatMap((adapter) => adapter.getCapabilities()),
+          Effect.mapError(refuse),
+        );
+        if (!hasReadOnlyRun(capabilities)) {
+          return yield* refuse(
+            `Side thread ${input.thread.id} needs a read-only run; ${input.modelSelection.instanceId} declares none.`,
+          );
+        }
+        return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make(readOnlyPolicy(policy));
+      }),
+    });
+  }),
+);

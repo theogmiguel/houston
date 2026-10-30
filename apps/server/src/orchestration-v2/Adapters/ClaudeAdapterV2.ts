@@ -448,6 +448,8 @@ export const ClaudeProviderCapabilitiesV2 = {
   },
   runtimePolicy: {
     enforcement: "native",
+    // Houston: a read-only policy maps to dontAsk with only the read tools (sideThreads families).
+    readOnlyRun: "permissionMode",
   },
 } satisfies OrchestrationV2ProviderCapabilities;
 

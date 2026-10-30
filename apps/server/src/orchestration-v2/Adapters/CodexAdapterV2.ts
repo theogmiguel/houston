@@ -324,6 +324,8 @@ export const CodexProviderCapabilitiesV2 = {
   },
   runtimePolicy: {
     enforcement: "native",
+    // Houston: a read-only policy becomes Codex's readOnly sandbox (sideThreads families).
+    readOnlyRun: "sandbox",
   },
 } satisfies OrchestrationV2ProviderCapabilities;
 

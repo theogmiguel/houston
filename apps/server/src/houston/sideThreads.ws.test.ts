@@ -19,7 +19,6 @@ import * as RelayClient from "@t3tools/shared/relayClient";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
@@ -273,7 +272,10 @@ const makeWsClient = Effect.fn("makeWsClient")(function* () {
 });
 
 /** Every thread record a value carries for `threadId`, at any depth. */
-const threadRecords = (value: unknown, threadId: string): ReadonlyArray<Record<string, unknown>> => {
+const threadRecords = (
+  value: unknown,
+  threadId: string,
+): ReadonlyArray<Record<string, unknown>> => {
   const found: Array<Record<string, unknown>> = [];
   const seen = new Set<unknown>();
   const visit = (node: unknown) => {
@@ -356,21 +358,10 @@ describe("side threads reach the renderer's reads", () => {
                 const source = yield* context.createThread({ threadId: "source", driver: "codex" });
                 yield* context.turn(source, "message:source:1", "first");
                 sourceRunId = (yield* context.orchestrator.getThreadProjection(source)).runs[0]!.id;
-                const client = yield* makeWsClient();
-                yield* client.request("shell", ORCHESTRATION_V2_WS_METHODS.subscribeShell, {});
-                const received: Array<unknown> = [];
-                const drain = Effect.gen(function* () {
-                  for (;;) {
-                    const next = yield* Queue.poll(client.responses);
-                    if (Option.isNone(next)) return;
-                    received.push(next.value);
-                    yield* client.ack("shell");
-                  }
-                });
-                yield* Effect.yieldNow;
-                yield* drain;
-                const beforeAside = received.length;
-                assert.lengthOf(threadRecords(received, "aside"), 0);
+                const before = yield* makeWsClient();
+                yield* before.request("shell", ORCHESTRATION_V2_WS_METHODS.subscribeShell, {});
+                assert.lengthOf(threadRecords(yield* Queue.take(before.responses), "aside"), 0);
+                yield* before.interrupt("shell");
                 yield* context.dispatch({
                   type: "houston.aside.start",
                   commandId: CommandId.make("aside"),
@@ -382,15 +373,17 @@ describe("side threads reach the renderer's reads", () => {
                   createdBy: "user",
                   creationSource: "web",
                 });
-                for (let round = 0; round < 20; round += 1) {
-                  yield* Effect.yieldNow;
-                  yield* drain;
-                }
-                const shells = threadRecords(received.slice(beforeAside), "aside");
-                assert.isAbove(shells.length, 0, JSON.stringify(received).slice(0, 2_000));
-                for (const shell of shells) {
-                  assert.deepEqual(shell.side, { ...side, sourceRunId });
-                }
+                yield* context.settle;
+                // The live tail projects each changed thread with getThreadShell.
+                const live = yield* context.orchestrator.getThreadShell(ThreadId.make("aside"));
+                assert.deepEqual(live?.side, { ...side, sourceRunId } as never);
+                // A subscriber's first frame carries the aside's shell, once.
+                const client = yield* makeWsClient();
+                yield* client.request("shell", ORCHESTRATION_V2_WS_METHODS.subscribeShell, {});
+                const snapshot = yield* Queue.take(client.responses);
+                const shells = threadRecords(snapshot, "aside");
+                assert.lengthOf(shells, 1, JSON.stringify(snapshot).slice(0, 2_000));
+                assert.deepEqual(shells[0]?.side, { ...side, sourceRunId });
                 yield* client.interrupt("shell");
               }),
             ),
@@ -405,9 +398,13 @@ describe("side threads reach the renderer's reads", () => {
             withRuntimeReads(
               Effect.gen(function* () {
                 const client = yield* makeWsClient();
-                yield* client.request("projection", ORCHESTRATION_V2_WS_METHODS.getThreadProjection, {
-                  threadId: "aside",
-                });
+                yield* client.request(
+                  "projection",
+                  ORCHESTRATION_V2_WS_METHODS.getThreadProjection,
+                  {
+                    threadId: "aside",
+                  },
+                );
                 const projection = yield* Queue.take(client.responses);
                 const threads = threadRecords(projection, "aside");
                 assert.isAbove(threads.length, 0, JSON.stringify(projection).slice(0, 2_000));

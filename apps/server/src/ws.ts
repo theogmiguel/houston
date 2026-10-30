@@ -1601,7 +1601,8 @@ export const layerWsRpc = (
             if (importedThread !== null) {
               return yield* new AcpRegistryOperationError({
                 reason: "session_delete_failed",
-                message: "Delete the imported Houston thread before deleting its native ACP session.",
+                message:
+                  "Delete the imported Houston thread before deleting its native ACP session.",
               });
             }
             yield* manager.deleteSession({
@@ -1874,7 +1875,13 @@ export const layerWsRpc = (
                     command.type === "delegated_task.completion-delivery.dispose" ||
                     command.type === "thread.created.record"
                   ? command.parentThreadId
-                  : command.threadId,
+                  : command.type === "houston.aside.start"
+                    ? command.asideThreadId
+                    : command.type === "houston.second-opinion.request"
+                      ? command.reviewThreadId
+                      : command.type === "houston.side-thread.send"
+                        ? command.sideThreadId
+                        : command.threadId,
             ...(command.type === "thread.fork" || command.type === "thread.merge_back"
               ? { "orchestration_v2.source_thread_id": command.sourceThreadId }
               : {}),

@@ -11,6 +11,17 @@ import {
 } from "../orchestrationV2.ts";
 import { HoustonSideThread } from "./sideThreads.ts";
 
+const decodeThreadJson = Schema.decodeUnknownSync(OrchestrationV2AppThreadJson);
+const encodeThreadJson = Schema.encodeSync(OrchestrationV2AppThreadJson);
+const decodeThread = Schema.decodeSync(OrchestrationV2AppThread);
+const decodeShellJson = Schema.decodeUnknownSync(OrchestrationV2ThreadShellJson);
+const encodeShellJson = Schema.encodeSync(OrchestrationV2ThreadShellJson);
+const decodeShell = Schema.decodeSync(OrchestrationV2ThreadShell);
+const decodeSide = Schema.decodeSync(HoustonSideThread);
+const decodeUnknownSide = Schema.decodeUnknownSync(HoustonSideThread);
+const decodeCommand = Schema.decodeUnknownSync(OrchestrationV2Command);
+const decodeDispatch = Schema.decodeUnknownSync(OrchestrationV2RpcSchemas.dispatchCommand.input);
+
 const at = "2026-10-30T12:00:00.000Z";
 
 // An app thread payload as payload_json stored it before side threads existed.
@@ -78,44 +89,42 @@ const sides = [
 
 describe("side thread records", () => {
   it("threads stored before side threads decode unchanged", () => {
-    const thread = Schema.decodeUnknownSync(OrchestrationV2AppThreadJson)(storedThread);
+    const thread = decodeThreadJson(storedThread);
     expect("side" in thread).toBe(false);
-    const reencoded = Schema.encodeSync(OrchestrationV2AppThreadJson)(thread);
+    const reencoded = encodeThreadJson(thread);
     expect("side" in reencoded).toBe(false);
     expect(reencoded).toEqual(storedThread);
-    const domainThread = Schema.decodeUnknownSync(OrchestrationV2AppThread)(thread);
+    const domainThread = decodeThread(thread);
     expect("side" in domainThread).toBe(false);
 
-    const shell = Schema.decodeUnknownSync(OrchestrationV2ThreadShellJson)(storedShell);
+    const shell = decodeShellJson(storedShell);
     expect("side" in shell).toBe(false);
-    expect("side" in Schema.encodeSync(OrchestrationV2ThreadShellJson)(shell)).toBe(false);
-    const domainShell = Schema.decodeUnknownSync(OrchestrationV2ThreadShell)(shell);
+    expect("side" in encodeShellJson(shell)).toBe(false);
+    const domainShell = decodeShell(shell);
     expect("side" in domainShell).toBe(false);
   });
 
   it("both side kinds decode", () => {
     for (const side of sides) {
-      const thread = Schema.decodeUnknownSync(OrchestrationV2AppThreadJson)({
+      const thread = decodeThreadJson({
         ...storedThread,
         id: `thread:${side.kind}`,
         side,
       });
       expect(thread.side).toEqual(side);
-      expect(Schema.encodeSync(OrchestrationV2AppThreadJson)(thread)).toEqual({
+      expect(encodeThreadJson(thread)).toEqual({
         ...storedThread,
         id: `thread:${side.kind}`,
         side,
       });
-      const shell = Schema.decodeUnknownSync(OrchestrationV2ThreadShellJson)({
+      const shell = decodeShellJson({
         ...storedShell,
         side,
       });
       expect(shell.side).toEqual(side);
-      expect(Schema.decodeUnknownSync(HoustonSideThread)(side)).toEqual(side);
+      expect(decodeSide(side)).toEqual(side);
     }
-    expect(() =>
-      Schema.decodeUnknownSync(HoustonSideThread)({ ...sides[0], kind: "fork" }),
-    ).toThrow();
+    expect(() => decodeUnknownSide({ ...sides[0], kind: "fork" })).toThrow();
   });
 });
 
@@ -151,8 +160,6 @@ describe("side thread commands", () => {
   ];
 
   it("the houston commands are orchestration commands", () => {
-    const decodeCommand = Schema.decodeUnknownSync(OrchestrationV2Command);
-    const decodeDispatch = Schema.decodeUnknownSync(OrchestrationV2RpcSchemas.dispatchCommand.input);
     for (const command of commands) {
       expect(decodeCommand(command)).toEqual(command);
       expect(decodeDispatch(command).type).toBe(command.type);

@@ -16,6 +16,7 @@ import {
 } from "@t3tools/contracts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -96,7 +97,8 @@ const sendToThread = (context: Context, sideThreadId: string, runId: RunId, comm
 const projectionOf = (context: Context, threadId: string) =>
   context.orchestrator.getThreadProjection(ThreadId.make(threadId));
 
-const runIds = (projection: OrchestrationV2ThreadProjection) => projection.runs.map((run) => run.id);
+const runIds = (projection: OrchestrationV2ThreadProjection) =>
+  projection.runs.map((run) => run.id);
 
 /** The user-facing text of a refused command. */
 const refusal = <A, E>(effect: Effect.Effect<A, E>) =>
@@ -259,7 +261,9 @@ describe("an aside", () => {
             harness.script.hold.add("message:source:2");
             yield* context.turn(source, "message:source:2", "keep working");
             const before = yield* context.orchestrator.getThreadProjection(source);
-            const sourceProviderThreads = new Set(before.providerThreads.map((thread) => thread.id));
+            const sourceProviderThreads = new Set(
+              before.providerThreads.map((thread) => thread.id),
+            );
             const eventsBefore = context.events.length;
             const startedBefore = harness.log.started.length;
             const steeredBefore = harness.log.steered.length;
@@ -274,7 +278,11 @@ describe("an aside", () => {
             assert.deepEqual(after.runs, before.runs);
             assert.deepEqual(after.messages, before.messages);
             assert.deepEqual(after.providerTurns, before.providerTurns);
-            assert.deepEqual(after.contextTransfers, before.contextTransfers);
+            // The fork's transfer is listed on both ends; nothing transfers into the source.
+            assert.deepEqual(
+              after.contextTransfers.filter((transfer) => transfer.targetThreadId === source),
+              before.contextTransfers.filter((transfer) => transfer.targetThreadId === source),
+            );
             assert.deepEqual(
               context.events.slice(eventsBefore).filter((event) => event.threadId === source),
               [],
@@ -372,7 +380,10 @@ describe("a second opinion", () => {
             });
             assert.equal(review.thread.projectId, sourceProjection.thread.projectId);
             assert.equal(review.thread.worktreePath, harness.cwd);
-            assert.deepEqual(review.thread.modelSelection, selection("claudeAgent", "claude-sonnet-4-6"));
+            assert.deepEqual(
+              review.thread.modelSelection,
+              selection("claudeAgent", "claude-sonnet-4-6"),
+            );
             assert.equal(review.thread.title, "Second opinion: Fix the parser");
             const prompt = review.messages.find(
               (message) => message.role === "user" && message.id === review.runs[0]?.userMessageId,
@@ -483,7 +494,7 @@ describe("a second opinion", () => {
               driver: "claudeAgent",
             });
             const shell = yield* context.orchestrator.getShellSnapshot();
-            const ids = shell.threads.map((thread) => thread.id);
+            const ids = shell.threads.map((thread) => String(thread.id));
             assert.notInclude(ids, "running");
             assert.notInclude(ids, "interrupted");
             assert.include(ids, "completed");
@@ -537,7 +548,11 @@ describe("a second opinion", () => {
             }
             const final = yield* context.orchestrator.getThreadProjection(source);
             assert.deepEqual(final.messages, before.messages);
-            assert.deepEqual(final.contextTransfers, before.contextTransfers);
+            // The aside's fork transfer is listed on its source; nothing transfers into it.
+            assert.deepEqual(
+              final.contextTransfers.filter((transfer) => transfer.targetThreadId === source),
+              before.contextTransfers.filter((transfer) => transfer.targetThreadId === source),
+            );
           }),
         );
       }),
@@ -600,7 +615,9 @@ describe("Send to thread", () => {
             assert.lengthOf(sent, 1);
             assert.equal(sent[0]?.text, `Second opinion from Claude on turn 1:\n\n${reviewText}`);
             assert.equal(sent[0]?.role, "user");
-            const run = projection.runs.find((candidate) => candidate.userMessageId === sent[0]?.id);
+            const run = projection.runs.find(
+              (candidate) => candidate.userMessageId === sent[0]?.id,
+            );
             assert.isDefined(run);
             assert.notEqual(run.status, "queued", "an idle source starts the review at once");
             yield* context.settle;
@@ -709,7 +726,10 @@ describe("Send to thread", () => {
             const silent = (yield* projectionOf(context, "silent-review")).runs[0]!;
             harness.script.silent.add(silent.userMessageId);
             yield* context.settle;
-            assert.equal((yield* projectionOf(context, "silent-review")).runs[0]?.status, "completed");
+            assert.equal(
+              (yield* projectionOf(context, "silent-review")).runs[0]?.status,
+              "completed",
+            );
             assert.equal(
               yield* refusal(sendToThread(context, "silent-review", silent.id, "send:silent")),
               ONLY_FINISHED_REVIEW,
@@ -822,7 +842,11 @@ describe("a side thread's limits", () => {
             for (const command of commands) {
               const error = yield* Effect.flip(context.dispatch(command));
               assert.equal(refusedCapability(error), "read_only_run", command.type);
-              assert.equal(userFacingDispatchErrorMessage(error), ANTIGRAVITY_REFUSAL, command.type);
+              assert.equal(
+                userFacingDispatchErrorMessage(error),
+                ANTIGRAVITY_REFUSAL,
+                command.type,
+              );
             }
             const projection = yield* projectionOf(context, "aside");
             assert.equal(projection.thread.providerInstanceId, "codex");
@@ -846,7 +870,6 @@ describe("a side thread's limits", () => {
             // A side thread stored while its provider still declared a read-only run, read by a
             // build whose adapter no longer declares one.
             const eventSink = yield* EventSink.EventSinkV2;
-            const ids = yield* IdAllocator.IdAllocatorV2;
             const sourceThread = (yield* context.orchestrator.getThreadProjection(source)).thread;
             const now = yield* DateTime.now;
             const sideThreadId = ThreadId.make("unproven");
@@ -857,16 +880,26 @@ describe("a side thread's limits", () => {
               providerInstanceId: selection("antigravity").instanceId,
               modelSelection: selection("antigravity"),
               activeProviderThreadId: null,
-              lineage: { rootThreadId: sideThreadId, parentThreadId: null, relationshipToParent: null },
+              lineage: {
+                rootThreadId: sideThreadId,
+                parentThreadId: null,
+                relationshipToParent: null,
+              },
               forkedFrom: null,
-              side: { kind: "secondOpinion" as const, sourceThreadId: source, sourceRunId: firstRunId },
+              side: {
+                kind: "secondOpinion" as const,
+                sourceThreadId: source,
+                sourceRunId: firstRunId,
+              },
               createdAt: now,
               updatedAt: now,
             };
             yield* eventSink.write({
               events: [
                 {
-                  id: yield* ids.allocate.event({ threadId: sideThreadId }),
+                  id: yield* IdAllocator.IdAllocatorV2.use((ids) =>
+                    ids.allocate.event({ threadId: sideThreadId }),
+                  ).pipe(Effect.provide(IdAllocator.layer)),
                   type: "thread.created",
                   threadId: sideThreadId,
                   providerInstanceId: sideThread.providerInstanceId,
@@ -892,7 +925,13 @@ describe("a side thread's limits", () => {
             );
             assert.equal(policy._tag, "RuntimePolicyResolveError");
 
-            yield* context.send(sideThreadId, "message:unproven", "review this");
+            // The run's policy resolves when it is planned, so the message may be refused there.
+            const sent = yield* Effect.exit(
+              context.send(sideThreadId, "message:unproven", "review this"),
+            );
+            if (sent._tag === "Failure") {
+              assert.include(Cause.pretty(sent.cause), "RuntimePolicyResolveError");
+            }
             yield* context.settle;
             assert.isFalse(
               harness.log.started.some((turn) => turn.input.threadId === sideThreadId),
@@ -1024,7 +1063,9 @@ describe("a side thread's limits", () => {
               asideDeleted.map((event) => event.threadId),
               ["aside"],
             );
-            assert.isNull((yield* context.orchestrator.getThreadProjection(source)).thread.deletedAt);
+            assert.isNull(
+              (yield* context.orchestrator.getThreadProjection(source)).thread.deletedAt,
+            );
             assert.isNull((yield* projectionOf(context, "review")).thread.deletedAt);
 
             // Deleting the source deletes it and both side threads in one command.

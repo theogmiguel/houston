@@ -18,7 +18,7 @@ import {
 } from "@t3tools/contracts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import { openCodePermissionRules } from "@t3tools/provider-opencode/server/adapter";
+import { openCodePermissionRules } from "@t3tools/provider-opencode/server";
 import { sessionRules } from "@t3tools/provider-opencode/server/v2/adapter";
 import {
   materializeReplayTranscriptWorkspace,
@@ -174,12 +174,14 @@ const replayOnSideThread = <Transcript extends ProviderReplayTranscript, E>(inpu
       });
       return yield* runOrchestratorV2Scenario(scenario);
     }).pipe(
-      Effect.provide(IdAllocator.layer),
       Effect.provide(
-        layerProviderReplay(scenario, input.harness, {
-          configureMcp: true,
-          mcpSessionRegistry: McpSessionRegistryTestkit.layer,
-        }),
+        Layer.merge(
+          IdAllocator.layer,
+          layerProviderReplay(scenario, input.harness, {
+            configureMcp: true,
+            mcpSessionRegistry: McpSessionRegistryTestkit.layer,
+          }),
+        ),
       ),
       provideDeterministicTestRuntime,
     );
@@ -210,12 +212,12 @@ describe("read-only declarations", () => {
             .pipe(Layer.provide(McpProviderSessions.layer)),
         ),
       );
-    }).pipe(Effect.scoped);
+    }).pipe(Effect.scoped, Effect.orDie);
 
   it.effect("each adapter declares its read-only run", () =>
     Effect.gen(function* () {
       const rows: ReadonlyArray<
-        readonly [string, Effect.Effect<OrchestrationV2ProviderCapabilities, unknown>, unknown]
+        readonly [string, Effect.Effect<OrchestrationV2ProviderCapabilities>, unknown]
       > = [
         [
           "Claude",
@@ -247,10 +249,7 @@ describe("read-only declarations", () => {
         ],
         [
           "ACP registry",
-          capabilitiesOf(
-            AcpRegistryOrchestratorReplayHarness,
-            "simple/registry_transcript.ndjson",
-          ),
+          capabilitiesOf(AcpRegistryOrchestratorReplayHarness, "simple/registry_transcript.ndjson"),
           undefined,
         ],
         [
@@ -263,13 +262,21 @@ describe("read-only declarations", () => {
           capabilitiesOf(GrokOrchestratorReplayHarness, "simple/grok_transcript.ndjson"),
           undefined,
         ],
-        ["Fx", capabilitiesOf(FxOrchestratorReplayHarness, "simple/fx_transcript.ndjson"), undefined],
+        [
+          "Fx",
+          capabilitiesOf(FxOrchestratorReplayHarness, "simple/fx_transcript.ndjson"),
+          undefined,
+        ],
         [
           "Muse",
           capabilitiesOf(MuseOrchestratorReplayHarness, "simple/muse_transcript.ndjson"),
           undefined,
         ],
-        ["Pi", capabilitiesOf(PiOrchestratorReplayHarness, "simple/pi_transcript.ndjson"), undefined],
+        [
+          "Pi",
+          capabilitiesOf(PiOrchestratorReplayHarness, "simple/pi_transcript.ndjson"),
+          undefined,
+        ],
       ];
       assert.lengthOf(rows, 11);
       for (const [name, capabilities, expected] of rows) {
@@ -393,7 +400,11 @@ describe("read-only runs per family", () => {
           // The source's recorded turn ran read-only too; only the source gets the override.
           runtimePolicyOverride: {
             approvalPolicy: "never",
-            sandboxPolicy: { type: "readOnly", access: { type: "fullAccess" }, networkAccess: false },
+            sandboxPolicy: {
+              type: "readOnly",
+              access: { type: "fullAccess" },
+              networkAccess: false,
+            },
           },
           runtimePolicyOverrideThreadIds: [ids.sourceThreadId],
         },
@@ -462,7 +473,11 @@ describe("read-only runs per family", () => {
       }
       assert.isFalse(rules.some((rule) => rule.action === "ask"));
       assert.deepInclude(rules, { permission: "read", pattern: "*", action: "allow" });
-      assert.deepInclude(rules, { permission: "external_directory", pattern: "*", action: "allow" });
+      assert.deepInclude(rules, {
+        permission: "external_directory",
+        pattern: "*",
+        action: "allow",
+      });
       // A side thread stored in Auto-accept edits is still denied edits.
       assert.isFalse(
         openCodePermissionRules({ ...READ_ONLY_POLICY, runtimeMode: "auto-accept-edits" }).some(
@@ -507,8 +522,16 @@ describe("read-only runs per family", () => {
       assert.isFalse(rules.some((rule) => rule.effect === "ask"));
 
       // The same thread without side: upstream's rules, which ask before a shell command.
-      const plain = sessionRules({ runtimeMode: "approval-required", interactionMode: "default" }, [], [], null);
-      assert.equal(plain.findLast((rule) => rule.action === "shell")?.effect, "ask");
+      const plain = sessionRules(
+        { runtimeMode: "approval-required", interactionMode: "default" },
+        [],
+        [],
+        null,
+      );
+      assert.equal(
+        plain.findLast((rule: { readonly action: string }) => rule.action === "shell")?.effect,
+        "ask",
+      );
     }).pipe(Effect.scoped),
   );
 });
@@ -533,9 +556,9 @@ describe("refusal by name", () => {
             return yield* (yield* registry.get(instanceId!)).getCapabilities();
           }).pipe(
             Effect.provide(
-              AcpRegistryOrchestratorReplayHarness.makeProviderAdapterRegistryLayer(transcript).pipe(
-                Layer.provide(McpProviderSessions.layer),
-              ),
+              AcpRegistryOrchestratorReplayHarness.makeProviderAdapterRegistryLayer(
+                transcript,
+              ).pipe(Layer.provide(McpProviderSessions.layer)),
             ),
           );
         }).pipe(Effect.scoped);
@@ -606,7 +629,10 @@ describe("refusal by name", () => {
                 typeof cause === "object" && cause !== null;
                 cause = (cause as { readonly cause?: unknown }).cause
               ) {
-                if ((cause as { readonly _tag?: string })._tag === "CommandPolicyCapabilityUnsupportedError") {
+                if (
+                  (cause as { readonly _tag?: string })._tag ===
+                  "CommandPolicyCapabilityUnsupportedError"
+                ) {
                   capability = (cause as { readonly capability?: unknown }).capability;
                   break;
                 }
@@ -618,7 +644,10 @@ describe("refusal by name", () => {
                 name,
               );
               const shell = yield* context.orchestrator.getShellSnapshot();
-              assert.isFalse(shell.threads.some((thread) => thread.id === threadId), name);
+              assert.isFalse(
+                shell.threads.some((thread) => thread.id === threadId),
+                name,
+              );
             }
             yield* context.settle;
             assert.lengthOf(harness.log.started.slice(startedBefore), 0, "no run starts");

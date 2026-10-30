@@ -199,6 +199,8 @@ const OpenCodeProviderCapabilitiesV2 = {
   },
   runtimePolicy: {
     enforcement: "native",
+    // Houston: a read-only policy denies every write permission (sideThreads families).
+    readOnlyRun: "permissionRules",
   },
 } satisfies OrchestrationV2ProviderCapabilities;
 
@@ -644,8 +646,9 @@ export function openCodePermissionRules(
     { permission: "read", pattern: "*.env.example", action: "allow" },
   );
 
+  // Houston: a read-only sandbox keeps edits denied whatever the stored mode.
   if (
-    runtimePolicy.runtimeMode === "auto-accept-edits" ||
+    (runtimePolicy.runtimeMode === "auto-accept-edits" && sandboxType !== "readOnly") ||
     (!requiresApproval && sandboxType === "workspaceWrite")
   ) {
     rules.push({ permission: "edit", pattern: "*", action: "allow" });

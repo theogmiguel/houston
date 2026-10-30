@@ -2838,3 +2838,26 @@ export function makeClaudeRestartReplayHarness(transcript: ClaudeAgentSdkReplayT
     assertComplete: replayQueryRunnerService(transcript, queryRunner).assertComplete,
   };
 }
+
+/** Houston: a replay that reports each query's full options; the recorded frame keeps only some. */
+export function makeClaudeObservedReplayHarness(
+  transcript: ClaudeAgentSdkReplayTranscript,
+  onOpen: (input: ClaudeAdapterV2.ClaudeAgentSdkQueryOpenInput) => void,
+) {
+  const replayed = makeReplayQueryRunner(transcript);
+  const queryRunner: ClaudeQueryRunner = {
+    ...replayed,
+    open: (input) => {
+      onOpen(input);
+      return replayed.open(input);
+    },
+  };
+  return {
+    harness: {
+      ...ClaudeOrchestratorReplayHarness,
+      makeProviderAdapterRegistryLayer: (decoded) =>
+        layerClaudeProviderAdapterRegistryReplay(decoded, { queryRunner }),
+    } satisfies typeof ClaudeOrchestratorReplayHarness,
+    assertComplete: replayQueryRunnerService(transcript, replayed).assertComplete,
+  };
+}
