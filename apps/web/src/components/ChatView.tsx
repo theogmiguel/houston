@@ -1290,6 +1290,12 @@ export default function ChatView(props: ChatViewProps) {
     automaticEnvironment,
     autoUpdateEnvironments,
   });
+  const environmentBannerItems = systemComposerBannerItems.filter(
+    (item) => item.group === "environment",
+  );
+  const composerSystemBannerItems = systemComposerBannerItems.filter(
+    (item) => item.group !== "environment",
+  );
   const providerInstanceEntries = providerInstanceEntriesFor(
     providerStatuses,
     settings,
@@ -2607,7 +2613,7 @@ export default function ChatView(props: ChatViewProps) {
         ...limitRecoveryItems,
         ...usageLimitsItems,
         ...projectCloneItems,
-        ...systemComposerBannerItems,
+        ...composerSystemBannerItems,
       ];
     }
     return [
@@ -2616,7 +2622,7 @@ export default function ChatView(props: ChatViewProps) {
       ...limitRecoveryItems,
       ...usageLimitsItems,
       ...projectCloneItems,
-      ...systemComposerBannerItems,
+      ...composerSystemBannerItems,
       branchMismatchBannerItem({
         mismatchKey: activeBranchMismatchKey,
         mismatch: localCheckoutBranchMismatch,
@@ -3311,6 +3317,15 @@ export default function ChatView(props: ChatViewProps) {
             />
           </header>
         )}
+
+        {environmentBannerItems.length > 0 ? (
+          <div
+            className="flex shrink-0 flex-col gap-1 px-1.5 pt-1.5"
+            data-environment-banner-lane=""
+          >
+            <ComposerBannerStack items={environmentBannerItems} detached />
+          </div>
+        ) : null}
 
         <div className="relative flex min-h-0 min-w-0 flex-1">
           <ThreadFindCanvas
