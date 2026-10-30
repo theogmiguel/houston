@@ -1,6 +1,7 @@
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
 import {
   useLayoutEffect,
+  useRef,
   useState,
   type MouseEventHandler,
   type ReactNode,
@@ -68,6 +69,9 @@ export function ThreadDetailsCard({
       useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", false);
   }, [mode, popoverOpen, threadRef]);
   const [contentElement, setContentElement] = useState<HTMLDivElement | null>(null);
+  // A grid cell renders its own pane head and omits the route header that owns the
+  // details button, so the popover anchors to the cell's top right instead of the viewport.
+  const fallbackAnchorRef = useRef<HTMLSpanElement | null>(null);
   const { environmentId, threadId } = threadRef;
   // Re-measures when the density or measurement key changes, so each density's
   // height is measured once it renders.
@@ -112,10 +116,22 @@ export function ThreadDetailsCard({
     environmentId,
     threadId,
   ]);
+  const fallbackAnchorElement = fallbackAnchorRef.current;
+  const popoverAnchor =
+    anchor.current ??
+    (fallbackAnchorElement
+      ? {
+          getBoundingClientRect: () => {
+            const cell = fallbackAnchorElement.closest<HTMLElement>("[data-grid-cell]");
+            const rect = (cell ?? fallbackAnchorElement).getBoundingClientRect();
+            return new DOMRect(rect.left, rect.top + 34, rect.width, 0);
+          },
+        }
+      : undefined);
   const card = (
     <div
       className={cn(
-        "dropdown-glass isolate contain-paint grid max-h-full grid-rows-[minmax(0,1fr)] overflow-hidden rounded-2xl",
+        "isolate contain-paint grid max-h-full grid-rows-[minmax(0,1fr)] overflow-hidden rounded-xl border border-border bg-[var(--surface-raised)] shadow-[var(--shadow-1)]",
         mode === "popover" &&
           "max-h-[min(calc(100dvh-6.5rem),calc(var(--available-height,100dvh)-1rem))]",
       )}
@@ -129,71 +145,75 @@ export function ThreadDetailsCard({
     </div>
   );
   return (
-    <Popover
-      handle={handle}
-      open={mode === "popover" && popoverOpen}
-      onOpenChange={(open, details) => {
-        const target =
-          details.reason === "focus-out"
-            ? (details.event as FocusEvent).relatedTarget
-            : details.reason === "outside-press"
-              ? details.event.target
-              : null;
-        if (!open && target instanceof Element && target.closest("[data-thread-find-bar]")) {
-          details.cancel();
-          return;
-        }
-        useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", open);
-      }}
-    >
-      {placement && inlineOpen ? (
-        <aside
-          {...detailsArea}
-          data-workspace-focus-key={`details:${threadRef.environmentId}:${threadRef.threadId}`}
-          // Skip the return transition to avoid overlapping the rising preview.
-          className={cn(
-            "absolute z-20",
-            topInset > 0 && "transition-[top] duration-150 ease-out motion-reduce:transition-none",
-          )}
-          style={{
-            right: placement.right,
-            top: placement.y,
-            width: placement.width,
-            maxHeight: height,
-          }}
-          data-density={density}
-          data-thread-details-panel="inline"
-        >
-          {card}
-        </aside>
-      ) : null}
-      {/* Rendered in both modes: base-ui keeps a popup that unmounts mid-open
+    <>
+      <span ref={fallbackAnchorRef} aria-hidden className="hidden" />
+      <Popover
+        handle={handle}
+        open={mode === "popover" && popoverOpen}
+        onOpenChange={(open, details) => {
+          const target =
+            details.reason === "focus-out"
+              ? (details.event as FocusEvent).relatedTarget
+              : details.reason === "outside-press"
+                ? details.event.target
+                : null;
+          if (!open && target instanceof Element && target.closest("[data-thread-find-bar]")) {
+            details.cancel();
+            return;
+          }
+          useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", open);
+        }}
+      >
+        {placement && inlineOpen ? (
+          <aside
+            {...detailsArea}
+            data-workspace-focus-key={`details:${threadRef.environmentId}:${threadRef.threadId}`}
+            // Skip the return transition to avoid overlapping the rising preview.
+            className={cn(
+              "absolute z-20",
+              topInset > 0 &&
+                "transition-[top] duration-150 ease-out motion-reduce:transition-none",
+            )}
+            style={{
+              right: placement.right,
+              top: placement.y,
+              width: placement.width,
+              maxHeight: height,
+            }}
+            data-density={density}
+            data-thread-details-panel="inline"
+          >
+            {card}
+          </aside>
+        ) : null}
+        {/* Rendered in both modes: base-ui keeps a popup that unmounts mid-open
           mounted, because its exit animation never finishes. Staying in the tree
           lets it close cleanly when the card switches inline. */}
-      <PopoverPopup
-        {...(mode === "popover" ? detailsArea : {})}
-        role="dialog"
-        data-workspace-focus-key={`details:${threadRef.environmentId}:${threadRef.threadId}`}
-        initialFocus={() => {
-          requestWorkspaceFocus({ area: "details" });
-          return false;
-        }}
-        anchor={anchor}
-        align="end"
-        // Account for the find panel's 8px card padding.
-        alignOffset={THREAD_DETAILS_CARD_GAP - 8}
-        collisionAvoidance={{ side: "shift", align: "shift", fallbackAxisSide: "none" }}
-        side="bottom"
-        sideOffset={topInset}
-        variant="panel"
-        padding="none"
-      >
-        {mode === "popover" ? (
-          <div data-density={density} data-thread-details-panel="popover">
-            {card}
-          </div>
-        ) : null}
-      </PopoverPopup>
-    </Popover>
+        <PopoverPopup
+          {...(mode === "popover" ? detailsArea : {})}
+          role="dialog"
+          data-workspace-focus-key={`details:${threadRef.environmentId}:${threadRef.threadId}`}
+          initialFocus={() => {
+            requestWorkspaceFocus({ area: "details" });
+            return false;
+          }}
+          anchor={popoverAnchor}
+          align="end"
+          // Account for the find panel's 8px card padding.
+          alignOffset={THREAD_DETAILS_CARD_GAP - 8}
+          collisionAvoidance={{ side: "shift", align: "shift", fallbackAxisSide: "none" }}
+          side="bottom"
+          sideOffset={topInset}
+          variant="panel"
+          padding="none"
+        >
+          {mode === "popover" ? (
+            <div data-density={density} data-thread-details-panel="popover">
+              {card}
+            </div>
+          ) : null}
+        </PopoverPopup>
+      </Popover>
+    </>
   );
 }

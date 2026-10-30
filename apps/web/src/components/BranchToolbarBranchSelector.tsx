@@ -726,11 +726,13 @@ export function BranchToolbarBranchSelector({
               )}
             />
             <ComposerContextLabel displayMode={displayMode}>
-              <MiddleTruncate
-                value={triggerLabel}
-                variant={displayMode === "panel" ? "cap-aligned" : "default"}
-                className="w-full"
-              />
+              <span className={displayMode === "panel" ? "font-mono" : undefined}>
+                <MiddleTruncate
+                  value={triggerLabel}
+                  variant={displayMode === "panel" ? "cap-aligned" : "default"}
+                  className="w-full"
+                />
+              </span>
             </ComposerContextLabel>
           </ComboboxTrigger>
         </span>
