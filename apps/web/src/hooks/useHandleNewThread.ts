@@ -83,6 +83,8 @@ export function createNewThreadHandler(router: AnyRouter) {
       envMode?: DraftThreadEnvMode;
       startFromOrigin?: boolean;
       replace?: boolean;
+      /** Route to the draft after registering it; false for callers that render it in a grid pane. */
+      navigate?: boolean;
       /** Composer text for the draft, set before it shows. A draft with user text keeps it. */
       prompt?: string;
     },
@@ -110,6 +112,7 @@ export function createNewThreadHandler(router: AnyRouter) {
       if (composerDraftHasUserContent(getComposerDraft(draftId))) return;
       setPrompt(draftId, options.prompt);
     };
+    const shouldNavigate = options?.navigate !== false;
     const requestingRouteHref = router.state.location.href;
     const routeChangedSinceRequest = () => router.state.location.href !== requestingRouteHref;
     const currentRouteTarget = getCurrentRouteTarget();
@@ -324,11 +327,13 @@ export function createNewThreadHandler(router: AnyRouter) {
         ) {
           return opened;
         }
-        await router.navigate({
-          to: "/draft/$draftId",
-          params: { draftId: emptyStoredDraftThread.draftId },
-          replace: options?.replace ?? false,
-        });
+        if (shouldNavigate) {
+          await router.navigate({
+            to: "/draft/$draftId",
+            params: { draftId: emptyStoredDraftThread.draftId },
+            replace: options?.replace ?? false,
+          });
+        }
         return opened;
       })();
     }
@@ -385,11 +390,13 @@ export function createNewThreadHandler(router: AnyRouter) {
           ...pickExplicitWorkspaceOptions(options),
         });
         seedPrompt(racedDraft.draftId);
-        await router.navigate({
-          to: "/draft/$draftId",
-          params: { draftId: racedDraft.draftId },
-          replace: options?.replace ?? false,
-        });
+        if (shouldNavigate) {
+          await router.navigate({
+            to: "/draft/$draftId",
+            params: { draftId: racedDraft.draftId },
+            replace: options?.replace ?? false,
+          });
+        }
         return { draftId: racedDraft.draftId, threadId: racedDraft.threadId };
       }
       setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, draftId, {
@@ -413,11 +420,13 @@ export function createNewThreadHandler(router: AnyRouter) {
         setModelSelection(draftId, modelSelectionOverride, { replaceOptions: true });
       }
       seedPrompt(draftId);
-      await router.navigate({
-        to: "/draft/$draftId",
-        params: { draftId },
-        replace: options?.replace ?? false,
-      });
+      if (shouldNavigate) {
+        await router.navigate({
+          to: "/draft/$draftId",
+          params: { draftId },
+          replace: options?.replace ?? false,
+        });
+      }
       return { draftId, threadId };
     })();
   };

@@ -97,6 +97,33 @@ export function gridById(grids: readonly GridRecord[], gridId: string): GridReco
   return grids.find((grid) => grid.id === gridId) ?? null;
 }
 
+export function gridContainingThread(
+  grids: readonly GridRecord[],
+  environmentId: string,
+  threadId: string,
+): GridRecord | null {
+  return (
+    grids.find(
+      (grid) =>
+        grid.environmentId === environmentId &&
+        grid.tree !== null &&
+        containsThreadId(grid.tree, threadId),
+    ) ?? null
+  );
+}
+
+export function gridContainingDraft(
+  grids: readonly GridRecord[],
+  draftId: string,
+): GridRecord | null {
+  return (
+    grids.find(
+      (grid) =>
+        grid.tree !== null && preorderThreads(grid.tree).some((leaf) => leaf.draftId === draftId),
+    ) ?? null
+  );
+}
+
 /**
  * A workspace's grids in sidebar order: pinned grids first, each group in the
  * order the user created them. Status never reorders a grid.
