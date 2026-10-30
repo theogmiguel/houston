@@ -592,9 +592,15 @@ function SidebarUpdateControl() {
             }}
             ref={releaseNotesPopupRef}
             side="top"
-            tooltipStyle
+            width="lg"
           >
             <SidebarUpdateReleaseNotes
+              action={action}
+              onAction={() => {
+                setReleaseNotesOpen(false);
+                void handleAction();
+              }}
+              onDismiss={() => setReleaseNotesOpen(false)}
               shell={window.desktopBridge}
               state={state}
               tooltip={tooltip}

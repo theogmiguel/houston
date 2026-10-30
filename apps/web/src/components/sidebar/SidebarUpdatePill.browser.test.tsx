@@ -155,6 +155,37 @@ describe("SidebarUpdatePill rail row", () => {
 });
 
 describe("SidebarUpdatePill release notes", () => {
+  it("lays out the offered release with its download action", async () => {
+    setup(
+      updateState({
+        status: "available",
+        currentVersion: "0.9.2",
+        availableVersion: "0.9.4",
+        releaseNotes: [
+          {
+            version: "0.9.4",
+            items: ["Faster thread switching in grids of six."],
+            totalItems: 1,
+            releasedAt: "2026-10-27",
+          },
+        ],
+      }),
+    );
+    await using _screen = await render(<SidebarUpdatePill />);
+    await userEvent.tab();
+    await vi.waitFor(() => expect(releaseNotes()).not.toBeNull());
+
+    const notes = releaseNotes()!;
+    expect(notes.textContent).toContain("Houston 0.9.4 is available");
+    expect(notes.textContent).toContain("You have 0.9.2");
+    expect(notes.textContent).toContain("What's new");
+    expect(notes.textContent).toContain("Faster thread switching in grids of six.");
+
+    await expect.element(page.getByRole("button", { name: "Download update" })).toBeVisible();
+    await userEvent.click(page.getByRole("button", { name: "Later" }));
+    await vi.waitFor(() => expect(releaseNotes()).toBeNull());
+  });
+
   it("closes when the release notes stop applying", async () => {
     setup(nightlyUpdate(RELEASE_NOTES));
     await using _screen = await render(<SidebarUpdatePill />);
