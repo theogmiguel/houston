@@ -522,6 +522,10 @@ const make = Effect.gen(function* () {
                   : sql`UPDATE houston_tasks SET status = ${value}, revision = revision + 1,
                       updated_at = ${now} WHERE id = ${task.id}`,
             );
+            // As every task edit: an edit invalidates an approved plan.
+            yield* run(sql`
+              UPDATE houston_task_domain SET approved_task_revision = NULL WHERE task_id = ${task.id}
+            `);
             yield* tasks.recordHistory(task.id, actor, "houston:source-resolved", {
               [field]: { old: live, new: value },
             });

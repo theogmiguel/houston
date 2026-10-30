@@ -739,4 +739,64 @@ describe("a resolution applies at the expected revisions only", () => {
       }),
     ),
   );
+
+  it.effect("a resolution that edits the task invalidates an approved plan", () =>
+    withSources(() =>
+      Effect.gen(function* () {
+        const projectId = yield* createProject("resolve-approved");
+        const sync = yield* HoustonTaskSourceSync;
+        const tasks = yield* HoustonTaskService.HoustonTaskService;
+        const sql = yield* SqlClient.SqlClient;
+        const imported = yield* sync.apply(projectId, "github_issues", record({}, milestone()));
+        const id = imported.taskId as number;
+        yield* sync.apply(
+          projectId,
+          "github_issues",
+          record(
+            { title: "Remote title", description: "Remote body", status: "done" },
+            milestone(),
+          ),
+        );
+        // A plan approved at the live revision, as a Houston 1 import brings it.
+        const approve = Effect.gen(function* () {
+          const { revision } = (yield* tasks.get({ id: String(id) })).task;
+          yield* sql`UPDATE houston_task_domain SET approved_task_revision = ${revision}
+            WHERE task_id = ${id}`;
+          return revision;
+        });
+        const approved = () =>
+          sql<{ readonly approved: number | null }>`
+            SELECT approved_task_revision AS approved FROM houston_task_domain WHERE task_id = ${id}
+          `.pipe(Effect.map((rows) => rows[0]?.approved));
+        const resolve = (
+          field: "title" | "description" | "status",
+          resolution: "local" | "remote" | { readonly custom: string },
+        ) =>
+          Effect.gen(function* () {
+            const task = (yield* tasks.get({ id: String(id) })).task;
+            const link = yield* linkOf(id);
+            return yield* sync.resolve({
+              taskId: String(id),
+              expectedTaskRevision: task.revision,
+              provider: "github_issues",
+              externalId: "octo-org/project#1",
+              field,
+              expectedLinkRevision: link.snapshot.revision,
+              resolution,
+            });
+          });
+
+        // Keeping the local value edits nothing, so the approval stands.
+        const kept = yield* approve;
+        yield* resolve("title", "local");
+        assert.strictEqual(yield* approved(), kept);
+
+        yield* resolve("status", "remote");
+        assert.isNull(yield* approved());
+        yield* approve;
+        yield* resolve("description", { custom: "Agreed body" });
+        assert.isNull(yield* approved());
+      }),
+    ),
+  );
 });
