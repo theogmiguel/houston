@@ -34,7 +34,6 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "../orchestration-v2/testkit/ProviderReplayHarness.ts";
 
-
 export interface DoubleOptions {
   /** The double's driver and capabilities; Codex's by default. */
   readonly driver?: string;
@@ -202,6 +201,10 @@ export const makeHarness = Effect.fn("messageDeliveryHarness")(function* (
   };
 });
 
+export type HarnessError =
+  | Orchestrator.OrchestratorV2Error
+  | EffectWorker.OrchestrationEffectWorkerError;
+
 export type Harness = Effect.Success<ReturnType<typeof makeHarness>>;
 
 /** The orchestration runtime around the double; a database path keeps state across a restart. */
@@ -228,15 +231,15 @@ export const runWith = <A, E, R>(
     readonly worker: EffectWorker.OrchestrationEffectWorkerV2["Service"];
     readonly threadId: ThreadId;
     readonly deliveries: (messageId: MessageId) => ReadonlyArray<MessageDelivery>;
-    readonly settle: Effect.Effect<void, unknown>;
+    readonly settle: Effect.Effect<void, HarnessError>;
     readonly send: (
       messageId: string,
       text: string,
       mode: Extract<OrchestrationV2Command, { type: "message.dispatch" }>["dispatchMode"],
       deliveryIntent?: "auto" | "steer" | "restart",
-    ) => Effect.Effect<void, unknown>;
-    readonly startFirst: Effect.Effect<RunId, unknown>;
-    readonly runningTurn: Effect.Effect<OrchestrationV2ProviderTurn, unknown>;
+    ) => Effect.Effect<void, Orchestrator.OrchestratorV2Error>;
+    readonly startFirst: Effect.Effect<RunId, HarnessError>;
+    readonly runningTurn: Effect.Effect<OrchestrationV2ProviderTurn, HarnessError>;
   }) => Effect.Effect<A, E, R>,
   options: {
     /** False when a previous run on the same database already created the thread. */
@@ -254,15 +257,20 @@ export const runWith = <A, E, R>(
       Effect.forkScoped,
     );
     yield* Effect.yieldNow;
+    // A queued message's record is on the message until its run starts, then on its item.
     const deliveries = (messageId: MessageId) =>
-      domainEvents.flatMap((event) =>
-        event.type === "turn-item.updated" &&
-        event.payload.type === "user_message" &&
-        event.payload.messageId === messageId &&
-        event.payload.delivery !== undefined
+      domainEvents.flatMap((event) => {
+        if (event.type === "message.updated") {
+          const delivery = event.payload.delivery;
+          return event.payload.id === messageId && delivery !== undefined ? [delivery] : [];
+        }
+        return event.type === "turn-item.updated" &&
+          event.payload.type === "user_message" &&
+          event.payload.messageId === messageId &&
+          event.payload.delivery !== undefined
           ? [event.payload.delivery]
-          : [],
-      );
+          : [];
+      });
     // Effects retry with backoff; move the clock so every retry runs.
     const settle = Effect.gen(function* () {
       for (let round = 0; round < 8; round += 1) {
@@ -293,26 +301,25 @@ export const runWith = <A, E, R>(
       });
     if (options.createThread !== false)
       yield* orchestrator.dispatch({
-      type: "thread.create",
-      commandId: CommandId.make("create"),
-      threadId,
-      projectId: ProjectId.make("project:message-delivery"),
-      title: "Send intents",
-      modelSelection: harness.modelSelection,
-      runtimeMode: "full-access",
-      interactionMode: "default",
-      branch: null,
-      worktreePath: harness.cwd,
-      createdBy: "user",
-      creationSource: "web",
-    });
+        type: "thread.create",
+        commandId: CommandId.make("create"),
+        threadId,
+        projectId: ProjectId.make("project:message-delivery"),
+        title: "Send intents",
+        modelSelection: harness.modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: harness.cwd,
+        createdBy: "user",
+        creationSource: "web",
+      });
     const runningTurn = Effect.gen(function* () {
       for (let round = 0; round < 50; round += 1) {
         const projection = yield* orchestrator.getThreadProjection(threadId);
         const turn = projection.providerTurns.find((candidate) => candidate.status === "running");
         if (turn !== undefined) return turn;
         yield* Effect.yieldNow;
-        yield* Effect.sleep("1 millis").pipe(Effect.forkChild, Effect.flatMap(Fiber.join));
         yield* TestClock.adjust("1 millis");
       }
       return yield* Effect.die("no provider turn reached running");
@@ -346,4 +353,3 @@ export const runWith = <A, E, R>(
   );
 
 export const latest = (list: ReadonlyArray<MessageDelivery>) => list.at(-1);
-

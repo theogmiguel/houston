@@ -12,6 +12,7 @@ import {
 import type { MessageDelivery } from "@t3tools/contracts/houston/messageDelivery";
 import { AcpProviderCapabilitiesV2 } from "@t3tools/provider-acp/server/adapter";
 import * as Effect from "effect/Effect";
+import { materializeReplayTranscriptWorkspace } from "@t3tools/provider-testing/replayTranscript";
 
 import { AcpRegistryOrchestratorReplayHarness } from "../orchestration-v2/Adapters/AcpRegistryAdapterV2.testkit.ts";
 import { ClaudeProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
@@ -20,7 +21,6 @@ import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingEr
 import { CodexOrchestratorReplayHarness } from "../orchestration-v2/Adapters/CodexAdapterV2.testkit.ts";
 import { OpenCode2OrchestratorReplayHarness } from "../orchestration-v2/Adapters/OpenCode2AdapterV2.testkit.ts";
 import type { OrchestratorV2ScenarioResult } from "../orchestration-v2/testkit/OrchestratorScenario.ts";
-import { messageRestartInput } from "../orchestration-v2/testkit/fixtures/message_steering/input.ts";
 import {
   CLAUDE_MODEL_SELECTION,
   MESSAGE_STEERING_INITIAL_PROMPT,
@@ -65,21 +65,35 @@ const replay = <T extends ProviderReplayTranscript, E>(input: {
     ...(input.transformTranscript === undefined
       ? {}
       : { transformTranscript: input.transformTranscript }),
+    // Codex records workspace paths; its replay runner rewrites them to the replay workspace.
+    ...(input.variant.driver === "codex"
+      ? {
+          materializeWorkspace: (transcript: ProviderReplayTranscript, workspace: string) =>
+            Effect.succeed(materializeReplayTranscriptWorkspace(transcript, workspace)),
+        }
+      : {}),
   });
 
-/** Every delivery the domain events recorded for the user message whose text includes `text`. */
+/**
+ * Every delivery recorded for the user message whose text includes `text`: on the message
+ * while it is queued, then on its user_message item.
+ */
 const deliveriesOf = (result: OrchestratorV2ScenarioResult, text: string) => {
-  const items = result.domainEvents.flatMap((event: OrchestrationV2DomainEvent) =>
+  const records = result.domainEvents.flatMap((event: OrchestrationV2DomainEvent) =>
     event.type === "turn-item.updated" &&
     event.payload.type === "user_message" &&
     event.payload.text.includes(text)
-      ? [event.payload]
-      : [],
+      ? [{ messageId: event.payload.messageId, delivery: event.payload.delivery }]
+      : event.type === "message.updated" &&
+          event.payload.role === "user" &&
+          event.payload.text.includes(text)
+        ? [{ messageId: event.payload.id, delivery: event.payload.delivery }]
+        : [],
   );
-  const messageId = items[0]?.messageId;
-  return items
-    .filter((item) => item.messageId === messageId)
-    .flatMap((item) => (item.delivery === undefined ? [] : [item.delivery]));
+  const messageId = records[0]?.messageId;
+  return records
+    .filter((record) => record.messageId === messageId)
+    .flatMap((record) => (record.delivery === undefined ? [] : [record.delivery]));
 };
 
 const last = (list: ReadonlyArray<MessageDelivery>) => list.at(-1);
@@ -130,7 +144,10 @@ describe("send intents per provider family", () => {
         const result = yield* replay({
           fixtureName: "queued_turn",
           variant: variantOf("queued_turn", driver),
-          harness: harness as OrchestratorV2ProviderReplayHarness<ProviderReplayTranscript, unknown>,
+          harness: harness as OrchestratorV2ProviderReplayHarness<
+            ProviderReplayTranscript,
+            unknown
+          >,
         });
         const history = deliveriesOf(result, MULTI_TURN_SECOND_PROMPT);
         assert.deepInclude(history[0], { intent: "queue", route: "ownTurn" }, driver);
@@ -258,6 +275,31 @@ describe("send intents per provider family", () => {
         deliveredAt,
       );
       assert.lengthOf(deliveriesOf(result, MESSAGE_STEERING_INITIAL_PROMPT), 0);
+
+      // Without the steered text's own userMessage item, the initial prompt's item adopts nothing.
+      const withoutSteeredItem = yield* replay({
+        fixtureName: "message_steering",
+        variant: variantOf("message_steering", "codex"),
+        harness: CodexOrchestratorReplayHarness,
+        transformTranscript: (transcript) => ({
+          ...transcript,
+          entries: transcript.entries.filter(
+            (entry) =>
+              !(
+                entry.type === "emit_inbound" &&
+                JSON.stringify(entry.frame).includes('"type":"userMessage"') &&
+                JSON.stringify(entry.frame).includes(MESSAGE_STEERING_STEER_PROMPT)
+              ),
+          ),
+        }),
+        ownAssertions: true,
+      });
+      const unread = deliveriesOf(withoutSteeredItem, MESSAGE_STEERING_STEER_PROMPT);
+      assert.isTrue(unread.some((delivery) => delivery.state === "delivered"));
+      assert.isFalse(
+        unread.some((delivery) => delivery.state === "adopted"),
+        JSON.stringify(unread),
+      );
     }),
   );
 
@@ -285,16 +327,19 @@ describe("send intents per provider family", () => {
 
   it.effect("an OpenCode 2 steer taken back is dropped", () =>
     Effect.gen(function* () {
-      // The recorded delivery of the steer's inbox entry, reported as a cancellation instead.
+      // The recording's second inbox delivery is the steer's; report it as a cancellation.
       const cancelled = (transcript: ProviderReplayTranscript) =>
         ({
           ...transcript,
           entries: transcript.entries.map((entry) => {
-            if (entry.type !== "emit_inbound") return entry;
-            const text = JSON.stringify(entry.frame);
-            return text.includes('"session.inbox.delivered"') && text.includes("msg_t3_steer_")
-              ? { ...entry, frame: JSON.parse(text.replace("session.inbox.delivered", "session.inbox.cancelled")) }
-              : entry;
+            if (entry.type !== "emit_inbound" || entry.label !== "session.inbox.delivered.2") {
+              return entry;
+            }
+            const frame = entry.frame as { readonly event: Record<string, unknown> };
+            return {
+              ...entry,
+              frame: { ...frame, event: { ...frame.event, type: "session.inbox.cancelled" } },
+            };
           }),
         }) as ProviderReplayTranscript;
       const result = yield* replay({
@@ -322,11 +367,9 @@ describe("send intents per provider family", () => {
       assertReadAtTurnStart(deliveriesOf(queued, MULTI_TURN_SECOND_PROMPT), "registry queue");
       // The registry's message_steering recording is an interrupt and restart: ACP cannot steer.
       const interrupted = yield* replay({
-        fixtureName: "message_steering",
-        variant: variantOf("message_steering", "acpRegistry"),
+        fixtureName: "message_steering_restart",
+        variant: variantOf("message_steering_restart", "acpRegistry"),
         harness: AcpRegistryOrchestratorReplayHarness,
-        buildInput: messageRestartInput,
-        ownAssertions: true,
       });
       const history = deliveriesOf(interrupted, MESSAGE_STEERING_STEER_PROMPT);
       assert.deepInclude(history[0], { intent: "interrupt", route: "ownTurn" });
@@ -374,9 +417,7 @@ describe("send intents per provider family", () => {
   );
 
   it.effect("an OpenCode 1 queued message is read when its turn starts", () =>
-    Effect.gen(function* () {
-      yield* ownTurnRead("queue-opencode1", { driver: "opencode" }, "queue");
-    }),
+    ownTurnRead("queue-opencode1", { driver: "opencode" }, "queue").pipe(Effect.asVoid),
   );
 
   it.effect("an OpenCode 1 interrupting message is read when its replacement turn starts", () =>
@@ -403,59 +444,61 @@ describe("send intents per provider family", () => {
             driver,
             capabilities: AcpProviderCapabilitiesV2,
           });
-          yield* runWith(harness, ({ send, startFirst, orchestrator, threadId, settle, deliveries }) =>
-            Effect.gen(function* () {
-              const runId = yield* startFirst;
-              const messageId = MessageId.make(`message:refused-${form}`);
-              let refused: unknown;
-              if (form === "promote") {
-                yield* send(messageId, "queued first", { type: "queue_after_active" });
-                const queued = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
-                  (run) => run.status === "queued",
-                )!;
-                refused = yield* orchestrator
-                  .dispatch({
-                    type: "queued-message.promote-to-steer",
-                    commandId: CommandId.make("promote"),
-                    threadId,
-                    queuedRunId: queued.id,
-                    targetRunId: runId,
-                  })
-                  .pipe(Effect.flip);
-              } else {
-                const attempt =
-                  form === "steer_active"
-                    ? send(messageId, "steer", { type: "steer_active", targetRunId: runId })
-                    : send(messageId, "steer", { type: "start_immediately" }, "steer");
-                refused = yield* Effect.flip(attempt);
-              }
-              const label = `${driver}/${form}`;
-              assert.equal(
-                userFacingDispatchErrorMessage(refused),
-                `${name} cannot redirect an active run. Stop it first, then send the message.`,
-                label,
-              );
-              assert.include(JSON.stringify(refused), `"capability":"active_steering"`, label);
-              yield* settle;
-              const projection = yield* orchestrator.getThreadProjection(threadId);
-              const stored = projection.messages.find((message) => message.id === messageId);
-              if (form === "promote") {
-                // The queued message stays queued, untouched.
-                const queuedRun = projection.runs.find((run) => run.status === "queued");
-                assert.equal(stored?.runId, queuedRun?.id, label);
-                assert.deepInclude(
-                  latest(deliveries(messageId)),
-                  { intent: "queue", state: "accepted" },
+          yield* runWith(
+            harness,
+            ({ send, startFirst, orchestrator, threadId, settle, deliveries }) =>
+              Effect.gen(function* () {
+                const runId = yield* startFirst;
+                const messageId = MessageId.make(`message:refused-${form}`);
+                let refused: unknown;
+                if (form === "promote") {
+                  yield* send(messageId, "queued first", { type: "queue_after_active" });
+                  const queued = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+                    (run) => run.status === "queued",
+                  )!;
+                  refused = yield* orchestrator
+                    .dispatch({
+                      type: "queued-message.promote-to-steer",
+                      commandId: CommandId.make("promote"),
+                      threadId,
+                      queuedRunId: queued.id,
+                      targetRunId: runId,
+                    })
+                    .pipe(Effect.flip);
+                } else {
+                  const attempt =
+                    form === "steer_active"
+                      ? send(messageId, "steer", { type: "steer_active", targetRunId: runId })
+                      : send(messageId, "steer", { type: "start_immediately" }, "steer");
+                  refused = yield* Effect.flip(attempt);
+                }
+                const label = `${driver}/${form}`;
+                assert.equal(
+                  userFacingDispatchErrorMessage(refused),
+                  `${name} cannot redirect an active run. Stop it first, then send the message.`,
                   label,
                 );
-              } else {
-                assert.isUndefined(stored, label);
-                assert.lengthOf(deliveries(messageId), 0, label);
-              }
-              assert.lengthOf(harness.interrupted, 0, label);
-              assert.lengthOf(harness.steered, 0, label);
-              assert.lengthOf(harness.started, 1, label);
-            }),
+                assert.include(JSON.stringify(refused), `"capability":"active_steering"`, label);
+                yield* settle;
+                const projection = yield* orchestrator.getThreadProjection(threadId);
+                const stored = projection.messages.find((message) => message.id === messageId);
+                if (form === "promote") {
+                  // The queued message stays queued, untouched.
+                  const queuedRun = projection.runs.find((run) => run.status === "queued");
+                  assert.equal(stored?.runId, queuedRun?.id, label);
+                  assert.deepInclude(
+                    latest(deliveries(messageId)),
+                    { intent: "queue", state: "accepted" },
+                    label,
+                  );
+                } else {
+                  assert.isUndefined(stored, label);
+                  assert.lengthOf(deliveries(messageId), 0, label);
+                }
+                assert.lengthOf(harness.interrupted, 0, label);
+                assert.lengthOf(harness.steered, 0, label);
+                assert.lengthOf(harness.started, 1, label);
+              }),
           );
         }
       }

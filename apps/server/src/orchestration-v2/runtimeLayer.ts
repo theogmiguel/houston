@@ -38,6 +38,7 @@ import * as ProviderContinuationRequests from "@t3tools/provider-core/server/Pro
 import * as ProviderContinuationService from "./ProviderContinuationService.ts";
 import * as ThreadTitleRegenerationService from "./ThreadTitleRegenerationService.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
+import * as MessageDelivery from "../houston/messageDelivery.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
@@ -103,6 +104,11 @@ export const layerProjectService = ProjectService.layer.pipe(
   ),
 );
 
+// Houston: one delivery writer for the ingestor and the effect executor, which both write.
+const layerMessageDeliveryProvided = MessageDelivery.layer.pipe(
+  Layer.provide(Layer.mergeAll(layerEventSink, IdAllocator.layer, ProjectionStore.layer)),
+);
+
 const layerProviderEventIngestorProvided = ProviderEventIngestor.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
@@ -111,6 +117,7 @@ const layerProviderEventIngestorProvided = ProviderEventIngestor.layer.pipe(
       ProjectionStore.layer,
       ThreadCommandExecutor.layer,
       GitVcsDriver.layer,
+      layerMessageDeliveryProvided,
     ),
   ),
 );
@@ -325,6 +332,7 @@ const layerEffectExecutorProvided = EffectWorker.layerExecutor.pipe(
       layerRuntimeRequestServiceProvided,
       layerThreadTitleRegenerationProvided,
       layerThreadManagementProvided,
+      layerMessageDeliveryProvided,
     ),
   ),
 );

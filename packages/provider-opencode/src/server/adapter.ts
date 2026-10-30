@@ -983,6 +983,16 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
         let nativeStreamFailure: OrchestrationV2ProviderFailure | null = null;
         const threads = new Map<string, OpenCodeThreadState>();
         const commandReceipts = new Map<string, Deferred.Deferred<void>>();
+        // Houston: steer prompts by OpenCode message id, until an assistant reply names one as parent.
+        const pendingSteers = new Map<
+          string,
+          {
+            readonly threadId: ThreadId;
+            readonly providerThreadId: OrchestrationV2ProviderTurn["providerThreadId"];
+            readonly providerTurnId: OrchestrationV2ProviderTurn["id"];
+            readonly messageId: ProviderAdapter.ProviderAdapterV2SteerInput["message"]["messageId"];
+          }
+        >();
         const commandControllers = new Map<string, Set<AbortController>>();
         const pendingRequests = new Map<string, PendingOpenCodeRequest>();
         const pendingRequestsByNativeId = new Map<string, PendingOpenCodeRequest>();
@@ -2377,6 +2387,19 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           if (state === undefined) return;
           const message = event.properties.info;
           state.messageRoles.set(message.id, message.role);
+          if (message.role === "assistant" && message.parentID) {
+            const steer = pendingSteers.get(message.parentID);
+            if (steer !== undefined) {
+              pendingSteers.delete(message.parentID);
+              yield* emitProviderEvent({
+                type: "message.delivery",
+                driver: OPENCODE_PROVIDER,
+                ...steer,
+                state: "adopted",
+                evidence: "opencode.replyParent",
+              });
+            }
+          }
           if (message.role === "assistant") {
             const usage = state.activeTurn?.usage;
             if (usage === undefined) return;
@@ -3379,8 +3402,20 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               turn.admissionSettled = Deferred.makeUnsafe<void>();
               // @effect-diagnostics-next-line abortControllerInEffect:off - Steering replaces the admission request independently of this command fiber.
               turn.admissionAbortController = new AbortController();
-              if (turn.admissionMessageId !== null)
+              if (turn.admissionMessageId !== null) {
                 turn.usage.promptMessageIds.add(turn.admissionMessageId);
+                // Bounded: a steer never answered is forgotten once newer steers replace it.
+                if (pendingSteers.size >= 64) {
+                  const oldest = pendingSteers.keys().next().value;
+                  if (oldest !== undefined) pendingSteers.delete(oldest);
+                }
+                pendingSteers.set(turn.admissionMessageId, {
+                  threadId: steerInput.threadId,
+                  providerThreadId: steerInput.providerThread.id,
+                  providerTurnId: turn.providerTurnId,
+                  messageId: steerInput.message.messageId,
+                });
+              }
               const admissionSettled = turn.admissionSettled;
               const admissionAbortController = turn.admissionAbortController;
               yield* submitPrompt(
@@ -3411,6 +3446,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                   yield* reconcilePromptAdmission(state, turn);
                 }
               }
+              return { adoption: "reported" } as const;
             },
             (effect, steerInput) =>
               effect.pipe(

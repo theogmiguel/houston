@@ -54,7 +54,7 @@ import { assertClaudeMessageSteeringOutput } from "./message_steering/claude_out
 import { assertMessageSteeringOutput } from "./message_steering/codex_output.ts";
 import { assertCursorMessageSteeringOutput } from "./message_steering/cursor_output.ts";
 import { assertGrokMessageSteeringOutput } from "./message_steering/grok_output.ts";
-import { messageSteeringInput } from "./message_steering/input.ts";
+import { messageRestartInput, messageSteeringInput } from "./message_steering/input.ts";
 import { assertPiMessageSteeringOutput } from "./message_steering/pi_output.ts";
 import { MUSE_PERMISSION_DECLINED_FILE, musePermissionInput } from "./muse_permission/input.ts";
 import { assertMusePermissionOutput } from "./muse_permission/output.ts";
@@ -1534,34 +1534,46 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
         assertOutput: assertClaudeMessageSteeringOutput,
       },
       {
+        driver: ProviderDriverKind.make("pi"),
+        transcriptFile: new URL("./message_steering/pi_transcript.ndjson", import.meta.url),
+        modelSelection: PI_MODEL_SELECTION,
+        assertOutput: assertPiMessageSteeringOutput,
+      },
+    ],
+  },
+  {
+    // Houston (AD-040): ACP drivers cannot steer. These recordings are the interrupt and
+    // restart upstream ran under a steer, replayed as the restart a sender asks for.
+    name: "message_steering_restart",
+    buildInput: messageRestartInput,
+    providers: [
+      {
         driver: ProviderDriverKind.make("cursor"),
         transcriptFile: new URL("./message_steering/cursor_transcript.ndjson", import.meta.url),
+        recordedScenario: "message_steering",
         modelSelection: CURSOR_MODEL_SELECTION,
         assertOutput: assertCursorMessageSteeringOutput,
       },
       {
         driver: ProviderDriverKind.make("grok"),
         transcriptFile: new URL("./message_steering/grok_transcript.ndjson", import.meta.url),
+        recordedScenario: "message_steering",
         modelSelection: GROK_MODEL_SELECTION,
         assertOutput: assertGrokMessageSteeringOutput,
       },
       {
         driver: ProviderDriverKind.make("fx"),
         transcriptFile: new URL("./message_steering/fx_transcript.ndjson", import.meta.url),
+        recordedScenario: "message_steering",
         modelSelection: FX_MODEL_SELECTION,
         assertOutput: assertGrokMessageSteeringOutput,
       },
       {
         driver: ProviderDriverKind.make("acpRegistry"),
         transcriptFile: new URL("./message_steering/registry_transcript.ndjson", import.meta.url),
+        recordedScenario: "message_steering",
         modelSelection: ACP_REGISTRY_MODEL_SELECTION,
         assertOutput: assertGrokMessageSteeringOutput,
-      },
-      {
-        driver: ProviderDriverKind.make("pi"),
-        transcriptFile: new URL("./message_steering/pi_transcript.ndjson", import.meta.url),
-        modelSelection: PI_MODEL_SELECTION,
-        assertOutput: assertPiMessageSteeringOutput,
       },
     ],
   },

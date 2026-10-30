@@ -34,6 +34,7 @@ import {
   ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
+import { MessageDeliveryReportEvidence } from "@t3tools/contracts/houston/messageDelivery";
 import * as Context from "effect/Context";
 import * as Schema from "effect/Schema";
 import type * as Effect from "effect/Effect";
@@ -137,6 +138,18 @@ export const ProviderAdapterV2Event = Schema.Union([
     type: Schema.Literal("plan.updated"),
     driver: ProviderDriverKind,
     plan: OrchestrationV2PlanArtifact,
+  }),
+  /** Houston: the provider's own report that it read, or took back, a message. */
+  Schema.Struct({
+    type: Schema.Literal("message.delivery"),
+    driver: ProviderDriverKind,
+    threadId: Schema.optional(ThreadId),
+    providerThreadId: ProviderThreadId,
+    providerTurnId: ProviderTurnId,
+    messageId: MessageId,
+    state: Schema.Literals(["adopted", "dropped"]),
+    evidence: Schema.NullOr(MessageDeliveryReportEvidence),
+    reason: Schema.optional(Schema.Literal("providerCancelled")),
   }),
   Schema.Struct({
     type: Schema.Literal("turn.terminal"),
@@ -438,6 +451,11 @@ export interface ProviderAdapterV2SteerInput {
   readonly message: ProviderAdapterV2TurnMessage;
 }
 
+/** Houston: a steer the provider took, and whether it will report reading it. */
+export interface ProviderAdapterV2SteerReceipt {
+  readonly adoption: "reported" | "notReported";
+}
+
 export interface ProviderAdapterV2InterruptInput {
   readonly providerThread: OrchestrationV2ProviderThread;
   readonly providerTurnId: ProviderTurnId;
@@ -581,9 +599,10 @@ export interface ProviderAdapterV2SessionRuntime {
   readonly compactThread?: (
     input: ProviderAdapterV2TurnInput,
   ) => Effect.Effect<void, ProviderAdapterV2Error>;
+  /** `void` means the provider does not say when it reads a steer (`notReported`). */
   readonly steerTurn: (
     input: ProviderAdapterV2SteerInput,
-  ) => Effect.Effect<void, ProviderAdapterV2Error>;
+  ) => Effect.Effect<void | ProviderAdapterV2SteerReceipt, ProviderAdapterV2Error>;
   readonly stopTask?: (input: {
     readonly providerThread: OrchestrationV2ProviderThread;
     readonly taskId: string;
