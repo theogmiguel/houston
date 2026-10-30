@@ -1164,6 +1164,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --ok: #1d7a3a;
   --ok-ink: #1d7a3a;
   --warn: #b45309;
+  --warn-ink: #9a4a06;
   --info-ink: #155e75;
   --scrim: rgba(0, 0, 0, 0.12);
   --pane: #ffffff;
@@ -1321,6 +1322,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     --ok: #30d158;
     --ok-ink: #30d158;
     --warn: #f5a524;
+    --warn-ink: #f5a524;
     --info-ink: #7cb7ff;
     --scrim: rgba(0, 0, 0, 0.28);
     --pane: #0f0f11;
