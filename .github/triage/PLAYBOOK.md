@@ -23,7 +23,7 @@ the server process is currently running, and the exact paths for state, logs, an
 the database.
 
 Its triage CLI version (called "Installed version" in older context files) is only
-the version of the `houston` that ran `t3 triage`. It is often not the build the bug
+the version of the `houston` that ran `houston triage`. It is often not the build the bug
 happened on: `npx houston triage` runs whatever `houston` npm resolves, while the user may
 run the desktop app, the background service, or a nightly. The server process line
 gives the local server's version when the server recorded one.
