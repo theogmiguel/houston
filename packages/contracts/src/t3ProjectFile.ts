@@ -106,7 +106,7 @@ export const T3ProjectFile = Schema.Struct({
 }).annotate({
   title: "Houston project file",
   description:
-    "Checked-in project configuration for Houston (houston.json at the repository root). See https://t3.codes for documentation.",
+    "Checked-in project configuration for Houston (houston.json at the repository root). See https://github.com/theogmiguel/houston for documentation.",
 });
 export type T3ProjectFile = typeof T3ProjectFile.Type;
 

@@ -1,8 +1,9 @@
 import type { DesktopBridge, DesktopUpdateState } from "@t3tools/contracts";
 
-const FALLBACK_TRIAGE_COMMAND = "npx houston triage";
-const DOWNLOAD_URL = "https://t3.codes/download";
-const ISSUE_URL = "https://github.com/pingdotgg/t3code/issues/new";
+const FALLBACK_TRIAGE_COMMAND = "houston triage";
+const DOWNLOAD_URL = "https://github.com/theogmiguel/houston/releases/latest";
+const NIGHTLY_DOWNLOAD_URL = "https://github.com/theogmiguel/houston/releases";
+const ISSUE_URL = "https://github.com/theogmiguel/houston/issues/new";
 const LAST_FAILURE_KEY = "t3code:boot-failed-at";
 const REPEAT_FAILURE_MS = 5 * 60_000;
 const MAX_CAUSES = 3;
@@ -23,7 +24,7 @@ function launcherCommand(launcherPath: string) {
     : `'${launcherPath.replaceAll("'", `'"'"'`)}'`;
 }
 
-/** Desktop can run its bundled launcher without Node; everything else falls back to npx. */
+/** Desktop can run its bundled launcher without Node; everything else falls back to an installed houston. */
 export async function resolveTriageCommand(bridge: DesktopBridge | undefined) {
   try {
     const state = await bridge?.cliCommand.getState();
@@ -357,7 +358,7 @@ export function showBootError(error: unknown) {
     ...(bridge
       ? [
           link(
-            nightly ? `${DOWNLOAD_URL}?channel=nightly` : DOWNLOAD_URL,
+            nightly ? NIGHTLY_DOWNLOAD_URL : DOWNLOAD_URL,
             nightly
               ? "Download and reinstall the latest nightly build"
               : "Download and reinstall Houston",

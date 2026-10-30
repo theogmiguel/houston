@@ -30,7 +30,7 @@ if (!TELEMETRY_CHANNELS.includes(telemetryChannel)) {
 
 // tsdown SEA needs one chunk (sourcemaps count) and Node >=25.7, so package separately.
 // TEMPORARY one-time Node fix. Remove when fixed: https://github.com/nodejs/node/issues/67048
-// "1" builds dist-exe/t3 here; "bundle" stops at bin.mjs for scripts/cli.ts to inject (linux-arm64).
+// "1" builds dist-exe/houston here; "bundle" stops at bin.mjs for scripts/cli.ts to inject (linux-arm64).
 const packMode = process.env.T3CODE_PACK_EXE;
 const packExecutable = packMode === "1" || packMode === "bundle";
 // TEMPORARY one-time Node fix. Remove when fixed: https://github.com/nodejs/node/issues/67048
@@ -93,7 +93,7 @@ export default mergeConfig(
       ...(packMode === "1"
         ? {
             exe: {
-              fileName: "t3",
+              fileName: "houston",
               outDir: "dist-exe",
               ...(packExecutableTargets ? { targets: packExecutableTargets } : {}),
               // Node SEA useCodeCache breaks import(), which the server needs.

@@ -171,9 +171,9 @@
       "types": "./src/remote.ts",
       "import": "./src/remote.ts"
     },
-    "./relaySigning": {
-      "types": "./src/relaySigning.ts",
-      "import": "./src/relaySigning.ts"
+    "./stableStringify": {
+      "types": "./src/stableStringify.ts",
+      "import": "./src/stableStringify.ts"
     },
     "./dpop": {
       "types": "./src/dpop.ts",

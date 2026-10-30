@@ -84,9 +84,9 @@ it.layer(NodeServices.layer)("houston base dir", (it) => {
         expect(error.message).toContain("t3Home");
         expect(error.message.startsWith("houston: ")).toBe(true);
       }
-      expect(yield* fs.exists(path.join(home, ".t3"))).toBe(false);
+      expect(yield* fs.exists(path.join(home, ".houston", "v2"))).toBe(false);
 
-      // Unhosted: upstream's order, --base-dir then T3CODE_HOME then ~/.t3.
+      // Unhosted: --base-dir then T3CODE_HOME then the desktop app's ~/.houston/v2.
       const flagDir = path.join(home, "b");
       const envDir = path.join(home, "h");
       const byFlag = yield* resolveServerConfig(webFlags(Option.some(flagDir)), Option.none()).pipe(
@@ -102,7 +102,7 @@ it.layer(NodeServices.layer)("houston base dir", (it) => {
       const byDefault = yield* resolveBaseDir(undefined).pipe(
         Effect.provideService(HostProcess.HomeDirectory, home),
       );
-      expect(byDefault).toBe(path.join(home, ".t3"));
+      expect(byDefault).toBe(path.join(home, ".houston", "v2"));
     }),
   );
 

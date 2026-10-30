@@ -48,7 +48,7 @@ function makeTestService(
       Effect.sync(() => {
         installOptions.push(options);
         return {
-          program: ["/test/t3/runtime/versions/1.0.0/t3", "__service-launcher"],
+          program: ["/test/t3/runtime/versions/1.0.0/houston", "__service-launcher"],
           baseDir: "/test/t3",
           unitPath: serviceStatus.unitPath,
           logPath: serviceStatus.logPath,

@@ -333,12 +333,12 @@ const REMOTE_NODE_ENV_SCRIPT = `prepend_path_if_dir() {
 }
 
 remote_node_satisfies_engine() {
-  T3_NODE_ENGINE_RANGE=@@T3_NODE_ENGINE_RANGE@@
-  if [ -z "$T3_NODE_ENGINE_RANGE" ]; then
+  HOUSTON_NODE_ENGINE_RANGE=@@HOUSTON_NODE_ENGINE_RANGE@@
+  if [ -z "$HOUSTON_NODE_ENGINE_RANGE" ]; then
     return 0
   fi
-  node - "$T3_NODE_ENGINE_RANGE" <<'NODE'
-@@T3_NODE_ENGINE_CHECK_SCRIPT@@
+  node - "$HOUSTON_NODE_ENGINE_RANGE" <<'NODE'
+@@HOUSTON_NODE_ENGINE_CHECK_SCRIPT@@
 NODE
 }
 
@@ -405,9 +405,9 @@ ensure_remote_node_path() {
   fi
 
   if ! command -v node >/dev/null 2>&1 && [ -d "$NVM_DIR/versions/node" ]; then
-    for T3_NODE_BIN in "$NVM_DIR"/versions/node/*/bin; do
-      if [ -x "$T3_NODE_BIN/node" ]; then
-        PATH="$T3_NODE_BIN:$PATH"
+    for HOUSTON_NODE_BIN in "$NVM_DIR"/versions/node/*/bin; do
+      if [ -x "$HOUSTON_NODE_BIN/node" ]; then
+        PATH="$HOUSTON_NODE_BIN:$PATH"
         export PATH
       fi
     done
@@ -419,9 +419,9 @@ ensure_remote_node_path() {
 
 const REMOTE_RUNNER_SCRIPT = `#!/bin/sh
 set -eu
-@@T3_NODE_ENV_SCRIPT@@
-T3_NODE_SCRIPT_PATH=@@T3_NODE_SCRIPT_PATH@@
-if [ -n "$T3_NODE_SCRIPT_PATH" ]; then
+@@HOUSTON_NODE_ENV_SCRIPT@@
+HOUSTON_NODE_SCRIPT_PATH=@@HOUSTON_NODE_SCRIPT_PATH@@
+if [ -n "$HOUSTON_NODE_SCRIPT_PATH" ]; then
   # Dev mode: a source checkout on the remote. This is the only path that
   # needs Node, so Node discovery runs here and nowhere else.
   ensure_remote_node_path || true
@@ -429,119 +429,118 @@ if [ -n "$T3_NODE_SCRIPT_PATH" ]; then
     printf 'Remote host is missing node on PATH. Install Node or configure a supported version manager for non-interactive shells.\\n' >&2
     exit 1
   fi
-  exec node "$T3_NODE_SCRIPT_PATH" "$@"
+  exec node "$HOUSTON_NODE_SCRIPT_PATH" "$@"
 fi
-T3_ARCHIVE_VERSION=@@T3_ARCHIVE_VERSION@@
-if [ -z "$T3_ARCHIVE_VERSION" ]; then
-  printf 'No t3 release version was provided for the remote runtime.\\n' >&2
+HOUSTON_ARCHIVE_VERSION=@@HOUSTON_ARCHIVE_VERSION@@
+if [ -z "$HOUSTON_ARCHIVE_VERSION" ]; then
+  printf 'No houston release version was provided for the remote runtime.\\n' >&2
   exit 1
 fi
 # Self-contained release archive: no Node, npm, or compiler on the remote.
 # Unpacked into the pinned-runtime layout so \`houston service install\` reuses it.
-T3_RELEASE_BASE_URL=@@T3_RELEASE_BASE_URL@@
-T3_RUNTIME_DIR="$HOME/.t3/runtime/versions/$T3_ARCHIVE_VERSION"
-t3_runtime_ready() {
-  [ -x "$T3_RUNTIME_DIR/t3" ] && [ "$(cat "$T3_RUNTIME_DIR/.install-complete" 2>/dev/null)" = "$T3_ARCHIVE_VERSION" ]
+HOUSTON_RELEASE_BASE_URL=@@HOUSTON_RELEASE_BASE_URL@@
+HOUSTON_RUNTIME_DIR="$HOME/.houston/v2/runtime/versions/$HOUSTON_ARCHIVE_VERSION"
+houston_runtime_ready() {
+  [ -x "$HOUSTON_RUNTIME_DIR/houston" ] && [ "$(cat "$HOUSTON_RUNTIME_DIR/.install-complete" 2>/dev/null)" = "$HOUSTON_ARCHIVE_VERSION" ]
 }
-if ! t3_runtime_ready; then
-  mkdir -p "$HOME/.t3/runtime/versions"
-  T3_LOCK="$HOME/.t3/runtime/versions/.$T3_ARCHIVE_VERSION.install.lock"
+if ! houston_runtime_ready; then
+  mkdir -p "$HOME/.houston/v2/runtime/versions"
+  HOUSTON_LOCK="$HOME/.houston/v2/runtime/versions/.$HOUSTON_ARCHIVE_VERSION.install.lock"
   # uutils mkdir can report success on EEXIST, so use shell noclobber.
   # An empty lock gets a short grace period for its owner to publish a PID.
-  T3_LOCK_WAITED=0
-  T3_LOCK_UNOWNED=0
-  while ! (set -C; printf '%s\\n' "$$" > "$T3_LOCK") 2>/dev/null; do
-    T3_LOCK_OWNER="$(cat "$T3_LOCK" 2>/dev/null || true)"
-    if [ -n "$T3_LOCK_OWNER" ]; then
-      T3_LOCK_UNOWNED=0
-      if ! kill -0 "$T3_LOCK_OWNER" 2>/dev/null; then
-        rm -rf "$T3_LOCK"
+  HOUSTON_LOCK_WAITED=0
+  HOUSTON_LOCK_UNOWNED=0
+  while ! (set -C; printf '%s\\n' "$$" > "$HOUSTON_LOCK") 2>/dev/null; do
+    HOUSTON_LOCK_OWNER="$(cat "$HOUSTON_LOCK" 2>/dev/null || true)"
+    if [ -n "$HOUSTON_LOCK_OWNER" ]; then
+      HOUSTON_LOCK_UNOWNED=0
+      if ! kill -0 "$HOUSTON_LOCK_OWNER" 2>/dev/null; then
+        rm -rf "$HOUSTON_LOCK"
         continue
       fi
     else
-      T3_LOCK_UNOWNED=$((T3_LOCK_UNOWNED + 1))
-      if [ "$T3_LOCK_UNOWNED" -ge 5 ]; then
-        rm -rf "$T3_LOCK"
+      HOUSTON_LOCK_UNOWNED=$((HOUSTON_LOCK_UNOWNED + 1))
+      if [ "$HOUSTON_LOCK_UNOWNED" -ge 5 ]; then
+        rm -rf "$HOUSTON_LOCK"
         continue
       fi
     fi
-    if [ "$T3_LOCK_WAITED" -ge @@T3_ARCHIVE_LOCK_WAIT_SECONDS@@ ]; then
-      printf 'Another t3 %s installation has held %s for too long.\\n' "$T3_ARCHIVE_VERSION" "$T3_LOCK" >&2
+    if [ "$HOUSTON_LOCK_WAITED" -ge @@HOUSTON_ARCHIVE_LOCK_WAIT_SECONDS@@ ]; then
+      printf 'Another houston %s installation has held %s for too long.\\n' "$HOUSTON_ARCHIVE_VERSION" "$HOUSTON_LOCK" >&2
       exit 1
     fi
     sleep 1
-    T3_LOCK_WAITED=$((T3_LOCK_WAITED + 1))
+    HOUSTON_LOCK_WAITED=$((HOUSTON_LOCK_WAITED + 1))
   done
-  trap 'rm -rf "$T3_LOCK"' EXIT
+  trap 'rm -rf "$HOUSTON_LOCK"' EXIT
 fi
-if ! t3_runtime_ready; then
+if ! houston_runtime_ready; then
   case "$(uname -s)" in
-    Darwin) T3_PLATFORM="darwin" ;;
-    Linux) T3_PLATFORM="linux" ;;
-    *) printf 'Remote host %s has no t3 release archive.\\n' "$(uname -s)" >&2; exit 1 ;;
+    Linux) HOUSTON_PLATFORM="linux" ;;
+    *) printf 'Remote host %s has no houston release archive; supported platforms are linux-x64 and linux-arm64.\\n' "$(uname -s)" >&2; exit 1 ;;
   esac
   case "$(uname -m)" in
-    arm64 | aarch64) T3_ARCH="arm64" ;;
-    x86_64 | amd64) T3_ARCH="x64" ;;
-    *) printf 'Remote host %s has no t3 release archive.\\n' "$(uname -m)" >&2; exit 1 ;;
+    arm64 | aarch64) HOUSTON_ARCH="arm64" ;;
+    x86_64 | amd64) HOUSTON_ARCH="x64" ;;
+    *) printf 'Remote host %s has no houston release archive; supported platforms are linux-x64 and linux-arm64.\\n' "$(uname -m)" >&2; exit 1 ;;
   esac
-  T3_ARCHIVE="t3-$T3_ARCHIVE_VERSION-$T3_PLATFORM-$T3_ARCH.tar.gz"
-  T3_STAGING="$(mktemp -d "$HOME/.t3/runtime/versions/.staging-XXXXXX")"
-  trap 'rm -rf "$T3_STAGING" "$T3_LOCK"' EXIT
-  t3_fetch() {
+  HOUSTON_ARCHIVE="houston-$HOUSTON_ARCHIVE_VERSION-$HOUSTON_PLATFORM-$HOUSTON_ARCH.tar.gz"
+  HOUSTON_STAGING="$(mktemp -d "$HOME/.houston/v2/runtime/versions/.staging-XXXXXX")"
+  trap 'rm -rf "$HOUSTON_STAGING" "$HOUSTON_LOCK"' EXIT
+  houston_fetch() {
     if command -v curl >/dev/null 2>&1; then curl -fsSL --connect-timeout 30 --max-time "$3" "$1" -o "$2"
     elif command -v wget >/dev/null 2>&1; then wget -q --timeout=30 --tries=1 "$1" -O "$2"
-    else printf 'Remote host needs curl or wget to download %s.\\n' "$T3_ARCHIVE" >&2; exit 1
+    else printf 'Remote host needs curl or wget to download %s.\\n' "$HOUSTON_ARCHIVE" >&2; exit 1
     fi
   }
-  t3_fetch "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/SHA256SUMS" "$T3_STAGING/SHA256SUMS" @@T3_ARCHIVE_CHECKSUMS_SECONDS@@
-  t3_fetch "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/$T3_ARCHIVE" "$T3_STAGING/$T3_ARCHIVE" @@T3_ARCHIVE_DOWNLOAD_SECONDS@@
-  T3_EXPECTED="$(grep " \\*\\{0,1\\}$T3_ARCHIVE$" "$T3_STAGING/SHA256SUMS" | cut -d' ' -f1)"
+  houston_fetch "$HOUSTON_RELEASE_BASE_URL/v$HOUSTON_ARCHIVE_VERSION/SHA256SUMS" "$HOUSTON_STAGING/SHA256SUMS" @@HOUSTON_ARCHIVE_CHECKSUMS_SECONDS@@
+  houston_fetch "$HOUSTON_RELEASE_BASE_URL/v$HOUSTON_ARCHIVE_VERSION/$HOUSTON_ARCHIVE" "$HOUSTON_STAGING/$HOUSTON_ARCHIVE" @@HOUSTON_ARCHIVE_DOWNLOAD_SECONDS@@
+  HOUSTON_EXPECTED="$(grep " \\*\\{0,1\\}$HOUSTON_ARCHIVE$" "$HOUSTON_STAGING/SHA256SUMS" | cut -d' ' -f1)"
   if command -v sha256sum >/dev/null 2>&1; then
-    T3_ACTUAL="$(sha256sum "$T3_STAGING/$T3_ARCHIVE" | cut -d' ' -f1)"
+    HOUSTON_ACTUAL="$(sha256sum "$HOUSTON_STAGING/$HOUSTON_ARCHIVE" | cut -d' ' -f1)"
   else
-    T3_ACTUAL="$(shasum -a 256 "$T3_STAGING/$T3_ARCHIVE" | cut -d' ' -f1)"
+    HOUSTON_ACTUAL="$(shasum -a 256 "$HOUSTON_STAGING/$HOUSTON_ARCHIVE" | cut -d' ' -f1)"
   fi
-  if [ -z "$T3_EXPECTED" ] || [ "$T3_ACTUAL" != "$T3_EXPECTED" ]; then
-    printf 'Checksum mismatch for %s.\\n' "$T3_ARCHIVE" >&2; exit 1
+  if [ -z "$HOUSTON_EXPECTED" ] || [ "$HOUSTON_ACTUAL" != "$HOUSTON_EXPECTED" ]; then
+    printf 'Checksum mismatch for %s.\\n' "$HOUSTON_ARCHIVE" >&2; exit 1
   fi
-  tar -xzf "$T3_STAGING/$T3_ARCHIVE" -C "$T3_STAGING" --strip-components=1
-  rm -f "$T3_STAGING/$T3_ARCHIVE" "$T3_STAGING/SHA256SUMS"
+  tar -xzf "$HOUSTON_STAGING/$HOUSTON_ARCHIVE" -C "$HOUSTON_STAGING" --strip-components=1
+  rm -f "$HOUSTON_STAGING/$HOUSTON_ARCHIVE" "$HOUSTON_STAGING/SHA256SUMS"
   # Prove the binary runs here (libc, arch) before marking it ready, or every
   # later launch would exec a broken install instead of retrying.
-  if ! "$T3_STAGING/t3" --version >/dev/null 2>&1; then
-    printf 'The t3 %s executable does not run on this host.\\n' "$T3_ARCHIVE_VERSION" >&2; exit 1
+  if ! "$HOUSTON_STAGING/houston" --version >/dev/null 2>&1; then
+    printf 'The houston %s executable does not run on this host.\\n' "$HOUSTON_ARCHIVE_VERSION" >&2; exit 1
   fi
-  printf '%s\\n' "$T3_ARCHIVE_VERSION" > "$T3_STAGING/.install-complete"
-  rm -rf "$T3_RUNTIME_DIR"
-  mv "$T3_STAGING" "$T3_RUNTIME_DIR"
+  printf '%s\\n' "$HOUSTON_ARCHIVE_VERSION" > "$HOUSTON_STAGING/.install-complete"
+  rm -rf "$HOUSTON_RUNTIME_DIR"
+  mv "$HOUSTON_STAGING" "$HOUSTON_RUNTIME_DIR"
 fi
-if [ -n "\${T3_LOCK:-}" ]; then
-  rm -rf "$T3_LOCK"
+if [ -n "\${HOUSTON_LOCK:-}" ]; then
+  rm -rf "$HOUSTON_LOCK"
   trap - EXIT
 fi
-exec "$T3_RUNTIME_DIR/t3" "$@"
+exec "$HOUSTON_RUNTIME_DIR/houston" "$@"
 `;
 
 const REMOTE_LAUNCH_SCRIPT = `set -eu
-@@T3_NODE_ENV_SCRIPT@@
+@@HOUSTON_NODE_ENV_SCRIPT@@
 STATE_KEY="$1"
-STATE_DIR="$HOME/.t3/ssh-launch/$STATE_KEY"
-DEFAULT_SERVER_HOME="$HOME/.t3"
+STATE_DIR="$HOME/.houston/v2/ssh-launch/$STATE_KEY"
+DEFAULT_SERVER_HOME="$HOME/.houston/v2"
 DEFAULT_RUNTIME_FILE="$DEFAULT_SERVER_HOME/userdata/server-runtime.json"
 PORT_FILE="$STATE_DIR/port"
 PID_FILE="$STATE_DIR/pid"
 MANAGED_FILE="$STATE_DIR/managed"
 LOG_FILE="$STATE_DIR/server.log"
-RUNNER_FILE="$STATE_DIR/run-t3.sh"
-RUNNER_NEXT="$STATE_DIR/run-t3.next.$$"
+RUNNER_FILE="$STATE_DIR/run-houston.sh"
+RUNNER_NEXT="$STATE_DIR/run-houston.next.$$"
 mkdir -p "$STATE_DIR"
 cleanup_runner_next() {
   rm -f "$RUNNER_NEXT"
 }
 trap cleanup_runner_next EXIT
 cat >"$RUNNER_NEXT" <<'SH'
-@@T3_RUNNER_SCRIPT@@
+@@HOUSTON_RUNNER_SCRIPT@@
 SH
 RUNNER_CHANGED=0
 if [ ! -f "$RUNNER_FILE" ] || ! cmp -s "$RUNNER_NEXT" "$RUNNER_FILE"; then
@@ -549,8 +548,8 @@ if [ ! -f "$RUNNER_FILE" ] || ! cmp -s "$RUNNER_NEXT" "$RUNNER_FILE"; then
 fi
 mv "$RUNNER_NEXT" "$RUNNER_FILE"
 chmod 700 "$RUNNER_FILE"
-T3_ARCHIVE_MODE=@@T3_ARCHIVE_MODE@@
-if [ "$T3_ARCHIVE_MODE" = "1" ]; then
+HOUSTON_ARCHIVE_MODE=@@HOUSTON_ARCHIVE_MODE@@
+if [ "$HOUSTON_ARCHIVE_MODE" = "1" ]; then
   # The archive ships the helpers below inside the executable; the remote
   # needs no Node at all. Resolving the runner once here also downloads the
   # archive before the port and readiness probes rely on it.
@@ -560,21 +559,21 @@ elif ! ensure_remote_node_path; then
   exit 1
 fi
 pick_port() {
-  if [ "$T3_ARCHIVE_MODE" = "1" ]; then
-    "$RUNNER_FILE" __ssh-helper pick-port "$PORT_FILE" "@@T3_DEFAULT_REMOTE_PORT@@" "@@T3_REMOTE_PORT_SCAN_WINDOW@@"
+  if [ "$HOUSTON_ARCHIVE_MODE" = "1" ]; then
+    "$RUNNER_FILE" __ssh-helper pick-port "$PORT_FILE" "@@HOUSTON_DEFAULT_REMOTE_PORT@@" "@@HOUSTON_REMOTE_PORT_SCAN_WINDOW@@"
     return
   fi
-  node - "$PORT_FILE" "@@T3_DEFAULT_REMOTE_PORT@@" "@@T3_REMOTE_PORT_SCAN_WINDOW@@" <<'NODE'
-@@T3_PICK_PORT_SCRIPT@@
+  node - "$PORT_FILE" "@@HOUSTON_DEFAULT_REMOTE_PORT@@" "@@HOUSTON_REMOTE_PORT_SCAN_WINDOW@@" <<'NODE'
+@@HOUSTON_PICK_PORT_SCRIPT@@
 NODE
 }
 wait_ready() {
-  if [ "$T3_ARCHIVE_MODE" = "1" ]; then
-    "$RUNNER_FILE" __ssh-helper wait-ready "$REMOTE_PORT" "$1" "@@T3_READY_PROBE_TIMEOUT_MS@@"
+  if [ "$HOUSTON_ARCHIVE_MODE" = "1" ]; then
+    "$RUNNER_FILE" __ssh-helper wait-ready "$REMOTE_PORT" "$1" "@@HOUSTON_READY_PROBE_TIMEOUT_MS@@"
     return
   fi
-  node - "$REMOTE_PORT" "$1" "@@T3_READY_PROBE_TIMEOUT_MS@@" <<'NODE'
-@@T3_WAIT_READY_SCRIPT@@
+  node - "$REMOTE_PORT" "$1" "@@HOUSTON_READY_PROBE_TIMEOUT_MS@@" <<'NODE'
+@@HOUSTON_WAIT_READY_SCRIPT@@
 NODE
 }
 wait_for_pid_exit() {
@@ -594,7 +593,7 @@ server_running() {
   esac
 }
 resolve_default_runtime_port() {
-  if [ "$T3_ARCHIVE_MODE" = "1" ]; then
+  if [ "$HOUSTON_ARCHIVE_MODE" = "1" ]; then
     "$RUNNER_FILE" __ssh-helper runtime-port "$DEFAULT_RUNTIME_FILE"
     return
   fi
@@ -638,7 +637,7 @@ if [ -n "$DEFAULT_REMOTE_PORT" ] && [ "$REMOTE_MANAGED" = "managed" ] && [ "$DEF
   printf '%s\\n' "$REMOTE_PORT" >"$PORT_FILE"
 elif [ -n "$DEFAULT_REMOTE_PORT" ]; then
   REMOTE_PORT="$DEFAULT_REMOTE_PORT"
-  if wait_ready "@@T3_REUSE_READY_TIMEOUT_MS@@"; then
+  if wait_ready "@@HOUSTON_REUSE_READY_TIMEOUT_MS@@"; then
     ADOPTED_PID="$DEFAULT_RUNTIME_PID"
     if [ "$REMOTE_MANAGED" = "managed" ]; then
       if [ -n "$REMOTE_PID" ] && kill -0 "$REMOTE_PID" 2>/dev/null; then
@@ -668,7 +667,7 @@ if [ "$REMOTE_MANAGED" = "external" ]; then
   # it again could catch a momentary stall and launch a second server beside it.
   if server_running "$ADOPTED_PID"; then
     :
-  elif [ -z "$REMOTE_PORT" ] || ! wait_ready "@@T3_REUSE_READY_TIMEOUT_MS@@"; then
+  elif [ -z "$REMOTE_PORT" ] || ! wait_ready "@@HOUSTON_REUSE_READY_TIMEOUT_MS@@"; then
     REMOTE_PID=""
     REMOTE_PORT=""
     REMOTE_MANAGED=""
@@ -682,7 +681,7 @@ elif [ -n "$REMOTE_PID" ] && [ -n "$REMOTE_PORT" ] && server_running "$REMOTE_PI
     REMOTE_PID=""
     REMOTE_PORT=""
     REMOTE_MANAGED=""
-  elif ! wait_ready "@@T3_READY_TIMEOUT_MS@@"; then
+  elif ! wait_ready "@@HOUSTON_READY_TIMEOUT_MS@@"; then
     printf 'Remote Houston server is still running but did not become ready. Retry the connection; the server was left running.\\n' >&2
     exit 1
   fi
@@ -694,7 +693,7 @@ fi
 if [ -z "$REMOTE_PORT" ]; then
   REMOTE_PORT="$(pick_port)" || true
   if [ -z "$REMOTE_PORT" ]; then
-    if [ "$T3_ARCHIVE_MODE" = "1" ]; then
+    if [ "$HOUSTON_ARCHIVE_MODE" = "1" ]; then
       printf 'Failed to find an available port on the remote host.\\n' >&2
     else
       printf 'Failed to find an available port on the remote host. Ensure node is available on PATH.\\n' >&2
@@ -706,7 +705,7 @@ if [ -z "$REMOTE_PORT" ]; then
   printf '%s\\n' "$REMOTE_PID" >"$PID_FILE"
   printf '%s\\n' "$REMOTE_PORT" >"$PORT_FILE"
   printf 'managed\\n' >"$MANAGED_FILE"
-  if ! wait_ready "@@T3_READY_TIMEOUT_MS@@"; then
+  if ! wait_ready "@@HOUSTON_READY_TIMEOUT_MS@@"; then
     printf 'Remote Houston server did not become ready on 127.0.0.1:%s.\\n' "$REMOTE_PORT" >&2
     if [ -s "$LOG_FILE" ]; then
       tail -n 80 "$LOG_FILE" >&2 2>/dev/null || true
@@ -723,12 +722,12 @@ printf '{"remotePort":%s,"serverKind":"%s"}\\n' "$REMOTE_PORT" "\${REMOTE_MANAGE
 `;
 
 const REMOTE_PAIRING_SCRIPT = `set -eu
-STATE_DIR="$HOME/.t3/ssh-launch/@@T3_STATE_KEY@@"
-DEFAULT_SERVER_HOME="$HOME/.t3"
-RUNNER_FILE="$STATE_DIR/run-t3.sh"
+STATE_DIR="$HOME/.houston/v2/ssh-launch/@@HOUSTON_STATE_KEY@@"
+DEFAULT_SERVER_HOME="$HOME/.houston/v2"
+RUNNER_FILE="$STATE_DIR/run-houston.sh"
 mkdir -p "$STATE_DIR"
 cat >"$RUNNER_FILE" <<'SH'
-@@T3_RUNNER_SCRIPT@@
+@@HOUSTON_RUNNER_SCRIPT@@
 SH
 chmod 700 "$RUNNER_FILE"
 PAIRING_BASE_DIR="$DEFAULT_SERVER_HOME"
@@ -736,7 +735,7 @@ PAIRING_BASE_DIR="$DEFAULT_SERVER_HOME"
 `;
 
 const REMOTE_STOP_SCRIPT = `set -eu
-STATE_DIR="$HOME/.t3/ssh-launch/@@T3_STATE_KEY@@"
+STATE_DIR="$HOME/.houston/v2/ssh-launch/@@HOUSTON_STATE_KEY@@"
 PID_FILE="$STATE_DIR/pid"
 PORT_FILE="$STATE_DIR/port"
 MANAGED_FILE="$STATE_DIR/managed"
@@ -759,7 +758,7 @@ printf '{"stopped":true}\\n'
 `;
 
 const REMOTE_LOG_TAIL_SCRIPT = `set -eu
-STATE_DIR="$HOME/.t3/ssh-launch/@@T3_STATE_KEY@@"
+STATE_DIR="$HOME/.houston/v2/ssh-launch/@@HOUSTON_STATE_KEY@@"
 LOG_FILE="$STATE_DIR/server.log"
 if [ -f "$LOG_FILE" ]; then
   tail -n 80 "$LOG_FILE" 2>/dev/null || true
@@ -771,7 +770,7 @@ export class SshInvalidArchiveVersionError extends Schema.TaggedError<SshInvalid
   { archiveVersion: Schema.String },
 ) {
   override get message(): string {
-    return `'${this.archiveVersion}' is not an exact t3 version and cannot name a runtime directory.`;
+    return `'${this.archiveVersion}' is not an exact houston version and cannot name a runtime directory.`;
   }
 }
 
@@ -786,7 +785,7 @@ export class SshMissingRunnerError extends Schema.TaggedError<SshMissingRunnerEr
   {},
 ) {
   override get message(): string {
-    return "A remote t3 runner needs an archive version or a node script path.";
+    return "A remote houston runner needs an archive version or a node script path.";
   }
 }
 
@@ -805,13 +804,13 @@ export function buildRemoteT3RunnerScript(input?: RemoteT3RunnerOptions): string
   );
   return stripTrailingNewlines(
     applyScriptPlaceholders(REMOTE_RUNNER_SCRIPT, {
-      T3_NODE_SCRIPT_PATH: shellSingleQuote(nodeScriptPath),
-      T3_ARCHIVE_VERSION: shellSingleQuote(archiveVersion),
-      T3_RELEASE_BASE_URL: shellSingleQuote(releaseBaseUrl),
-      T3_ARCHIVE_LOCK_WAIT_SECONDS: String(REMOTE_ARCHIVE_LOCK_WAIT_SECONDS),
-      T3_ARCHIVE_DOWNLOAD_SECONDS: String(REMOTE_ARCHIVE_DOWNLOAD_SECONDS),
-      T3_ARCHIVE_CHECKSUMS_SECONDS: String(REMOTE_ARCHIVE_CHECKSUMS_SECONDS),
-      T3_NODE_ENV_SCRIPT: buildRemoteNodeEnvScript(input),
+      HOUSTON_NODE_SCRIPT_PATH: shellSingleQuote(nodeScriptPath),
+      HOUSTON_ARCHIVE_VERSION: shellSingleQuote(archiveVersion),
+      HOUSTON_RELEASE_BASE_URL: shellSingleQuote(releaseBaseUrl),
+      HOUSTON_ARCHIVE_LOCK_WAIT_SECONDS: String(REMOTE_ARCHIVE_LOCK_WAIT_SECONDS),
+      HOUSTON_ARCHIVE_DOWNLOAD_SECONDS: String(REMOTE_ARCHIVE_DOWNLOAD_SECONDS),
+      HOUSTON_ARCHIVE_CHECKSUMS_SECONDS: String(REMOTE_ARCHIVE_CHECKSUMS_SECONDS),
+      HOUSTON_NODE_ENV_SCRIPT: buildRemoteNodeEnvScript(input),
     }),
   );
 }
@@ -819,43 +818,43 @@ export function buildRemoteT3RunnerScript(input?: RemoteT3RunnerOptions): string
 export function buildRemoteNodeEnvScript(input?: RemoteT3RunnerOptions): string {
   return stripTrailingNewlines(
     applyScriptPlaceholders(REMOTE_NODE_ENV_SCRIPT, {
-      T3_NODE_ENGINE_RANGE: shellSingleQuote(input?.nodeEngineRange?.trim() || ""),
-      T3_NODE_ENGINE_CHECK_SCRIPT: stripTrailingNewlines(buildRemoteNodeEngineCheckScript()),
+      HOUSTON_NODE_ENGINE_RANGE: shellSingleQuote(input?.nodeEngineRange?.trim() || ""),
+      HOUSTON_NODE_ENGINE_CHECK_SCRIPT: stripTrailingNewlines(buildRemoteNodeEngineCheckScript()),
     }),
   );
 }
 
 function buildRemoteLaunchScript(input?: RemoteT3RunnerOptions): string {
   return applyScriptPlaceholders(REMOTE_LAUNCH_SCRIPT, {
-    T3_ARCHIVE_MODE: isNodeScriptRunner(input) ? "0" : "1",
-    T3_NODE_ENV_SCRIPT: buildRemoteNodeEnvScript(input),
-    T3_RUNNER_SCRIPT: stripTrailingNewlines(buildRemoteT3RunnerScript(input)),
-    T3_PICK_PORT_SCRIPT: stripTrailingNewlines(REMOTE_PICK_PORT_SCRIPT),
-    T3_WAIT_READY_SCRIPT: stripTrailingNewlines(REMOTE_WAIT_READY_SCRIPT),
-    T3_DEFAULT_REMOTE_PORT: String(DEFAULT_REMOTE_PORT),
-    T3_REMOTE_PORT_SCAN_WINDOW: String(REMOTE_PORT_SCAN_WINDOW),
-    T3_READY_TIMEOUT_MS: String(REMOTE_READY_TIMEOUT_MS),
-    T3_REUSE_READY_TIMEOUT_MS: String(REMOTE_REUSE_READY_TIMEOUT_MS),
-    T3_READY_PROBE_TIMEOUT_MS: String(SSH_READY_PROBE_TIMEOUT_MS),
+    HOUSTON_ARCHIVE_MODE: isNodeScriptRunner(input) ? "0" : "1",
+    HOUSTON_NODE_ENV_SCRIPT: buildRemoteNodeEnvScript(input),
+    HOUSTON_RUNNER_SCRIPT: stripTrailingNewlines(buildRemoteT3RunnerScript(input)),
+    HOUSTON_PICK_PORT_SCRIPT: stripTrailingNewlines(REMOTE_PICK_PORT_SCRIPT),
+    HOUSTON_WAIT_READY_SCRIPT: stripTrailingNewlines(REMOTE_WAIT_READY_SCRIPT),
+    HOUSTON_DEFAULT_REMOTE_PORT: String(DEFAULT_REMOTE_PORT),
+    HOUSTON_REMOTE_PORT_SCAN_WINDOW: String(REMOTE_PORT_SCAN_WINDOW),
+    HOUSTON_READY_TIMEOUT_MS: String(REMOTE_READY_TIMEOUT_MS),
+    HOUSTON_REUSE_READY_TIMEOUT_MS: String(REMOTE_REUSE_READY_TIMEOUT_MS),
+    HOUSTON_READY_PROBE_TIMEOUT_MS: String(SSH_READY_PROBE_TIMEOUT_MS),
   });
 }
 
 function buildRemotePairingScript(stateKey: string, input?: RemoteT3RunnerOptions): string {
   return applyScriptPlaceholders(REMOTE_PAIRING_SCRIPT, {
-    T3_STATE_KEY: stateKey,
-    T3_RUNNER_SCRIPT: stripTrailingNewlines(buildRemoteT3RunnerScript(input)),
+    HOUSTON_STATE_KEY: stateKey,
+    HOUSTON_RUNNER_SCRIPT: stripTrailingNewlines(buildRemoteT3RunnerScript(input)),
   });
 }
 
 function buildRemoteStopScript(stateKey: string): string {
   return applyScriptPlaceholders(REMOTE_STOP_SCRIPT, {
-    T3_STATE_KEY: stateKey,
+    HOUSTON_STATE_KEY: stateKey,
   });
 }
 
 function buildRemoteLogTailScript(stateKey: string): string {
   return applyScriptPlaceholders(REMOTE_LOG_TAIL_SCRIPT, {
-    T3_STATE_KEY: stateKey,
+    HOUSTON_STATE_KEY: stateKey,
   });
 }
 

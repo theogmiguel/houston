@@ -25,6 +25,8 @@
       // release-desktop.yml runs the desktop launch check through xvfb-run, which knip
       // does not trace.
       "entry": [
+        // release-server.yml runs this archive builder by path.
+        "build-server-archive.mjs",
         // These fixture scripts are injected into a browser page by path.
         "fixtures/*/*.js",
         "knip-schemas.ts",

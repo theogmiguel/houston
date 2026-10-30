@@ -177,7 +177,7 @@ function namedProjectReadme(name: string): string {
     "",
     `# ${name}`,
     "",
-    "Created in [Houston](https://t3.codes).",
+    "Created in [Houston](https://github.com/theogmiguel/houston).",
     "",
   ].join("\n");
 }
