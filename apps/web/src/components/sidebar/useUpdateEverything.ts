@@ -5,7 +5,7 @@ import { APP_VERSION } from "~/branding";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isElectron } from "~/env";
 import { useEnvironments } from "~/state/environments";
-import { useNpmReleasePublished } from "~/state/npmRelease";
+import { useReleasePublished } from "~/state/releasePublication";
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentUpdateStatesAtom } from "~/state/server";
 import { environmentSessionStatesAtom } from "~/state/session";
@@ -68,7 +68,7 @@ export function useUpdateEverything(
     canMaintain: canUpdateServer(sessionStates[index]!),
     updateState: updateStates[index]!,
   }));
-  // A track switch's target came from npm already.
+  // A track switch's target came from GitHub already.
   const {
     targets: behindServers,
     skipped: unreachable,
@@ -76,7 +76,7 @@ export function useUpdateEverything(
   } = channelSwitch
     ? { ...collectChannelSwitchTargets(machines, channelSwitch), waitForNpm: [] }
     : collectServerUpdateTargets(machines, targetVersion, localUpdateVersion !== null);
-  const published = useNpmReleasePublished(waitForNpm.length > 0 ? targetVersion : null);
+  const published = useReleasePublished(waitForNpm.length > 0 ? targetVersion : null);
   const servers = published
     ? behindServers
     : behindServers.filter((server) => !waitForNpm.includes(server));
@@ -87,7 +87,7 @@ export function useUpdateEverything(
       .map((server) => ({
         environmentId: server.environmentId,
         label: server.serverLabel,
-        reason: `t3@${targetVersion} is not on npm yet`,
+        reason: `houston@${targetVersion} has no published server release yet`,
       })),
   ];
   // Track-only hosts save a setting and restart nothing, so they are neither listed nor counted.

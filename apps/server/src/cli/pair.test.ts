@@ -358,7 +358,7 @@ describe("houston pair", () => {
           ]);
           assert.isTrue(Exit.isFailure(exit));
           if (Exit.isFailure(exit)) {
-            assert.include(String(Cause.squash(exit.cause)), "houston@0.0.45 pair");
+            assert.include(String(Cause.squash(exit.cause)), "install houston 0.0.45");
           }
         }),
       "127.0.0.1",
