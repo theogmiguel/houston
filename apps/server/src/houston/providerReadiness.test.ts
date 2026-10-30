@@ -21,6 +21,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as EffectAcpErrors from "effect-acp/errors";
 
 import { classifyCodexManagedError } from "../provider/CodexManagedErrors.ts";
+import { claudeSignedOutMessage } from "../provider/Drivers/ClaudeHome.ts";
 import type * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import {
   classifyTurnFailure,
@@ -254,6 +255,22 @@ describe("snapshot precedence", () => {
     assert.isDefined(readiness);
     assert.deepInclude(readiness, expected);
   });
+
+  it("a ledger entry outranks a failed health check", () => {
+    const readiness = withReadiness(
+      makeProvider("codex", { status: "error", auth: { status: "unknown" } }),
+      {
+        state: "rejected",
+        code: "subscription_sharing_v2_invalid_user",
+        message: "ChatGPT could not validate this connection.",
+        at: "2026-10-29T12:00:00.000Z",
+      },
+    ).readiness;
+    assert.deepInclude(readiness, {
+      state: "rejected",
+      code: "subscription_sharing_v2_invalid_user",
+    });
+  });
 });
 
 describe("every non-ready state names its cause", () => {
@@ -369,7 +386,7 @@ describe("usage limits by family", () => {
 });
 
 describe("signed-out codes by family", () => {
-  it.effect("Claude 401, Codex unauthorized and ACP -32000 sign the instance out", () =>
+  it.effect("Claude's sign-out, Codex unauthorized and ACP -32000 sign the instance out", () =>
     withLedger(
       Effect.gen(function* () {
         const claude = makeProvider("claudeAgent");
@@ -378,11 +395,11 @@ describe("signed-out codes by family", () => {
         const vibe = makeProvider("acpRegistry");
         const { readinessAfter } = yield* makeHarness([claude, codex, antigravity, vibe]);
 
+        // The failure ClaudeAdapterV2.test.ts asserts for an assistant authentication_failed.
         const claudeFailure = failure({
           class: "provider_error",
-          message:
-            "Claude is signed out. Run `claude auth login` with CLAUDE_CONFIG_DIR=/synthetic.",
-          code: "api_error_401",
+          message: claudeSignedOutMessage({ configDir: "/synthetic", cwd: "/workspace" }),
+          code: "authentication_failed",
         });
         assert.deepEqual(yield* readinessAfter(claude, [failed(claude, claudeFailure)]), {
           state: "signedOut",
@@ -565,6 +582,14 @@ describe("request-level failures leave readiness unchanged", () => {
       }),
     ],
     ["acpRegistry", ACP_INTERNAL],
+    [
+      "opencode",
+      failure({
+        class: "provider_error",
+        message: "Provider rejected the request",
+        code: "provider",
+      }),
+    ],
   ];
 
   it.each(REQUEST_LEVEL)(
@@ -721,6 +746,38 @@ describe("snapshot states take precedence over the ledger", () => {
           state: "rejected",
           code: "subscription_sharing_v2_invalid_user",
         });
+      }),
+    ),
+  );
+});
+
+describe("a removed instance forgets its state", () => {
+  it.effect("an instance re-added under the same id starts ready", () =>
+    withLedger(
+      Effect.gen(function* () {
+        const codex = makeProvider("codex", {}, "codex");
+        const work = makeProvider("codex", {}, "codex_work");
+        const { fake, registry, ledger, readinessAfter } = yield* makeHarness([codex, work]);
+        const refusal = failure({
+          class: "provider_error",
+          message: "ChatGPT could not validate this connection.",
+          code: "subscription_sharing_v2_invalid_user",
+        });
+        assert.deepInclude(yield* readinessAfter(work, [failed(work, refusal)]), {
+          state: "rejected",
+        });
+
+        const events = yield* subscribe(registry.streamChanges);
+        yield* fake.publish([codex]);
+        yield* awaitPublished(events, (list) => list.length === 1);
+        assert.isFalse((yield* ledger.entries).has(work.instanceId));
+
+        yield* fake.publish([codex, work]);
+        const back = yield* awaitPublished(events, (list) => list.length === 2);
+        assert.deepEqual(
+          back.find((provider) => provider.instanceId === work.instanceId)?.readiness,
+          { state: "ready" },
+        );
       }),
     ),
   );
