@@ -412,7 +412,8 @@ dismissed.
 
 Panes that had already exited remain ended after reopening Houston, with their saved
 output available. They do not launch an agent automatically. Killed and closed panes do
-not return through recovery.
+not return through recovery. Panes that exited under a Houston version that did not keep
+exited panes have no saved output and stay closed after updating.
 
 A conversation belongs to its recorded provider and folder. Switching agents inside a
 shell cannot reuse the previous agent's conversation. If a pending conversation update was

@@ -184,6 +184,10 @@ the root conversation, are synced together with their directory on Unix, so powe
 cannot leave them empty under a delivered name; tool and other lifecycle drops stay unsynced
 because they sit on the agent's tool-call path.
 Naturally exited root panes retain their identity and saved output without automatic launch.
+Versions without this retention dropped exited roots at restart and deleted their output but
+left the rows Exited. A one-time boot pass, recorded in `settings`, closes Exited roots that
+have no saved output, so those historical rows cannot return as panes and restore the grids
+that still name them. The pass never repeats: a root that later exits without output stays.
 Each restore candidate fails independently: a failed respawn defers that pane and its
 children, and the remaining candidates still launch within the restore budget.
 Only the newest row of a session origin is eligible, so legacy replacement predecessors
