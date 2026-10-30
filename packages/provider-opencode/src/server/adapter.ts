@@ -665,6 +665,14 @@ export function openCodePermissionRules(
     if (recordString(access, "type") === "fullAccess") {
       rules.push({ permission: "external_directory", pattern: "*", action: "allow" });
     }
+    // Houston: a task planner or reviewer may call its own submit, and no other T3 tool.
+    if (runtimePolicy.houstonTaskSubmitTool !== undefined) {
+      rules.push({
+        permission: `t3-code_${runtimePolicy.houstonTaskSubmitTool}`,
+        pattern: "*",
+        action: "allow",
+      });
+    }
   }
 
   if (!requiresApproval && sandboxType === "workspaceWrite") {

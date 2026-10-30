@@ -1710,6 +1710,8 @@ export function claudeMcpQueryOverrides(input: {
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
   readonly readOnlySandbox: boolean;
   readonly allowedTools?: ReadonlyArray<string>;
+  /** Houston: a task planner's or reviewer's submit, the one write tool its read-only run may call. */
+  readonly houstonTaskSubmitTool?: string;
 }): {
   readonly allowedTools?: ReadonlyArray<string>;
   readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
@@ -1719,7 +1721,12 @@ export function claudeMcpQueryOverrides(input: {
     return input.allowedTools === undefined ? {} : { allowedTools: input.allowedTools };
   }
   const mcpAllowedTools = input.readOnlySandbox
-    ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS
+    ? [
+        ...CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS,
+        ...(input.houstonTaskSubmitTool === undefined
+          ? []
+          : [`mcp__t3-code__${input.houstonTaskSubmitTool}`]),
+      ]
     : [CLAUDE_T3_MCP_TOOL_WILDCARD];
   return {
     allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),
@@ -9848,6 +9855,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             mcpSession,
             readOnlySandbox:
               sandboxPolicyKindForClaudeRuntimePolicy(turnInput.runtimePolicy) === "readOnly",
+            ...(turnInput.runtimePolicy.houstonTaskSubmitTool === undefined
+              ? {}
+              : { houstonTaskSubmitTool: turnInput.runtimePolicy.houstonTaskSubmitTool }),
             ...(queryPolicy.allowedTools === undefined
               ? {}
               : { allowedTools: queryPolicy.allowedTools }),

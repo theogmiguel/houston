@@ -974,6 +974,49 @@ describe("a planner's and a reviewer's credential is scoped to their submit", ()
   );
 });
 
+describe("a planner's and a reviewer's run names its own submit tool", () => {
+  it.effect(
+    "the planner's policy names the plan submit, the reviewer's the review submit, the implementer's none",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("submit-tool");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const policyOf = (threadId: ThreadId | null | undefined) => {
+              const turn = harness.doubles.log.started.find(
+                (started) => started.input.threadId === threadId,
+              );
+              assert.isDefined(turn, `thread ${threadId} started a turn`);
+              return turn.input.runtimePolicy;
+            };
+            const { task } = yield* plannableTask(context, "Tool planner");
+            const planned = yield* context.runs.planStart({
+              id: task.key,
+              expectedRevision: task.revision,
+              modelSelection: selection("codex"),
+            });
+            yield* context.settle;
+            assert.strictEqual(
+              policyOf(planned.planning?.threadId).houstonTaskSubmitTool,
+              "houston_task_plan_submit",
+            );
+
+            yield* context.setSettings({ reviewer: selection("codex"), reviewMode: "manual" });
+            const { run } = yield* handedBack(context, "Tool reviewer");
+            assert.isUndefined(policyOf(run.threadId).houstonTaskSubmitTool);
+            const reviewed = yield* context.runs.reviewStart({ runId: run.id });
+            yield* context.settle;
+            assert.strictEqual(
+              policyOf(newestRun(reviewed, "review").threadId).houstonTaskSubmitTool,
+              "houston_task_review_submit",
+            );
+          }),
+        );
+      }),
+    TIMEOUT,
+  );
+});
+
 describe("approval applies the plan only at the revisions it read", () => {
   it.effect(
     "current revisions replace description and acceptance without a run; an edit is a conflict",

@@ -24,7 +24,12 @@ import * as McpToolAccessTestkit from "../../mcp/McpToolAccess.testkit.ts";
 import * as OrchestratorMcpService from "../../mcp/OrchestratorMcpService.ts";
 import { OrchestratorToolkit } from "../../mcp/toolkits/orchestrator/tools.ts";
 import { ProjectToolkit } from "../../mcp/toolkits/project/tools.ts";
-import { makeClaudeQueryOptions } from "../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
+import { openCodePermissionRules } from "@t3tools/provider-opencode/server";
+import { sessionRules } from "@t3tools/provider-opencode/server/v2/adapter";
+import {
+  claudeMcpQueryOverrides,
+  makeClaudeQueryOptions,
+} from "../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { codexThreadRuntimeParams } from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import { ClaudeSettings } from "@t3tools/contracts";
@@ -257,5 +262,72 @@ describe("a planner's run loads no user MCP server", () => {
     assert.isTrue(options.strictMcpConfig);
     assert.deepEqual(Object.keys(options.mcpServers ?? {}), ["t3-code"]);
     assert.isUndefined(options.extraArgs?.["mcp-config"]);
+  });
+});
+
+const SUBMIT_TOOLS = ["houston_task_plan_submit", "houston_task_review_submit"] as const;
+
+/** The action of OpenCode's last rule that matches `permission`, as OpenCode evaluates them. */
+const openCodeAction = (
+  rules: ReadonlyArray<{ readonly permission: string; readonly action: string }>,
+  permission: string,
+) =>
+  rules.findLast((rule) =>
+    new RegExp(`^${rule.permission.replaceAll("*", ".*")}$`).test(permission),
+  )?.action;
+
+const openCodeV2Effect = (
+  rules: ReadonlyArray<{ readonly action: string; readonly effect: string }>,
+  action: string,
+) =>
+  rules.findLast((rule) => new RegExp(`^${rule.action.replaceAll("*", ".*")}$`).test(action))
+    ?.effect;
+
+describe("a planner's and a reviewer's run may call its own submit tool", () => {
+  it("Claude: a read-only run pre-approves exactly the role's submit tool", () => {
+    for (const tool of SUBMIT_TOOLS) {
+      const other = SUBMIT_TOOLS.find((candidate) => candidate !== tool);
+      const allowedTools = [
+        ...(claudeMcpQueryOverrides({
+          mcpSession: SESSION,
+          readOnlySandbox: true,
+          houstonTaskSubmitTool: tool,
+        }).allowedTools ?? []),
+      ];
+      assert.include(allowedTools, `mcp__t3-code__${tool}`, tool);
+      assert.notInclude(allowedTools, `mcp__t3-code__${other}`, tool);
+      assert.notInclude(allowedTools, "mcp__t3-code__*", tool);
+    }
+    const allowedTools = [
+      ...(claudeMcpQueryOverrides({ mcpSession: SESSION, readOnlySandbox: true }).allowedTools ??
+        []),
+    ];
+    for (const tool of SUBMIT_TOOLS) assert.notInclude(allowedTools, `mcp__t3-code__${tool}`);
+  });
+
+  it("OpenCode: a read-only run allows exactly the role's submit tool after the deny", () => {
+    for (const tool of SUBMIT_TOOLS) {
+      const other = SUBMIT_TOOLS.find((candidate) => candidate !== tool);
+      const rules = openCodePermissionRules({ ...READ_ONLY_POLICY, houstonTaskSubmitTool: tool });
+      assert.strictEqual(openCodeAction(rules, `t3-code_${tool}`), "allow", tool);
+      assert.strictEqual(openCodeAction(rules, `t3-code_${other}`), "deny", tool);
+      assert.strictEqual(openCodeAction(rules, "t3-code_delegate_task"), "deny", tool);
+      assert.strictEqual(openCodeAction(rules, "edit"), "deny", tool);
+
+      const v2 = sessionRules(
+        { ...READ_ONLY_POLICY, houstonTaskSubmitTool: tool },
+        [],
+        [],
+        "t3-code-task-plan-1",
+      );
+      assert.strictEqual(openCodeV2Effect(v2, `t3-code-task-plan-1_${tool}`), "allow", tool);
+      assert.strictEqual(openCodeV2Effect(v2, `t3-code-task-plan-1_${other}`), "deny", tool);
+      assert.strictEqual(openCodeV2Effect(v2, "t3-code-task-plan-1_delegate_task"), "deny", tool);
+      assert.strictEqual(openCodeV2Effect(v2, "edit"), "deny", tool);
+    }
+    const plain = openCodePermissionRules(READ_ONLY_POLICY);
+    for (const tool of SUBMIT_TOOLS) {
+      assert.strictEqual(openCodeAction(plain, `t3-code_${tool}`), "deny");
+    }
   });
 });

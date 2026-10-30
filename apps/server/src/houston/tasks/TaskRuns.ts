@@ -48,7 +48,11 @@ import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
-import { HoustonReadOnlyThreads, hasReadOnlyRun } from "../sideThreads.ts";
+import {
+  HoustonReadOnlyThreads,
+  hasReadOnlyRun,
+  type HoustonTaskSubmitTool,
+} from "../sideThreads.ts";
 import {
   OPEN_RUN_STATES,
   buildBrief,
@@ -104,6 +108,20 @@ const readOnlyThreadsOf = (sql: SqlClient.SqlClient) => ({
     Effect.map((rows) => rows.length > 0),
     // A thread whose record cannot be read is not given write access.
     Effect.orElseSucceed(() => true),
+  ),
+  submitToolOf: Effect.fn("HoustonReadOnlyThreads.submitToolOf")(
+    (threadId: ThreadId) =>
+      sql<{ readonly tool: HoustonTaskSubmitTool }>`
+        SELECT 'houston_task_plan_submit' AS tool FROM houston_task_planning
+        WHERE thread_id = ${threadId}
+        UNION ALL
+        SELECT 'houston_task_review_submit' AS tool FROM houston_task_runs
+        WHERE thread_id = ${threadId} AND kind = 'review'
+        LIMIT 1
+      `,
+    Effect.map((rows) => rows[0]?.tool),
+    // A role that cannot be read is allowed no tool.
+    Effect.orElseSucceed(() => undefined),
   ),
 });
 

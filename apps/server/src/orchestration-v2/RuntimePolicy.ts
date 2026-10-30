@@ -194,7 +194,14 @@ export const layerReadOnlySideThreads: Layer.Layer<
             `Read-only thread ${input.thread.id} needs a read-only run; ${input.modelSelection.instanceId} declares none.`,
           );
         }
-        return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make(readOnlyPolicy(policy));
+        const submitTool =
+          input.thread.side === undefined
+            ? yield* readOnlyThreads.submitToolOf(input.thread.id)
+            : undefined;
+        return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          ...readOnlyPolicy(policy),
+          ...(submitTool === undefined ? {} : { houstonTaskSubmitTool: submitTool }),
+        });
       }),
     });
   }),

@@ -129,12 +129,24 @@ export const mayHoldT3Tools = <E, R>(
  * planner and reviewer with write access. */
 export class HoustonReadOnlyThreads extends Context.Service<
   HoustonReadOnlyThreads,
-  { readonly isReadOnly: (threadId: ThreadId) => Effect.Effect<boolean> }
+  {
+    readonly isReadOnly: (threadId: ThreadId) => Effect.Effect<boolean>;
+    /** The submit tool of the thread's role, or undefined when it has none or the read fails. */
+    readonly submitToolOf: (threadId: ThreadId) => Effect.Effect<HoustonTaskSubmitTool | undefined>;
+  }
 >()("t3/houston/sideThreads/HoustonReadOnlyThreads") {}
+
+export type HoustonTaskSubmitTool = NonNullable<
+  ProviderAdapter.ProviderAdapterV2RuntimePolicy["houstonTaskSubmitTool"]
+>;
 
 /** For assemblies without Tasks, such as upstream's tests: no thread is a planner or reviewer. */
 export const layerNoReadOnlyThreads = Layer.succeed(HoustonReadOnlyThreads, {
   isReadOnly: Effect.fn("HoustonReadOnlyThreads.none")(() => Effect.succeed(false)),
+  submitToolOf: Effect.fn("HoustonReadOnlyThreads.noTool")(() =>
+    // @effect-diagnostics-next-line effectSucceedWithVoid:off - the shape returns undefined, not void.
+    Effect.succeed(undefined),
+  ),
 });
 
 export const hasReadOnlyRun = (capabilities: OrchestrationV2ProviderCapabilities) =>
