@@ -416,6 +416,14 @@
     "apps/server/src/project/T3ProjectFileLoader.test.ts": "project settings load from houston.json instead of t3.json",
     "apps/server/src/vcs/GitVcsDriverCore.test.ts": "project settings load from houston.json instead of t3.json",
     "apps/server/src/provider/CodexAuthCallbackPage.ts": "user-visible product name: Houston instead of T3 Code; the two-part T3/Code brand mark becomes the single word Houston",
-    "apps/server/src/provider/agentContextBudget.json": "measured with Houston in the agent instructions"
+    "apps/server/src/provider/agentContextBudget.json": "measured with Houston in the agent instructions",
+    "apps/server/src/orchestration-v2/testkit/fixtures/multi_turn/muse_transcript.ndjson": "replay fixture: Houston names itself in the Muse client title and runtime prompt",
+    "apps/server/src/orchestration-v2/testkit/fixtures/muse_permission/muse_transcript.ndjson": "replay fixture: Houston names itself in the Muse client title and runtime prompt",
+    "apps/server/src/orchestration-v2/testkit/fixtures/muse_subagent_approval/muse_transcript.ndjson": "replay fixture: Houston names itself in the Muse client title and runtime prompt",
+    "apps/server/src/orchestration-v2/testkit/fixtures/muse_subagent_interrupt/muse_transcript.ndjson": "replay fixture: Houston names itself in the Muse client title and runtime prompt",
+    "apps/server/src/orchestration-v2/testkit/fixtures/muse_workflow/muse_transcript.ndjson": "replay fixture: Houston names itself in the Muse client title and runtime prompt",
+    "apps/server/src/orchestration-v2/testkit/fixtures/simple/muse_transcript.ndjson": "replay fixture: Houston names itself in the Muse client title and runtime prompt",
+    "apps/server/src/orchestration-v2/testkit/fixtures/subagent_v2/muse_transcript.ndjson": "replay fixture: Houston names itself in the Muse client title and runtime prompt",
+    "apps/server/src/orchestration-v2/testkit/fixtures/turn_interrupt/muse_transcript.ndjson": "replay fixture: Houston names itself in the Muse client title and runtime prompt"
   }
 }
