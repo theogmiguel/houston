@@ -169,6 +169,16 @@ describe('Settings › Workspaces (id `workspace-defaults`)', () => {
     expect(sent).toEqual([true])
   })
 
+  it('the links toggle says it covers only clicked terminal links; agents\' browser tools have their own row', () => {
+    act(() => {
+      root.render(<SettingsView {...baseSettingsViewProps()} />)
+    })
+    openWorkspaceDefaults()
+    expect(container.textContent).toContain('Clicking a link in a terminal pane opens it in a Houston browser tab')
+    expect(container.textContent).toContain('Agents\' browser tools are set separately below.')
+    expect(container.querySelector('[role="switch"][aria-label="Let agents use the browser"]')).not.toBeNull()
+  })
+
   it('D7: the new-workspace "Open links in" default is gone — nothing read it', () => {
     act(() => {
       root.render(<SettingsView {...baseSettingsViewProps()} />)

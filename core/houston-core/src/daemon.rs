@@ -1546,6 +1546,7 @@ impl DelegationSettleSample {
     }
 }
 
+mod agent_browser;
 mod child_inputs;
 mod conflict_pass;
 pub mod defect_detectors;

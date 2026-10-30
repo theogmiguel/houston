@@ -11,7 +11,7 @@ pub use task_trackers::{
 
 /// Bump once per wire-touching batch (`/ws` only); several PRs may land
 /// under one coordinated bump instead of each incrementing it.
-pub const PROTOCOL_VERSION: u32 = 153;
+pub const PROTOCOL_VERSION: u32 = 154;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
@@ -4633,6 +4633,11 @@ pub enum ClientMsg {
     GeneratedTitlesSet {
         enabled: bool,
     },
+    /// Whether agents may use the `browser_*` MCP tools; answered by `agent_browser`.
+    AgentBrowserGet {},
+    AgentBrowserSet {
+        enabled: bool,
+    },
     /// The opt-in ZCode quota check for a pane that stalls outside Night shift.
     ZcodeQuotaCheckGet {},
     ZcodeQuotaCheckSet {
@@ -5937,6 +5942,10 @@ pub enum ClientMsg {
 #[allow(clippy::large_enum_variant)]
 pub enum ServerMsg {
     GeneratedTitles {
+        enabled: bool,
+    },
+
+    AgentBrowser {
         enabled: bool,
     },
 
