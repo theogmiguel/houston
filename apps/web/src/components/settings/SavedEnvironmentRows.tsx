@@ -1,31 +1,21 @@
 import { SessionPermissions } from "./SessionPermissions";
 import {
   ChevronRightIcon,
-  ChevronsLeftRightEllipsisIcon,
   EllipsisIcon,
   RouteIcon,
 } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
-import { useEffect, useEffectEvent, useState } from "react";
-import {
-  AuthRelayWriteScope,
-  type EnvironmentId,
-  connectReachabilityHelpUrl,
-  formatConnectReachable,
-  resolveEnvironmentMachineKind,
-} from "@t3tools/contracts";
+import { useState } from "react";
+import { type EnvironmentId, resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import {
   connectionRoutes,
   hasSavedBearerRoute,
   connectionStatusText,
   environmentMcpUrl,
 } from "@t3tools/client-runtime/connection";
-import * as Option from "effect/Option";
 
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { cn } from "../../lib/utils";
-import { SettingsRow } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
 import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
 import { EnvironmentRoutesList } from "./EnvironmentRoutesList";
 import {
@@ -39,26 +29,14 @@ import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/men
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { Button, InlineButton } from "../ui/button";
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
+import { Button } from "../ui/button";
 import {
   resolveServerConfigVersionMismatch,
   resolveServerSelfUpdateCapability,
   supportsDesktopAppUpdate,
 } from "~/versionSkew";
-import { hasCloudPublicConfig } from "~/cloud/publicConfig";
-import { isElectron } from "~/env";
-import { useCloudLinkController } from "~/cloud/useCloudLinkController";
-import { useManagedTunnelUsage } from "~/cloud/managedRelayState";
-import { useT3ConnectAccountPage } from "../clerk/T3ConnectAccountPages";
-import { TunnelLimitAlert, TunnelUsageMeter } from "../cloud/TunnelUsage";
 import { environmentCatalog } from "~/connection/catalog";
-import { readEnvironmentScope } from "~/state/session";
-import {
-  type EnvironmentPresentation,
-  useRelayEnvironmentDiscovery,
-  usePrimaryEnvironmentId,
-} from "~/state/environments";
+import { type EnvironmentPresentation } from "~/state/environments";
 import { APP_VERSION } from "~/branding";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { serverEnvironment } from "~/state/server";
@@ -67,8 +45,6 @@ import {
   ServerUpdateAction,
   ServerUpdateProgress,
 } from "../ServerUpdateAction";
-import { CloudEnvironmentConnectRows } from "../cloud/CloudEnvironmentConnectList";
-import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
 
 type SavedBackendListRowProps = {
   environment: EnvironmentPresentation;
@@ -173,43 +149,17 @@ export function SavedBackendListRow({
     serverUpdateState.status === "running" && serverUpdateState.stage === "resuming";
   const status = savedBackendStatus(environment);
   const serverVersion = environment.serverConfig?.environment.serverVersion ?? null;
-  // Discovery empties its map on every refresh, so hold the last descriptor
-  // seen or the glyph would blink back to the generic one each time.
-  const relayDiscovery = useRelayEnvironmentDiscovery();
-  const discoveredDescriptor = Option.getOrNull(
-    relayDiscovery.environments.get(environmentId)?.status ?? Option.none(),
-  )?.descriptor;
-  const [lastDescriptor, setLastDescriptor] = useState(discoveredDescriptor);
-  if (discoveredDescriptor !== undefined && discoveredDescriptor !== lastDescriptor) {
-    setLastDescriptor(discoveredDescriptor);
-  }
-  const discoveredRelayHttpBaseUrl =
-    relayDiscovery.environments.get(environmentId)?.environment.endpoint.httpBaseUrl;
-  const [lastRelayHttpBaseUrl, setLastRelayHttpBaseUrl] = useState(discoveredRelayHttpBaseUrl);
-  if (
-    discoveredRelayHttpBaseUrl !== undefined &&
-    discoveredRelayHttpBaseUrl !== lastRelayHttpBaseUrl
-  ) {
-    setLastRelayHttpBaseUrl(discoveredRelayHttpBaseUrl);
-  }
   const retryNow = useAtomCommand(environmentCatalog.retryNow);
-  const {
-    diagnosis: currentDiagnosis,
-    state: connectionState,
-    relayOnly,
-  } = useConnectionDiagnosis(environment);
+  const { diagnosis: currentDiagnosis, state: connectionState } =
+    useConnectionDiagnosis(environment);
   const diagnosis = resumingServerUpdate ? null : currentDiagnosis;
   const prepared = usePreparedConnection(environmentId);
   const connectedTarget = isConnected && prepared._tag === "Some" ? prepared.value.target : null;
   const mcpUrl = environmentMcpUrl({
     entry: environment.entry,
-    relayHttpBaseUrl: discoveredRelayHttpBaseUrl ?? lastRelayHttpBaseUrl,
     connectedTarget,
   });
-  const machineKind = resolveEnvironmentMachineKind(
-    environment.serverConfig ??
-      (lastDescriptor === undefined ? null : { environment: lastDescriptor }),
-  );
+  const machineKind = resolveEnvironmentMachineKind(environment.serverConfig);
   const routeCount = connectionRoutes(environment.entry).length;
   const subtitleText = [
     environmentTransportLabel(environment, connectedTarget),
@@ -333,7 +283,7 @@ export function SavedBackendListRow({
               hostLabel={environment.label}
               diagnosis={diagnosis}
               onRetry={() => void retryNow(environmentId)}
-              onAddRoute={relayOnly ? () => onAddRoute(environment) : null}
+              onAddRoute={() => onAddRoute(environment)}
             />
           ) : null}
           {routesOpen && (
@@ -363,7 +313,7 @@ export function SavedBackendListRow({
         <OutdatedServerUpdateAction
           environmentId={environmentId}
           serverLabel={`${environment.label} server`}
-          fromVersion={lastDescriptor?.serverVersion}
+          fromVersion={environment.serverConfig?.environment.serverVersion}
           targetVersion={APP_VERSION}
           label={serverUpdateState.status === "failed" ? "Retry update" : "Update"}
         />
@@ -433,354 +383,4 @@ export function SavedBackendListRow({
       </Menu>
     </EnvironmentRow>
   );
-}
-
-function CloudLinkSwitch({
-  checked,
-  disabled,
-  disabledReason,
-  onCheckedChange,
-  ariaLabel = "Enable Houston Connect",
-}: {
-  readonly checked: boolean;
-  readonly disabled: boolean;
-  readonly disabledReason: string | null;
-  readonly onCheckedChange?: (enabled: boolean) => void;
-  readonly ariaLabel?: string;
-}) {
-  const control = (
-    <Switch
-      aria-label={ariaLabel}
-      checked={checked}
-      disabled={disabled}
-      {...(onCheckedChange ? { onCheckedChange } : {})}
-    />
-  );
-  return disabledReason ? (
-    <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex">{control}</span>} />
-      <TooltipPopup side="top">{disabledReason}</TooltipPopup>
-    </Tooltip>
-  ) : (
-    control
-  );
-}
-
-/** Tunnel meter, plus the upgrade prompt after the relay refuses a tunnel at the cap. */
-function T3ConnectTunnelUsage({ tunnelLimit }: { readonly tunnelLimit: number | null }) {
-  const usage = useManagedTunnelUsage();
-  const accountPage = useT3ConnectAccountPage();
-  const openAccountPage = accountPage.open;
-  // Usage when the relay refused. The relay also counts tunnels still being set up, so only
-  // a freed tunnel or a higher cap clears the alert, not a meter that merely shows room.
-  const [usedAtRefusal, setUsedAtRefusal] = useState<number | null>(null);
-  if (tunnelLimit === null) {
-    if (usedAtRefusal !== null) setUsedAtRefusal(null);
-  } else if (usedAtRefusal === null && usage.used !== null) {
-    setUsedAtRefusal(usage.used);
-  }
-  const showLimitAlert =
-    tunnelLimit !== null &&
-    !(usedAtRefusal !== null && usage.used !== null && usage.used < usedAtRefusal) &&
-    !(usage.limit !== null && usage.limit > tunnelLimit);
-  const meter =
-    usage.used !== null && usage.limit !== null ? (
-      <TunnelUsageMeter
-        used={usage.used}
-        limit={usage.limit}
-        action={
-          // At the cap the alert below carries the same action.
-          usage.upgrade && openAccountPage && !showLimitAlert ? (
-            <InlineButton onClick={() => openAccountPage("t3-chat")}>Get more tunnels</InlineButton>
-          ) : null
-        }
-      />
-    ) : null;
-  return (
-    <>
-      {meter || showLimitAlert ? (
-        <div className="flex flex-col gap-3 pb-3">
-          {meter}
-          {showLimitAlert ? (
-            <TunnelLimitAlert
-              upgrade={usage.upgrade}
-              onLinkT3Chat={openAccountPage ? () => openAccountPage("t3-chat") : null}
-              onManageTunnels={openAccountPage ? () => openAccountPage("t3-connect") : null}
-            />
-          ) : null}
-        </div>
-      ) : null}
-      {/* Kept outside the conditional so an open account page does not remount. */}
-      {accountPage.portals}
-    </>
-  );
-}
-
-function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: boolean }) {
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const {
-    isSignedIn,
-    linkState: primaryCloudLinkState,
-    linkRevoked,
-    managedTunnelActive,
-    managedTunnelOutOfSync,
-    publishAgentActivity,
-    holdWebhooksWhileOffline,
-    operationError,
-    tunnelLimit,
-    reconcileCloudState,
-  } = useCloudLinkController();
-  const { openAuthPrompt } = useT3ConnectAuthPrompt();
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [isUpdatingPreference, setIsUpdatingPreference] = useState(false);
-
-  const disabledReason = canManageRelay
-    ? null
-    : "Your session does not have permission to manage Houston Connect access.";
-  const isBusy = isUpdating || isUpdatingPreference;
-  const switchDisabled =
-    !canManageRelay ||
-    !isSignedIn ||
-    primaryCloudLinkState.data === null ||
-    primaryCloudLinkState.isPending ||
-    isBusy;
-  // `isSignedIn` is undefined until Clerk loads. Signed out, one row shows a
-  // sign-in button instead of its switch; the onboarding dialog that opens after
-  // a fresh sign-in offers both linking and publishing.
-  const signedOut = isSignedIn === false;
-  const signInButton = (
-    <Button size="sm" variant="outline" onClick={openAuthPrompt}>
-      Sign in
-    </Button>
-  );
-  const refreshLinkState = useEffectEvent(primaryCloudLinkState.refresh);
-  // The server rechecks reachability when the tunnel's 30 s readiness poll changes.
-  // Poll while mounted, so a failed read does not stop later ones.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- 30 s interval that refreshes the cloud link reachability while mounted
-  useEffect(() => {
-    const interval = window.setInterval(() => refreshLinkState(), 30_000);
-    return () => window.clearInterval(interval);
-  }, []);
-  const reachability = managedTunnelActive ? primaryCloudLinkState.data?.reachability : undefined;
-  const reachabilityStatus =
-    reachability?.status === "reachable" ? (
-      formatConnectReachable(reachability)
-    ) : reachability?.status === "unreachable" ? (
-      <span className="block text-destructive">
-        {[reachability.reason, reachability.hint, `Fix: ${reachability.fix}`]
-          .filter(Boolean)
-          .join(" ")}{" "}
-        <a
-          href={connectReachabilityHelpUrl(reachability.cause)}
-          target="_blank"
-          rel="noreferrer"
-          className="underline underline-offset-2"
-        >
-          More info
-        </a>
-      </span>
-    ) : null;
-
-  const updateManagedTunnel = async (enabled: boolean) => {
-    if (
-      primaryEnvironmentId === null ||
-      !readEnvironmentScope(primaryEnvironmentId, AuthRelayWriteScope)
-    )
-      return;
-    setIsUpdating(true);
-    const ok = await reconcileCloudState({ managedTunnel: enabled, publish: publishAgentActivity });
-    if (ok) {
-      toastManager.add({
-        type: "success",
-        title: enabled
-          ? "Houston Connect linked"
-          : publishAgentActivity
-            ? "Houston Connect tunnel disabled"
-            : "Houston Connect unlinked",
-        description: enabled
-          ? "This environment is available through Houston Connect."
-          : publishAgentActivity
-            ? "The managed tunnel was removed. Agent activity publishing stays on."
-            : "This environment is no longer available through Houston Connect.",
-      });
-    }
-    setIsUpdating(false);
-  };
-
-  const updatePublishAgentActivity = async (enabled: boolean) => {
-    if (
-      primaryEnvironmentId === null ||
-      !readEnvironmentScope(primaryEnvironmentId, AuthRelayWriteScope)
-    )
-      return;
-    setIsUpdatingPreference(true);
-    const ok = await reconcileCloudState({ managedTunnel: managedTunnelActive, publish: enabled });
-    if (ok) {
-      toastManager.add({
-        type: "success",
-        title: enabled ? "Agent activity enabled" : "Agent activity disabled",
-        description: enabled
-          ? "This environment publishes agent activity to your mobile clients."
-          : "This environment will stop publishing agent activity.",
-      });
-    }
-    setIsUpdatingPreference(false);
-  };
-
-  const updateHoldWebhooks = async (enabled: boolean) => {
-    setIsUpdatingPreference(true);
-    const ok = await reconcileCloudState({
-      managedTunnel: managedTunnelActive,
-      publish: publishAgentActivity,
-      holdWebhooksWhileOffline: enabled,
-    });
-    if (ok) {
-      toastManager.add({
-        type: "success",
-        title: enabled ? "Webhooks held while offline" : "Webhooks no longer held",
-        description: enabled
-          ? "Houston Connect keeps webhook requests for up to 24 hours while this environment is offline."
-          : "Requests to an offline environment now fail. Anything already held is still delivered.",
-      });
-    }
-    setIsUpdatingPreference(false);
-  };
-
-  return (
-    <>
-      {isElectron ? (
-        <SettingsRow
-          title={searchableSetting("t3-connect").title}
-          description={
-            signedOut
-              ? "Sign in to make this environment available to your other devices through Houston Connect."
-              : linkRevoked
-                ? "This environment was removed from Houston Connect. Turn it on to link it again."
-                : managedTunnelActive
-                  ? reachability?.status === "unreachable"
-                    ? "Houston Connect is on, but other devices cannot reach this environment."
-                    : reachability?.status === "reachable"
-                      ? "This environment is available to your other devices through Houston Connect."
-                      : "Houston Connect is on. Reachability has not been checked yet."
-                  : managedTunnelOutOfSync
-                    ? "Houston Connect is out of sync. This environment is linked only to publish agent activity, so other devices cannot connect. Turn Houston Connect on to repair it."
-                    : "Make this environment available to your other devices through Houston Connect."
-          }
-          status={operationError ?? primaryCloudLinkState.error ?? reachabilityStatus}
-          control={
-            signedOut ? (
-              signInButton
-            ) : (
-              <CloudLinkSwitch
-                checked={managedTunnelActive}
-                disabled={switchDisabled}
-                disabledReason={disabledReason}
-                onCheckedChange={(enabled) => void updateManagedTunnel(enabled)}
-              />
-            )
-          }
-        >
-          {signedOut ? null : <T3ConnectTunnelUsage tunnelLimit={tunnelLimit} />}
-        </SettingsRow>
-      ) : linkRevoked ? (
-        <SettingsRow
-          title={searchableSetting("t3-connect").title}
-          description="This environment was removed from Houston Connect. Run `t3 connect link` on the host to link it again."
-        />
-      ) : null}
-      {signedOut && isElectron ? null : (
-        <SettingsRow
-          title={searchableSetting("publish-agent-activity").title}
-          description={
-            signedOut
-              ? "Sign in to send activity to mobile notifications and Live Activities."
-              : "Send activity to mobile notifications and Live Activities without Houston Connect."
-          }
-          control={
-            signedOut ? (
-              signInButton
-            ) : (
-              <CloudLinkSwitch
-                ariaLabel="Publish agent activity to mobile clients"
-                checked={publishAgentActivity}
-                disabled={switchDisabled}
-                disabledReason={disabledReason}
-                onCheckedChange={(enabled) => void updatePublishAgentActivity(enabled)}
-              />
-            )
-          }
-        />
-      )}
-      {managedTunnelActive && !signedOut ? (
-        <SettingsRow
-          title={searchableSetting("hold-webhooks-while-offline").title}
-          description="Keep webhook requests for up to 24 hours while this environment is offline, then deliver them. Off: Houston Connect only forwards requests and stores nothing."
-          control={
-            <CloudLinkSwitch
-              ariaLabel="Hold webhook requests while this environment is offline"
-              checked={holdWebhooksWhileOffline}
-              disabled={switchDisabled}
-              disabledReason={disabledReason}
-              onCheckedChange={(enabled) => void updateHoldWebhooks(enabled)}
-            />
-          }
-        />
-      ) : null}
-    </>
-  );
-}
-
-export function CloudLinkRow({
-  canReadRelay,
-  canManageRelay,
-}: {
-  readonly canReadRelay: boolean;
-  readonly canManageRelay: boolean;
-}) {
-  if (!hasCloudPublicConfig()) return null;
-  if (!canReadRelay) {
-    return (
-      <SettingsRow
-        title="Houston Connect"
-        description="To edit these settings, pair this connection with both View relay and Manage relay permissions."
-      />
-    );
-  }
-  return <ConfiguredCloudLinkRow canManageRelay={canManageRelay} />;
-}
-
-function EmptyRemoteEnvironments({ cloudEnabled = true }: { readonly cloudEnabled?: boolean }) {
-  return (
-    <Empty className="min-h-52">
-      <EmptyMedia variant="icon">
-        <ChevronsLeftRightEllipsisIcon />
-      </EmptyMedia>
-      <EmptyHeader>
-        <EmptyTitle>No saved remote environments</EmptyTitle>
-        <EmptyDescription>
-          {cloudEnabled
-            ? "Click “Add environment” to pair another environment, or connect one from Houston Connect."
-            : "Click “Add environment” to pair another environment."}
-        </EmptyDescription>
-      </EmptyHeader>
-    </Empty>
-  );
-}
-
-export function CloudRemoteEnvironmentRows({
-  primaryEnvironmentId,
-  savedEnvironments,
-}: {
-  readonly primaryEnvironmentId: EnvironmentId | null;
-  readonly savedEnvironments: ReadonlyArray<EnvironmentPresentation>;
-}) {
-  return hasCloudPublicConfig() ? (
-    <CloudEnvironmentConnectRows
-      primaryEnvironmentId={primaryEnvironmentId}
-      savedEnvironments={savedEnvironments}
-      empty={<EmptyRemoteEnvironments />}
-    />
-  ) : savedEnvironments.length === 0 ? (
-    <EmptyRemoteEnvironments cloudEnabled={false} />
-  ) : null;
 }
