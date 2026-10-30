@@ -548,7 +548,10 @@ export const HoustonTaskRunControlInput = Schema.Struct({
 });
 export type HoustonTaskRunControlInput = typeof HoustonTaskRunControlInput.Type;
 
-export const HoustonTaskHandbackInput = Schema.Struct({ id: HoustonTaskRef, summary: Schema.String });
+export const HoustonTaskHandbackInput = Schema.Struct({
+  id: HoustonTaskRef,
+  summary: Schema.String,
+});
 export type HoustonTaskHandbackInput = typeof HoustonTaskHandbackInput.Type;
 
 export const HoustonTaskPlanStartInput = Schema.Struct({

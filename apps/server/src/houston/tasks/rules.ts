@@ -407,7 +407,9 @@ export const taskRunStateOf = (status: OrchestrationV2RunStatus): HoustonTaskRun
 /** Whether an automatic review starts: on handback in `handback` mode, once per new pushed head in `every_push`. */
 export const reviewTrigger = (input: {
   readonly mode: HoustonTaskReviewMode;
-  readonly event: { readonly type: "handback" } | { readonly type: "push"; readonly headSha: string };
+  readonly event:
+    | { readonly type: "handback" }
+    | { readonly type: "push"; readonly headSha: string };
   readonly reviewOpen: boolean;
   /** Heads a review already started on. */
   readonly reviewedHeads: ReadonlyArray<string>;

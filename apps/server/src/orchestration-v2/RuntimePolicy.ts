@@ -174,7 +174,10 @@ export const layerReadOnlySideThreads: Layer.Layer<
     return RuntimePolicyV2.of({
       resolve: Effect.fn("RuntimePolicyV2.resolveSideThread")(function* (input) {
         const policy = yield* base.resolve(input);
-        if (input.thread.side === undefined && !(yield* readOnlyThreads.isReadOnly(input.thread.id)))
+        if (
+          input.thread.side === undefined &&
+          !(yield* readOnlyThreads.isReadOnly(input.thread.id))
+        )
           return policy;
         const refuse = (cause: unknown) =>
           new RuntimePolicyResolveError({

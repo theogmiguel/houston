@@ -79,7 +79,8 @@ const startAndPrepare = (
 ) =>
   Effect.gen(function* () {
     const started = yield* context.runs.start({ id: task.key });
-    if (input.hold === true) context.harness.doubles.script.hold.add(briefMessageId(started.run.id));
+    if (input.hold === true)
+      context.harness.doubles.script.hold.add(briefMessageId(started.run.id));
     yield* context.until(
       "the run's worktree",
       detailOf(context, task).pipe(Effect.map((detail) => newestRun(detail).worktreePath !== null)),
@@ -220,7 +221,10 @@ describe("start launches a worktree thread with the brief", () => {
             assert.strictEqual(projection.thread.title, `${task.key} Fix the Login, page!`);
             assert.strictEqual(projection.thread.branch, branch);
             assert.strictEqual(projection.thread.worktreePath, run.worktreePath);
-            assert.strictEqual(git(run.worktreePath ?? "", "rev-parse", "--abbrev-ref", "HEAD"), branch);
+            assert.strictEqual(
+              git(run.worktreePath ?? "", "rev-parse", "--abbrev-ref", "HEAD"),
+              branch,
+            );
             const [first] = userMessages(projection);
             assert.include(first ?? "", "<<<HOUSTON-TASK-DATA");
             assert.include(first ?? "", "The button does nothing.");
@@ -577,7 +581,10 @@ describe("resume recovers a removed worktree", () => {
               assert.isTrue(existsSync(join(worktree, "README.md")));
               if (scenario.merge) {
                 assert.notStrictEqual(resumed.branch, branch);
-                assert.strictEqual(git(worktree, "rev-parse", "HEAD"), git(harness.repo, "rev-parse", "main"));
+                assert.strictEqual(
+                  git(worktree, "rev-parse", "HEAD"),
+                  git(harness.repo, "rev-parse", "main"),
+                );
               } else {
                 assert.strictEqual(resumed.branch, branch);
                 assert.strictEqual(git(worktree, "rev-parse", "HEAD"), head);
@@ -1000,7 +1007,9 @@ describe("every push reviews the pushed head only", () => {
             yield* context.until(
               "the every-push review",
               detailOf(context, task).pipe(
-                Effect.map((detail) => detail.runs.some((candidate) => candidate.kind === "review")),
+                Effect.map((detail) =>
+                  detail.runs.some((candidate) => candidate.kind === "review"),
+                ),
               ),
             );
             const review = newestRun(yield* detailOf(context, task), "review");
@@ -1015,7 +1024,10 @@ describe("every push reviews the pushed head only", () => {
               (started) => started.input.threadId === review.threadId,
             );
             assert.deepInclude(turn?.input.runtimePolicy, READ_ONLY);
-            assert.strictEqual(readFileSync(join(worktree, "uncommitted.ts"), "utf8"), "not committed");
+            assert.strictEqual(
+              readFileSync(join(worktree, "uncommitted.ts"), "utf8"),
+              "not committed",
+            );
           }),
         );
       }),
@@ -1065,7 +1077,9 @@ const failReview = (context: RunsContext, task: HoustonTask, message: string) =>
       detailOf(context, task).pipe(
         Effect.map((detail) => {
           const review = detail.runs.find((run) => run.kind === "review");
-          return review !== undefined && review.review?.verdict === undefined && review.threadId !== null;
+          return (
+            review !== undefined && review.review?.verdict === undefined && review.threadId !== null
+          );
         }),
       ),
     );
@@ -1094,7 +1108,10 @@ describe("a failed review reworks up to the configured rounds", () => {
             yield* context.runs.handback({ id: task.key, summary: "round 0" });
             for (const round of [1, 2, 3]) {
               const failed = yield* failReview(context, task, `finding of round ${round}`);
-              assert.include(failed.comments.map((comment) => comment.body).join("\n"), `finding of round ${round}`);
+              assert.include(
+                failed.comments.map((comment) => comment.body).join("\n"),
+                `finding of round ${round}`,
+              );
               if (round === 3) break;
               yield* context.until(
                 `attempt ${round + 1}`,
@@ -1149,7 +1166,10 @@ describe("with no rework rounds the findings are information only", () => {
             yield* failReview(context, task, "an informational finding");
             yield* context.settle;
             const detail = yield* detailOf(context, task);
-            assert.strictEqual(detail.runs.filter((item) => item.kind === "implementation").length, 1);
+            assert.strictEqual(
+              detail.runs.filter((item) => item.kind === "implementation").length,
+              1,
+            );
             assert.strictEqual(newestRun(detail).state, "needs_review");
             const messages = userMessages(yield* projectionOf(context, yield* threadOf(run)));
             assert.strictEqual(messages.length, 2);

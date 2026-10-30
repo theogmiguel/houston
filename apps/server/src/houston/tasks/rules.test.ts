@@ -592,8 +592,18 @@ describe("review findings are bounded and name a wrong field", () => {
   };
 
   it("accepts 100 findings and refuses 101 as a limit", () => {
-    expect(checkFindings("op", Array.from({ length: 100 }, () => finding))).toHaveLength(100);
-    const refused = refusal(checkFindings("op", Array.from({ length: 101 }, () => finding)));
+    expect(
+      checkFindings(
+        "op",
+        Array.from({ length: 100 }, () => finding),
+      ),
+    ).toHaveLength(100);
+    const refused = refusal(
+      checkFindings(
+        "op",
+        Array.from({ length: 101 }, () => finding),
+      ),
+    );
     expect(refused.kind).toBe("limit");
     expect(refused.limit).toBe(100);
     expect(refused.actual).toBe(101);
@@ -623,9 +633,9 @@ describe("review findings are bounded and name a wrong field", () => {
 
   it("bounds the message at 2,000 characters and needs a line", () => {
     expect(checkFindings("op", [{ ...finding, message: "m".repeat(2000) }])).toHaveLength(1);
-    expect(fieldOf(checkFindings("op", [finding, { ...finding, message: "m".repeat(2001) }]))).toMatch(
-      /findings\[1\]\.message/,
-    );
+    expect(
+      fieldOf(checkFindings("op", [finding, { ...finding, message: "m".repeat(2001) }])),
+    ).toMatch(/findings\[1\]\.message/);
     expect(fieldOf(checkFindings("op", [{ ...finding, line: -1 }]))).toMatch(/findings\[0\]\.line/);
   });
 });

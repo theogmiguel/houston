@@ -149,7 +149,9 @@ export class HoustonTaskRuns extends Context.Service<
       input: HoustonTaskReviewSubmitInput,
     ) => Effect.Effect<HoustonTaskDetail, HoustonTaskError>;
     /** The refusal of any agent write but its own submit from a planner or reviewer thread. */
-    readonly agentWriteRefusal: (caller: ThreadId) => Effect.Effect<OrchestratorMcpFailure | undefined>;
+    readonly agentWriteRefusal: (
+      caller: ThreadId,
+    ) => Effect.Effect<OrchestratorMcpFailure | undefined>;
     /** Applies every thread event stored since the last call. */
     readonly catchUp: Effect.Effect<void>;
   }
@@ -172,7 +174,9 @@ interface PlanningRow {
   readonly state: "active" | "submitted" | "cancelled" | "exited";
 }
 
-const decodeDecisions = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(Schema.String)));
+const decodeDecisions = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Array(Schema.String)),
+);
 const encodePlan = Schema.encodeSync(Schema.fromJsonString(HoustonTaskPlan));
 
 const runningAfterUserStatus = (row: TaskRow) => row.status === "todo" || row.status === "backlog";
@@ -192,7 +196,7 @@ const make = Effect.gen(function* () {
   const newThreadId = (prefix: string) =>
     Effect.map(randomUuidV4, (uuid) => ThreadId.make(`${prefix}-${uuid}`));
 
-  const run =<A, E>(effect: Effect.Effect<A, E>) => Effect.orDie(effect);
+  const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.orDie(effect);
   const keyOf = (row: TaskRow) => houstonTaskKey(row.number);
 
   const runById = (id: number) =>
@@ -283,7 +287,9 @@ const make = Effect.gen(function* () {
   const checkBrief = (operation: string, brief: string) => {
     const bytes = Buffer.byteLength(brief, "utf8");
     return bytes > HOUSTON_TASK_LIMITS.briefBytes
-      ? Effect.fail(limitRefusal(operation, HOUSTON_TASK_LIMITS.briefBytes, bytes, "bytes in the brief"))
+      ? Effect.fail(
+          limitRefusal(operation, HOUSTON_TASK_LIMITS.briefBytes, bytes, "bytes in the brief"),
+        )
       : Effect.void;
   };
 
@@ -385,8 +391,13 @@ const make = Effect.gen(function* () {
       `),
     );
 
-  const launchFailure = (operation: string, row: TaskRow) => (error: { readonly message: string }) =>
-    refuse("invalid", operation, `the thread for ${keyOf(row)} could not launch: ${error.message}`);
+  const launchFailure =
+    (operation: string, row: TaskRow) => (error: { readonly message: string }) =>
+      refuse(
+        "invalid",
+        operation,
+        `the thread for ${keyOf(row)} could not launch: ${error.message}`,
+      );
 
   /** Launches a run's thread; on failure the run is recorded failed with the launcher's reason. */
   const launchRun = Effect.fn("HoustonTaskRuns.launchRun")(function* (
@@ -435,9 +446,9 @@ const make = Effect.gen(function* () {
     const threadRun = launched.projection.runs.at(-1);
     if (threadRun !== undefined) {
       yield* store.write(
-        run(sql`UPDATE houston_task_runs SET run_id = ${threadRun.id} WHERE id = ${runRow.id}`).pipe(
-          Effect.as({ result: undefined, touched: [row.id] }),
-        ),
+        run(
+          sql`UPDATE houston_task_runs SET run_id = ${threadRun.id} WHERE id = ${runRow.id}`,
+        ).pipe(Effect.as({ result: undefined, touched: [row.id] })),
       );
     }
     return (yield* runById(runRow.id)) as RunRow;
@@ -459,7 +470,11 @@ const make = Effect.gen(function* () {
           );
         }
         yield* tasks
-          .save({ id: keyOf(row), expectedRevision: row.revision, patch: { projectId: input.projectId } })
+          .save({
+            id: keyOf(row),
+            expectedRevision: row.revision,
+            patch: { projectId: input.projectId },
+          })
           .pipe(Effect.mapError((error) => refuse(error.kind, operation, error.message)));
         row = yield* taskOf(row.id);
       } else if (input.projectId !== undefined && input.projectId !== row.project_id) {
@@ -483,7 +498,11 @@ const make = Effect.gen(function* () {
       const baseRef = input.baseRef ?? (yield* TaskGit.currentBranch(root)) ?? "HEAD";
       const baseCommit = yield* TaskGit.resolveCommit(root, baseRef);
       if (baseCommit === null) {
-        return yield* refuse("invalid", operation, `base ref "${baseRef}" does not name a commit in ${root}`);
+        return yield* refuse(
+          "invalid",
+          operation,
+          `base ref "${baseRef}" does not name a commit in ${root}`,
+        );
       }
       const modelSelection = input.modelSelection ?? settings.startModel;
       const send = settings.delivery === "send";
@@ -548,8 +567,16 @@ const make = Effect.gen(function* () {
     if (OPEN_RUN_STATES.has(previous.state)) {
       return yield* refuse("invalid", operation, `run ${previous.id} is still ${previous.state}`);
     }
-    if (previous.kind !== "implementation" || previous.worktree_path === null || previous.branch === null) {
-      return yield* refuse("invalid", operation, `run ${previous.id} has no worktree to continue in`);
+    if (
+      previous.kind !== "implementation" ||
+      previous.worktree_path === null ||
+      previous.branch === null
+    ) {
+      return yield* refuse(
+        "invalid",
+        operation,
+        `run ${previous.id} has no worktree to continue in`,
+      );
     }
     if (row.project_id === null) {
       return yield* refuse("invalid", operation, `${keyOf(row)} has no project`);
@@ -575,7 +602,11 @@ const make = Effect.gen(function* () {
         freshBranch: `${previous.branch}-${attempt}`,
       }).pipe(
         Effect.mapError((error) =>
-          refuse("invalid", operation, `the worktree of run ${previous.id} could not be recreated: ${error.message}`),
+          refuse(
+            "invalid",
+            operation,
+            `the worktree of run ${previous.id} could not be recreated: ${error.message}`,
+          ),
         ),
       );
       if (branch !== previous.branch) baseCommit = yield* TaskGit.resolveCommit(root, base);
@@ -585,8 +616,12 @@ const make = Effect.gen(function* () {
         const current = yield* taskOf(row.id);
         const touched =
           current.status !== "in_progress"
-            ? yield* moveTask(current, "in_progress", options.actor, options.action, { run: previous.id })
-            : (yield* store.recordHistory(current.id, options.actor, options.action, { run: previous.id }),
+            ? yield* moveTask(current, "in_progress", options.actor, options.action, {
+                run: previous.id,
+              })
+            : (yield* store.recordHistory(current.id, options.actor, options.action, {
+                run: previous.id,
+              }),
               [current.id]);
         const after = yield* taskOf(current.id);
         const runRow = yield* insertRun({
@@ -612,7 +647,11 @@ const make = Effect.gen(function* () {
     return yield* launchRun(operation, row, recorded, {
       title: `${keyOf(row)} ${row.title} (attempt ${attempt})`,
       modelSelection,
-      workspaceStrategy: { type: "existing_worktree", worktreePath: previous.worktree_path, branch },
+      workspaceStrategy: {
+        type: "existing_worktree",
+        worktreePath: previous.worktree_path,
+        branch,
+      },
       message: brief,
     });
   });
@@ -627,7 +666,11 @@ const make = Effect.gen(function* () {
     }
     if (input.action === "stop") {
       if (!OPEN_RUN_STATES.has(previous.state)) {
-        return yield* refuse("invalid", operation, `run ${previous.id} is ${previous.state}, not live`);
+        return yield* refuse(
+          "invalid",
+          operation,
+          `run ${previous.id} is ${previous.state}, not live`,
+        );
       }
       // Cancelled first, so the thread's stopped run is not read as an interruption.
       const stopped = yield* store.write(
@@ -673,7 +716,9 @@ const make = Effect.gen(function* () {
             current.revision > open.initial_revision
               ? `\n\nWarning: ${keyOf(current)} changed since this run started (revision ${open.initial_revision} to ${current.revision}); check the work against the current task.`
               : "";
-          const result = yield* setRunState(open.id, "handed_back", null, { summary: input.summary });
+          const result = yield* setRunState(open.id, "handed_back", null, {
+            summary: input.summary,
+          });
           yield* addComment(row.id, `${input.summary}${drift}`, actor);
           const touched = yield* moveTask(current, "in_review", actor, "houston:handback", {
             run: open.id,
@@ -693,7 +738,13 @@ const make = Effect.gen(function* () {
           })
         ) {
           yield* startReview(operation, handed, { automatic: true, settings }).pipe(
-            Effect.catch((error) => noteOnce(row.id, `handback:${open.id}`, `Automatic review not started: ${error.message}`)),
+            Effect.catch((error) =>
+              noteOnce(
+                row.id,
+                `handback:${open.id}`,
+                `Automatic review not started: ${error.message}`,
+              ),
+            ),
           );
         }
       }
@@ -738,7 +789,11 @@ const make = Effect.gen(function* () {
     yield* requireReadOnlyRun(operation, reviewer, "review a task");
     const worktree = implementation.worktree_path;
     if (worktree === null || row.project_id === null) {
-      return yield* refuse("invalid", operation, `run ${implementation.id} has no worktree to review`);
+      return yield* refuse(
+        "invalid",
+        operation,
+        `run ${implementation.id} has no worktree to review`,
+      );
     }
     const root = yield* workspaceRoot(operation, row.project_id);
     const head =
@@ -957,7 +1012,11 @@ const make = Effect.gen(function* () {
           action: "houston:rework",
         }).pipe(
           Effect.catch((error) =>
-            noteOnce(row.id, `rework:${review.id}`, `Automatic rework not started: ${error.message}`),
+            noteOnce(
+              row.id,
+              `rework:${review.id}`,
+              `Automatic rework not started: ${error.message}`,
+            ),
           ),
         );
       } else if (settings.reworkRounds === 0 && implementation.thread_id !== null) {
@@ -985,40 +1044,43 @@ const make = Effect.gen(function* () {
       Effect.map((rows) => rows[0]),
     );
 
-  const planStart: HoustonTaskRuns["Service"]["planStart"] = Effect.fn(
-    "HoustonTaskRuns.planStart",
-  )(function* (input) {
-    const operation = "houston.tasks.plan.start";
-    const row = yield* store.resolve(operation, input.id);
-    if (row.revision !== input.expectedRevision) {
-      return yield* conflictRefusal(operation, keyOf(row), input.expectedRevision, row.revision);
-    }
-    if (row.project_id === null) {
-      return yield* refuse("invalid", operation, `${keyOf(row)} has no project; a project is required to plan it`);
-    }
-    yield* requireReadOnlyRun(operation, input.modelSelection, "plan a task");
-    const domain = yield* store.domainRow(row.id);
-    if (domain === undefined) {
-      return yield* refuse(
-        "invalid",
-        operation,
-        `${keyOf(row)} has no kind; set delivery or slice with houston.tasks.domain.save before planning`,
-      );
-    }
-    if (domain.planning_thread_id !== null) {
-      return yield* refuse(
-        "busy",
-        operation,
-        `${keyOf(row)} already has an open planning session in thread ${domain.planning_thread_id}`,
-      );
-    }
-    const initiative = yield* initiativeOf(row.id);
-    const threadId = yield* newThreadId("task-plan");
-    // Recorded before launch, so its first turn already resolves read-only.
-    yield* store.write(
-      Effect.gen(function* () {
-        const now = yield* nowIso;
-        yield* run(sql`
+  const planStart: HoustonTaskRuns["Service"]["planStart"] = Effect.fn("HoustonTaskRuns.planStart")(
+    function* (input) {
+      const operation = "houston.tasks.plan.start";
+      const row = yield* store.resolve(operation, input.id);
+      if (row.revision !== input.expectedRevision) {
+        return yield* conflictRefusal(operation, keyOf(row), input.expectedRevision, row.revision);
+      }
+      if (row.project_id === null) {
+        return yield* refuse(
+          "invalid",
+          operation,
+          `${keyOf(row)} has no project; a project is required to plan it`,
+        );
+      }
+      yield* requireReadOnlyRun(operation, input.modelSelection, "plan a task");
+      const domain = yield* store.domainRow(row.id);
+      if (domain === undefined) {
+        return yield* refuse(
+          "invalid",
+          operation,
+          `${keyOf(row)} has no kind; set delivery or slice with houston.tasks.domain.save before planning`,
+        );
+      }
+      if (domain.planning_thread_id !== null) {
+        return yield* refuse(
+          "busy",
+          operation,
+          `${keyOf(row)} already has an open planning session in thread ${domain.planning_thread_id}`,
+        );
+      }
+      const initiative = yield* initiativeOf(row.id);
+      const threadId = yield* newThreadId("task-plan");
+      // Recorded before launch, so its first turn already resolves read-only.
+      yield* store.write(
+        Effect.gen(function* () {
+          const now = yield* nowIso;
+          yield* run(sql`
           INSERT INTO houston_task_planning (
             thread_id, task_id, task_revision, initiative_id, initiative_revision, state, created_at
           ) VALUES (
@@ -1026,41 +1088,44 @@ const make = Effect.gen(function* () {
             ${initiative?.revision ?? null}, 'active', ${now}
           )
         `);
-        yield* run(sql`
+          yield* run(sql`
           UPDATE houston_task_domain SET planning_thread_id = ${threadId},
             planning_task_revision = ${row.revision}, planning_initiative_id = ${initiative?.id ?? null},
             planning_initiative_revision = ${initiative?.revision ?? null}
           WHERE task_id = ${row.id}
         `);
-        yield* store.recordHistory(row.id, USER_ACTOR, "houston:plan-start", { thread: threadId });
-        return { result: undefined, touched: [row.id] };
-      }),
-    );
-    const prompt = [
-      `Plan Houston task ${keyOf(row)}. Read the code you need; do not change any files.`,
-      `When done, call houston_task_plan_submit with id "${keyOf(row)}" and a proposal: description, acceptance (a list of checkable items), pointers (files or docs), outOfScope and questions (only those the user must answer).`,
-      yield* briefFor(row),
-    ].join("\n\n");
-    yield* launcher
-      .launch({
-        commandId: CommandId.make(`houston-task-plan:${threadId}`),
-        threadId,
-        projectId: row.project_id as ProjectId,
-        title: `Plan ${keyOf(row)} ${row.title}`,
-        modelSelection: input.modelSelection,
-        runtimeMode: "approval-required",
-        interactionMode: "default",
-        workspaceStrategy: { type: "root" },
-        initialMessage: { text: prompt, attachments: [] },
-        createdBy: "user",
-        creationSource: "server",
-      })
-      .pipe(
-        Effect.tapError(() => settlePlanning(threadId, "cancelled")),
-        Effect.mapError(launchFailure(operation, row)),
+          yield* store.recordHistory(row.id, USER_ACTOR, "houston:plan-start", {
+            thread: threadId,
+          });
+          return { result: undefined, touched: [row.id] };
+        }),
       );
-    return yield* detailOf(row.id);
-  });
+      const prompt = [
+        `Plan Houston task ${keyOf(row)}. Read the code you need; do not change any files.`,
+        `When done, call houston_task_plan_submit with id "${keyOf(row)}" and a proposal: description, acceptance (a list of checkable items), pointers (files or docs), outOfScope and questions (only those the user must answer).`,
+        yield* briefFor(row),
+      ].join("\n\n");
+      yield* launcher
+        .launch({
+          commandId: CommandId.make(`houston-task-plan:${threadId}`),
+          threadId,
+          projectId: row.project_id as ProjectId,
+          title: `Plan ${keyOf(row)} ${row.title}`,
+          modelSelection: input.modelSelection,
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+          workspaceStrategy: { type: "root" },
+          initialMessage: { text: prompt, attachments: [] },
+          createdBy: "user",
+          creationSource: "server",
+        })
+        .pipe(
+          Effect.tapError(() => settlePlanning(threadId, "cancelled")),
+          Effect.mapError(launchFailure(operation, row)),
+        );
+      return yield* detailOf(row.id);
+    },
+  );
 
   const settlePlanning = (threadId: string, state: "submitted" | "cancelled" | "exited") =>
     store.write(
@@ -1069,7 +1134,9 @@ const make = Effect.gen(function* () {
         if (planning === undefined || planning.state !== "active") {
           return { result: undefined, touched: [] };
         }
-        yield* run(sql`UPDATE houston_task_planning SET state = ${state} WHERE thread_id = ${threadId}`);
+        yield* run(
+          sql`UPDATE houston_task_planning SET state = ${state} WHERE thread_id = ${threadId}`,
+        );
         yield* run(sql`
           UPDATE houston_task_domain SET planning_thread_id = NULL
           WHERE task_id = ${planning.task_id} AND planning_thread_id = ${threadId}
@@ -1078,7 +1145,11 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  const writePlan = (taskId: number, plan: HoustonTaskPlan, extra: { readonly approvedTaskRevision?: number } = {}) =>
+  const writePlan = (
+    taskId: number,
+    plan: HoustonTaskPlan,
+    extra: { readonly approvedTaskRevision?: number } = {},
+  ) =>
     run(sql`
       UPDATE houston_task_domain SET plan_json = ${encodePlan(plan)}, plan_revision = ${plan.revision},
         approved_task_revision = ${extra.approvedTaskRevision ?? null}
@@ -1125,7 +1196,9 @@ const make = Effect.gen(function* () {
             plan_initiative_revision = ${planning.initiative_revision}, planning_thread_id = NULL
           WHERE task_id = ${row.id}
         `);
-        yield* run(sql`UPDATE houston_task_planning SET state = 'submitted' WHERE thread_id = ${caller}`);
+        yield* run(
+          sql`UPDATE houston_task_planning SET state = 'submitted' WHERE thread_id = ${caller}`,
+        );
         yield* store.recordHistory(row.id, `agent:${caller}`, "houston:plan-submit", {
           planRevision: plan.revision,
         });
@@ -1146,7 +1219,11 @@ const make = Effect.gen(function* () {
     const domain = yield* store.domainRow(row.id);
     const plan = parsePlan(domain?.plan_json ?? null);
     if (plan === null || !plan.proposal.questions.includes(input.question)) {
-      return yield* refuse("invalid", operation, `${keyOf(row)}'s plan asks no question "${input.question}"`);
+      return yield* refuse(
+        "invalid",
+        operation,
+        `${keyOf(row)}'s plan asks no question "${input.question}"`,
+      );
     }
     yield* store.write(
       Effect.gen(function* () {
@@ -1157,7 +1234,9 @@ const make = Effect.gen(function* () {
             { question: input.question, answer: input.answer },
           ],
         });
-        yield* store.recordHistory(row.id, USER_ACTOR, "houston:plan-answer", { question: input.question });
+        yield* store.recordHistory(row.id, USER_ACTOR, "houston:plan-answer", {
+          question: input.question,
+        });
         return { result: undefined, touched: [row.id] };
       }),
     );
@@ -1176,14 +1255,24 @@ const make = Effect.gen(function* () {
     const domain = yield* store.domainRow(row.id);
     const plan = parsePlan(domain?.plan_json ?? null);
     if (plan === null || plan.revision !== input.planRevision) {
-      return yield* conflictRefusal(operation, `${key}'s plan`, input.planRevision, plan?.revision ?? 0);
+      return yield* conflictRefusal(
+        operation,
+        `${key}'s plan`,
+        input.planRevision,
+        plan?.revision ?? 0,
+      );
     }
     const [read] = yield* run(sql<PlanningRow>`
       SELECT * FROM houston_task_planning WHERE task_id = ${row.id} AND state = 'submitted'
       ORDER BY created_at DESC, rowid DESC LIMIT 1
     `);
     if (read !== undefined && read.task_revision !== row.revision) {
-      return yield* conflictRefusal(operation, `${key} (as its planner read it)`, read.task_revision, row.revision);
+      return yield* conflictRefusal(
+        operation,
+        `${key} (as its planner read it)`,
+        read.task_revision,
+        row.revision,
+      );
     }
     const bound = yield* run(sql<{
       readonly plan_initiative_id: number | null;
@@ -1205,10 +1294,17 @@ const make = Effect.gen(function* () {
       }
     }
     const unanswered = plan.proposal.questions.filter(
-      (question) => !plan.answers.some((answer) => answer.question === question && answer.answer.trim().length > 0),
+      (question) =>
+        !plan.answers.some(
+          (answer) => answer.question === question && answer.answer.trim().length > 0,
+        ),
     );
     if (unanswered.length > 0) {
-      return yield* refuse("invalid", operation, `${key}'s plan has ${unanswered.length} unanswered question(s)`);
+      return yield* refuse(
+        "invalid",
+        operation,
+        `${key}'s plan has ${unanswered.length} unanswered question(s)`,
+      );
     }
     const saved = yield* tasks
       .save({
@@ -1219,8 +1315,14 @@ const make = Effect.gen(function* () {
       .pipe(Effect.mapError((error) => refuse(error.kind, operation, error.message)));
     yield* store.write(
       Effect.gen(function* () {
-        yield* writePlan(row.id, { ...plan, approvedRevision: plan.revision }, { approvedTaskRevision: saved.revision });
-        yield* store.recordHistory(row.id, USER_ACTOR, "houston:plan-approve", { planRevision: plan.revision });
+        yield* writePlan(
+          row.id,
+          { ...plan, approvedRevision: plan.revision },
+          { approvedTaskRevision: saved.revision },
+        );
+        yield* store.recordHistory(row.id, USER_ACTOR, "houston:plan-approve", {
+          planRevision: plan.revision,
+        });
         return { result: undefined, touched: [row.id] };
       }),
     );
@@ -1242,7 +1344,9 @@ const make = Effect.gen(function* () {
   // Following threads.
 
   const runsOfThread = (threadId: string) =>
-    run(sql<RunRow>`SELECT * FROM houston_task_runs WHERE thread_id = ${threadId} ORDER BY id DESC`);
+    run(
+      sql<RunRow>`SELECT * FROM houston_task_runs WHERE thread_id = ${threadId} ORDER BY id DESC`,
+    );
 
   const userSetStatusSinceStart = (taskId: number) =>
     run(sql<{ readonly one: number }>`
@@ -1269,7 +1373,9 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const touched: Array<number> = [taskRun.task_id];
         if (taskRun.run_id !== threadRun.id) {
-          yield* run(sql`UPDATE houston_task_runs SET run_id = ${threadRun.id} WHERE id = ${taskRun.id}`);
+          yield* run(
+            sql`UPDATE houston_task_runs SET run_id = ${threadRun.id} WHERE id = ${taskRun.id}`,
+          );
         }
         if (next !== taskRun.state) {
           yield* setRunState(
@@ -1289,7 +1395,11 @@ const make = Effect.gen(function* () {
           runningAfterUserStatus(row) &&
           !(yield* userSetStatusSinceStart(row.id))
         ) {
-          touched.push(...(yield* moveTask(row, "in_progress", RUN_ACTOR, "houston:run-working", { run: taskRun.id })));
+          touched.push(
+            ...(yield* moveTask(row, "in_progress", RUN_ACTOR, "houston:run-working", {
+              run: taskRun.id,
+            })),
+          );
         }
         return { result: undefined, touched };
       }),
@@ -1327,20 +1437,31 @@ const make = Effect.gen(function* () {
 
   const followPullRequest = Effect.fn("HoustonTaskRuns.followPullRequest")(function* (
     threadId: string,
-    link: Extract<OrchestrationV2DomainEvent, { readonly type: "thread.pull-request-link-updated" }>["payload"],
+    link: Extract<
+      OrchestrationV2DomainEvent,
+      { readonly type: "thread.pull-request-link-updated" }
+    >["payload"],
   ) {
-    const [implementation] = (yield* runsOfThread(threadId)).filter((row) => row.kind === "implementation");
+    const [implementation] = (yield* runsOfThread(threadId)).filter(
+      (row) => row.kind === "implementation",
+    );
     if (implementation === undefined) return;
     const row = yield* taskOf(implementation.task_id);
     yield* store.write(
       Effect.gen(function* () {
         const touched: Array<number> = [];
         if (implementation.pr_url !== link.url) {
-          yield* run(sql`UPDATE houston_task_runs SET pr_url = ${link.url} WHERE id = ${implementation.id}`);
+          yield* run(
+            sql`UPDATE houston_task_runs SET pr_url = ${link.url} WHERE id = ${implementation.id}`,
+          );
           touched.push(row.id);
         }
         if (link.snapshot?.state === "merged" && row.status === "in_review") {
-          touched.push(...(yield* moveTask(row, "done", "houston:pr", "houston:pr-merged", { pullRequest: link.url })));
+          touched.push(
+            ...(yield* moveTask(row, "done", "houston:pr", "houston:pr-merged", {
+              pullRequest: link.url,
+            })),
+          );
         }
         return { result: undefined, touched };
       }),
@@ -1353,13 +1474,16 @@ const make = Effect.gen(function* () {
     `);
     if (last !== undefined && last.changes === toJsonText({ headSha: head })) return;
     yield* store.write(
-      store.recordHistory(row.id, "houston:pr", PUSHED_ACTION, { headSha: head }).pipe(
-        Effect.as({ result: undefined, touched: [row.id] }),
-      ),
+      store
+        .recordHistory(row.id, "houston:pr", PUSHED_ACTION, { headSha: head })
+        .pipe(Effect.as({ result: undefined, touched: [row.id] })),
     );
     if (row.project_id === null) return;
     const settings = yield* settingsOf("houston.tasks.review", row.project_id).pipe(Effect.orDie);
-    const reviews = yield* run(sql<{ readonly review_head_sha: string | null; readonly state: HoustonTaskRunState }>`
+    const reviews = yield* run(sql<{
+      readonly review_head_sha: string | null;
+      readonly state: HoustonTaskRunState;
+    }>`
       SELECT review_head_sha, state FROM houston_task_runs WHERE task_id = ${row.id} AND kind = 'review'
     `);
     if (
@@ -1368,7 +1492,9 @@ const make = Effect.gen(function* () {
         mode: settings.reviewMode,
         event: { type: "push", headSha: head },
         reviewOpen: reviews.some((review) => OPEN_RUN_STATES.has(review.state)),
-        reviewedHeads: reviews.flatMap((review) => (review.review_head_sha === null ? [] : [review.review_head_sha])),
+        reviewedHeads: reviews.flatMap((review) =>
+          review.review_head_sha === null ? [] : [review.review_head_sha],
+        ),
       })
     ) {
       return;
@@ -1379,7 +1505,11 @@ const make = Effect.gen(function* () {
       pushedHead: head,
     }).pipe(
       Effect.catch((error) =>
-        noteOnce(row.id, `push:${head}:${error.kind}`, `Review of pushed head ${head} not started: ${error.message}`),
+        noteOnce(
+          row.id,
+          `push:${head}:${error.kind}`,
+          `Review of pushed head ${head} not started: ${error.message}`,
+        ),
       ),
     );
   });
@@ -1461,7 +1591,9 @@ const make = Effect.gen(function* () {
 
   yield* orchestrator.streamDomainEvents.pipe(
     Stream.runForEach(() => catchUp),
-    Effect.catchCause((cause) => Effect.logWarning("Houston task runs stopped following threads", { cause })),
+    Effect.catchCause((cause) =>
+      Effect.logWarning("Houston task runs stopped following threads", { cause }),
+    ),
     Effect.forkScoped,
   );
 

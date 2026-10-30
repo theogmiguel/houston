@@ -91,13 +91,19 @@ export const recreateWorktree = Effect.fn("HoustonTaskGit.recreateWorktree")(fun
   yield* git(input.repo, ["worktree", "prune"]);
   const local = yield* resolveCommit(input.repo, `refs/heads/${input.branch}`);
   const pushed =
-    local === null
-      ? yield* resolveCommit(input.repo, `refs/remotes/origin/${input.branch}`)
-      : null;
+    local === null ? yield* resolveCommit(input.repo, `refs/remotes/origin/${input.branch}`) : null;
   const tip = local ?? pushed;
   const base = yield* resolveCommit(input.repo, input.base);
   if (tip === null || (base !== null && (yield* contains(input.repo, base, tip)))) {
-    yield* git(input.repo, ["worktree", "add", "-q", "-b", input.freshBranch, input.path, input.base]);
+    yield* git(input.repo, [
+      "worktree",
+      "add",
+      "-q",
+      "-b",
+      input.freshBranch,
+      input.path,
+      input.base,
+    ]);
     return input.freshBranch;
   }
   if (local !== null) {

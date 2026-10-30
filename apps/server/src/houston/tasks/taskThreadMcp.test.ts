@@ -80,7 +80,9 @@ const layerMixedTools = (calls: Array<string>) => {
     McpToolAccess.reads(() =>
       Effect.sync(() => calls.push(name)).pipe(
         Effect.andThen(
-          Effect.fail(new OrchestratorMcpFailure({ code: "thread_not_found", message: "Recorded." })),
+          Effect.fail(
+            new OrchestratorMcpFailure({ code: "thread_not_found", message: "Recorded." }),
+          ),
         ),
       ),
     );
@@ -169,29 +171,31 @@ const fakeHttpServer = HttpServer.HttpServer.of({
 });
 
 describe("a planner is issued a submit-only credential", () => {
-  it.effect("the credential holds the submit scope and no orchestration, worktree or PR scope", () =>
-    Effect.gen(function* () {
-      const registry = yield* McpSessionRegistry.__testing.make();
-      const issued = yield* registry.issue({
-        threadId: planner,
-        providerInstanceId: ProviderInstanceId.make("codex"),
-        houstonTaskSubmitOnly: true,
-      });
-      const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
-      const resolved = yield* registry.resolve(token);
-      assert.deepEqual([...(resolved?.capabilities ?? [])], ["houston-task-submit"]);
-      assert.deepEqual([...(issued.config.capabilities ?? [])], ["houston-task-submit"]);
-    }).pipe(
-      Effect.provideService(HttpServer.HttpServer, fakeHttpServer),
-      Effect.provideService(
-        ServerEnvironment.ServerEnvironment,
-        ServerEnvironment.ServerEnvironment.of({
-          getEnvironmentId: Effect.succeed(environmentId),
-          getDescriptor: Effect.die("unused"),
-        }),
+  it.effect(
+    "the credential holds the submit scope and no orchestration, worktree or PR scope",
+    () =>
+      Effect.gen(function* () {
+        const registry = yield* McpSessionRegistry.__testing.make();
+        const issued = yield* registry.issue({
+          threadId: planner,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          houstonTaskSubmitOnly: true,
+        });
+        const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+        const resolved = yield* registry.resolve(token);
+        assert.deepEqual([...(resolved?.capabilities ?? [])], ["houston-task-submit"]);
+        assert.deepEqual([...(issued.config.capabilities ?? [])], ["houston-task-submit"]);
+      }).pipe(
+        Effect.provideService(HttpServer.HttpServer, fakeHttpServer),
+        Effect.provideService(
+          ServerEnvironment.ServerEnvironment,
+          ServerEnvironment.ServerEnvironment.of({
+            getEnvironmentId: Effect.succeed(environmentId),
+            getDescriptor: Effect.die("unused"),
+          }),
+        ),
+        Effect.provide(NodeServices.layer),
       ),
-      Effect.provide(NodeServices.layer),
-    ),
   );
 });
 
@@ -220,7 +224,9 @@ describe("a planner's run loads no user MCP server", () => {
       runtimePolicy: READ_ONLY_POLICY,
     });
     assert.deepEqual(Object.keys(params.config.mcp_servers as object), ["t3-code"]);
-    const houston = (params.config.mcp_servers as Record<string, Record<string, unknown>>)["t3-code"];
+    const houston = (params.config.mcp_servers as Record<string, Record<string, unknown>>)[
+      "t3-code"
+    ];
     assert.strictEqual(houston?.url, SESSION.endpoint);
     assert.deepEqual(houston?.http_headers, { Authorization: SESSION.authorizationHeader });
     assert.isFalse(Object.keys(params.config).some((key) => key.startsWith("mcp_servers.")));
@@ -228,7 +234,10 @@ describe("a planner's run loads no user MCP server", () => {
 
   it("Claude: strict MCP config with Houston's server only, and launch arguments add none", () => {
     const options = makeClaudeQueryOptions({
-      modelSelection: { instanceId: ProviderInstanceId.make("claudeAgent"), model: "claude-sonnet-4-6" },
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-4-6",
+      },
       nativeThreadId: "native:task-plan",
       resume: false,
       cwd: "/work",
