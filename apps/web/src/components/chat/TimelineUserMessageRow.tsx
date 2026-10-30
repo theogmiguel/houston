@@ -470,7 +470,6 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   // Media sent with words sits above the bubble as its own shape, like a chat app.
   const mediaAboveText =
     !folded &&
-    userMessage.attribution !== "guest" &&
     !mediaOnly &&
     regularImages.length + userVideos.length > 0;
   const standaloneMedia = mediaOnly || mediaAboveText;
@@ -485,7 +484,6 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   // Files sent without words show as cards, not as a bubble around a name chip.
   const fileCardsOnly =
     !folded &&
-    userMessage.attribution !== "guest" &&
     otherUserFiles.length > 0 &&
     regularImages.length + userVideos.length + userAudio.length + unknownAttachments.length === 0 &&
     replaceComposerContextReferences(resolvedContext.text, (reference) =>
@@ -499,7 +497,6 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     ).trim() === "";
   const audioOnly =
     !folded &&
-    userMessage.attribution !== "guest" &&
     userAudio.length > 0 &&
     regularImages.length + userVideos.length + otherUserFiles.length + unknownAttachments.length ===
       0 &&
