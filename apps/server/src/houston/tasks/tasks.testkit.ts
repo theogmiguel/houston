@@ -27,13 +27,13 @@ import * as HoustonTaskV1Import from "./V1Import.ts";
 /** Instances the settings check treats as configured unless a test names others. */
 export const CONFIGURED_INSTANCES: ReadonlyArray<string> = ["claudeAgent", "codex"];
 
-const layerWorkspacePaths = Layer.succeed(WorkspacePaths.WorkspacePaths, {
+export const layerWorkspacePaths = Layer.succeed(WorkspacePaths.WorkspacePaths, {
   normalizeWorkspaceRoot: (workspaceRoot) => Effect.succeed(workspaceRoot),
   resolveRelativePathWithinRoot: ({ workspaceRoot, relativePath }) =>
     Effect.succeed({ absolutePath: `${workspaceRoot}/${relativePath}`, relativePath }),
 });
 
-const layerProjectMetadata = Layer.merge(
+export const layerProjectMetadata = Layer.merge(
   Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
     resolve: () => Effect.succeed(null),
   }),
@@ -43,7 +43,7 @@ const layerProjectMetadata = Layer.merge(
   }),
 );
 
-const layerInstances = (configured: ReadonlyArray<string>) =>
+export const layerInstances = (configured: ReadonlyArray<string>) =>
   Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
     getInstance: (instanceId: ProviderInstanceId) =>
       Effect.succeed(configured.includes(instanceId) ? ({ instanceId } as never) : undefined),

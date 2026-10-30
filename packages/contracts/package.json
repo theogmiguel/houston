@@ -42,6 +42,10 @@
     "./houston/tasks": {
       "types": "./src/houston/tasks.ts",
       "import": "./src/houston/tasks.ts"
+    },
+    "./houston/taskSources": {
+      "types": "./src/houston/taskSources.ts",
+      "import": "./src/houston/taskSources.ts"
     }
   },
   "scripts": {

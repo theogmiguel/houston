@@ -410,6 +410,16 @@ describe("readiness lists every missing condition", () => {
     expect(result.reasons).toHaveLength(4);
   });
 
+  it("an unresolved tracker conflict makes a task unready", () => {
+    const conflicted = readiness({ ...ready, trackerConflict: true });
+    expect(conflicted.ready).toBe(false);
+    expect(conflicted.reasons).toEqual(["the task has an unresolved tracker conflict"]);
+    expect(readiness({ ...ready, trackerConflict: false })).toMatchObject({
+      ready: true,
+      reasons: [],
+    });
+  });
+
   it("a task with no domain row needs no initiative; a delivery does", () => {
     expect(readiness({ ...ready, domain: null }).ready).toBe(true);
     expect(readiness({ ...ready, domain: { kind: "slice", initiative: null } }).ready).toBe(true);
