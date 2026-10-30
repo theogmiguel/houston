@@ -164,7 +164,7 @@ export function layerWithOverride(
 export const layerReadOnlySideThreads: Layer.Layer<
   RuntimePolicyV2,
   never,
-  RuntimePolicyV2 | ProviderAdapterRegistry.ProviderAdapterRegistryV2
+  RuntimePolicyV2 | ProviderAdapterRegistry.ProviderAdapterRegistryV2 | HoustonReadOnlyThreads
 > = Layer.effect(
   RuntimePolicyV2,
   Effect.gen(function* () {

@@ -857,6 +857,47 @@ describe("a planner's and a reviewer's credential is scoped to their submit", ()
       }),
     TIMEOUT,
   );
+
+  it.effect(
+    "over the server's provision, a planner turn runs read-only with only the submit scope",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("server-read-only");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const { task } = yield* plannableTask(context, "Server planner");
+            const planned = yield* context.runs.planStart({
+              id: task.key,
+              expectedRevision: task.revision,
+              modelSelection: selection("codex"),
+            });
+            yield* context.settle;
+            const turnOf = (threadId: ThreadId | null | undefined) =>
+              harness.doubles.log.started.find((started) => started.input.threadId === threadId);
+            const planner = turnOf(planned.planning?.threadId);
+            assert.isDefined(planner);
+            assert.deepInclude(planner.input.runtimePolicy, READ_ONLY);
+            assert.deepEqual([...(planner.mcp?.capabilities ?? [])], ["houston-task-submit"]);
+
+            // The implementer of the same project is neither read-only nor submit-only.
+            yield* context.setSettings({});
+            const run = yield* startAndPrepare(
+              context,
+              yield* context.readyTask("Server implementer"),
+            );
+            yield* context.settle;
+            const implementer = turnOf(run.threadId);
+            assert.isDefined(implementer);
+            assert.notDeepEqual(
+              implementer.input.runtimePolicy.sandboxPolicy,
+              READ_ONLY.sandboxPolicy as never,
+            );
+            assert.notInclude([...(implementer.mcp?.capabilities ?? [])], "houston-task-submit");
+          }),
+        );
+      }),
+    TIMEOUT,
+  );
 });
 
 describe("approval applies the plan only at the revisions it read", () => {

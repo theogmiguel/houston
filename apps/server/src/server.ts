@@ -586,6 +586,13 @@ const layerProviderInstallationRefresh = Layer.effectDiscard(
   }),
 );
 
+/** The task store and the read-only record of planners and reviewers, which the runtime policy
+ * and the MCP credential read. Exported so the task-run tests build over the server's own. */
+export const layerHoustonTaskPersistence = Layer.empty.pipe(
+  Layer.provideMerge(HoustonTaskRuns.layerReadOnlyThreads),
+  Layer.provideMerge(HoustonTaskStore.layer),
+);
+
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   AgentAwarenessRelay.layer,
   HeldHooksWaker.layer,
@@ -649,9 +656,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(layerVcs),
   Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
   // Below the orchestration runtime so its ProjectService sees the store on project deletion.
-  // Planners and reviewers resolve read-only in the runtime policy and the MCP credential.
-  Layer.provideMerge(HoustonTaskRuns.layerReadOnlyThreads),
-  Layer.provideMerge(HoustonTaskStore.layer),
+  Layer.provideMerge(layerHoustonTaskPersistence),
   Layer.provideMerge(layerPersistence),
   Layer.provideMerge(
     Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),

@@ -43,6 +43,7 @@ import * as ProjectSetupScriptRunner from "../../project/ProjectSetupScriptRunne
 import * as WorktreeSetupTracker from "../../project/WorktreeSetupTracker.ts";
 import * as ProviderRegistryMock from "../../provider/testUtils/providerRegistryMock.ts";
 import * as TerminalManager from "../../terminal/Manager.ts";
+import * as Server from "../../server.ts";
 import * as TextGeneration from "../../textGeneration/TextGeneration.ts";
 import * as SideThreads from "../sideThreads.testkit.ts";
 import * as HoustonTaskRuns from "./TaskRuns.ts";
@@ -195,9 +196,14 @@ export const layerRuns = (harness: RunsHarness, options: RunsOptions = {}) => {
       databaseLayer: database,
       configureMcp: true,
       mcpSessionRegistry: layerScopedMcpRegistry,
+      // The server's own provision, so a server that drops it fails these tests.
+      readOnlyThreads: Server.layerHoustonTaskPersistence.pipe(
+        Layer.provide(database),
+        Layer.orDie,
+      ),
       ...(options.restarted === true ? { recoverOnStartup: true } : { runEffectWorker: false }),
     },
-  ).pipe(Layer.provide(HoustonTaskRuns.layerReadOnlyThreads.pipe(Layer.provide(database))));
+  );
   const tasks = layerTasks({ databaseLayer: database });
   const receipts = CommandReceiptStore.layer.pipe(Layer.provide(database));
   const threadManagement = ThreadManagement.layer.pipe(

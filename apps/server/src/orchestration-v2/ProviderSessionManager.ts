@@ -296,6 +296,7 @@ export const layerWithOptions = (
   | CommandOutputHub.CommandOutputHub
   | EventSink.EventSinkV2
   | FileSystem.FileSystem
+  | HoustonReadOnlyThreads
   | IdAllocator.IdAllocatorV2
   | McpProviderSessions.McpProviderSessions
   | McpSessionRegistry.McpSessionRegistry
