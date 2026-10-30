@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { cliArchiveTarCommand, newestCliReleaseVersion, parseChecksums } from "./cliRelease.ts";
+import {
+  CLI_ARCHIVE_PLATFORM_KEYS,
+  cliArchiveFileName,
+  cliArchivePlatformKey,
+  cliArchiveTarCommand,
+  newestCliReleaseVersion,
+  parseChecksums,
+} from "./cliRelease.ts";
 
 describe("cliRelease", () => {
   it("parses sha256sum output including binary-mode markers", () => {
@@ -15,6 +22,15 @@ describe("cliRelease", () => {
     expect(checksums.get("t3-1.2.3-linux-x64.tar.gz")).toBe("a".repeat(64));
     expect(checksums.get("t3-1.2.3-win32-x64.zip")).toBe("b".repeat(64));
     expect(checksums.size).toBe(2);
+  });
+
+  it("names Houston server archives and publishes only the Linux platforms", () => {
+    expect(cliArchiveFileName("1.2.3", "linux-x64")).toBe("houston-1.2.3-linux-x64.tar.gz");
+    expect(cliArchivePlatformKey("linux", "arm64")).toBe("linux-arm64");
+    expect(cliArchivePlatformKey("linux", "x64")).toBe("linux-x64");
+    expect(cliArchivePlatformKey("darwin", "arm64")).toBeUndefined();
+    expect(cliArchivePlatformKey("win32", "x64")).toBeUndefined();
+    expect([...CLI_ARCHIVE_PLATFORM_KEYS]).toEqual(["linux-x64", "linux-arm64"]);
   });
 
   it("extracts with the System32 bsdtar on Windows and plain tar elsewhere", () => {
