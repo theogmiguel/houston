@@ -7,6 +7,7 @@ pub mod distros;
 pub mod provision;
 pub mod relay;
 pub mod unc;
+pub mod v2;
 
 use command::{Piped, RunOutput, Runner, WslExe};
 use distros::{decode, Distro};
