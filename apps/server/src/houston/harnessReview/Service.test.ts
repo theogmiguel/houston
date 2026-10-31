@@ -4,7 +4,10 @@ import { CommandId, MessageId, type ProjectId, ThreadId } from "@t3tools/contrac
 import type { HoustonTaskStatus } from "@t3tools/contracts/houston/tasks";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
@@ -801,6 +804,107 @@ describe("fix tasks", () => {
           )!;
           assert.equal(link.landedAt, null);
           assert.equal(link.sessionsAfter, 0);
+        }),
+      );
+    }),
+  );
+
+  it.effect("an interrupt between saving and linking a fix task leaves no orphan", () =>
+    Effect.gen(function* () {
+      const caller = yield* Deferred.make<Fiber.Fiber<unknown, unknown>>();
+      // Interrupts the createTask fiber once its task row exists, before the link is written.
+      const kit = yield* makeKit("create-task-interrupt", {
+        tasks: (real) => ({
+          ...real,
+          save: (input, actor) =>
+            real.save(input, actor).pipe(
+              Effect.tap(() =>
+                actor !== "houston:harness"
+                  ? Effect.void
+                  : Effect.gen(function* () {
+                      yield* Effect.forkDetach(Fiber.interrupt(yield* Deferred.await(caller)));
+                      for (let round = 0; round < 20; round += 1) yield* Effect.yieldNow;
+                    }),
+              ),
+            ),
+        }),
+      });
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const harness = yield* service;
+          const { projectId } = yield* createProject("interrupt");
+          yield* seedPublished({ projectId, findings: [{ key: "denied-push" }], endedAt: day(1) });
+          const fiber = yield* Effect.forkChild(
+            harness.createTask({ projectId, key: "denied-push" }),
+          );
+          yield* Deferred.succeed(caller, fiber);
+          const exit = yield* Fiber.await(fiber);
+          assert.isTrue(Exit.hasInterrupts(exit), String(exit));
+          assert.deepEqual(yield* countRows, { tasks: 1, links: 1 });
+
+          // The retry sees the linked task.
+          const retry = yield* Effect.flip(harness.createTask({ projectId, key: "denied-push" }));
+          assert.equal(kindOf(retry), "busy");
+          assert.include(messageOf(retry), "HOU-1");
+          assert.deepEqual(yield* countRows, { tasks: 1, links: 1 });
+        }),
+      );
+    }),
+  );
+
+  it.effect("create task adopts the fix task a stopped call left unlinked", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("create-task-orphan");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const harness = yield* service;
+          const tasks = yield* tasksService;
+          const { projectId } = yield* createProject("orphan");
+          const other = yield* createProject("orphan-other");
+          yield* seedPublished({
+            projectId,
+            findings: [{ key: "denied-push" }, { key: "denied-push-2" }],
+            endedAt: day(1),
+          });
+          const fixText = (key: string) => ({
+            title: `Harness: ${key}`,
+            description: `Finding: ${key}\nReview: #1\nRecommendation: Allow it`,
+            status: "todo" as const,
+          });
+          // What a server stopped between the save and the link leaves, with look-alikes that
+          // are not orphans of denied-push: the user's own task, another finding's, another
+          // project's, and a canceled one.
+          yield* tasks.save({ projectId, patch: fixText("denied-push") });
+          yield* tasks.save({ projectId, patch: fixText("denied-push-2") }, "houston:harness");
+          yield* tasks.save(
+            { projectId: other.projectId, patch: fixText("denied-push") },
+            "houston:harness",
+          );
+          yield* tasks.save(
+            { projectId, patch: { ...fixText("denied-push"), status: "canceled" } },
+            "houston:harness",
+          );
+          const orphan = yield* tasks.save(
+            { projectId, patch: fixText("denied-push") },
+            "houston:harness",
+          );
+          assert.equal(orphan.key, "HOU-5");
+          const before = yield* countRows;
+          assert.deepEqual(before, { tasks: 5, links: 0 });
+
+          const { task } = yield* harness.createTask({ projectId, key: "denied-push" });
+          assert.equal(task.key, "HOU-5");
+          assert.deepEqual(yield* countRows, { tasks: 5, links: 1 });
+          const finding = (yield* findingOf(projectId, "denied-push"))!;
+          assert.equal(finding.phase, "fixing");
+          assert.equal(finding.task?.key, "HOU-5");
+
+          // denied-push-2's orphan is its own, so that finding adopts HOU-2.
+          const second = yield* harness.createTask({ projectId, key: "denied-push-2" });
+          assert.equal(second.task.key, "HOU-2");
+          assert.deepEqual(yield* countRows, { tasks: 5, links: 2 });
         }),
       );
     }),

@@ -576,6 +576,29 @@ const make = Effect.gen(function* () {
             "Tasks access for this project is read-only; allow writes in Settings ▸ Tasks to create a fix task",
           );
         }
+        const linkAndReturn = (taskId: number) =>
+          store
+            .linkTask({
+              projectId: input.projectId,
+              key: input.key,
+              taskId,
+              reviewId: finding.review_id,
+            })
+            .pipe(
+              Effect.andThen(taskStore.summaries({ ids: [taskId] })),
+              Effect.map(({ summaries }) => ({ task: summaries[0]! })),
+            );
+        // A server stopped between an earlier call's save and link left its task unlinked.
+        const prefix = `Finding: ${input.key}\nReview: #`;
+        const [orphan] = yield* sql<{ id: number }>`
+          SELECT t.id FROM houston_tasks t
+          WHERE t.project_id = ${input.projectId} AND t.created_by = ${HARNESS_ACTOR}
+            AND t.archived_at IS NULL AND t.status NOT IN ('done', 'canceled')
+            AND substr(t.description, 1, ${prefix.length}) = ${prefix}
+            AND NOT EXISTS (SELECT 1 FROM houston_harness_finding_tasks l WHERE l.task_id = t.id)
+          ORDER BY t.id DESC LIMIT 1
+        `.pipe(Effect.orDie);
+        if (orphan !== undefined) return yield* linkAndReturn(orphan.id);
         const [count] = yield* sql<{ n: number }>`SELECT COUNT(*) AS n FROM houston_tasks`.pipe(
           Effect.orDie,
         );
@@ -608,7 +631,8 @@ const make = Effect.gen(function* () {
             actual: text.actual,
           });
         }
-        const task = yield* tasks
+        // A client that disconnects mid-request interrupts it; the task must not stay unlinked.
+        return yield* tasks
           .save(
             {
               projectId: input.projectId,
@@ -621,15 +645,11 @@ const make = Effect.gen(function* () {
             },
             HARNESS_ACTOR,
           )
-          .pipe(Effect.mapError((error) => fromTaskError(operation, error)));
-        yield* store.linkTask({
-          projectId: input.projectId,
-          key: input.key,
-          taskId: task.id,
-          reviewId: finding.review_id,
-        });
-        const { summaries } = yield* taskStore.summaries({ ids: [task.id] });
-        return { task: summaries[0]! };
+          .pipe(
+            Effect.mapError((error) => fromTaskError(operation, error)),
+            Effect.flatMap((task) => linkAndReturn(task.id)),
+            Effect.uninterruptible,
+          );
       }),
     );
   });
