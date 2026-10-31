@@ -12,6 +12,7 @@ use serde_json::Value;
 pub enum SnapShotMode {
     #[allow(dead_code)]
     Direct,
+    #[allow(dead_code)]
     Portal,
     Unavailable,
 }
@@ -21,6 +22,7 @@ impl SnapShotMode {
         match self {
             #[allow(dead_code)]
             Self::Direct => "direct",
+            #[allow(dead_code)]
             Self::Portal => "portal",
             Self::Unavailable => "unavailable",
         }
@@ -275,12 +277,14 @@ pub struct CaptureSupport {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub struct CaptureOptions {
     pub flash: bool,
     pub animate: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct NormalizedFrame {
     pub x: f64,
     pub y: f64,
@@ -289,6 +293,7 @@ pub struct NormalizedFrame {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct Bounds {
     pub x: i64,
     pub y: i64,
