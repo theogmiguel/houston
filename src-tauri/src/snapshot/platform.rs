@@ -224,7 +224,6 @@ pub fn system_conflict(shortcut: &SnapShotShortcut) -> Option<String> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigDesktop {
-    #[cfg(target_os = "linux")]
     Niri,
     #[cfg(target_os = "linux")]
     Hyprland,

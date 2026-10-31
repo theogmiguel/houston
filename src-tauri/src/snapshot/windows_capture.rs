@@ -3,13 +3,10 @@
 
 use std::ffi::c_void;
 
-use windows_sys::Win32::Foundation::{CloseHandle, HWND, RECT};
+use windows_sys::Win32::Foundation::{HWND, RECT};
 use windows_sys::Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits,
     ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, SRCCOPY,
-};
-use windows_sys::Win32::System::Threading::{
-    OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetSystemMetrics, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId,
@@ -20,7 +17,6 @@ use super::platform::Bounds;
 use super::window_identity::executable_name;
 
 const WINDOW_TITLE_CHARS: usize = 1_024;
-const PROCESS_PATH_CHARS: usize = 32_768;
 
 pub struct ActiveWindow {
     pub title: String,
@@ -165,22 +161,5 @@ fn window_text(handle: HWND) -> String {
 }
 
 fn process_image_path(process_id: u32) -> String {
-    if process_id == 0 {
-        return String::new();
-    }
-    unsafe {
-        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id);
-        if process.is_null() {
-            return String::new();
-        }
-        let mut buffer = vec![0u16; PROCESS_PATH_CHARS];
-        let mut length = buffer.len() as u32;
-        let found = QueryFullProcessImageNameW(process, 0, buffer.as_mut_ptr(), &mut length);
-        CloseHandle(process);
-        if found == 0 {
-            String::new()
-        } else {
-            String::from_utf16_lossy(&buffer[..length as usize])
-        }
-    }
+    crate::sys::pid::process_image_path(process_id).unwrap_or_default()
 }

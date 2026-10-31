@@ -15,7 +15,6 @@ use super::platform::{
     PlatformPaths, ShortcutAvailability, ShortcutStatus, SnapShotMode, SnapShotPlatform,
     SnapShotShortcut, TriggerCallback, WindowMetadata,
 };
-use super::windows_feedback::WindowFlash;
 use super::windows_input::{ChordShortcut, ModifierPairShortcut};
 
 const WINDOW_UNAVAILABLE: &str = "The active window is not available for capture.";

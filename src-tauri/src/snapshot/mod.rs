@@ -136,7 +136,9 @@ impl SnapShotHost {
             state_dir: state_dir.clone(),
         };
         #[cfg(target_os = "windows")]
-        let paths = PlatformPaths { state_dir };
+        let paths = PlatformPaths {
+            state_dir: state_dir.clone(),
+        };
         Self {
             inner: Mutex::new(Inner::default()),
             captures_dir: state_dir.join("snap-shots"),
