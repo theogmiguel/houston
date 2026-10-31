@@ -486,14 +486,13 @@ const make = Effect.gen(function* () {
         cwd,
         detail,
       });
-    // Return null for missing/non-repository cwd; force untranslated git diagnostics for matching.
+    // Return null for missing/non-repository cwd; Git diagnostics are pinned to English.
     const read = Effect.fnUntraced(function* (args: string[], allowedExitCode?: number) {
       const result = yield* git
         .execute({
           operation: "StorageCleanup.branchChanged",
           cwd,
           args,
-          env: { LC_ALL: "C" },
           allowNonZeroExit: true,
         })
         .pipe(

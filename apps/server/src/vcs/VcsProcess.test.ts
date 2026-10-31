@@ -93,6 +93,67 @@ describe("VcsProcess.run", () => {
     }).pipe(provideLive, Effect.provide(NodeServices.layer), Effect.scoped),
   );
 
+  it.effect("pins Git's message locale when the host locale is not English", () =>
+    Effect.gen(function* () {
+      const envs: Array<NodeJS.ProcessEnv | undefined> = [];
+      const service = yield* VcsProcess.make.pipe(
+        Effect.provideService(HostProcess.Platform, "linux"),
+        Effect.provideService(ProcessRunner.ProcessRunner, {
+          run: (input) =>
+            Effect.sync(() => {
+              envs.push(input.env);
+              return {
+                stdout: "",
+                stderr: "",
+                code: ChildProcessSpawner.ExitCode(0),
+                timedOut: false,
+                stdoutTruncated: false,
+                stderrTruncated: false,
+                stdoutInvalidUtf8: false,
+                stderrInvalidUtf8: false,
+              };
+            }),
+        }),
+      );
+      const hostLocale = {
+        LANG: "pt_BR.UTF-8",
+        LC_ALL: "pt_BR.UTF-8",
+        LANGUAGE: "pt_BR",
+        PATH: process.env.PATH,
+      };
+
+      yield* service.run({ ...baseInput, env: hostLocale });
+      yield* service.run({ ...baseInput, command: "node", args: ["--version"], env: hostLocale });
+
+      expect(envs[0]).toMatchObject({ LC_ALL: "C", LANGUAGE: "" });
+      expect(envs[1]).toMatchObject({ LC_ALL: "pt_BR.UTF-8", LANGUAGE: "pt_BR" });
+    }),
+  );
+
+  it.effect("explains a locked index when the host locale is not English", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-index-lock-locale-" });
+      const hostLocale = {
+        LANG: "pt_BR.UTF-8",
+        LC_ALL: "pt_BR.UTF-8",
+        LANGUAGE: "pt_BR",
+      };
+      const git = (args: readonly string[]) =>
+        run({ operation: "test.checkpoint.restore", command: "git", cwd, args, env: hostLocale });
+      yield* git(["init"]);
+      yield* fs.writeFileString(path.join(cwd, "README.md"), "before\n");
+      yield* fs.writeFileString(path.join(cwd, ".git", "index.lock"), "held by another process\n");
+
+      const error = yield* Effect.flip(git(["add", "README.md"]));
+      expect(error).toMatchObject({
+        failureKind: "command-failed",
+        detail: VcsProcess.GIT_INDEX_LOCKED_DETAIL,
+      });
+    }).pipe(provideLive, Effect.provide(NodeServices.layer), Effect.scoped),
+  );
+
   it.effect.each([
     {
       stderr: "fatal: Unable to create '/private/repo/index.lock': File exists",
