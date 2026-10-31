@@ -93,6 +93,28 @@ impl fmt::Display for SignalError {
 
 impl std::error::Error for SignalError {}
 
+/// The executable path behind a pid, used to label a captured window. It only opens
+/// the process for `PROCESS_QUERY_LIMITED_INFORMATION`, never to signal it.
+#[cfg(windows)]
+pub fn process_image_path(pid: u32) -> Option<String> {
+    let pid = checked_pid(pid).ok()?;
+    let handle = win::open(pid, win::QUERY).ok()?;
+    let mut buffer = vec![0u16; 32_768];
+    let mut length = buffer.len() as u32;
+    // SAFETY: the handle comes from this module's open(), and the buffer length is
+    // passed in the units QueryFullProcessImageNameW expects (UTF-16 code units).
+    let found = unsafe {
+        windows_sys::Win32::System::Threading::QueryFullProcessImageNameW(
+            handle,
+            0,
+            buffer.as_mut_ptr(),
+            &mut length,
+        )
+    };
+    win::close(handle);
+    (found != 0).then(|| String::from_utf16_lossy(&buffer[..length as usize]))
+}
+
 #[cfg(unix)]
 pub fn signal_process_checked(pid: u32, sig: Signal) -> Result<SignalOutcome, SignalError> {
     let pid_t = checked_pid(pid).map_err(SignalError::InvalidPid)?;

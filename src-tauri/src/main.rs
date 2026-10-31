@@ -12,9 +12,9 @@ mod provider_auth;
 mod shell;
 mod shells;
 mod skills;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 mod snapshot;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 #[path = "snapshot/unsupported.rs"]
 mod snapshot;
 mod sys;

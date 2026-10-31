@@ -1,5 +1,6 @@
 //! The per-OS seam. The core state machine in `mod.rs` never mentions a desktop
-//! API: Linux lives in `linux.rs`, and other targets get `unsupported.rs`.
+//! API: Linux lives in `linux.rs`, Windows in `windows.rs`, and macOS gets
+//! `unsupported.rs`.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -10,15 +11,46 @@ use serde_json::Value;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SnapShotMode {
+    #[cfg(target_os = "windows")]
+    Direct,
+    #[cfg(target_os = "linux")]
     Portal,
+    #[cfg(target_os = "linux")]
     Unavailable,
 }
 
 impl SnapShotMode {
     pub fn as_str(self) -> &'static str {
         match self {
+            #[cfg(target_os = "windows")]
+            Self::Direct => "direct",
+            #[cfg(target_os = "linux")]
             Self::Portal => "portal",
+            #[cfg(target_os = "linux")]
             Self::Unavailable => "unavailable",
+        }
+    }
+
+    /// The core state machine asks without naming a platform-specific variant.
+    pub fn is_portal(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            matches!(self, Self::Portal)
+        }
+        #[cfg(target_os = "windows")]
+        {
+            false
+        }
+    }
+
+    pub fn is_unavailable(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            matches!(self, Self::Unavailable)
+        }
+        #[cfg(target_os = "windows")]
+        {
+            false
         }
     }
 }
@@ -193,6 +225,7 @@ pub fn system_conflict(shortcut: &SnapShotShortcut) -> Option<String> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigDesktop {
     Niri,
+    #[cfg(target_os = "linux")]
     Hyprland,
 }
 
@@ -271,9 +304,13 @@ pub struct CaptureOutput {
 
 #[derive(Debug, Clone, Default)]
 pub struct PlatformPaths {
+    /// Desktop config locations only exist for the compositor-managed setups.
+    #[cfg(target_os = "linux")]
     pub home: PathBuf,
     pub state_dir: PathBuf,
+    #[cfg(target_os = "linux")]
     pub config_home: PathBuf,
+    #[cfg(target_os = "linux")]
     pub data_home: PathBuf,
 }
 
@@ -282,6 +319,8 @@ pub type ChangedCallback = Arc<dyn Fn() + Send + Sync>;
 
 pub trait SnapShotPlatform: Send + Sync {
     fn mode(&self) -> SnapShotMode;
+    /// Hands the platform the application handle it needs for native overlays.
+    fn attach_app(&self, _app: &tauri::AppHandle) {}
     fn support(&self) -> CaptureSupport;
     fn capture(
         &self,
@@ -326,6 +365,12 @@ pub trait SnapShotPlatform: Send + Sync {
     }
 }
 
+#[cfg(target_os = "linux")]
 pub fn new_platform() -> Box<dyn SnapShotPlatform> {
     Box::new(super::linux::LinuxPlatform::new())
+}
+
+#[cfg(target_os = "windows")]
+pub fn new_platform() -> Box<dyn SnapShotPlatform> {
+    Box::new(super::windows::WindowsPlatform::new())
 }
