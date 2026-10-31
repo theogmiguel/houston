@@ -98,8 +98,6 @@ jobs:
           key: release-windows
           cache-on-failure: true
 
-      - uses: oven-sh/setup-bun@v2
-
       - name: Cache the pinned Tauri CLI
         id: tauri-cli-cache
         uses: actions/cache@v5
@@ -138,10 +136,6 @@ jobs:
           if ($LASTEXITCODE -or $actual -ne "tauri-cli $env:TAURI_CLI_VERSION") {
             throw "Expected tauri-cli $env:TAURI_CLI_VERSION, got '$actual'"
           }
-
-      - name: Install renderer dependencies
-        run: bun install --frozen-lockfile
-        working-directory: ui
 
       # The embedded v2 server is built with the Node version its SEA build pins
       # in package.json engines.node, not the runner's default.

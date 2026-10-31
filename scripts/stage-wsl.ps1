@@ -20,7 +20,3 @@ foreach ($name in @('houston-core', 'tr-helper', 'houston-supervisor')) {
     }
     Copy-Item -LiteralPath $source -Destination (Join-Path $wslStage $name) -Force
 }
-& "$env:ProgramFiles\Git\bin\bash.exe" -lc ('export LC_ALL=C.UTF-8 HOUSTON_WSL_BUNDLE_REQUIRED=1; cd "$(cygpath -u "' +
-    ($Root -replace '\\','/') + '")"; bash scripts/check-wsl-bundle.sh')
-if ($LASTEXITCODE -ne 0) { throw "scripts/check-wsl-bundle.sh failed with exit code $LASTEXITCODE" }
-

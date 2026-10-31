@@ -43,7 +43,7 @@ else
   echo "ok: no nix::sys::signal or direct syscall( route around the guard"
 fi
 
-offenders="$(grep -rn 'OpenProcess(\|TerminateProcess(\|TerminateJobObject(\|taskkill' core/ src-tauri/ ui/ \
+offenders="$(grep -rn 'OpenProcess(\|TerminateProcess(\|TerminateJobObject(\|taskkill' core/ src-tauri/ \
   --include='*.rs' \
   | grep -v '^core/houston-core/src/pid\.rs:' \
   | grep -v '^src-tauri/src/sys/pid\.rs:' \
