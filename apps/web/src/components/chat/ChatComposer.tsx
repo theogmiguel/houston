@@ -3392,9 +3392,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   />
                 )}
 
-              {composerAttachmentMediaRow}
-
-              {composerAttachmentFileList}
+              {composerAttachmentMediaRow || composerAttachmentFileList ? (
+                <div
+                  data-chat-composer-attachment-row="true"
+                  className="mb-2 flex max-w-full flex-wrap gap-1.5 [&>div]:contents"
+                >
+                  {composerAttachmentMediaRow}
+                  {composerAttachmentFileList}
+                </div>
+              ) : null}
 
               <ComposerPendingAnnotationChips
                 citations={pendingCitationChips}

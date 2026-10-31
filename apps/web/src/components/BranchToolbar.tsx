@@ -1,3 +1,5 @@
+import { formatAttachmentUploadProgress } from "../lib/attachmentUploadState";
+import { useAttachmentUploadStore } from "../lib/attachmentUploadQueue";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
 import { readLocalApi } from "../localApi";
@@ -5,7 +7,14 @@ import { stackedThreadToast, toastManager } from "./ui/toast";
 import { ComposerContextLabel } from "./ComposerContextLabel";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
-import { FolderGit2Icon, FolderGitIcon, FolderIcon, PlusIcon, ScaleIcon } from "lucide-react";
+import {
+  ArrowUpIcon,
+  FolderGit2Icon,
+  FolderGitIcon,
+  FolderIcon,
+  PlusIcon,
+  ScaleIcon,
+} from "lucide-react";
 import {
   type Ref,
   type MouseEvent as ReactMouseEvent,
@@ -17,7 +26,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 
-import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
+import { useComposerDraftStore, useComposerThreadDraft, type DraftId } from "../composerDraftStore";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { useProject, useThreadShellsForProjectRefs } from "../state/entities";
 import {
@@ -532,6 +541,19 @@ export const BranchToolbar = memo(function BranchToolbar({
   const branchSelectorRef = useRef<BranchToolbarBranchSelectorHandle>(null);
   const threadRef = scopeThreadRef(environmentId, threadId);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
+  const composerUploadDraft = useComposerThreadDraft(draftId ?? threadRef);
+  const uploadsByImageId = useAttachmentUploadStore((store) => store.uploadsByImageId);
+  const attachmentIds = [...composerUploadDraft.images, ...composerUploadDraft.files].map(
+    (attachment) => attachment.id,
+  );
+  const runningUploads = attachmentIds.flatMap((attachmentId) => {
+    const upload = uploadsByImageId[attachmentId];
+    return upload?.status === "uploading" ? [upload] : [];
+  });
+  const aggregateUploadProgress =
+    runningUploads.length > 0
+      ? runningUploads.reduce((total, upload) => total + upload.progress, 0) / runningUploads.length
+      : null;
   // The composer retains resolved thread details while bootstrap cleanup can remove its shell.
   const activeProjectRef = scopeProjectRef(environmentId, projectId);
   const activeProject = useProject(activeProjectRef);
@@ -749,6 +771,16 @@ export const BranchToolbar = memo(function BranchToolbar({
           {...(onCheckoutPullRequestRequest ? { onCheckoutPullRequestRequest } : {})}
           {...(onComposerFocusRequest ? { onComposerFocusRequest } : {})}
         />
+      ) : null}
+      {runningUploads.length > 0 && aggregateUploadProgress !== null ? (
+        <span
+          data-composer-upload-progress="true"
+          className="inline-flex shrink-0 items-center gap-1 px-1.5 text-2xs text-(--t3) tabular-nums whitespace-nowrap"
+        >
+          <ArrowUpIcon className="size-3 shrink-0" aria-hidden="true" />
+          {runningUploads.length} of {attachmentIds.length} ·{" "}
+          {formatAttachmentUploadProgress(aggregateUploadProgress)}
+        </span>
       ) : null}
       {trailing}
     </ComposerSurface.ContextStrip>
