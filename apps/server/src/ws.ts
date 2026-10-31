@@ -3029,6 +3029,7 @@ export const layerWsRpc = (
         [WS_METHODS.houstonHarnessReport]: (input) => houstonHarness.report(input),
         [WS_METHODS.houstonHarnessDecide]: (input) => houstonHarness.decide(input),
         [WS_METHODS.houstonHarnessMarkSeen]: (input) => houstonHarness.markSeen(input),
+        [WS_METHODS.houstonHarnessCreateTask]: (input) => houstonHarness.createTask(input),
         [WS_METHODS.houstonMergeQueueGet]: (input) => houstonMergeQueue.get(input),
         [WS_METHODS.houstonMergeQueueSubscribe]: (input) => houstonMergeQueue.subscribe(input),
         [WS_METHODS.houstonMergeQueueSubscribeSummary]: (input) =>

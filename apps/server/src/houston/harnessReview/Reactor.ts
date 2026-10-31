@@ -15,6 +15,13 @@ import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import { finalAssistantText } from "../sideThreads.ts";
+import * as HoustonTaskService from "../tasks/TaskService.ts";
+import {
+  type FixTaskLink,
+  HARNESS_ACTOR,
+  HoustonHarnessFixTasks,
+  layer as HoustonHarnessFixTasksLayer,
+} from "./FixTasks.ts";
 import { runDirectory } from "./runDirectory.ts";
 import { correctionMessageId } from "./Runner.ts";
 import {
@@ -23,6 +30,8 @@ import {
   parseFindings,
   readAnswer,
   reviewSummary,
+  verdictComment,
+  type VerificationWrite,
 } from "./rules.ts";
 import { HoustonHarnessStore, type StoredReview } from "./Store.ts";
 
@@ -35,6 +44,8 @@ const ENDED: ReadonlySet<OrchestrationV2Run["status"]> = new Set([
 ]);
 
 const UNREADABLE = "the run ended without a readable answer";
+/** The `decided_by` of a decision a verdict made. */
+const VERIFICATION_ACTOR = "houston:verification";
 const STOPPED_WHILE_PREPARING = "the server stopped while this review was being prepared";
 
 const endedBecause = (status: OrchestrationV2Run["status"]) =>
@@ -65,6 +76,8 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectStore.ProjectStoreV2;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const fixTasks = yield* HoustonHarnessFixTasks;
+  const tasks = yield* HoustonTaskService.HoustonTaskService;
 
   const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const fail = (review: StoredReview, error: string) =>
@@ -127,7 +140,14 @@ const make = Effect.gen(function* () {
         return yield* correct(review, run, `${name} is ${bytes} bytes, over the 1 MiB cap`);
       }
     }
-    const parsed = parseFindings(read.findingsJson, new Map<string, ReadonlyArray<LinkedTask>>());
+    const links = yield* fixTasks.links(review.projectId, review.startedAt);
+    const linked = new Map<string, Array<LinkedTask>>();
+    for (const link of links) {
+      const list = linked.get(link.key) ?? [];
+      list.push({ task: link.taskKey, taskId: link.taskId, sessionsAfter: link.sessionsAfter });
+      linked.set(link.key, list);
+    }
+    const parsed = parseFindings(read.findingsJson, linked);
     if (!parsed.ok) return yield* correct(review, run, parsed.error);
 
     const project = yield* projects.get(review.projectId).pipe(Effect.orElseSucceed(Option.none));
@@ -164,6 +184,39 @@ const make = Effect.gen(function* () {
       findings: parsed.value.findings,
       verifications: parsed.value.verifications,
     });
+    if ((yield* store.getReview(review.id))?.status !== "published") return;
+    yield* applyVerdicts(review, parsed.value.verifications, links);
+  });
+
+  /** Gone resolves the finding and still present reopens it; both comment on the fix task. */
+  const applyVerdicts = Effect.fn("HarnessReviewReactor.applyVerdicts")(function* (
+    review: StoredReview,
+    verifications: ReadonlyArray<VerificationWrite>,
+    links: ReadonlyArray<FixTaskLink>,
+  ) {
+    for (const verification of verifications) {
+      const body = verdictComment(review.id, verification.key, verification.verdict);
+      if (body === null) continue;
+      yield* store.decide({
+        projectId: review.projectId,
+        key: verification.key,
+        state: verification.verdict === "gone" ? "resolved" : "open",
+        by: VERIFICATION_ACTOR,
+      });
+      const taskKey =
+        links.find((link) => link.taskId === verification.taskId)?.taskKey ??
+        String(verification.taskId);
+      yield* tasks
+        .comment({ id: taskKey, body }, HARNESS_ACTOR)
+        .pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning(
+              `Harness review ${review.id} could not comment its verdict on ${taskKey}; the review is published`,
+              { cause },
+            ),
+          ),
+        );
+    }
   });
 
   const settleRun: HarnessReviewReactor["Service"]["settleRun"] = Effect.fn(
@@ -237,4 +290,6 @@ const make = Effect.gen(function* () {
 });
 
 /** Settles open reviews and follows run ends for as long as the layer lives. */
-export const layer = Layer.effect(HarnessReviewReactor, make);
+export const layer = Layer.effect(HarnessReviewReactor, make).pipe(
+  Layer.provide(HoustonHarnessFixTasksLayer),
+);

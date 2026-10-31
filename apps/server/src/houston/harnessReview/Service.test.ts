@@ -3,6 +3,7 @@ import { assert, describe, it } from "@effect/vitest";
 import { CommandId, MessageId, type ProjectId, ThreadId } from "@t3tools/contracts";
 import type { HoustonTaskStatus } from "@t3tools/contracts/houston/tasks";
 import * as Cause from "effect/Cause";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Logger from "effect/Logger";
@@ -406,7 +407,8 @@ describe("project deletion", () => {
 
 const MINUTE_MS = 60_000;
 /** NOW plus `minutes`, as the ISO text the stores write. */
-const at = (minutes: number) => new Date(Date.parse(NOW) + minutes * MINUTE_MS).toISOString();
+const at = (minutes: number) =>
+  DateTime.formatIso(DateTime.makeUnsafe(Date.parse(NOW) + minutes * MINUTE_MS));
 const setClock = (minutes: number) => TestClock.setTime(Date.parse(NOW) + minutes * MINUTE_MS);
 
 const countRows = Effect.gen(function* () {
@@ -872,15 +874,11 @@ describe("fix tasks", () => {
           assert.equal(published.status, "published", published.error ?? "");
           yield* until(
             "the gone verdict is commented",
-            tasks
-              .get({ id: "HOU-1" })
-              .pipe(Effect.map((detail) => detail.comments.length > 0)),
+            tasks.get({ id: "HOU-1" }).pipe(Effect.map((detail) => detail.comments.length > 0)),
           );
           yield* until(
             "the still present verdict is commented",
-            tasks
-              .get({ id: "HOU-2" })
-              .pipe(Effect.map((detail) => detail.comments.length > 0)),
+            tasks.get({ id: "HOU-2" }).pipe(Effect.map((detail) => detail.comments.length > 0)),
           );
 
           const commentsOf = (key: string) =>
@@ -888,7 +886,10 @@ describe("fix tasks", () => {
               .get({ id: key })
               .pipe(
                 Effect.map((detail) =>
-                  detail.comments.map((comment) => ({ body: comment.body, author: comment.author })),
+                  detail.comments.map((comment) => ({
+                    body: comment.body,
+                    author: comment.author,
+                  })),
                 ),
               );
           assert.deepEqual(yield* commentsOf("HOU-1"), [
@@ -1006,7 +1007,10 @@ describe("fix tasks", () => {
           });
           yield* harness.createTask({ projectId, key: "awaiting-fix" });
           yield* setStatus("HOU-1", "done");
-          assert.equal((yield* findingOf(projectId, "awaiting-fix"))!.phase, "awaitingVerification");
+          assert.equal(
+            (yield* findingOf(projectId, "awaiting-fix"))!.phase,
+            "awaitingVerification",
+          );
 
           const suggestedKeys = harness
             .overview({})
@@ -1036,9 +1040,7 @@ describe("fix tasks", () => {
 
           yield* harness.createTask({ projectId, key: "fix-me" });
           assert.deepEqual(yield* suggestedKeys, ["dismiss-me"]);
-          const fixing = (yield* harness.overview({})).rows.find(
-            (r) => r.projectId === projectId,
-          )!;
+          const fixing = (yield* harness.overview({})).rows.find((r) => r.projectId === projectId)!;
           assert.equal(fixing.fixing, 1);
           yield* harness.decide({ projectId, key: "dismiss-me", state: "dismissed" });
           assert.deepEqual(yield* suggestedKeys, []);

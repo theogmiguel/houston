@@ -250,6 +250,7 @@
     "apps/server/src/houston/harnessReview/Reactor.ts",
     "apps/server/src/houston/harnessReview/ScheduledTaskRunner.ts",
     "apps/server/src/houston/harnessReview/Service.ts",
+    "apps/server/src/houston/harnessReview/FixTasks.ts",
     "apps/server/src/houston/harnessReview/layer.ts",
     "apps/server/src/houston/harnessReview/rules.test.ts",
     "apps/server/src/houston/harnessReview/inventory.test.ts",

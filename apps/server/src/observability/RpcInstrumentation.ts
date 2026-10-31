@@ -225,6 +225,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.houstonHarnessReport]: "houstonHarness",
   [WS_METHODS.houstonHarnessDecide]: "houstonHarness",
   [WS_METHODS.houstonHarnessMarkSeen]: "houstonHarness",
+  [WS_METHODS.houstonHarnessCreateTask]: "houstonHarness",
   [WS_METHODS.houstonMergeQueueGet]: "houstonMergeQueue",
   [WS_METHODS.houstonMergeQueueSubscribe]: "houstonMergeQueue",
   [WS_METHODS.houstonMergeQueueSubscribeSummary]: "houstonMergeQueue",

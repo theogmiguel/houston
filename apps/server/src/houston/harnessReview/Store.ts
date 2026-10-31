@@ -16,7 +16,12 @@ import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { runDirOf, type FindingWrite, type VerificationWrite } from "./rules.ts";
+import {
+  runDirOf,
+  type FindingWrite,
+  type StoredVerdict,
+  type VerificationWrite,
+} from "./rules.ts";
 
 interface ReviewRow {
   readonly id: number;
@@ -67,6 +72,16 @@ export interface DecisionRow {
   readonly state: HoustonHarnessDecisionState;
   readonly decided_at: string;
   readonly decided_by: string;
+}
+
+export interface VerificationRow {
+  readonly review_id: number;
+  readonly review_ended_at: string;
+  readonly key: string;
+  readonly task_id: number;
+  readonly verdict: StoredVerdict;
+  readonly sessions_after: number;
+  readonly evidence_json: string;
 }
 
 export interface SettingsRow {
@@ -165,6 +180,17 @@ export class HoustonHarnessStore extends Context.Service<
     readonly latestPublishedReviewId: (projectId: ProjectId) => Effect.Effect<number>;
     /** Every finding of the project's published reviews, with the review's end. */
     readonly findingRows: (projectId: ProjectId) => Effect.Effect<ReadonlyArray<FindingRow>>;
+    /** Every verification of the project's published reviews, newest review first. */
+    readonly verificationRows: (
+      projectId: ProjectId,
+    ) => Effect.Effect<ReadonlyArray<VerificationRow>>;
+    /** Links a fix task the Tasks service created to the finding `key`. */
+    readonly linkTask: (input: {
+      readonly projectId: ProjectId;
+      readonly key: string;
+      readonly taskId: number;
+      readonly reviewId: number;
+    }) => Effect.Effect<void>;
     readonly decisions: (projectId: ProjectId) => Effect.Effect<ReadonlyArray<DecisionRow>>;
     readonly decide: (input: {
       readonly projectId: ProjectId;
@@ -372,6 +398,26 @@ const make = Effect.gen(function* () {
       ORDER BY f.review_id DESC, f.rowid ASC
     `.pipe(Effect.orDie);
 
+  const verificationRows: HoustonHarnessStore["Service"]["verificationRows"] = (projectId) =>
+    sql<VerificationRow>`
+      SELECT v.*, r.ended_at AS review_ended_at
+      FROM houston_harness_verifications v
+      JOIN houston_harness_reviews r ON r.id = v.review_id
+      WHERE r.project_id = ${projectId} AND r.status = 'published'
+      ORDER BY v.review_id DESC, v.rowid ASC
+    `.pipe(Effect.orDie);
+
+  const linkTask: HoustonHarnessStore["Service"]["linkTask"] = Effect.fn(
+    "HoustonHarnessStore.linkTask",
+  )(function* (input) {
+    const at = yield* nowIso;
+    yield* sql`
+      INSERT INTO houston_harness_finding_tasks (project_id, key, task_id, review_id, created_at)
+      VALUES (${input.projectId}, ${input.key}, ${input.taskId}, ${input.reviewId}, ${at})
+    `.pipe(Effect.orDie);
+    yield* touched(input.projectId);
+  });
+
   const decisions: HoustonHarnessStore["Service"]["decisions"] = (projectId) =>
     sql<DecisionRow>`SELECT key, state, decided_at, decided_by FROM houston_harness_decisions
       WHERE project_id = ${projectId}`.pipe(Effect.orDie);
@@ -488,6 +534,8 @@ const make = Effect.gen(function* () {
     windows,
     latestPublishedReviewId,
     findingRows,
+    verificationRows,
+    linkTask,
     decisions,
     decide,
     settings,

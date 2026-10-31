@@ -4,6 +4,8 @@ import type { ProjectId, ScheduledTask, ScheduledTaskId } from "@t3tools/contrac
 import {
   HOUSTON_HARNESS_LIMITS,
   HoustonHarnessError,
+  type HoustonHarnessCreateTaskInput,
+  type HoustonHarnessCreateTaskResult,
   type HoustonHarnessDecideInput,
   type HoustonHarnessEmptyResult,
   type HoustonHarnessFinding,
@@ -20,7 +22,9 @@ import {
   type HoustonHarnessSchedule,
   type HoustonHarnessSetupInput,
   type HoustonHarnessSnapshot,
+  type HoustonHarnessVerdict,
 } from "@t3tools/contracts/houston/harnessReview";
+import { HOUSTON_TASK_LIMITS, type HoustonTaskError } from "@t3tools/contracts/houston/tasks";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -29,14 +33,36 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
+import * as HoustonTaskService from "../tasks/TaskService.ts";
+import * as HoustonTaskStore from "../tasks/TaskStore.ts";
+import {
+  type FixTaskLink,
+  HARNESS_ACTOR,
+  HoustonHarnessFixTasks,
+  layer as HoustonHarnessFixTasksLayer,
+} from "./FixTasks.ts";
 import { HoustonHarnessRunner } from "./Runner.ts";
 import { HoustonScheduledTaskRunner } from "./ScheduledTaskRunner.ts";
-import { findingDecision, findingPhase, nextSeenReviewId } from "./rules.ts";
-import { busyMessage, HoustonHarnessStore, type StoredReview } from "./Store.ts";
+import {
+  findingDecision,
+  findingPhase,
+  fixTaskText,
+  isFindingKey,
+  nextSeenReviewId,
+  type StoredVerdict,
+} from "./rules.ts";
+import {
+  busyMessage,
+  HoustonHarnessStore,
+  type StoredReview,
+  type VerificationRow,
+} from "./Store.ts";
 
 export const SET_UP_FIRST = "set up the harness review first";
 const TASK_PROMPT =
@@ -59,6 +85,22 @@ const refuse = (
   Effect.fail(new HoustonHarnessError({ kind, operation, message }));
 
 const publicReview = ({ runId: _runId, ...review }: StoredReview) => review;
+
+const VERDICTS: Record<StoredVerdict, HoustonHarnessVerdict> = {
+  gone: "gone",
+  still_present: "stillPresent",
+  inconclusive: "inconclusive",
+};
+
+/** A Tasks refusal as the harness reports it: its limit stays a limit, anything else is invalid. */
+const fromTaskError = (operation: string, error: HoustonTaskError) =>
+  new HoustonHarnessError({
+    kind: error.kind === "limit" ? "limit" : error.kind === "not_found" ? "not_found" : "invalid",
+    operation,
+    message: error.message,
+    ...(error.limit === undefined ? {} : { limit: error.limit }),
+    ...(error.actual === undefined ? {} : { actual: error.actual }),
+  });
 
 const textList = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(Schema.String)));
 
@@ -92,6 +134,9 @@ export class HoustonHarnessService extends Context.Service<
     readonly markSeen: (
       input: HoustonHarnessMarkSeenInput,
     ) => Effect.Effect<HoustonHarnessMarkSeenResult, HoustonHarnessError>;
+    readonly createTask: (
+      input: HoustonHarnessCreateTaskInput,
+    ) => Effect.Effect<HoustonHarnessCreateTaskResult, HoustonHarnessError>;
   }
 >()("houston/houston/harnessReview/Service/HoustonHarnessService") {}
 
@@ -103,6 +148,10 @@ const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const claim = yield* Effect.serviceOption(HoustonScheduledTaskRunner);
+  const fixTasks = yield* HoustonHarnessFixTasks;
+  const tasks = yield* HoustonTaskService.HoustonTaskService;
+  const taskStore = yield* HoustonTaskStore.HoustonTaskStore;
+  const sql = yield* SqlClient.SqlClient;
 
   const projectOf = (operation: string, projectId: ProjectId) =>
     projects.get(projectId).pipe(
@@ -131,6 +180,15 @@ const make = Effect.gen(function* () {
     const rows = yield* store.findingRows(projectId);
     const decisions = new Map((yield* store.decisions(projectId)).map((row) => [row.key, row]));
     const latest = yield* store.latestPublishedReviewId(projectId);
+    // Newest first, so the first per key is the finding's current task and verdict.
+    const links = new Map<string, FixTaskLink>();
+    for (const link of yield* fixTasks.linkStates(projectId)) {
+      if (!links.has(link.key)) links.set(link.key, link);
+    }
+    const verifications = new Map<string, VerificationRow>();
+    for (const row of yield* store.verificationRows(projectId)) {
+      if (!verifications.has(row.key)) verifications.set(row.key, row);
+    }
     const seen = new Set<string>();
     const findings: HoustonHarnessFinding[] = [];
     for (const row of rows) {
@@ -142,13 +200,24 @@ const make = Effect.gen(function* () {
         row.review_ended_at,
       );
       const quotes = textList(row.quotes_json);
+      const link = links.get(row.key);
+      const verification = verifications.get(row.key);
+      const evidence = verification === undefined ? [] : textList(verification.evidence_json);
       const { phase, quotes: shown } = findingPhase({
         state: read.state,
         reviewId: row.review_id,
         latestPublishedReviewId: latest,
         quotes,
-        verification: null,
-        task: null,
+        verification:
+          verification === undefined
+            ? null
+            : {
+                reviewId: verification.review_id,
+                verdict: verification.verdict,
+                reviewEndedAt: verification.review_ended_at,
+                evidence,
+              },
+        task: link === undefined ? null : { status: link.status, createdAt: link.linkedAt },
       });
       findings.push({
         key: row.key,
@@ -168,8 +237,25 @@ const make = Effect.gen(function* () {
         recurred: read.recurred,
         phase,
         lastSeenReviewId: Math.max(latest, row.review_id),
-        task: null,
-        verification: null,
+        task:
+          link === undefined
+            ? null
+            : {
+                taskId: link.taskId,
+                key: link.taskKey,
+                status: link.status,
+                landedAt: link.landedAt,
+              },
+        verification:
+          verification === undefined
+            ? null
+            : {
+                reviewId: verification.review_id,
+                taskId: verification.task_id,
+                verdict: VERDICTS[verification.verdict],
+                sessionsAfter: verification.sessions_after,
+                evidence,
+              },
       });
     }
     return findings;
@@ -429,6 +515,119 @@ const make = Effect.gen(function* () {
     return { seenReviewId: next };
   });
 
+  // One fix task at a time, so two concurrent requests for one finding cannot both pass `busy`.
+  const createLock = yield* Semaphore.make(1);
+
+  const createTask: HoustonHarnessService["Service"]["createTask"] = Effect.fn(
+    "HoustonHarnessService.createTask",
+  )(function* (input) {
+    const operation = "createTask";
+    yield* projectOf(operation, input.projectId);
+    if (!isFindingKey(input.key)) {
+      return yield* refuse(
+        "invalid",
+        operation,
+        `the finding key "${input.key}" is not lowercase kebab-case of at most ${HOUSTON_HARNESS_LIMITS.keyChars} characters`,
+      );
+    }
+    return yield* createLock.withPermits(1)(
+      Effect.gen(function* () {
+        const finding = (yield* store.findingRows(input.projectId)).find(
+          (row) => row.key === input.key,
+        );
+        if (finding === undefined) {
+          return yield* refuse(
+            "invalid",
+            operation,
+            `no published review of project ${input.projectId} raised the finding "${input.key}"`,
+          );
+        }
+        const linked = (yield* fixTasks.linkStates(input.projectId)).filter(
+          (link) => link.key === input.key,
+        );
+        const open = linked.find((link) => link.status !== "done" && link.status !== "canceled");
+        if (open !== undefined) {
+          return yield* refuse(
+            "busy",
+            operation,
+            `finding ${input.key} already has the open fix task ${open.taskKey} (${open.status}); finish or cancel it first`,
+          );
+        }
+        const settings = yield* tasks
+          .getSettings({ projectId: input.projectId })
+          .pipe(Effect.mapError((error) => fromTaskError(operation, error)));
+        if (settings.access === "off") {
+          return yield* refuse(
+            "access_off",
+            operation,
+            "Tasks access for this project is off; turn it on in Settings ▸ Tasks to create a fix task",
+          );
+        }
+        if (settings.access === "read") {
+          return yield* refuse(
+            "read_only",
+            operation,
+            "Tasks access for this project is read-only; allow writes in Settings ▸ Tasks to create a fix task",
+          );
+        }
+        const [count] = yield* sql<{ n: number }>`SELECT COUNT(*) AS n FROM houston_tasks`.pipe(
+          Effect.orDie,
+        );
+        const held = count?.n ?? 0;
+        if (held >= HOUSTON_TASK_LIMITS.tasks) {
+          const limit = HOUSTON_TASK_LIMITS.tasks;
+          return yield* new HoustonHarnessError({
+            kind: "limit",
+            operation,
+            message: `the Tasks backlog holds ${held.toLocaleString("en-US")} tasks, archived included, and its limit is ${limit.toLocaleString("en-US")}; remove tasks before creating a fix task`,
+            limit,
+            actual: held,
+          });
+        }
+        const text = fixTaskText({
+          key: input.key,
+          reviewId: finding.review_id,
+          title: finding.title,
+          recommendation: finding.recommendation,
+          target: finding.target,
+          applyPrompt: input.applyPrompt ?? finding.apply_prompt,
+          previousTask: linked[0]?.taskKey ?? null,
+        });
+        if (!text.ok) {
+          return yield* new HoustonHarnessError({
+            kind: "invalid",
+            operation,
+            message: text.message,
+            limit: text.limit,
+            actual: text.actual,
+          });
+        }
+        const task = yield* tasks
+          .save(
+            {
+              projectId: input.projectId,
+              patch: {
+                title: text.value.title,
+                description: text.value.description,
+                acceptance: [text.value.acceptance],
+                status: "todo",
+              },
+            },
+            HARNESS_ACTOR,
+          )
+          .pipe(Effect.mapError((error) => fromTaskError(operation, error)));
+        yield* store.linkTask({
+          projectId: input.projectId,
+          key: input.key,
+          taskId: task.id,
+          reviewId: finding.review_id,
+        });
+        const { summaries } = yield* taskStore.summaries({ ids: [task.id] });
+        return { task: summaries[0]! };
+      }),
+    );
+  });
+
   return HoustonHarnessService.of({
     get,
     subscribe,
@@ -439,7 +638,10 @@ const make = Effect.gen(function* () {
     report,
     decide,
     markSeen,
+    createTask,
   });
 });
 
-export const layer = Layer.effect(HoustonHarnessService, make);
+export const layer = Layer.effect(HoustonHarnessService, make).pipe(
+  Layer.provideMerge(HoustonHarnessFixTasksLayer),
+);

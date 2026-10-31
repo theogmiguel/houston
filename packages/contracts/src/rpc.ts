@@ -218,6 +218,8 @@ import {
   HoustonTaskSourceSyncResult,
 } from "./houston/taskSources.ts";
 import {
+  HoustonHarnessCreateTaskInput,
+  HoustonHarnessCreateTaskResult,
   HoustonHarnessDecideInput,
   HoustonHarnessEmptyResult,
   HoustonHarnessError,
@@ -587,6 +589,7 @@ export const WS_METHODS = {
   houstonHarnessReport: "houston.harness.report",
   houstonHarnessDecide: "houston.harness.decide",
   houstonHarnessMarkSeen: "houston.harness.markSeen",
+  houstonHarnessCreateTask: "houston.harness.createTask",
   houstonMergeQueueGet: "houston.mergeQueue.get",
   houstonMergeQueueSubscribe: "houston.mergeQueue.subscribe",
   houstonMergeQueueSubscribeSummary: "houston.mergeQueue.subscribeSummary",
@@ -1928,6 +1931,12 @@ const WsHoustonHarnessMarkSeenRpc = Rpc.make(WS_METHODS.houstonHarnessMarkSeen, 
   error: HoustonHarnessRpcError,
 });
 
+const WsHoustonHarnessCreateTaskRpc = Rpc.make(WS_METHODS.houstonHarnessCreateTask, {
+  payload: HoustonHarnessCreateTaskInput,
+  success: HoustonHarnessCreateTaskResult,
+  error: HoustonHarnessRpcError,
+});
+
 const HoustonMergeQueueRpcError = Schema.Union([
   HoustonMergeQueueError,
   EnvironmentAuthorizationError,
@@ -2604,6 +2613,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonHarnessReportRpc,
   WsHoustonHarnessDecideRpc,
   WsHoustonHarnessMarkSeenRpc,
+  WsHoustonHarnessCreateTaskRpc,
   WsHoustonMergeQueueGetRpc,
   WsHoustonMergeQueueSubscribeRpc,
   WsHoustonMergeQueueSubscribeSummaryRpc,
