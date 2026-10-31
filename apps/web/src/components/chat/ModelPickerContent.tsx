@@ -583,6 +583,19 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const isSearching = searchQuery.trim().length > 0;
   // Inside one provider's tab the provider line repeats the selected rail icon on every row.
   const rowsMixProviders = isSearching || selectedInstanceId === "favorites";
+  // A cross-provider multi-model selection stays visible in whichever provider tab is open.
+  const crossProviderSelectedModels =
+    isSearching ||
+    isLocked ||
+    selectedInstanceId === "favorites" ||
+    onToggleModel === undefined ||
+    props.selectedModels === undefined
+      ? []
+      : flatModels.filter(
+          (model) =>
+            model.instanceId !== selectedInstanceId &&
+            selectedModelKeySet.has(modelPickerModelKey(model.instanceId, model.slug)),
+        );
   // Fit the tallest tab so switching tabs never resizes the popup and moves the rail under the cursor.
   const tallestTabUnits = (() => {
     const unitsByTab = new Map<ProviderInstanceId | "favorites", number>();
@@ -606,6 +619,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       }
     }
     for (const instanceId of tabsWithLegacyRow) addRow(instanceId, true);
+    for (let index = 0; index < crossProviderSelectedModels.length; index += 1) {
+      addRow(selectedInstanceId, true);
+    }
     return Math.max(0, ...unitsByTab.values());
   })();
   const lockedDisabledInstanceIds = (() => {
@@ -698,12 +714,21 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   })();
 
   const visibleModels = (() => {
-    if (!legacySection) {
-      return filteredModels;
-    }
+    const providerModels = !legacySection
+      ? filteredModels
+      : [
+          ...legacySection.currentModels,
+          ...(legacySection.isExpanded ? legacySection.legacyModels : []),
+        ];
+    if (crossProviderSelectedModels.length === 0) return providerModels;
+    const visibleKeys = new Set(
+      providerModels.map((model) => modelPickerModelKey(model.instanceId, model.slug)),
+    );
     return [
-      ...legacySection.currentModels,
-      ...(legacySection.isExpanded ? legacySection.legacyModels : []),
+      ...providerModels,
+      ...crossProviderSelectedModels.filter(
+        (model) => !visibleKeys.has(modelPickerModelKey(model.instanceId, model.slug)),
+      ),
     ];
   })();
 
@@ -1021,7 +1046,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         ? selectedModelKeySet.has(modelKey)
                         : modelKey === activeModelKey
                     }
-                    showProvider={rowsMixProviders || Boolean(model.subProvider)}
+                    showProvider={
+                      rowsMixProviders ||
+                      model.instanceId !== selectedInstanceId ||
+                      Boolean(model.subProvider)
+                    }
                     multiple={onToggleModel !== undefined}
                     showNewBadge={model.badge === "new"}
                     unavailable={model.isUnavailable === true}

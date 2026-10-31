@@ -29,6 +29,8 @@ vi.mock(import("~/hooks/useSettings"), async (original) => ({
 
 const CLAUDE = ProviderInstanceId.make("claude");
 const CLAUDE_KIND = ProviderDriverKind.make("claudeAgent");
+const CODEX = ProviderInstanceId.make("codex");
+const CODEX_KIND = ProviderDriverKind.make("codex");
 const EFFECT = {
   id: "effort",
   label: "Effort",
@@ -87,7 +89,28 @@ const provider: ServerProvider = {
   slashCommands: [],
 };
 
-const entries = deriveProviderInstanceEntries([provider]);
+const codexProvider: ServerProvider = {
+  instanceId: CODEX,
+  driver: CODEX_KIND,
+  enabled: true,
+  installed: true,
+  version: "1.0.0",
+  status: "ready",
+  auth: { status: "authenticated" },
+  checkedAt: "2026-10-30T00:00:00.000Z",
+  models: [
+    {
+      slug: "gpt-5-6-luna",
+      name: "GPT-5.6 Luna",
+      isCustom: false,
+      capabilities: { optionDescriptors: effortOptions() },
+    },
+  ],
+  skills: [],
+  slashCommands: [],
+};
+
+const entries = deriveProviderInstanceEntries([provider, codexProvider]);
 const modelOptionsByInstance = new Map(
   entries.map((entry) => [entry.instanceId, entry.models] as const),
 );
@@ -123,9 +146,48 @@ it("draws the multi-model footer, search hint and collapsed legacy section", asy
   );
 
   await expect.element(page.getByPlaceholder("Search models · Shift click adds")).toBeVisible();
+  await expect.element(page.getByText("200k · High").first()).toBeVisible();
   await expect.element(page.getByText("2 models selected")).toBeVisible();
   await expect.element(page.getByText("Legacy models · 1")).toBeVisible();
 
   await page.getByRole("button", { name: "Send to 2" }).click();
   expect(onSendSelectedModels).toHaveBeenCalledOnce();
+});
+
+it("keeps cross-provider selected models in the open provider tab", async () => {
+  const container = document.createElement("div");
+  container.style.width = "520px";
+  container.style.height = "520px";
+  const searchInputRef = createRef<HTMLInputElement>();
+
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <ModelPickerContent
+        environmentId={null}
+        activeInstanceId={CLAUDE}
+        model="opus"
+        selectedModels={[
+          { instanceId: CLAUDE, model: "opus" },
+          { instanceId: CODEX, model: "gpt-5-6-luna" },
+        ]}
+        onToggleModel={() => {}}
+        onSendSelectedModels={() => {}}
+        lockedProvider={null}
+        instanceEntries={entries}
+        modelOptionsByInstance={modelOptionsByInstance}
+        terminalOpen={false}
+        onInstanceModelChange={() => {}}
+        searchInputRef={searchInputRef}
+      />
+    </TooltipProvider>,
+    { container },
+  );
+
+  const crossProviderRow = page.getByRole("option", { name: /GPT-5\.6 Luna/ });
+  await expect.element(crossProviderRow).toBeVisible();
+  expect(crossProviderRow.element().textContent).toContain("Codex");
+
+  await page.getByRole("button", { name: "Codex" }).click();
+  await expect.element(page.getByRole("option", { name: /GPT-5\.6 Luna/ })).toBeVisible();
+  await expect.element(page.getByRole("option", { name: /Claude Opus 5\.5/ })).toBeVisible();
 });
