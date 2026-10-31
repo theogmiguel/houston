@@ -13,6 +13,7 @@ import {
   type ProviderInstanceId,
   type ProviderOptionDescriptor,
   type ProviderOptionSelection,
+  type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   type ServerProviderModel,
 } from "@t3tools/contracts";
@@ -45,9 +46,7 @@ import {
 } from "../ui/menu";
 import { useComposerDraftStore, DraftId } from "../../composerDraftStore";
 import { getProviderModelCapabilities } from "../../providerModels";
-import { primaryServerKeybindingsAtom } from "../../state/server";
 import { shortcutLabelForCommand } from "../../keybindings";
-import { useAtomValue } from "@effect/atom-react";
 import { shortEffortLabel, traitsSplitTriggerClassName, type TraitsSplitPart } from "./modelTraits";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
@@ -331,6 +330,7 @@ interface TraitsMenuContentProps {
   planModeEnabled: boolean;
   triggerClassName?: string;
   isComposerOwned?: boolean;
+  keybindings?: ResolvedKeybindingsConfig;
   /** Composer chips name the effort level unless the user picked bars. */
   effortDisplay?: EffortDisplay;
   /** Extra section shown below the traits in the picker popup (Permissions). */
@@ -427,12 +427,12 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
   allowPromptInjectedEffort = true,
   planModeEnabled,
   isComposerOwned,
+  keybindings,
   ...persistence
 }: TraitsMenuContentProps & TraitsPersistence) {
   const modelSelection =
     instanceId && model ? { instanceId, model, options: modelOptions ?? [] } : null;
   const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const updateModelOptions = (nextOptions: ProviderOptions | undefined) => {
     if ("onModelOptionsChange" in persistence) {
       persistence.onModelOptionsChange(nextOptions);
@@ -520,9 +520,8 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
     (descriptor) =>
       descriptor.id !== effortDescriptor?.id && descriptor.id !== contextWindowDescriptor?.id,
   );
-  const effortShortcut = isComposerOwned
-    ? shortcutLabelForCommand(keybindings, "composer.effort")
-    : null;
+  const effortShortcut =
+    isComposerOwned && keybindings ? shortcutLabelForCommand(keybindings, "composer.effort") : null;
   if (!hasAnyControls) {
     return null;
   }
@@ -729,6 +728,7 @@ export const TraitsPicker = memo(function TraitsPicker({
   triggerClassName,
   split,
   isComposerOwned,
+  keybindings,
   effortDisplay = "label",
   extraMenuContent,
   extraMenuOwnsModeShortcut,
@@ -748,10 +748,8 @@ export const TraitsPicker = memo(function TraitsPicker({
   const composerFloatingLayerProps = useComposerMenuProps();
   const [isMenuOpen, setIsMenuOpen] = useComposerMenuState(hidden || disabled);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const permissionsShortcut = isComposerOwned
-    ? shortcutLabelForCommand(keybindings, "composer.mode")
-    : null;
+  const permissionsShortcut =
+    isComposerOwned && keybindings ? shortcutLabelForCommand(keybindings, "composer.mode") : null;
   const { descriptors, primarySelectDescriptor, ultrathinkPromptControlled } =
     getTraitsSectionVisibility({
       provider,

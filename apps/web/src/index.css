@@ -2532,18 +2532,32 @@ code {
   pointer-events: none;
 }
 
-/* Composer chips follow the board's removable chip: a 24px field-filled pill with
-   the context kind's icon and a 12px secondary label. */
+/* Composer chips follow the board's removable chip: a 20px selected-surface
+   pill with the context kind's icon and a 12px mono label. */
 .composer-tiptap [data-slot="context-chip"] {
-  height: 24px;
+  height: 20px;
   max-width: 100%;
   gap: 4px;
-  border-radius: var(--r-ctl);
-  background: var(--field);
-  padding: 0 6px 0 8px;
-  color: var(--secondary-foreground);
+  border-radius: 5px;
+  background: var(--sel);
+  padding: 0 6px;
+  color: var(--t1);
+  font-family: var(--font-mono);
   font-size: 12px;
-  line-height: normal;
+  line-height: 20px;
+}
+
+/* The inline context node owns the surface, so its wrapper takes the board chip. */
+.composer-tiptap .composer-inline-chip {
+  height: 20px;
+  gap: 4px;
+  border-radius: 5px;
+  background: var(--sel);
+  padding: 0 6px;
+  color: var(--t1);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 20px;
 }
 
 .composer-tiptap [data-slot="context-chip"] > svg:first-child,
