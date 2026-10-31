@@ -127,28 +127,31 @@ depend on it.
 ### v1 removal
 
 The daemon (`houston-core`) and Houston's MCP orchestration (`pane_*`, `hs-pane`) leave with v1;
-agents orchestrate through upstream's orchestration-v2. Houston-only features that upstream lacks are
-not deleted: their code moves to the v2 stack. The removal runs in two parts, each split by owner.
+agents orchestrate through upstream's orchestration-v2.
 
-1. **What v2 already replaces**, after the server entrypoint and the host land:
-   - Augusto: `core/houston-protocol`, and the PTY, transport, hooks and MCP orchestration in
-     `core/houston-core`, with their tests and the scripts that start the daemon.
-   - Theo: `ui/`, the native browser, `daemon_host.rs`, `houston-supervisor` and the daemon's
-     watchdog in `src-tauri`, with their tests.
-   - Both: the `ci.yml` jobs that build or test them (`core-checks`, `core-integration`,
-     `linux-native-checks`, the v1 renderer and Windows checks), the safety scripts that guard only
-     the daemon, and the `docs/` pages that describe it.
-2. **What upstream lacks**, in port order: the Tasks backlog, task sources (GitHub, Notion), the
-   merge queue, harness review and defects, Slack intake, workspace transfer, and Night shift last
-   (its workers move from `pane_*` to orchestration-v2). WSL is the host's: upstream's server already
-   runs in a distro, and the host implements the desktop bridge. Each is ported to the server (and
-   its renderer side) in its own slice, and its Rust code leaves in the same PR. `core/` is deleted
-   when the last of them has moved. Upstream already covers routines, agent accounts, diagnostics
-   and pane handoff; those leave with part 1. Remote access, dictation, review requests, SSH panes,
-   skill sync and conflict prediction are decided (port or leave) before part 1's last step.
+**The T3 base comes first.** The Houston-only ports are parked and return afterwards on the v2
+server: the Tasks agent toolkit (#456), task sources writeback (#457), merge queue hand-off and
+stacks (#469), harness review (#450), Slack intake (#459), workspace transfer (#470) and Night
+shift (#471). Each parked PR is a draft titled "Parked:" that holds its work so far. Houston code
+already on `v2` stays: the server entrypoint, provider status, send intents, reviewed files, aside
+and second opinion, the Tasks backlog store and runs, task sources sync and the merge queue core.
 
-`AGENTS.md`'s daemon, PTY and MCP invariants are replaced by the v2 invariants in the PR that
-removes what they guard.
+So `core/` is removed now, without waiting for the ports, in two PRs. The PR that deletes a path
+also removes every reader of it, so `v2` builds at every merge:
+
+1. **PR A (Theo), first:** the v1 host path in `src-tauri` (`daemon_host`, `daemon_isolation`, the
+   supervisor and watchdog wiring, the native browser, the v1 parts of host, tray, wsl, app_update
+   and bench, the `hook`/`hs-pane`/`hs-mail` dispatch, `HOUSTON_V1_HOST`, `externalBin` and the WSL
+   bundle) and `ui/` with its readers (the v1 renderer CI jobs, its scripts, its licence graph). After
+   it, `src-tauri` uses no `houston_protocol` and only about 13 utilities from `houston_core`.
+2. **PR B (Augusto, Theo reviews), on top of PR A:** those utilities move to `src-tauri/src/sys/`;
+   a one-time `v1_cleanup` removes Houston's managed hook blocks from the agent CLIs' configs (it
+   stands down while a v1 daemon of the same channel runs); `core/` and everything that reads it
+   are deleted; the docs are rewritten and `AGENTS.md` gets the v2 invariants.
+
+A v1 user loses the parked features until they return, and the features with no port planned
+(remote access, dictation, review tiers, SSH panes, skill sync, conflict prediction, WSL). v1's data
+in `~/.houston*` is never deleted or opened read-write; v2 keeps its state in `<channel dir>/v2`.
 
 ### Additions from MonoCode and Capy
 
