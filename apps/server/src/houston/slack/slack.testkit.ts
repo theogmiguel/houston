@@ -156,7 +156,9 @@ export const layerFakeRuns = (fake: FakeRuns) =>
               return yield* refuse("not_found", "houston.tasks.runControl", `no run ${input.runId}`);
             }
             const task = (yield* store.taskById(previous.task_id)) as TaskRow;
-            const brief = yield* slackBriefOf(task);
+            const brief = yield* slackBriefOf(task).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+            );
             fake.attempts.push({
               runId: input.runId,
               action: input.action,

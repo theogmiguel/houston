@@ -66,6 +66,8 @@ import {
 } from "./toolkits/device/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
+import * as HoustonSlackHandlers from "../houston/slack/toolkit/handlers.ts";
+import { HoustonSlackToolkit } from "../houston/slack/toolkit/tools.ts";
 
 const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
   HttpServerRequest.toURL(request).pipe(
@@ -1017,6 +1019,12 @@ export const layerDeviceToolkit = Layer.mergeAll(
   layerDeviceScreenshotRegistration,
 );
 
+// Houston: the Slack intake's question and hand-back, refused outside a Slack-filed run.
+export const layerHoustonSlackToolkit = toolkitRegistration(
+  HoustonSlackToolkit,
+  HoustonSlackHandlers.layer,
+);
+
 export const layerMcpTransport = McpServer.layerHttp({
   name: "Houston",
   version: packageJson.version,
@@ -1038,6 +1046,7 @@ export const layerTools = Layer.mergeAll(
   layerPullRequestsToolkit,
   layerDeviceToolkit,
   layerHtmlToolkit,
+  layerHoustonSlackToolkit,
 );
 
 export const layer = layerTools.pipe(Layer.provideMerge(layerMcpTransport));

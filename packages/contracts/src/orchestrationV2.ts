@@ -42,6 +42,7 @@ import {
 import { AuthMcpClientAccess } from "./auth.ts";
 import { MessageDelivery, MessageDeliveryJson } from "./houston/messageDelivery.ts";
 import { HoustonSideThread, makeHoustonSideThreadCommands } from "./houston/sideThreads.ts";
+import { HoustonSlackAnswerCommand } from "./houston/slack.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import {
   OrchestrationSearchThreadsInput,
@@ -3313,6 +3314,7 @@ export const OrchestrationV2Command = Schema.Union([
     modelSelection: ModelSelection,
   }),
   ...makeHoustonSideThreadCommands(OrchestrationV2CreationFields),
+  HoustonSlackAnswerCommand,
 ]);
 export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 

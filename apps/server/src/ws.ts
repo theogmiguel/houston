@@ -213,6 +213,7 @@ import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
 import * as HoustonTaskSourceService from "./houston/taskSources/SourceService.ts";
 import * as HoustonSlackService from "./houston/slack/Service.ts";
+import * as HoustonSlackV1Import from "./houston/slack/V1Import.ts";
 import * as HoustonTaskSourceV1Import from "./houston/taskSources/V1Import.ts";
 import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
@@ -1311,6 +1312,7 @@ export const layerWsRpc = (
       const houstonTaskSources = yield* HoustonTaskSourceService.HoustonTaskSourceService;
       const houstonTaskSourceImport = yield* HoustonTaskSourceV1Import.HoustonTaskSourceV1Import;
       const houstonSlack = yield* HoustonSlackService.HoustonSlackService;
+      const houstonSlackImport = yield* HoustonSlackV1Import.HoustonSlackV1Import;
       const houstonMergeQueue = yield* HoustonMergeQueueService.HoustonMergeQueueService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
@@ -3025,6 +3027,8 @@ export const layerWsRpc = (
         [WS_METHODS.houstonSlackConfigure]: (input) => houstonSlack.configure(input),
         [WS_METHODS.houstonSlackRequestsList]: (input) => houstonSlack.requests(input),
         [WS_METHODS.houstonSlackSubscribe]: () => houstonSlack.subscribe,
+        [WS_METHODS.houstonSlackImportV1Status]: () => houstonSlackImport.status,
+        [WS_METHODS.houstonSlackImportV1Run]: () => houstonSlackImport.run,
         [WS_METHODS.houstonMergeQueueGet]: (input) => houstonMergeQueue.get(input),
         [WS_METHODS.houstonMergeQueueSubscribe]: (input) => houstonMergeQueue.subscribe(input),
         [WS_METHODS.houstonMergeQueueSubscribeSummary]: (input) =>

@@ -91,9 +91,12 @@ const make = Effect.gen(function* () {
             .call(token, "reactions.remove", { channel, timestamp, name: row.remove_reaction })
             .pipe(settled("no_reaction"));
         }
-        yield* web
-          .call(token, "reactions.add", { channel, timestamp, name: row.reaction ?? "" })
-          .pipe(settled("already_reacted"));
+        // A row without a reaction only takes one away (an ignored reply's 👀).
+        if (row.reaction !== null && row.reaction.length > 0) {
+          yield* web
+            .call(token, "reactions.add", { channel, timestamp, name: row.reaction })
+            .pipe(settled("already_reacted"));
+        }
         return { channel, ts: timestamp };
       }
       case "thread": {

@@ -222,6 +222,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.houstonSlackConfigure]: "houstonSlack",
   [WS_METHODS.houstonSlackRequestsList]: "houstonSlack",
   [WS_METHODS.houstonSlackSubscribe]: "houstonSlack",
+  [WS_METHODS.houstonSlackImportV1Status]: "houstonSlack",
+  [WS_METHODS.houstonSlackImportV1Run]: "houstonSlack",
   [WS_METHODS.houstonMergeQueueGet]: "houstonMergeQueue",
   [WS_METHODS.houstonMergeQueueSubscribe]: "houstonMergeQueue",
   [WS_METHODS.houstonMergeQueueSubscribeSummary]: "houstonMergeQueue",

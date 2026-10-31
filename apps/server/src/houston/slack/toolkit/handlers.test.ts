@@ -27,6 +27,7 @@ import {
   buttonsOf,
   connectedProject,
   flushOutbox,
+  layerSlackTest,
   makeFakeRuns,
   ownerDms,
   postedText,
@@ -107,21 +108,22 @@ const call = (threadId: string, name: string, args: Record<string, unknown>) =>
         Effect.orDie,
       )) as McpSchema.CallToolResult;
     const text = textOf(result);
-    return { isError: result.isError === true, text, value: parse(text) } satisfies ToolResult;
+    const toolResult: ToolResult = { isError: result.isError === true, text, value: parse(text) };
+    return toolResult;
   });
 
+type SlackServices = Layer.Success<ReturnType<typeof layerSlackTest>>;
+
 /** Runs `body` over the Slack layers with the toolkit registered. */
-const withTools = <A, E, R>(
-  body: (fake: SlackFake) => Effect.Effect<A, E, R>,
+const withTools = <A, E>(
+  body: (fake: SlackFake) => Effect.Effect<A, E, SlackServices | McpServer.McpServer>,
   options: { readonly runs?: FakeRuns; readonly startAtMs?: number } = {},
 ) =>
   runSlack(
     (fake) =>
       Effect.gen(function* () {
         const services = yield* Effect.context<HoustonSlackConversation>();
-        return yield* (body(fake) as Effect.Effect<A, E, never>).pipe(
-          Effect.provide(toolkitLayer(services)),
-        );
+        return yield* body(fake).pipe(Effect.provide(toolkitLayer(services)));
       }),
     options,
   );

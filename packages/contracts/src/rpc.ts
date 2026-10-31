@@ -222,6 +222,8 @@ import {
   HoustonSlackConnectInput,
   HoustonSlackEmptyInput,
   HoustonSlackError,
+  HoustonSlackImportResult,
+  HoustonSlackImportStatus,
   HoustonSlackInfo,
   HoustonSlackRequest,
   HoustonSlackRequestsListInput,
@@ -578,6 +580,8 @@ export const WS_METHODS = {
   houstonSlackConfigure: "houston.slack.configure",
   houstonSlackRequestsList: "houston.slack.requests.list",
   houstonSlackSubscribe: "houston.slack.subscribe",
+  houstonSlackImportV1Status: "houston.slack.importV1.status",
+  houstonSlackImportV1Run: "houston.slack.importV1.run",
   houstonMergeQueueGet: "houston.mergeQueue.get",
   houstonMergeQueueSubscribe: "houston.mergeQueue.subscribe",
   houstonMergeQueueSubscribeSummary: "houston.mergeQueue.subscribeSummary",
@@ -1900,6 +1904,18 @@ const WsHoustonSlackSubscribeRpc = Rpc.make(WS_METHODS.houstonSlackSubscribe, {
   stream: true,
 });
 
+const WsHoustonSlackImportV1StatusRpc = Rpc.make(WS_METHODS.houstonSlackImportV1Status, {
+  payload: HoustonSlackEmptyInput,
+  success: HoustonSlackImportStatus,
+  error: HoustonSlackRpcError,
+});
+
+const WsHoustonSlackImportV1RunRpc = Rpc.make(WS_METHODS.houstonSlackImportV1Run, {
+  payload: HoustonSlackEmptyInput,
+  success: HoustonSlackImportResult,
+  error: HoustonSlackRpcError,
+});
+
 const HoustonMergeQueueRpcError = Schema.Union([
   HoustonMergeQueueError,
   EnvironmentAuthorizationError,
@@ -2573,6 +2589,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonSlackConfigureRpc,
   WsHoustonSlackRequestsListRpc,
   WsHoustonSlackSubscribeRpc,
+  WsHoustonSlackImportV1StatusRpc,
+  WsHoustonSlackImportV1RunRpc,
   WsHoustonMergeQueueGetRpc,
   WsHoustonMergeQueueSubscribeRpc,
   WsHoustonMergeQueueSubscribeSummaryRpc,

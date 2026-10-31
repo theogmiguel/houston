@@ -177,6 +177,12 @@ import {
   SIDE_THREAD_READ_ONLY,
   sideMessageId,
 } from "../houston/sideThreads.ts";
+import {
+  SLACK_ANSWER_ALREADY_SENT,
+  SLACK_ANSWER_NEEDS_LIVE_THREAD,
+  answerDispatchMode,
+  slackAnswerMessageId,
+} from "../houston/slackAnswer.ts";
 import type { HoustonSideThread } from "@t3tools/contracts/houston/sideThreads";
 import * as CheckpointDiffQuery from "../checkpointing/CheckpointDiffQuery.ts";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
@@ -564,6 +570,8 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
       return command.reviewThreadId;
     case "houston.side-thread.send":
       return command.sideThreadId;
+    case "houston.slack.answer":
+      return command.threadId;
   }
 }
 
@@ -4618,6 +4626,43 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       );
     },
   );
+
+  // Houston: a Slack answer to its run's thread (slackAnswer.ts holds the rules).
+  const dispatchSlackAnswer = Effect.fn("orchestrationV2.dispatch.slackAnswer")(function* (
+    command: Extract<OrchestrationV2Command, { readonly type: "houston.slack.answer" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    const messageId = slackAnswerMessageId(command.questionId);
+    const target = yield* projectionStore
+      .getThreadRecords(command.threadId, ["runs", "messages"], { messageIds: [messageId] })
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    if (target.thread.archivedAt !== null) {
+      return yield* refuseSideCommand(command, SLACK_ANSWER_NEEDS_LIVE_THREAD);
+    }
+    if (target.messages.some((message) => message.id === messageId)) {
+      return yield* refuseSideCommand(command, SLACK_ANSWER_ALREADY_SENT);
+    }
+    return yield* dispatchMessage(
+      {
+        type: "message.dispatch",
+        createdBy: "user",
+        creationSource: "server",
+        commandId: command.commandId,
+        threadId: command.threadId,
+        messageId,
+        text: command.text,
+        attachments: [],
+        dispatchMode: answerDispatchMode(target.runs),
+      },
+      events,
+      effects,
+    );
+  });
 
   const dispatchSideThreadSend = Effect.fn("orchestrationV2.dispatch.sideThreadSend")(function* (
     command: Extract<OrchestrationV2Command, { readonly type: "houston.side-thread.send" }>,
@@ -13356,6 +13401,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "houston.side-thread.send":
         cancelUnsettledEffects = yield* dispatchSideThreadSend(command, events, effects);
+        break;
+      case "houston.slack.answer":
+        cancelUnsettledEffects = yield* dispatchSlackAnswer(command, events, effects);
         break;
       default:
         return yield* dispatchUnsupported(command);
