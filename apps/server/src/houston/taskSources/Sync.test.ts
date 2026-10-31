@@ -883,3 +883,59 @@ describe("a local resolution enqueues its write-back atomically", () => {
     ),
   );
 });
+
+describe("a remote resolution sends nothing back to the tracker", () => {
+  it.effect("a remote resolution sends nothing back to the tracker", () =>
+    withSources(({ github }) =>
+      Effect.gen(function* () {
+        github.respond = (_url, request) =>
+          request.method === "POST"
+            ? new Response(JSON.stringify({ id: 1 }), { status: 201 })
+            : new Response("[]", { status: 200 });
+        const projectId = yield* createProject("remote-writeback");
+        yield* enableGithub(projectId);
+        const sync = yield* HoustonTaskSourceSync;
+        const tasks = yield* HoustonTaskService.HoustonTaskService;
+        const sql = yield* SqlClient.SqlClient;
+        const drain = (yield* HoustonTaskSourceOutboxDrain).drain;
+        const outbox = () =>
+          sql<{
+            readonly id: number;
+            readonly action: string;
+            readonly receipt_json: string | null;
+          }>`SELECT id, action, receipt_json FROM houston_task_source_outbox ORDER BY id`;
+
+        // An imported delivery the user moved on, its write-back sent, then closed by the tracker.
+        const imported = yield* sync.apply(projectId, "github_issues", record({}, milestone()));
+        const id = imported.taskId as number;
+        const task = (yield* tasks.get({ id: String(id) })).task;
+        const moved = yield* tasks.save({
+          id: task.key,
+          expectedRevision: task.revision,
+          patch: { status: "in_progress" },
+        });
+        yield* drain;
+        yield* sync.apply(projectId, "github_issues", record({ status: "done" }, milestone()));
+        const link = yield* linkOf(id);
+        const sent = yield* outbox();
+        assert.isTrue(sent.every((row) => row.receipt_json !== null));
+
+        // Taking the tracker's status changes the task and writes nothing back.
+        github.requests.length = 0;
+        yield* sync.resolve({
+          taskId: moved.key,
+          expectedTaskRevision: moved.revision,
+          provider: "github_issues",
+          externalId: link.externalId,
+          field: "status",
+          expectedLinkRevision: link.snapshot.revision,
+          resolution: "remote",
+        });
+        assert.strictEqual((yield* tasks.get({ id: String(id) })).task.status, "done");
+        assert.deepEqual(yield* outbox(), sent);
+        yield* drain;
+        assert.isTrue(github.requests.every((request) => request.method === "GET"));
+      }),
+    ),
+  );
+});
