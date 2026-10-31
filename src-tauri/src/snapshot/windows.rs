@@ -25,6 +25,15 @@ enum Shortcut {
     Pair(ModifierPairShortcut),
 }
 
+impl Shortcut {
+    fn stop(self) {
+        match self {
+            Self::Chord(worker) => drop(worker),
+            Self::Pair(worker) => drop(worker),
+        }
+    }
+}
+
 pub struct WindowsPlatform {
     app: Mutex<Option<tauri::AppHandle>>,
     shortcut: Mutex<Option<Shortcut>>,
@@ -177,7 +186,9 @@ impl SnapShotPlatform for WindowsPlatform {
 
     fn release_shortcut(&self) {
         if let Ok(mut slot) = self.shortcut.lock() {
-            *slot = None;
+            if let Some(shortcut) = slot.take() {
+                shortcut.stop();
+            }
         }
         if let Ok(mut slot) = self.status.lock() {
             *slot = None;
