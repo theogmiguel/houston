@@ -930,6 +930,8 @@ describe("only the requester or owner answers and the first answer reaches the r
             messages.delivered[0]?.text ?? "",
             "<<<HOUSTON-SLACK-ANSWER\nCSV\nHOUSTON-SLACK-ANSWER>>>",
           );
+          assert.include(messages.delivered[0]?.text ?? "", "The requester answered");
+          assert.notInclude(messages.delivered[0]?.text ?? "", "The owner answered");
           assert.isNotNull((yield* questionRow(first.questionId))?.delivered_at ?? null);
 
           // Another answer…: the owner's dialog text.
@@ -976,6 +978,8 @@ describe("only the requester or owner answers and the first answer reaches the r
           yield* tickReplies;
           const delivered = messages.delivered.find((entry) => entry.questionId === second.questionId);
           assert.isDefined(delivered);
+          assert.include(delivered?.text ?? "", "The owner answered");
+          assert.notInclude(delivered?.text ?? "", "The requester answered");
           assert.strictEqual(
             (delivered?.text ?? "").split("HOUSTON-SLACK-ANSWER>>>").length - 1,
             1,
