@@ -126,6 +126,11 @@ impl TestHome {
         self.home().join(".codex").join("config.toml")
     }
 
+    /// Codex's `config.toml` as v1 wrote it for `sentinels`, every line ended by `eol`.
+    pub fn codex_toml_with(&self, sentinels: &[&str], eol: &str) -> String {
+        self.codex_toml(sentinels).replace('\n', eol)
+    }
+
     pub fn antigravity_mcp(&self) -> PathBuf {
         self.home()
             .join(".gemini")

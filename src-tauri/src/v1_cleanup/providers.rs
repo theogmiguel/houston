@@ -178,8 +178,24 @@ pub fn codex_config(path: &Path, sentinel: &str) -> Result<bool> {
     };
     text.parse::<toml::Value>()
         .map_err(|e| anyhow!("not valid TOML: {e}"))?;
-    let without_trust = without_trust_block(&text, sentinel)?;
+    // v1 wrote `\n`; an editor may have turned every line into CRLF since.
+    let crlf = text.contains("\r\n") && !text.replace("\r\n", "").contains('\n');
+    let lf = if crlf {
+        text.replace("\r\n", "\n")
+    } else {
+        text.clone()
+    };
+    let without_trust = without_trust_block(&lf, sentinel)?;
+    let begin = format!("# BEGIN Houston Codex hook trust {sentinel}");
+    if without_trust.lines().any(|l| l.trim_end() == begin) {
+        bail!("its Houston Codex trust block for {sentinel} mixes line endings; left as is");
+    }
     let restored = wake_notify(&without_trust, sentinel)?;
+    let restored = if crlf {
+        restored.replace('\n', "\r\n")
+    } else {
+        restored
+    };
     if restored == text {
         return Ok(false);
     }

@@ -616,3 +616,42 @@ fn foreign_houston_mcp_entries_stay() {
         }
     }
 }
+
+#[test]
+fn crlf_codex_config_loses_its_trust_block() {
+    let home = TestHome::new();
+    home.install_all(&[DEV]);
+    let path = home.codex_config();
+    std::fs::write(&path, home.codex_toml_with(&[DEV], "\r\n")).expect("CRLF config");
+    let outcome = run(&home.target(Some("dev")));
+    assert_eq!(
+        home.read(&path),
+        home.codex_toml_with(&[], "\r\n"),
+        "{:?}",
+        outcome.log
+    );
+    assert!(outcome.changed.contains(&path), "{:?}", outcome.log);
+
+    // CRLF markers in a file with LF lines too: left, and one line says why.
+    let home = TestHome::new();
+    home.install_all(&[DEV]);
+    let mixed = format!(
+        "{}approval_policy = \"never\"\n",
+        home.codex_toml_with(&[DEV], "\r\n")
+    );
+    let path = home.codex_config();
+    std::fs::write(&path, &mixed).expect("mixed config");
+    let outcome = run(&home.target(Some("dev")));
+    assert_eq!(home.read(&path), mixed);
+    let shown = path.display().to_string();
+    let lines: Vec<&String> = outcome
+        .log
+        .iter()
+        .filter(|line| line.contains(&shown))
+        .collect();
+    assert!(
+        lines.len() == 1 && lines[0].contains("line endings"),
+        "{:?}",
+        outcome.log
+    );
+}
