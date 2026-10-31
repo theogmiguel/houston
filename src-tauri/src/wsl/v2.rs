@@ -1,7 +1,6 @@
-//! The v2 bridge's WSL state. Distro enumeration reuses the v1 `wsl.exe`
-//! helpers. The v2 server itself is still started on the host: the server-side
-//! WSL slice owns launching it inside a distro, so enabling the backend is
-//! refused by name while the distro and WSL-only selections persist.
+//! The v2 bridge's WSL state; distro enumeration reuses the `wsl.exe` helpers.
+//! The server still starts on the host, so enabling the WSL backend is refused
+//! by name while the distro and WSL-only selections persist.
 
 use serde_json::{json, Value};
 
