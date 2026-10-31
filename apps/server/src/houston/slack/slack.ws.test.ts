@@ -811,3 +811,36 @@ describe("slack state survives a restart", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });
+
+describe("configure limits reach the renderer as slack errors", () => {
+  it.effect("configure limits reach the renderer as slack errors", () =>
+    withServer(() =>
+      Effect.gen(function* () {
+        const client = yield* makeWsClient(ALL_SCOPES);
+        const projectId = yield* createProject("ws-limits");
+        const channels = (count: number) =>
+          Array.from({ length: count }, (_, index) => ({ channelId: `C${index + 1}`, projectId }));
+        // A frame past the contract's bounds reaches the service, whose refusal names them.
+        const tooMany = failureOf(
+          yield* client.call(WS_METHODS.houstonSlackConfigure, { channels: channels(17) }),
+        );
+        assert.strictEqual(tooMany?._tag, "HoustonSlackError");
+        assert.strictEqual(tooMany?.kind, "limit");
+        assert.include(tooMany?.message ?? "", "16");
+        assert.include(tooMany?.message ?? "", "17");
+        assert.include(tooMany?.message ?? "", "houston.slack.configure");
+        const lower = failureOf(
+          yield* client.call(WS_METHODS.houstonSlackConfigure, {
+            channels: [{ channelId: "c123", projectId }],
+          }),
+        );
+        assert.strictEqual(lower?._tag, "HoustonSlackError");
+        assert.strictEqual(lower?.kind, "invalid");
+        assert.include(lower?.message ?? "", "c123");
+        const info = (yield* client.call(WS_METHODS.houstonSlackGet, {})) as HoustonSlackInfo;
+        assert.deepEqual(info.channels, []);
+        assert.strictEqual(info.revision, 0);
+      }),
+    ),
+  );
+});
