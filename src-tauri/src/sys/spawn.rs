@@ -42,6 +42,7 @@ fn git_program() -> &'static std::ffi::OsStr {
     "git".as_ref()
 }
 
+#[cfg(unix)]
 #[allow(clippy::disallowed_methods)]
 pub fn tokio_command<S: AsRef<std::ffi::OsStr>>(program: S) -> tokio::process::Command {
     #[allow(unused_mut)]
@@ -519,15 +520,9 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "houston");
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn the_tokio_twin_runs_and_captures_too() {
-        #[cfg(windows)]
-        let out = tokio_command("cmd")
-            .args(["/C", "echo", "houston"])
-            .output()
-            .await
-            .expect("cmd /C echo must run");
-        #[cfg(unix)]
         let out = tokio_command("echo")
             .arg("houston")
             .output()
