@@ -31,6 +31,7 @@ import {
   checkRequestText,
   classifyEvent,
   escapeMrkdwn,
+  outboundText,
   isSlackFileUrl,
   ownerAccepts,
   sniffImage,
@@ -325,7 +326,7 @@ const make = Effect.gen(function* () {
           `);
           yield* store.react(current.id, "warning");
           yield* ownerDm(current, settings, `refused-filing:${current.id}`, [
-            `${text.attention}: ${text.notFiled(escapeMrkdwn(created.failure.message))}`,
+            `${text.attention}: ${text.notFiled(outboundText(created.failure.message))}`,
           ]);
           return { result: undefined, requests: [current.id] };
         }),
@@ -451,7 +452,7 @@ const make = Effect.gen(function* () {
           `);
           yield* store.react(request.id, "warning");
           yield* ownerDm(request, settings, `start-failed:${request.id}`, [
-            `${text.attention}: ${text.couldNotStart(escapeMrkdwn(started.failure.message))}`,
+            `${text.attention}: ${text.couldNotStart(outboundText(started.failure.message))}`,
           ]);
           return { result: undefined, requests: [request.id] };
         }),

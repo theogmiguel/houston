@@ -13,6 +13,7 @@ import {
   checkTokens,
   classifyEvent,
   fenceSlackRequest,
+  outboundText,
   historyActions,
   isSlackFileUrl,
   ownerAccepts,
@@ -415,5 +416,32 @@ describe("each request state shows one status reaction", () => {
     assert.deepEqual(reactionMove(null, "eyes"), { remove: null, add: "eyes" });
     assert.deepEqual(reactionMove("eyes", "gear"), { remove: "eyes", add: "gear" });
     assert.isNull(reactionMove("gear", "gear"));
+  });
+});
+
+describe("text Houston did not write is posted without paths or secrets", () => {
+  it("paths are cut to their last part, secrets redacted and mrkdwn escaped", () => {
+    assert.strictEqual(
+      outboundText("worktree /home/someone/work/HOU-1 is locked"),
+      "worktree HOU-1 is locked",
+    );
+    assert.strictEqual(
+      outboundText(String.raw`open C:\Users\someone\work\a.ts failed`),
+      "open a.ts failed",
+    );
+    assert.strictEqual(
+      outboundText("see https://github.com/acme/app/pull/7"),
+      "see https://github.com/acme/app/pull/7",
+    );
+    for (const secret of [
+      "xoxb-1700000000-leaked-bot-token",
+      "xapp-1-A0TEST-1700000000-5f2c9d0e7a11b3",
+      "ghp_abcdefghijklmnopqrstuvwxyz0123",
+    ]) {
+      const posted = outboundText(`token ${secret} refused`);
+      assert.notInclude(posted, secret);
+      assert.include(posted, "[redacted]");
+    }
+    assert.strictEqual(outboundText("<!channel> & <@U9>"), "&lt;!channel&gt; &amp; &lt;@U9&gt;");
   });
 });

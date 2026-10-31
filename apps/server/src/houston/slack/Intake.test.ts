@@ -784,3 +784,37 @@ describe("disconnect stops work already in progress", () => {
     ),
   );
 });
+
+describe("a failed start reaches the owner without paths or secrets", () => {
+  it.effect("a failed start reaches the owner without paths or secrets", () => {
+    const runs = makeFakeRuns();
+    return runSlack(
+      (fake) =>
+        Effect.gen(function* () {
+          yield* connected(fake, "start-failed");
+          const ts = "1700000000.000100";
+          yield* fileReady(fake, ts, "fix the login");
+          runs.failWith =
+            "worktree /home/someone/.houston-dev/worktrees/start-failed/HOU-1 is locked; token xoxb-1700000000-leaked-bot-token <@U9>";
+          yield* reaction(fake, OWNER, "white_check_mark", ts);
+          yield* until(
+            "the failed start",
+            requestAt(ts).pipe(Effect.map((row) => row?.status_reaction === "warning")),
+          );
+          yield* flush;
+          const dm = fake
+            .callsOf("chat.update")
+            .concat(fake.callsOf("chat.postMessage"))
+            .map((call) => `${call.body.text ?? ""} ${call.body.blocks ?? ""}`)
+            .find((text) => text.includes("is locked"));
+          assert.isDefined(dm);
+          assert.include(dm ?? "", "HOU-1 is locked");
+          assert.notInclude(dm ?? "", "/home/someone");
+          assert.notInclude(dm ?? "", ".houston-dev");
+          assert.notInclude(dm ?? "", "xoxb-1700000000-leaked-bot-token");
+          assert.notInclude(dm ?? "", "<@U9>");
+        }),
+      { runs },
+    );
+  });
+});
