@@ -100,6 +100,16 @@ describe("Claude model catalog", () => {
       },
     });
     const selection = { instanceId: ProviderInstanceId.make("claudeAgent"), model: "synthetic" };
+    assert.equal(
+      catalog.models.find((entry) => entry.model.slug === "claude-synthetic-next")?.model
+        .capabilities?.contextWindowTokens,
+      1_000_000,
+    );
+    assert.equal(
+      catalog.models.find((entry) => entry.model.slug === "fixed")?.model.capabilities
+        ?.contextWindowTokens,
+      64_000,
+    );
     assert.equal(resolveClaudeCatalogContextWindowTokens(catalog, selection), 1_000_000);
     assert.equal(
       resolveClaudeCatalogContextWindowTokens(catalog, {

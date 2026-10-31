@@ -46,6 +46,7 @@ import {
 } from "../ui/menu";
 import { useComposerDraftStore, DraftId } from "../../composerDraftStore";
 import { getProviderModelCapabilities } from "../../providerModels";
+import { formatCompactContextWindowTokens } from "../../lib/contextWindow";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { shortEffortLabel, traitsSplitTriggerClassName, type TraitsSplitPart } from "./modelTraits";
 import { cn } from "~/lib/utils";
@@ -175,6 +176,11 @@ function getSelectedTraits(
   const thinkingEnabled =
     typeof thinkingDescriptor?.currentValue === "boolean" ? thinkingDescriptor.currentValue : null;
   const contextWindow = getDescriptorStringValue(contextWindowDescriptor);
+  const contextWindowTokens = contextWindowDescriptor
+    ? null
+    : caps.contextWindowTokens !== undefined && caps.contextWindowTokens > 0
+      ? caps.contextWindowTokens
+      : null;
   const selectedAgent = getDescriptorStringValue(agentDescriptor);
   const selectedAgentLabel = agentDescriptor
     ? getProviderOptionCurrentLabel(agentDescriptor)
@@ -193,6 +199,7 @@ function getSelectedTraits(
     effort,
     thinkingEnabled,
     contextWindow,
+    contextWindowTokens,
     ultrathinkPromptControlled,
     ultrathinkInBodyText,
     selectedAgent,
@@ -223,7 +230,8 @@ function getTraitsSectionVisibility(input: {
   const showEffort = selected.primarySelectDescriptor !== null;
   const showThinking = selected.thinkingDescriptor !== null;
   const showFastMode = selected.fastModeDescriptor !== null;
-  const showContextWindow = selected.contextWindowDescriptor !== null;
+  const showContextWindow =
+    selected.contextWindowDescriptor !== null || selected.contextWindowTokens !== null;
   const showAgent = selected.agentDescriptor !== null;
 
   return {
@@ -416,6 +424,20 @@ function TraitsValueRow(props: {
   );
 }
 
+function TraitsReadOnlyRow(props: { icon?: ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex h-7.5 min-h-0 items-center gap-2 px-2 text-(--t1) text-headline">
+      {props.icon ? (
+        <span className="flex size-3.5 shrink-0 items-center justify-center text-(--t3)">
+          {props.icon}
+        </span>
+      ) : null}
+      <span className="min-w-0 flex-1 truncate">{props.label}</span>
+      <span className="shrink-0 text-(--t3)">{props.value}</span>
+    </div>
+  );
+}
+
 export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
   provider,
   instanceId,
@@ -464,6 +486,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
     selectDescriptors,
     primarySelectDescriptor,
     contextWindowDescriptor,
+    contextWindowTokens,
     fastModeDescriptor,
     thinkingDescriptor,
     ultrathinkPromptControlled,
@@ -649,6 +672,12 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
         >
           {renderSelectOptions(contextWindowDescriptor)}
         </TraitsValueRow>
+      ) : contextWindowTokens !== null ? (
+        <TraitsReadOnlyRow
+          icon={<ChartNoAxesColumnIcon className="size-3.5" />}
+          label="Context window"
+          value={formatCompactContextWindowTokens(contextWindowTokens) ?? ""}
+        />
       ) : null}
 
       {showUltrathinkToggle ? (
