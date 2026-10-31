@@ -122,6 +122,7 @@ import * as HoustonTaskSourceStore from "./houston/taskSources/SourceStore.ts";
 import { layerTaskSources } from "./houston/taskSources/layer.ts";
 import { layerMergeQueue } from "./houston/mergeQueue/layer.ts";
 import * as HoustonMergeQueueStore from "./houston/mergeQueue/Store.ts";
+import * as HoustonMergeQueueThreads from "./houston/mergeQueue/Threads.ts";
 import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
@@ -580,7 +581,11 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
 ).pipe(
   // The merge queue reads through the PR page's own service and GitHub client.
   Layer.provideMerge(
-    layerMergeQueue(Layer.mergeAll(GitHubRest.layerWithDependencies, layerPullRequestService)),
+    layerMergeQueue(
+      Layer.mergeAll(GitHubRest.layerWithDependencies, layerPullRequestService).pipe(
+        Layer.merge(HoustonMergeQueueThreads.layer),
+      ),
+    ),
   ),
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer, HoustonTaskV1Import.layer)),

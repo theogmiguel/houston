@@ -12,6 +12,7 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as TestClock from "effect/testing/TestClock";
 
 import {
   createProject,
@@ -459,7 +460,9 @@ describe("retry puts a parked entry back in line", () => {
           notifiedThreadId: null,
           at: "2026-10-30T10:00:00.000Z",
         });
-        const parked = (yield* queue.get({ projectId })).entries.find((entry) => entry.number === 7);
+        const parked = (yield* queue.get({ projectId })).entries.find(
+          (entry) => entry.number === 7,
+        );
         assert.strictEqual(parked?.status, "parked");
 
         const result = yield* queue.retry({ projectId, number: 7 });
@@ -472,7 +475,10 @@ describe("retry puts a parked entry back in line", () => {
 
         const inLine = yield* failure(queue.retry({ projectId, number: 8 }));
         assert.strictEqual(inLine.kind, "invalid");
-        assert.strictEqual(inLine.message, "PR #8 is in line, not parked; there is nothing to retry");
+        assert.strictEqual(
+          inLine.message,
+          "PR #8 is in line, not parked; there is nothing to retry",
+        );
         const missing = yield* failure(queue.retry({ projectId, number: 99 }));
         assert.strictEqual(missing.kind, "not_found");
       }),
@@ -517,7 +523,7 @@ describe("revert opens a revert pull request for a queue merge only", () => {
 });
 
 describe("the away count covers unattended work since the acknowledgement", () => {
-  it.live("the away count covers unattended work since the acknowledgement", () => {
+  it.effect("the away count covers unattended work since the acknowledgement", () => {
     const github = makeGitHub(makeRepos());
     return withQueue(
       Effect.gen(function* () {
@@ -533,11 +539,13 @@ describe("the away count covers unattended work since the acknowledgement", () =
 
         yield* queue.acknowledge({ projectId });
         assert.deepEqual((yield* queue.get({ projectId })).away, { merged: 0, parked: 0 });
-        yield* Effect.sleep("10 millis");
+        yield* TestClock.adjust("1 second");
         yield* store.appendLog(projectId, logRow("merge", 5, { unattended: true }));
         assert.deepEqual((yield* queue.get({ projectId })).away, { merged: 1, parked: 0 });
 
-        const missing = yield* failure(queue.acknowledge({ projectId: "project-missing" as ProjectId }));
+        const missing = yield* failure(
+          queue.acknowledge({ projectId: "project-missing" as ProjectId }),
+        );
         assert.strictEqual(missing.kind, "not_found");
       }),
       { github },

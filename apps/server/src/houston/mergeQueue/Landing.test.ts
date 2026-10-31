@@ -565,7 +565,10 @@ describe("the merge queue has no push but the lease and no unpinned merge", () =
           handOffs.add(mutation[1]!);
         }
       }
-      assert.deepEqual([...handOffs].toSorted(), ["enablePullRequestAutoMerge", "enqueuePullRequest"]);
+      assert.deepEqual([...handOffs].toSorted(), [
+        "enablePullRequestAutoMerge",
+        "enqueuePullRequest",
+      ]);
       // The one lease push, in Landing.ts, and no other force form.
       assert.deepEqual(
         pushSites.map((site) => site.file),

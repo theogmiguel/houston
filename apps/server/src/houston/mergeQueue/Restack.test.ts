@@ -45,7 +45,11 @@ const changed = (cwd: string, sha: string) =>
   git(cwd, ["diff-tree", "--no-commit-id", "--name-only", "-r", sha]).split("\n").filter(Boolean);
 
 /** Resets `branch` to main with one new commit, as a force-pushed rewrite would. */
-const rewriteBranch = (github: FakeGitHub, branch: string, files: Readonly<Record<string, string>>) => {
+const rewriteBranch = (
+  github: FakeGitHub,
+  branch: string,
+  files: Readonly<Record<string, string>>,
+) => {
   const repos = github.repos!;
   const work = NodePath.join(repos.root, `rewrite-${branch.replaceAll("/", "-")}`);
   git(repos.root, ["clone", "--quiet", repos.bare, work]);
@@ -114,7 +118,10 @@ const stackScenario = (
   });
 
 /** Verifies and merges the entry that goes next by the user's Merge. */
-const landNext = (projectId: Parameters<HoustonMergeQueueService["Service"]["get"]>[0]["projectId"], number: number) =>
+const landNext = (
+  projectId: Parameters<HoustonMergeQueueService["Service"]["get"]>[0]["projectId"],
+  number: number,
+) =>
   Effect.gen(function* () {
     const queue = yield* HoustonMergeQueueService;
     const runner = yield* HoustonMergeQueueRunner;
@@ -232,7 +239,10 @@ describe("a dependent with no recorded fork point is refused by name", () => {
         const message = two.failure!.message;
         assert.include(message, one.headSha.slice(0, 7));
         assert.include(message, one.verification!.verifiedSha.slice(0, 7));
-        assert.include(message, "Houston does not guess one. Rebase houston/two onto main and push");
+        assert.include(
+          message,
+          "Houston does not guess one. Rebase houston/two onto main and push",
+        );
         assert.deepEqual(pushesOf(gitLog), []);
         assert.strictEqual(remoteHead(github.repos!, "houston/two"), before);
         const merges = mergesOf(github).length;

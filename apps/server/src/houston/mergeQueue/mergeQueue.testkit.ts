@@ -363,7 +363,8 @@ const answerMutation = (github: FakeGitHub, query: string, variables: Record<str
     });
   }
   if (query.includes("enablePullRequestAutoMerge(")) {
-    if (!github.autoMergeAllowed) return graphqlError("Auto merge is not allowed for this repository");
+    if (!github.autoMergeAllowed)
+      return graphqlError("Auto merge is not allowed for this repository");
     const refused = pinned();
     if (refused !== null) return graphqlError(refused);
     if (!github.handOffIgnored) {
@@ -371,7 +372,8 @@ const answerMutation = (github: FakeGitHub, query: string, variables: Record<str
     }
     return json({ data: { enablePullRequestAutoMerge: { pullRequest: { number: pull.number } } } });
   }
-  const takeBack = query.includes("dequeuePullRequest(") || query.includes("disablePullRequestAutoMerge(");
+  const takeBack =
+    query.includes("dequeuePullRequest(") || query.includes("disablePullRequestAutoMerge(");
   if (takeBack && github.takeBackFailure !== null) return graphqlError(github.takeBackFailure);
   if (query.includes("dequeuePullRequest(")) {
     pull.queued = null;
@@ -379,7 +381,9 @@ const answerMutation = (github: FakeGitHub, query: string, variables: Record<str
   }
   if (query.includes("disablePullRequestAutoMerge(")) {
     pull.autoMerge = null;
-    return json({ data: { disablePullRequestAutoMerge: { pullRequest: { number: pull.number } } } });
+    return json({
+      data: { disablePullRequestAutoMerge: { pullRequest: { number: pull.number } } },
+    });
   }
   return graphqlError("unknown mutation");
 };
@@ -687,7 +691,11 @@ export const layerRecordingVcs = (log: GitLog) =>
 /** The project threads the queue may tell, and every note and launch it sent. */
 export interface FakeThreads {
   readonly threads: Array<QueueThread>;
-  readonly notes: Array<{ readonly threadId: string; readonly messageId: string; readonly text: string }>;
+  readonly notes: Array<{
+    readonly threadId: string;
+    readonly messageId: string;
+    readonly text: string;
+  }>;
   readonly launched: Array<LaunchRequest>;
   launchFailure: string | null;
 }
@@ -751,10 +759,8 @@ export interface MergeQueueTestOptions {
 export const layerMergeQueueTest = (options: MergeQueueTestOptions = {}) => {
   const github = options.github ?? makeGitHub();
   return layerMergeQueue(
-    Layer.mergeAll(
-      layerGitHubRestFake(github),
-      layerPullRequestFake(github),
-      layerThreadsFake(options.threads ?? makeThreads()),
+    Layer.mergeAll(layerGitHubRestFake(github), layerPullRequestFake(github)).pipe(
+      Layer.merge(layerThreadsFake(options.threads ?? makeThreads())),
     ),
     { loops: options.loops ?? true },
   ).pipe(

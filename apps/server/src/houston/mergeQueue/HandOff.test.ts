@@ -225,10 +225,7 @@ describe("a hand-off is pinned to the verified commit and confirmed", () => {
         const held = entryOf(snapshot, 7);
         assert.strictEqual(held.status, "watching");
         assert.strictEqual(held.reason, "In GitHub's merge queue (position 2)");
-        assert.deepEqual(
-          [held.github?.mode, held.github?.headSha],
-          ["mergeQueue", entry.headSha],
-        );
+        assert.deepEqual([held.github?.mode, held.github?.headSha], ["mergeQueue", entry.headSha]);
         const rows = snapshot.log.filter((row) => row.kind === "hand_off");
         assert.strictEqual(rows.length, 1);
         assert.deepEqual([rows[0]!.number, rows[0]!.headSha], [7, entry.headSha]);
@@ -306,7 +303,10 @@ describe("a hand-off is pinned to the verified commit and confirmed", () => {
         assert.strictEqual(out.failure?.kind, "refused");
         assert.include(out.failure?.message, "did not report");
         assert.isNull(out.github);
-        assert.deepEqual(snapshot.log.filter((row) => row.kind === "hand_off"), []);
+        assert.deepEqual(
+          snapshot.log.filter((row) => row.kind === "hand_off"),
+          [],
+        );
       }),
     );
   });
@@ -416,50 +416,56 @@ describe("github's merge, ejection, failure or a new head settle a held entry", 
     );
   });
 
-  it.live("github's merge, ejection, failure or a new head settle a held entry: auto-merge off", () => {
-    const github = makeGitHub(makeRepos());
-    github.autoMergeAllowed = true;
-    return withQueue(
-      github,
-      Effect.gen(function* () {
-        const queue = yield* HoustonMergeQueueService;
-        const reader = yield* HoustonMergeQueueReader;
-        const runner = yield* HoustonMergeQueueRunner;
-        const projectId = yield* queueScenario(github, [7], { command: "git --version" });
-        const { pull } = yield* handedOff(github, projectId);
-        pull.autoMerge = null;
-        pull.letGo = "the base branch was changed";
-        yield* reader.readProject(projectId);
-        yield* runner.step(projectId);
-        const out = entryOf(yield* queue.get({ projectId }), 7);
-        assert.strictEqual(out.failure?.kind, "ejected", JSON.stringify(out));
-        assert.include(out.failure?.message, "auto-merge");
-        assert.include(out.failure?.message, "the base branch was changed");
-      }),
-    );
-  });
+  it.live(
+    "github's merge, ejection, failure or a new head settle a held entry: auto-merge off",
+    () => {
+      const github = makeGitHub(makeRepos());
+      github.autoMergeAllowed = true;
+      return withQueue(
+        github,
+        Effect.gen(function* () {
+          const queue = yield* HoustonMergeQueueService;
+          const reader = yield* HoustonMergeQueueReader;
+          const runner = yield* HoustonMergeQueueRunner;
+          const projectId = yield* queueScenario(github, [7], { command: "git --version" });
+          const { pull } = yield* handedOff(github, projectId);
+          pull.autoMerge = null;
+          pull.letGo = "the base branch was changed";
+          yield* reader.readProject(projectId);
+          yield* runner.step(projectId);
+          const out = entryOf(yield* queue.get({ projectId }), 7);
+          assert.strictEqual(out.failure?.kind, "ejected", JSON.stringify(out));
+          assert.include(out.failure?.message, "auto-merge");
+          assert.include(out.failure?.message, "the base branch was changed");
+        }),
+      );
+    },
+  );
 
-  it.live("github's merge, ejection, failure or a new head settle a held entry: a failing check", () => {
-    const github = makeGitHub(makeRepos());
-    github.autoMergeAllowed = true;
-    return withQueue(
-      github,
-      Effect.gen(function* () {
-        const queue = yield* HoustonMergeQueueService;
-        const reader = yield* HoustonMergeQueueReader;
-        const runner = yield* HoustonMergeQueueRunner;
-        const projectId = yield* queueScenario(github, [7], { command: "git --version" });
-        const { pull } = yield* handedOff(github, projectId);
-        pull.checks = [{ name: "build", status: "failure", required: true }];
-        yield* reader.readProject(projectId);
-        yield* runner.step(projectId);
-        const out = entryOf(yield* queue.get({ projectId }), 7);
-        assert.strictEqual(out.failure?.kind, "checksFailed", JSON.stringify(out));
-        assert.include(out.failure?.message, "build");
-        assert.deepEqual(mergesOf(github), []);
-      }),
-    );
-  });
+  it.live(
+    "github's merge, ejection, failure or a new head settle a held entry: a failing check",
+    () => {
+      const github = makeGitHub(makeRepos());
+      github.autoMergeAllowed = true;
+      return withQueue(
+        github,
+        Effect.gen(function* () {
+          const queue = yield* HoustonMergeQueueService;
+          const reader = yield* HoustonMergeQueueReader;
+          const runner = yield* HoustonMergeQueueRunner;
+          const projectId = yield* queueScenario(github, [7], { command: "git --version" });
+          const { pull } = yield* handedOff(github, projectId);
+          pull.checks = [{ name: "build", status: "failure", required: true }];
+          yield* reader.readProject(projectId);
+          yield* runner.step(projectId);
+          const out = entryOf(yield* queue.get({ projectId }), 7);
+          assert.strictEqual(out.failure?.kind, "checksFailed", JSON.stringify(out));
+          assert.include(out.failure?.message, "build");
+          assert.deepEqual(mergesOf(github), []);
+        }),
+      );
+    },
+  );
 
   it.live(
     "github's merge, ejection, failure or a new head settle a held entry: a new head while another project verifies",
@@ -643,7 +649,10 @@ describe("required checks come from the head and no branch rules are read", () =
           ),
           [],
         );
-        assert.deepEqual(yield* store.handOffs(projectId), { main: "autoMerge", release: "houston" });
+        assert.deepEqual(yield* store.handOffs(projectId), {
+          main: "autoMerge",
+          release: "houston",
+        });
       }),
     );
   });

@@ -638,9 +638,7 @@ describe("the hand-off follows the read, then the cache for the base, then houst
       },
     ];
     for (const value of cases) {
-      expect(handOffMode(value.facts, "main", value.cache ?? {}), value.name).toBe(
-        value.expected,
-      );
+      expect(handOffMode(value.facts, "main", value.cache ?? {}), value.name).toBe(value.expected);
     }
     // A read that never happened or failed leaves the cache to answer.
     expect(handOffMode(null, "main", { main: "autoMerge" })).toBe("autoMerge");

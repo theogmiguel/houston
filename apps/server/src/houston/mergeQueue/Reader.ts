@@ -9,7 +9,15 @@ import * as Layer from "effect/Layer";
 
 import { HoustonMergeQueueGitHub, type PullRead } from "./GitHubQueueClient.ts";
 import { HoustonMergeQueueProject, type ProjectTarget } from "./Project.ts";
-import { sameAnswer, type Facts, type QueueRow } from "./rules.ts";
+import { HoustonMergeQueueOutcomes } from "./Outcomes.ts";
+import {
+  handOffMode,
+  sameAnswer,
+  targetBase,
+  verificationHolds,
+  type Facts,
+  type QueueRow,
+} from "./rules.ts";
 import { HoustonMergeQueueStore, nowIso } from "./Store.ts";
 import { HoustonMergeVerifier } from "./Verifier.ts";
 
@@ -46,6 +54,8 @@ export const failedFacts = (error: string, readAt: string, row: QueueRow): Facts
   threadsTruncated: false,
   mergeMethods: { merge: false, squash: false, rebase: false },
   defaultBranch: null,
+  handOff: null,
+  nodeId: null,
 });
 
 export const makeReader = Effect.fn("HoustonMergeQueueReader.make")(function* (options: {
@@ -55,6 +65,7 @@ export const makeReader = Effect.fn("HoustonMergeQueueReader.make")(function* (o
   const github = yield* HoustonMergeQueueGitHub;
   const projects = yield* HoustonMergeQueueProject;
   const verifier = yield* HoustonMergeVerifier;
+  const outcomes = yield* HoustonMergeQueueOutcomes;
   let loops = 0;
 
   const leave = Effect.fn("HoustonMergeQueueReader.leave")(function* (
@@ -83,6 +94,22 @@ export const makeReader = Effect.fn("HoustonMergeQueueReader.make")(function* (o
       return { read: null, error: read.failure };
     }
     const { facts } = read.success;
+    const base = targetBase({ baseRef: facts.baseRef, stacked: row.stacked });
+    if (facts.handOff !== undefined && facts.handOff !== null && base !== null) {
+      yield* store.recordHandOff(target.projectId, base, handOffMode(facts, base, {}));
+    }
+    const hold = row.github;
+    if (facts.state === "merged" && hold !== null) {
+      // GitHub landed what Houston handed it: the landing finishes as for Houston's own merge.
+      const verification = verificationHolds(row);
+      yield* outcomes.finishMerge(target, row, {
+        commit: facts.headSha,
+        method: hold.method ?? null,
+        baseBefore: verification?.baseSha ?? null,
+        unattended: hold.unattended === true,
+      });
+      return { read: read.success, error: null };
+    }
     if (facts.state !== "open") {
       yield* leave(target, row, facts.state === "merged");
       return { read: read.success, error: null };

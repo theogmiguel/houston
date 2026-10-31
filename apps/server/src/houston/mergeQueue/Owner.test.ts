@@ -13,6 +13,7 @@ import {
   type OrchestrationV2Command,
 } from "@t3tools/contracts";
 import type { HoustonMergeQueueError } from "@t3tools/contracts/houston/mergeQueue";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -276,7 +277,7 @@ describe("a failure goes to the owner thread once and parks without one", () => 
                   projectId: ProjectId.make(PROJECT),
                   branch: null,
                   worktreePath: null,
-                  archivedAt: new Date(0),
+                  archivedAt: DateTime.makeUnsafe(0),
                 },
               ]),
           } as never),
@@ -296,13 +297,17 @@ describe("a failure goes to the owner thread once and parks without one", () => 
         },
         { id: "thread-b", projectId: PROJECT, branch: null, worktreePath: null, archived: true },
       ]);
-      yield* threads.notify({ threadId: "thread-a", messageId: "message:merge-queue:x", text: "t" });
+      yield* threads.notify({
+        threadId: "thread-a",
+        messageId: "message:merge-queue:x",
+        text: "t",
+      });
       assert.deepEqual(dispatched, [
         {
           type: "houston.merge-queue.notify",
-          commandId: "houston-merge-queue:message:merge-queue:x",
-          threadId: "thread-a",
-          messageId: "message:merge-queue:x",
+          commandId: CommandId.make("houston-merge-queue:message:merge-queue:x"),
+          threadId: ThreadId.make("thread-a"),
+          messageId: MessageId.make("message:merge-queue:x"),
           text: "t",
         },
       ]);
@@ -389,7 +394,9 @@ describe("hand to a new thread launches one thread with the failure", () => {
           (file) => file.endsWith(".ts") && !file.includes(".test.") && !file.includes("testkit"),
         );
       const launchers = sources.filter((file) =>
-        /ThreadLaunchService|\.launch\(/.test(NodeFS.readFileSync(NodePath.join(directory, file), "utf8")),
+        /ThreadLaunchService|\.launch\(/.test(
+          NodeFS.readFileSync(NodePath.join(directory, file), "utf8"),
+        ),
       );
       assert.deepEqual(launchers.toSorted(), ["Service.ts", "Threads.ts"]);
       const service = NodeFS.readFileSync(NodePath.join(directory, "Service.ts"), "utf8");
@@ -436,7 +443,7 @@ describe("hand to a new thread launches one thread with the failure", () => {
         branch: "houston/7",
       });
       assert.deepEqual(launches[0]!.initialMessage, {
-        messageId: "message:merge-queue:hand:7",
+        messageId: MessageId.make("message:merge-queue:hand:7"),
         text: "the note",
         attachments: [],
       });

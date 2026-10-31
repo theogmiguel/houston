@@ -1,6 +1,15 @@
 import * as Schema from "effect/Schema";
 
-import { IsoDateTime, NonNegativeInt, PositiveInt, ProjectId } from "../baseSchemas.ts";
+import {
+  CommandId,
+  IsoDateTime,
+  MessageId,
+  NonNegativeInt,
+  PositiveInt,
+  ProjectId,
+  ThreadId,
+} from "../baseSchemas.ts";
+import { ModelSelection } from "../modelSelection.ts";
 
 /** The bounds the merge queue is checked against; a refusal names the bound and the value. */
 export const HOUSTON_MERGE_QUEUE_LIMITS = {
@@ -78,6 +87,8 @@ export const HoustonMergeQueueVerification = Schema.Struct({
   at: IsoDateTime,
   /** Checks GitHub reported on `headSha` when the queue pushed `verifiedSha` over it. */
   headChecks: Schema.optionalKey(NonNegativeInt),
+  /** A restack: only the commits after this recorded head of the merged dependency replayed. */
+  forkSha: Schema.optionalKey(Schema.String),
 });
 export type HoustonMergeQueueVerification = typeof HoustonMergeQueueVerification.Type;
 
@@ -109,10 +120,17 @@ export const HoustonMergeQueueHandOff = Schema.Literals(["houston", "autoMerge",
 export type HoustonMergeQueueHandOff = typeof HoustonMergeQueueHandOff.Type;
 
 /** What was handed to GitHub; it holds only for the head it names. */
+export const HoustonMergeQueueMergeMethod = Schema.Literals(["squash", "merge", "rebase"]);
+export type HoustonMergeQueueMergeMethod = typeof HoustonMergeQueueMergeMethod.Type;
+
 export const HoustonMergeQueueGitHubHold = Schema.Struct({
   mode: HoustonMergeQueueHandOff,
   headSha: Schema.String,
   at: IsoDateTime,
+  /** Whether Merge when verified handed it off, so GitHub's merge counts as unattended. */
+  unattended: Schema.optionalKey(Schema.Boolean),
+  /** The method auto-merge was enabled with. */
+  method: Schema.optionalKey(HoustonMergeQueueMergeMethod),
 });
 export type HoustonMergeQueueGitHubHold = typeof HoustonMergeQueueGitHubHold.Type;
 
@@ -150,9 +168,6 @@ export const HoustonMergeQueueLogKind = Schema.Literals([
   "hand_off",
 ]);
 export type HoustonMergeQueueLogKind = typeof HoustonMergeQueueLogKind.Type;
-
-export const HoustonMergeQueueMergeMethod = Schema.Literals(["squash", "merge", "rebase"]);
-export type HoustonMergeQueueMergeMethod = typeof HoustonMergeQueueMergeMethod.Type;
 
 export const HoustonMergeQueueLogEntry = Schema.Struct({
   id: PositiveInt,
@@ -292,6 +307,26 @@ export const HoustonMergeQueuePauseInput = Schema.Struct({
   paused: Schema.Boolean,
 });
 export type HoustonMergeQueuePauseInput = typeof HoustonMergeQueuePauseInput.Type;
+
+export const HoustonMergeQueueHandToThreadInput = Schema.Struct({
+  projectId: ProjectId,
+  number: PositiveInt,
+  modelSelection: ModelSelection,
+});
+export type HoustonMergeQueueHandToThreadInput = typeof HoustonMergeQueueHandToThreadInput.Type;
+
+export const HoustonMergeQueueHandToThreadResult = Schema.Struct({ threadId: ThreadId });
+export type HoustonMergeQueueHandToThreadResult = typeof HoustonMergeQueueHandToThreadResult.Type;
+
+/** One queued user message to a merge queue entry's owner thread (AD-061). */
+export const HoustonMergeQueueNotifyCommand = Schema.Struct({
+  type: Schema.Literal("houston.merge-queue.notify"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  messageId: MessageId,
+  text: Schema.String,
+});
+export type HoustonMergeQueueNotifyCommand = typeof HoustonMergeQueueNotifyCommand.Type;
 
 export const HoustonMergeQueueMessageResult = Schema.Struct({ message: Schema.String });
 export type HoustonMergeQueueMessageResult = typeof HoustonMergeQueueMessageResult.Type;

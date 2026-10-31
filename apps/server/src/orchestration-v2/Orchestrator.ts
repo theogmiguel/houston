@@ -177,6 +177,11 @@ import {
   SIDE_THREAD_READ_ONLY,
   sideMessageId,
 } from "../houston/sideThreads.ts";
+import {
+  MERGE_QUEUE_NOTE_ALREADY_SENT,
+  MERGE_QUEUE_NOTE_NEEDS_LIVE_THREAD,
+  noteDispatchMode,
+} from "../houston/mergeQueueNotify.ts";
 import type { HoustonSideThread } from "@t3tools/contracts/houston/sideThreads";
 import * as CheckpointDiffQuery from "../checkpointing/CheckpointDiffQuery.ts";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
@@ -564,6 +569,8 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
       return command.reviewThreadId;
     case "houston.side-thread.send":
       return command.sideThreadId;
+    case "houston.merge-queue.notify":
+      return command.threadId;
   }
 }
 
@@ -4690,6 +4697,46 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       effects,
     );
   });
+
+  // Houston: the merge queue's note to an owner thread (mergeQueueNotify.ts holds the rules).
+  const dispatchMergeQueueNotify = Effect.fn("orchestrationV2.dispatch.mergeQueueNotify")(
+    function* (
+      command: Extract<OrchestrationV2Command, { readonly type: "houston.merge-queue.notify" }>,
+      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+      effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+    ) {
+      const owner = yield* projectionStore
+        .getThreadRecords(command.threadId, ["runs", "messages"], {
+          messageIds: [command.messageId],
+        })
+        .pipe(
+          Effect.mapError(
+            (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+          ),
+        );
+      if (owner.thread.archivedAt !== null) {
+        return yield* refuseSideCommand(command, MERGE_QUEUE_NOTE_NEEDS_LIVE_THREAD);
+      }
+      if (owner.messages.some((message) => message.id === command.messageId)) {
+        return yield* refuseSideCommand(command, MERGE_QUEUE_NOTE_ALREADY_SENT);
+      }
+      return yield* dispatchMessage(
+        {
+          type: "message.dispatch",
+          createdBy: "user",
+          creationSource: "server",
+          commandId: command.commandId,
+          threadId: command.threadId,
+          messageId: command.messageId,
+          text: command.text,
+          attachments: [],
+          dispatchMode: noteDispatchMode(owner.runs),
+        },
+        events,
+        effects,
+      );
+    },
+  );
 
   /** A source's live side threads, deleted with it. */
   const sideThreadsOf = Effect.fn("Orchestrator.sideThreadsOf")(function* (
@@ -13356,6 +13403,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "houston.side-thread.send":
         cancelUnsettledEffects = yield* dispatchSideThreadSend(command, events, effects);
+        break;
+      case "houston.merge-queue.notify":
+        cancelUnsettledEffects = yield* dispatchMergeQueueNotify(command, events, effects);
         break;
       default:
         return yield* dispatchUnsupported(command);

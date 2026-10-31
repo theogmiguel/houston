@@ -385,11 +385,17 @@ describe("the project checkout is unchanged by every outcome", () => {
           .split("\n")
           .filter((line) => !pushed.some((ref) => line.endsWith(`\t${ref}`)))
           .join("\n");
-      assert.deepEqual({ ...after, refs: without(after.refs) }, { ...before, refs: without(before.refs) });
+      assert.deepEqual(
+        { ...after, refs: without(after.refs) },
+        { ...before, refs: without(before.refs) },
+      );
       for (const ref of pushed) {
         const line = after.refs.split("\n").find((value) => value.endsWith(`\t${ref}`));
         if (line !== undefined) {
-          assert.strictEqual(line.split(" ")[0], remoteHead(repos, ref.slice("refs/remotes/origin/".length)));
+          assert.strictEqual(
+            line.split(" ")[0],
+            remoteHead(repos, ref.slice("refs/remotes/origin/".length)),
+          );
         }
       }
       assert.isFalse(NodeFS.existsSync(marker), "a hook of the checkout ran");

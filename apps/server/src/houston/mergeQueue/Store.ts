@@ -5,6 +5,7 @@ import {
   HOUSTON_MERGE_QUEUE_LIMITS,
   type HoustonMergeQueueAway,
   type HoustonMergeQueueFailure,
+  type HoustonMergeQueueGitHubHold,
   type HoustonMergeQueueHandOff,
   type HoustonMergeQueueLogEntry,
   type HoustonMergeQueueSettings,
@@ -20,7 +21,14 @@ import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import type * as SqlError from "effect/sql/SqlError";
 
-import type { CheckedSettings, Facts, QueueRow, Stacked } from "./rules.ts";
+import type { CheckedSettings, Facts, HandOffCache, QueueRow, Stacked } from "./rules.ts";
+
+interface HandOffJson {
+  /** The hand-off of the newest visible answer, which the snapshot shows. */
+  readonly mode: HoustonMergeQueueHandOff;
+  readonly baseRef: string;
+  readonly bases: HandOffCache;
+}
 
 export const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 
@@ -177,6 +185,26 @@ export class HoustonMergeQueueStore extends Context.Service<
     readonly settings: (projectId: ProjectId) => Effect.Effect<HoustonMergeQueueSettings>;
     readonly acknowledgedAt: (projectId: string) => Effect.Effect<string | null>;
     readonly handOff: (projectId: string) => Effect.Effect<HoustonMergeQueueHandOff | null>;
+    /** The hand-off GitHub's last visible answer chose, per base branch. */
+    readonly handOffs: (projectId: string) => Effect.Effect<HandOffCache>;
+    /** Remembers the hand-off for a base; publishes only when it changed. */
+    readonly recordHandOff: (
+      projectId: string,
+      baseRef: string,
+      mode: HoustonMergeQueueHandOff,
+    ) => Effect.Effect<void>;
+    readonly setGitHub: (
+      projectId: string,
+      number: number,
+      hold: HoustonMergeQueueGitHubHold | null,
+    ) => Effect.Effect<void>;
+    readonly setOwner: (projectId: string, number: number, threadId: string) => Effect.Effect<void>;
+    readonly acknowledge: (projectId: string) => Effect.Effect<void>;
+    /** Every log row of one pull request, oldest first. */
+    readonly logOf: (
+      projectId: string,
+      number: number,
+    ) => Effect.Effect<ReadonlyArray<HoustonMergeQueueLogEntry>>;
     /** Checks, then stores, with no write between; a new command drops its verifications. */
     readonly saveSettings: <E>(
       projectId: ProjectId,
@@ -433,13 +461,77 @@ const make = Effect.gen(function* () {
     yield* PubSub.publish(events, { projectId });
   });
 
-  const handOff = (projectId: string) =>
+  const handOffJson = (projectId: string) =>
     settingsRow(projectId).pipe(
-      Effect.map(
-        (row) =>
-          parse<{ readonly mode: HoustonMergeQueueHandOff }>(row?.hand_off_json ?? null)?.mode ??
-          null,
-      ),
+      Effect.map((row) => parse<HandOffJson>(row?.hand_off_json ?? null)),
+    );
+
+  const handOff = (projectId: string) =>
+    handOffJson(projectId).pipe(Effect.map((stored) => stored?.mode ?? null));
+
+  const handOffs = (projectId: string) =>
+    handOffJson(projectId).pipe(Effect.map((stored): HandOffCache => stored?.bases ?? {}));
+
+  const recordHandOff = (projectId: string, baseRef: string, mode: HoustonMergeQueueHandOff) =>
+    lock
+      .withPermits(1)(
+        Effect.gen(function* () {
+          const stored = yield* handOffJson(projectId);
+          if (stored?.mode === mode && stored.bases?.[baseRef] === mode) return false;
+          const next: HandOffJson = { mode, baseRef, bases: { ...stored?.bases, [baseRef]: mode } };
+          yield* sql
+            .withTransaction(sql`
+          INSERT INTO houston_merge_queue_settings (project_id, hand_off_json)
+          VALUES (${projectId}, ${json(next)})
+          ON CONFLICT (project_id) DO UPDATE SET hand_off_json = excluded.hand_off_json
+        `)
+            .pipe(Effect.orDie);
+          return true;
+        }),
+      )
+      .pipe(
+        Effect.flatMap((changed) =>
+          changed ? PubSub.publish(events, { projectId }).pipe(Effect.asVoid) : Effect.void,
+        ),
+      );
+
+  const setGitHub = (projectId: string, number: number, hold: HoustonMergeQueueGitHubHold | null) =>
+    write(
+      projectId,
+      sql`
+        UPDATE houston_merge_queue_entries SET github_json = ${json(hold)}
+        WHERE project_id = ${projectId} AND number = ${number}
+      `,
+    );
+
+  const setOwner = (projectId: string, number: number, threadId: string) =>
+    write(
+      projectId,
+      sql`
+        UPDATE houston_merge_queue_entries SET owner_thread_id = ${threadId}
+        WHERE project_id = ${projectId} AND number = ${number}
+      `,
+    );
+
+  const acknowledge = (projectId: string) =>
+    write(
+      projectId,
+      Effect.gen(function* () {
+        const now = yield* nowIso;
+        yield* sql`
+          INSERT INTO houston_merge_queue_settings (project_id, acknowledged_at) VALUES (${projectId}, ${now})
+          ON CONFLICT (project_id) DO UPDATE SET acknowledged_at = excluded.acknowledged_at
+        `;
+      }),
+    );
+
+  const logOf = (projectId: string, number: number) =>
+    sql<LogRow>`
+      SELECT * FROM houston_merge_queue_log WHERE project_id = ${projectId} AND number = ${number}
+      ORDER BY id
+    `.pipe(
+      Effect.map((found) => found.map(toLog)),
+      Effect.orDie,
     );
 
   const projectRemoved = (projectId: ProjectId) =>
@@ -473,6 +565,12 @@ const make = Effect.gen(function* () {
     settings,
     acknowledgedAt,
     handOff,
+    handOffs,
+    recordHandOff,
+    setGitHub,
+    setOwner,
+    acknowledge,
+    logOf,
     saveSettings,
     setPaused,
     globalPaused,
