@@ -1,9 +1,13 @@
 // What each request is owed when its task changes in Houston, derived on each tick.
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import { HoustonTaskRuns } from "../tasks/TaskRuns.ts";
 import * as HoustonTaskService from "../tasks/TaskService.ts";
+import { HoustonTaskStore } from "../tasks/TaskStore.ts";
+import { slackBriefOf } from "./Brief.ts";
 import { createProject } from "../tasks/tasks.testkit.ts";
 import { HoustonSlackOutbox } from "./Outbox.ts";
 import { HoustonSlackReplies } from "./Replies.ts";
@@ -265,6 +269,55 @@ describe("a stopped, failed or waiting run marks the request for attention", () 
           dms.some((text) => text.includes("waiting for a confirmation")),
           "the waiting run is named",
         );
+      }),
+    ),
+  );
+});
+
+describe("a slack run handed back with the tasks tool still reaches the thread and the owner", () => {
+  it.effect("a slack run handed back with the tasks tool still reaches the thread and the owner", () =>
+    runSlack((fake) =>
+      Effect.gen(function* () {
+        yield* connectedProject("tasks-handback");
+        const ts = "1700000000.000100";
+        const request = yield* startedRequest(fake, ts, "Export the report");
+
+        // The brief names the Slack tools, so the agent is told how to ask and hand back.
+        const task = yield* Effect.flatMap(HoustonTaskStore, (store) =>
+          store.taskById(request.taskId),
+        );
+        const brief = yield* slackBriefOf(task!);
+        assert.isTrue(Option.isSome(brief));
+        const description = Option.getOrThrow(brief).description;
+        assert.include(description, "houston_slack_ask");
+        assert.include(description, "houston_slack_handback");
+
+        // The agent hands back with houston_task_handback instead.
+        yield* Effect.flatMap(HoustonTaskRuns, (runs) =>
+          runs.handback(
+            { id: request.key, summary: "Export works\n\nThe report exports CSV." },
+            `agent:${request.threadId}`,
+          ),
+        );
+        yield* tickReplies;
+        yield* flushOutbox;
+        const ready = threadPosts(fake, ts).filter((post) =>
+          postedText(post).includes("Ready, waiting for review"),
+        );
+        assert.lengthOf(ready, 1);
+        assert.include(postedText(ready[0]), "Export works");
+        assert.include(postedText(ready[0]), "The report exports CSV.");
+        assert.strictEqual((yield* storedRequest(ts))?.status_reaction, "checkered_flag");
+        assert.isTrue(
+          ownerDms(fake).some((dm) => postedText(dm).includes("Ready for review: Export works")),
+          "the owner hears of the hand-back",
+        );
+
+        // Once per run: later ticks post nothing more.
+        const before = fake.callsOf("chat.postMessage").length;
+        yield* tickReplies;
+        yield* flushOutbox;
+        assert.strictEqual(fake.callsOf("chat.postMessage").length, before);
       }),
     ),
   );

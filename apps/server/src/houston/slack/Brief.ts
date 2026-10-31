@@ -13,6 +13,10 @@ const decodeAttachments = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Array(ChatAttachment)),
 );
 
+/** How a Slack run talks to its thread; the generic brief names only the Tasks tools. */
+export const SLACK_TOOLS_NOTE =
+  "The requester follows this task in its Slack thread. Ask them a question with houston_slack_ask, one at a time, and hand the task back with houston_slack_handback, which posts your result to the thread.";
+
 export interface SlackBrief {
   readonly title: string;
   readonly description: string;
@@ -46,10 +50,13 @@ export const slackBriefOf = Effect.fn("HoustonSlackBrief.of")(function* (
   });
   return Option.some<SlackBrief>({
     title: defangFences(row.title),
-    description:
-      adjustments.length === 0
-        ? fenced
-        : `${fenced}\n\n${fenceSlackAdjustments(adjustments.map((entry) => entry.text))}`,
+    description: [
+      fenced,
+      ...(adjustments.length === 0
+        ? []
+        : [fenceSlackAdjustments(adjustments.map((entry) => entry.text))]),
+      SLACK_TOOLS_NOTE,
+    ].join("\n\n"),
     attachments:
       request.attachments_json === null
         ? []

@@ -360,20 +360,32 @@ const make = Effect.gen(function* () {
     if (refusal !== undefined) return yield* refusal;
     const caller = yield* slackRunOf(HANDBACK, threadId);
     const key = houstonTaskKey(caller.task.number);
-    yield* runs.handback(
-      { id: key, summary: `${form.subject.trim()}\n\n${form.changes.trim()}` },
-      `agent:${threadId}`,
-    );
     const now = yield* nowIso;
-    yield* store.write(
-      run(sql`
+    // The form is recorded first: a Replies tick on the hand-back would otherwise post the
+    // run's summary in its place. A refused hand-back takes it away again.
+    const recorded = yield* store.write(
+      run(sql<{ readonly id: number }>`
         INSERT INTO houston_slack_results (task_run_id, request_id, form_json, created_at)
         VALUES (${caller.run.id}, ${caller.request.id}, ${encodeResult(form)}, ${now})
-        ON CONFLICT (task_run_id) DO NOTHING
-      `).pipe(
-        Effect.as({ result: undefined, requests: [caller.request.id], touched: [caller.task.id] }),
-      ),
+        ON CONFLICT (task_run_id) DO NOTHING RETURNING task_run_id AS id
+      `).pipe(Effect.map((rows) => ({ result: rows.length > 0, requests: [caller.request.id] }))),
     );
+    yield* runs
+      .handback(
+        { id: key, summary: `${form.subject.trim()}\n\n${form.changes.trim()}` },
+        `agent:${threadId}`,
+      )
+      .pipe(
+        Effect.tapError(() =>
+          recorded
+            ? store.write(
+                run(sql`
+                  DELETE FROM houston_slack_results WHERE task_run_id = ${caller.run.id}
+                `).pipe(Effect.as({ result: undefined })),
+              )
+            : Effect.void,
+        ),
+      );
     return (yield* tasks.get({ id: key })).task;
   });
 

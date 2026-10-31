@@ -1,5 +1,6 @@
 // What each open request is owed when its task or run changes in Houston: derived from the rows
 // every 5 seconds and on each Tasks change, then queued in the outbox under a dedupe key.
+import { HOUSTON_SLACK_LIMITS } from "@t3tools/contracts/houston/slack";
 import { houstonTaskKey } from "@t3tools/contracts/houston/tasks";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -63,6 +64,8 @@ const decodeResult = Schema.decodeUnknownSync(
     }),
   ),
 );
+
+const encodeResult = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const ms = (iso: string) => DateTime.toEpochMillis(DateTime.makeUnsafe(iso));
 
@@ -203,6 +206,29 @@ const make = Effect.gen(function* () {
         return { result: undefined, requests: [row.id] };
       }),
     );
+  });
+
+  /** A run handed back without `houston_slack_handback` (the Tasks tool): its summary is the form. */
+  const recordSummary = Effect.fn("HoustonSlackReplies.recordSummary")(function* (
+    row: OwedRow,
+    latest: RunRow,
+  ) {
+    const [first = "", ...rest] = (latest.summary ?? "").trim().split("\n");
+    const cut = (value: string, chars: number) => [...value].slice(0, chars).join("").trim();
+    const form: ResultForm = {
+      outcome: "ready",
+      subject: cut(first, HOUSTON_SLACK_LIMITS.subjectChars),
+      changes: cut(rest.join("\n").trim() || first, HOUSTON_SLACK_LIMITS.changesChars),
+    };
+    const now = yield* nowIso;
+    yield* store.write(
+      run(sql`
+        INSERT INTO houston_slack_results (task_run_id, request_id, form_json, created_at)
+        VALUES (${latest.id}, ${row.id}, ${encodeResult(form)}, ${now})
+        ON CONFLICT (task_run_id) DO NOTHING
+      `).pipe(Effect.as({ result: undefined, requests: [row.id] })),
+    );
+    return form;
   });
 
   /** A stopped, failed or waiting run tells the owner once and shows ⚠️. */
@@ -380,8 +406,8 @@ const make = Effect.gen(function* () {
       const latest = yield* latestRunOf(row.task_id);
       if (latest === undefined) continue;
       if (latest.state === "handed_back") {
-        const form = yield* resultOf(latest.id);
-        if (form !== undefined) yield* postResult(row, latest, form, settings);
+        const form = (yield* resultOf(latest.id)) ?? (yield* recordSummary(row, latest));
+        yield* postResult(row, latest, form, settings);
         continue;
       }
       yield* attention(row, latest, settings);
