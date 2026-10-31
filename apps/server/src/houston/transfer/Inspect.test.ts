@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import type * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
@@ -90,7 +91,10 @@ describe("inspect summarises a file without unpacking it", () => {
           assert.deepEqual(frames, ["manifest.json"]);
           assert.strictEqual(summary.transferId, exported.transferId);
           assert.strictEqual(summary.format, 2);
-          assert.strictEqual(summary.sourceOs, process.platform === "win32" ? "win32" : "linux");
+          assert.strictEqual(
+            summary.sourceOs,
+            (yield* HostProcess.Platform) === "win32" ? "win32" : "linux",
+          );
           assert.deepEqual(summary.source, {
             title: "source",
             root: repos.checkout,
@@ -109,7 +113,10 @@ describe("inspect summarises a file without unpacking it", () => {
           assert.strictEqual(checkout!.head, git(repos.checkout, ["rev-parse", "HEAD"]));
           assert.isTrue(checkout!.carriesCommits);
           assert.strictEqual(checkout!.untracked, 3);
-          assert.deepEqual(checkout!.agentConfigPaths, [".claude/settings.local.json", "CLAUDE.md"]);
+          assert.deepEqual(checkout!.agentConfigPaths, [
+            ".claude/settings.local.json",
+            "CLAUDE.md",
+          ]);
           assert.deepEqual(summary.counts, {
             tasks: 1,
             taskSourceLinks: 0,

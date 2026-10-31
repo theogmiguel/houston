@@ -86,7 +86,12 @@ describe("destinations are absolute paths in an existing folder", () => {
     expect(exists?.kind).toBe("destination_exists");
     expect(exists?.items).toEqual([target]);
     expect(
-      checkDestination({ destination: target, folderExists: true, fileExists: true, overwrite: true }),
+      checkDestination({
+        destination: target,
+        folderExists: true,
+        fileExists: true,
+        overwrite: true,
+      }),
     ).toBeNull();
     expect(
       checkDestination({
@@ -126,9 +131,9 @@ describe("untracked names another computer cannot carry are listed", () => {
     expect(folded).toHaveLength(1);
     expect(folded[0]).toContain("Readme.md");
     expect(folded[0]).toContain("README.md");
-    expect(unportableNames(["src/lib.rs", "notes/console.md", "a/b/c.d.e", ".github/x.yml"])).toEqual(
-      [],
-    );
+    expect(
+      unportableNames(["src/lib.rs", "notes/console.md", "a/b/c.d.e", ".github/x.yml"]),
+    ).toEqual([]);
   });
 
   it("entry names are relative paths of ordinary components", () => {
@@ -150,7 +155,11 @@ describe("untracked names another computer cannot carry are listed", () => {
     ]) {
       expect(entryNameProblem(name), JSON.stringify(name)).not.toBeNull();
     }
-    for (const name of ["manifest.json", "threads/0/thread.json", "checkouts/1/untracked/a b.txt"]) {
+    for (const name of [
+      "manifest.json",
+      "threads/0/thread.json",
+      "checkouts/1/untracked/a b.txt",
+    ]) {
       expect(entryNameProblem(name), name).toBeNull();
     }
   });

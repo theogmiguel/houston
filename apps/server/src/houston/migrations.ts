@@ -362,12 +362,53 @@ const MergeQueue = Effect.gen(function* () {
   `;
 });
 
+// Workspace transfer records. An import is live while not undone: one per transfer and project.
+// No column holds the passphrase.
+const WorkspaceTransfer = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_transfer_exports (
+      transfer_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      file TEXT NOT NULL,
+      bytes INTEGER NOT NULL,
+      threads_json TEXT NOT NULL,
+      tree_state_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_transfer_imports (
+      import_id TEXT PRIMARY KEY,
+      transfer_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      state TEXT NOT NULL CHECK (state IN ('running', 'done', 'undone')),
+      journal_json TEXT NOT NULL,
+      notes_json TEXT NOT NULL DEFAULT '[]',
+      started_at TEXT NOT NULL,
+      ended_at TEXT
+    )
+  `;
+  yield* sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_houston_transfer_imports_live
+    ON houston_transfer_imports(transfer_id, project_id) WHERE state <> 'undone'
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_transfer_threads (
+      thread_id TEXT PRIMARY KEY,
+      import_id TEXT NOT NULL,
+      source_thread_id TEXT NOT NULL
+    )
+  `;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
   [3, "TaskSources", TaskSources],
   [4, "TaskRunsCursor", TaskRunsCursor],
   [5, "MergeQueue", MergeQueue],
+  [8, "WorkspaceTransfer", WorkspaceTransfer],
 ] as const;
 
 const run = Migrator.make({});

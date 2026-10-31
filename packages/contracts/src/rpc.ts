@@ -234,6 +234,15 @@ import {
   HoustonMergeQueueSummary,
   HoustonMergeQueueSummaryInput,
 } from "./houston/mergeQueue.ts";
+import {
+  HoustonTransferError,
+  HoustonTransferExportInput,
+  HoustonTransferExportSummary,
+  HoustonTransferFileSummary,
+  HoustonTransferInspectInput,
+  HoustonTransferStreamEvent,
+  HoustonTransferSubscribeInput,
+} from "./houston/transfer.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import { OrchestrationSearchThreadsError } from "./threadSearch.ts";
 import {
@@ -570,6 +579,9 @@ export const WS_METHODS = {
   houstonMergeQueueMergeHead: "houston.mergeQueue.mergeHead",
   houstonMergeQueueSettingsSet: "houston.mergeQueue.settings.set",
   houstonMergeQueuePause: "houston.mergeQueue.pause",
+  houstonTransferExport: "houston.transfer.export",
+  houstonTransferInspect: "houston.transfer.inspect",
+  houstonTransferSubscribe: "houston.transfer.subscribe",
 
   terminalOpen: "terminal.open",
   terminalAttach: "terminal.attach",
@@ -1903,6 +1915,27 @@ const WsHoustonMergeQueuePauseRpc = Rpc.make(WS_METHODS.houstonMergeQueuePause, 
   error: HoustonMergeQueueRpcError,
 });
 
+const HoustonTransferRpcError = Schema.Union([HoustonTransferError, EnvironmentAuthorizationError]);
+
+const WsHoustonTransferExportRpc = Rpc.make(WS_METHODS.houstonTransferExport, {
+  payload: HoustonTransferExportInput,
+  success: HoustonTransferExportSummary,
+  error: HoustonTransferRpcError,
+});
+
+const WsHoustonTransferInspectRpc = Rpc.make(WS_METHODS.houstonTransferInspect, {
+  payload: HoustonTransferInspectInput,
+  success: HoustonTransferFileSummary,
+  error: HoustonTransferRpcError,
+});
+
+const WsHoustonTransferSubscribeRpc = Rpc.make(WS_METHODS.houstonTransferSubscribe, {
+  payload: HoustonTransferSubscribeInput,
+  success: HoustonTransferStreamEvent,
+  error: HoustonTransferRpcError,
+  stream: true,
+});
+
 const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
   payload: TerminalOpenInput,
   success: TerminalSessionSnapshot,
@@ -2520,6 +2553,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonMergeQueueMergeHeadRpc,
   WsHoustonMergeQueueSettingsSetRpc,
   WsHoustonMergeQueuePauseRpc,
+  WsHoustonTransferExportRpc,
+  WsHoustonTransferInspectRpc,
+  WsHoustonTransferSubscribeRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
   WsTerminalObserveRpc,

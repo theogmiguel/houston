@@ -8,6 +8,7 @@ import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import type { HoustonTransferError } from "@t3tools/contracts/houston/transfer";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { afterAll, beforeAll } from "vite-plus/test";
@@ -85,6 +86,17 @@ const makeRepos = () => {
   return { root, origin, checkout };
 };
 
+/** A link in `checkout` to a file outside it; a junction to a folder where Windows refuses that. */
+const makeLink = (checkout: string, file: string, folder: string) => {
+  try {
+    NodeFS.symlinkSync(file, NodePath.join(checkout, "link.txt"), "file");
+    return "link.txt";
+  } catch {
+    NodeFS.symlinkSync(folder, NodePath.join(checkout, "linked-dir"), "junction");
+    return "linked-dir";
+  }
+};
+
 /** Every file below `dir` except `.git`, with its bytes. */
 const tree = (dir: string) => {
   const files: Record<string, string> = {};
@@ -93,8 +105,9 @@ const tree = (dir: string) => {
       if (entry.name === ".git") continue;
       const path = NodePath.join(folder, entry.name);
       if (entry.isDirectory()) walk(path);
-      else files[NodePath.relative(dir, path).replaceAll("\\", "/")] =
-        NodeFS.readFileSync(path).toString("base64");
+      else
+        files[NodePath.relative(dir, path).replaceAll("\\", "/")] =
+          NodeFS.readFileSync(path).toString("base64");
     }
   };
   walk(dir);
@@ -103,8 +116,7 @@ const tree = (dir: string) => {
 
 const layer = Layer.mergeAll(VcsProcess.layer).pipe(Layer.provideMerge(NodeServices.layer));
 
-const failureOf = <A>(effect: Effect.Effect<A, HoustonTransferError, never>) =>
-  Effect.flip(effect);
+const failureOf = <A, R>(effect: Effect.Effect<A, HoustonTransferError, R>) => Effect.flip(effect);
 
 describe("capture carries local commits, the diff and untracked files", () => {
   it.effect("capture carries local commits, the diff and untracked files", () =>
@@ -161,14 +173,7 @@ describe("capture skips links and nested repositories and names them", () => {
       write(checkout, "kept.txt", "kept\n");
       const outside = NodePath.join(root, "outside.txt");
       NodeFS.writeFileSync(outside, "outside\n");
-      // A file link needs a privilege on Windows; a junction does not.
-      let link = "link.txt";
-      try {
-        NodeFS.symlinkSync(outside, NodePath.join(checkout, link), "file");
-      } catch {
-        link = "linked-dir";
-        NodeFS.symlinkSync(root, NodePath.join(checkout, link), "junction");
-      }
+      const link = makeLink(checkout, outside, root);
       const nested = NodePath.join(checkout, "vendor", "lib");
       NodeFS.mkdirSync(nested, { recursive: true });
       git(nested, ["init", "--quiet", "--initial-branch=main"]);
@@ -196,7 +201,7 @@ describe("partially staged files are named and unportable names refuse before re
       const { checkout } = makeRepos();
       write(checkout, "fine.txt", "fine\n");
       // Windows cannot create these names, so only Linux reaches them; the rules test covers both.
-      if (process.platform !== "win32") {
+      if ((yield* HostProcess.Platform) !== "win32") {
         write(checkout, "notes:v2.txt", "colon\n");
         write(checkout, "aux.md", "device\n");
         write(checkout, "Fine.txt", "case\n");
@@ -211,7 +216,10 @@ describe("partially staged files are named and unportable names refuse before re
         );
         assert.strictEqual(refused.kind, "unportable_names");
         for (const name of ["aux.md", "notes:v2.txt", "Fine.txt"]) {
-          assert.isTrue(refused.items.some((item) => item.includes(name)), name);
+          assert.isTrue(
+            refused.items.some((item) => item.includes(name)),
+            name,
+          );
         }
         assert.deepEqual(reads, []);
         for (const name of ["notes:v2.txt", "aux.md", "Fine.txt"]) {

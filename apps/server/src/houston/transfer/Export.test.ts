@@ -15,6 +15,7 @@ import type {
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import type * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import type * as Scope from "effect/Scope";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -30,6 +31,7 @@ import {
   addManagedWorktree,
   commitAll,
   createProject,
+  git,
   layerTransferTest,
   makeRepos,
   PASSPHRASE,
@@ -39,7 +41,7 @@ import {
   type TransferTestOptions,
 } from "./transfer.testkit.ts";
 
-type Services = import("effect/Layer").Layer.Success<ReturnType<typeof layerTransferTest>>;
+type Services = Layer.Success<ReturnType<typeof layerTransferTest>>;
 
 const withComputer = <A, E>(
   body: Effect.Effect<A, E, Services | Scope.Scope>,
@@ -54,7 +56,11 @@ const withComputer = <A, E>(
 const exportProject = (
   projectId: ProjectId,
   destination: string,
-  extra: { readonly overwrite?: boolean; readonly renderer?: string; readonly passphrase?: string } = {},
+  extra: {
+    readonly overwrite?: boolean;
+    readonly renderer?: string;
+    readonly passphrase?: string;
+  } = {},
 ) =>
   Effect.gen(function* () {
     const service = yield* HoustonTransferService;
@@ -351,7 +357,7 @@ describe("a thread with an open run or request blocks the export by name", () =>
           {
             name: "starting",
             status: "starting" as const,
-            options: { attemptStatus: "starting" },
+            options: { attemptStatus: "pending" },
             state: "starting",
           },
         ];
@@ -408,7 +414,8 @@ describe("an untracked secret file refuses the export and an ignored one is neve
 
         // Ignored, the same files are neither carried nor refused, and never opened.
         write(repos.checkout, ".gitignore", ".env\n*.key\n");
-        commitAll(repos.checkout, "ignore secrets");
+        git(repos.checkout, ["add", ".gitignore"]);
+        git(repos.checkout, ["commit", "--quiet", "-m", "ignore secrets"]);
         const reads: Array<string> = [];
         const summary = yield* exportProject(projectId, destination).pipe(
           Effect.provideService(TransferProbe, {
@@ -417,7 +424,10 @@ describe("an untracked secret file refuses the export and an ignored one is neve
           }),
         );
         assert.isNotEmpty(reads);
-        assert.isFalse(reads.some((path) => /\.env$|prod\.key$/.test(path)), reads.join("\n"));
+        assert.isFalse(
+          reads.some((path) => /\.env$|prod\.key$/.test(path)),
+          reads.join("\n"),
+        );
         const frames = yield* framesOf(summary.file);
         assert.deepEqual([...manifestOf(frames).checkouts[0]!.untracked].toSorted(), [
           ".env.example",
@@ -458,17 +468,14 @@ describe("no credential reaches the file", () => {
         write(config.baseDir, "providers/codex/auth.json", `{"t":"${needles[2]}"}`);
         write(config.secretsDir, "server-signing-key", needles[3]!);
         yield* sql`
-          INSERT INTO auth_sessions (session_id, subject, role, method, client_label, scopes_json,
-            issued_at, expires_at, revoked_at)
-          VALUES (${needles[4]!}, 'subject', 'owner', 'browser-session-cookie', NULL, '[]',
-            'now', 'later', NULL)
-        `.pipe(Effect.ignore);
+          INSERT INTO auth_sessions (session_id, subject, scopes, method, issued_at, expires_at)
+          VALUES (${needles[4]!}, 'subject', '[]', 'browser-session-cookie', 'now', 'later')
+        `;
         yield* sql`
-          INSERT INTO auth_pairing_links (id, credential, method, role, subject, label, scopes_json,
-            created_at, expires_at, consumed_at, revoked_at)
-          VALUES ('pairing', ${needles[5]!}, 'one-time-token', 'client', 'subject', NULL, '[]',
-            'now', 'later', NULL, NULL)
-        `.pipe(Effect.ignore);
+          INSERT INTO auth_pairing_links (id, credential, method, scopes, subject, created_at,
+            expires_at)
+          VALUES ('pairing', ${needles[5]!}, 'one-time-token', '[]', 'subject', 'now', 'later')
+        `;
         process.env.HOUSTON_TEST_SECRET = needles[6];
         write(repos.checkout, ".gitignore", ".env\n");
         commitAll(repos.checkout, "ignore .env");
@@ -506,7 +513,9 @@ describe("no credential reaches the file", () => {
         try {
           const summary = yield* exportProject(projectId, destinationIn(repos.root));
           const frames = yield* framesOf(summary.file);
-          const plain = Buffer.concat(frames.flatMap((frame) => [Buffer.from(frame.name), frame.bytes]));
+          const plain = Buffer.concat(
+            frames.flatMap((frame) => [Buffer.from(frame.name), frame.bytes]),
+          );
           for (const needle of needles) assert.isFalse(plain.includes(needle), needle);
           for (const name of [".credentials.json", "auth.json", "secrets/", "Nightly", "Setup"]) {
             assert.isFalse(plain.includes(name), name);
@@ -684,7 +693,9 @@ describe("export refuses an unknown project, a folder without git, nothing to ca
             Effect.forkScoped,
           );
           yield* Deferred.await(reached);
-          const busy = yield* refusalOf(exportProject(projectId, destinationIn(repos.root, "second")));
+          const busy = yield* refusalOf(
+            exportProject(projectId, destinationIn(repos.root, "second")),
+          );
           assert.strictEqual(busy.kind, "busy");
           assert.include(busy.problem, "export");
           yield* Deferred.succeed(release, undefined);

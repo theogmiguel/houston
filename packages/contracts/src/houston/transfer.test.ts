@@ -61,7 +61,9 @@ const manifest = (patch: Record<string, unknown> = {}) => ({
   counts: { tasks: 1, taskSourceLinks: 0, viewedFiles: 0, attachments: 1 },
   renderer: null,
   entries: [{ name: "checkouts/0/head.bundle", size: 10, sha256: "c".repeat(64) }],
-  lineage: [{ transferId: "1f0c2a1e-5b7d-4c9e-8a10-2b3c4d5e6f70", exportedAt: "2026-10-29T12:00:00.000Z" }],
+  lineage: [
+    { transferId: "1f0c2a1e-5b7d-4c9e-8a10-2b3c4d5e6f70", exportedAt: "2026-10-29T12:00:00.000Z" },
+  ],
   ...patch,
 });
 
@@ -106,9 +108,9 @@ describe("transfer schemas bound their fields and redact the passphrase", () => 
     }
     expect(decodes(manifest({ sourceOs: "darwin" }))).toBe(false);
     expect(decodes(manifest({ transferId: "not-a-uuid" }))).toBe(false);
-    expect(
-      decodes(manifest({ entries: [{ name: "a", size: -1, sha256: "c".repeat(64) }] })),
-    ).toBe(false);
+    expect(decodes(manifest({ entries: [{ name: "a", size: -1, sha256: "c".repeat(64) }] }))).toBe(
+      false,
+    );
     expect(decodes(manifest({ entries: [{ name: "a", size: 1, sha256: "C".repeat(63) }] }))).toBe(
       false,
     );

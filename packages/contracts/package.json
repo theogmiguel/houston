@@ -46,6 +46,10 @@
     "./houston/mergeQueue": {
       "types": "./src/houston/mergeQueue.ts",
       "import": "./src/houston/mergeQueue.ts"
+    },
+    "./houston/transfer": {
+      "types": "./src/houston/transfer.ts",
+      "import": "./src/houston/transfer.ts"
     }
   },
   "scripts": {

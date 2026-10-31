@@ -52,7 +52,7 @@ const baseManifest = (
   format: 2,
   transferId: "3f0c2a1e-5b7d-4c9e-8a10-2b3c4d5e6f70",
   createdAt: "2026-10-30T12:00:00.000Z",
-  sourceOs: process.platform === "win32" ? "win32" : "linux",
+  sourceOs: "linux",
   houstonVersion: "0.0.0",
   project: { title: "Fixture", root: "/work/fixture", remoteUrl: null },
   checkouts: [
@@ -138,9 +138,13 @@ const writeValid = async (
 describe("the envelope is a standard age passphrase file", () => {
   it("the envelope is a standard age passphrase file", async () => {
     const dir = tempDir();
-    const file = await writeValid(dir, { "checkouts/0/tracked.diff": "diff\n" }, {
-      workFactor: HOUSTON_TRANSFER_LIMITS.exportWorkFactor,
-    });
+    const file = await writeValid(
+      dir,
+      { "checkouts/0/tracked.diff": "diff\n" },
+      {
+        workFactor: HOUSTON_TRANSFER_LIMITS.exportWorkFactor,
+      },
+    );
     const bytes = NodeFS.readFileSync(file);
     const header = bytes.subarray(0, bytes.indexOf("\n---")).toString("latin1").split("\n");
     expect(header[0]).toBe("age-encryption.org/v1");
@@ -155,9 +159,12 @@ describe("the envelope is a standard age passphrase file", () => {
     const plain = NodeZlib.gunzipSync(await decrypter.decrypt(new Uint8Array(bytes)));
     expect(plain.subarray(0, MAGIC.length).toString("latin1")).toBe("HOUSTON-TRANSFER 2\n");
     const frames = readFrames(plain);
-    expect(frames.map((frame) => frame.name)).toEqual(["manifest.json", "checkouts/0/tracked.diff"]);
+    expect(frames.map((frame) => frame.name)).toEqual([
+      "manifest.json",
+      "checkouts/0/tracked.diff",
+    ]);
     expect(Buffer.from(frames[1]!.bytes).toString("utf8")).toBe("diff\n");
-  }, 60_000);
+  });
 });
 
 describe("a file past the size limit is refused naming its largest entries", () => {
@@ -219,9 +226,7 @@ describe("a wrong passphrase, a foreign file and an excessive work factor are re
       "recipient.houston-transfer",
       await encrypter.encrypt(NodeZlib.gzipSync(MAGIC)),
     );
-    expect((await refusalOf(readManifest(toRecipient, PASSPHRASE))).kind).toBe(
-      "not_transfer_file",
-    );
+    expect((await refusalOf(readManifest(toRecipient, PASSPHRASE))).kind).toBe("not_transfer_file");
 
     const whole = NodeFS.readFileSync(valid);
     const cut = writeFile(dir, "cut.houston-transfer", whole.subarray(0, whole.length / 2));
@@ -252,7 +257,7 @@ describe("a wrong passphrase, a foreign file and an excessive work factor are re
     const manifest = await readManifest(valid, PASSPHRASE, { decrypter: spy });
     expect(manifest.format).toBe(2);
     expect(decryptions).toBe(1);
-  }, 60_000);
+  });
 });
 
 describe("a Houston 1 file and an unknown format are refused by name", () => {
@@ -265,7 +270,11 @@ describe("a Houston 1 file and an unknown format are refused by name", () => {
     const v1 = writeFile(
       dir,
       "v1.houston-transfer",
-      await sealPlaintext(NodeZlib.gzipSync(Buffer.concat([tarHeader, Buffer.alloc(1024)])), PASSPHRASE, 10),
+      await sealPlaintext(
+        NodeZlib.gzipSync(Buffer.concat([tarHeader, Buffer.alloc(1024)])),
+        PASSPHRASE,
+        10,
+      ),
     );
     const houston1 = await refusalOf(readManifest(v1, PASSPHRASE));
     expect(houston1.kind).toBe("houston1_file");
@@ -301,8 +310,10 @@ describe("crafted entries are refused before anything is written", () => {
     NodeFS.mkdirSync(parent);
     const diff = NodeCrypto.randomBytes(256 * 1024);
     const good = entriesOf({ "checkouts/0/tracked.diff": diff });
-    const manifestFrame = (entries: ReadonlyArray<{ name: string; bytes: Uint8Array }>, patch = {}) =>
-      encodeFrame("manifest.json", text(JSON.stringify(baseManifest(entries, patch))));
+    const manifestFrame = (
+      entries: ReadonlyArray<{ name: string; bytes: Uint8Array }>,
+      patch = {},
+    ) => encodeFrame("manifest.json", text(JSON.stringify(baseManifest(entries, patch))));
     const framesOf = (entries: ReadonlyArray<{ name: string; bytes: Uint8Array }>) =>
       entries.map((entry) => encodeFrame(entry.name, entry.bytes));
     const hostile = (name: string) => {
@@ -317,7 +328,11 @@ describe("crafted entries are refused before anything is written", () => {
     flipped[flipped.length - 1_000] = flipped[flipped.length - 1_000]! ^ 0xff;
 
     const cases: ReadonlyArray<readonly [string, Uint8Array | Promise<Uint8Array>, string]> = [
-      ["no magic line", craft([manifestFrame(good), ...framesOf(good)], { magic: text("HOUSTON\n") }), "(the start of the file)"],
+      [
+        "no magic line",
+        craft([manifestFrame(good), ...framesOf(good)], { magic: text("HOUSTON\n") }),
+        "(the start of the file)",
+      ],
       [
         "an entry before the manifest",
         craft([encodeFrame("threads/0/thread.json", text("{}")), manifestFrame(good)]),
@@ -430,7 +445,7 @@ describe("crafted entries are refused before anything is written", () => {
     expect(sized.kind).toBe("not_transfer_file");
     expect(sized.limit).toBe(1024);
     expect(NodeFS.readdirSync(parent)).toEqual([]);
-  }, 60_000);
+  });
 });
 
 describe("frames decode as they were written", () => {

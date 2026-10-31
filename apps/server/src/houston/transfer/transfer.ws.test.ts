@@ -505,7 +505,10 @@ describe("each transfer method requires its declared scope", () => {
           const only = yield* makeWsClient([entry.scope]);
           const id = yield* only.send(entry.method, entry.payload());
           const allowed = yield* Queue.take(only.responses);
-          assert.isNull(failureOf(allowed), `${entry.method}: ${JSON.stringify(failureOf(allowed))}`);
+          assert.isNull(
+            failureOf(allowed),
+            `${entry.method}: ${JSON.stringify(failureOf(allowed))}`,
+          );
           if (entry.stream === true) yield* only.interrupt(id);
         }
       }),

@@ -49,7 +49,10 @@ describe("every houston table is carried by a section or listed as not carried",
         assert.isAbove(NOT_CARRIED[table]!.length, 10, `${table} has a reason`);
       }
       // Every section and not-carried name is a real table.
-      for (const table of [...SECTIONS.flatMap((section) => section.tables), ...Object.keys(NOT_CARRIED)]) {
+      for (const table of [
+        ...SECTIONS.flatMap((section) => section.tables),
+        ...Object.keys(NOT_CARRIED),
+      ]) {
         assert.include(tables, table);
       }
 

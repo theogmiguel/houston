@@ -10,6 +10,7 @@ import {
   MessageId,
   NodeId,
   ProviderInstanceId,
+  ProviderThreadId,
   ProviderTurnId,
   RunAttemptId,
   RunId,
@@ -74,7 +75,9 @@ export const layerTransferTest = (options: TransferTestOptions = {}) =>
     Layer.provideMerge(Layer.merge(RuntimeLayer.layerEventSink, ProjectionStore.layer)),
     Layer.provideMerge(ProjectStore.layer),
     Layer.provideMerge(HoustonTaskStore.layer),
-    Layer.provideMerge(HoustonKeychain.layerMemory(options.keychain ?? HoustonKeychain.makeMemory())),
+    Layer.provideMerge(
+      HoustonKeychain.layerMemory(options.keychain ?? HoustonKeychain.makeMemory()),
+    ),
     Layer.provideMerge(VcsProcess.layer),
     Layer.provideMerge(layerInstances(CONFIGURED_INSTANCES)),
     Layer.provideMerge(ProjectEnrichmentService.layer),
@@ -87,7 +90,10 @@ export const layerTransferTest = (options: TransferTestOptions = {}) =>
     ),
     Layer.provideMerge(ServerSettings.layerTest()),
     Layer.provideMerge(
-      ServerConfig.layerTest(process.cwd(), options.baseDir ?? { prefix: "houston-transfer-test-" }),
+      ServerConfig.layerTest(
+        process.cwd(),
+        options.baseDir ?? { prefix: "houston-transfer-test-" },
+      ),
     ),
     Layer.provideMerge(NodeServices.layer),
     Layer.provideMerge(Layer.succeed(HostedLaunch, false)),
@@ -154,7 +160,7 @@ export const seedThread = Effect.fn("HoustonTransferTest.seedThread")(function* 
         ? { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId }
         : {
             parentThreadId: ThreadId.make(parent),
-            relationshipToParent: "side",
+            relationshipToParent: "fork",
             rootThreadId: ThreadId.make(parent),
           },
     forkedFrom: null,
@@ -290,10 +296,12 @@ export const seedRun = Effect.fn("HoustonTransferTest.seedRun")(function* (
         attemptOrdinal: 1,
         rootNodeId: nodeId,
         providerInstanceId: instanceId,
-        providerThreadId: null,
+        providerThreadId: ProviderThreadId.make(`provider-thread:${suffix}`),
         providerTurnId: null,
         reason: "initial",
-        status: options.attemptStatus ?? (finished ? status : "running"),
+        status:
+          options.attemptStatus ??
+          (finished ? (status === "rolled_back" ? "cancelled" : status) : "running"),
         startedAt: now,
         completedAt: finished ? now : null,
       },
@@ -312,7 +320,7 @@ export const seedRun = Effect.fn("HoustonTransferTest.seedRun")(function* (
         nativeRequestRef: null,
         kind: "command",
         status: "pending",
-        responseCapability: { type: "none" },
+        responseCapability: { type: "message" },
         createdAt: now,
         resolvedAt: null,
       },
