@@ -127,6 +127,11 @@ import * as HoustonSlackStore from "./houston/slack/Store.ts";
 import * as SlackWebApi from "./houston/slack/WebApi.ts";
 import { layerMergeQueue } from "./houston/mergeQueue/layer.ts";
 import * as HoustonMergeQueueStore from "./houston/mergeQueue/Store.ts";
+import { layerHarnessReview } from "./houston/harnessReview/layer.ts";
+import * as HoustonHarnessRunner from "./houston/harnessReview/Runner.ts";
+import * as HoustonHarnessStore from "./houston/harnessReview/Store.ts";
+import { layerNightShift } from "./houston/nightShift/layer.ts";
+import * as HoustonNightShiftStore from "./houston/nightShift/Store.ts";
 import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
@@ -590,6 +595,14 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
       ),
     ),
   ),
+  // The harness review service and its one reactor, over the orchestration runtime below.
+  layerHarnessReview.pipe(
+    Layer.provide(HoustonHarnessRunner.layer),
+    Layer.provide(ProjectionStoreV2.layer),
+    Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
+  ),
+  // The Night shift service over the runner and claim the orchestration runtime below exports.
+  layerNightShift,
 ).pipe(
   // The merge queue reads through the PR page's own service and GitHub client.
   Layer.provideMerge(
@@ -611,7 +624,14 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(layerVcs),
   Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
   // Below the orchestration runtime so its ProjectService sees the store on project deletion.
-  Layer.provideMerge(Layer.merge(HoustonTaskSourceStore.layer, HoustonMergeQueueStore.layer)),
+  Layer.provideMerge(
+    Layer.mergeAll(
+      HoustonTaskSourceStore.layer,
+      HoustonMergeQueueStore.layer,
+      HoustonHarnessStore.layer,
+      HoustonNightShiftStore.layer,
+    ),
+  ),
   Layer.provideMerge(HoustonSlackStore.layer),
   Layer.provideMerge(HoustonKeychain.layerLive),
   Layer.provideMerge(layerHoustonTaskPersistence),

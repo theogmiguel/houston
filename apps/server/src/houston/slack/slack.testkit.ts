@@ -86,6 +86,10 @@ export const layerFakeRuns = (fake: FakeRuns) =>
             );
             return { run: toRun(run) };
           }),
+        claim: unused,
+        agentHandback: unused,
+        execute: unused,
+        taskOfRun: unused,
         runControl: unused,
         handback: unused,
         planStart: unused,
