@@ -123,6 +123,9 @@ import * as HoustonTaskSourceStore from "./houston/taskSources/SourceStore.ts";
 import { layerTaskSources } from "./houston/taskSources/layer.ts";
 import { layerMergeQueue } from "./houston/mergeQueue/layer.ts";
 import * as HoustonMergeQueueStore from "./houston/mergeQueue/Store.ts";
+import { layerHarnessReview } from "./houston/harnessReview/layer.ts";
+import * as HoustonHarnessRunner from "./houston/harnessReview/Runner.ts";
+import * as HoustonHarnessStore from "./houston/harnessReview/Store.ts";
 import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
@@ -572,6 +575,12 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
   Layer.effectDiscard(HoustonTaskProjectSweep.sweep),
   Layer.effectDiscard(HoustonTaskSourceStore.sweep),
+  // The harness review service and its one reactor, over the orchestration runtime below.
+  layerHarnessReview.pipe(
+    Layer.provide(HoustonHarnessRunner.layer),
+    Layer.provide(ProjectionStoreV2.layer),
+    Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
+  ),
   HoustonTaskRuns.layer.pipe(
     Layer.provide(
       Layer.merge(
@@ -601,7 +610,13 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(layerVcs),
   Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
   // Below the orchestration runtime so its ProjectService sees the store on project deletion.
-  Layer.provideMerge(Layer.merge(HoustonTaskSourceStore.layer, HoustonMergeQueueStore.layer)),
+  Layer.provideMerge(
+    Layer.mergeAll(
+      HoustonTaskSourceStore.layer,
+      HoustonMergeQueueStore.layer,
+      HoustonHarnessStore.layer,
+    ),
+  ),
   Layer.provideMerge(HoustonKeychain.layerLive),
   Layer.provideMerge(layerHoustonTaskPersistence),
   Layer.provideMerge(layerPersistence),

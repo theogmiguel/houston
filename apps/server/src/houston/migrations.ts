@@ -284,6 +284,126 @@ const TaskSources = Effect.gen(function* () {
   `;
 });
 
+// Harness reviews, their findings and decisions, and suspected defects, keyed by upstream
+// ProjectId without a foreign key; a deleted project's rows go with its deletion hook.
+const HarnessReview = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_harness_settings (
+      project_id TEXT PRIMARY KEY,
+      scheduled_task_id TEXT,
+      seen_review_id INTEGER NOT NULL DEFAULT 0,
+      defect_notice_day TEXT,
+      updated_at TEXT NOT NULL
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_harness_reviews (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id TEXT NOT NULL,
+      trigger TEXT NOT NULL CHECK (trigger IN ('scheduled', 'manual', 'imported')),
+      scheduled_task_id TEXT,
+      thread_id TEXT,
+      run_id TEXT,
+      provider_instance_id TEXT,
+      status TEXT NOT NULL CHECK (status IN ('preparing', 'running', 'published', 'failed')),
+      run_dir TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      window_since TEXT,
+      window_until TEXT,
+      threads INTEGER,
+      prompts INTEGER,
+      cost_usd REAL,
+      finding_count INTEGER,
+      corrections INTEGER NOT NULL DEFAULT 0,
+      summary TEXT,
+      error TEXT
+    )
+  `;
+  // A restart or a second server process must not start a second run over the same directory.
+  yield* sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_houston_harness_reviews_active
+    ON houston_harness_reviews(project_id) WHERE status IN ('preparing', 'running')
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_harness_reviews_project ON houston_harness_reviews(project_id, id DESC)`;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_harness_reviews_thread ON houston_harness_reviews(thread_id)`;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_harness_findings (
+      review_id INTEGER NOT NULL,
+      key TEXT NOT NULL,
+      title TEXT NOT NULL,
+      category TEXT NOT NULL,
+      confidence TEXT NOT NULL,
+      sessions_json TEXT NOT NULL,
+      count INTEGER NOT NULL,
+      quotes_json TEXT NOT NULL,
+      recommendation_kind TEXT NOT NULL,
+      target TEXT NOT NULL,
+      recommendation TEXT NOT NULL,
+      apply_prompt TEXT NOT NULL,
+      PRIMARY KEY (review_id, key)
+    )
+  `;
+  // decided_by is user, not_a_bug, filed or houston:verification; findings and defects share it.
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_harness_decisions (
+      project_id TEXT NOT NULL,
+      key TEXT NOT NULL,
+      state TEXT NOT NULL CHECK (state IN ('open', 'dismissed', 'resolved')),
+      decided_at TEXT NOT NULL,
+      decided_by TEXT NOT NULL,
+      PRIMARY KEY (project_id, key)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_harness_finding_tasks (
+      project_id TEXT NOT NULL,
+      key TEXT NOT NULL,
+      task_id INTEGER NOT NULL,
+      review_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (project_id, key, task_id)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_harness_verifications (
+      review_id INTEGER NOT NULL,
+      key TEXT NOT NULL,
+      task_id INTEGER NOT NULL,
+      verdict TEXT NOT NULL CHECK (verdict IN ('gone', 'still_present', 'inconclusive')),
+      sessions_after INTEGER NOT NULL,
+      evidence_json TEXT NOT NULL,
+      PRIMARY KEY (review_id, key, task_id)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_defects (
+      project_id TEXT NOT NULL,
+      key TEXT NOT NULL,
+      source TEXT NOT NULL CHECK (source IN ('agent', 'detector')),
+      detector TEXT,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      evidence_json TEXT NOT NULL,
+      destination TEXT NOT NULL CHECK (destination IN ('houston', 'project')),
+      reporter_thread_id TEXT,
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      count INTEGER NOT NULL,
+      issue_url TEXT,
+      PRIMARY KEY (project_id, key)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_harness_import (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      imported_at TEXT NOT NULL,
+      counts_json TEXT NOT NULL
+    )
+  `;
+});
+
 // Task runs: the last thread event they applied, so a restart replays what a crash left unapplied.
 const TaskRunsCursor = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -376,6 +496,7 @@ const houstonMigrationEntries = [
   [4, "TaskRunsCursor", TaskRunsCursor],
   [5, "MergeQueue", MergeQueue],
   [6, "TaskSourceMarkerKey", TaskSourceMarkerKey],
+  [7, "HarnessReview", HarnessReview],
 ] as const;
 
 const run = Migrator.make({});

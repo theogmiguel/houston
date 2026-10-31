@@ -218,6 +218,22 @@ import {
   HoustonTaskSourceSyncResult,
 } from "./houston/taskSources.ts";
 import {
+  HoustonHarnessDecideInput,
+  HoustonHarnessEmptyResult,
+  HoustonHarnessError,
+  HoustonHarnessMarkSeenInput,
+  HoustonHarnessMarkSeenResult,
+  HoustonHarnessOverview,
+  HoustonHarnessOverviewEvent,
+  HoustonHarnessOverviewInput,
+  HoustonHarnessProjectInput,
+  HoustonHarnessReportInput,
+  HoustonHarnessReportResult,
+  HoustonHarnessRunNowResult,
+  HoustonHarnessSetupInput,
+  HoustonHarnessSnapshot,
+} from "./houston/harnessReview.ts";
+import {
   HoustonMergeQueueEmptyResult,
   HoustonMergeQueueEnqueueInput,
   HoustonMergeQueueEntry,
@@ -562,6 +578,15 @@ export const WS_METHODS = {
   houstonTaskSourcesSubscribe: "houston.taskSources.subscribe",
   houstonTaskSourcesImportV1Status: "houston.taskSources.importV1.status",
   houstonTaskSourcesImportV1Run: "houston.taskSources.importV1.run",
+  houstonHarnessGet: "houston.harness.get",
+  houstonHarnessSubscribe: "houston.harness.subscribe",
+  houstonHarnessOverview: "houston.harness.overview",
+  houstonHarnessSubscribeOverview: "houston.harness.subscribeOverview",
+  houstonHarnessSetup: "houston.harness.setup",
+  houstonHarnessRunNow: "houston.harness.runNow",
+  houstonHarnessReport: "houston.harness.report",
+  houstonHarnessDecide: "houston.harness.decide",
+  houstonHarnessMarkSeen: "houston.harness.markSeen",
   houstonMergeQueueGet: "houston.mergeQueue.get",
   houstonMergeQueueSubscribe: "houston.mergeQueue.subscribe",
   houstonMergeQueueSubscribeSummary: "houston.mergeQueue.subscribeSummary",
@@ -1845,6 +1870,64 @@ const WsHoustonTaskSourcesImportV1RunRpc = Rpc.make(WS_METHODS.houstonTaskSource
   error: HoustonTaskSourceRpcError,
 });
 
+const HoustonHarnessRpcError = Schema.Union([HoustonHarnessError, EnvironmentAuthorizationError]);
+
+const WsHoustonHarnessGetRpc = Rpc.make(WS_METHODS.houstonHarnessGet, {
+  payload: HoustonHarnessProjectInput,
+  success: HoustonHarnessSnapshot,
+  error: HoustonHarnessRpcError,
+});
+
+const WsHoustonHarnessSubscribeRpc = Rpc.make(WS_METHODS.houstonHarnessSubscribe, {
+  payload: HoustonHarnessProjectInput,
+  success: HoustonHarnessSnapshot,
+  error: HoustonHarnessRpcError,
+  stream: true,
+});
+
+const WsHoustonHarnessOverviewRpc = Rpc.make(WS_METHODS.houstonHarnessOverview, {
+  payload: HoustonHarnessOverviewInput,
+  success: HoustonHarnessOverview,
+  error: HoustonHarnessRpcError,
+});
+
+const WsHoustonHarnessSubscribeOverviewRpc = Rpc.make(WS_METHODS.houstonHarnessSubscribeOverview, {
+  payload: HoustonHarnessOverviewInput,
+  success: HoustonHarnessOverviewEvent,
+  error: HoustonHarnessRpcError,
+  stream: true,
+});
+
+const WsHoustonHarnessSetupRpc = Rpc.make(WS_METHODS.houstonHarnessSetup, {
+  payload: HoustonHarnessSetupInput,
+  success: HoustonHarnessSnapshot,
+  error: HoustonHarnessRpcError,
+});
+
+const WsHoustonHarnessRunNowRpc = Rpc.make(WS_METHODS.houstonHarnessRunNow, {
+  payload: HoustonHarnessProjectInput,
+  success: HoustonHarnessRunNowResult,
+  error: HoustonHarnessRpcError,
+});
+
+const WsHoustonHarnessReportRpc = Rpc.make(WS_METHODS.houstonHarnessReport, {
+  payload: HoustonHarnessReportInput,
+  success: HoustonHarnessReportResult,
+  error: HoustonHarnessRpcError,
+});
+
+const WsHoustonHarnessDecideRpc = Rpc.make(WS_METHODS.houstonHarnessDecide, {
+  payload: HoustonHarnessDecideInput,
+  success: HoustonHarnessEmptyResult,
+  error: HoustonHarnessRpcError,
+});
+
+const WsHoustonHarnessMarkSeenRpc = Rpc.make(WS_METHODS.houstonHarnessMarkSeen, {
+  payload: HoustonHarnessMarkSeenInput,
+  success: HoustonHarnessMarkSeenResult,
+  error: HoustonHarnessRpcError,
+});
+
 const HoustonMergeQueueRpcError = Schema.Union([
   HoustonMergeQueueError,
   EnvironmentAuthorizationError,
@@ -2512,6 +2595,15 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTaskSourcesSubscribeRpc,
   WsHoustonTaskSourcesImportV1StatusRpc,
   WsHoustonTaskSourcesImportV1RunRpc,
+  WsHoustonHarnessGetRpc,
+  WsHoustonHarnessSubscribeRpc,
+  WsHoustonHarnessOverviewRpc,
+  WsHoustonHarnessSubscribeOverviewRpc,
+  WsHoustonHarnessSetupRpc,
+  WsHoustonHarnessRunNowRpc,
+  WsHoustonHarnessReportRpc,
+  WsHoustonHarnessDecideRpc,
+  WsHoustonHarnessMarkSeenRpc,
   WsHoustonMergeQueueGetRpc,
   WsHoustonMergeQueueSubscribeRpc,
   WsHoustonMergeQueueSubscribeSummaryRpc,

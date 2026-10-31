@@ -37,6 +37,7 @@ import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as HoustonTaskStore from "../houston/tasks/TaskStore.ts";
 import * as HoustonTaskSourceStore from "../houston/taskSources/SourceStore.ts";
 import * as HoustonMergeQueueStore from "../houston/mergeQueue/Store.ts";
+import * as HoustonHarnessStore from "../houston/harnessReview/Store.ts";
 
 export interface ProjectCreateInput extends ProjectCreatePayload {
   readonly commandId: CommandId;
@@ -174,6 +175,7 @@ export const make = Effect.gen(function* () {
   const houstonMergeQueue = yield* Effect.serviceOption(
     HoustonMergeQueueStore.HoustonMergeQueueStore,
   );
+  const houstonHarness = yield* Effect.serviceOption(HoustonHarnessStore.HoustonHarnessStore);
   const projectLocks = yield* KeyedLock.make<ProjectId>();
   const workspaceLocks = yield* KeyedLock.make<string>();
 
@@ -530,6 +532,7 @@ export const make = Effect.gen(function* () {
         if (Option.isSome(houstonMergeQueue)) {
           yield* houstonMergeQueue.value.projectRemoved(projectId);
         }
+        if (Option.isSome(houstonHarness)) yield* houstonHarness.value.projectRemoved(projectId);
       }
       yield* projectEnrichment.invalidate([existing.value.workspaceRoot]);
       return yield* readCommitted(projectId);

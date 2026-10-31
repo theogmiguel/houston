@@ -167,6 +167,7 @@ import {
   asideForkRefusal,
   asideSourceRun,
   finalAssistantText,
+  HARNESS_REVIEW_NOT_SENT,
   ONLY_FINISHED_REVIEW_SENDS,
   REVIEW_ALREADY_SENT,
   REVIEW_NEEDS_ANOTHER_PROVIDER,
@@ -174,10 +175,13 @@ import {
   reviewPrompt,
   sentReviewText,
   SIDE_RESULT_ONLY_THROUGH_SEND,
+  reservedThreadIdOf,
+  reservedThreadIdRefusal,
+  SIDE_THREAD_NOT_A_SOURCE,
   SIDE_THREAD_READ_ONLY,
   sideMessageId,
 } from "../houston/sideThreads.ts";
-import type { HoustonSideThread } from "@t3tools/contracts/houston/sideThreads";
+import { hasSourceThread, type HoustonSideThread } from "@t3tools/contracts/houston/sideThreads";
 import * as CheckpointDiffQuery from "../checkpointing/CheckpointDiffQuery.ts";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as Crypto from "effect/Crypto";
@@ -564,6 +568,8 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
       return command.reviewThreadId;
     case "houston.side-thread.send":
       return command.sideThreadId;
+    case "houston.harness-review.start":
+      return command.threadId;
   }
 }
 
@@ -4635,6 +4641,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ),
       );
     const side = review.thread.side;
+    if (side?.kind === "harnessReview") {
+      return yield* refuseSideCommand(command, HARNESS_REVIEW_NOT_SENT);
+    }
     const run = review.runs.find((candidate) => candidate.id === command.runId);
     const text =
       run === undefined ? undefined : finalAssistantText(review.turnItems, command.runId);
@@ -4691,6 +4700,62 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     );
   });
 
+  // Houston: a harness review's read-only thread at its project's root (harnessReview/Runner.ts).
+  const dispatchHarnessReviewStart = Effect.fn("orchestrationV2.dispatch.harnessReviewStart")(
+    function* (
+      command: Extract<
+        OrchestrationV2ServerCommand,
+        { readonly type: "houston.harness-review.start" }
+      >,
+      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+      effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+    ) {
+      const project = yield* projects.get(command.projectId).pipe(mapDispatchError(command));
+      if (Option.isNone(project) || project.value.deletedAt !== null) {
+        return yield* refuseSideCommand(command, `Project ${command.projectId} does not exist.`);
+      }
+      yield* ensureNewThread(command, command.threadId);
+      yield* ensureReadOnlyProvider(command, command.threadId, command.modelSelection.instanceId);
+      yield* dispatchThreadCreate(
+        {
+          type: "thread.create",
+          createdBy: "system",
+          creationSource: "server",
+          commandId: command.commandId,
+          threadId: command.threadId,
+          projectId: command.projectId,
+          title: `Harness review ${command.reviewId}`,
+          modelSelection: command.modelSelection,
+          runtimeMode: "approval-required",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: project.value.workspaceRoot,
+        },
+        events,
+      );
+      yield* markSideThread(events, command.threadId, {
+        kind: "harnessReview",
+        reviewId: command.reviewId,
+      });
+      return yield* dispatchMessage(
+        {
+          type: "message.dispatch",
+          createdBy: "system",
+          creationSource: "server",
+          commandId: command.commandId,
+          threadId: command.threadId,
+          messageId: command.messageId,
+          text: command.text,
+          attachments: [],
+          modelSelection: command.modelSelection,
+          dispatchMode: { type: "start_immediately" },
+        },
+        events,
+        effects,
+      );
+    },
+  );
+
   /** A source's live side threads, deleted with it. */
   const sideThreadsOf = Effect.fn("Orchestrator.sideThreadsOf")(function* (
     thread: OrchestrationV2AppThread,
@@ -4703,7 +4768,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     );
     return snapshots
       .flatMap((snapshot) => [...snapshot.threads, ...snapshot.archivedThreads])
-      .filter((shell) => shell.side?.sourceThreadId === thread.id && shell.deletedAt === null)
+      .filter(
+        (shell) =>
+          hasSourceThread(shell.side) &&
+          shell.side.sourceThreadId === thread.id &&
+          shell.deletedAt === null,
+      )
       .map((shell) => shell.id);
   });
 
@@ -12983,6 +13053,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         }
       | undefined;
     let updateDelegatedCompletionOnlyRunId: RunId | undefined;
+    const reserved = reservedThreadIdOf(command);
+    if (reserved !== undefined) {
+      return yield* refuseSideCommand(command, reservedThreadIdRefusal(reserved));
+    }
     switch (command.type) {
       case "thread.create":
         yield* dispatchThreadCreate(command, events);
@@ -13349,13 +13423,23 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         yield* dispatchLinkRequestRecord(command, events, effects);
         break;
       case "houston.aside.start":
+        // A side thread's content (a review's digest quotes) never leaves it for another thread.
+        if ((yield* readThread(command.sourceThreadId)).side !== undefined) {
+          return yield* refuseSideCommand(command, SIDE_THREAD_NOT_A_SOURCE);
+        }
         cancelUnsettledEffects = yield* dispatchAsideStart(command, events, effects);
         break;
       case "houston.second-opinion.request":
+        if ((yield* readThread(command.sourceThreadId)).side !== undefined) {
+          return yield* refuseSideCommand(command, SIDE_THREAD_NOT_A_SOURCE);
+        }
         cancelUnsettledEffects = yield* dispatchSecondOpinionRequest(command, events, effects);
         break;
       case "houston.side-thread.send":
         cancelUnsettledEffects = yield* dispatchSideThreadSend(command, events, effects);
+        break;
+      case "houston.harness-review.start":
+        cancelUnsettledEffects = yield* dispatchHarnessReviewStart(command, events, effects);
         break;
       default:
         return yield* dispatchUnsupported(command);
@@ -13602,9 +13686,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         Effect.map((thread) => thread.side),
         Effect.orElseSucceed(() => undefined),
       );
-      return yield* side === undefined
-        ? dispatch
-        : threadDispatch.withLock(side.sourceThreadId, dispatch);
+      return yield* hasSourceThread(side)
+        ? threadDispatch.withLock(side.sourceThreadId, dispatch)
+        : dispatch;
     }
     // Answering a message-mode question can also start a follow-up.
     if (

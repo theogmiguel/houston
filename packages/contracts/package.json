@@ -46,6 +46,10 @@
     "./houston/mergeQueue": {
       "types": "./src/houston/mergeQueue.ts",
       "import": "./src/houston/mergeQueue.ts"
+    },
+    "./houston/harnessReview": {
+      "types": "./src/houston/harnessReview.ts",
+      "import": "./src/houston/harnessReview.ts"
     }
   },
   "scripts": {
