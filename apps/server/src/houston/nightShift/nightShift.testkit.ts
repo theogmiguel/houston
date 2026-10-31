@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off - fixture repositories are built with git in temp dirs.
+// @effect-diagnostics nodeBuiltinImport:off globalDate:off - git fixtures in temp dirs; local wall clocks.
 // Night shift over one database with the real orchestrator, projects, scheduled tasks and claim;
 // threads, machine readings, readiness and the keep-awake child are doubles, git is real.
 import * as NodeChildProcess from "node:child_process";
@@ -22,6 +22,7 @@ import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderS
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import { HttpClient } from "effect/http";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 import { TestClock } from "effect/testing";
@@ -126,6 +127,8 @@ export interface KitState {
   spawnFailure: string | null;
   /** Settle steps in order, as `<step>` names. */
   readonly settleSteps: Array<string>;
+  /** Every HTTP request any layer of the kit sent, GitHub's included. */
+  readonly httpRequests: Array<string>;
 }
 
 const READY: ProviderReadiness = { state: "ready" };
@@ -160,7 +163,17 @@ export const freshState = (): KitState => ({
   spawns: [],
   spawnFailure: null,
   settleSteps: [],
+  httpRequests: [],
 });
+
+const layerRecordingHttp = (state: KitState) =>
+  Layer.succeed(
+    HttpClient.HttpClient,
+    HttpClient.make((request) => {
+      state.httpRequests.push(`${request.method} ${request.url}`);
+      return Effect.die(`Night shift tests answer no HTTP request: ${request.url}`);
+    }),
+  );
 
 export interface KitOptions {
   readonly databaseFile?: string;
@@ -386,6 +399,7 @@ export const layerKit = (kit: Kit) => {
     Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "houston-night-test-" })),
     Layer.provideMerge(NodeServices.layer),
     Layer.provideMerge(Layer.succeed(HostedLaunch, false)),
+    Layer.provideMerge(layerRecordingHttp(state)),
   );
 };
 
