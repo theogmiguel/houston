@@ -230,13 +230,14 @@ describe("a stopped, failed or waiting run marks the request for attention", () 
         yield* connectedProject("attention");
         const stopped = yield* startedRequest(fake, "1700000000.000100", "Export the report");
         const failed = yield* startedRequest(fake, "1700000000.000200", "Rename the file");
-        const waiting = yield* startedRequest(fake, "1700000000.000300", "Fix the header");
         yield* flushOutbox;
         const dmsBefore = ownerDms(fake).length;
+        // The stopped run frees its slot, so a third request starts under the cap of two.
         yield* sql`
           UPDATE houston_task_runs SET state = 'cancelled', reason = 'stopped'
           WHERE id = ${stopped.runId}
         `;
+        const waiting = yield* startedRequest(fake, "1700000000.000300", "Fix the header");
         yield* sql`
           UPDATE houston_task_runs SET state = 'failed', reason = 'the provider exited'
           WHERE id = ${failed.runId}
@@ -249,7 +250,11 @@ describe("a stopped, failed or waiting run marks the request for attention", () 
         for (const ts of ["1700000000.000100", "1700000000.000200", "1700000000.000300"]) {
           assert.strictEqual((yield* storedRequest(ts))?.status_reaction, "warning", ts);
         }
-        const dms = ownerDms(fake).slice(dmsBefore).map(postedText);
+        // The third request's own filing message is not an attention message.
+        const dms = ownerDms(fake)
+          .slice(dmsBefore)
+          .map(postedText)
+          .filter((text) => text.includes("Attention"));
         assert.lengthOf(dms, 3);
         assert.isTrue(dms.some((text) => text.includes("stopped")), "the stopped run is named");
         assert.isTrue(

@@ -103,7 +103,7 @@ const TASKS: V1Fixture = {
   ],
   settings: {
     slack_enabled: "1",
-    slack_owner: "U1",
+    slack_owner: "U01",
     slack_language: "pt_br",
     slack_channels: JSON.stringify([
       { channel_id: "C1", workspace: V1_ROOT },
@@ -293,7 +293,7 @@ describe("v1 intake arrives disabled with its filed requests", () => {
             const info = yield* slack.get;
             assert.strictEqual(info.enabled, false);
             assert.strictEqual(info.hasTokens, false);
-            assert.strictEqual(info.ownerUserId, "U1");
+            assert.strictEqual(info.ownerUserId, "U01");
             assert.strictEqual(info.language, "pt-BR");
             assert.deepEqual(info.channels, [{ channelId: "C1", projectId }]);
             const sql = yield* SqlClient.SqlClient;
@@ -315,10 +315,10 @@ describe("v1 intake arrives disabled with its filed requests", () => {
             assert.isUndefined(yield* storedRequest("1700000000.000300"));
 
             // The user reconnects once; the owner's ✅ on an imported request starts it.
-            yield* connectSlack(projectId, { owner: "U1" });
+            yield* connectSlack(projectId, { owner: "U01" });
             yield* untilConnected;
             assert.strictEqual((yield* slack.get).language, "pt-BR");
-            yield* sendEvent(fake, reactionEvent("U1", "white_check_mark", "1700000000.000100"));
+            yield* sendEvent(fake, reactionEvent("U01", "white_check_mark", "1700000000.000100"));
             yield* until(
               "the imported request started",
               storedRequest("1700000000.000100").pipe(Effect.map((row) => row?.state === "started")),
@@ -344,7 +344,7 @@ describe("the slack import reads no keychain, never writes v1, and stores all or
               const daemon = new NodeSqlite.DatabaseSync(dirs.source);
               try {
                 daemon.exec("PRAGMA wal_autocheckpoint = 0");
-                daemon.prepare("UPDATE settings SET value = 'U1' WHERE key = 'slack_owner'").run();
+                daemon.prepare("UPDATE settings SET value = 'U01' WHERE key = 'slack_owner'").run();
                 daemon.prepare("SELECT COUNT(*) AS n FROM intake_events").get();
                 yield* createProject("shop", ROOT);
                 const imports = yield* HoustonSlackV1Import;
