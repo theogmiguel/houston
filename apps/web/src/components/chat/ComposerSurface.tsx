@@ -31,7 +31,7 @@ function Shell({
 }
 
 const outlineClasses =
-  "after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:border after:border-(--chat-composer-outline) focus-within:after:border-ring";
+  "after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:border after:border-(--chat-composer-outline) focus-within:after:border-(--line-focus)";
 
 function Host({ className, ...props }: ComponentProps<"div">) {
   return (

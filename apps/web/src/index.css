@@ -1162,6 +1162,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --border: rgba(0, 0, 0, 0.09);
   --border-hover: rgba(0, 0, 0, 0.16);
   --line-strong: rgba(0, 0, 0, 0.16);
+  --line-focus: rgba(0, 0, 0, 0.3);
   --field: rgba(0, 0, 0, 0.05);
   --hover: rgba(0, 0, 0, 0.045);
   --sel: rgba(0, 0, 0, 0.09);
@@ -1295,6 +1296,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --border: rgba(255, 255, 255, 0.09);
   --border-hover: rgba(255, 255, 255, 0.16);
   --line-strong: rgba(255, 255, 255, 0.16);
+  --line-focus: rgba(255, 255, 255, 0.3);
   --field: rgba(255, 255, 255, 0.06);
   --hover: rgba(255, 255, 255, 0.05);
   --sel: rgba(255, 255, 255, 0.09);
