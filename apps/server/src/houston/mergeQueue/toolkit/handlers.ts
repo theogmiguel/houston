@@ -17,7 +17,7 @@ import {
   HoustonMergeQueueToolkit,
 } from "./tools.ts";
 
-const PULL_URL = /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/pull\/(\d+)\/?(?:[?#].*)?$/i;
+const PULL_URL = /^https?:\/\/([^/]+)\/([^/]+\/[^/]+)\/pull\/(\d+)\/?(?:[?#].*)?$/i;
 
 const untrusted: typeof HOUSTON_MERGE_QUEUE_UNTRUSTED_LABEL = HOUSTON_MERGE_QUEUE_UNTRUSTED_LABEL;
 
@@ -58,7 +58,16 @@ const ownNumber = Effect.fn("HoustonMergeQueueToolkit.ownNumber")(function* (
     return yield* refuse("invalid", tool, `${pullRequest} is not a pull request number or URL`);
   }
   const target = yield* (yield* HoustonMergeQueueProject).target(tool, projectId);
-  const repository = match[1]!;
+  const host = match[1]!;
+  const repository = match[2]!;
+  const own = `${target.host}/${target.repository}`;
+  if (host.toLowerCase() !== target.host.toLowerCase()) {
+    return yield* refuse(
+      "refused",
+      tool,
+      `${pullRequest} is on ${host}/${repository}, not ${own}; an agent of ${target.title} queues only pull requests of ${own}`,
+    );
+  }
   if (repository.toLowerCase() !== target.repository.toLowerCase()) {
     return yield* refuse(
       "refused",
@@ -66,7 +75,7 @@ const ownNumber = Effect.fn("HoustonMergeQueueToolkit.ownNumber")(function* (
       `${pullRequest} is in ${repository}, not ${target.repository}; an agent of ${target.title} queues only pull requests of ${target.repository}`,
     );
   }
-  return Number(match[2]);
+  return Number(match[3]);
 });
 
 const agentEntry = (entry: HoustonMergeQueueEntry): HoustonMergeQueueAgentEntry => ({
