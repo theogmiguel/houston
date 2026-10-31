@@ -45,6 +45,8 @@ export interface RestingComposerControlsMeasurement {
   gap: number;
   naturalFixedWidth: number;
   minimumFixedWidth: number;
+  /** Present when the leading control is the model picker, which can drop to its provider icon. */
+  modelIconOnlyWidth?: number;
   blockWidths: readonly number[];
   overflowWidth: number;
   iconOnlyBlockWidths?: readonly number[];
@@ -88,24 +90,38 @@ const RESTING_CONTROLS_SLACK_PX = 1;
 export function resolveRestingComposerControlsLayout(
   input: RestingComposerControlsMeasurement & {
     hostWidth: number;
-    previous?: { hiddenCount: number; iconOnlyCount?: number; visible: boolean };
+    previous?: {
+      hiddenCount: number;
+      iconOnlyCount?: number;
+      modelIconOnly?: boolean;
+      visible: boolean;
+    };
   },
-): { hiddenCount: number; iconOnlyCount?: number; visible: boolean } {
+): { hiddenCount: number; iconOnlyCount?: number; modelIconOnly: boolean; visible: boolean } {
   const { blockWidths, hostWidth, previous } = input;
-  const iconSteps = input.iconOnlyBlockWidths ? blockWidths.length : 0;
+  const blockIconSteps = input.iconOnlyBlockWidths ? blockWidths.length : 0;
+  // The model label drops before any block moves to the overflow menu.
+  const modelIconStep = input.modelIconOnlyWidth === undefined ? 0 : 1;
+  const iconSteps = blockIconSteps + modelIconStep;
   const previousStep = previous
     ? previous.hiddenCount > 0
       ? iconSteps + Math.min(previous.hiddenCount, blockWidths.length)
-      : Math.min(previous.iconOnlyCount ?? 0, iconSteps)
+      : previous.modelIconOnly
+        ? iconSteps
+        : Math.min(previous.iconOnlyCount ?? 0, blockIconSteps)
     : 0;
   let step = 0;
-  const widthAtStep = (candidate: number, fixedWidth = input.naturalFixedWidth) =>
-    restingComposerControlsWidth(
+  const widthAtStep = (candidate: number, fixedWidth?: number) => {
+    const iconOnlyCount = Math.min(candidate, blockIconSteps);
+    const modelIconOnly = modelIconStep === 1 && candidate > blockIconSteps;
+    return restingComposerControlsWidth(
       input,
       Math.max(0, candidate - iconSteps),
-      fixedWidth,
-      Math.min(candidate, iconSteps),
+      fixedWidth ??
+        (modelIconOnly ? (input.modelIconOnlyWidth ?? input.minimumFixedWidth) : undefined),
+      iconOnlyCount,
     );
+  };
   // Use 1px slack for natural-width jitter on promotion; demote immediately to avoid clipping or layout
   // flapping.
   while (
@@ -115,13 +131,19 @@ export function resolveRestingComposerControlsLayout(
     step += 1;
   }
   const hiddenCount = Math.max(0, step - iconSteps);
-  const iconOnlyCount = Math.min(step, iconSteps);
+  const iconOnlyCount = Math.min(step, blockIconSteps);
+  const modelIconOnly = modelIconStep === 1 && step > blockIconSteps;
   const minimumWidth = widthAtStep(step, input.minimumFixedWidth);
   const visible =
     previous && !previous.visible
       ? minimumWidth <= hostWidth - RESTING_CONTROLS_SLACK_PX
       : minimumWidth <= hostWidth;
-  return { hiddenCount, ...(input.iconOnlyBlockWidths ? { iconOnlyCount } : {}), visible };
+  return {
+    hiddenCount,
+    ...(input.iconOnlyBlockWidths ? { iconOnlyCount } : {}),
+    modelIconOnly,
+    visible,
+  };
 }
 
 export function resolveScrollToEndClearance(input: {

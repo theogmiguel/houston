@@ -27,9 +27,14 @@ function providerModelPickerNaturalWidth(picker: HTMLElement): number {
   const labelIsCollapsed = label?.clientWidth === 0 && getComputedStyle(label).flexGrow === "0";
   const hiddenLabelWidth =
     label && !labelIsCollapsed ? Math.max(0, label.scrollWidth - label.clientWidth) : 0;
+  // In the icon-only form the label is out of flow; add its text width back, minus the
+  // provider icon the label form does not draw.
+  const iconOnly = picker.dataset.chatProviderModelPickerIconOnly === "true";
+  const icon = picker.querySelector<HTMLElement>("[data-chat-provider-model-picker-icon]");
+  const iconWidth = iconOnly && icon ? elementOuterWidth(icon) : 0;
   const maxWidth = Number.parseFloat(style.maxWidth);
   const naturalWidth = Math.min(
-    renderedWidth + hiddenLabelWidth,
+    renderedWidth + hiddenLabelWidth - iconWidth,
     Number.isFinite(maxWidth) ? maxWidth : Number.POSITIVE_INFINITY,
   );
   return naturalWidth + elementInlineMarginWidth(picker);
@@ -87,6 +92,11 @@ export function measureRestingComposerControls(
     minimumFixedWidth:
       (picker ? providerModelPickerMinimumWidth(picker) : elementOuterWidth(leadingControl)) +
       separatorAndGapWidth,
+    ...(picker
+      ? {
+          modelIconOnlyWidth: providerModelPickerMinimumWidth(picker) + separatorAndGapWidth,
+        }
+      : {}),
     blockWidths: widths.map((width) => width.natural),
     iconOnlyBlockWidths: widths.map((width) => width.iconOnly),
     overflowWidth: overflow ? elementOuterWidth(overflow) : 0,

@@ -73,6 +73,8 @@ export function ComposerControlsBar(props: {
   paneDensity: ChatComposerProps["paneDensity"];
   restingHiddenBlockCount: number;
   iconOnlyBlockCount: number;
+  /** The model label has dropped to its provider icon, ahead of any block moving to the menu. */
+  modelIconOnly: boolean;
   showProviderUnavailable: boolean;
   providerSetupInstanceId: ProviderInstanceId | undefined;
   onOpenProviderSetup: ChatComposerProps["onOpenProviderSetup"];
@@ -123,6 +125,7 @@ export function ComposerControlsBar(props: {
     paneDensity,
     restingHiddenBlockCount: measuredHiddenBlockCount,
     iconOnlyBlockCount,
+    modelIconOnly,
     showProviderUnavailable,
     providerSetupInstanceId,
     onOpenProviderSetup,
@@ -265,6 +268,7 @@ export function ComposerControlsBar(props: {
       environmentId={environmentId}
       compact={false}
       isComposerOwned
+      iconOnly={modelIconOnly}
       {...(traitsBlockIndex >= 0 && !traitsBlockInOverflow ? { split: "start" as const } : {})}
       disabled={providerCatalogPending || isSendBusy}
       multipleModelsEnabled={multipleModelsEnabled}

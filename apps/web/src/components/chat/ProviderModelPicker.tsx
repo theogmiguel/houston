@@ -6,13 +6,14 @@ import {
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
 import { memo, useRef, useState, type ReactNode } from "react";
-import { ChevronDownIcon } from "lucide-react";
+import { BotIcon, ChevronDownIcon } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { ChatGptSharingControl } from "./ChatGptSharingControl";
+import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { ModelEsque, getDisplayModelName, getTriggerDisplayModelName } from "./providerIconUtils";
 import { type ProviderInstanceEntry } from "../../providerInstances";
 import { ComposerControl, type ComposerControlSize } from "./ComposerControl";
@@ -83,6 +84,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   size?: ComposerControlSize;
   compact?: boolean;
   isComposerOwned?: boolean;
+  /** The label no longer fits: keep the provider icon and the affordance, drop the text. */
+  iconOnly?: boolean;
   /** Draws this trigger as the left half of the model/traits split control. */
   split?: TraitsSplitPart;
   disabled?: boolean;
@@ -103,6 +106,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const isMenuOpen = props.open ?? uncontrolledIsMenuOpen;
   const searchInputRef = useRef<HTMLInputElement>(null);
   const size = props.size ?? "sm";
+  const iconOnly = props.iconOnly === true;
 
   const activeEntry =
     props.instanceEntries.find((entry) => entry.instanceId === props.activeInstanceId) ?? null;
@@ -199,6 +203,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             }
             size={size}
             data-chat-provider-model-picker="true"
+            data-chat-provider-model-picker-icon-only={iconOnly ? "true" : undefined}
             className={cn(
               "min-w-0 shrink justify-between whitespace-nowrap",
               props.compact
@@ -214,11 +219,32 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         <span
           className={cn("flex min-w-0 flex-1 items-center", size === "xs" ? "gap-1" : "gap-1.5")}
         >
+          {iconOnly ? (
+            <span
+              className="inline-flex shrink-0 items-center"
+              data-chat-provider-model-picker-icon="true"
+            >
+              {activeEntry ? (
+                <ProviderInstanceIcon
+                  driverKind={activeEntry.driverKind}
+                  displayName={activeEntry.displayName}
+                  accentColor={activeEntry.accentColor}
+                  acpRegistryAgentId={activeEntry.acpRegistryAgentId}
+                  acpRegistryIconUrl={activeEntry.acpRegistryIconUrl}
+                  badgeContent="none"
+                  size="compact"
+                  iconClassName="size-3.5"
+                />
+              ) : (
+                <BotIcon aria-hidden="true" className="size-3.5" />
+              )}
+            </span>
+          ) : null}
           <Tooltip>
             <TooltipTrigger
               render={
                 <span
-                  className="min-w-0 flex-1 overflow-hidden truncate"
+                  className={cn("min-w-0 flex-1 overflow-hidden truncate", iconOnly && "sr-only")}
                   data-chat-provider-model-picker-label="true"
                 />
               }

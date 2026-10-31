@@ -873,6 +873,7 @@
     "packages/client-runtime/src/preview/serverBrowserStream.ts": "CLI binary renamed from t3 to houston",
     "packages/contracts/src/peerLink.ts": "CLI binary renamed from t3 to houston",
     "packages/contracts/src/settings.ts": "CLI binary renamed from t3 to houston",
+    "packages/contracts/src/settings.test.ts": "Houston shows the composer context strip in active threads by default",
     "apps/server/scripts/cli.ts": "server executable renamed from t3 to houston",
     "apps/server/src/device/SshDeviceHost.ts": "device host state moved under ~/.houston/v2",
     "apps/server/src/device/sshDeviceScript.ts": "device host state moved under ~/.houston/v2",
