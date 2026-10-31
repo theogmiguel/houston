@@ -14,6 +14,10 @@ pub const RELEASE: &str = "--houston-managed";
 
 pub const OPENCODE_USER_PLUGIN: &str = "export const Mine = async () => ({})\n";
 
+fn user_hook() -> Value {
+    json!({"type": "command", "command": "notify-send mine"})
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Provider {
     Claude,
@@ -334,6 +338,75 @@ impl TestHome {
                 ),
             }
         }
+    }
+
+    /// Hook events of a Claude settings file or a ZCode settings file.
+    fn events(provider: Provider, root: &mut Value) -> &mut serde_json::Map<String, Value> {
+        let hooks = &mut root["hooks"];
+        let events = match provider {
+            Provider::Claude => hooks,
+            Provider::Zcode => &mut hooks["events"],
+            other => panic!("{other:?} keeps no user hook beside Houston's in one group"),
+        };
+        events.as_object_mut().expect("hook events object")
+    }
+
+    /// A user adds their own hook to every group v1 created for `dev` (Claude, ZCode), as
+    /// v1's uninstall anticipated; returns how many groups now hold both.
+    pub fn share_houston_groups(&self, provider: Provider) -> usize {
+        let mut shared = 0;
+        for (path, _) in self.files(provider, &[DEV]) {
+            let mut root: Value = serde_json::from_str(&self.read(&path)).expect("fixture JSON");
+            for groups in Self::events(provider, &mut root)
+                .values_mut()
+                .filter_map(Value::as_array_mut)
+            {
+                for group in groups {
+                    let hooks = group["hooks"].as_array_mut().expect("group hooks");
+                    if hooks.iter().any(|h| h.to_string().contains(DEV)) {
+                        hooks.push(user_hook());
+                        shared += 1;
+                    }
+                }
+            }
+            self.write(&path, &pretty(&root));
+        }
+        shared
+    }
+
+    /// After a `dev` cleanup: each shared group holds the user's hook alone, and without
+    /// those groups every file is v1's output with no channel installed.
+    pub fn assert_user_groups_left(&self, provider: Provider, shared: usize) {
+        let mut found = 0;
+        for ((path, _), (_, bare)) in self
+            .files(provider, &[DEV])
+            .into_iter()
+            .zip(self.files(provider, &[]))
+        {
+            let mut root: Value = serde_json::from_str(&self.read(&path)).expect("cleaned JSON");
+            let events = Self::events(provider, &mut root);
+            for groups in events.values_mut().filter_map(Value::as_array_mut) {
+                let before = groups.len();
+                groups.retain(|g| g["hooks"] != json!([user_hook()]));
+                found += before - groups.len();
+            }
+            events.retain(|_, v| v.as_array().is_none_or(|g| !g.is_empty()));
+            let bare: Value = serde_json::from_str(&bare.expect("bare fixture")).expect("JSON");
+            assert_eq!(root, bare, "{provider:?}: {}", path.display());
+        }
+        assert_eq!(
+            found, shared,
+            "{provider:?}: groups left holding the user hook"
+        );
+    }
+
+    /// The command of the first hook v1 installed for `dev` in Claude's settings.
+    pub fn claude_houston_command(&self) -> String {
+        let root: Value = serde_json::from_str(&self.claude(&[DEV])).expect("fixture JSON");
+        root["hooks"]["Stop"][1]["hooks"][0]["command"]
+            .as_str()
+            .expect("Houston's Stop command")
+            .to_string()
     }
 
     pub fn write_claude_mcp_entry(&self) {

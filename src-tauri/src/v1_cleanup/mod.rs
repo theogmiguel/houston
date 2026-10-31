@@ -426,3 +426,72 @@ fn v1_state_dir_untouched() {
     };
     assert_eq!(outside_v2(&after), outside_v2(&before));
 }
+
+#[test]
+fn user_hook_in_houstons_group_stays() {
+    for provider in [Provider::Claude, Provider::Zcode] {
+        let home = TestHome::new();
+        home.install_all(&[DEV]);
+        let shared = home.share_houston_groups(provider);
+        assert!(shared > 0, "{provider:?}");
+        let outcome = run(&home.target(Some("dev")));
+        home.assert_user_groups_left(provider, shared);
+        assert!(!outcome.stood_down, "{:?}", outcome.log);
+    }
+}
+
+#[test]
+fn json_config_keeps_every_user_key_and_value() {
+    let home = TestHome::new();
+    // Written since by another tool: compact, unsorted, with keys v1 never wrote.
+    let houston = serde_json::to_string(&home.claude_houston_command()).expect("json");
+    let text = format!(
+        r#"{{"model":"opus","permissions":{{"deny":[],"allow":["Bash(ls)","Read"]}},"hooks":{{"Stop":[{{"hooks":[{{"type":"command","command":{houston}}}]}}],"PreToolUse":[{{"matcher":"Bash","hooks":[{{"type":"command","command":"mine"}}]}}]}},"env":{{"B":"1","A":"2"}},"includeCoAuthoredBy":false}}"#
+    );
+    std::fs::create_dir_all(home.claude_settings().parent().expect("dir")).expect("dir");
+    std::fs::write(home.claude_settings(), &text).expect("settings");
+    let outcome = run(&home.target(Some("dev")));
+    assert_eq!(
+        outcome.changed,
+        vec![home.claude_settings()],
+        "{:?}",
+        outcome.log
+    );
+    let after: serde_json::Value =
+        serde_json::from_str(&home.read(&home.claude_settings())).expect("cleaned JSON");
+    assert_eq!(
+        after,
+        serde_json::json!({
+            "model": "opus",
+            "permissions": {"deny": [], "allow": ["Bash(ls)", "Read"]},
+            "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "mine"}]}]},
+            "env": {"B": "1", "A": "2"},
+            "includeCoAuthoredBy": false,
+        })
+    );
+}
+
+#[test]
+fn shared_mcp_entries_stay_while_another_channel_daemon_runs() {
+    let home = TestHome::new();
+    home.write_claude_mcp_entry();
+    let bin = home.fake_claude();
+    let daemon = FakeDaemon::spawn(&home.root().join("fake-daemon"), "houston-core");
+    home.write_daemon_json(None, daemon.pid());
+    let before = home.snapshot();
+    let outcome = run(&home.target_with_path(Some("dev"), &bin));
+    assert!(!outcome.stood_down, "release's daemon is another channel's");
+    assert_eq!(home.fake_claude_calls(&bin), Vec::<String>::new());
+    assert_eq!(home.snapshot(), before, "{:?}", outcome.log);
+    let named: Vec<&String> = outcome
+        .log
+        .iter()
+        .filter(|line| line.contains(&format!("pid {}", daemon.pid())))
+        .collect();
+    assert_eq!(
+        named.len(),
+        1,
+        "one line per shared entry names the PID: {:?}",
+        outcome.log
+    );
+}
