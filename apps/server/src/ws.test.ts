@@ -83,6 +83,8 @@ import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
 import * as HoustonTaskSourceService from "./houston/taskSources/SourceService.ts";
 import * as HoustonTaskSourceV1Import from "./houston/taskSources/V1Import.ts";
 import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
+import * as HoustonHarnessService from "./houston/harnessReview/Service.ts";
+import * as HoustonNightShiftService from "./houston/nightShift/Service.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
@@ -537,6 +539,8 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(HoustonTaskSourceService.HoustonTaskSourceService)({}),
   Layer.mock(HoustonTaskSourceV1Import.HoustonTaskSourceV1Import)({}),
   Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
+  Layer.mock(HoustonHarnessService.HoustonHarnessService)({}),
+  Layer.mock(HoustonNightShiftService.HoustonNightShiftService)({}),
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
   Layer.mock(ServerLifecycleEvents.ServerLifecycleEvents)({}),

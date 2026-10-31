@@ -56,6 +56,8 @@ import * as ThreadForkService from "./ThreadForkService.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
+import { layerNightShiftRunner } from "../houston/nightShift/layer.ts";
+import { layerHoustonScheduledTaskRunner } from "../houston/nightShift/ScheduledTaskRunner.ts";
 
 export const layerEventInfrastructure = Layer.mergeAll(
   OrchestrationEventStore.layer,
@@ -288,7 +290,24 @@ const layerThreadLaunchProvided = ThreadLaunchService.layer.pipe(
 const layerSecretRequestsProvided = SecretRequests.layer.pipe(
   Layer.provide(layerThreadManagementProvided),
 );
+// Houston: a scheduled task a harness review or a Night shift owns runs that feature instead of a
+// fresh thread; the Night shift runner and its claim are exported for the service above.
 const layerScheduledTaskProvided = ScheduledTaskService.layer.pipe(
+  Layer.provideMerge(
+    layerHoustonScheduledTaskRunner.pipe(
+      Layer.provideMerge(
+        layerNightShiftRunner.pipe(
+          Layer.provide(
+            Layer.mergeAll(layerThreadLaunchProvided, layerThreadManagementProvided),
+          ),
+        ),
+      ),
+      Layer.provide(
+        Layer.mergeAll(layerOrchestratorProvided, ProjectionStore.layer, ProjectStore.layer),
+      ),
+      Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
+    ),
+  ),
   Layer.provide(
     Layer.mergeAll(
       layerThreadLaunchProvided,

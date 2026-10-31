@@ -42,7 +42,7 @@ relocated Claude or ZCode pane starts a new conversation and says why.
 Choose **New session** beside a workspace to create a new empty grid. Choose **Terminal**
 or an installed agent in the empty grid to open its first pane directly. The pane **+**
 menu adds more terminals or agents to the current grid. Choose model and effort inside
-an agent CLI. For coordinated multi-agent work, use [orchestration](orchestration.md).
+an agent CLI.
 
 New terminal sessions support 256-colour and true-colour output even when the
 launcher disables its own colours. Existing sessions retain their original

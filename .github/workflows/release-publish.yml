@@ -52,8 +52,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y minisign
 
       # The release assets: desktop bundles plus the Linux server archives the
-      # boot service and remote installs download. The raw Linux daemon the
-      # Windows installer embeds is no release asset, so it is not uploaded.
+      # boot service and remote installs download.
       - uses: actions/download-artifact@v7
         with:
           pattern: houston-*
