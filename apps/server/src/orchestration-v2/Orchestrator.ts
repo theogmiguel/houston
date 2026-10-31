@@ -566,6 +566,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "houston.side-thread.send":
       return command.sideThreadId;
     case "houston.harness-review.start":
+    case "houston.night-shift.notify":
       return command.threadId;
   }
 }
@@ -13426,6 +13427,24 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "houston.harness-review.start":
         cancelUnsettledEffects = yield* dispatchHarnessReviewStart(command, events, effects);
+        break;
+      // Houston: a Night shift message waits for the orchestrator's turn (nightShift/Threads.ts).
+      case "houston.night-shift.notify":
+        cancelUnsettledEffects = yield* dispatchMessage(
+          {
+            type: "message.dispatch",
+            createdBy: "system",
+            creationSource: "server",
+            commandId: command.commandId,
+            threadId: command.threadId,
+            messageId: command.messageId,
+            text: command.text,
+            attachments: [],
+            dispatchMode: { type: "queue_after_active" },
+          },
+          events,
+          effects,
+        );
         break;
       default:
         return yield* dispatchUnsupported(command);

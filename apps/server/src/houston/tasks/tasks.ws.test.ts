@@ -114,6 +114,7 @@ import * as HoustonReviewState from "../reviewState.ts";
 import * as HoustonTaskSourceService from "../taskSources/SourceService.ts";
 import * as HoustonTaskSourceV1Import from "../taskSources/V1Import.ts";
 import * as HoustonHarnessService from "../harnessReview/Service.ts";
+import * as HoustonNightShiftService from "../nightShift/Service.ts";
 import * as HoustonTaskService from "./TaskService.ts";
 import { createProject, layerTasks, type TasksTestOptions } from "./tasks.testkit.ts";
 import { writeV1Database } from "./v1Fixture.ts";
@@ -142,6 +143,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonTaskSourceService.HoustonTaskSourceService)({}),
   Layer.mock(HoustonTaskSourceV1Import.HoustonTaskSourceV1Import)({}),
   Layer.mock(HoustonHarnessService.HoustonHarnessService)({}),
+  Layer.mock(HoustonNightShiftService.HoustonNightShiftService)({}),
   Layer.mock(KnownWorkspaces.KnownWorkspaces)({}),
   Layer.mock(McpAppRequests.McpAppRequests)({}),
   Layer.mock(OrchestrationEventStore.OrchestrationEventStore)({}),

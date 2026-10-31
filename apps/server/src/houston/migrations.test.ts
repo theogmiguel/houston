@@ -20,6 +20,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [2, "TasksBacklog"],
   [3, "TaskSources"],
   [6, "HarnessReview"],
+  [9, "NightShift"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -309,8 +310,9 @@ describe("the harness review migration runs on the Houston track", () => {
         const upstream = yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const history = yield* houstonHistory;
-          assert.deepEqual(history.at(-1), [6, "HarnessReview"]);
-          assert.isTrue(history.slice(0, -1).every(([id]) => id < 6));
+          const harness = history.findIndex(([id]) => id === 6);
+          assert.deepEqual(history[harness], [6, "HarnessReview"]);
+          assert.isTrue(history.slice(0, harness).every(([id]) => id < 6));
           assert.deepEqual(yield* harnessTables, HARNESS_TABLES);
 
           // One preparing or running review per project; one per project in two projects is fine.
@@ -366,6 +368,117 @@ describe("the harness review migration runs on the Houston track", () => {
               (SELECT COUNT(*) FROM houston_defects) AS defects
           `;
           assert.deepEqual(counts, [{ reviews: 4, findings: 1, decisions: 1, defects: 1 }]);
+        }).pipe(Effect.provide(openThroughSqlite(file)));
+      }),
+    ),
+  );
+});
+
+describe("the night shift migration runs on the Houston track", () => {
+  const NIGHT_TABLES = [
+    "houston_night_crew",
+    "houston_night_entries",
+    "houston_night_import",
+    "houston_night_pushes",
+    "houston_night_runs",
+    "houston_night_shift_settings",
+  ];
+
+  const nightTables = Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    return (yield* sql<{ readonly name: string }>`
+      SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'houston_night_%'
+      ORDER BY name
+    `).map((row) => row.name);
+  });
+
+  const run = (
+    projectId: string,
+    phase: string,
+    options: { readonly trigger?: string; readonly stopReason?: string | null } = {},
+  ) =>
+    Effect.flatMap(
+      SqlClient.SqlClient,
+      (sql) =>
+        sql`INSERT INTO houston_night_runs (project_id, trigger, phase, stop_reason, settings_json, started_at)
+        VALUES (${projectId}, ${options.trigger ?? "manual"}, ${phase}, ${options.stopReason ?? null}, '{}', '2026-10-30T23:30:00.000Z')`,
+    );
+
+  it.effect("the night shift migration runs on the Houston track", () =>
+    withDatabaseFile((file) =>
+      Effect.gen(function* () {
+        const upstream = yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const history = yield* houstonHistory;
+          assert.deepEqual(history.at(-1), [9, "NightShift"]);
+          assert.isTrue(history.slice(0, -1).every(([id]) => id < 9));
+          assert.deepEqual(yield* nightTables, NIGHT_TABLES);
+
+          // One preflight, running or wrapping-up run per project; one each in two projects.
+          yield* run("project-p", "running");
+          for (const phase of ["preflight", "running", "wrappingUp"]) {
+            assert.isTrue(Exit.isFailure(yield* Effect.exit(run("project-p", phase))), phase);
+          }
+          yield* run("project-q", "preflight");
+          yield* run("project-p", "settled", { stopReason: "hardStop" });
+          yield* run("project-p", "refused", { stopReason: "launchFailed" });
+
+          // Every enumerated column refuses a value outside its CHECK.
+          const refused = [
+            run("project-r", "paused"),
+            run("project-r", "settled", { trigger: "routine" }),
+            run("project-r", "settled", { stopReason: "timeout" }),
+            sql`INSERT INTO houston_night_crew (run_id, thread_id, role, provider_instance_id, started_at)
+              VALUES (1, 't-1', 'fixer', 'claudeAgent', 'now')`,
+            sql`INSERT INTO houston_night_entries (run_id, project_id, kind, title, created_at)
+              VALUES (1, 'project-p', 'note', 't', 'now')`,
+          ];
+          for (const insert of refused) {
+            assert.isTrue(Exit.isFailure(yield* Effect.exit(insert)));
+          }
+          yield* sql`INSERT INTO houston_night_crew (run_id, thread_id, role, provider_instance_id, started_at)
+            VALUES (1, 't-1', 'orchestrator', 'claudeAgent', 'now')`;
+          // One crew row per run and thread.
+          assert.isTrue(
+            Exit.isFailure(
+              yield* Effect.exit(
+                sql`INSERT INTO houston_night_crew (run_id, thread_id, role, provider_instance_id, started_at)
+                  VALUES (1, 't-1', 'review', 'codex', 'now')`,
+              ),
+            ),
+          );
+          yield* sql`INSERT INTO houston_night_entries (run_id, project_id, kind, title, created_at)
+            VALUES (1, 'project-p', 'lesson', 't', 'now')`;
+          yield* sql`INSERT INTO houston_night_shift_settings (project_id, settings_json, updated_at)
+            VALUES ('project-p', '{}', 'now')`;
+          yield* sql`INSERT INTO houston_night_pushes (run_id, branch, new_sha, at)
+            VALUES (1, 't3/fix', 'abc', 'now')`;
+          assert.isFalse(
+            (yield* upstreamHistory).some((row) => row.name.toLowerCase().includes("night")),
+          );
+          return yield* upstreamHistory;
+        }).pipe(Effect.provide(openThroughSqlite(file)));
+
+        // A reopen applies nothing and keeps every row.
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          assert.deepEqual(yield* runHoustonMigrations(), []);
+          assert.deepEqual(yield* upstreamHistory, upstream);
+          const counts = yield* sql<{
+            readonly runs: number;
+            readonly crew: number;
+            readonly entries: number;
+            readonly settings: number;
+            readonly pushes: number;
+          }>`
+            SELECT
+              (SELECT COUNT(*) FROM houston_night_runs) AS runs,
+              (SELECT COUNT(*) FROM houston_night_crew) AS crew,
+              (SELECT COUNT(*) FROM houston_night_entries) AS entries,
+              (SELECT COUNT(*) FROM houston_night_shift_settings) AS settings,
+              (SELECT COUNT(*) FROM houston_night_pushes) AS pushes
+          `;
+          assert.deepEqual(counts, [{ runs: 4, crew: 1, entries: 1, settings: 1, pushes: 1 }]);
         }).pipe(Effect.provide(openThroughSqlite(file)));
       }),
     ),

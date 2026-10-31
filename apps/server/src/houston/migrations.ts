@@ -404,12 +404,128 @@ const HarnessReview = Effect.gen(function* () {
   `;
 });
 
-// Ids 4 and 5 belong to Houston migrations on other branches; the Migrator orders by id.
+// Night shift: settings, runs, crew, ledger, pushes and the v1 import, keyed by upstream ProjectId
+// without a foreign key; a deleted project's rows go with its deletion hook.
+const NightShift = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_shift_settings (
+      project_id TEXT PRIMARY KEY,
+      scheduled_task_id TEXT,
+      settings_json TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id TEXT NOT NULL,
+      trigger TEXT NOT NULL CHECK (trigger IN ('scheduled', 'catchUp', 'manual', 'imported')),
+      scheduled_task_id TEXT,
+      phase TEXT NOT NULL
+        CHECK (phase IN ('preflight', 'refused', 'running', 'wrappingUp', 'settled')),
+      stop_reason TEXT CHECK (stop_reason IS NULL OR stop_reason IN ('report', 'hardStop',
+        'stopped', 'idle', 'orchestratorEnded', 'orchestratorLimited', 'serverRestart',
+        'launchFailed', 'imported')),
+      stop_detail TEXT,
+      orchestrator_thread_id TEXT,
+      worktree_path TEXT,
+      branch TEXT,
+      settings_json TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      wrap_up_at TEXT,
+      hard_stop_at TEXT,
+      wrap_up_sent INTEGER NOT NULL DEFAULT 0,
+      nudged_at TEXT,
+      ended_at TEXT,
+      preflight_json TEXT NOT NULL DEFAULT '[]',
+      limited_json TEXT NOT NULL DEFAULT '[]',
+      remote_heads_json TEXT,
+      remote_changes_json TEXT,
+      interruptions_json TEXT NOT NULL DEFAULT '[]',
+      cost_json TEXT,
+      summary TEXT,
+      report_path TEXT,
+      keep_awake TEXT,
+      notice_sent INTEGER NOT NULL DEFAULT 0
+    )
+  `;
+  // A restart or a second server process must not start a second crew in the same project.
+  yield* sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_houston_night_runs_live
+    ON houston_night_runs(project_id) WHERE phase IN ('preflight', 'running', 'wrappingUp')
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_night_runs_project ON houston_night_runs(project_id, id DESC)`;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_crew (
+      run_id INTEGER NOT NULL,
+      thread_id TEXT NOT NULL,
+      task_id TEXT,
+      parent_thread_id TEXT,
+      role TEXT NOT NULL CHECK (role IN ('orchestrator', 'implementation', 'research', 'review',
+        'design', 'test', 'general')),
+      provider_instance_id TEXT NOT NULL,
+      requested_instance_id TEXT,
+      worktree_path TEXT,
+      branch TEXT,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      PRIMARY KEY (run_id, thread_id)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id INTEGER NOT NULL,
+      project_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('plan', 'pr', 'lesson', 'flaky', 'decision', 'deferred',
+        'studied', 'pick', 'verdict')),
+      title TEXT NOT NULL,
+      theme TEXT,
+      status TEXT,
+      pr_number INTEGER,
+      task_number INTEGER,
+      head_sha TEXT,
+      branch TEXT,
+      visible INTEGER NOT NULL DEFAULT 0,
+      qa_passed INTEGER NOT NULL DEFAULT 0,
+      body TEXT NOT NULL DEFAULT '',
+      detail_json TEXT NOT NULL DEFAULT '{}',
+      author_thread_id TEXT,
+      created_at TEXT NOT NULL,
+      decided_at TEXT,
+      choice TEXT
+    )
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_night_entries_project ON houston_night_entries(project_id, kind, id DESC)`;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_pushes (
+      run_id INTEGER NOT NULL,
+      branch TEXT NOT NULL,
+      old_sha TEXT,
+      new_sha TEXT NOT NULL,
+      pr_number INTEGER,
+      at TEXT NOT NULL,
+      PRIMARY KEY (run_id, branch, new_sha)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_import (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      imported_at TEXT NOT NULL,
+      counts_json TEXT NOT NULL
+    )
+  `;
+});
+
+// Ids 4, 5, 7 and 8 belong to Houston migrations on other branches; the Migrator orders by id.
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
   [3, "TaskSources", TaskSources],
   [6, "HarnessReview", HarnessReview],
+  [9, "NightShift", NightShift],
 ] as const;
 
 const run = Migrator.make({});

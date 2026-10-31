@@ -37,6 +37,7 @@ import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as HoustonTaskStore from "../houston/tasks/TaskStore.ts";
 import * as HoustonTaskSourceStore from "../houston/taskSources/SourceStore.ts";
 import * as HoustonHarnessStore from "../houston/harnessReview/Store.ts";
+import * as HoustonNightShiftStore from "../houston/nightShift/Store.ts";
 
 export interface ProjectCreateInput extends ProjectCreatePayload {
   readonly commandId: CommandId;
@@ -172,6 +173,9 @@ export const make = Effect.gen(function* () {
     HoustonTaskSourceStore.HoustonTaskSourceStore,
   );
   const houstonHarness = yield* Effect.serviceOption(HoustonHarnessStore.HoustonHarnessStore);
+  const houstonNightShift = yield* Effect.serviceOption(
+    HoustonNightShiftStore.HoustonNightShiftStore,
+  );
   const projectLocks = yield* KeyedLock.make<ProjectId>();
   const workspaceLocks = yield* KeyedLock.make<string>();
 
@@ -526,6 +530,9 @@ export const make = Effect.gen(function* () {
           yield* houstonTaskSources.value.projectRemoved(projectId);
         }
         if (Option.isSome(houstonHarness)) yield* houstonHarness.value.projectRemoved(projectId);
+        if (Option.isSome(houstonNightShift)) {
+          yield* houstonNightShift.value.projectRemoved(projectId);
+        }
       }
       yield* projectEnrichment.invalidate([existing.value.workspaceRoot]);
       return yield* readCommitted(projectId);

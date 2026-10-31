@@ -122,6 +122,8 @@ import { layerTaskSources } from "./houston/taskSources/layer.ts";
 import { layerHarnessReview } from "./houston/harnessReview/layer.ts";
 import * as HoustonHarnessRunner from "./houston/harnessReview/Runner.ts";
 import * as HoustonHarnessStore from "./houston/harnessReview/Store.ts";
+import { layerNightShift } from "./houston/nightShift/layer.ts";
+import * as HoustonNightShiftStore from "./houston/nightShift/Store.ts";
 import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
@@ -568,6 +570,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provide(ProjectionStoreV2.layer),
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
   ),
+  // The Night shift service over the runner and claim the orchestration runtime below exports.
+  layerNightShift,
 ).pipe(
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer, HoustonTaskV1Import.layer)),
@@ -586,7 +590,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
   // Below the orchestration runtime so its ProjectService sees the store on project deletion.
   Layer.provideMerge(HoustonTaskSourceStore.layer),
-  Layer.provideMerge(HoustonHarnessStore.layer),
+  Layer.provideMerge(Layer.merge(HoustonHarnessStore.layer, HoustonNightShiftStore.layer)),
   Layer.provideMerge(HoustonKeychain.layerLive),
   Layer.provideMerge(HoustonTaskStore.layer),
   Layer.provideMerge(layerPersistence),
