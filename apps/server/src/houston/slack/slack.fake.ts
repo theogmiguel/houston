@@ -28,6 +28,7 @@ export interface SlackFakeAnswer {
 
 export interface SlackFakeFile {
   readonly status?: number;
+  readonly headers?: Readonly<Record<string, string>>;
   readonly body: Uint8Array;
 }
 
@@ -197,6 +198,7 @@ export const makeSlackFake = Effect.acquireRelease(
           const file = fake.files.get(path);
           response.writeHead(file?.status ?? (file === undefined ? 404 : 200), {
             "content-type": "application/octet-stream",
+            ...file?.headers,
           });
           response.end(file === undefined ? "" : Buffer.from(file.body));
           return;

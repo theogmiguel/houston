@@ -122,3 +122,30 @@ describe("the slack web api client is bounded to its origin, time and wait", () 
     ),
   );
 });
+
+describe("a slack file download refuses a redirect", () => {
+  it.effect("a slack file download refuses a redirect", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeSlackFake;
+      const elsewhere = yield* makeSlackFake;
+      elsewhere.files.set("/files/a.png", { body: Uint8Array.from([0x89, 0x50]) });
+      fake.files.set("/files/moved.png", {
+        status: 302,
+        headers: { location: `${elsewhere.origin}/files/a.png` },
+        body: new Uint8Array(),
+      });
+      const client = yield* make({ origin: `${fake.origin}/api/`, allowLoopback: true });
+      const refused = yield* Effect.flip(
+        client.download(TOKEN, `${fake.origin}/files/moved.png`, 1024),
+      );
+      assert.include(refused.message, "302");
+      assert.notInclude(refused.message, Redacted.value(TOKEN));
+      assert.deepEqual(fake.fileRequests, ["/files/moved.png"]);
+      assert.deepEqual(elsewhere.fileRequests, []);
+    }).pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.scoped,
+      Effect.provide(NodeServices.layer),
+    ),
+  );
+});
