@@ -3327,7 +3327,7 @@ export default function ChatView(props: ChatViewProps) {
           </div>
         ) : null}
 
-        <div className="relative flex min-h-0 min-w-0 flex-1">
+        <div className="relative mx-1.5 mb-1.5 flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-(--r-group) border border-border bg-pane">
           <ThreadFindCanvas
             findOptions={{
               skills: timelineSkills,
@@ -3365,10 +3365,7 @@ export default function ChatView(props: ChatViewProps) {
               setThreadError={setThreadError}
               setThreadErrorBannerDismissTick={setThreadErrorBannerDismissTick}
             />
-            <div
-              {...conversationArea}
-              className="relative flex min-h-0 flex-1 flex-col bg-background"
-            >
+            <div {...conversationArea} className="relative flex min-h-0 flex-1 flex-col bg-pane">
               <ThreadTimeline
                 pendingApprovals={timelinePendingApprovals}
                 heldApprovalRequestIds={heldApprovalRequestIds}
@@ -3907,6 +3904,7 @@ export default function ChatView(props: ChatViewProps) {
           sheetAnimationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
           onCloseSheet={closePreviewPanelStable}
           open={rightPanelOpen}
+          fixedTabs
           keybindings={keybindings}
           getShortcutContext={getShortcutContextStable}
           maximized={rightPanelMaximized}

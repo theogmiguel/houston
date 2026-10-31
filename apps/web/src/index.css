@@ -313,6 +313,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--contrast-accent-foreground);
   --color-accent: var(--accent-surface);
+  --color-selected: var(--sel);
+  --color-pane: var(--pane);
+  --color-pane-head: var(--pane-head);
   --color-muted-foreground: var(--contrast-muted-foreground);
   --color-muted: var(--muted);
   --color-placeholder: var(--contrast-placeholder);
@@ -2673,6 +2676,12 @@ code {
 [data-workspace-area]:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
+}
+
+/* The Timeline board draws the message column at 720px, narrower than the
+   composer lane, so the timeline scopes the shared lane width. */
+.messages-timeline-scroll {
+  --chat-content-max-width: 45rem;
 }
 
 /* The timeline prose measure and rhythm: 14/20 in a 720px lane, with one
