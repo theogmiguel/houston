@@ -137,16 +137,7 @@ case "${1:-}" in
           env HOUSTON_CHANNEL=dev ./scripts/oom-shield.sh \
               cargo test --manifest-path src-tauri/Cargo.toml
 
-        step 'ui: bun install'   bash -c 'cd ui && bun install --frozen-lockfile'
-        step 'ui: typecheck'     bash -c 'cd ui && bun run typecheck'
-        step 'ui: test'          bash -c 'cd ui && bun run test'
-        step 'ui: build'         bash -c 'cd ui && bun run build'
-        step 'ui: check:css'     bash -c 'cd ui && bun run check:css'
-        step 'ui: check:bundle'  bash -c 'cd ui && bun run check:bundle'
-
-        for s in check-watchdog check-dev-channel check-kill-guard check-protocol-sync \
-                 check-loop-spawn-sync check-title-tooltip-guard \
-                 check-spawn-window check-env-ratchet; do
+        for s in check-dev-channel check-kill-guard check-spawn-window check-env-ratchet; do
           step \"safety: \$s\" \"./scripts/\$s.sh\"
         done
 
@@ -161,7 +152,6 @@ case "${1:-}" in
 
   build)
     vm_detach build "vmcd $VM_REPO
-(cd ui && bun install --frozen-lockfile)
 ./scripts/build-app.sh --bundles appimage,deb"
     echo "[linux-vm] follow with: ./scripts/linux-vm.sh wait build"
     ;;

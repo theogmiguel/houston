@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Houston type and layout</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&amp;family=JetBrains+Mono:wght@400;500&amp;family=Source+Serif+4:opsz,wght@8..60,400..600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+[data-theme=graphite]{color-scheme:dark;--rail:#1c1c1f;--content:#161618;--card:#202023;--raised:#26262a;--border:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.16);--field:rgba(255,255,255,.06);--hover:rgba(255,255,255,.05);--sel:rgba(255,255,255,.09);--accent:#2f6fe8;--accent-ink:#64a0ff;--accent-muted:rgba(47,111,232,.15);--t1:rgba(255,255,255,.92);--t2:rgba(255,255,255,.66);--t3:rgba(255,255,255,.52);--shadow-1:0 12px 32px -8px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.08);--shadow-2:0 12px 32px -8px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.08);--scrim:rgba(0,0,0,.28);--pane:#0f0f11;--pane-head:#18181b;--term:#0f0f11;--border-hover:rgba(255,255,255,.16);--accent-hover:#4f85ec;--ok:#30d158;--ok-ink:#30d158;--warn:#f5a524;--stop:#ff6b61;--stop-ink:#ff6b61;--warn-wash:rgba(245,165,36,.08);--warn-line:rgba(245,165,36,.32);--add-bg:rgba(48,209,88,.10);--del-bg:rgba(255,107,97,.10);--code-bg:#18181b;--danger-fill:#d93a30;--danger-wash:rgba(255,107,97,.10);--tog-off:rgba(255,255,255,.18);--claude:#d97757;--codex:rgba(255,255,255,.92);--composer:#18181b}
+[data-theme=paper]{color-scheme:light;--rail:#ececef;--content:#f5f5f7;--card:#ffffff;--raised:#ffffff;--border:rgba(0,0,0,.09);--line-strong:rgba(0,0,0,.16);--field:rgba(0,0,0,.05);--hover:rgba(0,0,0,.045);--sel:rgba(0,0,0,.09);--accent:#0a63e0;--accent-ink:#0a5cd1;--accent-muted:rgba(10,99,224,.12);--t1:#1d1d1f;--t2:#424245;--t3:#5b5b60;--shadow-1:0 12px 32px -10px rgba(0,0,0,.18),0 0 0 1px rgba(0,0,0,.08);--shadow-2:0 12px 32px -10px rgba(0,0,0,.18),0 0 0 1px rgba(0,0,0,.08);--scrim:rgba(0,0,0,.12);--pane:#ffffff;--pane-head:#f7f7f9;--term:#ffffff;--border-hover:rgba(0,0,0,.16);--accent-hover:#0954be;--ok:#1d7a3a;--ok-ink:#1d7a3a;--warn:#b45309;--stop:#c0362c;--stop-ink:#c0362c;--warn-wash:rgba(180,83,9,.06);--warn-line:rgba(180,83,9,.3);--add-bg:rgba(29,122,58,.09);--del-bg:rgba(192,54,44,.08);--code-bg:#f7f7f9;--danger-fill:#c0362c;--danger-wash:rgba(192,54,44,.08);--tog-off:rgba(0,0,0,.22);--claude:#c25f3f;--codex:#1d1d1f;--composer:#ffffff}
+.hs{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-optical-sizing:auto;font-size:13px;line-height:18px;color:var(--t1);-webkit-font-smoothing:antialiased}
+.hs *{box-sizing:border-box}
+.hs h1,.hs h2,.hs h3,.hs p{margin:0}
+.mono{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-size:12px}
+.serif{font-family:'Source Serif 4',Georgia,serif}
+.t-large{font-size:26px;line-height:32px;font-weight:700;letter-spacing:-.01em}
+.t-title{font-size:20px;line-height:26px;font-weight:650}
+.t-head{font-size:13px;line-height:18px;font-weight:600}
+.t-callout{font-size:12px;line-height:16px}
+.t-cap{font-size:11px;line-height:14px;font-weight:600;letter-spacing:.01em}
+.c2{color:var(--t2)}.c3{color:var(--t3)}
+.spec{display:grid;grid-template-columns:120px 120px minmax(0,1fr);gap:16px;align-items:baseline;padding:14px 0;border-bottom:1px solid var(--border)}
+</style>
+</helmet>
+<div class="hs" data-theme="{{theme}}" style="background: var(--content); min-height: 1700px; padding: 56px 24px 80px">
+<div style="max-width: 1240px; margin: 0 auto; display: flex; flex-direction: column; gap: 48px">
+
+<section style="display: flex; flex-direction: column; gap: 12px">
+<h1 class="t-large">Typography</h1>
+<p class="c2" style="max-width: 78ch">Three families with fixed jobs. Body is 13 / 18 at weight 400, the desktop default; the floor is 11px for labels. Serif appears only in display: empty states and first run. Hierarchy comes from weight and ink tier before size.</p>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding-top: 8px">
+<div style="padding: 20px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; gap: 10px">
+<span class="t-cap c3">Inter Variable · optical sizing</span>
+<span style="font-size: 34px; line-height: 40px; font-weight: 600; letter-spacing: -.02em">Every control</span>
+<span class="c2">Chrome, body copy, menus, rows, buttons, timeline prose.</span>
+</div>
+<div style="padding: 20px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; gap: 10px">
+<span class="t-cap c3">Source Serif 4 · 20px and up</span>
+<span class="serif" style="font-size: 34px; line-height: 40px; font-weight: 500">A quiet arrival</span>
+<span class="c2">First run, empty states, About. Never in chrome, menus or tables.</span>
+</div>
+<div style="padding: 20px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; gap: 10px">
+<span class="t-cap c3">JetBrains Mono · machine values</span>
+<span class="mono" style="font-size: 26px; line-height: 40px">feat/grid-drawer</span>
+<span class="c2">Paths, branches, ids, code, terminal. Never prose or emphasis.</span>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; padding-top: 8px">
+<div class="spec"><span class="mono c3">display</span><span class="mono c3">Serif 34 / 40 · 500</span><span style="font: 500 34px/40px 'Source Serif 4', Georgia, serif; letter-spacing: -.01em">Add a project to start</span></div>
+<div class="spec"><span class="mono c3">stat</span><span class="mono c3">22 / 28 · 650 · tabular</span><span style="font-size: 22px; line-height: 28px; font-weight: 650; font-variant-numeric: tabular-nums">$500.03</span></div>
+<div class="spec"><span class="mono c3">largeTitle</span><span class="mono c3">26 / 32 · 700</span><span class="t-large">Settings</span></div>
+<div class="spec"><span class="mono c3">title</span><span class="mono c3">20 / 26 · 650</span><span class="t-title">Delete this grid?</span></div>
+<div class="spec"><span class="mono c3">headline</span><span class="mono c3">13 / 18 · 600</span><span class="t-head">Providers</span></div>
+<div class="spec"><span class="mono c3">body</span><span class="mono c3">13 / 18 · 400</span><span>Claude is reading the migration files before it changes the schema.</span></div>
+<div class="spec"><span class="mono c3">prose</span><span class="mono c3">14 / 20 · 400</span><span style="font-size: 14px; line-height: 20px">I split the drawer state out of the thread store so a grid can keep one drawer open while threads change underneath it.</span></div>
+<div class="spec"><span class="mono c3">callout</span><span class="mono c3">12 / 16 · 400</span><span class="t-callout c2">Started 4 min ago · houston/main</span></div>
+<div class="spec"><span class="mono c3">caption / label</span><span class="mono c3">11 / 14 · 600</span><span class="t-cap c3">Pinned grids</span></div>
+<div class="spec"><span class="mono c3">mono</span><span class="mono c3">12 / 18 · 400</span><span class="mono">apps/web/src/components/ChatView.tsx</span></div>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 12px">
+<h2 class="t-title">Spacing and control metrics</h2>
+<p class="c2" style="max-width: 78ch">A 4pt scale. Rhythm belongs to the container: gap on the parent, never margins on children.</p>
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-end; padding: 20px; background: var(--card); border: 1px solid var(--border); border-radius: 10px">
+<sc-for list="{{space}}" as="s" hint-placeholder-count="9">
+<div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-start">
+<div style="height: {{s.px}}px; width: {{s.px}}px; background: var(--accent-muted); border: 1px solid var(--accent-ink); border-radius: 2px"></div>
+<span class="mono c2">{{s.name}}</span><span class="mono c3">{{s.px}}px</span>
+</div>
+</sc-for>
+</div>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+<sc-for list="{{metrics}}" as="m" hint-placeholder-count="8">
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 10px">
+<div style="display: flex; justify-content: space-between"><span class="mono">{{m.name}}</span><span class="mono c3">{{m.px}}px</span></div>
+<span class="t-callout c2">{{m.use}}</span>
+</div>
+</sc-for>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 12px">
+<h2 class="t-title">Radius</h2>
+<p class="c2" style="max-width: 78ch">Four roles. Rounded is a value, capsule is pressable: a status or count uses the control rung; a filter or removable chip is a capsule.</p>
+<div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 8px"><div style="height: 88px; background: var(--card); border: 1px solid var(--line-strong); border-radius: 4px"></div><span class="mono">--r-badge · 4</span><span class="t-callout c3">Badges, swatches</span></div>
+<div style="display: flex; flex-direction: column; gap: 8px"><div style="height: 88px; background: var(--card); border: 1px solid var(--line-strong); border-radius: 6px"></div><span class="mono">--r-ctl · 6</span><span class="t-callout c3">Buttons, fields, rows</span></div>
+<div style="display: flex; flex-direction: column; gap: 8px"><div style="height: 88px; background: var(--card); border: 1px solid var(--line-strong); border-radius: 10px"></div><span class="mono">--r-group · 10</span><span class="t-callout c3">Cards, panes, menus</span></div>
+<div style="display: flex; flex-direction: column; gap: 8px"><div style="height: 88px; background: var(--card); border: 1px solid var(--line-strong); border-radius: 14px"></div><span class="mono">--r-dialog · 14</span><span class="t-callout c3">Dialogs, palette</span></div>
+<div style="display: flex; flex-direction: column; gap: 8px"><div style="height: 88px; display: flex; align-items: center; justify-content: center; background: var(--card); border: 1px solid var(--line-strong); border-radius: 10px"><span style="height: 26px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line-strong); display: inline-flex; align-items: center" class="t-callout">Capsule</span></div><span class="mono">pill · 999</span><span class="t-callout c3">Pressable chips only</span></div>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 12px">
+<h2 class="t-title">Material ladder</h2>
+<p class="c2" style="max-width: 78ch">Five rungs, each one step more separated. The rail carries one hairline on its right edge; nothing in the shell casts a shadow. Panes never cast shadows; more emphasis than overlay is a focus ring.</p>
+<div style="position: relative; height: 340px; border-radius: 14px; overflow: hidden; border: 1px solid var(--border); background: var(--rail)">
+<div style="position: absolute; left: 0; top: 0; bottom: 0; width: 220px; padding: 18px; display: flex; flex-direction: column; gap: 6px"><span class="t-cap c3">shell · --rail</span><span class="t-callout c2">Rail, topbar, grid frame</span></div>
+<div style="position: absolute; left: 220px; top: 10px; right: 10px; bottom: 10px; background: var(--content); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 6px"><span class="t-cap c3">base · --content</span><span class="t-callout c2">The thread canvas</span></div>
+<div style="position: absolute; left: 260px; top: 70px; width: 300px; height: 230px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 6px"><span class="t-cap c3">inset · --card</span><span class="t-callout c2">Composer, cards, panels</span></div>
+<div style="position: absolute; left: 600px; top: 70px; width: 240px; height: 150px; background: var(--raised); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-1); padding: 16px; display: flex; flex-direction: column; gap: 6px"><span class="t-cap c3">raised · shadow-1</span><span class="t-callout c2">Menus, popovers, tooltips, toasts</span></div>
+<div style="position: absolute; left: 880px; top: 40px; right: 30px; bottom: 30px; background: var(--scrim); border-radius: 10px"></div>
+<div style="position: absolute; left: 920px; top: 90px; right: 70px; height: 170px; background: var(--raised); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-2); padding: 16px; display: flex; flex-direction: column; gap: 6px"><span class="t-cap c3">overlay · shadow-2 + scrim</span><span class="t-callout c2">Dialogs, palette, confirm sheets</span></div>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 12px">
+<h2 class="t-title">Motion</h2>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+<div style="padding: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; gap: 6px"><span class="t-head">Fast · 120ms</span><span class="mono c3">cubic-bezier(.2,0,.38,1)</span><span class="t-callout c2">Hovers and micro-transitions</span></div>
+<div style="padding: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; gap: 6px"><span class="t-head">Menu · 160ms</span><span class="mono c3">cubic-bezier(.16,1,.3,1)</span><span class="t-callout c2">Menu content and popover views</span></div>
+<div style="padding: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; gap: 6px"><span class="t-head">Panel · 240ms</span><span class="mono c3">cubic-bezier(.32,.72,0,1)</span><span class="t-callout c2">Drawer and side panels</span></div>
+<div style="padding: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; gap: 6px"><span class="t-head">Scrim · 90ms</span><span class="mono c3">linear</span><span class="t-callout c2">Always the fastest thing on screen</span></div>
+</div>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["graphite","paper"],"default":"graphite"},"$preview":{"width":1440,"height":1700}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      theme: this.props.theme ?? 'graphite',
+      space: [['--space-1', 4], ['--space-1-5', 6], ['--space-2', 8], ['--space-2-5', 10], ['--space-3', 12], ['--space-4', 16], ['--space-4-5', 20], ['--space-5', 24], ['--space-6', 32]].map(([name, px]) => ({ name, px })),
+      metrics: [
+        { name: '--h-top', px: 40, use: 'Top bar: breadcrumb, actions and the window controls' }, { name: '--w-window-control', px: 30, use: 'Minimize, maximize, close; 20px disc on hover' },
+        { name: '--h-pane-head', px: 30, use: 'Every pane header in a grid' },
+        { name: '--h-ctl', px: 28, use: 'Buttons, selects, inputs' },
+        { name: '--h-ctl-mini', px: 22, use: 'Glyph box inside a 28px control, never the control' },
+        { name: '--h-row', px: 28, use: 'Sidebar rows' },
+        { name: 'settings row', px: 48, use: 'Settings rows with a description; 44 without' }, { name: 'switch', px: 20, use: '36 × 20; the whole row is its hit target' },
+        { name: '--h-pill', px: 26, use: 'Chips' },
+        { name: '--page-w', px: 960, use: 'Usage and Pull requests column' }, { name: '--settings-w', px: 720, use: 'Settings column, centred' }, { name: 'right panel', px: 600, use: 'Presets 340 · 470 · 600 · 732' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

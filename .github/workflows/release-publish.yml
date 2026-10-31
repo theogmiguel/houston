@@ -51,8 +51,9 @@ jobs:
       - name: Install signature verifier
         run: sudo apt-get update && sudo apt-get install -y minisign
 
-      # Only the bundles: the run also holds the raw Linux daemon the Windows
-      # installer embeds, which is no release asset.
+      # The release assets: desktop bundles plus the Linux server archives the
+      # boot service and remote installs download. The raw Linux daemon the
+      # Windows installer embeds is no release asset, so it is not uploaded.
       - uses: actions/download-artifact@v7
         with:
           pattern: houston-*

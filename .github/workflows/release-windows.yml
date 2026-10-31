@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       stage:
-        description: Compile native binaries, or bundle previously compiled binaries with WSL resources
+        description: Compile the native application, or bundle a previously compiled build
         type: string
         required: true
       version:
@@ -67,7 +67,6 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item scripts/build-app.ps1 "$env:RUNNER_TEMP/release-build-app.ps1"
-          Copy-Item scripts/stage-wsl.ps1 "$env:RUNNER_TEMP/release-stage-wsl.ps1"
       - name: Check out the application source
         uses: actions/checkout@v5
         with:
@@ -76,7 +75,6 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item "$env:RUNNER_TEMP/release-build-app.ps1" scripts/build-app.ps1 -Force
-          Copy-Item "$env:RUNNER_TEMP/release-stage-wsl.ps1" scripts/stage-wsl.ps1 -Force
 
       - name: Require the checked-out tree to carry the release version
         shell: bash
@@ -97,8 +95,6 @@ jobs:
             src-tauri
           key: release-windows
           cache-on-failure: true
-
-      - uses: oven-sh/setup-bun@v2
 
       - name: Cache the pinned Tauri CLI
         id: tauri-cli-cache
@@ -139,30 +135,34 @@ jobs:
             throw "Expected tauri-cli $env:TAURI_CLI_VERSION, got '$actual'"
           }
 
-      - name: Install renderer dependencies
-        run: bun install --frozen-lockfile
-        working-directory: ui
-
-      - name: Compile native application without WSL packaging resources
-        shell: pwsh
-        run: ./scripts/build-app.ps1 -DeferWslStaging
-
-      - name: Assert the Windows sidecars were staged
+      # The embedded v2 server is built with the Node version its SEA build pins
+      # in package.json engines.node, not the runner's default.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: package.json
+          cache: pnpm
+      - name: Install the server workspace
+        run: pnpm install --frozen-lockfile
+      - name: Build and stage the bundled v2 server
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          foreach ($name in @('houston-core.exe', 'tr-helper.exe')) {
-            $path = Join-Path (Get-Location) "src-tauri/target/release/$name"
-            if (-not (Test-Path $path)) {
-              Write-Error "$name missing at $path -- build-app.ps1 did not stage the sidecar"
-              exit 1
-            }
-          }
+          pnpm --filter houston build:exe
+          if ($LASTEXITCODE) { throw "build:exe failed with exit code $LASTEXITCODE" }
+          node scripts/stage-v2-server.mjs
+          if ($LASTEXITCODE) { throw "stage-v2-server.mjs failed with exit code $LASTEXITCODE" }
+
+      - name: Compile native application
+        shell: pwsh
+        run: ./scripts/build-app.ps1
 
       - name: Archive native binaries for the installer job
         shell: pwsh
         run: |
-          tar -cf windows-native.tar src-tauri/target/release/houston.exe src-tauri/target/release/houston-core.exe src-tauri/target/release/tr-helper.exe src-tauri/binaries
+          tar -cf windows-native.tar src-tauri/target/release/houston.exe src-tauri/v2-server
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           git rev-parse HEAD | Set-Content -NoNewline windows-native-sha.txt
       - uses: actions/upload-artifact@v7
@@ -203,7 +203,6 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item scripts/build-app.ps1 "$env:RUNNER_TEMP/release-build-app.ps1"
-          Copy-Item scripts/stage-wsl.ps1 "$env:RUNNER_TEMP/release-stage-wsl.ps1"
       - name: Check out the application source
         uses: actions/checkout@v5
         with:
@@ -212,7 +211,6 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item "$env:RUNNER_TEMP/release-build-app.ps1" scripts/build-app.ps1 -Force
-          Copy-Item "$env:RUNNER_TEMP/release-stage-wsl.ps1" scripts/stage-wsl.ps1 -Force
 
       - name: Require the checked-out tree to carry the release version
         shell: bash
@@ -360,17 +358,14 @@ jobs:
           tar -xf "$env:RUNNER_TEMP/windows-native/windows-native.tar"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
-      - name: Download the Linux daemon for WSL distros
-        uses: actions/download-artifact@v7
-        with:
-          name: wsl-linux-x86_64-${{ inputs.version }}
-          path: ${{ runner.temp }}/wsl-linux
-
-      - name: Stage and verify the WSL resources before packaging
+      - name: Assert the bundled v2 server was staged
         shell: pwsh
-        env:
-          HOUSTON_WSL_LINUX_BIN_DIR: ${{ runner.temp }}/wsl-linux
-        run: ./scripts/stage-wsl.ps1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $server = Join-Path (Get-Location) 'src-tauri/v2-server/houston-v2-server.exe'
+          if (-not (Test-Path $server)) {
+            throw "$server missing -- the compile job did not stage the v2 server"
+          }
 
       - name: Bundle the NSIS installer
         shell: pwsh

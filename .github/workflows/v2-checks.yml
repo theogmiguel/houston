@@ -1,0 +1,401 @@
+name: v2-checks
+
+# Gates for the v2 rebuild: its integration PR into main and slice PRs into v2. A push
+# to v2 already runs through the open integration PR, so there is no push trigger.
+on:
+  pull_request:
+    branches: [main, v2]
+  workflow_dispatch:
+
+concurrency:
+  group: v2-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # handoff/ is working material deleted before v2 merges into main, and the paths
+  # upstream.json lists as imported stay byte-identical to upstream; every other
+  # Markdown file in the tree keeps the usual hygiene rules.
+  doc-hygiene:
+    if: github.event_name == 'workflow_dispatch' || github.base_ref == 'v2' || github.head_ref == 'v2' || startsWith(github.head_ref, 'v2-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Drop handoff/ from the checked-out tree
+        run: |
+          if [ -d handoff ]; then
+            git rm -r -q --cached handoff
+            rm -rf handoff
+          fi
+      - name: Drop upstream's imported paths from the checked-out tree
+        run: |
+          if [ -f upstream.json ]; then
+            jq -r '.imported[]' upstream.json | while IFS= read -r path; do
+              if [ -e "$path" ]; then
+                git rm -r -q --cached -- "$path"
+                rm -rf -- "$path"
+              fi
+            done
+          fi
+      - name: check-doc-hygiene.sh (outside handoff/ and imported paths)
+        run: bash scripts/check-doc-hygiene.sh
+
+  # Ported code may only exist alongside its upstream MIT notice, in both the source
+  # tree's NOTICE and the inventory the app ships.
+  licence-notice:
+    if: github.event_name == 'workflow_dispatch' || github.base_ref == 'v2' || github.head_ref == 'v2' || startsWith(github.head_ref, 'v2-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Upstream MIT notice is present
+        run: |
+          notice='Copyright (c) 2026 T3 Tools Inc.'
+          for file in NOTICE third-party-licenses.config.json src-tauri/resources/third-party-licenses.json; do
+            if ! grep -qF "$notice" "$file"; then
+              echo "v2-checks: $file lacks the upstream licence line \"$notice\"; ported code cannot ship without it." >&2
+              echo "  Restore it in NOTICE and third-party-licenses.config.json, then run: node scripts/gen-third-party-licenses.mjs" >&2
+              exit 1
+            fi
+          done
+          echo "v2-checks: upstream MIT notice present in NOTICE and the licence inventory"
+
+  # Slice PRs that touch the copied server packages or their workspace plumbing
+  # get the full gate: install, typecheck, tests, and zero drift from the pinned
+  # upstream commit.
+  server-packages-paths:
+    if: github.event_name == 'workflow_dispatch' || github.base_ref == 'v2' || github.head_ref == 'v2' || startsWith(github.head_ref, 'v2-')
+    runs-on: ubuntu-latest
+    outputs:
+      server: ${{ steps.paths.outputs.server }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: paths
+        name: Detect server-package changes
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "server=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base="$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)"
+          if git diff --name-only "$base" HEAD | grep -qE '^((packages|apps|patches|scripts|oxlint-plugin-t3code)/|package\.json$|pnpm-workspace\.yaml$|pnpm-lock\.yaml$|tsconfig\.base\.json$|vite\.config\.ts$|upstream\.json$|\.github/workflows/v2-checks\.yml$)'; then
+            echo "server=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "server=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  server-packages:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r typecheck
+      - run: pnpm --filter @t3tools/contracts --filter @t3tools/shared test
+      - name: Script tests (check-upstream and the licence generator)
+        run: node --test scripts/check-upstream.test.mjs scripts/gen-third-party-licenses.test.mjs
+      - name: Fetch upstream t3code at the pinned commit
+        run: |
+          git init "$RUNNER_TEMP/t3code"
+          git -C "$RUNNER_TEMP/t3code" remote add origin https://github.com/pingdotgg/t3code.git
+          pin="$(node -p "require('./upstream.json').commit")"
+          git -C "$RUNNER_TEMP/t3code" fetch --depth 1 origin "$pin"
+          git -C "$RUNNER_TEMP/t3code" checkout --detach FETCH_HEAD
+      # apps/web is the adapted renderer, gated by its own drift policy.
+      - name: check-upstream.mjs (copied files match the pinned commit)
+        run: node scripts/check-upstream.mjs "$RUNNER_TEMP/t3code" --skip apps/web
+
+  # Upstream's persistence store on both release platforms: the event store,
+  # migrations, projections, outbox and receipts run against a real node:sqlite
+  # database in temp directories.
+  server-persistence:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Windows runs and reports, but does not fail the job until the
+      # Windows parity slice lands; the known failures are tabled on #373.
+      - name: Persistence tests (src/persistence)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        run: pnpm --filter houston exec vp test run src/persistence
+
+  # Upstream's provider layer on both release platforms: the provider packages,
+  # the server's src/provider layer and the orchestration adapters replaying
+  # recorded traffic through their testkits.
+  server-providers:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Every step runs even after an earlier one fails. Windows reports but
+      # does not fail the job until the Windows parity slice (failures on #374).
+      - name: Provider packages
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        run: pnpm --no-bail --filter @t3tools/provider-core --filter effect-codex-app-server --filter effect-acp --filter @t3tools/provider-acp --filter @t3tools/provider-acp-registry --filter @t3tools/provider-opencode test
+      - name: Server provider layer (src/provider)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm --filter houston exec vp test run src/provider
+      - name: Orchestration adapters (src/orchestration-v2/Adapters)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm --filter houston exec vp test run src/orchestration-v2/Adapters
+
+  # Upstream's terminal PTY service behind the thread drawer, with node-pty
+  # built from its patched source. Windows runs and reports but does not fail
+  # the job until the Windows parity slice lands.
+  server-terminal:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Terminal PTY tests (src/terminal)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm --filter houston exec vp test run src/terminal
+
+  # Upstream's orchestration engine: sessions, tasks, queues and scheduling,
+  # the layer that replaces pane_* orchestration. The adapters have their own
+  # job in server-providers; Windows reports but does not fail the job yet.
+  server-orchestration:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Orchestration tests (src/orchestration-v2, Adapters excluded)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm --filter houston exec vp test run src/orchestration-v2 --exclude "src/orchestration-v2/Adapters/**"
+
+
+  # Upstream's MCP toolkits: the server-side tools agents call through the
+  # orchestration layer. Windows reports but does not fail the job yet.
+  server-mcp:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: MCP toolkit tests (src/mcp, src/mcpApps)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm --filter houston exec vp test run src/mcp src/mcpApps
+
+  # Upstream's git, pull-request, worktree, checkpoint, review and usage
+  # services behind the orchestrator. Windows reports but does not fail the
+  # job yet.
+  server-git:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Git and project service tests (src/git through src/usage)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm --filter houston exec vp test run src/git src/vcs src/pullRequest src/sourceControl src/checkpointing src/workspace src/review src/usage
+
+  # Houston's server entrypoint: the base dir rules, no telemetry, and the host
+  # contract against a spawned server, plus the upstream CLI, telemetry and
+  # observability suites around them. Windows reports but does not fail the job yet.
+  server-entrypoint:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Entrypoint tests (src/houston)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm --filter houston exec vp test run src/houston
+      - name: CLI, telemetry and observability suites
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm --filter houston exec vp test run src/cli src/telemetry src/observability src/serverRuntimeState.test.ts src/launcherWatch.test.ts src/os-jank.test.ts
+
+  # Every server test file no area job above runs, so each of the server's
+  # test files runs in exactly one job; new directories land here by default.
+  # Windows reports but does not fail the job yet.
+  server-rest:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Copied from upstream's server job: the preview tests drive a headless Chromium.
+      - name: Resolve Playwright version
+        id: playwright_version
+        shell: bash
+        run: echo "version=$(node -p "require('./apps/server/node_modules/playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Chromium
+        id: chromium_cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.os == 'Windows' && '~\AppData\Local\ms-playwright' || '~/.cache/ms-playwright' }}
+          key: playwright-chromium-shell-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright_version.outputs.version }}
+      - name: Install Chromium for server browser integration tests
+        if: steps.chromium_cache.outputs.cache-hit != 'true'
+        run: node apps/server/node_modules/playwright-core/cli.js install --only-shell chromium
+      - name: Install missing Chromium system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          browser=$(find "$HOME/.cache/ms-playwright" -name chrome-headless-shell -type f -print -quit)
+          test -n "$browser"
+          if ldd "$browser" | grep '=> not found'; then
+            node apps/server/node_modules/playwright-core/cli.js install-deps chromium
+          fi
+      - name: Remaining server tests (src and scripts, area jobs' directories excluded)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: >-
+          pnpm --filter houston exec vp test run src/ scripts/
+          --exclude "src/persistence/**"
+          --exclude "src/provider/**"
+          --exclude "src/orchestration-v2/**"
+          --exclude "src/terminal/**"
+          --exclude "src/git/**"
+          --exclude "src/vcs/**"
+          --exclude "src/pullRequest/**"
+          --exclude "src/sourceControl/**"
+          --exclude "src/checkpointing/**"
+          --exclude "src/workspace/**"
+          --exclude "src/review/**"
+          --exclude "src/usage/**"
+          --exclude "src/mcp/**"
+          --exclude "src/mcpApps/**"
+
+  # Every workspace package's suite but the server, web and scripts (whose
+  # node:test files server-packages runs). --no-sort: a failed package must
+  # not skip its dependents. Windows reports but does not fail the job yet.
+  workspace-packages:
+    needs: server-packages-paths
+    if: needs.server-packages-paths.outputs.server == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Workspace package tests (web and server excluded)
+        continue-on-error: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ !cancelled() }}
+        run: pnpm -r --no-bail --no-sort --filter "!@t3tools/web" --filter "!houston" --filter "!@t3tools/scripts" test

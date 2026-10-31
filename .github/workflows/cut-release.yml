@@ -296,7 +296,8 @@ jobs:
           # Named, not `git add -A`: a release commit carries the version bump
           # and nothing a runner happened to leave behind.
           git add src-tauri/tauri.conf.json src-tauri/Cargo.toml \
-            src-tauri/Cargo.lock ui/package.json core/Cargo.toml core/Cargo.lock
+            src-tauri/Cargo.lock apps/server/package.json \
+            core/Cargo.toml core/Cargo.lock
           git commit -m "release: v$VERSION"
           git tag -m "release: v$VERSION" "v$VERSION"
 
@@ -344,6 +345,14 @@ jobs:
       require_signing: true
     secrets: inherit
 
+  server-archives:
+    needs: prepare
+    if: inputs.preview_only != true
+    uses: ./.github/workflows/release-server.yml
+    with:
+      ref: ${{ needs.prepare.outputs.tag }}
+      version: ${{ needs.prepare.outputs.version }}
+
   windows-compile:
     needs: prepare
     if: inputs.include_windows && inputs.preview_only != true
@@ -370,11 +379,12 @@ jobs:
   publish:
     # The cut builds and publishes its own tag: no other workflow watches for
     # the push, so a run that stopped after the push would ship nothing.
-    needs: [prepare, linux-bundle, windows-bundle]
+    needs: [prepare, linux-bundle, windows-bundle, server-archives]
     if: >-
       always() && inputs.preview_only != true &&
       needs.prepare.result == 'success' &&
       needs.linux-bundle.result == 'success' &&
+      needs.server-archives.result == 'success' &&
       (inputs.include_windows != true || needs.windows-bundle.result == 'success')
     uses: ./.github/workflows/release-publish.yml
     with:

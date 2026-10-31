@@ -1,6 +1,6 @@
 name: CI
 
-# Public and fork-gated: PRs run safety scripts, renderer/core suites and every Linux
+# Public and fork-gated: PRs run safety scripts, core suites and every Linux
 # houston-core integration test. Load-sensitive gates stay local (docs/operations/development.md).
 # Windows runs core unit tests and portable ConPTY regressions.
 on:
@@ -45,6 +45,10 @@ jobs:
           # Ratchets compare origin/<base> (PR) or HEAD~1 (push), so they need history.
           # The root commit is the one exception: it records the first baseline.
           fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
       - name: Validate workflow syntax and reusable workflow contracts
         run: |
           tool_dir="$RUNNER_TEMP/actionlint"
@@ -68,113 +72,26 @@ jobs:
         run: |
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > "$RUNNER_TEMP/release-pr.json"
           python3 scripts/release-helper.py check-pr --pr-file "$RUNNER_TEMP/release-pr.json"
-      - name: check-watchdog.sh (tauri tracing-feature ban, monotonic clocks)
-        run: bash scripts/check-watchdog.sh
       - name: check-dev-channel.sh (dev.sh channel resolution)
         run: bash scripts/check-dev-channel.sh
       - name: check-kill-guard.sh (kill(2) broadcast guard)
         run: bash scripts/check-kill-guard.sh
-      - name: check-protocol-sync.sh (daemon/UI/doc wire version agree)
-        run: bash scripts/check-protocol-sync.sh
       - name: check-case-collisions.sh (paths unique on case-insensitive filesystems)
         run: bash scripts/check-case-collisions.sh
-      - name: check-loop-spawn-sync.sh (both daemon hosts call the loop-spawn helper)
-        run: bash scripts/check-loop-spawn-sync.sh
-      - name: check-title-tooltip-guard.sh (title= component-prop vs Tooltip conversion)
-        run: bash scripts/check-title-tooltip-guard.sh
       - name: check-spawn-window.sh (CREATE_NO_WINDOW lint config still armed)
         run: bash scripts/check-spawn-window.sh
       - name: check-env-ratchet.sh (direct process-environment access only goes down)
         run: bash scripts/check-env-ratchet.sh
-      - name: check-wsl-bundle.sh (the Windows installer bundles the Linux daemon for WSL)
-        run: bash scripts/check-wsl-bundle.sh
-      - name: check-icon-imports.sh (raw lucide-react imports outside components/icons.tsx)
-        run: bash scripts/check-icon-imports.sh
-      - name: check-native-select.sh (no native <select> — its popup is a GTK window)
-        run: bash scripts/check-native-select.sh
-      - name: check-native-input.sh (no native checkbox/radio — its box is drawn by the OS theme)
-        run: bash scripts/check-native-input.sh
-      - name: check-menu-descriptions.sh (a menu item description wraps or truncates on purpose)
-        run: bash scripts/check-menu-descriptions.sh
+      # v2 carries handoff/ until it merges; v2-checks.yml runs this check without it.
       - name: check-doc-hygiene.sh (Markdown tree shape, plan cap, no diary content)
+        if: github.head_ref != 'v2' && !startsWith(github.head_ref, 'v2-')
         run: bash scripts/check-doc-hygiene.sh
       - name: check-comment-hygiene.sh (no dates/phases/diary/app names in code comments)
         run: bash scripts/check-comment-hygiene.sh
-      - name: check-type-scale.sh (semantic text tokens and an absolute 11px floor)
-        run: bash scripts/check-type-scale.sh
-      - name: check-label-tracking.sh (label step's uppercase tracking never leaks onto other text)
-        run: bash scripts/check-label-tracking.sh
-      - name: check-control-metrics.sh (control heights come from --h-* tokens)
-        run: bash scripts/check-control-metrics.sh
-      - name: check-radius-tokens.sh (corner radii come from --tr-radius-* rungs)
-        run: bash scripts/check-radius-tokens.sh
-      - name: check-spacing-tokens.sh (a stack's rhythm is the container's gap)
-        run: bash scripts/check-spacing-tokens.sh
-      - name: check-button-recipes.sh (button overlays keep the shared .btn base)
-        run: bash scripts/check-button-recipes.sh
-      - name: check-icon-metrics.sh (icon size/stroke come from --tr-icon-* rungs)
-        run: bash scripts/check-icon-metrics.sh
-      - name: check-status-glyph.sh (a rounded status image renders StatusGlyph, never a local dot)
-        run: bash scripts/check-status-glyph.sh
-      - name: check-shadow-recipes.sh (shadow recipes come from tokens/shadowChrome.ts, never a literal)
-        run: bash scripts/check-shadow-recipes.sh
-      - name: check-ellipsis.sh (real ellipsis character, never ASCII "...", in user-facing text)
-        run: bash scripts/check-ellipsis.sh
-      - name: check-focus-visible.sh (a killed outline gets its own focus-visible paint back)
-        run: bash scripts/check-focus-visible.sh
-      - name: check-empty-state-action.sh (an empty state offers the action its copy names)
-        run: bash scripts/check-empty-state-action.sh
-      - name: check-ui-boundary.sh (feature class strings use layout utilities only)
-        run: bash scripts/check-ui-boundary.sh
-      - name: check-page-width.sh (every page root uses the one --page-w column)
-        run: bash scripts/check-page-width.sh
-      - name: check-copy.sh (interface copy uses sentence case and status vocabulary)
-        run: bash scripts/check-copy.sh
-      - name: check-ratchets-only-tighten.sh (the complexity ratchet only tightens)
-        run: bash scripts/check-ratchets-only-tighten.sh
-      - uses: oven-sh/setup-bun@v2
-      # check-mutations.sh drives ui's complexity gate, which shells out to the
-      # pinned oxlint under ui/node_modules — without this install the gate throws
-      # before it can name the planted violation, reading as "the check did not fire".
-      - name: Install renderer dependencies (oxlint for check-complexity)
-        run: bun install --frozen-lockfile
-        working-directory: ui
-      # Last because it runs the other guards against a broken fixture: every
-      # covered check must fail on it by name.
-      - name: check-mutations.sh (every covered check proves it fires)
-        run: bash scripts/check-mutations.sh
-      - name: Report job timing
-        if: always()
-        continue-on-error: true
-        run: |
-          elapsed=$(( $(date +%s) - JOB_START ))
-          {
-            echo "### ${{ github.job }} timing"
-            echo "| job | elapsed (s) |"
-            echo "|---|---|"
-            echo "| ${{ github.job }} | $elapsed |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # Fork PRs need more than a text search: typecheck and the jsdom suite catch
-  # what safety-checks' pattern scans cannot.
-  renderer-checks:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Record job start time
-        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
-      - name: Install renderer dependencies
-        run: bun install --frozen-lockfile
-        working-directory: ui
-      - name: Typecheck
-        run: bun run typecheck
-        working-directory: ui
-      # Never bare `bun test` — that invokes Bun's own test runner, not vitest,
-      # and fails the jsdom-based suite.
-      - name: Test
-        run: bun run test
-        working-directory: ui
+      - name: check-web-style.sh (apps/web design-system guards, baseline ratchet)
+        run: bash scripts/check-web-style.sh --all
+      - name: check-web-style.sh --self-test (each guard fires on its bad fixture)
+        run: bash scripts/check-web-style.sh --self-test
       - name: Report job timing
         if: always()
         continue-on-error: true
@@ -337,68 +254,26 @@ jobs:
         with:
           path: src-tauri/target/ghostty-vt
           key: ghostty-vt-src-tauri-ubuntu-latest-${{ hashFiles('core/houston-core/ghostty-vt.lock', 'core/houston-core/build.rs') }}
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      # tauri.conf.json's frontendDist is the upstream web app's dist directory,
+      # which generate_context! requires at compile time.
       - name: Build renderer assets for native compilation
-        working-directory: ui
         run: |
-          bun install --frozen-lockfile
-          bun run build
-      - name: Stage debug sidecars
-        run: |
-          bash scripts/stage-helper.sh
-          bash scripts/stage-helper.sh --bin houston-core
-          bash scripts/stage-helper.sh --bin houston-supervisor
+          pnpm install --frozen-lockfile
+          pnpm --filter @t3tools/web build
       - name: Check native formatting and Clippy
         run: |
           cargo fmt --all --check --manifest-path src-tauri/Cargo.toml
           cargo clippy --locked --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
-          cargo clippy --locked --all-targets --features bench --manifest-path src-tauri/Cargo.toml -- -D warnings
       - name: Test native application
         run: |
           bash scripts/with-test-keyring.sh cargo test --locked --manifest-path src-tauri/Cargo.toml -- --test-threads=3
-          bash scripts/with-test-keyring.sh cargo test --locked --features bench --manifest-path src-tauri/Cargo.toml -- --test-threads=3
-
-  windows-renderer-checks:
-    runs-on: windows-2022
-    timeout-minutes: 15
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - name: Record job start time
-        run: '"JOB_START=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" >> $env:GITHUB_ENV'
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '24'
-      - uses: oven-sh/setup-bun@v2
-      - name: Install renderer dependencies
-        run: bun install --frozen-lockfile
-        working-directory: ui
-      - name: Typecheck renderer
-        working-directory: ui
-        run: bun run typecheck
-      - name: Test renderer
-        working-directory: ui
-        run: bun run test
-      - name: Build renderer
-        working-directory: ui
-        run: bun run build
-      - name: Check renderer output
-        working-directory: ui
-        run: |
-          bun run check:complexity
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          bun run check:css
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          bun run check:bundle
-          exit $LASTEXITCODE
-      - name: Report job timing
-        if: always()
-        continue-on-error: true
-        run: |
-          $elapsed = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [long]$env:JOB_START
-          "| Job | Elapsed (s) |`n|---|---|`n| windows-renderer-checks | $elapsed |" >> $env:GITHUB_STEP_SUMMARY
 
   windows-checks:
     runs-on: windows-2022
@@ -422,14 +297,20 @@ jobs:
             core
             src-tauri
           key: windows-checks
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      # tauri.conf.json's frontendDist is the upstream web app's dist directory,
+      # which generate_context! requires at compile time.
       - name: Build renderer assets for native compilation
-        working-directory: ui
         run: |
-          bun install --frozen-lockfile
+          pnpm install --frozen-lockfile
+          pnpm --filter @t3tools/web build
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          bun run build
-          exit $LASTEXITCODE
       - name: Check core formatting and Clippy
         working-directory: core
         run: |
@@ -451,14 +332,6 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cargo test --locked -p houston-core --doc
           exit $LASTEXITCODE
-      - name: Stage debug sidecars
-        run: |
-          cargo build --locked --manifest-path core/Cargo.toml --bin houston-core --bin tr-helper
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          New-Item -ItemType Directory -Force src-tauri/binaries | Out-Null
-          foreach ($name in @('houston-core', 'tr-helper')) {
-            Copy-Item "core/target/debug/$name.exe" "src-tauri/binaries/$name-x86_64-pc-windows-msvc.exe"
-          }
       - name: Check native application
         working-directory: src-tauri
         run: |
@@ -475,9 +348,9 @@ jobs:
           $elapsed = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [long]$env:JOB_START
           "| Job | Elapsed (s) |`n|---|---|`n| windows-checks | $elapsed |" >> $env:GITHUB_STEP_SUMMARY
 
-  # The committed third-party inventory is generated from both dependency graphs
-  # at once, so this needs the Rust toolchain (cargo metadata, no build) and the
-  # renderer's node_modules together — a shape none of the three jobs above has.
+  # The committed third-party inventory is generated from every dependency graph
+  # at once: the Rust toolchain (cargo metadata, no build), the renderer's
+  # node_modules and the pnpm workspace's node_modules — no other job has all three.
   licence-inventory:
     runs-on: ubuntu-latest
     steps:
@@ -485,9 +358,14 @@ jobs:
       # No components and no build cache: `cargo metadata` resolves the graph and
       # compiles nothing, so a restore-and-save cycle would cost more than it saves.
       - uses: dtolnay/rust-toolchain@stable
-      - uses: oven-sh/setup-bun@v2
-      - name: Install renderer dependencies
-        run: bun install --frozen-lockfile
-        working-directory: ui
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
       - name: check-third-party-licenses.sh (committed inventory matches the dependency graphs)
         run: ./scripts/check-third-party-licenses.sh

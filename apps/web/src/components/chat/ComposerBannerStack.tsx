@@ -1,0 +1,208 @@
+import { InfoIcon } from "lucide-react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+
+import { cn } from "~/lib/utils";
+import { Button } from "../ui/button";
+import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { ComposerBanner, type ComposerBannerVariant } from "./ComposerBanner";
+import { observeResize } from "~/lib/observeResize";
+
+/**
+ * Where a notice sits in the stack. The machine comes first, then what needs you; the
+ * order is fixed so rows never trade places as notices come and go.
+ */
+export type ComposerBannerGroup = "environment" | "attention";
+
+export interface ComposerBannerStackItem {
+  readonly id: string;
+  readonly variant: ComposerBannerVariant;
+  readonly group?: ComposerBannerGroup;
+  readonly icon: ReactNode;
+  readonly iconClassName?: string;
+  readonly title: ReactNode;
+  readonly description?: ReactNode;
+  readonly children?: ReactNode;
+  readonly actions?: ReactNode;
+  readonly dismissLabel?: string;
+  readonly onDismiss?: () => void;
+}
+
+const GROUPS = ["environment", "attention"] as const;
+
+const FADE_IN =
+  "transition-opacity duration-150 ease-out starting:opacity-0 motion-reduce:transition-none";
+
+/**
+ * Notices about sending from this composer, each its own attached card. Consecutive cards join
+ * edge to edge, and the last joins the composer or the drawer below it. Detached cards stand
+ * apart instead, for layouts where the composer must not move when a notice appears.
+ */
+export function ComposerBannerStack({
+  items,
+  detached = false,
+}: {
+  readonly items: ReadonlyArray<ComposerBannerStackItem>;
+  readonly detached?: boolean;
+}) {
+  const ordered = GROUPS.flatMap((group) =>
+    items.filter((item) => (item.group ?? "attention") === group),
+  );
+  if (detached) {
+    return ordered.map((item) => (
+      <div key={item.id} data-composer-banner-stack="true" className={FADE_IN}>
+        <NoticeCard item={item} detached />
+      </div>
+    ));
+  }
+  if (ordered.length === 0) return null;
+  return (
+    <div data-composer-banner-shelf="true" className="flex flex-col">
+      {ordered.map((item) => (
+        <div key={item.id} data-composer-banner-stack="true" className={FADE_IN}>
+          <NoticeCard item={item} inCard />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function NoticeText({
+  children,
+  className,
+  detailsLabel,
+}: {
+  readonly children: ReactNode;
+  readonly className: string;
+  readonly detailsLabel: string;
+}) {
+  const textRef = useRef<HTMLSpanElement>(null);
+  const detailsRef = useRef<HTMLButtonElement>(null);
+  const [showDetails, setShowDetails] = useState(false);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures text overflow in the DOM via ResizeObserver and MutationObserver to show the details button
+  useLayoutEffect(() => {
+    const text = textRef.current;
+    if (!text) return;
+    const measure = () => {
+      // Ignore the space taken by the details button itself so it cannot
+      // sustain its own overflow after the text would otherwise fit.
+      const recoveredWidth = detailsRef.current ? detailsRef.current.offsetWidth + 4 : 0;
+      const hidden = getComputedStyle(text).position === "absolute";
+      setShowDetails(
+        hidden ||
+          [text, ...text.querySelectorAll("*")].some(
+            (element) => element.scrollWidth > element.clientWidth + recoveredWidth,
+          ),
+      );
+    };
+    measure();
+    const stopObserving = observeResize(text, measure);
+    const mutations = new MutationObserver(measure);
+    mutations.observe(text, { childList: true, subtree: true, characterData: true });
+    return () => {
+      stopObserving();
+      mutations.disconnect();
+    };
+  }, []);
+
+  return (
+    <span className="contents">
+      <span ref={textRef} className={className}>
+        {children}
+      </span>
+      {showDetails ? (
+        <Popover>
+          <PopoverTrigger
+            openOnHover
+            render={
+              <Button
+                ref={detailsRef}
+                size="icon-xs"
+                variant="ghost-muted"
+                aria-label={detailsLabel}
+                className="flex-none"
+              />
+            }
+          >
+            <InfoIcon />
+          </PopoverTrigger>
+          <PopoverPopup
+            aria-label="Notice details"
+            tooltipStyle
+            side="top"
+            className="max-w-[min(30rem,calc(100vw-2rem))] whitespace-normal wrap-anywhere [--inline-button-text-align:start] [--inline-button-white-space:normal] [&_[data-slot=inline-button]]:max-w-full"
+          >
+            <ComposerBanner.Scroll className="max-h-[min(var(--available-height),24rem,40dvh)]">
+              {children}
+            </ComposerBanner.Scroll>
+          </PopoverPopup>
+        </Popover>
+      ) : null}
+    </span>
+  );
+}
+
+function NoticeCard({
+  item,
+  detached = false,
+  inCard = false,
+}: {
+  readonly item: ComposerBannerStackItem;
+  readonly detached?: boolean;
+  readonly inCard?: boolean;
+}) {
+  return (
+    <ComposerBanner.Root
+      role={item.variant === "error" || item.variant === "warning" ? "alert" : undefined}
+      variant={item.variant}
+      detached={detached}
+      {...(inCard ? { inCard: "notice" as const } : {})}
+      density="comfortable"
+      data-chat-composer-collapsed-controls="true"
+    >
+      <ComposerBanner.Row layout="wrap-actions">
+        <ComposerBanner.Icon
+          className={cn("h-(--composer-banner-icon-column) self-start", item.iconClassName)}
+        >
+          {item.icon}
+        </ComposerBanner.Icon>
+        <ComposerBanner.Content className="whitespace-nowrap">
+          <NoticeText
+            detailsLabel={
+              typeof item.title === "string"
+                ? `Show full title: ${item.title}`
+                : "Show title details"
+            }
+            className="min-w-0 truncate font-medium leading-7 sm:leading-6"
+          >
+            {item.title}
+          </NoticeText>
+          {item.description ? (
+            <NoticeText
+              detailsLabel={
+                typeof item.title === "string"
+                  ? `Show details: ${item.title}`
+                  : "Show notice details"
+              }
+              className="w-0 min-w-0 grow truncate text-muted-foreground @max-[400px]:sr-only"
+            >
+              {item.description}
+            </NoticeText>
+          ) : null}
+        </ComposerBanner.Content>
+        {item.actions || item.onDismiss ? (
+          <ComposerBanner.Actions>
+            {item.actions}
+            {item.onDismiss ? (
+              <ComposerBanner.Dismiss
+                aria-label={item.dismissLabel ?? "Dismiss warning"}
+                onClick={item.onDismiss}
+              />
+            ) : null}
+          </ComposerBanner.Actions>
+        ) : null}
+      </ComposerBanner.Row>
+      {item.children ? <ComposerBanner.Children>{item.children}</ComposerBanner.Children> : null}
+    </ComposerBanner.Root>
+  );
+}

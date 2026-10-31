@@ -1,9 +1,14 @@
 {
   "bundle": {
-    "resources": ["resources/third-party-licenses.json", "wsl/"],
+    "resources": [
+      "resources/third-party-licenses.json",
+      "v2-server/"
+    ],
     "fileAssociations": [
       {
-        "ext": ["houston-transfer"],
+        "ext": [
+          "houston-transfer"
+        ],
         "name": "Houston workspace transfer",
         "description": "Houston workspace transfer",
         "mimeType": "application/x-houston-transfer",

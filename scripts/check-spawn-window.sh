@@ -37,22 +37,25 @@ for ws in core src-tauri; do
   fi
 done
 
-spawn_rs="core/houston-core/src/spawn.rs"
-if [ ! -f "$spawn_rs" ]; then
-  echo "FAIL: $spawn_rs is missing -- clippy.toml's reason strings name it as" >&2
-  echo "      the one place a child's window policy is applied." >&2
-  fail=1
-elif ! grep -qF 'creation_flags(CREATE_NO_WINDOW)' "$spawn_rs"; then
-  echo "FAIL: $spawn_rs no longer calls creation_flags(CREATE_NO_WINDOW)." >&2
-  echo "      Every call site routes through it precisely so this one line" >&2
-  echo "      exists; without it the console windows come back." >&2
-  fail=1
-else
-  echo "ok: $spawn_rs still applies CREATE_NO_WINDOW"
-fi
+spawn_files="core/houston-core/src/spawn.rs src-tauri/src/sys/spawn.rs"
+for spawn_rs in $spawn_files; do
+  if [ ! -f "$spawn_rs" ]; then
+    echo "FAIL: $spawn_rs is missing -- clippy.toml's reason strings name it as" >&2
+    echo "      the one place a child's window policy is applied." >&2
+    fail=1
+  elif ! grep -qF 'creation_flags(CREATE_NO_WINDOW)' "$spawn_rs"; then
+    echo "FAIL: $spawn_rs no longer calls creation_flags(CREATE_NO_WINDOW)." >&2
+    echo "      Every call site routes through it precisely so this one line" >&2
+    echo "      exists; without it the console windows come back." >&2
+    fail=1
+  else
+    echo "ok: $spawn_rs still applies CREATE_NO_WINDOW"
+  fi
+done
 
 if grep -rn 'CREATE_NO_WINDOW' core/ src-tauri/ --include='*.rs' \
-  | grep -v "^$spawn_rs:" \
+  | grep -v "^core/houston-core/src/spawn.rs:" \
+  | grep -v "^src-tauri/src/sys/spawn.rs:" \
   | grep -qi 'commandbuilder'; then
   echo "FAIL: CREATE_NO_WINDOW was applied to a portable_pty::CommandBuilder." >&2
   echo "      A pane's child NEEDS its pseudoconsole -- that window is the" >&2

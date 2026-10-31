@@ -5,6 +5,34 @@ A Tauri client connects to a detached Rust daemon that owns real PTYs in project
 The renderer presents sessions as terminal panes. Closing the application detaches the
 client; the daemon and its sessions continue running.
 
+## Branch `v2`
+
+On `v2` and its `v2-*` slice branches, Houston is being rebuilt: panes become **threads**
+(structured conversations) served by a TypeScript sidecar, ported from the upstream project
+named in [NOTICE](NOTICE). `handoff/` holds the decisions and the slice plan; read
+`handoff/HANDOFF.md` and `handoff/PLAN.md` before starting a slice. Until the v2 invariants
+replace the sections below, these rules take precedence on this branch:
+
+- **Superseded:** terminal fidelity, PTY-based reported status, the binary-PTY-frame rule
+  and the `houston-core` host, transport and protocol checks do not bind v2 code. They
+  still bind any change to the existing daemon. A thread may have a shell terminal drawer;
+  agent CLIs do not run in terminals.
+- **Copy, then adapt:** upstream files are copied as they are and changed only where
+  Houston differs; do not retype them. `upstream.json` at the root records the upstream
+  commit and the imported paths; files carry no per-file header. Ported code is pushed only with the MIT notice in `NOTICE` and
+  `third-party-licenses.config.json`.
+- **Detached server:** closing the app must not stop the server or its agents.
+- **Renderer:** the upstream web app is the renderer base. Its primitives adopt Houston's
+  tokens and recipes and are bound by the style guards; copied feature components are exempt
+  from the feature-`className` rule until a slice adapts them.
+- **Tests first:** a slice ports its upstream tests before its code and lands only with
+  them green.
+- **Shared branch:** `v2` has two maintainers pushing from separate machines. Never
+  rebase or force-push `v2`; slices enter through PRs `v2-<slice> → v2`. Regenerate lockfiles
+  and the licence inventory instead of hand-merging them.
+- `check-doc-hygiene.sh` fails on `handoff/` by design; `handoff/` is deleted before `v2`
+  merges into `main`.
+
 Prefer the smallest design that satisfies the requirement. Verify documentation against
 the implementation and correct discrepancies in the same change. If an instruction
 conflicts with the task, explain the conflict and obtain maintainer direction.
@@ -75,8 +103,9 @@ Before completing a change, identify which of these checks apply:
   hook installation paths. Support each relevant provider or refuse it by name. Cursor,
   Grok, Droid, Copilot and Aider are recognised identities only; they are not spawnable.
 - **Protocol:** type all `/ws` messages in `core/houston-protocol`. Bump
-  `PROTOCOL_VERSION` once per wire-changing batch, regenerate TypeScript and update
-  `protocol/protocol.md` in the same commit. Run `check-protocol-sync.sh`.
+  `PROTOCOL_VERSION` once per wire-changing batch and update `protocol/protocol.md` in the
+  same commit. The TypeScript mirror under `ui/` is no longer generated and stays frozen.
+  Run `check-protocol-sync.sh`.
 - **State transitions:** provide reversal and visibility: spawn/kill, pin/unpin, and
   settings with a visible current value. Errors for limits name the limit, actual value
   and requested operation.
@@ -166,7 +195,7 @@ detach drive persistence; terminal bytes use binary frames. Agent orchestration 
 on the daemon port with per-pane bearer tokens. See the
 [architecture overview](docs/internals/overview.md).
 
-- `core/houston-protocol`: Rust wire schema and generated TypeScript source types.
+- `core/houston-protocol`: Rust wire schema; its TypeScript mirror under `ui/` is frozen.
 - `core/houston-core`: daemon, PTYs, persistence, hooks, orchestration and provider logic.
 - `src-tauri`: desktop application, daemon connection, native browser, watchdog and tray.
 - `ui/src/renderer/src`: React renderer, terminal engine, layout, components and transport.

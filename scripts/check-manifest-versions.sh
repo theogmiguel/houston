@@ -10,19 +10,19 @@ cd "$(dirname "$0")/.."
 
 conf=$(jq -r .version src-tauri/tauri.conf.json)
 crate=$(sed -n '0,/^version = /s/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml)
-ui=$(jq -r .version ui/package.json)
+server=$(jq -r .version apps/server/package.json)
 # Scoped to the [workspace.package] table: core/Cargo.toml also carries
 # `version = ` lines under [workspace.dependencies], and an unscoped
 # first-match read picks up whichever comes first.
 core=$(awk '/^\[workspace\.package\]/{f=1;next} /^\[/{f=0} f && /^version = /{gsub(/^version = "|"$/,""); print; exit}' core/Cargo.toml)
 
-echo "tauri.conf.json=$conf  src-tauri/Cargo.toml=$crate  ui/package.json=$ui  core/Cargo.toml=$core" >&2
-if [ -z "$conf" ] || [ -z "$crate" ] || [ -z "$ui" ] || [ -z "$core" ]; then
-  echo "FAIL: a manifest version came back empty -- expected a semver string in each of the four (got tauri.conf.json='$conf' src-tauri/Cargo.toml='$crate' ui/package.json='$ui' core/Cargo.toml='$core')" >&2
+echo "tauri.conf.json=$conf  src-tauri/Cargo.toml=$crate  apps/server/package.json=$server  core/Cargo.toml=$core" >&2
+if [ -z "$conf" ] || [ -z "$crate" ] || [ -z "$server" ] || [ -z "$core" ]; then
+  echo "FAIL: a manifest version came back empty -- expected a semver string in each of the four (got tauri.conf.json='$conf' src-tauri/Cargo.toml='$crate' apps/server/package.json='$server' core/Cargo.toml='$core')" >&2
   exit 1
 fi
-if [ "$conf" != "$crate" ] || [ "$conf" != "$ui" ] || [ "$conf" != "$core" ]; then
-  echo "FAIL: version mismatch across the four manifests (tauri.conf.json=$conf src-tauri/Cargo.toml=$crate ui/package.json=$ui core/Cargo.toml=$core) -- they must agree before a release" >&2
+if [ "$conf" != "$crate" ] || [ "$conf" != "$server" ] || [ "$conf" != "$core" ]; then
+  echo "FAIL: version mismatch across the four manifests (tauri.conf.json=$conf src-tauri/Cargo.toml=$crate apps/server/package.json=$server core/Cargo.toml=$core) -- they must agree before a release" >&2
   exit 1
 fi
 if [ -n "${1:-}" ] && [ "$conf" != "$1" ]; then

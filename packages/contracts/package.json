@@ -1,0 +1,62 @@
+{
+  "name": "@t3tools/contracts",
+  "version": "0.1.4",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./settings": {
+      "types": "./src/settings.ts",
+      "import": "./src/settings.ts"
+    },
+    "./houston/terminalFrames": {
+      "types": "./src/houston/terminalFrames.ts",
+      "import": "./src/houston/terminalFrames.ts"
+    },
+    "./houston/providerReadiness": {
+      "types": "./src/houston/providerReadiness.ts",
+      "import": "./src/houston/providerReadiness.ts"
+    },
+    "./houston/reviewState": {
+      "types": "./src/houston/reviewState.ts",
+      "import": "./src/houston/reviewState.ts"
+    },
+    "./houston/messageDelivery": {
+      "types": "./src/houston/messageDelivery.ts",
+      "import": "./src/houston/messageDelivery.ts"
+    },
+    "./houston/sideThreads": {
+      "types": "./src/houston/sideThreads.ts",
+      "import": "./src/houston/sideThreads.ts"
+    },
+    "./houston/tasks": {
+      "types": "./src/houston/tasks.ts",
+      "import": "./src/houston/tasks.ts"
+    },
+    "./houston/taskSources": {
+      "types": "./src/houston/taskSources.ts",
+      "import": "./src/houston/taskSources.ts"
+    },
+    "./houston/mergeQueue": {
+      "types": "./src/houston/mergeQueue.ts",
+      "import": "./src/houston/mergeQueue.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir ."
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}
