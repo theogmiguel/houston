@@ -18,6 +18,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "../../config.ts";
+import * as ServerSettings from "../../serverSettings.ts";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ThreadLaunchService from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
@@ -385,6 +386,44 @@ describe("hand to a new thread launches one thread with the failure", () => {
     );
   });
 
+  it.live("hand to a new thread launches one thread with the failure: the runtime mode", () => {
+    const github = makeGitHub(makeRepos());
+    const threads = makeThreads();
+    return withQueue(
+      github,
+      threads,
+      Effect.gen(function* () {
+        const queue = yield* HoustonMergeQueueService;
+        const runner = yield* HoustonMergeQueueRunner;
+        const settings = yield* ServerSettings.ServerSettingsService;
+        const projectId = yield* queueScenario(github, [7], {
+          name: "owner",
+          command: "git --version",
+          mainMoves: false,
+        });
+        // The server-wide default is full-access; this project asks for approval.
+        yield* settings.updateSettings({
+          projectSettingsOverrides: { [projectId]: { defaultRuntimeMode: "approval-required" } },
+        });
+        yield* conflicting(github, projectId);
+        yield* runner.step(projectId);
+        assert.strictEqual(entryOf(yield* queue.get({ projectId }), 7).status, "parked");
+
+        yield* queue.handToThread({ projectId, number: 7, modelSelection: selection() });
+        assert.strictEqual(threads.launched[0]?.runtimeMode, "approval-required");
+
+        // A mode the caller passes wins over the project's.
+        yield* queue.handToThread({
+          projectId,
+          number: 7,
+          modelSelection: selection(),
+          runtimeMode: "auto-accept-edits",
+        });
+        assert.strictEqual(threads.launched[1]?.runtimeMode, "auto-accept-edits");
+      }),
+    );
+  });
+
   it.live("hand to a new thread launches one thread with the failure: the only launch", () =>
     Effect.sync(() => {
       const directory = import.meta.dirname;
@@ -431,6 +470,7 @@ describe("hand to a new thread launches one thread with the failure", () => {
         threadId: "thread-new",
         title: "Fix PR #7",
         modelSelection: selection(),
+        runtimeMode: "approval-required",
         branch: "houston/7",
         worktreePath: "/w/7",
         messageId: "message:merge-queue:hand:7",
@@ -449,6 +489,7 @@ describe("hand to a new thread launches one thread with the failure", () => {
       });
       assert.strictEqual(launches[0]!.threadId, "thread-new");
       assert.deepEqual(launches[0]!.modelSelection, selection());
+      assert.strictEqual(launches[0]!.runtimeMode, "approval-required");
     }).pipe(Effect.provide(adapter));
   });
 });

@@ -389,12 +389,19 @@ const make = Effect.gen(function* () {
     }
     const threadId = `merge-queue-${yield* randomUuidV4}`;
     const worktreePath = yield* projects.managedWorktreeOf(project, row.headRef);
+    // The thread runs the pull request's own code, so its mode is the user's, not the queue's.
+    const runtimeMode =
+      input.runtimeMode ??
+      (yield* projects
+        .defaultRuntimeMode(project.projectId)
+        .pipe(Effect.mapError((error) => refuse("remote", operation, error))));
     // The only thread the queue launches, and only on the user's word.
     const launched = threads.launch({
       projectId: project.projectId,
       threadId,
       title: `Fix PR #${row.number}${row.title === null ? "" : `: ${row.title}`}`,
       modelSelection: input.modelSelection,
+      runtimeMode,
       branch: row.headRef,
       worktreePath,
       messageId: `message:merge-queue:${project.projectId}:${row.number}:${row.headSha}:hand`,

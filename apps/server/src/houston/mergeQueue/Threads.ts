@@ -6,6 +6,7 @@ import {
   ThreadId,
   type ModelSelection,
   type ProjectId,
+  type RuntimeMode,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -25,6 +26,8 @@ export interface LaunchRequest {
   readonly threadId: string;
   readonly title: string;
   readonly modelSelection: ModelSelection;
+  /** The caller's mode, else the project's default; never a mode the queue picks. */
+  readonly runtimeMode: RuntimeMode;
   readonly branch: string;
   /** The head branch's worktree; a new one on the branch when there is none. */
   readonly worktreePath: string | null;
@@ -94,7 +97,7 @@ const make = Effect.gen(function* () {
         projectId: request.projectId,
         title: request.title,
         modelSelection: request.modelSelection,
-        runtimeMode: "full-access",
+        runtimeMode: request.runtimeMode,
         interactionMode: "default",
         workspaceStrategy:
           request.worktreePath === null

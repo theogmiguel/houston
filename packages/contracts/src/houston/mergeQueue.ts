@@ -10,6 +10,7 @@ import {
   ThreadId,
 } from "../baseSchemas.ts";
 import { ModelSelection } from "../modelSelection.ts";
+import { RuntimeMode } from "../providerPolicy.ts";
 
 /** The bounds the merge queue is checked against; a refusal names the bound and the value. */
 export const HOUSTON_MERGE_QUEUE_LIMITS = {
@@ -312,6 +313,8 @@ export const HoustonMergeQueueHandToThreadInput = Schema.Struct({
   projectId: ProjectId,
   number: PositiveInt,
   modelSelection: ModelSelection,
+  /** The new thread's runtime mode; the project's `defaultRuntimeMode` when omitted. */
+  runtimeMode: Schema.optionalKey(RuntimeMode),
 });
 export type HoustonMergeQueueHandToThreadInput = typeof HoustonMergeQueueHandToThreadInput.Type;
 

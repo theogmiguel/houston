@@ -5,9 +5,10 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId, RuntimeMode } from "@t3tools/contracts";
 import { houstonTaskKey, type HoustonTaskRunState } from "@t3tools/contracts/houston/tasks";
 import { parseGitRemoteRepository } from "@t3tools/shared/git";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -153,6 +154,8 @@ export class HoustonMergeQueueProject extends Context.Service<
     ) => Effect.Effect<string | null>;
     /** Branches recorded on a Houston task run of the project. */
     readonly taskBranches: (projectId: ProjectId) => Effect.Effect<ReadonlySet<string>>;
+    /** The project's resolved `defaultRuntimeMode`, as the startup thread uses it. */
+    readonly defaultRuntimeMode: (projectId: ProjectId) => Effect.Effect<RuntimeMode, string>;
   }
 >()("houston/houston/mergeQueue/Project/HoustonMergeQueueProject") {}
 
@@ -342,6 +345,17 @@ const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => new Set<string>() as ReadonlySet<string>),
     );
 
+  const defaultRuntimeMode = Effect.fn("HoustonMergeQueueProject.defaultRuntimeMode")(function* (
+    projectId: ProjectId,
+  ) {
+    const settings = yield* serverSettings.getSettings.pipe(
+      Effect.mapError((error) => `reading the server settings failed: ${error.message}`),
+    );
+    const project = yield* projects.get(projectId).pipe(Effect.orDie);
+    return resolveProjectSettings(settings, projectId, Option.getOrNull(project)).settings
+      .defaultRuntimeMode;
+  });
+
   return HoustonMergeQueueProject.of({
     resolve,
     target,
@@ -351,6 +365,7 @@ const make = Effect.gen(function* () {
     managedBranches,
     managedWorktreeOf,
     taskBranches,
+    defaultRuntimeMode,
   });
 });
 
