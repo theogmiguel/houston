@@ -33,6 +33,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
@@ -129,6 +130,7 @@ const make = Effect.gen(function* () {
   const machine = yield* NightShiftMachine;
   const providers = yield* NightShiftProviders;
   const mergeQueue = yield* NightShiftMergeQueue;
+  const runNowLock = yield* Semaphore.make(1);
 
   const projectOf = (operation: string, projectId: ProjectId) =>
     projects.get(projectId).pipe(
@@ -525,21 +527,41 @@ const make = Effect.gen(function* () {
         { actual: input.durationMinutes },
       );
     }
-    yield* claim.holdDuration(task.id, input.durationMinutes);
-    const ran = yield* scheduled.runNow({ id: task.id }).pipe(Effect.result);
-    const refusal = yield* claim.lastRefusal(task.id);
+    // One Run now at a time: the held duration and the claim's refusal belong to this call.
+    const { ran, refusal } = yield* runNowLock.withPermits(1)(
+      Effect.gen(function* () {
+        yield* claim.clearRefusal(task.id);
+        yield* claim.holdDuration(task.id, input.durationMinutes);
+        const ran = yield* scheduled
+          .runNow({ id: task.id })
+          .pipe(Effect.result, Effect.ensuring(claim.releaseDuration(task.id)));
+        return { ran, refusal: yield* claim.lastRefusal(task.id) };
+      }),
+    );
     if (ran._tag === "Success" && ran.success.threadId !== null) {
       const run = yield* store.runByThread(ran.success.threadId);
       if (run !== undefined) return { runId: run.id, threadId: ran.success.threadId };
     }
     if (refusal !== undefined) return yield* refusal;
     const live = (yield* store.liveRuns).find((run) => run.projectId === input.projectId);
+    if (live !== undefined) {
+      return yield* refuse(
+        "busy",
+        "runNow",
+        `${liveRunText(live)}; one Night shift run per project is live at a time`,
+      );
+    }
+    // The scheduled service refused before Night shift's claim saw the run.
+    const reason =
+      ran._tag === "Failure"
+        ? [ran.failure.message, (ran.failure.cause as { message?: unknown } | undefined)?.message]
+            .filter((part): part is string => typeof part === "string")
+            .join(": ")
+        : "it started no run";
     return yield* refuse(
-      "busy",
+      reason.includes("already running") ? "busy" : "invalid",
       "runNow",
-      live === undefined
-        ? `the Night shift task ${task.id} is already starting`
-        : `${liveRunText(live)}; one Night shift run per project is live at a time`,
+      `the scheduled task ${task.id} did not start: ${reason}`,
     );
   });
 

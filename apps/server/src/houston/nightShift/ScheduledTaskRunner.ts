@@ -32,10 +32,14 @@ export class HoustonNightShiftClaim extends Context.Service<
     ) => Effect.Effect<ThreadId, HoustonNightShiftError>;
     /** Holds a Run now's duration until the claim of that task reads it. */
     readonly holdDuration: (taskId: ScheduledTaskId, minutes: number) => Effect.Effect<void>;
+    /** Drops a held duration no claim read. */
+    readonly releaseDuration: (taskId: ScheduledTaskId) => Effect.Effect<void>;
     /** The refusal of the task's last claimed run, if it was refused. */
     readonly lastRefusal: (
       taskId: ScheduledTaskId,
     ) => Effect.Effect<HoustonNightShiftError | undefined>;
+    /** Forgets the task's last refusal, so a run that never reaches the claim reports none. */
+    readonly clearRefusal: (taskId: ScheduledTaskId) => Effect.Effect<void>;
   }
 >()("houston/houston/nightShift/ScheduledTaskRunner/HoustonNightShiftClaim") {}
 
@@ -62,10 +66,14 @@ export const layerClaim = Layer.effect(
       trigger: ScheduledTaskTrigger,
     ) {
       const operation = trigger === "scheduled" ? "scheduledRun" : "runNow";
-      const durationMinutes = yield* Ref.modify(durations, (current) => [
-        current.get(task.id),
-        without(current, task.id),
-      ]);
+      // Only Night shift's Run now holds a duration, and it fires as `manual`.
+      const durationMinutes =
+        trigger === "manual"
+          ? yield* Ref.modify(durations, (current) => [
+              current.get(task.id),
+              without(current, task.id),
+            ])
+          : undefined;
       const projectId = yield* store.projectOfTask(task.id);
       if (projectId === undefined) {
         return yield* new HoustonNightShiftError({
@@ -111,8 +119,14 @@ export const layerClaim = Layer.effect(
       holdDuration: Effect.fn("HoustonNightShiftClaim.holdDuration")((taskId, minutes) =>
         Ref.update(durations, (current) => new Map(current).set(taskId, minutes)),
       ),
+      releaseDuration: Effect.fn("HoustonNightShiftClaim.releaseDuration")((taskId) =>
+        Ref.update(durations, (current) => without(current, taskId)),
+      ),
       lastRefusal: Effect.fn("HoustonNightShiftClaim.lastRefusal")((taskId) =>
         Ref.get(refusals).pipe(Effect.map((current) => current.get(taskId))),
+      ),
+      clearRefusal: Effect.fn("HoustonNightShiftClaim.clearRefusal")((taskId) =>
+        remember(taskId, undefined),
       ),
     });
   }),

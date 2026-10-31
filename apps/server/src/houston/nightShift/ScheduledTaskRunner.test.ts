@@ -201,6 +201,50 @@ describe("night shift scheduling", () => {
     }),
   );
 
+  it.effect("a run now refused before the claim holds no duration and names its own refusal", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("pre-claim");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const night = yield* service;
+          const store = yield* Store.HoustonNightShiftStore;
+          const fixture = makeRepository("pre-claim", { kind: "bare" });
+          const projectId = yield* createProject("pre-claim", fixture.root);
+          const everyNight = { timeOfDay: "23:30", weekdays: [0, 1, 2, 3, 4, 5, 6] };
+          const seeded = yield* seedNightShift(projectId, {}, everyNight);
+
+          // An earlier Run now was refused by preflight.
+          const memory = kit.state.readings.freeMemoryBytes;
+          kit.state.readings = { ...kit.state.readings, freeMemoryBytes: 1024 ** 3 };
+          assert.equal(
+            kindOf(yield* Effect.flip(night.runNow({ projectId, durationMinutes: 60 }))),
+            "blocked",
+          );
+          kit.state.readings = { ...kit.state.readings, freeMemoryBytes: memory };
+
+          // Scheduled tasks makes it a webhook task: the scheduled service refuses before the claim.
+          yield* upsertFrom(seeded, { schedule: { type: "webhook" } as never });
+          const refused = yield* Effect.flip(night.runNow({ projectId, durationMinutes: 15 }));
+          assert.notEqual(kindOf(refused), "blocked");
+          assert.include(messageOf(refused), "Webhook");
+
+          // Back on its nights, the scheduled fire keeps the window, not the 15 minutes.
+          yield* upsertFrom((yield* nightTask(projectId))!, {
+            enabled: true,
+            schedule: { type: "fixed_time", ...everyNight },
+          });
+          const fired = yield* fireDue((yield* nightTask(projectId))!);
+          assert.equal(fired?.lastRunStatus, "succeeded", fired?.lastRunError ?? "");
+          const run = (yield* store.listRuns(projectId, 30))[0]!;
+          assert.equal(run.trigger, "scheduled");
+          assert.equal(localClock(run.hardStopAt!).slice(11), "07:30");
+          assert.equal(localClock(run.wrapUpAt!).slice(11), "06:45");
+        }),
+      );
+    }),
+  );
+
   it.effect("a fire whose window breaks the rules is refused by name", () =>
     Effect.gen(function* () {
       const kit = yield* makeKit("task-window");
