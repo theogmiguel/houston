@@ -1,5 +1,5 @@
 import type { AssistantCitation, PreviewAnnotationPayload } from "@t3tools/contracts";
-import { MessageSquareIcon, XIcon } from "lucide-react";
+import { ImageIcon, QuoteIcon, XIcon } from "lucide-react";
 
 export type PendingCitationChip = {
   citation: AssistantCitation;
@@ -47,23 +47,20 @@ export function ComposerPendingAnnotationChips(props: {
 }) {
   if (props.citations.length === 0 && props.previewAnnotations.length === 0) return null;
   return (
-    <div data-composer-pending-annotations="true" className="flex flex-wrap gap-1.5 px-0.5 pb-1.5">
+    <div data-composer-pending-annotations="true" className="flex flex-wrap gap-1.5 px-0.5 pb-2">
       {props.citations.map((chip) => {
         const label = citationChipLabel(chip.citation);
         return (
           <span
             key={`citation:${chip.citation.messageId}:${chip.citation.start}:${chip.promptStart}`}
             data-annotation-chip="citation"
-            className="inline-flex h-6 max-w-full items-center gap-1.5 rounded-(--r-ctl) bg-(--field) ps-2 pe-1 text-xs text-(--t2)"
+            className="inline-flex h-6 max-w-[300px] items-center gap-1.5 rounded-(--r-ctl) border border-(--border) bg-(--field) ps-2 pe-0.5 text-xs text-(--t2)"
           >
-            <MessageSquareIcon
-              aria-hidden="true"
-              className="size-3.25 shrink-0 text-(--accent-ink)"
-            />
+            <QuoteIcon aria-hidden="true" className="size-3 shrink-0 text-(--t3)" />
             <button
               type="button"
               aria-label={`Edit citation comment: ${label}`}
-              className="min-w-0 cursor-pointer truncate text-left outline-none focus-visible:underline"
+              className="min-w-0 cursor-pointer truncate text-left text-(--t1) outline-none focus-visible:underline"
               onClick={() => props.onEditCitation(chip)}
             >
               {label}
@@ -71,10 +68,10 @@ export function ComposerPendingAnnotationChips(props: {
             <button
               type="button"
               aria-label="Remove citation"
-              className="inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-(--r-badge) text-(--t3) outline-none hover:bg-(--hover) hover:text-(--t1) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-(--r-badge) text-(--t3) outline-none hover:bg-(--hover) hover:text-(--t1) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
               onClick={() => props.onRemoveCitation(chip)}
             >
-              <XIcon aria-hidden="true" className="size-3.25" />
+              <XIcon aria-hidden="true" className="size-3" />
             </button>
           </span>
         );
@@ -85,20 +82,17 @@ export function ComposerPendingAnnotationChips(props: {
           <span
             key={`preview:${chip.annotation.id}:${chip.promptStart}`}
             data-annotation-chip="preview"
-            className="inline-flex h-6 max-w-full items-center gap-1.5 rounded-(--r-ctl) bg-(--field) ps-2 pe-1 text-xs text-(--t2)"
+            className="inline-flex h-6 max-w-[300px] items-center gap-1.5 rounded-(--r-ctl) border border-(--border) bg-(--field) ps-2 pe-0.5 text-xs text-(--t2)"
           >
-            <MessageSquareIcon
-              aria-hidden="true"
-              className="size-3.25 shrink-0 text-(--accent-ink)"
-            />
-            <span className="min-w-0 truncate">{label}</span>
+            <ImageIcon aria-hidden="true" className="size-3 shrink-0 text-(--t3)" />
+            <span className="min-w-0 truncate text-(--t1)">{label}</span>
             <button
               type="button"
               aria-label="Remove preview annotation"
-              className="inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-(--r-badge) text-(--t3) outline-none hover:bg-(--hover) hover:text-(--t1) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-(--r-badge) text-(--t3) outline-none hover:bg-(--hover) hover:text-(--t1) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
               onClick={() => props.onRemovePreviewAnnotation(chip)}
             >
-              <XIcon aria-hidden="true" className="size-3.25" />
+              <XIcon aria-hidden="true" className="size-3" />
             </button>
           </span>
         );
