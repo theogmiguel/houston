@@ -20,7 +20,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [3, "TaskSources"],
   [4, "TaskRunsCursor"],
   [5, "MergeQueue"],
-  [8, "WorkspaceTransfer"],
+  [9, "WorkspaceTransfer"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
