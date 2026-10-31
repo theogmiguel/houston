@@ -795,6 +795,50 @@ describe("a hold outlives a failed read and is never forgotten without a take-ba
   );
 });
 
+describe("a pause names a take-back github refused", () => {
+  it.live("a pause names a take-back github refused: one queue", () => {
+    const github = makeGitHub(makeRepos());
+    github.mergeQueueBases.add("main");
+    return withQueue(
+      github,
+      Effect.gen(function* () {
+        const queue = yield* HoustonMergeQueueService;
+        const projectId = yield* queueScenario(github, [7], { command: "git --version" });
+        const { pull } = yield* handedOff(github, projectId);
+        github.takeBackFailure = "Resource not accessible by integration";
+        const result = yield* queue.pause({ projectId, paused: true });
+        // The pause applies, and its answer says GitHub still holds #7 and why.
+        assert.include(result.message, "is paused");
+        assert.include(result.message, "GitHub still holds PR #7");
+        assert.include(result.message, "Resource not accessible by integration");
+        assert.isNotNull(pull.queued);
+        const held = entryOf(yield* queue.get({ projectId }), 7);
+        assert.strictEqual(held.status, "watching", JSON.stringify(held));
+        assert.strictEqual(held.github?.mode, "mergeQueue");
+      }),
+    );
+  });
+
+  it.live("a pause names a take-back github refused: every queue", () => {
+    const github = makeGitHub(makeRepos());
+    github.mergeQueueBases.add("main");
+    return withQueue(
+      github,
+      Effect.gen(function* () {
+        const queue = yield* HoustonMergeQueueService;
+        const projectId = yield* queueScenario(github, [7], { command: "git --version" });
+        yield* handedOff(github, projectId);
+        github.takeBackFailure = "Resource not accessible by integration";
+        const result = yield* queue.pause({ paused: true });
+        assert.include(result.message, "every merge queue is paused");
+        assert.include(result.message, "GitHub still holds PR #7");
+        assert.include(result.message, "Resource not accessible by integration");
+        assert.strictEqual(entryOf(yield* queue.get({ projectId }), 7).github?.mode, "mergeQueue");
+      }),
+    );
+  });
+});
+
 describe("a held entry whose checks fail is failed only once github let go", () => {
   it.live("a held entry whose checks fail is failed only once github let go", () => {
     const github = makeGitHub(makeRepos());

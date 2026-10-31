@@ -311,25 +311,35 @@ const make = Effect.gen(function* () {
     yield* store.setGitHub(target.projectId, row.number, null);
   });
 
-  /** Takes back every hold of the project (or of every project) when its queue pauses. */
-  const takeBackAll = (projectIds: ReadonlyArray<ProjectId>) =>
-    Effect.forEach(
-      projectIds,
-      (projectId) =>
-        Effect.gen(function* () {
-          const target = yield* projects.target("houston.mergeQueue.pause", projectId);
-          for (const row of yield* store.rows(projectId)) {
-            yield* takeBack(target, row).pipe(
-              Effect.catch((error: string) =>
-                Effect.logWarning(
-                  `Merge queue: taking PR #${row.number} back on pause failed: ${error}`,
-                ),
+  /** Takes back every hold of the paused projects; the holds GitHub refused to give back. */
+  const takeBackAll = Effect.fn("HoustonMergeQueueService.takeBackAll")(function* (
+    projectIds: ReadonlyArray<ProjectId>,
+  ) {
+    const refused: Array<string> = [];
+    for (const projectId of projectIds) {
+      yield* Effect.gen(function* () {
+        const target = yield* projects.target("houston.mergeQueue.pause", projectId);
+        for (const row of yield* store.rows(projectId)) {
+          yield* takeBack(target, row).pipe(
+            Effect.catch((error: string) =>
+              Effect.logWarning(
+                `Merge queue: taking PR #${row.number} back on pause failed: ${error}`,
+              ).pipe(
+                Effect.tap(() => Effect.sync(() => refused.push(`PR #${row.number}: ${error}`))),
               ),
-            );
-          }
-        }).pipe(Effect.ignore),
-      { discard: true },
-    );
+            ),
+          );
+        }
+      }).pipe(Effect.ignore);
+    }
+    return refused;
+  });
+
+  /** The pause's answer, naming what GitHub still holds and may merge during it. */
+  const pausedAnswer = (message: string, refused: ReadonlyArray<string>) =>
+    refused.length === 0
+      ? message
+      : `${message}, but GitHub still holds ${refused.join("; ")}. GitHub can merge it during the pause; dequeue it, or turn it off on GitHub`;
 
   const entryRow = Effect.fn("HoustonMergeQueueService.entryRow")(function* (
     operation: string,
@@ -476,18 +486,18 @@ const make = Effect.gen(function* () {
     const word = input.paused ? "paused" : "resumed";
     if (input.projectId === undefined) {
       yield* store.setGlobalPaused(input.paused);
-      if (input.paused) yield* takeBackAll(yield* store.projectsWithEntries);
+      const refused = input.paused ? yield* takeBackAll(yield* store.projectsWithEntries) : [];
       if (!input.paused) yield* store.wake;
-      return { message: `every merge queue is ${word}` };
+      return { message: pausedAnswer(`every merge queue is ${word}`, refused) };
     }
     const project = yield* projects.resolve(
       "houston.mergeQueue.pause",
       input.projectId as ProjectId,
     );
     yield* store.setPaused(project.projectId, input.paused);
-    if (input.paused) yield* takeBackAll([project.projectId]);
+    const refused = input.paused ? yield* takeBackAll([project.projectId]) : [];
     if (!input.paused) yield* store.wake;
-    return { message: `the merge queue of ${project.title} is ${word}` };
+    return { message: pausedAnswer(`the merge queue of ${project.title} is ${word}`, refused) };
   });
 
   return HoustonMergeQueueService.of({
