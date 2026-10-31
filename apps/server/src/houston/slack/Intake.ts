@@ -162,8 +162,10 @@ const make = Effect.gen(function* () {
   ) {
     const kept: Array<ChatAttachment> = [];
     const leftOut: Array<{ readonly name: string; readonly reason: LeftOutReason }> = [];
+    // Downloads are counted, kept or not, so a mention fetches at most `images` files.
+    let fetched = 0;
     for (const file of files) {
-      if (kept.length >= HOUSTON_SLACK_LIMITS.images) {
+      if (fetched >= HOUSTON_SLACK_LIMITS.images) {
         leftOut.push({ name: file.name, reason: "count" });
         continue;
       }
@@ -171,6 +173,7 @@ const make = Effect.gen(function* () {
         leftOut.push({ name: file.name, reason: "host" });
         continue;
       }
+      fetched += 1;
       const downloaded = yield* Effect.result(
         web.download(botToken, file.url, HOUSTON_SLACK_LIMITS.imageBytes),
       );

@@ -348,8 +348,6 @@ describe("images are bounded, sniffed and fetched only from slack hosts", () => 
           [
             ["a.png", "image/png"],
             ["b.jpg", "image/jpeg"],
-            ["c.webp", "image/webp"],
-            ["d.gif", "image/gif"],
           ],
         );
         for (const entry of stored) {
@@ -363,13 +361,12 @@ describe("images are bounded, sniffed and fetched only from slack hosts", () => 
             entry.sizeBytes,
           );
         }
+        // At most 4 downloads per mention, whether or not each is kept.
         assert.deepEqual(fake.fileRequests, [
           "/files/a.png",
           "/files/b.jpg",
           "/files/drawing.png",
           "/files/big.png",
-          "/files/c.webp",
-          "/files/d.gif",
         ]);
         yield* flush;
         const dm = fake.callsOf("chat.postMessage").find((call) => !call.body.thread_ts);
@@ -377,6 +374,8 @@ describe("images are bounded, sniffed and fetched only from slack hosts", () => 
         assert.include(text, "drawing.png");
         assert.include(text, "evil.png");
         assert.include(text, "big.png");
+        assert.include(text, "c.webp");
+        assert.include(text, "d.gif");
         assert.include(text, "extra.png");
         assert.notInclude(text, "a.png ");
       }),
