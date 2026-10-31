@@ -1233,12 +1233,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     attachControls: attachRestingComposerControls,
     hiddenBlockCount: restingControlsHiddenBlockCount,
     iconOnlyBlockCount: restingControlsIconOnlyBlockCount,
+    modelIconOnly: restingControlsModelIconOnly,
     controlsVisible: restingControlsVisible,
   } = useRestingComposerControlsLayout(inlineRestingControlsHost);
   const {
     attachControls: attachExpandedComposerControls,
     hiddenBlockCount: expandedControlsHiddenBlockCount,
     iconOnlyBlockCount: expandedControlsIconOnlyBlockCount,
+    modelIconOnly: expandedControlsModelIconOnly,
   } = useRestingComposerControlsLayout(null, true);
   const pendingPrimaryAction = activePendingProgress
     ? {
@@ -2363,6 +2365,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     : composerControlsCollapsed
       ? 0
       : expandedControlsIconOnlyBlockCount;
+  const modelIconOnly = showInlineRestingControls
+    ? restingControlsModelIconOnly
+    : composerControlsCollapsed
+      ? false
+      : expandedControlsModelIconOnly;
   const composerControls = (
     <ComposerControlsBar
       environmentId={environmentId}
@@ -2392,6 +2399,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerControlsHidden={composerControlsHidden}
       restingHiddenBlockCount={restingHiddenBlockCount}
       iconOnlyBlockCount={iconOnlyBlockCount}
+      modelIconOnly={modelIconOnly}
       showProviderUnavailable={showProviderUnavailable}
       providerSetupInstanceId={providerSetupInstanceId}
       onOpenProviderSetup={onOpenProviderSetup}
