@@ -54,15 +54,6 @@ pub fn accessible_window_text(root: &TextNode, max_chars: usize) -> String {
     text
 }
 
-pub fn bounded_snapshot_string(value: &str, max_chars: usize) -> Option<String> {
-    let candidate = value.replace('\0', "");
-    let candidate = candidate.trim();
-    if candidate.is_empty() {
-        return None;
-    }
-    Some(candidate.chars().take(max_chars).collect())
-}
-
 #[derive(Debug, Clone)]
 pub struct WindowCandidate {
     pub name: Option<String>,

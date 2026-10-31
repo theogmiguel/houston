@@ -387,10 +387,10 @@ impl SnapShotHost {
         let captured_at = iso_now();
         let (app_name, window_title, app_identifier) = match output.window.as_ref() {
             Some(window) => (
-                accessibility::bounded_snapshot_string(&window.app_name, 255)
+                platform::bounded_snapshot_string(&window.app_name, 255)
                     .unwrap_or_else(|| "Window".to_string()),
-                accessibility::bounded_snapshot_string(&window.title, 1_000).unwrap_or_default(),
-                accessibility::bounded_snapshot_string(&window.app_identifier, 255),
+                platform::bounded_snapshot_string(&window.title, 1_000).unwrap_or_default(),
+                platform::bounded_snapshot_string(&window.app_identifier, 255),
             ),
             None => ("Screen".to_string(), String::new(), None),
         };

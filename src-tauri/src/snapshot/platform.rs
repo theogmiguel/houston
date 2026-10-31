@@ -79,6 +79,7 @@ impl SnapShotShortcut {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_modifier_pair(&self) -> bool {
         self.modifier_pair().is_some()
     }
@@ -131,6 +132,16 @@ fn electron_key_name(key: &str) -> String {
 }
 
 #[allow(dead_code)]
+pub fn bounded_snapshot_string(value: &str, max_chars: usize) -> Option<String> {
+    let candidate = value.replace('\0', "");
+    let candidate = candidate.trim();
+    if candidate.is_empty() {
+        return None;
+    }
+    Some(candidate.chars().take(max_chars).collect())
+}
+
+#[allow(dead_code)]
 pub fn same_shortcut(left: &SnapShotShortcut, right: &SnapShotShortcut) -> bool {
     if left.is_modifier_pair() || right.is_modifier_pair() {
         return left.modifier_pair() == right.modifier_pair();
@@ -176,6 +187,7 @@ pub fn observed_pair_message(shortcut: &SnapShotShortcut, apple: bool) -> Option
     })
 }
 
+#[allow(dead_code)]
 pub fn system_conflict(shortcut: &SnapShotShortcut) -> Option<String> {
     let SnapShotShortcut::Chord(chord) = shortcut else {
         return None;
@@ -232,6 +244,7 @@ pub fn system_conflict(shortcut: &SnapShotShortcut) -> Option<String> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum ConfigDesktop {
     Niri,
     Hyprland,
@@ -305,6 +318,7 @@ pub struct CaptureOutput {
 }
 
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct PlatformPaths {
     pub home: PathBuf,
     pub state_dir: PathBuf,
