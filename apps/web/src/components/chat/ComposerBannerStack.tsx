@@ -1,6 +1,7 @@
 import { InfoIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
+import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { ComposerBanner, type ComposerBannerVariant } from "./ComposerBanner";
@@ -17,6 +18,7 @@ export interface ComposerBannerStackItem {
   readonly variant: ComposerBannerVariant;
   readonly group?: ComposerBannerGroup;
   readonly icon: ReactNode;
+  readonly iconClassName?: string;
   readonly title: ReactNode;
   readonly description?: ReactNode;
   readonly children?: ReactNode;
@@ -151,7 +153,9 @@ function NoticeCard({
       data-chat-composer-collapsed-controls="true"
     >
       <ComposerBanner.Row layout="wrap-actions">
-        <ComposerBanner.Icon className="h-(--composer-banner-icon-column) self-start">
+        <ComposerBanner.Icon
+          className={cn("h-(--composer-banner-icon-column) self-start", item.iconClassName)}
+        >
           {item.icon}
         </ComposerBanner.Icon>
         <ComposerBanner.Content className="whitespace-nowrap">

@@ -640,7 +640,13 @@ describe("houston server entrypoint", () => {
       const next = spawnServer({ env: sandboxEnv(root), envelope: envelope(nextPort, base) });
       await waitReady(next, nextPort);
       expect(await environmentStatus(nextPort)).toBe(200);
-      expect((await readRecord(base)).pid).toBe(next.child.pid);
+      // The killed server's record stays until the next one publishes its own at activation,
+      // which follows the first 200.
+      await waitFor(
+        "the runtime record to name the restarted server",
+        async () => (await readRecord(base).catch(() => undefined))?.pid === next.child.pid,
+        READY_TIMEOUT_MS,
+      );
     },
     TEST_TIMEOUT_MS,
   );

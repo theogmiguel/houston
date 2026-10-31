@@ -27,6 +27,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
   isFavorite: boolean;
   isSelected: boolean;
   showProvider: boolean;
+  multiple?: boolean;
   showNewBadge?: boolean;
   unavailable?: boolean;
   jumpLabel?: string | null;
@@ -47,15 +48,27 @@ export const ModelListRow = memo(function ModelListRow(props: {
       index={props.index}
       value={modelPickerModelKey(props.instanceId, props.slug)}
       disabled={Boolean(props.disabledReason)}
+      density={props.showProvider ? "two-line" : "compact"}
       className={cn(
         "group relative w-full !min-w-0 max-w-full cursor-pointer",
         props.disabledReason &&
           "data-disabled:pointer-events-auto data-disabled:cursor-not-allowed",
       )}
     >
+      {props.multiple ? (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "grid size-3.5 shrink-0 place-items-center rounded-(--r-badge) text-white ring-1 ring-(--line-strong) ring-inset",
+            props.isSelected && "bg-(--accent) ring-0",
+          )}
+        >
+          {props.isSelected ? <CheckIcon className="size-2.5 stroke-2 text-white" /> : null}
+        </span>
+      ) : null}
       <div className="min-w-0 flex-1 text-left">
         <div className="flex min-w-0 items-center gap-2">
-          <div className="min-w-0 truncate text-sm font-normal leading-snug">
+          <div className="min-w-0 truncate font-normal text-headline leading-snug">
             {getDisplayModelName(model)}
           </div>
           {props.showNewBadge ? (
@@ -73,7 +86,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
           ) : null}
         </div>
         {props.showProvider && (
-          <div className="mt-1 flex items-center gap-1.5">
+          <div className="mt-0.5 flex items-center gap-1.5">
             <ProviderInstanceIcon
               driverKind={props.driverKind}
               displayName={props.providerDisplayName}
@@ -82,7 +95,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
               className="size-3"
               iconClassName="size-3"
             />
-            <span className="truncate text-xs font-normal leading-snug text-muted-foreground/70">
+            <span className="truncate text-xs font-normal leading-snug text-(--t3)">
               {providerLabel}
             </span>
           </div>
@@ -92,7 +105,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
       <div className="flex shrink-0 items-center gap-1.5">
         {traitsLabel ? (
           <span
-            className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground/70"
+            className="shrink-0 whitespace-nowrap text-xs tabular-nums text-(--t3)"
             data-model-picker-traits="true"
           >
             {traitsLabel}
@@ -132,10 +145,15 @@ export const ModelListRow = memo(function ModelListRow(props: {
           </TooltipPopup>
         </Tooltip>
         {/* Last, and always reserved, so stars and the check keep fixed columns. */}
-        <CheckIcon
-          className={cn("size-3.5", !props.isSelected && "invisible")}
-          aria-hidden="true"
-        />
+        {props.multiple ? null : (
+          <CheckIcon
+            className={cn(
+              "size-3.5 text-(--accent-ink)",
+              !props.isSelected && "invisible",
+            )}
+            aria-hidden="true"
+          />
+        )}
       </div>
     </ComboboxItem>
   );

@@ -5,6 +5,7 @@ import {
 } from "@t3tools/client-runtime/work-log/presentation";
 import { isJavaScriptReplTool } from "@t3tools/shared/toolActivity";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
+import { workEntryDisplayLabel } from "./MessagesTimeline.logic";
 import { type TimelineWorkEntry, type TimelineRow } from "./timelineRowContext";
 import { type WorkEntryIconName } from "./TimelineToolActivityIcon";
 
@@ -235,5 +236,92 @@ export function remarkThoughtPreview(fallback: string) {
     tree.children = children.some((child) => child.type !== "text" || child.value)
       ? children
       : [{ type: "text", value: fallback }];
+  };
+}
+
+const TOOL_ACTION_LABEL: Partial<Record<ReturnType<typeof toolGroupAction>, string>> = {
+  read: "Read",
+  edit: "Edited",
+  command: "Ran",
+  "code-search": "Searched",
+  search: "Searched",
+};
+
+export interface WorkEntryToolParts {
+  readonly action: string;
+  readonly value: string;
+  readonly exitCode?: number;
+  readonly additions?: number;
+  readonly deletions?: number;
+  readonly results?: number;
+}
+
+function countDiffLines(diff: string | undefined): { additions?: number; deletions?: number } {
+  if (!diff) return {};
+  let additions = 0;
+  let deletions = 0;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+") && !line.startsWith("+++")) additions += 1;
+    else if (line.startsWith("-") && !line.startsWith("---")) deletions += 1;
+  }
+  return additions + deletions > 0 ? { additions, deletions } : {};
+}
+
+/** The Board tool row splits a call into the action verb, its mono target and a
+ *  trailing result, instead of one compacted sentence. */
+export function workEntryToolParts(
+  entry: TimelineWorkEntry,
+  workspaceRoot: string | undefined,
+): WorkEntryToolParts {
+  const item = entry.structuredPayload;
+  const actionKey = toolGroupAction(entry);
+  const action = TOOL_ACTION_LABEL[actionKey] ?? entry.toolTitle?.trim() ?? "Used";
+  const label = workEntryDisplayLabel(entry, workspaceRoot);
+  const stripAction = (value: string) =>
+    value
+      .replace(/^(?:Read|Read file|Read \d+ files?|Searched|Editing|Edited|Changed|Ran)\s+/i, "")
+      .trim();
+
+  let value = "";
+  if (actionKey === "command") {
+    value = workEntryRawCommand(entry) ?? entry.command ?? stripAction(label);
+  } else if (actionKey === "edit") {
+    const path = entry.changedFiles?.[0];
+    value =
+      (path ? formatWorkspaceRelativePath(path, workspaceRoot) : undefined) ??
+      (item?.type === "file_change"
+        ? formatWorkspaceRelativePath(item.fileName, workspaceRoot)
+        : undefined) ??
+      stripAction(label);
+  } else if (actionKey === "read") {
+    value = stripAction(label) || label;
+  } else if (item?.type === "file_search") {
+    value = item.pattern?.trim() ? item.pattern : stripAction(label);
+  } else if (actionKey === "code-search" || actionKey === "search") {
+    value = stripAction(label) || label;
+  } else if (item?.type === "dynamic_tool") {
+    value = stripAction(label) || label;
+  } else {
+    value = stripAction(label) || label;
+  }
+
+  const exitCode = item?.type === "command_execution" ? item.exitCode : undefined;
+  const results =
+    item?.type === "file_search" || item?.type === "web_search" ? item.results?.length : undefined;
+  const fileChange = item?.type === "file_change" ? item : null;
+  const counted = fileChange
+    ? {
+        additions: fileChange.additions,
+        deletions: fileChange.deletions,
+      }
+    : countDiffLines(item?.type === "file_change" ? item.diffStr : undefined);
+
+  return {
+    action,
+    value: value || label,
+    ...(exitCode !== undefined ? { exitCode } : {}),
+    ...(results !== undefined ? { results } : {}),
+    ...(counted.additions !== undefined ? { additions: counted.additions } : {}),
+    ...(counted.deletions !== undefined ? { deletions: counted.deletions } : {}),
   };
 }

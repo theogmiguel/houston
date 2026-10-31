@@ -27,6 +27,7 @@ type CommandPaletteContentProps = Omit<ComponentProps<typeof Command>, "children
   readonly footerActionLabel?: ReactNode;
   readonly footerTrailing?: ReactNode;
   readonly inputAccessory?: ReactNode;
+  readonly inputEndAddon?: ReactNode;
   readonly inputProps: ComponentProps<typeof CommandInput>;
   readonly panelSize?: "list" | "tall-list" | "fill";
   readonly showBackHint?: boolean;
@@ -35,10 +36,11 @@ type CommandPaletteContentProps = Omit<ComponentProps<typeof Command>, "children
 
 export function CommandPaletteContent({
   children,
-  escapeLabel = "Close",
-  footerActionLabel,
+  escapeLabel,
+  footerActionLabel = "Open",
   footerTrailing,
   inputAccessory,
+  inputEndAddon,
   inputProps,
   panelSize = "list",
   showBackHint,
@@ -49,7 +51,12 @@ export function CommandPaletteContent({
     <div className="contents" data-testid={testId}>
       <Command {...commandProps}>
         <div className="relative">
-          <CommandInput autoFocus={false} {...inputProps} ref={claimFocusInOpenDialog} />
+          <CommandInput
+            autoFocus={false}
+            endAddon={inputEndAddon}
+            {...inputProps}
+            ref={claimFocusInOpenDialog}
+          />
           {inputAccessory}
         </div>
         <CommandPanel
@@ -72,7 +79,7 @@ export function CommandPaletteContent({
               <Kbd>
                 <ArrowDownIcon />
               </Kbd>
-              <span>Navigate</span>
+              <span>Move</span>
             </KbdGroup>
             {footerActionLabel !== undefined ? (
               <KbdGroup>
@@ -86,10 +93,12 @@ export function CommandPaletteContent({
                 <span>Back</span>
               </KbdGroup>
             ) : null}
-            <KbdGroup>
-              <Kbd>Esc</Kbd>
-              <span>{escapeLabel}</span>
-            </KbdGroup>
+            {escapeLabel !== undefined ? (
+              <KbdGroup>
+                <Kbd>Esc</Kbd>
+                <span>{escapeLabel}</span>
+              </KbdGroup>
+            ) : null}
           </div>
           {footerTrailing}
         </CommandFooter>

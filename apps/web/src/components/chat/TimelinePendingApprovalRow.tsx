@@ -40,7 +40,7 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
   const presentation = APPROVAL_PRESENTATION[approval.requestKind];
   const canRespond = approval.responseCapability === "live";
   return (
-    <div className="rounded-lg border border-warning/30 bg-warning-surface px-2 py-1.5">
+    <div className="rounded-(--r-group) border border-(--warn-line) bg-(--warn-wash) px-2.5 py-2">
       <WorkLogRow
         role="group"
         aria-label={presentation.label}
@@ -50,14 +50,14 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
           <ToolActivityIconView
             icon={undefined}
             fallbackName={presentation.icon}
-            className="block size-4 shrink-0 stroke-2 text-warning"
+            className="block size-3.5 shrink-0 stroke-2 text-warning"
             muted
           />
         }
         label={
           <code
             aria-label={presentation.detailLabel}
-            className="block max-h-40 min-w-0 overflow-auto rounded-md border border-border bg-code px-2.5 py-1.5 whitespace-pre-wrap font-mono text-xs leading-5 text-foreground select-text! wrap-anywhere [scrollbar-width:thin] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+            className="block max-h-40 min-w-0 overflow-auto rounded-(--r-ctl) border border-border bg-(--code-bg) px-2.5 py-1.5 whitespace-pre-wrap font-mono text-mono leading-5 text-foreground select-text! wrap-anywhere [scrollbar-width:thin] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
             data-approval-detail="complete"
             tabIndex={0}
           >

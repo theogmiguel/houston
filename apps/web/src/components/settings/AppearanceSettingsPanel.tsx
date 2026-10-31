@@ -264,30 +264,17 @@ export function AppearanceSettingsPanel() {
             ) : null
           }
           control={
-            <Select
-              value={settings.environmentIdentificationMode}
-              onValueChange={(value) => {
-                const option = environmentIdentificationOptionList.find(
-                  ([optionValue]) => optionValue === value,
-                );
-                if (option) updateSettings({ environmentIdentificationMode: option[0] });
-              }}
-            >
-              <SelectTrigger
-                size="sm"
-                className="w-full sm:w-40"
-                aria-label="Environment identification"
-              >
-                <SelectValue>{environmentIdentificationLabel}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                {environmentIdentificationOptionList.map(([value, label]) => (
-                  <SelectItem hideIndicator key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
+            <Switch
+              checked={settings.environmentIdentificationMode !== "none"}
+              onCheckedChange={(checked) =>
+                updateSettings({
+                  environmentIdentificationMode: checked
+                    ? DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE
+                    : "none",
+                })
+              }
+              aria-label="Environment identification"
+            />
           }
         />
         <SettingsRow
@@ -305,12 +292,12 @@ export function AppearanceSettingsPanel() {
           }
           control={
             <div className="flex w-full items-center gap-3 sm:w-52">
-              <output
-                className="min-w-12 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
-                htmlFor="glass-opacity"
+              <span
+                aria-hidden="true"
+                className="min-w-8 text-right font-mono text-xs tabular-nums text-muted-foreground"
               >
-                {settings.glassOpacity}%
-              </output>
+                {settings.glassOpacity}
+              </span>
               <input
                 aria-label="Glass opacity"
                 className="settings-slider min-w-0 flex-1"

@@ -842,7 +842,7 @@
     "apps/server/src/secrets/SecretRequests.ts": "CLI binary renamed from t3 to houston",
     "apps/server/src/serverActivation.ts": "CLI binary renamed from t3 to houston",
     "apps/server/src/serverLifecycleEvents.ts": "CLI binary renamed from t3 to houston",
-    "apps/server/src/serverRuntimeState.test.ts": "CLI binary renamed from t3 to houston",
+    "apps/server/src/serverRuntimeState.test.ts": "CLI binary renamed from t3 to houston; user-visible product name: Houston instead of T3 Code",
     "apps/server/src/serverSettings.ts": "CLI binary renamed from t3 to houston",
     "apps/server/src/sourceControl/SourceControlDiscovery.ts": "CLI binary renamed from t3 to houston",
     "apps/server/src/sourceControl/SourceControlProviderRegistry.ts": "CLI binary renamed from t3 to houston",

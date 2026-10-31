@@ -412,8 +412,10 @@
         overflow: hidden;
         display: flex;
         min-height: 100%;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
+        gap: 10px;
         background: inherit;
         color: inherit;
       }
@@ -429,14 +431,39 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 96px;
-        height: 96px;
+        width: 40px;
+        height: 40px;
       }
 
       #boot-shell-logo {
-        width: 64px;
-        height: 64px;
+        width: 40px;
+        height: 40px;
         object-fit: contain;
+      }
+
+      #boot-shell-copy {
+        font: 500 13px/18px system-ui, -apple-system, 'Segoe UI', sans-serif;
+        color: inherit;
+        opacity: 0.66;
+      }
+
+      #boot-shell-bar {
+        display: block;
+        width: 200px;
+        height: 4px;
+        overflow: hidden;
+        border-radius: 2px;
+        background: color-mix(in srgb, currentColor 16%, transparent);
+      }
+
+      #boot-shell-bar i {
+        display: block;
+        width: 35%;
+        height: 100%;
+        margin-left: 20%;
+        border-radius: 2px;
+        background: currentColor;
+        opacity: 0.92;
       }
 
       /* App CSS locks body and #root scrolling once main loads, so the error screen scrolls itself. */
@@ -678,6 +705,8 @@
         <div id="boot-shell-card" aria-label="Houston splash screen">
           <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="Houston" />
         </div>
+        <span id="boot-shell-copy">Starting Houston's server…</span>
+        <span id="boot-shell-bar" aria-hidden="true"><i></i></span>
       </div>
     </div>
     <script type="module" src="/src/bootstrap.ts"></script>

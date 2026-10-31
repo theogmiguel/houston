@@ -68,6 +68,9 @@ export type ThemeFile = Readonly<{
 }>;
 
 const customThemeListeners = new Set<() => void>();
+// Bumped on every custom or environment theme notification so snapshot readers can
+// cache their derived colours between changes instead of rebuilding them per read.
+let customThemesRevision = 0;
 type CustomThemeLibrarySnapshot =
   | Readonly<{
       status: "ready";
@@ -230,7 +233,12 @@ function getCustomThemeLibrarySnapshot(): CustomThemeLibrarySnapshot {
 }
 
 function notifyCustomThemeListeners() {
+  customThemesRevision += 1;
   for (const listener of customThemeListeners) listener();
+}
+
+export function getCustomThemesRevision(): number {
+  return customThemesRevision;
 }
 
 export function invalidateCustomThemes() {
@@ -347,9 +355,10 @@ export function getStoredCustomThemeCollection(
 
 export function subscribeToCustomThemes(listener: () => void): () => void {
   customThemeListeners.add(listener);
-  const unsubscribeEnvironment = subscribeAtomChanges(environmentThemeDefinitionsAtom, () =>
-    listener(),
-  );
+  const unsubscribeEnvironment = subscribeAtomChanges(environmentThemeDefinitionsAtom, () => {
+    customThemesRevision += 1;
+    listener();
+  });
   if (typeof window === "undefined") {
     return () => {
       customThemeListeners.delete(listener);
