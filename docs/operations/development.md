@@ -509,6 +509,19 @@ committed inventory and runs in its own `licence-inventory` job.
 
 | `check-page-width.sh` | every page root uses the one `--page-w` column (960px in `theme.css`), never a per-page `max-w-[Npx]` | scans `components/nav/`, `components/prs/`, `UsageSection.tsx` and `ui/PrPage.tsx` for arbitrary max widths; only `max-w-[var(--page-w)]` passes |
 
+### v2 renderer style guards
+
+The design-system rules that used to scan `ui/` now scan `apps/web` through one
+runner, `scripts/check-web-style.mjs`. `bash scripts/check-web-style.sh --all`
+runs every rule; `--self-test` proves each guard still fires on the fixture in
+`scripts/web-style-fixtures/<rule>/bad` and passes its `good` twin.
+
+Each rule keeps a per-file count in `scripts/web-style-baseline/<rule>.baseline`.
+CI fails on a new file, a raised count, or a stale entry; after removing a
+violation, lower the pin with `--update` (never raise it). `--list` prints every
+rule and whether it was ported or adapted, and `--print <rule>` lists the
+current hits.
+
 ### What CI runs
 
 | Job | Runs on | What it does |
