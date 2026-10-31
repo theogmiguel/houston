@@ -129,12 +129,14 @@ depend on it.
 The daemon (`houston-core`) and Houston's MCP orchestration (`pane_*`, `hs-pane`) leave with v1;
 agents orchestrate through upstream's orchestration-v2.
 
-**The T3 base comes first.** The Houston-only ports are parked and return afterwards on the v2
-server: the Tasks agent toolkit (#456), task sources writeback (#457), merge queue hand-off and
-stacks (#469), harness review (#450), Slack intake (#459), workspace transfer (#470) and Night
-shift (#471). Each parked PR is a draft titled "Parked:" that holds its work so far. Houston code
-already on `v2` stays: the server entrypoint, provider status, send intents, reviewed files, aside
-and second opinion, the Tasks backlog store and runs, task sources sync and the merge queue core.
+**The T3 base comes first.** The Houston-only ports were parked and now return one by one on the
+v2 server while the T3 base finishes in the renderer and the bridge: the Tasks agent toolkit
+(#456), merge queue hand-off and stacks (#469), harness review (#450), Slack intake (#459),
+workspace transfer (#470) and Night shift (#471). Each parked PR is a draft titled "Parked:" that
+holds its work so far, and a maintainer reviews it before it merges. Houston code already on `v2`
+stays: the server entrypoint, provider status, send intents, reviewed files, aside and second
+opinion, the Tasks backlog store and runs, task sources sync and writeback (#457), and the merge
+queue core.
 
 So `core/` is removed now, without waiting for the ports, in two PRs. The PR that deletes a path
 also removes every reader of it, so `v2` builds at every merge:
@@ -149,13 +151,16 @@ also removes every reader of it, so `v2` builds at every merge:
    `apps/web` or removed with `ui/`.
 2. **PR B (Augusto, Theo reviews), on top of PR A:** a one-time `v1_cleanup` in the host removes
    Houston's managed hook and MCP blocks from the agent CLIs' configs (it stands down while a v1
-   daemon of the same channel runs); `core/`, `protocol/` and everything that reads them are
-   deleted; the docs are rewritten and `AGENTS.md` gets the v2 invariants. `native/libghostty-vt`
+   daemon of the same channel runs; the host never stops a v1 daemon); `core/`, `protocol/`,
+   `packages/contracts/src/houston/terminalFrames.ts` and everything that reads them are deleted; the docs are rewritten and `AGENTS.md` gets the v2 invariants. `native/libghostty-vt`
    stays: the v2 terminal drawer builds its WASM from it.
 
 A v1 user loses the parked features until they return, and the features with no port planned
 (remote access, dictation, review tiers, SSH panes, skill sync, conflict prediction, WSL). v1's data
 in `~/.houston*` is never deleted or opened read-write; v2 keeps its state in `<channel dir>/v2`.
+
+Before `handoff/` is deleted, `handoff/design/`'s boards and `read-board.py` move to
+`apps/web/design/`, and its rules and decisions into `docs/internals/styleguide.md`.
 
 ### Additions from MonoCode and Capy
 
