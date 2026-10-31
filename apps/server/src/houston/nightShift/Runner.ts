@@ -168,7 +168,7 @@ const make = Effect.gen(function* () {
   });
 
   const timesFor = Effect.fn("HoustonNightShiftRunner.timesFor")(function* (input: {
-    readonly trigger: StartTrigger;
+    readonly trigger: StartTrigger | "preview";
     readonly startMs: number;
     readonly durationMinutes: number | undefined;
     readonly wrapUp: string;
@@ -222,7 +222,7 @@ const make = Effect.gen(function* () {
     const stored = yield* settingsOf(operation, projectId);
     const nowMs = yield* Clock.currentTimeMillis;
     const { times, timeZone } = yield* timesFor({
-      trigger: durationMinutes === undefined ? "scheduled" : "manual",
+      trigger: durationMinutes === undefined ? "preview" : "manual",
       startMs: nowMs,
       durationMinutes,
       wrapUp: stored.settings.window.wrapUp,

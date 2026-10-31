@@ -201,6 +201,34 @@ describe("night shift scheduling", () => {
     }),
   );
 
+  it.effect("a fire whose window breaks the rules is refused by name", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("task-window");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const store = yield* Store.HoustonNightShiftStore;
+          const fixture = makeRepository("task-window", { kind: "bare" });
+          const projectId = yield* createProject("task-window", fixture.root);
+          const seeded = yield* seedNightShift(projectId);
+          // Scheduled tasks moves the start to 07:00; the settings keep wrap-up 06:45, stop 07:30.
+          yield* upsertFrom(seeded, {
+            enabled: true,
+            schedule: { type: "fixed_time", timeOfDay: "07:00", weekdays: [0, 1, 2, 3, 4, 5, 6] },
+          });
+          const fired = yield* fireDue((yield* nightTask(projectId))!);
+          assert.equal(fired?.lastRunStatus, "failed");
+          for (const clock of ["07:00", "06:45", "07:30"]) {
+            assert.include(fired?.lastRunError ?? "", clock);
+          }
+          assert.lengthOf(yield* store.listRuns(projectId, 30), 0);
+          assert.lengthOf(kit.state.launches, 0);
+          assert.lengthOf(kit.state.spawns, 0);
+        }),
+      );
+    }),
+  );
+
   it.effect("the server start catches up a missed night once", () =>
     Effect.gen(function* () {
       const kit = yield* makeKit("catch-up");
@@ -246,7 +274,11 @@ describe("startup", () => {
       const kitSource = source("./nightShift.testkit.ts");
       // One runner and claim: the orchestration runtime builds them once and exports them.
       assert.equal(count(runtime, "layerNightShiftRunner"), 2, "imported and provided once");
-      assert.equal(count(runtime, "layerHoustonScheduledTaskRunner"), 2, "imported and provided once");
+      assert.equal(
+        count(runtime, "layerHoustonScheduledTaskRunner"),
+        2,
+        "imported and provided once",
+      );
       assert.equal(count(server, "layerNightShift,"), 1, "the service is composed once");
       assert.include(kitSource, "layerHoustonScheduledTaskRunner");
       assert.include(kitSource, "layerClaim");

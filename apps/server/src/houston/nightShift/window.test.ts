@@ -78,6 +78,24 @@ describe("night shift window", () => {
       timeZone: "UTC",
     });
     expect(upstreamNight.ok && iso(upstreamNight.hardStopAtMs)).toBe("2026-10-28T07:30:00.000Z");
+    // Exactly 16 h before the hard stop is accepted; a minute more is refused.
+    const sixteen = runTimes({
+      kind: "upstreamRunNow",
+      startMs: at("2026-10-27T15:30:00Z"),
+      wrapUp: "06:45",
+      hardStop: "07:30",
+      timeZone: "UTC",
+    });
+    expect(sixteen.ok && iso(sixteen.hardStopAtMs)).toBe("2026-10-28T07:30:00.000Z");
+    const overSixteen = runTimes({
+      kind: "upstreamRunNow",
+      startMs: at("2026-10-27T15:29:00Z"),
+      wrapUp: "06:45",
+      hardStop: "07:30",
+      timeZone: "UTC",
+    });
+    expect(overSixteen.ok).toBe(false);
+    if (!overSixteen.ok) expect(overSixteen.message).toContain("16 h 1 min");
 
     // Lisbon leaves summer time that night: 23:30 is 22:30Z, 07:30 is 07:30Z.
     const acrossDst = runTimes({
@@ -102,6 +120,58 @@ describe("night shift window", () => {
       "2026-07-12T05:45:00.000Z",
       "2026-07-12T06:30:00.000Z",
     ]);
+  });
+
+  it("a scheduled or caught-up window is checked at fire time in elapsed time", () => {
+    // The task's start moved to 07:00 in Scheduled tasks; the settings keep 06:45 and 07:30.
+    const moved = runTimes({
+      kind: "scheduled",
+      startMs: at("2026-10-27T07:00:00Z"),
+      wrapUp: "06:45",
+      hardStop: "07:30",
+      timeZone: "UTC",
+    });
+    expect(moved.ok).toBe(false);
+    if (!moved.ok) {
+      expect(moved.message).toContain("07:00");
+      expect(moved.message).toContain("06:45");
+      expect(moved.message).toContain("07:30");
+    }
+    // A wrap-up after the hard stop is refused, not stretched into the next day.
+    const late = runTimes({
+      kind: "catchUp",
+      startMs: at("2026-10-27T02:10:00Z"),
+      wrapUp: "07:30",
+      hardStop: "06:45",
+      timeZone: "UTC",
+    });
+    expect(late.ok).toBe(false);
+    if (!late.ok) expect(late.message).toContain("strictly between");
+    // A start more than 16 h before the hard stop is refused naming the span and the limit.
+    const long = runTimes({
+      kind: "scheduled",
+      startMs: at("2026-10-27T14:00:00Z"),
+      wrapUp: "06:45",
+      hardStop: "07:30",
+      timeZone: "UTC",
+    });
+    expect(long.ok).toBe(false);
+    if (!long.ok) {
+      expect(long.message).toContain("17 h 30 min");
+      expect(long.message).toContain("16 h");
+    }
+
+    // 22:00 / 05:00 / 14:00 is 16 h on the clock, but 17 h when Lisbon leaves summer time.
+    const window = { wrapUp: "05:00", hardStop: "14:00", timeZone: "Europe/Lisbon" };
+    const autumn = runTimes({ kind: "scheduled", startMs: at("2026-10-24T21:00:00Z"), ...window });
+    expect(autumn.ok).toBe(false);
+    if (!autumn.ok) expect(autumn.message).toContain("17 h");
+    const ordinary = runTimes({
+      kind: "scheduled",
+      startMs: at("2026-11-07T22:00:00Z"),
+      ...window,
+    });
+    expect(ordinary.ok && (ordinary.hardStopAtMs - at("2026-11-07T22:00:00Z")) / MINUTE).toBe(960);
   });
 
   it("a missed start is caught up once before wrap-up", () => {

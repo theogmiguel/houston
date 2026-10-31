@@ -75,6 +75,12 @@ const addDays = (date: LocalDate, days: number): LocalDate => {
 const weekday = (date: LocalDate) =>
   new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
 
+/** The local clock `HH:MM` at `ms` in `timeZone`. */
+const clockOf = (ms: number, timeZone: string) => {
+  const p = localParts(ms, timeZone);
+  return `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
+};
+
 /** The first instant strictly after `afterMs` whose local clock reads `clock`. */
 export const nextClock = (afterMs: number, clock: string, timeZone: string) => {
   const today = localDate(afterMs, timeZone);
@@ -87,7 +93,8 @@ export const nextClock = (afterMs: number, clock: string, timeZone: string) => {
 
 export type RunTimesInput =
   | {
-      readonly kind: "scheduled" | "catchUp" | "upstreamRunNow";
+      /** `preview`: the next window's times from now, unchecked, for a preflight without a duration. */
+      readonly kind: "scheduled" | "catchUp" | "upstreamRunNow" | "preview";
       readonly startMs: number;
       readonly wrapUp: string;
       readonly hardStop: string;
@@ -138,12 +145,32 @@ export const runTimes = (input: RunTimesInput): RunTimes => {
       hardStopAtMs,
     };
   }
+  // Checked again here because Scheduled tasks can move the start after `update` checked it; the
+  // span is elapsed time, so a daylight saving change cannot stretch it past the limit.
   const wrapUpAtMs = nextClock(input.startMs, input.wrapUp, input.timeZone);
-  return {
-    ok: true,
-    wrapUpAtMs,
-    hardStopAtMs: nextClock(wrapUpAtMs, input.hardStop, input.timeZone),
-  };
+  const hardStopAtMs = nextClock(input.startMs, input.hardStop, input.timeZone);
+  if (input.kind === "preview") {
+    return {
+      ok: true,
+      wrapUpAtMs,
+      hardStopAtMs: nextClock(wrapUpAtMs, input.hardStop, input.timeZone),
+    };
+  }
+  const start = clockOf(input.startMs, input.timeZone);
+  if (wrapUpAtMs >= hardStopAtMs) {
+    return {
+      ok: false,
+      message: `wrap-up ${input.wrapUp} must fall strictly between start ${start} and hard stop ${input.hardStop}; change the window or the start time`,
+    };
+  }
+  const elapsed = Math.round((hardStopAtMs - input.startMs) / MINUTE);
+  if (elapsed > LIMITS.windowMinutes) {
+    return {
+      ok: false,
+      message: `start ${start} to hard stop ${input.hardStop} is ${formatMinutes(elapsed)}, over the ${formatMinutes(LIMITS.windowMinutes)} limit (wrap-up ${input.wrapUp}); change the window or the start time`,
+    };
+  }
+  return { ok: true, wrapUpAtMs, hardStopAtMs };
 };
 
 /** The missed night's start to catch up now, or null: once, and only before its wrap-up. */
