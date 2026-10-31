@@ -18,6 +18,7 @@ mod shell;
 mod shells;
 mod skills;
 mod spike_webview;
+mod sys;
 mod system;
 #[cfg(test)]
 mod test_home;
@@ -166,7 +167,7 @@ fn main() {
         println!(
             "houston {} ({}) protocol {}",
             env!("CARGO_PKG_VERSION"),
-            houston_core::daemon::build_commit(),
+            crate::sys::build_commit(),
             houston_protocol::PROTOCOL_VERSION,
         );
         return;
@@ -257,7 +258,7 @@ fn main() {
     let daemon_fresh = daemon_fresh_requested();
     let print_target = daemon_host::print_target_requested(&args);
 
-    let home = match houston_core::home_dir::home_dir() {
+    let home = match crate::sys::home_dir::home_dir() {
         Some(home) => home,
         None => {
             eprintln!("houston-tauri: refusing to own a daemon: cannot resolve the home directory");
@@ -275,7 +276,7 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let state_dir = houston_core::paths::dir_for(&home, owning_channel.as_deref());
+    let state_dir = crate::sys::paths::dir_for(&home, owning_channel.as_deref());
     let target_channel_label = owning_channel
         .clone()
         .unwrap_or_else(|| "release".to_string());
@@ -306,8 +307,8 @@ fn main() {
     }
 
     if print_target {
-        let config_dir = houston_core::paths::config_dir();
-        let log_dir = houston_core::paths::log_dir();
+        let config_dir = crate::sys::paths::config_dir();
+        let log_dir = crate::sys::paths::log_dir();
         println!(
             "houston-tauri: --print-target: channel={target_channel_label} state_dir={} \
              config_dir={} log_dir={}",
@@ -324,20 +325,20 @@ fn main() {
         std::process::exit(0);
     }
 
-    let _log_guard = houston_core::logging::init();
+    let _log_guard = crate::sys::logging::init();
     render_overrides.report();
 
-    houston_core::env_hygiene::scrub();
-    houston_core::login_path::adopt();
+    crate::sys::env_hygiene::scrub();
+    crate::sys::login_path::adopt();
 
-    match houston_core::paths::config_dir() {
+    match crate::sys::paths::config_dir() {
         Ok(dir) => println!("houston-tauri: houston-core state dir = {}", dir.display()),
         Err(err) => {
             eprintln!("houston-tauri: failed to resolve houston-core state dir: {err}");
         }
     }
 
-    let channel_label = match houston_core::paths::channel() {
+    let channel_label = match crate::sys::paths::channel() {
         Ok(channel) => channel.unwrap_or_else(|| "release".to_string()),
         Err(err) => {
             eprintln!("houston-tauri: refusing to start: {err}");
@@ -476,6 +477,8 @@ fn main() {
     builder = builder.manage(browser::BrowserRegistry::new());
     builder = builder.manage(browser::confirm::ConfirmRegistry::new());
     builder = builder.manage(app_update::UpdateFlight::new());
+    builder = builder.manage(std::sync::Arc::new(app_update::V2UpdateHandle::new()));
+    builder = builder.manage(window::ContextMenuState::default());
     let render_overrides = Arc::new(render_overrides);
     builder = builder.manage(app_update::ActiveStateDir::new(
         state_dir.clone(),
@@ -525,10 +528,19 @@ fn main() {
             spike_report,
             app_log::system_log_debug,
             app_update::app_update_install,
+            app_update::v2_update_state,
+            app_update::v2_update_set_channel,
+            app_update::v2_update_check,
+            app_update::v2_update_download,
+            app_update::v2_update_install,
             host::host_config,
             v2_server::v2_local_environment_bootstrap,
             v2_server::v2_local_environment_bearer_token,
             v2_server::v2_server_status,
+            v2_server::v2_server_exposure_state,
+            v2_server::v2_server_set_exposure_mode,
+            v2_server::v2_server_set_tailscale_serve,
+            v2_server::v2_server_advertised_endpoints,
             fs_allowlist::fs_add_allowed_root,
             fs_allowlist::fs_set_allowed_roots,
             fs::fs_read_directory,
@@ -565,6 +577,7 @@ fn main() {
             dialog::dialog_pick_directories,
             dialog::dialog_pick_file,
             dialog::dialog_pick_image,
+            dialog::dialog_pick_theme_files,
             dialog::dialog_save_image_url,
             dialog::dialog_save_transfer,
             dialog::dialog_pick_transfer,
@@ -577,6 +590,8 @@ fn main() {
             system::system_get_log_path,
             system::system_third_party_licenses,
             system::system_get_home_dir,
+            system::v2_open_system_settings,
+            system::v2_check_system_permission,
             skills::system_list_skills,
             skills::system_write_skill,
             skills::system_delete_skill,
@@ -587,6 +602,10 @@ fn main() {
             window::window_minimize,
             window::window_maximize,
             window::window_is_maximized,
+            window::window_is_fullscreen,
+            window::window_set_theme,
+            window::window_set_badge_count,
+            window::v2_show_context_menu,
             window::window_is_focused,
             window::window_toggle_fullscreen,
             window::window_set_zoom,
@@ -603,6 +622,10 @@ fn main() {
             wsl::wsl_enable,
             wsl::wsl_disable,
             wsl::env_list,
+            wsl::v2::v2_wsl_state,
+            wsl::v2::v2_wsl_set_enabled,
+            wsl::v2::v2_wsl_set_distro,
+            wsl::v2::v2_wsl_set_only,
             spike_webview::spike_wv_mount,
             spike_webview::spike_wv_set_bounds,
             spike_webview::spike_wv_geometry,
@@ -702,6 +725,12 @@ fn main() {
                 commands(invoke)
             }
         })
+        .on_menu_event(|app, event| {
+            let id = event.id().0.as_str();
+            if !window::handle_context_menu_event(app, id) {
+                let _ = app.emit_to("main", "v2-menu-action", id);
+            }
+        })
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Resized(_)) {
                 browser::follow_window_resize(window);
@@ -750,6 +779,12 @@ fn main() {
                 browser::handle_window_closed(window.app_handle(), window.label());
             }
             if window.label() == "main" {
+                if let Ok(fullscreen) = window.is_fullscreen() {
+                    let _ = window.emit_to("main", "v2-window-fullscreen", fullscreen);
+                }
+                if matches!(event, tauri::WindowEvent::Focused(true)) {
+                    let _ = window.emit_to("main", "v2-notification-badge-clear", ());
+                }
                 match event {
                     tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
                         if let Some(tracker) = window
@@ -1021,7 +1056,7 @@ fn main() {
             #[cfg(feature = "bench")]
             app.state::<Arc<bench::BootStamps>>().stamp("window-created");
 
-            let app_log_path = match houston_core::paths::config_dir() {
+            let app_log_path = match crate::sys::paths::config_dir() {
                 Ok(dir) => dir.join("app-debug.ndjson"),
                 Err(err) => {
                     eprintln!(
@@ -1037,7 +1072,7 @@ fn main() {
             if run_bench {
                 spawn_bench_watchdog(app.handle().clone());
             }
-            let log_path = match houston_core::paths::config_dir() {
+            let log_path = match crate::sys::paths::config_dir() {
                 Ok(dir) => dir.join("watchdog.ndjson"),
                 Err(err) => {
                     eprintln!(

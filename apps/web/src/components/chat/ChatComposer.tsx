@@ -3158,11 +3158,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ) : null;
   const composerAttachButton =
     showComposerAttachAction && paneDensity !== "compact" ? (
-    <ComposerAttachButton
-      addComposerAttachments={addComposerAttachments}
-      focusComposer={focusComposer}
-    />
-  ) : null;
+      <ComposerAttachButton
+        addComposerAttachments={addComposerAttachments}
+        focusComposer={focusComposer}
+      />
+    ) : null;
   return (
     <form
       ref={composerFormRef}
@@ -3216,12 +3216,31 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       data-chat-composer-form="true"
       {...threadContextDropTargetProps()}
     >
-      <ComposerBanner.Dock>
-        <ComposerBanner.Column>
-          <ComposerBannerStack items={shelfItems} />
-          {showComposerTopDrawer ? (
-            <ComposerBanner.Attachment>
-              <ComposerBanner.Root data-chat-composer-top-drawer="true" variant="warning">
+      <div className="relative">
+        <ComposerSurface.Main
+          ref={composerMainSurfaceRef}
+          data-inline-resting-controls="true"
+          className={composerProviderState.composerFrameClassName}
+        >
+          <div
+            ref={composerSurfaceRef}
+            data-chat-composer-surface="true"
+            data-chat-composer-mobile-collapsed={isComposerCollapsedMobile ? "true" : "false"}
+            className={cn(
+              "rounded-xl transition-[background-color] duration-200",
+              "in-data-[thread-context-over]:bg-accent/45 in-data-[thread-context-over]:ring-1 in-data-[thread-context-over]:ring-inset in-data-[thread-context-over]:ring-primary/70",
+              isDragOverComposer ? "bg-accent/45 ring-1 ring-inset ring-primary/70" : null,
+              projectSelectionRequired ? "opacity-75" : null,
+              composerProviderState.composerSurfaceClassName,
+            )}
+          >
+            <ComposerBannerStack items={shelfItems} />
+            {showComposerTopDrawer ? (
+              <ComposerBanner.Root
+                data-chat-composer-top-drawer="true"
+                variant="warning"
+                inCard="drawer"
+              >
                 {pendingUserInputs.length > 0 ? (
                   <ComposerPendingUserInputPanel
                     pendingUserInputs={pendingUserInputs}
@@ -3246,28 +3265,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   />
                 ) : null}
               </ComposerBanner.Root>
-            </ComposerBanner.Attachment>
-          ) : null}
-        </ComposerBanner.Column>
-      </ComposerBanner.Dock>
-      <div className="relative">
-        <ComposerSurface.Main
-          ref={composerMainSurfaceRef}
-          data-inline-resting-controls="true"
-          className={composerProviderState.composerFrameClassName}
-        >
-          <div
-            ref={composerSurfaceRef}
-            data-chat-composer-surface="true"
-            data-chat-composer-mobile-collapsed={isComposerCollapsedMobile ? "true" : "false"}
-            className={cn(
-              "rounded-xl transition-[background-color] duration-200",
-              "in-data-[thread-context-over]:bg-accent/45 in-data-[thread-context-over]:ring-1 in-data-[thread-context-over]:ring-inset in-data-[thread-context-over]:ring-primary/70",
-              isDragOverComposer ? "bg-accent/45 ring-1 ring-inset ring-primary/70" : null,
-              projectSelectionRequired ? "opacity-75" : null,
-              composerProviderState.composerSurfaceClassName,
-            )}
-          >
+            ) : null}
             {showCollapsedMobilePromptRow ? (
               <div className="flex items-center justify-between gap-2 px-3 py-2">
                 <button
@@ -3338,11 +3336,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 };
               }}
               data-chat-composer-body="true"
-              className={cn(
-                "relative px-3.5 pb-2",
-                "pt-3 sm:pt-3.5",
-                isComposerCollapsedMobile && "hidden",
-              )}
+              className={cn("relative px-3 pt-2.5 pb-1", isComposerCollapsedMobile && "hidden")}
             >
               {isStashMenuOpen && !composerMenuOpen && (
                 <ComposerCommandMenuLayer anchor={composerMenuAnchor}>
@@ -3398,9 +3392,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   />
                 )}
 
-              {composerAttachmentMediaRow}
-
-              {composerAttachmentFileList}
+              {composerAttachmentMediaRow || composerAttachmentFileList ? (
+                <div
+                  data-chat-composer-attachment-row="true"
+                  className="mb-2 flex max-w-full flex-wrap gap-1.5 [&>div]:contents"
+                >
+                  {composerAttachmentMediaRow}
+                  {composerAttachmentFileList}
+                </div>
+              ) : null}
 
               <ComposerPendingAnnotationChips
                 citations={pendingCitationChips}
@@ -3515,44 +3515,46 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               <div
                 data-chat-composer-footer="true"
                 className={cn(
-                  "flex min-w-0 flex-nowrap items-center overflow-visible px-2 pb-2",
-                  pendingUserInputs.length > 0 && "pt-2",
+                  "flex min-w-0 flex-nowrap items-center gap-0.5 overflow-visible px-1.5 pt-0.5 pb-1.5",
+                  pendingUserInputs.length > 0 && "pt-1.5",
                   showMobilePendingAnswerActions && "hidden sm:flex",
                 )}
               >
-                {composerAttachButton ? <div className="me-2">{composerAttachButton}</div> : null}
+                {composerAttachButton ? <div className="me-0.5">{composerAttachButton}</div> : null}
                 <div
                   data-chat-composer-actions="right"
                   data-chat-composer-transition-actions="true"
                   data-chat-composer-primary-actions-compact={
                     isComposerPrimaryActionsCompact ? "true" : "false"
                   }
-                  className="flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-2"
+                  className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5"
                 >
                   <div
                     ref={attachExpandedComposerControls}
                     data-chat-composer-controls="footer"
                     data-chat-composer-footer-controls="true"
-                    className="relative flex min-w-0 flex-1 items-center justify-end gap-0.5"
+                    className="relative flex min-w-0 flex-1 items-center gap-0.5"
                   >
                     {composerControls}
+                    <ComposerStashBadge
+                      count={stashQueue.length}
+                      menuOpen={isStashMenuOpen}
+                      pulseKey={stashPulseKey}
+                      onToggleMenu={toggleStashMenuStable}
+                    />
                   </div>
-                  <ComposerStashBadge
-                    count={stashQueue.length}
-                    menuOpen={isStashMenuOpen}
-                    pulseKey={stashPulseKey}
-                    onToggleMenu={toggleStashMenuStable}
-                  />
                   {phase === "running" && activeTurnStartedAt ? (
                     <span
                       role="status"
-                      className="shrink-0 pe-1 text-2xs text-muted-foreground tabular-nums"
+                      className="shrink-0 px-1.5 text-(--t3) text-xs tabular-nums"
                     >
-                      <span className="text-(--accent-ink)">Running</span> ·{" "}
+                      Running ·{" "}
                       <span
                         ref={tickTextContent(
                           (nowMs) =>
-                            formatDuration(Math.max(1_000, nowMs - Date.parse(activeTurnStartedAt))),
+                            formatDuration(
+                              Math.max(1_000, nowMs - Date.parse(activeTurnStartedAt)),
+                            ),
                           true,
                         )}
                       />

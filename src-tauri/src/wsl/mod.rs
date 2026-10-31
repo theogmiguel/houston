@@ -7,6 +7,7 @@ pub mod distros;
 pub mod provision;
 pub mod relay;
 pub mod unc;
+pub mod v2;
 
 use command::{Piped, RunOutput, Runner, WslExe};
 use distros::{decode, Distro};
@@ -566,7 +567,7 @@ impl WslManager {
             runner: Arc::new(WslExe),
             state_dir,
             channel,
-            build: houston_core::daemon::build_commit().to_string(),
+            build: crate::sys::build_commit().to_string(),
             bundle_dir,
             supported: platform_supported(),
             retry_delay: relay::RETRY_DELAY,

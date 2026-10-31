@@ -1,4 +1,4 @@
-use houston_core::paths;
+use crate::sys::paths;
 use tauri::Manager;
 
 #[tauri::command]
@@ -12,7 +12,7 @@ pub fn system_get_log_path() -> Result<String, String> {
 
 #[tauri::command]
 pub fn system_get_home_dir() -> Result<String, String> {
-    houston_core::home_dir::home_dir()
+    crate::sys::home_dir::home_dir()
         .map(|p| p.to_string_lossy().into_owned())
         .ok_or_else(|| "system_get_home_dir: cannot resolve home directory".to_string())
 }
@@ -76,6 +76,42 @@ pub fn system_third_party_licenses(app: tauri::AppHandle) -> Result<String, Stri
     }
 }
 
+/// The only settings pane the desktop bridge names. Anything else is a
+/// contract violation, not a silent no-op.
+fn system_settings_pane(pane: &str) -> Result<&'static str, String> {
+    match pane {
+        "full-disk-access" => {
+            Ok("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+        }
+        other => Err(format!(
+            "system settings pane must be \"full-disk-access\", got {other:?}"
+        )),
+    }
+}
+
+#[tauri::command]
+pub fn v2_open_system_settings(pane: String) -> Result<bool, String> {
+    let url = system_settings_pane(&pane)?;
+    #[cfg(target_os = "macos")]
+    {
+        let status = std::process::Command::new("open").arg(url).status();
+        return Ok(status.map(|status| status.success()).unwrap_or(false));
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = url;
+        Ok(false)
+    }
+}
+
+/// TCC has no supported query, so the bridge reports what it can prove: no
+/// permission pane is granted automatically.
+#[tauri::command]
+pub fn v2_check_system_permission(pane: String) -> Result<bool, String> {
+    system_settings_pane(&pane)?;
+    Ok(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,9 +137,16 @@ mod tests {
     }
 
     #[test]
+    fn system_settings_panes_accept_only_full_disk_access() {
+        assert!(system_settings_pane("full-disk-access").is_ok());
+        let error = system_settings_pane("microphone").expect_err("unknown pane must be refused");
+        assert!(error.contains("microphone"), "{error}");
+    }
+
+    #[test]
     fn system_get_home_dir_agrees_with_the_shared_home_resolver() {
         let expected =
-            houston_core::home_dir::home_dir().expect("test host must have a resolvable home dir");
+            crate::sys::home_dir::home_dir().expect("test host must have a resolvable home dir");
         let got =
             system_get_home_dir().expect("system_get_home_dir must succeed in a normal test env");
         assert_eq!(got, expected.to_string_lossy());

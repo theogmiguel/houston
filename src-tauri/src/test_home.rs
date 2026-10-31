@@ -42,7 +42,7 @@ pub fn run_isolated_test(test: &str) -> bool {
         return false;
     }
     let home = tempfile::tempdir().expect("throwaway home");
-    let mut command = houston_core::spawn::command(std::env::current_exe().expect("test binary"));
+    let mut command = crate::sys::spawn::command(std::env::current_exe().expect("test binary"));
     isolate(&mut command, home.path());
     let output = command
         .env("HOUSTON_ISOLATED_TEST", test)
@@ -61,7 +61,7 @@ pub fn run_isolated_test(test: &str) -> bool {
 #[test]
 fn daemon_command_overrides_inherited_config_homes() {
     let home = tempfile::tempdir().expect("throwaway home");
-    let mut command = houston_core::spawn::command("unused-daemon");
+    let mut command = crate::sys::spawn::command("unused-daemon");
     for key in [
         "HOME",
         "USERPROFILE",

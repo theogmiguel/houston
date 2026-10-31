@@ -21,6 +21,9 @@ const KEYCHAIN_SERVICE_PREFIX: &str = "houston-v2";
 const KEYCHAIN_PROFILE: &str = "desktop-bootstrap-secret";
 const RUNTIME_DIR: &str = "userdata";
 const RUNTIME_FILE: &str = "server-runtime.json";
+/// Host-owned preferences that decide how the server is spawned.
+const DESKTOP_SETTINGS_FILE: &str = "desktop-settings.json";
+const DEFAULT_TAILSCALE_PORT: u16 = 443;
 const PREFERRED_PORT: u16 = 3773;
 const LAST_PROBED_PORT: u16 = 3809;
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
@@ -46,6 +49,293 @@ pub struct ServerRuntime {
     pub host: Option<String>,
     #[serde(default, rename = "startedAt")]
     pub started_at: Option<String>,
+}
+
+/// Host-owned server preferences. They live beside the runtime record rather
+/// than in it: the server rewrites its record, while exposure is the host's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopSettings {
+    #[serde(default = "default_exposure_mode")]
+    pub exposure_mode: String,
+    #[serde(default)]
+    pub tailscale_serve_enabled: bool,
+    #[serde(default = "default_tailscale_port")]
+    pub tailscale_serve_port: u16,
+    #[serde(default)]
+    pub wsl_enabled: bool,
+    #[serde(default)]
+    pub wsl_distro: Option<String>,
+    #[serde(default)]
+    pub wsl_only: bool,
+}
+
+fn default_exposure_mode() -> String {
+    "local-only".to_string()
+}
+
+fn default_tailscale_port() -> u16 {
+    DEFAULT_TAILSCALE_PORT
+}
+
+impl Default for DesktopSettings {
+    fn default() -> Self {
+        Self {
+            exposure_mode: default_exposure_mode(),
+            tailscale_serve_enabled: false,
+            tailscale_serve_port: DEFAULT_TAILSCALE_PORT,
+            wsl_enabled: false,
+            wsl_distro: None,
+            wsl_only: false,
+        }
+    }
+}
+
+pub fn settings_path(base_dir: &Path) -> PathBuf {
+    base_dir.join(DESKTOP_SETTINGS_FILE)
+}
+
+/// A missing file is the default configuration. A malformed one is named so the
+/// caller can report it rather than silently replacing the operator's choice.
+pub fn load_settings(base_dir: &Path) -> Result<DesktopSettings, String> {
+    let path = settings_path(base_dir);
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(DesktopSettings::default()),
+        Err(e) => return Err(format!("reading {}: {e}", path.display())),
+    };
+    let settings: DesktopSettings = serde_json::from_str(&text)
+        .map_err(|e| format!("{} is not valid desktop settings JSON: {e}", path.display()))?;
+    validate_settings(&settings)?;
+    Ok(settings)
+}
+
+pub fn save_settings(base_dir: &Path, settings: &DesktopSettings) -> Result<(), String> {
+    validate_settings(settings)?;
+    let path = settings_path(base_dir);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| {
+            format!(
+                "creating the v2 settings directory {}: {e}",
+                parent.display()
+            )
+        })?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    let body = serde_json::to_string_pretty(settings).expect("DesktopSettings serializes");
+    fs::write(&tmp, body)
+        .and_then(|()| fs::rename(&tmp, &path))
+        .map_err(|e| format!("writing {}: {e}", path.display()))
+}
+
+fn validate_settings(settings: &DesktopSettings) -> Result<(), String> {
+    if !matches!(
+        settings.exposure_mode.as_str(),
+        "local-only" | "network-accessible"
+    ) {
+        return Err(format!(
+            "exposureMode must be \"local-only\" or \"network-accessible\", got {:?}",
+            settings.exposure_mode
+        ));
+    }
+    if settings.tailscale_serve_port == 0 {
+        return Err("tailscaleServePort must be between 1 and 65535, got 0".to_string());
+    }
+    Ok(())
+}
+
+/// The host side of `desktopBridge.getServerExposureState`.
+pub fn exposure_state(settings: &DesktopSettings, running: Option<&RunningServer>) -> Value {
+    let local = running.and_then(|running| local_ipv4().map(|ip| (ip, running.port)));
+    let endpoint = match (&settings.exposure_mode[..], local.as_ref(), running) {
+        ("network-accessible", Some((ip, port)), _) => Some(format!("http://{ip}:{port}")),
+        (_, _, Some(running)) => Some(running.origin.clone()),
+        _ => None,
+    };
+    let advertised_host = if settings.exposure_mode == "network-accessible" {
+        local
+            .map(|(ip, _)| ip)
+            .unwrap_or_else(|| "0.0.0.0".to_string())
+    } else {
+        "127.0.0.1".to_string()
+    };
+    json!({
+        "mode": settings.exposure_mode,
+        "endpointUrl": endpoint,
+        "advertisedHost": advertised_host,
+        "tailscaleServeEnabled": settings.tailscale_serve_enabled,
+        "tailscaleServePort": settings.tailscale_serve_port,
+    })
+}
+
+/// A UDP connect to a public address picks the interface the OS would use
+/// without sending a packet. Fallible on offline machines, where LAN
+/// advertisement is simply omitted.
+fn local_ipv4() -> Option<String> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    let address = socket.local_addr().ok()?;
+    let ip = address.ip();
+    if ip.is_loopback() || ip.is_unspecified() {
+        None
+    } else {
+        Some(ip.to_string())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TailscaleStatus {
+    pub magic_dns_name: Option<String>,
+    pub ipv4: Vec<String>,
+}
+
+/// `tailscale status --json`, read only for the fields the bridge advertises.
+pub fn parse_tailscale_status(raw: &str) -> Option<TailscaleStatus> {
+    let value: Value = serde_json::from_str(raw).ok()?;
+    let self_node = value.get("Self")?;
+    let magic_dns_name = self_node
+        .get("DNSName")
+        .and_then(Value::as_str)
+        .map(|name| name.trim().trim_end_matches('.').to_string())
+        .filter(|name| !name.is_empty());
+    let ipv4 = self_node
+        .get("TailscaleIPs")
+        .and_then(Value::as_array)
+        .map(|addresses| {
+            addresses
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|address| is_tailnet_ipv4(address))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(TailscaleStatus {
+        magic_dns_name,
+        ipv4,
+    })
+}
+
+fn is_tailnet_ipv4(address: &str) -> bool {
+    let octets: Vec<u8> = address
+        .split('.')
+        .map(|part| part.parse::<u8>())
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap_or_default();
+    octets.len() == 4 && octets[0] == 100 && (64..=127).contains(&octets[1])
+}
+
+fn read_tailscale_status() -> Option<TailscaleStatus> {
+    let mut command = houston_core::spawn::command("tailscale");
+    command.args(["status", "--json"]);
+    let output = houston_core::spawn::output_within(command, Duration::from_secs(3)).ok()??;
+    if !output.status.success() {
+        return None;
+    }
+    parse_tailscale_status(&String::from_utf8_lossy(&output.stdout))
+}
+
+struct EndpointSpec {
+    id: String,
+    label: &'static str,
+    provider_id: &'static str,
+    provider_label: &'static str,
+    provider_kind: &'static str,
+    url: String,
+    reachability: &'static str,
+    status: &'static str,
+    hosted_compatibility: &'static str,
+    is_default: bool,
+}
+
+fn endpoint(spec: EndpointSpec) -> Value {
+    json!({
+        "id": spec.id,
+        "label": spec.label,
+        "provider": {
+            "id": spec.provider_id,
+            "label": spec.provider_label,
+            "kind": spec.provider_kind,
+            "isAddon": false,
+        },
+        "httpBaseUrl": spec.url,
+        "wsBaseUrl": spec.url.replacen("http", "ws", 1),
+        "reachability": spec.reachability,
+        "compatibility": {
+            "hostedHttpsApp": spec.hosted_compatibility,
+            "desktopApp": "compatible",
+        },
+        "source": "desktop-core",
+        "status": spec.status,
+        "isDefault": spec.is_default,
+    })
+}
+
+/// The `desktopBridge.getAdvertisedEndpoints` list: loopback first, then the
+/// LAN address when exposed, then Tailscale when its CLI answers.
+pub fn advertised_endpoints(settings: &DesktopSettings, running: Option<&RunningServer>) -> Value {
+    let Some(running) = running else {
+        return json!([]);
+    };
+    let mut endpoints = vec![endpoint(EndpointSpec {
+        id: format!("desktop-loopback:{}", running.port),
+        label: "This machine",
+        provider_id: "desktop-core",
+        provider_label: "This machine",
+        provider_kind: "core",
+        url: running.origin.clone(),
+        reachability: "loopback",
+        status: "available",
+        hosted_compatibility: "requires-configuration",
+        is_default: settings.exposure_mode == "local-only",
+    })];
+    if settings.exposure_mode == "network-accessible" {
+        if let Some(ip) = local_ipv4() {
+            let url = format!("http://{ip}:{}", running.port);
+            endpoints.push(endpoint(EndpointSpec {
+                id: format!("desktop-lan:{url}"),
+                label: "Local network",
+                provider_id: "desktop-core",
+                provider_label: "Local network",
+                provider_kind: "private-network",
+                url,
+                reachability: "lan",
+                status: "available",
+                hosted_compatibility: "requires-configuration",
+                is_default: true,
+            }));
+        }
+    }
+    if settings.exposure_mode == "network-accessible" || settings.tailscale_serve_enabled {
+        if let Some(status) = read_tailscale_status() {
+            if let Some(name) = status.magic_dns_name {
+                let port = settings.tailscale_serve_port;
+                let url = if port == DEFAULT_TAILSCALE_PORT {
+                    format!("https://{name}")
+                } else {
+                    format!("https://{name}:{port}")
+                };
+                let available = settings.tailscale_serve_enabled;
+                endpoints.push(endpoint(EndpointSpec {
+                    id: format!("tailscale-magicdns:{name}:{port}"),
+                    label: "Tailscale HTTPS",
+                    provider_id: "tailscale",
+                    provider_label: "Tailscale",
+                    provider_kind: "private-network",
+                    url,
+                    reachability: "private-network",
+                    status: if available {
+                        "available"
+                    } else {
+                        "unavailable"
+                    },
+                    hosted_compatibility: "compatible",
+                    is_default: false,
+                }));
+            }
+        }
+    }
+    Value::Array(endpoints)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -155,7 +445,7 @@ fn resolve_server_entry_with(
 
 pub fn resolve_node(override_node: Option<PathBuf>) -> PathBuf {
     override_node
-        .or_else(|| houston_core::exe_path::resolve("node"))
+        .or_else(|| crate::sys::exe_path::resolve("node"))
         .unwrap_or_else(|| PathBuf::from("node"))
 }
 
@@ -174,18 +464,29 @@ pub fn current_desktop_bootstrap_token(secret: &str, now_ms: u128) -> String {
 /// Bootstrap envelope read by upstream's CLI from fd 0. `desktopBootstrapSecret`
 /// keeps a reopened app able to authenticate to a server started earlier; the
 /// embedded token is only the current window's convenience value.
-pub fn bootstrap_envelope(base_dir: &Path, port: u16, secret: &str, token: &str) -> Value {
+pub fn bootstrap_envelope(
+    base_dir: &Path,
+    port: u16,
+    secret: &str,
+    token: &str,
+    settings: &DesktopSettings,
+) -> Value {
+    let host = if settings.exposure_mode == "network-accessible" {
+        "0.0.0.0"
+    } else {
+        "127.0.0.1"
+    };
     json!({
         "mode": "desktop",
         "noBrowser": true,
         "port": port,
         "t3Home": base_dir.to_string_lossy(),
-        "host": "127.0.0.1",
+        "host": host,
         "desktopBootstrapToken": token,
         "desktopBootstrapSecret": secret,
         "shellEnvironmentPrepared": false,
-        "tailscaleServeEnabled": false,
-        "tailscaleServePort": 443,
+        "tailscaleServeEnabled": settings.tailscale_serve_enabled,
+        "tailscaleServePort": settings.tailscale_serve_port,
     })
 }
 
@@ -208,11 +509,11 @@ fn now_ms() -> u128 {
         .unwrap_or(0)
 }
 
-/// Try a loopback listener; a taken port means another process owns it, so step
-/// forward inside the preferred range instead of racing it.
-pub fn pick_port() -> u16 {
+/// Try a listener on the interface the server will actually bind; a taken port
+/// means another process owns it, so step forward instead of racing it.
+pub fn pick_port_for(bind_host: &str) -> u16 {
     for port in PREFERRED_PORT..=LAST_PROBED_PORT {
-        if std::net::TcpListener::bind(("127.0.0.1", port)).is_ok() {
+        if std::net::TcpListener::bind((bind_host, port)).is_ok() {
             return port;
         }
     }
@@ -225,7 +526,7 @@ fn read_runtime(base_dir: &Path) -> Option<ServerRuntime> {
 }
 
 fn process_alive(pid: i32) -> bool {
-    pid > 0 && houston_core::pid::process_is_alive(pid as u32)
+    pid > 0 && crate::sys::pid::process_is_alive(pid as u32)
 }
 
 async fn health_ok(origin: &str) -> bool {
@@ -242,7 +543,7 @@ async fn health_ok(origin: &str) -> bool {
 }
 
 fn keychain_entry(base_dir: &Path) -> Result<keyring::Entry, String> {
-    let service = houston_core::keychain::scoped_service(KEYCHAIN_SERVICE_PREFIX, base_dir);
+    let service = crate::sys::keychain::scoped_service(KEYCHAIN_SERVICE_PREFIX, base_dir);
     keyring::Entry::new(&service, KEYCHAIN_PROFILE).map_err(|e| {
         format!(
             "opening the system keychain for the v2 desktop secret (service {service:?}) \
@@ -310,7 +611,7 @@ const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 #[cfg(windows)]
 pub fn detached_spawn_flags(breakaway: bool) -> u32 {
     let mut flags =
-        houston_core::spawn::CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
+        crate::sys::spawn::CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
     if breakaway {
         flags |= CREATE_BREAKAWAY_FROM_JOB;
     }
@@ -329,9 +630,9 @@ fn server_command(
         .try_clone()
         .map_err(|e| format!("cloning the v2 server log handle: {e}"))?;
     let mut cmd = match entry {
-        ServerEntry::Bundled(executable) => houston_core::spawn::command(executable),
+        ServerEntry::Bundled(executable) => crate::sys::spawn::command(executable),
         ServerEntry::Node(entry) => {
-            let mut cmd = houston_core::spawn::command(node);
+            let mut cmd = crate::sys::spawn::command(node);
             cmd.arg(entry);
             cmd
         }
@@ -459,11 +760,12 @@ pub struct RunningServer {
     pub attached: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct HostState {
     running: Option<RunningServer>,
     bearer: Option<String>,
     last_error: Option<String>,
+    settings: DesktopSettings,
 }
 
 pub struct V2Host {
@@ -475,12 +777,75 @@ pub struct V2Host {
 
 impl V2Host {
     pub fn new(base_dir: PathBuf, node: PathBuf, entry: ServerEntry) -> Self {
+        let settings = load_settings(&base_dir).unwrap_or_else(|error| {
+            eprintln!("houston-tauri: v2 desktop settings: {error}; using defaults");
+            DesktopSettings::default()
+        });
         Self {
             base_dir,
             node,
             entry,
-            state: Mutex::new(HostState::default()),
+            state: Mutex::new(HostState {
+                running: None,
+                bearer: None,
+                last_error: None,
+                settings,
+            }),
         }
+    }
+
+    pub fn settings(&self) -> DesktopSettings {
+        self.state
+            .lock()
+            .map(|state| state.settings.clone())
+            .unwrap_or_default()
+    }
+
+    fn store_settings(&self, settings: DesktopSettings) -> Result<(), String> {
+        save_settings(&self.base_dir, &settings)?;
+        if let Ok(mut state) = self.state.lock() {
+            state.settings = settings;
+        }
+        Ok(())
+    }
+
+    /// Persist preferences that do not change how the server is spawned (WSL
+    /// routing is resolved by the server slice; the host records the choice).
+    pub fn update_settings(&self, settings: DesktopSettings) -> Result<(), String> {
+        self.store_settings(settings)
+    }
+
+    /// Apply a settings change that affects how the server is spawned. The old
+    /// value is restored if the new server does not become healthy.
+    pub async fn apply_settings_restarting(&self, next: DesktopSettings) -> Result<(), String> {
+        let previous = self.settings();
+        self.store_settings(next)?;
+        match self.restart().await {
+            Ok(_) => Ok(()),
+            Err(error) => {
+                let _ = self.store_settings(previous);
+                let recovery = self.restart().await;
+                Err(match recovery {
+                    Ok(_) => format!("{error}; the previous exposure settings were restored"),
+                    Err(second) => format!(
+                        "{error}; restoring the previous exposure settings also failed: {second}"
+                    ),
+                })
+            }
+        }
+    }
+
+    /// Stop the tracked server and start a fresh one with the current settings.
+    pub async fn restart(&self) -> Result<RunningServer, String> {
+        if let Some(running) = self.running() {
+            stop_server(running.pid).await?;
+        }
+        let _ = fs::remove_file(runtime_path(&self.base_dir));
+        if let Ok(mut state) = self.state.lock() {
+            state.running = None;
+            state.bearer = None;
+        }
+        ensure_running(self).await
     }
 
     fn record_error(&self, error: String) {
@@ -615,6 +980,70 @@ fn form_encode(value: &str) -> String {
     out
 }
 
+/// A detached child stays unreaped until Houston exits, so `kill(pid, 0)`
+/// still succeeds for a zombie. On Linux the process state distinguishes the
+/// two; elsewhere (Windows has no zombies) `kill(pid, 0)` is already final.
+fn process_exited(pid: i32) -> bool {
+    if pid <= 0 || !process_alive(pid) {
+        return true;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let path = format!("/proc/{pid}/stat");
+        if let Ok(stat) = fs::read_to_string(path) {
+            if let Some((_, rest)) = stat.rsplit_once(')') {
+                return rest.trim_start().starts_with('Z');
+            }
+        }
+    }
+    false
+}
+
+/// Stop a server this host started or attached to. SIGTERM first so the server
+/// can close its database; a process that ignores it is killed after five
+/// seconds. Only a recorded, positive pid ever reaches the signal helper.
+async fn stop_server(pid: i32) -> Result<(), String> {
+    use houston_core::pid::{signal_process_checked, Signal, SignalOutcome};
+    if process_exited(pid) {
+        return Ok(());
+    }
+    let pid = pid as u32;
+    match signal_process_checked(pid, Signal::Term) {
+        Ok(SignalOutcome::Delivered | SignalOutcome::NoSuchProcess) => {}
+        Ok(SignalOutcome::IdentityMismatch) => {
+            return Err(format!(
+                "refusing to stop the v2 server: pid {pid} no longer belongs to it"
+            ))
+        }
+        Err(error) => return Err(format!("stopping the v2 server (pid {pid}): {error}")),
+    }
+    for _ in 0..25 {
+        if process_exited(pid as i32) {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    eprintln!("houston-tauri: v2 server (pid {pid}) ignored SIGTERM for 5 s; sending a hard kill");
+    match signal_process_checked(pid, Signal::Kill) {
+        Ok(SignalOutcome::Delivered | SignalOutcome::NoSuchProcess) => {}
+        Ok(SignalOutcome::IdentityMismatch) => {
+            return Err(format!(
+                "refusing to kill the v2 server: pid {pid} no longer belongs to it"
+            ))
+        }
+        Err(error) => return Err(format!("killing the v2 server (pid {pid}): {error}")),
+    }
+    for _ in 0..25 {
+        if process_exited(pid as i32) {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    Err(format!(
+        "the v2 server (pid {pid}) is still alive after SIGKILL"
+    ))
+}
+
 /// Discover and attach, or spawn and wait. On either path the host ends up with
 /// the loopback origin and pid the renderer talks to.
 pub async fn ensure_running(host: &V2Host) -> Result<RunningServer, String> {
@@ -646,9 +1075,15 @@ pub async fn ensure_running(host: &V2Host) -> Result<RunningServer, String> {
     }
 
     let secret = load_or_create_secret(&host.base_dir)?;
-    let port = pick_port();
+    let settings = host.settings();
+    let bind_host = if settings.exposure_mode == "network-accessible" {
+        "0.0.0.0"
+    } else {
+        "127.0.0.1"
+    };
+    let port = pick_port_for(bind_host);
     let token = current_desktop_bootstrap_token(&secret, now_ms());
-    let envelope = bootstrap_envelope(&host.base_dir, port, &secret, &token);
+    let envelope = bootstrap_envelope(&host.base_dir, port, &secret, &token, &settings);
     let mut child = spawn_server(&host.node, &host.entry, &host.base_dir, port, &envelope)?;
     let runtime = wait_for_ready(&host.base_dir, &mut child).await?;
     let running = RunningServer {
@@ -699,6 +1134,57 @@ pub async fn v2_local_environment_bearer_token(
 #[tauri::command]
 pub fn v2_server_status(host: tauri::State<'_, std::sync::Arc<V2Host>>) -> Value {
     host.status()
+}
+
+#[tauri::command]
+pub fn v2_server_exposure_state(
+    host: tauri::State<'_, std::sync::Arc<V2Host>>,
+) -> Result<Value, String> {
+    Ok(exposure_state(&host.settings(), host.running().as_ref()))
+}
+
+#[tauri::command]
+pub async fn v2_server_set_exposure_mode(
+    mode: String,
+    host: tauri::State<'_, std::sync::Arc<V2Host>>,
+) -> Result<Value, String> {
+    if !matches!(mode.as_str(), "local-only" | "network-accessible") {
+        return Err(format!(
+            "network exposure mode must be \"local-only\" or \"network-accessible\", got {mode:?}"
+        ));
+    }
+    let mut settings = host.settings();
+    settings.exposure_mode = mode;
+    host.apply_settings_restarting(settings).await?;
+    Ok(exposure_state(&host.settings(), host.running().as_ref()))
+}
+
+#[tauri::command]
+pub async fn v2_server_set_tailscale_serve(
+    enabled: bool,
+    port: Option<u16>,
+    host: tauri::State<'_, std::sync::Arc<V2Host>>,
+) -> Result<Value, String> {
+    let port = port.unwrap_or_else(default_tailscale_port);
+    if port == 0 {
+        return Err("Tailscale Serve port must be between 1 and 65535, got 0".to_string());
+    }
+    let mut settings = host.settings();
+    settings.tailscale_serve_enabled = enabled;
+    settings.tailscale_serve_port = port;
+    host.apply_settings_restarting(settings).await?;
+    Ok(exposure_state(&host.settings(), host.running().as_ref()))
+}
+
+#[tauri::command]
+pub async fn v2_server_advertised_endpoints(
+    host: tauri::State<'_, std::sync::Arc<V2Host>>,
+) -> Result<Value, String> {
+    let settings = host.settings();
+    let running = host.running();
+    tokio::task::spawn_blocking(move || advertised_endpoints(&settings, running.as_ref()))
+        .await
+        .map_err(|e| format!("reading advertised endpoints stopped unexpectedly: {e}"))
 }
 
 #[cfg(test)]
@@ -882,6 +1368,7 @@ mod tests {
             3773,
             "secret",
             "token",
+            &DesktopSettings::default(),
         );
         assert_eq!(envelope["mode"], "desktop");
         assert_eq!(envelope["noBrowser"], true);
@@ -902,8 +1389,8 @@ mod tests {
         assert_eq!(flags & DETACHED_PROCESS, DETACHED_PROCESS);
         assert_eq!(flags & CREATE_NEW_PROCESS_GROUP, CREATE_NEW_PROCESS_GROUP);
         assert_eq!(
-            flags & houston_core::spawn::CREATE_NO_WINDOW,
-            houston_core::spawn::CREATE_NO_WINDOW
+            flags & crate::sys::spawn::CREATE_NO_WINDOW,
+            crate::sys::spawn::CREATE_NO_WINDOW
         );
         assert_eq!(
             flags & 0x0000_0010,
@@ -919,6 +1406,106 @@ mod tests {
         assert_eq!(flags & CREATE_BREAKAWAY_FROM_JOB, 0);
         assert_eq!(flags & DETACHED_PROCESS, DETACHED_PROCESS);
         assert_eq!(flags & CREATE_NEW_PROCESS_GROUP, CREATE_NEW_PROCESS_GROUP);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn stop_server_accepts_an_unreaped_child_as_stopped() {
+        let mut child = houston_core::spawn::command("sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn sleep");
+        let pid = child.id() as i32;
+        stop_server(pid).await.expect("SIGTERM stops the child");
+        assert!(process_exited(pid), "an exited child may still be a zombie");
+        let _ = child.wait();
+    }
+
+    #[test]
+    fn desktop_settings_round_trip_and_reject_an_unknown_mode() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let mut settings = DesktopSettings {
+            exposure_mode: "network-accessible".to_string(),
+            tailscale_serve_enabled: true,
+            tailscale_serve_port: 8443,
+            ..DesktopSettings::default()
+        };
+        save_settings(dir.path(), &settings).expect("save settings");
+        assert_eq!(load_settings(dir.path()).unwrap(), settings);
+
+        settings.exposure_mode = "everyone".to_string();
+        let error = save_settings(dir.path(), &settings).expect_err("mode must be refused");
+        assert!(error.contains("everyone"), "{error}");
+    }
+
+    #[test]
+    fn network_exposure_binds_every_interface_and_passes_tailscale_flags() {
+        let settings = DesktopSettings {
+            exposure_mode: "network-accessible".to_string(),
+            tailscale_serve_enabled: true,
+            tailscale_serve_port: 8443,
+            ..DesktopSettings::default()
+        };
+        let envelope = bootstrap_envelope(
+            Path::new("/home/u/.houston-dev/v2"),
+            3773,
+            "secret",
+            "token",
+            &settings,
+        );
+        assert_eq!(envelope["host"], "0.0.0.0");
+        assert_eq!(envelope["tailscaleServeEnabled"], true);
+        assert_eq!(envelope["tailscaleServePort"], 8443);
+    }
+
+    #[test]
+    fn exposure_state_names_the_loopback_endpoint_until_network_access_is_on() {
+        let settings = DesktopSettings::default();
+        let running = RunningServer {
+            origin: "http://127.0.0.1:3773".to_string(),
+            port: 3773,
+            pid: 42,
+            attached: false,
+        };
+        let state = exposure_state(&settings, Some(&running));
+        assert_eq!(state["mode"], "local-only");
+        assert_eq!(state["endpointUrl"], "http://127.0.0.1:3773");
+        assert_eq!(state["advertisedHost"], "127.0.0.1");
+        assert_eq!(state["tailscaleServeEnabled"], false);
+        assert_eq!(state["tailscaleServePort"], 443);
+    }
+
+    #[test]
+    fn advertised_endpoints_begin_with_the_loopback_endpoint() {
+        let settings = DesktopSettings::default();
+        let running = RunningServer {
+            origin: "http://127.0.0.1:3773".to_string(),
+            port: 3773,
+            pid: 42,
+            attached: false,
+        };
+        let endpoints = advertised_endpoints(&settings, Some(&running));
+        let first = &endpoints[0];
+        assert_eq!(first["id"], "desktop-loopback:3773");
+        assert_eq!(first["reachability"], "loopback");
+        assert_eq!(first["status"], "available");
+        assert_eq!(first["isDefault"], true);
+        assert_eq!(first["wsBaseUrl"], "ws://127.0.0.1:3773");
+        assert_eq!(advertised_endpoints(&settings, None), serde_json::json!([]));
+    }
+
+    #[test]
+    fn tailscale_status_reads_dns_name_and_tailnet_addresses() {
+        let status = parse_tailscale_status(
+            r#"{"Self":{"DNSName":"desktop.tail.ts.net.","TailscaleIPs":["100.100.100.100","fd7a::1","192.168.1.20"]}}"#,
+        )
+        .expect("valid status");
+        assert_eq!(
+            status.magic_dns_name.as_deref(),
+            Some("desktop.tail.ts.net")
+        );
+        assert_eq!(status.ipv4, ["100.100.100.100"]);
+        assert!(parse_tailscale_status("not json").is_none());
     }
 
     #[test]

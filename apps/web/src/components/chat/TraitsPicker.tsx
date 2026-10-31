@@ -25,7 +25,7 @@ import {
   isClaudeUltrathinkPrompt,
   normalizeModelSlug,
 } from "@t3tools/shared/model";
-import { createContext, memo, type ReactNode, useContext, useRef } from "react";
+import { memo, type ReactNode, useRef } from "react";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import {
   BrainIcon,
@@ -57,12 +57,6 @@ import { useComposerMenuState } from "./useComposerMenuState";
 import { EffortGlyph, resolveEffortGlyph } from "./EffortGlyph";
 
 type ProviderOptions = ReadonlyArray<ProviderOptionSelection>;
-
-/**
- * The composer owns the keybinding atom; reading it here would pull the server state module into
- * the composer draft store's import cycle. Callers that render the composer provide it instead.
- */
-export const TraitsKeybindingsContext = createContext<ResolvedKeybindingsConfig | null>(null);
 
 /**
  * All the picker reads from the prompt while rendering. Passing this instead of
@@ -336,6 +330,7 @@ interface TraitsMenuContentProps {
   planModeEnabled: boolean;
   triggerClassName?: string;
   isComposerOwned?: boolean;
+  keybindings?: ResolvedKeybindingsConfig;
   /** Composer chips name the effort level unless the user picked bars. */
   effortDisplay?: EffortDisplay;
   /** Extra section shown below the traits in the picker popup (Permissions). */
@@ -433,13 +428,13 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
   allowPromptInjectedEffort = true,
   planModeEnabled,
   isComposerOwned,
+  keybindings,
   size = "sm",
   ...persistence
 }: TraitsMenuContentProps & TraitsPersistence) {
   const modelSelection =
     instanceId && model ? { instanceId, model, options: modelOptions ?? [] } : null;
   const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);
-  const keybindings = useContext(TraitsKeybindingsContext);
   const updateModelOptions = (nextOptions: ProviderOptions | undefined) => {
     if ("onModelOptionsChange" in persistence) {
       persistence.onModelOptionsChange(nextOptions);
@@ -528,9 +523,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
       descriptor.id !== effortDescriptor?.id && descriptor.id !== contextWindowDescriptor?.id,
   );
   const effortShortcut =
-    isComposerOwned && keybindings !== null
-      ? shortcutLabelForCommand(keybindings, "composer.effort")
-      : null;
+    isComposerOwned && keybindings ? shortcutLabelForCommand(keybindings, "composer.effort") : null;
   if (!hasAnyControls) {
     return null;
   }
@@ -749,6 +742,7 @@ export const TraitsPicker = memo(function TraitsPicker({
   triggerClassName,
   split,
   isComposerOwned,
+  keybindings,
   effortDisplay = "label",
   extraMenuContent,
   extraMenuOwnsModeShortcut,
@@ -768,11 +762,8 @@ export const TraitsPicker = memo(function TraitsPicker({
   const composerFloatingLayerProps = useComposerMenuProps();
   const [isMenuOpen, setIsMenuOpen] = useComposerMenuState(hidden || disabled);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const keybindings = useContext(TraitsKeybindingsContext);
   const permissionsShortcut =
-    isComposerOwned && keybindings !== null
-      ? shortcutLabelForCommand(keybindings, "composer.mode")
-      : null;
+    isComposerOwned && keybindings ? shortcutLabelForCommand(keybindings, "composer.mode") : null;
   const { descriptors, primarySelectDescriptor, ultrathinkPromptControlled } =
     getTraitsSectionVisibility({
       provider,
@@ -952,6 +943,7 @@ export const TraitsPicker = memo(function TraitsPicker({
           reportedModelSelection={reportedModelSelection}
           allowPromptInjectedEffort={allowPromptInjectedEffort}
           planModeEnabled={planModeEnabled}
+          {...(keybindings ? { keybindings } : {})}
           size={size}
           {...persistence}
         />

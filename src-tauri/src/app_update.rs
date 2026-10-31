@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 // The ManageLiveSessions payload only reaches this module on Windows, where the
@@ -14,6 +14,8 @@ use houston_protocol as proto;
 use tauri::utils::config::BundleType;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_updater::UpdaterExt;
+
+use serde_json::{json, Value};
 
 use crate::daemon_host;
 
@@ -144,7 +146,7 @@ fn windows_live_sessions_refusal(channel: &str, live: &proto::ManageLiveSessions
 /// The channel the active state dir belongs to, for messages: an absent suffix
 /// is the release channel, anything else names itself.
 fn active_channel_label(state_dir: &Path) -> String {
-    match houston_core::paths::channel_of_state_dir(state_dir) {
+    match crate::sys::paths::channel_of_state_dir(state_dir) {
         Some(channel) => channel,
         None => "release".to_string(),
     }
@@ -237,14 +239,14 @@ fn linux_relaunch_refusal(bundle: &BundleType, has_appimage_path: bool) -> Optio
 /// Stable installs only a strictly newer version; an equal or older manifest is
 /// not an update.
 fn offers_update(running: &str, manifest: &str) -> bool {
-    houston_core::updates::is_newer(manifest, running)
+    crate::sys::updates::is_newer(manifest, running)
 }
 
 /// The manifest must still publish the exact release the operator was shown.
 /// A feed that moved under the panel refuses by name instead of riding
 /// `compare_versions`' unparseable-reads-as-Equal rule.
 fn expected_version_matches(manifest: &str, expected: &str) -> bool {
-    !expected.trim().is_empty() && houston_core::updates::same_release(manifest, expected)
+    !expected.trim().is_empty() && crate::sys::updates::same_release(manifest, expected)
 }
 
 fn updater_error(
@@ -487,9 +489,487 @@ pub async fn app_update_install(
     })
 }
 
+/// Emitted after every v2 update state transition, for `desktopBridge.onUpdateState`.
+pub const V2_UPDATE_EVENT: &str = "v2-update://state";
+const V2_UPDATE_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct V2ReleaseNote {
+    pub version: String,
+    pub items: Vec<String>,
+    pub total_items: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct V2UpdateState {
+    pub enabled: bool,
+    pub status: String,
+    pub channel: String,
+    pub current_version: String,
+    pub host_arch: String,
+    pub app_arch: String,
+    pub running_under_arm64_translation: bool,
+    pub available_version: Option<String>,
+    pub downloaded_version: Option<String>,
+    pub release_notes: Vec<V2ReleaseNote>,
+    pub omitted_release_count: usize,
+    pub download_percent: Option<u64>,
+    pub checked_at: Option<String>,
+    pub message: Option<String>,
+    pub error_context: Option<String>,
+    pub can_retry: bool,
+}
+
+fn runtime_arch() -> String {
+    match std::env::consts::ARCH {
+        "x86_64" => "x64",
+        "aarch64" => "arm64",
+        _ => "other",
+    }
+    .to_string()
+}
+
+fn initial_v2_update_state() -> V2UpdateState {
+    let enabled = !cfg!(debug_assertions);
+    V2UpdateState {
+        enabled,
+        status: if enabled { "idle" } else { "disabled" }.to_string(),
+        channel: "latest".to_string(),
+        current_version: env!("CARGO_PKG_VERSION").to_string(),
+        host_arch: runtime_arch(),
+        app_arch: runtime_arch(),
+        running_under_arm64_translation: false,
+        available_version: None,
+        downloaded_version: None,
+        release_notes: Vec::new(),
+        omitted_release_count: 0,
+        download_percent: None,
+        checked_at: None,
+        message: (!enabled).then(|| "Updates are disabled in a development build.".to_string()),
+        error_context: None,
+        can_retry: false,
+    }
+}
+
+struct V2UpdateInner {
+    state: V2UpdateState,
+    candidate: Option<tauri_plugin_updater::Update>,
+    downloaded: Option<(tauri_plugin_updater::Update, Vec<u8>)>,
+}
+
+pub struct V2UpdateHandle(Mutex<V2UpdateInner>);
+
+impl Default for V2UpdateHandle {
+    fn default() -> Self {
+        Self(Mutex::new(V2UpdateInner {
+            state: initial_v2_update_state(),
+            candidate: None,
+            downloaded: None,
+        }))
+    }
+}
+
+impl V2UpdateHandle {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn snapshot(&self) -> V2UpdateState {
+        self.0
+            .lock()
+            .map(|inner| inner.state.clone())
+            .unwrap_or_else(|_| initial_v2_update_state())
+    }
+
+    fn update<F: FnOnce(&mut V2UpdateInner)>(&self, change: F) -> V2UpdateState {
+        self.0
+            .lock()
+            .map(|mut inner| {
+                change(&mut inner);
+                inner.state.clone()
+            })
+            .unwrap_or_else(|_| initial_v2_update_state())
+    }
+}
+
+fn v2_emit_state(app: &AppHandle, state: &V2UpdateState) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    if let Err(error) = window.emit(V2_UPDATE_EVENT, state) {
+        eprintln!("v2 update: could not emit {V2_UPDATE_EVENT}: {error}");
+    }
+}
+
+fn release_notes(update: &tauri_plugin_updater::Update) -> Vec<V2ReleaseNote> {
+    let items: Vec<String> = update
+        .body
+        .as_deref()
+        .unwrap_or("")
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect();
+    if items.is_empty() {
+        return Vec::new();
+    }
+    let total_items = items.len();
+    vec![V2ReleaseNote {
+        version: update.version.clone(),
+        items,
+        total_items,
+    }]
+}
+
+fn validate_update_channel(channel: &str) -> Result<(), String> {
+    if channel != "latest" && channel != "nightly" {
+        return Err(format!(
+            "update channel must be \"latest\" or \"nightly\", got {channel:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn v2_updater(app: &AppHandle, channel: &str) -> Result<tauri_plugin_updater::Updater, String> {
+    validate_update_channel(channel)?;
+    let bundle = tauri::utils::platform::bundle_type().ok_or_else(|| {
+        "update checks need an installed bundle; this build carries no bundle type".to_string()
+    })?;
+    let target = updater_target(bundle, tauri_plugin_updater::target())?;
+    let endpoint = MANIFEST_URL;
+    let endpoint_url = endpoint
+        .parse()
+        .map_err(|e| format!("the update endpoint {endpoint:?} is not a URL: {e}"))?;
+    bounded_updater(app.updater_builder(), CHECK_TIMEOUT, NETWORK_IDLE_TIMEOUT)
+        .target(target)
+        .endpoints(vec![endpoint_url])
+        .map_err(|e| format!("update endpoint {endpoint:?} was refused: {e}"))?
+        .version_comparator(|running, manifest| {
+            offers_update(&running.to_string(), &manifest.version.to_string())
+        })
+        .build()
+        .map_err(|e| format!("could not build the updater: {e}"))
+}
+
+#[tauri::command]
+pub fn v2_update_state(state: State<'_, Arc<V2UpdateHandle>>) -> Value {
+    serde_json::to_value(state.snapshot()).expect("V2UpdateState serializes")
+}
+
+#[tauri::command]
+pub fn v2_update_set_channel(
+    channel: String,
+    _minimum_version: Option<String>,
+    app: AppHandle,
+    state: State<'_, Arc<V2UpdateHandle>>,
+) -> Result<Value, String> {
+    validate_update_channel(&channel)?;
+    let next = state.update(|inner| {
+        if inner.state.channel == channel {
+            return;
+        }
+        inner.state.channel = channel;
+        inner.state.available_version = None;
+        inner.state.downloaded_version = None;
+        inner.state.release_notes.clear();
+        inner.state.download_percent = None;
+        inner.state.error_context = None;
+        inner.state.can_retry = false;
+        inner.state.message = None;
+        inner.state.status = if inner.state.enabled {
+            "idle"
+        } else {
+            "disabled"
+        }
+        .to_string();
+        inner.candidate = None;
+        inner.downloaded = None;
+    });
+    v2_emit_state(&app, &next);
+    Ok(serde_json::to_value(next).expect("V2UpdateState serializes"))
+}
+
+#[tauri::command]
+pub async fn v2_update_check(
+    app: AppHandle,
+    state: State<'_, Arc<V2UpdateHandle>>,
+) -> Result<Value, String> {
+    let enabled = state.snapshot().enabled;
+    if !enabled {
+        let snapshot = state.snapshot();
+        return Ok(json!({ "checked": false, "state": snapshot }));
+    }
+    let channel = state.snapshot().channel;
+    let checking = state.update(|inner| {
+        inner.state.status = "checking".to_string();
+        inner.state.error_context = None;
+        inner.state.can_retry = false;
+        inner.state.message = None;
+        inner.state.download_percent = None;
+    });
+    v2_emit_state(&app, &checking);
+
+    let updater = match v2_updater(&app, &channel) {
+        Ok(updater) => updater,
+        Err(error) => {
+            let failed = state.update(|inner| {
+                inner.state.status = "error".to_string();
+                inner.state.message = Some(error);
+                inner.state.error_context = Some("check".to_string());
+                inner.state.can_retry = true;
+            });
+            v2_emit_state(&app, &failed);
+            return Ok(json!({ "checked": false, "state": failed }));
+        }
+    };
+
+    match updater.check().await {
+        Ok(Some(update)) => {
+            let next = state.update(|inner| {
+                inner.state.status = "available".to_string();
+                inner.state.available_version = Some(update.version.clone());
+                inner.state.downloaded_version = None;
+                inner.state.download_percent = None;
+                inner.state.release_notes = release_notes(&update);
+                inner.state.omitted_release_count = 0;
+                inner.state.message = Some(format!("Version {} is available.", update.version));
+                inner.state.error_context = None;
+                inner.state.can_retry = false;
+                inner.candidate = Some(update);
+                inner.downloaded = None;
+            });
+            v2_emit_state(&app, &next);
+            Ok(json!({ "checked": true, "state": next }))
+        }
+        Ok(None) => {
+            let next = state.update(|inner| {
+                inner.state.status = "up-to-date".to_string();
+                inner.state.available_version = None;
+                inner.state.downloaded_version = None;
+                inner.state.release_notes.clear();
+                inner.state.omitted_release_count = 0;
+                inner.state.download_percent = None;
+                inner.state.message = Some("Houston is up to date.".to_string());
+                inner.state.error_context = None;
+                inner.state.can_retry = false;
+                inner.candidate = None;
+                inner.downloaded = None;
+            });
+            v2_emit_state(&app, &next);
+            Ok(json!({ "checked": true, "state": next }))
+        }
+        Err(error) => {
+            let message = updater_error("checking", MANIFEST_URL, &runtime_arch(), error);
+            let failed = state.update(|inner| {
+                inner.state.status = "error".to_string();
+                inner.state.message = Some(message);
+                inner.state.error_context = Some("check".to_string());
+                inner.state.can_retry = true;
+            });
+            v2_emit_state(&app, &failed);
+            Ok(json!({ "checked": false, "state": failed }))
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn v2_update_download(
+    app: AppHandle,
+    state: State<'_, Arc<V2UpdateHandle>>,
+) -> Result<Value, String> {
+    let (candidate, version) = {
+        let inner = state
+            .0
+            .lock()
+            .map_err(|_| "update state lock poisoned".to_string())?;
+        let version = inner.state.available_version.clone().ok_or_else(|| {
+            "there is no checked update to download; check again first".to_string()
+        })?;
+        let candidate = inner.candidate.clone().ok_or_else(|| {
+            "there is no checked update to download; check again first".to_string()
+        })?;
+        (candidate, version)
+    };
+
+    let downloading = state.update(|inner| {
+        inner.state.status = "downloading".to_string();
+        inner.state.download_percent = Some(0);
+        inner.state.message = Some(format!("Downloading {version}…"));
+        inner.state.error_context = None;
+        inner.state.can_retry = false;
+    });
+    v2_emit_state(&app, &downloading);
+
+    let downloaded = Arc::new(AtomicU64::new(0));
+    let last_percent = Arc::new(AtomicU64::new(u64::MAX));
+    let progress = Arc::clone(&downloaded);
+    let progress_percent = Arc::clone(&last_percent);
+    let progress_app = app.clone();
+    let progress_state = Arc::clone(&state);
+    let update = bounded_download(candidate.clone(), V2_UPDATE_DOWNLOAD_TIMEOUT);
+    let bytes = match update
+        .download(
+            move |chunk_len, content_len| {
+                let done = progress.fetch_add(chunk_len as u64, AtomicOrdering::Relaxed)
+                    + chunk_len as u64;
+                let Some(total) = content_len.filter(|total| *total > 0) else {
+                    return;
+                };
+                let percent = done.saturating_mul(100) / total;
+                if progress_percent.swap(percent, AtomicOrdering::Relaxed) == percent {
+                    return;
+                }
+                let next = progress_state.update(|inner| {
+                    inner.state.download_percent = Some(percent);
+                });
+                v2_emit_state(&progress_app, &next);
+            },
+            || {},
+        )
+        .await
+    {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let message = updater_error("downloading", MANIFEST_URL, &runtime_arch(), error);
+            let failed = state.update(|inner| {
+                inner.state.status = "error".to_string();
+                inner.state.download_percent = None;
+                inner.state.message = Some(message);
+                inner.state.error_context = Some("download".to_string());
+                inner.state.can_retry = true;
+            });
+            v2_emit_state(&app, &failed);
+            return Ok(json!({ "accepted": true, "completed": false, "state": failed }));
+        }
+    };
+
+    let next = state.update(|inner| {
+        inner.state.status = "downloaded".to_string();
+        inner.state.downloaded_version = Some(version);
+        inner.state.download_percent = Some(100);
+        inner.state.message = Some("Update downloaded. Install it to restart Houston.".to_string());
+        inner.state.error_context = None;
+        inner.state.can_retry = false;
+        inner.downloaded = Some((candidate, bytes));
+    });
+    v2_emit_state(&app, &next);
+    Ok(json!({ "accepted": true, "completed": true, "state": next }))
+}
+
+#[tauri::command]
+pub async fn v2_update_install(
+    app: AppHandle,
+    expected_version: Option<String>,
+    state: State<'_, Arc<V2UpdateHandle>>,
+) -> Result<Value, String> {
+    let (update, bytes, downloaded_version) = {
+        let mut inner = state
+            .0
+            .lock()
+            .map_err(|_| "update state lock poisoned".to_string())?;
+        let Some((update, bytes)) = inner.downloaded.take() else {
+            return Err("there is no downloaded update to install; download it first".to_string());
+        };
+        let version = inner
+            .state
+            .downloaded_version
+            .clone()
+            .unwrap_or_else(|| update.version.clone());
+        (update, bytes, version)
+    };
+    if let Some(expected) = expected_version.as_deref() {
+        if expected != downloaded_version {
+            return Err(format!(
+                "refusing to install: the panel asked for {expected:?} but {downloaded_version:?} \
+                 was downloaded; check for updates again"
+            ));
+        }
+    }
+
+    let installing = state.update(|inner| {
+        inner.state.message = Some(format!("Installing {downloaded_version}…"));
+        inner.state.error_context = None;
+        inner.state.can_retry = false;
+    });
+    v2_emit_state(&app, &installing);
+
+    if let Err(error) = update.install(bytes) {
+        let message = updater_error("installing", MANIFEST_URL, &runtime_arch(), error);
+        let failed = state.update(|inner| {
+            inner.state.status = "error".to_string();
+            inner.state.message = Some(message);
+            inner.state.error_context = Some("install".to_string());
+            inner.state.can_retry = true;
+        });
+        v2_emit_state(&app, &failed);
+        return Ok(json!({ "accepted": true, "completed": false, "state": failed }));
+    }
+
+    let complete = state.update(|inner| {
+        inner.state.status = "downloaded".to_string();
+        inner.state.downloaded_version = Some(update.version.clone());
+        inner.state.message = Some("Update installed. Houston is restarting.".to_string());
+    });
+    v2_emit_state(&app, &complete);
+
+    #[cfg(target_os = "linux")]
+    {
+        eprintln!(
+            "v2 update: Houston {} installed; relaunching the updated app",
+            update.version
+        );
+        app.restart();
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    Ok(json!({ "accepted": true, "completed": true, "state": complete }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_v2_update_state_starts_idle_with_the_package_version() {
+        let state = initial_v2_update_state();
+        assert_eq!(state.current_version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(state.channel, "latest");
+        assert_eq!(state.host_arch, state.app_arch);
+        assert_eq!(
+            state.status,
+            if cfg!(debug_assertions) {
+                "disabled"
+            } else {
+                "idle"
+            }
+        );
+        assert_eq!(state.enabled, !cfg!(debug_assertions));
+        assert_eq!(state.download_percent, None);
+    }
+
+    #[test]
+    fn v2_update_channel_validation_names_the_bad_value() {
+        assert!(validate_update_channel("latest").is_ok());
+        assert!(validate_update_channel("nightly").is_ok());
+        let error = validate_update_channel("stable").unwrap_err();
+        assert!(error.contains("stable"), "{error}");
+    }
+
+    #[test]
+    fn v2_release_notes_serialize_as_the_contract_shape() {
+        let note = V2ReleaseNote {
+            version: "0.20.0".into(),
+            items: vec!["one".into(), "two".into()],
+            total_items: 2,
+        };
+        let value = serde_json::to_value(note).unwrap();
+        assert_eq!(value["version"], "0.20.0");
+        assert_eq!(value["totalItems"], 2);
+        assert_eq!(value["items"], serde_json::json!(["one", "two"]));
+    }
 
     #[tokio::test]
     async fn stalled_update_requests_release_the_flight_for_retry() {

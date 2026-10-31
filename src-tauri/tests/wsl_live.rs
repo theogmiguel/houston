@@ -6,6 +6,10 @@
 
 #[path = "../src/wsl/command.rs"]
 mod command;
+// command.rs reaches `crate::sys::spawn`; in this test crate that is core's copy.
+mod sys {
+    pub use houston_core::spawn;
+}
 #[path = "../src/wsl/distros.rs"]
 mod distros;
 #[path = "../src/wsl/relay.rs"]
