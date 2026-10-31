@@ -82,17 +82,12 @@ import { SidebarInset } from "../ui/sidebar";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { UsageLimitsSection } from "./UsageLimits";
+import { UsagePlanLimits } from "./UsagePlanLimits";
 import { UsagePriceOverrides } from "./UsagePriceOverrides";
 import { UsageProviderChart } from "./UsageProviderChart";
-import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
+import { UsageModelDialog } from "./UsageModelDialog";
 import { UsageShareBar } from "./UsageShareBar";
-import {
-  costTypeSegments,
-  modelShare,
-  sortModelsByTokens,
-  speedCostSegments,
-  tokenTypeSegments,
-} from "./usageBreakdown";
+import { costTypeBoardSegments, modelShare, sortModelsByTokens, tokenTypeSegments } from "./usageBreakdown";
 import {
   METRIC_OPTIONS,
   WINDOW_OPTIONS,
@@ -503,6 +498,7 @@ export function UsagePage() {
                 void refreshLimits(false, true);
               }}
               onSelectModel={selectUsageModel}
+              now={limitsNow}
             />
           )}
         </WorkspacePageContainer>
@@ -537,6 +533,10 @@ export function UsagePage() {
   );
 }
 
+type AgentSummaryRow =
+  | { readonly kind: "usage"; readonly provider: UsageProviderKind }
+  | { readonly kind: "enable"; readonly environment: EnvironmentUsageStatus };
+
 function UsageOverview({
   merged,
   shownWindow,
@@ -552,6 +552,7 @@ function UsageOverview({
   showChatGptSharing,
   onCursorEnabled,
   onSelectModel,
+  now,
 }: {
   readonly merged: MergedUsage;
   readonly shownWindow: UsageSummaryInput;
@@ -567,6 +568,7 @@ function UsageOverview({
   readonly showChatGptSharing: boolean;
   readonly onCursorEnabled: () => void;
   readonly onSelectModel: (key: string) => void;
+  readonly now: number;
 }) {
   const [breakdown, setBreakdown] = useState<"model" | "time">("model");
   const shownHourly = shownWindow.resolution === "hour";
@@ -610,18 +612,11 @@ function UsageOverview({
     breakdown === "model" && metric === "tokens"
       ? sortModelsByTokens(merged.models)
       : merged.models;
-  const breakdownPeak = breakdownModels.reduce(
-    (peak, model) => Math.max(peak, metric === "tokens" ? model.totalTokens : model.costUsd),
-    0,
-  );
   const cursorInsertAt =
     Math.max(activeProviders.indexOf("codex"), activeProviders.indexOf("claude")) + 1;
   const cacheReadShare = merged.totalTokens > 0 ? merged.cachedInputTokens / merged.totalTokens : 0;
   const averageCostPerDay = merged.costUsd / Math.max(days.length, 1);
-  const summaryRows: ReadonlyArray<
-    | { readonly kind: "usage"; readonly provider: UsageProviderKind }
-    | { readonly kind: "enable"; readonly environment: EnvironmentUsageStatus }
-  > = [
+  const summaryRows: ReadonlyArray<AgentSummaryRow> = [
     ...activeProviders
       .slice(0, cursorInsertAt)
       .map((provider) => ({ kind: "usage" as const, provider })),
@@ -665,195 +660,73 @@ function UsageOverview({
         />
       </section>
 
-      <section className="flex flex-col gap-3">
-        <div className="flex min-w-0 flex-col gap-5 rounded-lg border border-border bg-card p-4">
-          <h2 className="text-headline font-semibold text-foreground">By agent</h2>
-          <div className="flex flex-col gap-1">
-            <span
-              className={cn(
-                "text-4xl font-semibold text-foreground tabular-nums",
-                figureClass(loadingPartial),
-              )}
-            >
-              {metric === "cost" ? formatUsd(merged.costUsd) : formatTokens(merged.totalTokens)}
-            </span>
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-              <span>
-                <span className={figureClass(loadingPartial)}>
-                  {formatCount(merged.sessions)} sessions
-                </span>
-                {metric === "cost" && " · API estimate"}
-              </span>
-              {metric === "cost" && merged.costQuality.unpricedShare > 0 && (
-                <Popover>
-                  <PopoverTrigger
-                    openOnHover
-                    render={<InlineButton tone="muted" />}
-                    aria-label="Unpriced usage details"
-                  >
-                    <InfoIcon className="size-3" aria-hidden />
-                  </PopoverTrigger>
-                  <PopoverPopup side="top" tooltipStyle>
-                    API estimate excludes {formatPercent(merged.costQuality.unpricedShare)} unpriced
-                    records.
-                  </PopoverPopup>
-                </Popover>
-              )}
-            </span>
-          </div>
-
-          {showChatGptSharing ? (
-            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span>ChatGPT shared usage</span>
-              <ChatGptUsageButton size="xs" />
-            </div>
-          ) : null}
-
-          {summaryRows.map((row) => {
-            if (row.kind === "enable") {
-              return (
-                <CursorEnableRow
-                  key={`enable:${row.environment.environmentId}`}
-                  environmentId={row.environment.environmentId}
-                  label={row.environment.label}
-                  showEnvironment={selectedEnvironments.length > 1}
-                  onEnabled={onCursorEnabled}
-                />
-              );
-            }
-            const provider = row.provider;
-            const totals = merged.providers.find((entry) => entry.provider === provider);
-            const share = metric === "cost" ? (totals?.costShare ?? 0) : (totals?.tokenShare ?? 0);
-            const providerSessions = totals?.sessions ?? 0;
-            const sessionLabel = `${formatCount(providerSessions)} ${
-              providerSessions === 1 ? "session" : "sessions"
-            }`;
-            const providerLoading = loadingProviders.has(provider);
-            const awaitingData = providerLoading && !providersWithData.has(provider);
-            return (
-              <div key={provider} className="flex flex-col gap-1">
-                <div className="flex items-baseline justify-between gap-4">
-                  <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
-                    <span
-                      aria-hidden
-                      className="size-2 shrink-0 rounded-full"
-                      style={{
-                        backgroundColor: PROVIDER_PRESENTATION[provider].color,
-                      }}
-                    />
-                    <ProviderMark provider={provider} className="size-4" />
-                    <span className="flex min-w-0 items-baseline gap-1.5">
-                      <span className="shrink-0">{PROVIDER_PRESENTATION[provider].label}</span>
-                      <span
-                        className={cn(
-                          "min-w-0 truncate whitespace-nowrap text-2xs text-muted-foreground tabular-nums",
-                          figureClass(providerLoading),
-                          awaitingData && "invisible",
-                        )}
-                      >
-                        {sessionLabel}
-                      </span>
-                    </span>
-                  </span>
-                  <span
-                    className={cn(
-                      "shrink-0 text-sm font-medium text-foreground tabular-nums",
-                      figureClass(providerLoading),
-                    )}
-                  >
-                    {awaitingData
-                      ? "-"
-                      : metric === "cost"
-                        ? formatUsd(totals?.costUsd ?? 0)
-                        : formatTokens(totals?.totalTokens ?? 0)}
-                  </span>
-                </div>
+      <section className="flex min-w-0 flex-col gap-4 rounded-[10px] border border-border bg-card p-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-[13px] leading-[18px] font-semibold text-[var(--t1)]">
+            {metric === "tokens" ? "Tokens per" : "Cost per"} {shownHourly ? "hour" : "day"}
+          </h2>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--t3)]">
+            {activeProviders.map((provider) => (
+              <span key={provider} className="inline-flex items-center gap-1.5">
                 <span
-                  className={cn(
-                    "text-xs text-muted-foreground",
-                    figureClass(providerLoading),
-                    awaitingData && "invisible",
-                  )}
-                >
-                  {metric === "cost"
-                    ? `${formatPercent(share)} of cost · ${formatTokens(totals?.totalTokens ?? 0)} tokens`
-                    : `${formatPercent(share)} of tokens · ${formatUsd(totals?.costUsd ?? 0)}`}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="order-first flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card p-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-headline font-semibold text-foreground">
-              {metric === "tokens" ? "Tokens per" : "Cost per"} {shownHourly ? "hour" : "day"}
-            </h2>
-            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-              {activeProviders.map((provider) => (
-                <span key={provider} className="inline-flex items-center gap-1.5">
-                  <span
-                    aria-hidden
-                    className="size-2 rounded-full"
-                    style={{ backgroundColor: PROVIDER_PRESENTATION[provider].color }}
-                  />
-                  {PROVIDER_PRESENTATION[provider].label}
-                </span>
-              ))}
-            </div>
+                  aria-hidden
+                  className="size-2 rounded-full"
+                  style={{ backgroundColor: PROVIDER_PRESENTATION[provider].color }}
+                />
+                {PROVIDER_PRESENTATION[provider].label}
+              </span>
+            ))}
           </div>
-          <UsageProviderChart
-            providers={activeProviders}
-            loadingProviders={chartLoadingProviders}
-            days={days}
-            daily={merged.daily}
-            hours={hours}
-            hourly={merged.hourly}
-            metric={metric}
-            referenceTime={shownWindow.untilTime}
-            resolution={shownHourly ? "hour" : "day"}
-            timeZone={shownWindow.timeZone}
-            hour12={hour12}
-          />
         </div>
+        <UsageProviderChart
+          providers={activeProviders}
+          loadingProviders={chartLoadingProviders}
+          days={days}
+          daily={merged.daily}
+          hours={hours}
+          hourly={merged.hourly}
+          metric={metric}
+          referenceTime={shownWindow.untilTime}
+          resolution={shownHourly ? "hour" : "day"}
+          timeZone={shownWindow.timeZone}
+          hour12={hour12}
+        />
       </section>
 
-      {merged.totalTokens > 0 ? (
-        <section
-          className={cn(
-            "grid gap-x-12 gap-y-8 rounded-lg border border-border bg-card p-4 lg:grid-cols-2",
-            figureClass(loadingPartial),
-          )}
-        >
-          {metric === "tokens" ? (
+      <div className="grid gap-3 lg:grid-cols-2 lg:items-start">
+        <ByAgentCard
+          mode={metric === "tokens" ? "tokens" : "cost"}
+          merged={merged}
+          loadingPartial={loadingPartial}
+          loadingProviders={loadingProviders}
+          providersWithData={providersWithData}
+          rows={summaryRows}
+          selectedEnvironments={selectedEnvironments}
+          showChatGptSharing={showChatGptSharing}
+          onCursorEnabled={onCursorEnabled}
+        />
+        {metric === "tokens" ? (
+          <section className="flex min-w-0 flex-col gap-3 rounded-[10px] border border-border bg-card p-5">
             <UsageShareBar
               label="Tokens by type"
               segments={tokenTypeSegments(merged)}
               format={formatTokens}
             />
-          ) : (
-            <>
-              <UsageShareBar
-                label="Cost by type"
-                segments={costTypeSegments(merged.categoryCost)}
-                format={formatUsd}
-              />
-              {merged.speedCost.fast + merged.speedCost.ultrafast > 0 ? (
-                <UsageShareBar
-                  label="Cost by speed"
-                  segments={speedCostSegments(merged.speedCost)}
-                  format={formatUsd}
-                  aside={<SpeedPremium premiumUsd={merged.speedCost.premium} />}
-                />
-              ) : null}
-            </>
-          )}
-        </section>
-      ) : null}
+          </section>
+        ) : merged.totalTokens > 0 ? (
+          <WhereCostGoesCard merged={merged} />
+        ) : null}
+      </div>
 
-      <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+      <UsagePlanLimits
+        selectedEnvironmentIds={new Set(selectedEnvironments.map((environment) => environment.environmentId))}
+        hiddenProviders={hiddenProviders}
+        now={now}
+      />
+
+      <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="px-1 text-2xs font-semibold text-muted-foreground">Breakdown</h2>
+          <h2 className="text-[13px] leading-[18px] font-semibold text-[var(--t1)]">Breakdown</h2>
           <ToggleGroup
             aria-label="Usage breakdown"
             variant="segmented"
@@ -876,73 +749,74 @@ function UsageOverview({
           </ToggleGroup>
         </div>
 
+        <div className="overflow-hidden rounded-[10px] border border-border bg-card">
         {breakdown === "model" ? (
-          <table className="w-full text-sm">
+          <table className="w-full text-[13px]">
             <thead>
-              <tr className="border-b border-border text-right text-xs text-muted-foreground">
-                <th className="py-2 pr-3 text-left font-normal">#</th>
-                <th className="w-full py-2 text-left font-normal">Model</th>
-                <th className="py-2 pl-6 font-normal">Cost</th>
-                <th className="hidden py-2 pl-6 font-normal sm:table-cell">Share</th>
-                <th className="py-2 pl-6 font-normal">Tokens</th>
+              <tr className="h-8 text-right text-xs text-[var(--t3)]">
+                <th className="px-4 text-left font-medium">Model</th>
+                <th className="w-20 px-4 font-medium">Tokens</th>
+                <th className="w-[100px] px-4 font-medium">Cost</th>
+                <th className="w-40 px-4 font-medium">Share</th>
               </tr>
             </thead>
             <tbody>
               {breakdownModels.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-6 text-center text-muted-foreground">
+                  <td colSpan={4} className="py-6 text-center text-muted-foreground">
                     No activity in this window.
                   </td>
                 </tr>
               ) : (
-                breakdownModels.map((model, index) => {
+                breakdownModels.map((model) => {
                   const key = `${model.provider}:${model.model}`;
-                  const value = metric === "tokens" ? model.totalTokens : model.costUsd;
-                  const hasBar = value > 0 && breakdownPeak > 0;
                   const share = modelShare(model, metric === "tokens" ? "tokens" : "cost");
                   const rowFigures = figureClass(loadingProviders.has(model.provider));
                   return (
                     <tr
                       key={key}
-                      className="relative border-b border-border/50 text-right whitespace-nowrap text-muted-foreground tabular-nums transition-colors hover:bg-muted/50 has-focus-visible:bg-muted/50"
+                      className="h-[38px] border-t border-border text-right whitespace-nowrap tabular-nums transition-colors hover:bg-[var(--hover)]"
                     >
-                      <td className="py-2.5 pr-3 text-left text-xs">{index + 1}</td>
-                      <td className="py-2.5 text-left whitespace-normal">
+                      <td className="px-4 text-left whitespace-normal">
                         <button
                           type="button"
                           onClick={() => onSelectModel(key)}
-                          className={cn(
-                            "flex items-center gap-2 text-left text-foreground outline-none after:absolute after:inset-0",
-                            !hasBar && "py-1",
-                          )}
+                          className="inline-flex items-center gap-2.5 text-left text-[var(--t1)] outline-none after:absolute after:inset-0"
                         >
-                          <ProviderMark provider={model.provider} className="size-3.5" />
-                          {model.model}
+                          <span
+                            aria-hidden
+                            className="inline-grid size-5 shrink-0 place-items-center rounded-[5px] border border-border"
+                          >
+                            <ProviderMark provider={model.provider} className="size-3" />
+                          </span>
+                          <span className="font-mono">{model.model}</span>
                         </button>
-                        {hasBar ? (
-                          <div aria-hidden className={cn("mt-1.5 h-0.5 max-w-48", rowFigures)}>
-                            <div
-                              className="h-full rounded-full"
-                              style={{
-                                width: `max(0.5rem, ${(value / breakdownPeak) * 100}%)`,
-                                backgroundColor: PROVIDER_PRESENTATION[model.provider].color,
-                              }}
-                            />
-                          </div>
-                        ) : null}
                       </td>
-                      <td className={cn("py-2.5 pl-6 text-foreground", rowFigures)}>
+                      <td className={cn("px-4 text-[var(--t3)]", rowFigures)}>
+                        {formatTokens(model.totalTokens)}
+                      </td>
+                      <td className={cn("px-4 text-[var(--t1)]", rowFigures)}>
                         {isModelCostUnknown(model) ? (
-                          <span className="text-muted-foreground">Unpriced</span>
+                          <span className="text-[var(--t3)]">Unpriced</span>
                         ) : (
                           formatUsd(model.costUsd)
                         )}
                       </td>
-                      <td className={cn("hidden py-2.5 pl-6 sm:table-cell", rowFigures)}>
-                        {share === null ? "" : formatPercent(share)}
-                      </td>
-                      <td className={cn("py-2.5 pl-6", rowFigures)}>
-                        {formatTokens(model.totalTokens)}
+                      <td className="px-4">
+                        <span className="flex items-center gap-2">
+                          <span className="block h-1 flex-1 overflow-hidden rounded-full bg-border">
+                            <span
+                              className="block h-full rounded-full"
+                              style={{
+                                width: `${Math.min(100, Math.max(0, (share ?? 0) * 100))}%`,
+                                backgroundColor: PROVIDER_PRESENTATION[model.provider].color,
+                              }}
+                            />
+                          </span>
+                          <span className={cn("w-11 text-right text-xs text-[var(--t3)]", rowFigures)}>
+                            {share === null ? "" : formatPercent(share)}
+                          </span>
+                        </span>
                       </td>
                     </tr>
                   );
@@ -1028,8 +902,224 @@ function UsageOverview({
             </table>
           </div>
         )}
+        </div>
       </section>
+      <UsageSourceFootnote environments={selectedEnvironments} />
     </div>
+  );
+}
+
+function ByAgentCard({
+  mode,
+  merged,
+  loadingPartial,
+  loadingProviders,
+  providersWithData,
+  rows,
+  selectedEnvironments,
+  showChatGptSharing,
+  onCursorEnabled,
+}: {
+  readonly mode: "cost" | "tokens";
+  readonly merged: MergedUsage;
+  readonly loadingPartial: boolean;
+  readonly loadingProviders: ReadonlySet<UsageProviderKind>;
+  readonly providersWithData: ReadonlySet<UsageProviderKind>;
+  readonly rows: ReadonlyArray<AgentSummaryRow>;
+  readonly selectedEnvironments: readonly EnvironmentUsageStatus[];
+  readonly showChatGptSharing: boolean;
+  readonly onCursorEnabled: () => void;
+}) {
+  return (
+    <section className="rounded-[10px] border border-border bg-card">
+      <h2 className="px-4 pb-1 pt-3 text-[13px] leading-[18px] font-semibold text-[var(--t1)]">
+        By agent
+      </h2>
+      {rows.map((row) => {
+        if (row.kind === "enable") {
+          return (
+            <div key={`enable:${row.environment.environmentId}`} className="border-t border-border px-4 py-2.5">
+              <CursorEnableRow
+                environmentId={row.environment.environmentId}
+                label={row.environment.label}
+                showEnvironment={selectedEnvironments.length > 1}
+                onEnabled={onCursorEnabled}
+              />
+            </div>
+          );
+        }
+        const provider = row.provider;
+        const totals = merged.providers.find((entry) => entry.provider === provider);
+        const share = mode === "cost" ? (totals?.costShare ?? 0) : (totals?.tokenShare ?? 0);
+        const providerSessions = totals?.sessions ?? 0;
+        const providerLoading = loadingProviders.has(provider);
+        const awaitingData = providerLoading && !providersWithData.has(provider);
+        return (
+          <div key={provider} className="border-t border-border px-4 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <span
+                aria-hidden
+                className="inline-grid size-5 shrink-0 place-items-center rounded-[5px] border border-border"
+              >
+                <ProviderMark provider={provider} className="size-3" />
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-[13px] font-medium text-[var(--t1)]">
+                  {PROVIDER_PRESENTATION[provider].label}
+                </span>
+                <span
+                  className={cn(
+                    "text-xs text-[var(--t3)] tabular-nums",
+                    figureClass(providerLoading),
+                    awaitingData && "invisible",
+                  )}
+                >
+                  {awaitingData
+                    ? ""
+                    : `${formatCount(providerSessions)} sessions · ${formatTokens(totals?.totalTokens ?? 0)} tokens`}
+                </span>
+              </span>
+              <span className="flex shrink-0 flex-col items-end">
+                <span
+                  className={cn(
+                    "text-[13px] font-medium text-[var(--t1)] tabular-nums",
+                    figureClass(providerLoading),
+                  )}
+                >
+                  {awaitingData
+                    ? "-"
+                    : mode === "cost"
+                      ? formatUsd(totals?.costUsd ?? 0)
+                      : formatTokens(totals?.totalTokens ?? 0)}
+                </span>
+                <span
+                  className={cn(
+                    "text-xs text-[var(--t3)] tabular-nums",
+                    figureClass(providerLoading),
+                    awaitingData && "invisible",
+                  )}
+                >
+                  {awaitingData ? "" : formatPercent(share)}
+                </span>
+              </span>
+            </div>
+            <span
+              aria-hidden
+              className="mt-1.5 block h-1 w-full overflow-hidden rounded-full bg-border"
+            >
+              <span
+                className={cn("block h-full rounded-full", figureClass(providerLoading))}
+                style={{
+                  width: `${Math.min(100, Math.max(0, share * 100))}%`,
+                  backgroundColor: PROVIDER_PRESENTATION[provider].color,
+                }}
+              />
+            </span>
+          </div>
+        );
+      })}
+      {showChatGptSharing ? (
+        <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-2.5 text-xs text-[var(--t3)]">
+          <span>ChatGPT shared usage</span>
+          <ChatGptUsageButton size="xs" />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function WhereCostGoesCard({ merged }: { readonly merged: MergedUsage }) {
+  const segments = costTypeBoardSegments(merged.categoryCost).filter(
+    (segment) => segment.value > 0,
+  );
+  const segmentTotal = segments.reduce((total, segment) => total + segment.value, 0);
+  const total = merged.costUsd > 0 ? merged.costUsd : segmentTotal;
+  if (segments.length === 0 || total <= 0) return null;
+  const speedUpgrade = merged.speedCost.fast + merged.speedCost.ultrafast;
+  const cacheSavings = merged.costQuality.cacheSavingsUsd;
+  return (
+    <section className="grid gap-3 rounded-[10px] border border-border bg-card p-5">
+      <h2 className="text-[13px] leading-[18px] font-semibold text-[var(--t1)]">
+        Where the cost goes
+      </h2>
+      <span
+        className="flex h-2.5 gap-0.5 overflow-hidden rounded-[5px]"
+        aria-label={`Where the cost goes, total ${formatUsd(total)}`}
+      >
+        {segments.map((segment) => (
+          <i
+            key={segment.label}
+            aria-hidden
+            className="block"
+            style={{ width: `${(segment.value / total) * 100}%`, backgroundColor: segment.color }}
+          />
+        ))}
+      </span>
+      <div className="grid gap-1.5">
+        {segments.map((segment) => {
+          const share = Math.round((segment.value / total) * 100);
+          return (
+            <span key={segment.label} className="flex items-center gap-2 text-xs leading-4">
+              <i
+                aria-hidden
+                className="size-2 shrink-0 rounded-[2px]"
+                style={{ backgroundColor: segment.color }}
+              />
+              <span className="flex-1 text-[var(--t2)]">{segment.label}</span>
+              <span className="w-12 text-right text-[var(--t3)] tabular-nums">{share}%</span>
+              <span className="w-20 text-right text-[var(--t1)] tabular-nums">
+                {formatUsd(segment.value)}
+              </span>
+            </span>
+          );
+        })}
+      </div>
+      {speedUpgrade > 0 || cacheSavings > 0 ? (
+        <p className="border-t border-border pt-2 text-xs leading-4 text-[var(--t3)]">
+          {speedUpgrade > 0 ? `Fast mode added ${formatUsd(speedUpgrade)}.` : ""}
+          {speedUpgrade > 0 && cacheSavings > 0 ? " " : ""}
+          {cacheSavings > 0
+            ? `Caching saved ${formatUsd(cacheSavings)} against full input prices.`
+            : ""}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function UsageSourceFootnote({
+  environments,
+}: {
+  readonly environments: readonly EnvironmentUsageStatus[];
+}) {
+  const sources = new Map<string, { path: string; sessions: number }>();
+  for (const environment of environments) {
+    for (const source of environment.summary?.sources ?? []) {
+      if (
+        source.fingerprint.provider !== "claude" &&
+        source.fingerprint.provider !== "codex"
+      ) {
+        continue;
+      }
+      if (source.distinctSessions === 0) continue;
+      const path = source.fingerprint.resolvedHomePath;
+      const seen = sources.get(path);
+      sources.set(path, {
+        path,
+        sessions: Math.max(seen?.sessions ?? 0, source.distinctSessions),
+      });
+    }
+  }
+  if (sources.size === 0) return null;
+  return (
+    <p className="px-1 text-xs leading-4 text-[var(--t3)]">
+      Read from{" "}
+      {[...sources.values()]
+        .sort((left, right) => left.path.localeCompare(right.path))
+        .map((source) => `${source.path} (${formatCount(source.sessions)} sessions)`)
+        .join(" and ")}
+      . Costs are estimates at API list prices; a subscription is billed differently.
+    </p>
   );
 }
 

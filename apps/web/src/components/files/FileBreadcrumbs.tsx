@@ -239,11 +239,11 @@ function FolderContentsMenu(props: FileBreadcrumbsProps & { readonly crumb: File
           <button
             type="button"
             aria-label={`Browse ${props.crumb.label}`}
-            className="relative mx-0.5 flex h-5 w-4 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground/60 outline-none pointer-coarse:after:absolute pointer-coarse:after:-inset-3 hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:bg-accent data-popup-open:text-foreground"
+            className="relative mx-1 flex h-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-xs text-[var(--t3)] outline-none pointer-coarse:after:absolute pointer-coarse:after:-inset-3 hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:bg-accent data-popup-open:text-foreground"
           />
         }
       >
-        <ChevronRightIcon className="size-3.5" />
+        /
       </MenuTrigger>
       {open ? (
         <BreadcrumbMenuContent
@@ -329,10 +329,9 @@ export function FileBreadcrumbs(props: FileBreadcrumbsProps) {
                 />
               )}
               {index === breadcrumbs.length - 1 ? null : hostPath ? (
-                <ChevronRightIcon
-                  aria-hidden
-                  className="mx-1 size-3.5 shrink-0 text-muted-foreground/60"
-                />
+                <span aria-hidden className="mx-1 shrink-0 text-xs text-[var(--t3)]">
+                  /
+                </span>
               ) : (
                 <FolderContentsMenu {...props} crumb={crumb} />
               )}
