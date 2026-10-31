@@ -149,13 +149,16 @@ export const checkDestination = (input: {
   return null;
 };
 
+/** Windows device names: digits 0-9 and the superscripts 1-3 after COM and LPT. */
+const DEVICE_DIGITS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "¹", "²", "³"];
 const RESERVED = new Set([
   "con",
   "prn",
   "aux",
   "nul",
-  ...Array.from({ length: 9 }, (_, index) => `com${index + 1}`),
-  ...Array.from({ length: 9 }, (_, index) => `lpt${index + 1}`),
+  "conin$",
+  "conout$",
+  ...DEVICE_DIGITS.flatMap((digit) => [`com${digit}`, `lpt${digit}`]),
 ]);
 
 const FORBIDDEN = /[\u0000-\u001f\u007f\\:<>"|?*]/;
@@ -261,10 +264,10 @@ export const agentConfigPaths = (paths: ReadonlyArray<string>) =>
     );
   });
 
-/** `url` without a `user:password@` or `token@` part; scp-style and local remotes are kept. */
+/** `url` without its userinfo (up to the last `@` before the path, as git splits it). */
 export const stripRemoteCredentials = (url: string | null): string | null => {
   if (url === null) return null;
-  const match = /^([a-z][a-z0-9+.-]*:\/\/)([^/@]*@)?(.*)$/i.exec(url);
+  const match = /^([a-z][a-z0-9+.-]*:\/\/)([^/]*@)?(.*)$/i.exec(url);
   if (match === null) return url;
   return `${match[1]}${match[3]}`;
 };
@@ -275,7 +278,7 @@ const remoteKey = (url: string): string | null => {
     .trim()
     .replace(/\/+$/, "")
     .replace(/\.git$/i, "");
-  const withScheme = /^[a-z][a-z0-9+.-]*:\/\/(?:[^/@]*@)?([^/:]+)(?::\d+)?\/(.+)$/i.exec(trimmed);
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\/(?:[^/]*@)?([^/:]+)(?::\d+)?\/(.+)$/i.exec(trimmed);
   if (withScheme !== null && !/^file:/i.test(trimmed)) {
     return `${withScheme[1]}/${withScheme[2]}`.toLowerCase();
   }

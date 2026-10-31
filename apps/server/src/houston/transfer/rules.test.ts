@@ -180,6 +180,28 @@ describe("untracked names another computer cannot carry are listed", () => {
     }
   });
 
+  it("every Windows device name is refused", () => {
+    for (const name of [
+      "COM¹",
+      "com².txt",
+      "COM³",
+      "LPT¹",
+      "lpt²",
+      "LPT³.log",
+      "COM0",
+      "LPT0.txt",
+      "CONIN$",
+      "conout$.txt",
+      "threads/0/attachments/COM¹",
+    ]) {
+      expect(entryNameProblem(name), name).not.toBeNull();
+      expect(unportableNames([name, "src/lib.rs"]), name).toHaveLength(1);
+    }
+    for (const name of ["COM10", "LPT⁴", "console", "conin"]) {
+      expect(entryNameProblem(name), name).toBeNull();
+    }
+  });
+
   it("a refusal lists twenty items and counts the rest", () => {
     const items = Array.from({ length: 23 }, (_, index) => `item-${index}`);
     expect(itemsWithCount(items)).toEqual([...items.slice(0, 20), "and 3 more"]);
@@ -239,6 +261,21 @@ describe("remote credentials are stripped before they are recorded", () => {
     expect(stripRemoteCredentials("file:///srv/git/r.git")).toBe("file:///srv/git/r.git");
     expect(stripRemoteCredentials(null)).toBeNull();
     expect(stripRemoteCredentials("ssh://git:secret@host/o/r.git")).toBe("ssh://host/o/r.git");
+  });
+});
+
+describe("a password holding @ is stripped up to the host", () => {
+  it("a password holding @ is stripped up to the host", () => {
+    expect(stripRemoteCredentials("https://user:p@ss@github.com/o/r.git")).toBe(
+      "https://github.com/o/r.git",
+    );
+    expect(stripRemoteCredentials("https://a@b@c@gitlab.example.com:8443/o/r.git")).toBe(
+      "https://gitlab.example.com:8443/o/r.git",
+    );
+    expect(stripRemoteCredentials("https://github.com/o/r@v2.git")).toBe(
+      "https://github.com/o/r@v2.git",
+    );
+    expect(remotesMatch("https://user:p@ss@github.com/O/R.git", "git@github.com:o/r")).toBe(true);
   });
 });
 
