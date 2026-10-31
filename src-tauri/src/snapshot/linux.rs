@@ -181,14 +181,6 @@ impl CaptureFeedback for ExtensionFeedback {
         self.animation_started
     }
 
-    fn activate(&mut self, title: &str) -> Result<(), String> {
-        let proxy = Proxy::new(&self.connection, EXTENSION, EXTENSION_PATH, EXTENSION)
-            .map_err(|error| error.to_string())?;
-        proxy
-            .call::<_, _, ()>("Activate", &(title,))
-            .map_err(|error| error.to_string())
-    }
-
     fn animate_to(&mut self, frame: NormalizedFrame) -> Result<(), String> {
         let proxy = Proxy::new(&self.connection, EXTENSION, EXTENSION_PATH, EXTENSION)
             .map_err(|error| error.to_string())?;

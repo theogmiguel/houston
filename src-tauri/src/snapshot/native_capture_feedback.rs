@@ -104,10 +104,6 @@ impl CaptureFeedback for NativeCaptureFeedback {
         self.animation_started
     }
 
-    fn activate(&mut self, _title: &str) -> Result<(), String> {
-        Ok(())
-    }
-
     fn animate_to(&mut self, frame: NormalizedFrame) -> Result<(), String> {
         if self.flying || !self.animation_started {
             return Ok(());

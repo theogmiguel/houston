@@ -1,7 +1,6 @@
 //! Geometry helpers from upstream `SnapShotTransition.ts`. The Electron overlay
 //! windows themselves have no Tauri equivalent yet; the renderer keeps its own
 //! animation, so only the pure geometry is used here.
-#![allow(dead_code)]
 
 use super::platform::Bounds;
 

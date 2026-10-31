@@ -5,8 +5,6 @@
 mod platform;
 
 #[cfg(target_os = "linux")]
-mod accessibility;
-#[cfg(target_os = "linux")]
 mod capture_config_edit;
 #[cfg(target_os = "linux")]
 mod capture_config_kdl;
@@ -28,10 +26,8 @@ mod native_capture_feedback;
 mod niri_snapshot;
 #[cfg(target_os = "linux")]
 mod portal_capture_shortcut;
-#[cfg(target_os = "linux")]
+#[cfg(test)]
 mod snapshot_transition;
-#[cfg(not(target_os = "linux"))]
-mod unsupported;
 
 use std::fs;
 use std::io::Write;

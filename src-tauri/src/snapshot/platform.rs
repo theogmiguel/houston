@@ -10,9 +10,6 @@ use serde_json::Value;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SnapShotMode {
-    #[allow(dead_code)]
-    Direct,
-    #[allow(dead_code)]
     Portal,
     Unavailable,
 }
@@ -20,9 +17,6 @@ pub enum SnapShotMode {
 impl SnapShotMode {
     pub fn as_str(self) -> &'static str {
         match self {
-            #[allow(dead_code)]
-            Self::Direct => "direct",
-            #[allow(dead_code)]
             Self::Portal => "portal",
             Self::Unavailable => "unavailable",
         }
@@ -43,13 +37,6 @@ pub struct KeyChord {
     pub alt_key: bool,
     #[serde(default)]
     pub mod_key: bool,
-}
-
-impl KeyChord {
-    #[allow(dead_code)]
-    pub fn has_modifier(&self) -> bool {
-        self.meta_key || self.ctrl_key || self.shift_key || self.alt_key || self.mod_key
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,7 +68,6 @@ impl SnapShotShortcut {
         }
     }
 
-    #[allow(dead_code)]
     pub fn is_modifier_pair(&self) -> bool {
         self.modifier_pair().is_some()
     }
@@ -133,7 +119,6 @@ fn electron_key_name(key: &str) -> String {
     }
 }
 
-#[allow(dead_code)]
 pub fn bounded_snapshot_string(value: &str, max_chars: usize) -> Option<String> {
     let candidate = value.replace('\0', "");
     let candidate = candidate.trim();
@@ -143,7 +128,6 @@ pub fn bounded_snapshot_string(value: &str, max_chars: usize) -> Option<String> 
     Some(candidate.chars().take(max_chars).collect())
 }
 
-#[allow(dead_code)]
 pub fn same_shortcut(left: &SnapShotShortcut, right: &SnapShotShortcut) -> bool {
     if left.is_modifier_pair() || right.is_modifier_pair() {
         return left.modifier_pair() == right.modifier_pair();
@@ -151,45 +135,6 @@ pub fn same_shortcut(left: &SnapShotShortcut, right: &SnapShotShortcut) -> bool 
     left.accelerator() == right.accelerator()
 }
 
-#[allow(dead_code)]
-pub fn modifier_pair_label(modifier: &str, apple: bool) -> String {
-    let label = match (modifier, apple) {
-        ("shift", _) => "Shift",
-        ("meta", true) => "Command",
-        ("meta", false) => "Super",
-        ("control", true) => "Control",
-        ("control", false) => "Ctrl",
-        ("alt", true) => "Option",
-        ("alt", false) => "Alt",
-        (other, _) => other,
-    };
-    format!("{label} + {label}")
-}
-
-#[allow(dead_code)]
-pub fn registration_failure_message(shortcut: &SnapShotShortcut, apple: bool) -> String {
-    match shortcut.modifier_pair() {
-        Some(modifier) => format!(
-            "{} is not available on this system.",
-            modifier_pair_label(modifier, apple)
-        ),
-        None => "This shortcut is already used by the system or another app.".to_string(),
-    }
-}
-
-#[allow(dead_code)]
-pub fn observed_pair_message(shortcut: &SnapShotShortcut, apple: bool) -> Option<String> {
-    let modifier = shortcut.modifier_pair()?;
-    let label = modifier_pair_label(modifier, apple);
-    let base = format!("{label} is observed and cannot be reserved exclusively.");
-    Some(if modifier == "meta" && !apple {
-        format!("{base} This key can also open the system's own menu.")
-    } else {
-        base
-    })
-}
-
-#[allow(dead_code)]
 pub fn system_conflict(shortcut: &SnapShotShortcut) -> Option<String> {
     let SnapShotShortcut::Chord(chord) = shortcut else {
         return None;
@@ -246,7 +191,6 @@ pub fn system_conflict(shortcut: &SnapShotShortcut) -> Option<String> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum ConfigDesktop {
     Niri,
     Hyprland,
@@ -277,14 +221,12 @@ pub struct CaptureSupport {
 }
 
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 pub struct CaptureOptions {
     pub flash: bool,
     pub animate: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[allow(dead_code)]
 pub struct NormalizedFrame {
     pub x: f64,
     pub y: f64,
@@ -293,7 +235,6 @@ pub struct NormalizedFrame {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[allow(dead_code)]
 pub struct Bounds {
     pub x: i64,
     pub y: i64,
@@ -317,8 +258,6 @@ pub struct WindowMetadata {
 
 pub trait CaptureFeedback: Send {
     fn animation_started(&self) -> bool;
-    #[allow(dead_code)]
-    fn activate(&mut self, title: &str) -> Result<(), String>;
     fn animate_to(&mut self, frame: NormalizedFrame) -> Result<(), String>;
     fn complete(&mut self);
     fn close(&mut self);
@@ -331,7 +270,6 @@ pub struct CaptureOutput {
 }
 
 #[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
 pub struct PlatformPaths {
     pub home: PathBuf,
     pub state_dir: PathBuf,
@@ -388,12 +326,6 @@ pub trait SnapShotPlatform: Send + Sync {
     }
 }
 
-#[cfg(target_os = "linux")]
 pub fn new_platform() -> Box<dyn SnapShotPlatform> {
     Box::new(super::linux::LinuxPlatform::new())
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn new_platform() -> Box<dyn SnapShotPlatform> {
-    Box::new(super::unsupported::UnsupportedPlatform)
 }
