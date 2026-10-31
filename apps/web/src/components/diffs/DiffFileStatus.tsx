@@ -17,8 +17,9 @@ export function DiffFileStatus({
       <TooltipTrigger
         render={
           <Button
-            size="icon-micro"
+            size="icon"
             variant="ghost-muted"
+            className="[&_svg]:size-[15px]"
             aria-label={error ? "Retry loading diff" : "Partial diff preview"}
             onClick={(event) => {
               event.stopPropagation();

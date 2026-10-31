@@ -92,3 +92,8 @@
 2 core/houston-core/tests/it/ws_control_wire.rs
 2 core/houston-core/tests/it/zcode_hooks_wire.rs
 14 core/houston-core/tests/it/zcode_wire.rs
+2 src-tauri/src/sys/env_hygiene.rs
+4 src-tauri/src/sys/home_dir.rs
+3 src-tauri/src/sys/login_path.rs
+3 src-tauri/src/sys/paths.rs
+1 src-tauri/src/sys/pid.rs

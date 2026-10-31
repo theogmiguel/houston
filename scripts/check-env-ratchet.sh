@@ -2,7 +2,7 @@
 
 # Direct process-environment access only goes down; daemon code reads it through HostEnv.
 # Counts: scripts/env-ratchet.baseline. Sanctioned readers: host_env.rs, tests/common/mod.rs.
-# Grep, not only clippy: a blanket `allow(clippy::disallowed_methods)` hides new calls.
+# Covers core and src-tauri/src/sys; grep, not only clippy, since a blanket allow hides new calls.
 
 set -euo pipefail
 
@@ -13,9 +13,9 @@ baseline="scripts/env-ratchet.baseline"
 pattern='std::env::(var|var_os|vars|vars_os|set_var|remove_var)\b|dirs::home_dir\(|home_dir::home_dir\('
 
 counts() {
-  grep -rEc "$pattern" --include='*.rs' core/houston-core/src core/houston-core/tests \
+  grep -rEc "$pattern" --include='*.rs' core/houston-core/src core/houston-core/tests src-tauri/src/sys \
     | grep -v ':0$' \
-    | grep -v -e '^core/houston-core/src/host_env.rs:' -e '^core/houston-core/tests/common/mod.rs:' \
+    | grep -v -e '^core/houston-core/src/host_env.rs:' -e '^core/houston-core/tests/common/mod.rs:' -e '^src-tauri/src/sys/host_env.rs:' \
     | sed -E 's/^(.*):([0-9]+)$/\2 \1/' \
     | LC_ALL=C sort -k2
 }
@@ -39,7 +39,7 @@ while read -r n path; do
   was="$(awk -v p="$path" '$2 == p {print $1}' "$baseline")"
   if [ -z "$was" ]; then
     echo "FAIL: $path reads the process environment $n time(s) and is not in the baseline." >&2
-    echo "      Use HostEnv (core/houston-core/src/host_env.rs) instead." >&2
+    echo "      Use HostEnv (core/houston-core/src/host_env.rs or src-tauri/src/sys/host_env.rs) instead." >&2
     fail=1
   elif [ "$n" -gt "$was" ]; then
     echo "FAIL: $path: $n direct environment accesses, baseline $was." >&2

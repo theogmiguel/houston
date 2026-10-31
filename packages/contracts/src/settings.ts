@@ -448,8 +448,9 @@ export const ClientSettingsSchema = Schema.Struct({
   onboardingCompletedAt: Schema.NullOr(Schema.String).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  // The approved composer draws the context strip on every state, so it starts visible.
   persistComposerContextStrip: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.succeed(false)),
+    Schema.withDecodingDefault(Effect.succeed(true)),
   ),
 
   favorites: ModelFavorites.pipe(Schema.withDecodingDefault(Effect.succeed([]))),

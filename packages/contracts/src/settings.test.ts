@@ -484,3 +484,12 @@ describe("server model preferences", () => {
     expect(decodeServerSettingsPatch(input)).toEqual(input);
   });
 });
+
+describe("ClientSettings composer context strip", () => {
+  it("shows the strip in active threads unless the user turned it off", () => {
+    expect(decodeClientSettings({}).persistComposerContextStrip).toBe(true);
+    expect(
+      decodeClientSettings({ persistComposerContextStrip: false }).persistComposerContextStrip,
+    ).toBe(false);
+  });
+});

@@ -113,6 +113,22 @@ export interface NewTask {
 
 export const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 
+/** A history row a write recorded. */
+export interface TaskTransition {
+  readonly taskId: number;
+  readonly actor: string;
+  readonly action: string;
+  readonly changes: object;
+}
+
+/** Hears each write's history rows before the write commits, inside its transaction. */
+export class HoustonTaskTransitions extends Context.Service<
+  HoustonTaskTransitions,
+  {
+    readonly recorded: (transitions: ReadonlyArray<TaskTransition>) => Effect.Effect<void>;
+  }
+>()("houston/houston/tasks/TaskStore/HoustonTaskTransitions") {}
+
 /** The history action that records a head pushed to a run thread's pull request. */
 export const PUSHED_ACTION = "houston:pushed";
 
@@ -311,6 +327,9 @@ const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const lock = yield* Semaphore.make(1);
   const changes = yield* PubSub.unbounded<ReadonlyArray<number>>();
+  const transitions = yield* Effect.serviceOption(HoustonTaskTransitions);
+  // The history rows of the write in progress; writes run one at a time.
+  let recorded: Array<TaskTransition> = [];
 
   const taskById = (id: number) =>
     sql<TaskRow>`SELECT * FROM houston_tasks WHERE id = ${id}`.pipe(
@@ -353,6 +372,7 @@ const make = Effect.gen(function* () {
       INSERT INTO houston_task_history (task_id, actor, action, changes, created_at)
       VALUES (${taskId}, ${actor}, ${action}, ${toJsonText(changesJson)}, ${now})
     `;
+    recorded.push({ taskId, actor, action, changes: changesJson });
   }, Effect.orDie);
 
   const createTask = Effect.fn("HoustonTaskStore.createTask")(function* (input: NewTask) {
@@ -384,15 +404,31 @@ const make = Effect.gen(function* () {
     return created;
   }, Effect.orDie);
 
+  // The transitions are heard after the body, so they see the write's final rows.
+  const heard = Effect.suspend(() => {
+    const entries = recorded;
+    recorded = [];
+    return entries.length === 0 || Option.isNone(transitions)
+      ? Effect.void
+      : transitions.value.recorded(entries);
+  });
+
   const write: HoustonTaskStore["Service"]["write"] = (body) =>
     lock.withPermits(1)(
-      sql.withTransaction(body).pipe(
-        Effect.catchIf(SqlError.isSqlError, (error) => Effect.die(error)),
-        Effect.tap(({ touched }) =>
-          touched.length === 0 ? Effect.void : PubSub.publish(changes, [...new Set(touched)]),
+      sql
+        .withTransaction(
+          Effect.suspend(() => {
+            recorded = [];
+            return body;
+          }).pipe(Effect.tap(() => heard)),
+        )
+        .pipe(
+          Effect.catchIf(SqlError.isSqlError, (error) => Effect.die(error)),
+          Effect.tap(({ touched }) =>
+            touched.length === 0 ? Effect.void : PubSub.publish(changes, [...new Set(touched)]),
+          ),
+          Effect.map(({ result }) => result),
         ),
-        Effect.map(({ result }) => result),
-      ),
     ) as never;
 
   const loadInputs = Effect.fn("HoustonTaskStore.loadInputs")(function* (

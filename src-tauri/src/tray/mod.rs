@@ -1,9 +1,6 @@
 pub mod model;
 mod probe;
-#[cfg(debug_assertions)]
-pub mod selftest;
 mod settings;
-mod shutdown;
 
 use model::{TrayIconState, TrayItem, TrayPayload};
 pub use probe::{probe, TrayAvailability};
@@ -15,7 +12,6 @@ use tauri::image::Image;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::{AppHandle, Emitter, Manager, Wry};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 macro_rules! tray_png {
     ($state:literal, $size:literal) => {
@@ -25,7 +21,6 @@ macro_rules! tray_png {
 
 const MENU_ID_OPEN: &str = "tray:open";
 const MENU_ID_QUIT: &str = "tray:quit";
-const MENU_ID_STOP: &str = "tray:stop";
 const MENU_ID_HEADER: &str = "tray:header";
 const MENU_ID_OVERFLOW: &str = "tray:overflow";
 const MENU_ID_AGENTS: &str = "tray:agents";
@@ -242,13 +237,6 @@ fn build_items(
                 true,
                 None::<&str>,
             )?),
-            TrayItem::StopDaemon => Box::new(MenuItem::with_id(
-                app,
-                MENU_ID_STOP,
-                "Quit and stop daemons…",
-                true,
-                None::<&str>,
-            )?),
         };
         owned.push(boxed);
     }
@@ -260,7 +248,6 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
     match id {
         MENU_ID_OPEN => show_main_window(app),
         MENU_ID_QUIT => quit(app),
-        MENU_ID_STOP => confirm_and_stop(app),
         MENU_ID_HEADER | MENU_ID_AGENTS => {}
         _ if id.starts_with(MENU_ID_OVERFLOW) || id.starts_with(MENU_ID_GROUP_PREFIX) => {}
         _ => {
@@ -282,80 +269,6 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
             }
         }
     }
-}
-
-fn confirm_and_stop(app: &AppHandle) {
-    let message = {
-        let host = app.state::<Arc<TrayHost>>();
-        let payload = host.payload.lock().expect("tray payload mutex");
-        model::stop_confirm_message(&payload)
-    };
-    let handle = app.clone();
-    app.dialog()
-        .message(message)
-        .title("Quit Houston")
-        .kind(MessageDialogKind::Warning)
-        .buttons(MessageDialogButtons::OkCancelCustom(
-            "Quit and stop daemons".into(),
-            "Cancel".into(),
-        ))
-        .show(move |confirmed| {
-            if !confirmed {
-                return;
-            }
-            stop_daemons_and_quit(&handle);
-        });
-}
-
-static STOPPING: AtomicBool = AtomicBool::new(false);
-
-fn stop_daemons_and_quit(app: &AppHandle) {
-    if STOPPING.swap(true, Ordering::SeqCst) {
-        return;
-    }
-    let local = app.state::<crate::host::ConnectionCell>().current();
-    let wsl = app.state::<crate::wsl::WslManager>().inner().clone();
-    let handle = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let (environments, ownership_failure) = match wsl.pause_for_stop().await {
-            Ok(envs) => (envs, None),
-            Err(error) => (Vec::new(), Some(error)),
-        };
-        let mut failures = shutdown::stop_all(local, environments).await;
-        failures.extend(ownership_failure);
-        if failures.is_empty() {
-            quit(&handle);
-            return;
-        }
-        let message = format!(
-            "Some daemons could not be confirmed stopped:\n\n{}\n\nClose Houston anyway? Sessions in those environments may still be running.",
-            failures.join("\n")
-        );
-        eprintln!("houston-tauri: {message}");
-        let exit_handle = handle.clone();
-        handle
-            .dialog()
-            .message(message)
-            .title("Could not stop all daemons")
-            .kind(MessageDialogKind::Warning)
-            .buttons(MessageDialogButtons::OkCancelCustom(
-                "Close Houston anyway".into(),
-                "Keep Houston open".into(),
-            ))
-            .show(move |confirmed| {
-                STOPPING.store(false, Ordering::SeqCst);
-                if confirmed {
-                    quit(&exit_handle);
-                } else {
-                    wsl.keep_open_after_stop();
-                }
-            });
-    });
-}
-
-#[tauri::command]
-pub fn app_stop_daemons_and_quit(app: AppHandle) {
-    stop_daemons_and_quit(&app);
 }
 
 pub fn install(app: &AppHandle, host: &Arc<TrayHost>) {

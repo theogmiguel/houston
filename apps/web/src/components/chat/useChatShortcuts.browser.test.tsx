@@ -85,6 +85,15 @@ it("leaves the launcher's letters to the launcher, in either case", async () => 
   expect(composerKeys).toEqual([]);
 });
 
+it("reserves plain T for a new thread instead of typing into the composer", async () => {
+  const composerKeys: string[] = [];
+  await using _screen = await render(<Chat composerKeys={composerKeys} />, options);
+
+  await userEvent.keyboard("tT");
+
+  expect(composerKeys).toEqual([]);
+});
+
 it("still types other letters into the composer while the launcher is open", async () => {
   const composerKeys: string[] = [];
   const received: string[] = [];

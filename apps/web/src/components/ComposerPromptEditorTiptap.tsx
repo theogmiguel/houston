@@ -548,7 +548,7 @@ function ComposerContextReferenceNodeView({ node, editor, getPos }: NodeViewProp
       className={CHIP_NODE_SELECTION_CLASS_NAME}
       data-composer-context-chip="true"
     >
-      <span className="inline-flex h-6 max-w-full items-center gap-0.5 rounded-(--r-ctl) bg-(--field) ps-2 pe-1 text-xs text-secondary-foreground">
+      <span className="composer-inline-chip inline-flex max-w-full items-center gap-1">
         <ComposerContextReferenceChip
           kind={(node.attrs.kind as string) ?? ""}
           contextId={(node.attrs.contextId as string) ?? ""}

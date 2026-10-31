@@ -245,6 +245,14 @@ export function resolveExplicitDiffOpenOnActivate(input: {
   return input.surfaceKind === "diff" && !input.diffOpen ? input.activeThreadRef : null;
 }
 
+/** The board's first right-panel tab is Changes, so an empty panel opens on the diff when one exists. */
+export function shouldOpenDefaultRightPanelDiff(input: {
+  readonly surfaceCount: number;
+  readonly diffAvailable: boolean;
+}): boolean {
+  return input.surfaceCount === 0 && input.diffAvailable;
+}
+
 export function codexArtifactTemplatePromptToAppend(
   currentDraft: string,
   template: CodexArtifactTemplate,

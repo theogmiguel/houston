@@ -57,13 +57,13 @@ export function formatSnapShotShortcutLabel(
 }
 
 function modifierKeyLabel(modifier: SnapShotModifier, platform: string): string {
-  if (modifier === "shift") return "⇧";
+  if (modifier === "shift") return "Shift";
   if (isMacPlatform(platform)) {
-    if (modifier === "meta") return "⌘";
-    if (modifier === "control") return "⌃";
-    return "⌥";
+    if (modifier === "meta") return "Command";
+    if (modifier === "control") return "Control";
+    return "Option";
   }
-  if (modifier === "meta") return isWindowsPlatform(platform) ? "⊞" : "Super";
+  if (modifier === "meta") return isWindowsPlatform(platform) ? "Win" : "Super";
   return modifier === "control" ? "Ctrl" : "Alt";
 }
 

@@ -274,6 +274,9 @@ function openCodeCapabilitiesForModel(input: {
           ]
         : []),
     ],
+    ...(input.model.limit === undefined
+      ? {}
+      : { contextWindowTokens: input.model.limit.input ?? input.model.limit.context }),
   });
 }
 
@@ -453,6 +456,7 @@ export interface OpenCode2Model extends OpenCodeRelease {
   readonly name: string;
   readonly providerName?: string;
   readonly variants: ReadonlyArray<{ readonly id: string }>;
+  readonly contextWindowTokens?: number;
 }
 
 // Sub-provider names distinguish overlapping catalog entries.
@@ -599,6 +603,9 @@ function openCode2ModelCapabilities(model: OpenCode2Model): ModelCapabilities {
               ...(defaultVariant === undefined ? {} : { currentValue: defaultVariant }),
             },
           ],
+    ...(model.contextWindowTokens === undefined
+      ? {}
+      : { contextWindowTokens: model.contextWindowTokens }),
   });
 }
 

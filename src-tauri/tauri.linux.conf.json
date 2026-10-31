@@ -1,9 +1,10 @@
 {
   "bundle": {
-    "externalBin": ["binaries/tr-helper", "binaries/houston-core", "binaries/houston-supervisor"],
     "fileAssociations": [
       {
-        "ext": ["houston-transfer"],
+        "ext": [
+          "houston-transfer"
+        ],
         "name": "Houston workspace transfer",
         "description": "Houston workspace transfer",
         "mimeType": "application/x-houston-transfer",

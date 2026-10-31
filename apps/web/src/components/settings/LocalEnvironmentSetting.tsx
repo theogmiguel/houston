@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ServerIcon } from "lucide-react";
 
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import { usePrimaryEnvironment } from "../../state/environments";
@@ -43,7 +44,12 @@ export function LocalEnvironmentSetting() {
   return (
     <>
       <SettingsRow
-        title="This PC"
+        title={
+          <span className="flex items-center gap-2">
+            <ServerIcon aria-hidden className="size-4 text-muted-foreground" />
+            This PC
+          </span>
+        }
         description={
           <span>
             <span className="font-mono">{address}</span>
