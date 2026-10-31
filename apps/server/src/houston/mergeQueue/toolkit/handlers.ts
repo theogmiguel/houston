@@ -1,8 +1,12 @@
 // Every call resolves the caller thread's project and acts on that project's queue only; a pull
 // request URL of another repository is refused before GitHub is read.
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
-import type { HoustonMergeQueueEntry } from "@t3tools/contracts/houston/mergeQueue";
+import {
+  HoustonMergeQueueError,
+  type HoustonMergeQueueEntry,
+} from "@t3tools/contracts/houston/mergeQueue";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../../mcp/McpToolAccess.ts";
@@ -20,6 +24,23 @@ import {
 const PULL_URL = /^https?:\/\/([^/]+)\/([^/]+\/[^/]+)\/pull\/(\d+)\/?(?:[?#].*)?$/i;
 
 const untrusted: typeof HOUSTON_MERGE_QUEUE_UNTRUSTED_LABEL = HOUSTON_MERGE_QUEUE_UNTRUSTED_LABEL;
+
+const isQueueError = Schema.is(HoustonMergeQueueError);
+
+/** A queue refusal can quote GitHub or git (a fork's name, an error), so it carries the label. */
+const labelled = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.mapError(effect, (error) =>
+    isQueueError(error)
+      ? (new HoustonMergeQueueError({
+          kind: error.kind,
+          operation: error.operation,
+          message: `${error.message}. ${untrusted}`,
+          ...(error.limit === undefined ? {} : { limit: error.limit }),
+          ...(error.actual === undefined ? {} : { actual: error.actual }),
+          ...(error.expected === undefined ? {} : { expected: error.expected }),
+        }) as E)
+      : error,
+  );
 
 /** The calling thread and its project, once its credential grants pull requests. */
 const callerOf = Effect.fn("HoustonMergeQueueToolkit.callerOf")(function* (
@@ -110,7 +131,7 @@ export const layer = McpToolAccess.toLayer(HoustonMergeQueueToolkit, {
         agent.threadId,
       );
       return { untrusted, entry: agentEntry(entry) };
-    }),
+    }).pipe(labelled),
   ),
   houston_merge_queue_dequeue: McpToolAccess.writesWithCapability((input) =>
     Effect.gen(function* () {
@@ -121,13 +142,13 @@ export const layer = McpToolAccess.toLayer(HoustonMergeQueueToolkit, {
         projectId: agent.projectId,
         number,
       });
-    }),
+    }).pipe(labelled),
   ),
   houston_merge_queue_status: McpToolAccess.readsAsCaller(() =>
     Effect.gen(function* () {
       const agent = yield* callerOf("houston_merge_queue_status", "reads");
       const snapshot = yield* (yield* HoustonMergeQueueService).get({ projectId: agent.projectId });
       return { untrusted, message: snapshot.message, entries: snapshot.entries.map(agentEntry) };
-    }),
+    }).pipe(labelled),
   ),
 });
