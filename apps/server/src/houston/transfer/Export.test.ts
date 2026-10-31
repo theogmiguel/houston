@@ -530,6 +530,31 @@ describe("no credential reaches the file", () => {
       { keychain },
     );
   });
+
+  it.effect("a token in the origin URL reaches neither the file nor inspect", () =>
+    withComputer(
+      Effect.gen(function* () {
+        const { repos, projectId } = yield* simpleProject("c9-remote");
+        const needle = "ghp_origin_needle_4407";
+        git(repos.checkout, [
+          "remote",
+          "set-url",
+          "origin",
+          `https://x-access-token:${needle}@github.com/o/r.git`,
+        ]);
+        const summary = yield* exportProject(projectId, destinationIn(repos.root));
+        const plain = yield* Effect.promise(() => decryptPlaintext(summary.file, PASSPHRASE));
+        assert.isFalse(plain.includes(needle));
+        assert.isFalse(plain.includes("x-access-token"));
+        const service = yield* HoustonTransferService;
+        const inspected = yield* service.inspect({
+          file: summary.file,
+          passphrase: Redacted.make(PASSPHRASE),
+        });
+        assert.strictEqual(inspected.source.remoteUrl, "https://github.com/o/r.git");
+      }),
+    ),
+  );
 });
 
 describe("export carries only this project's section rows", () => {
