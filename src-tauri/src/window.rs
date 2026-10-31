@@ -288,9 +288,6 @@ pub fn window_start_resize_dragging<R: Runtime>(
 #[tauri::command]
 pub fn window_set_zoom<R: Runtime>(webview: Webview<R>, factor: f64) -> Result<(), String> {
     validate_zoom_factor(factor)?;
-    if crate::browser::selftest::requested() {
-        return Ok(());
-    }
     webview.set_zoom(factor).map_err(|e| {
         format!(
             "window_set_zoom: failed to set zoom {factor} on webview {:?}: {e}",

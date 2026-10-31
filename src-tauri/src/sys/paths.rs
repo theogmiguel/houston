@@ -65,12 +65,6 @@ pub fn log_dir_for(home: &Path, channel: Option<&str>) -> PathBuf {
     dir_for(home, channel).join("logs")
 }
 
-pub fn channel_of_state_dir(state_dir: &Path) -> Option<String> {
-    let name = state_dir.file_name()?.to_str()?;
-    let suffix = name.strip_prefix(BASE_DIR)?.strip_prefix('-')?;
-    validate_channel(suffix).ok().flatten()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,26 +129,5 @@ mod tests {
             "dev channel logs must sit under the dev state dir, not the release one"
         );
         assert_ne!(log_dir_for(home, None), log_dir_for(home, Some("dev")));
-    }
-
-    #[test]
-    fn channel_round_trips_through_the_state_dir() {
-        let home = Path::new("/home/x");
-        assert_eq!(channel_of_state_dir(&dir_for(home, None)), None);
-        assert_eq!(
-            channel_of_state_dir(&dir_for(home, Some("dev"))).as_deref(),
-            Some("dev")
-        );
-    }
-
-    #[test]
-    fn a_temp_dir_is_not_a_channel() {
-        assert_eq!(channel_of_state_dir(Path::new("/tmp/xyz123")), None);
-        assert_eq!(channel_of_state_dir(Path::new("/tmp/.houston")), None);
-        assert_eq!(
-            channel_of_state_dir(Path::new("/tmp/.houston-")),
-            None,
-            "a bare trailing dash is not a channel name"
-        );
     }
 }

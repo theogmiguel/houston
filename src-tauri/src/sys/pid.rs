@@ -12,6 +12,7 @@ pub type RawPid = u32;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Signal {
     Check,
+    Term,
     // Only Linux child-group cleanup sends it; other targets just match on it.
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Kill,
@@ -22,6 +23,7 @@ impl Signal {
     fn as_c_int(self) -> libc::c_int {
         match self {
             Signal::Check => 0,
+            Signal::Term => libc::SIGTERM,
             Signal::Kill => libc::SIGKILL,
         }
     }
@@ -245,7 +247,7 @@ pub fn signal_process_checked(pid: u32, sig: Signal) -> Result<SignalOutcome, Si
             }
             Err(err) => Err(SignalError::Os(err)),
         },
-        Signal::Kill => {
+        Signal::Term | Signal::Kill => {
             deliver_or_classify(pid, win::TERMINATE, |_, handle| win::terminate(handle))
         }
     }
