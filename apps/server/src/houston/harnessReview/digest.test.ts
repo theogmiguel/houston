@@ -418,7 +418,7 @@ describe("the digest", () => {
       previousEnd: null,
       threads: [
         input(
-          thread("t-mask"),
+          thread("t-mask", { title: "Rotate API_KEY=title-secret" }),
           [claudeRun],
           [
             userMessage(
@@ -443,6 +443,31 @@ describe("the digest", () => {
                 retryable: false,
               },
             }),
+            item("t-mask", claudeRun.id, time, {
+              type: "error",
+              failure: {
+                class: "provider",
+                message: "Refused SECRET_KEY=error-secret",
+                code: null,
+                retryable: false,
+              },
+            }),
+            item("t-mask", claudeRun.id, time, {
+              type: "approval_request",
+              requestId: "request:mask",
+              requestKind: "command",
+              prompt: 'curl -H "Authorization: Bearer approval.secret"',
+              reason: "needs PASSWORD=reason-secret",
+              status: "failed",
+            }),
+            item("t-mask", claudeRun.id, time, {
+              type: "subagent",
+              prompt: "Deploy with AUTH_TOKEN=subagent-secret",
+            }),
+            item("t-mask", claudeRun.id, time, {
+              type: "assistant_message",
+              text: "Done; I used ACCESS_TOKEN=assistant-secret",
+            }),
           ],
         ),
       ],
@@ -452,7 +477,22 @@ describe("the digest", () => {
     assert.notInclude(digest.jsonl, "ghp_");
     assert.include(line!.failures[0].command, "Bearer <redacted>");
     assert.notInclude(digest.jsonl, "abc.def");
-    assert.deepEqual(line!.errors, ["Could not open /work/p/src/index.ts"]);
+    assert.deepEqual(line!.errors, [
+      "Could not open /work/p/src/index.ts",
+      "Refused SECRET_KEY=<redacted>",
+    ]);
+    assert.equal(line!.title, "Rotate API_KEY=<redacted>");
+    assert.deepEqual(line!.approvals, [
+      {
+        kind: "command",
+        prompt: 'curl -H "Authorization: Bearer <redacted>"',
+        reason: "needs PASSWORD=<redacted>",
+        status: "failed",
+      },
+    ]);
+    assert.deepEqual(line!.subagents, ["Deploy with AUTH_TOKEN=<redacted>"]);
+    assert.equal(line!.last_assistant, "Done; I used ACCESS_TOKEN=<redacted>");
+    assert.notMatch(digest.jsonl, /-secret|approval\.secret/);
   });
 
   it("a digest line and the digest stay within their caps", () => {
