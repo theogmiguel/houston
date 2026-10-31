@@ -482,12 +482,20 @@ const MergeQueue = Effect.gen(function* () {
   `;
 });
 
+// Task source write-back: the installation's random key that write-back markers are keyed with.
+// Not a credential: it only makes Houston's own markers unforgeable, so it stays in the database.
+const TaskSourceMarkerKey = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`ALTER TABLE houston_task_source_identity ADD COLUMN marker_key TEXT`;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
   [3, "TaskSources", TaskSources],
   [4, "TaskRunsCursor", TaskRunsCursor],
   [5, "MergeQueue", MergeQueue],
+  [6, "TaskSourceMarkerKey", TaskSourceMarkerKey],
   [7, "HarnessReview", HarnessReview],
 ] as const;
 

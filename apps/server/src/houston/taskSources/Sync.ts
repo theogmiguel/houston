@@ -20,6 +20,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import { checkDescription, checkTaskCount, checkTitle } from "../tasks/rules.ts";
 import { HoustonTaskStore, nowIso, toTask, type TaskRow } from "../tasks/TaskStore.ts";
+import { HoustonTaskSourceOutbox } from "./Outbox.ts";
 import {
   cutChars,
   firstSnapshot,
@@ -89,6 +90,7 @@ const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const tasks = yield* HoustonTaskStore;
   const sources = yield* HoustonTaskSourceStore;
+  const outbox = yield* HoustonTaskSourceOutbox;
   const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.orDie(effect);
 
   const linkRow = (projectId: string, provider: string, externalId: string) =>
@@ -541,6 +543,10 @@ const make = Effect.gen(function* () {
             `);
           }
           next = resolveInSnapshot(snapshot, field, value, conflict.remote);
+          // As Houston 1: a status the user kept or chose goes back to the tracker.
+          if (field === "status" && input.resolution !== "remote") {
+            yield* outbox.statusResolved(task.id, input.provider);
+          }
         }
         yield* run(sql`
           UPDATE houston_task_source_links SET snapshot_json = ${encodeSnapshot(next)},

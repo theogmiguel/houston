@@ -33,15 +33,19 @@ import {
 } from "../tasks/tasks.testkit.ts";
 import { layerTaskSources } from "./layer.ts";
 import * as NotionClient from "./NotionClient.ts";
+import * as HoustonTaskSourceOutbox from "./Outbox.ts";
 import * as HoustonTaskSourceStore from "./SourceStore.ts";
 
 /** The token GitHubCredentials hands out in tests, as a Settings token would be. */
 export const GITHUB_SETTINGS_TOKEN = "ghp_settings_token_for_tests";
 
 export interface GithubFakeRequest {
+  readonly method: string;
   readonly url: string;
   readonly authorization: string | undefined;
   readonly ifNoneMatch: string | undefined;
+  /** The JSON body of a write. */
+  readonly body: unknown;
 }
 
 /** Answers requests to https://api.github.com in process; `"stall"` never answers. */
@@ -82,9 +86,14 @@ export const layerGitHubFake = (fake: GithubFake) => {
     HttpClient.HttpClient,
     HttpClient.make((request) => {
       const entry: GithubFakeRequest = {
+        method: request.method,
         url: request.url,
         authorization: request.headers.authorization,
         ifNoneMatch: request.headers["if-none-match"],
+        body:
+          request.body._tag === "Uint8Array"
+            ? (JSON.parse(new TextDecoder().decode(request.body.body)) as unknown)
+            : undefined,
       };
       fake.requests.push(entry);
       const answer = fake.respond(new URL(request.url), entry);
@@ -225,6 +234,8 @@ export const layerSources = (options: SourcesTestOptions = {}) =>
     Layer.provideMerge(HoustonTaskSourceStore.layer),
     Layer.provideMerge(layerMemory(options.keychain ?? makeMemory())),
     Layer.provideMerge(HoustonTaskStore.layer),
+    // Below the Tasks store, which hands it every write's transitions, as in server.ts.
+    Layer.provideMerge(HoustonTaskSourceOutbox.layer),
     Layer.provideMerge(layerInstances(CONFIGURED_INSTANCES)),
     Layer.provideMerge(ProjectEnrichmentService.layer),
     Layer.provideMerge(layerWorkspacePaths),
