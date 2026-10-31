@@ -145,7 +145,10 @@ const make = Effect.gen(function* () {
         (SELECT state FROM houston_task_runs
           WHERE task_id = r.task_id AND kind = 'implementation' ORDER BY id DESC LIMIT 1) AS run_state,
         (SELECT COUNT(*) FROM houston_slack_questions q
-          WHERE q.request_id = r.id AND q.answered_at IS NULL) AS asking
+          WHERE q.request_id = r.id AND q.answered_at IS NULL
+            AND q.task_run_id = (SELECT id FROM houston_task_runs
+              WHERE task_id = r.task_id AND kind = 'implementation' ORDER BY id DESC LIMIT 1)
+        ) AS asking
       FROM houston_slack_requests r WHERE r.state = 'started'
     `);
     return workingCount(
@@ -1131,9 +1134,19 @@ const make = Effect.gen(function* () {
                 text.onlyRequesterAnswers(request.author),
               );
             }
+            const closed = () =>
+              ephemeral(
+                request,
+                channel ?? request.channel_id,
+                user,
+                clickKey,
+                text.questionClosedNotice,
+              );
             if (actionId !== OTHER_ANSWER_ACTION) {
               const option = optionOf(question.form_json, Number(rawIndex));
-              if (option !== undefined) yield* conversation.answer(question.id, user, option);
+              if (option === undefined) return;
+              const outcome = yield* conversation.answer(question.id, user, option);
+              if (outcome === "closed") yield* closed();
               return;
             }
             const triggerId = str(payload.trigger_id);
@@ -1238,7 +1251,20 @@ const make = Effect.gen(function* () {
             const input = isObject(block.answer) ? block.answer : {};
             const value = (str(input.value) ?? "").trim();
             if (value.length === 0 || [...value].length > HOUSTON_SLACK_LIMITS.dialogChars) return;
-            yield* conversation.answer(Number(str(view.private_metadata) ?? "0"), user, value);
+            const questionId = Number(str(view.private_metadata) ?? "0");
+            const outcome = yield* conversation.answer(questionId, user, value);
+            const question = outcome === "closed" ? yield* questionOf(questionId) : undefined;
+            const request =
+              question === undefined ? undefined : yield* store.requestById(question.request_id);
+            if (request !== undefined) {
+              yield* ephemeral(
+                request,
+                request.channel_id,
+                user,
+                `closed:${questionId}`,
+                slackText(language(settings)).questionClosedNotice,
+              );
+            }
             return;
           }
           if (view.callback_id !== REFUSE_CALLBACK) return;

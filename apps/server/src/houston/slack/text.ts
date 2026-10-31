@@ -114,6 +114,14 @@ export const slackText = (language: HoustonSlackLanguage) => {
     ),
     answerLabel: pick("*Resposta*", "*Answer*"),
     answeredBy: (user: string) => pick(`Respondido por <@${user}>`, `Answered by <@${user}>`),
+    questionClosed: pick(
+      "_Pergunta encerrada: a execução terminou antes de uma resposta._",
+      "_Question closed: the run ended before it was answered._",
+    ),
+    questionClosedNotice: pick(
+      "Esta pergunta foi encerrada quando a execução terminou, então a resposta não foi enviada.",
+      "This question closed when its run ended, so the answer was not sent.",
+    ),
     onlyRequesterAnswers: (requester: string) =>
       pick(
         `Esta pergunta é para <@${requester}>, que fez o pedido. Se tiver uma sugestão, fale com <@${requester}>.`,

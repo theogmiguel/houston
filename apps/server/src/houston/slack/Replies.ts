@@ -405,6 +405,7 @@ const make = Effect.gen(function* () {
       if (row.state !== "started" || row.task_id === null) continue;
       const latest = yield* latestRunOf(row.task_id);
       if (latest === undefined) continue;
+      yield* conversation.closeEnded(row.id);
       if (latest.state === "handed_back") {
         const form = (yield* resultOf(latest.id)) ?? (yield* recordSummary(row, latest));
         yield* postResult(row, latest, form, settings);

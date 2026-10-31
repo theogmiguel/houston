@@ -1276,3 +1276,94 @@ describe("thread replies are bounded like the dialog and a refused addition reac
     ),
   );
 });
+
+describe("a run's open question closes when the run ends", () => {
+  it.effect("a run's open question closes when the run ends", () => {
+    const runs = makeFakeRuns();
+    const messages = makeFakeMessages();
+    return runSlack(
+      (fake) =>
+        Effect.gen(function* () {
+          const conversation = yield* HoustonSlackConversation;
+          const sql = yield* SqlClient.SqlClient;
+          yield* connectedProject("closing");
+          const ts = "1700000000.000100";
+          const a = yield* startedRequest(fake, ts, "Export the report");
+          const adjustment = (replyTs: string) =>
+            sql<{ readonly id: number; readonly state: string }>`
+              SELECT id, state FROM houston_slack_adjustments WHERE ts = ${replyTs}
+            `.pipe(Effect.map((rows) => rows[0]));
+          const closedNote = (question: string) =>
+            fake
+              .callsOf("chat.update")
+              .some(
+                (entry) =>
+                  postedText(entry).includes(question) &&
+                  postedText(entry).includes("Question closed"),
+              );
+
+          // Handed back with its question open: the question closes, with a note in the thread.
+          const first = yield* conversation.ask(a.threadId, ASK);
+          yield* conversation.handback(a.threadId, READY);
+          yield* tickReplies;
+          yield* flushOutbox;
+          assert.isTrue(closedNote(ASK.question), "the question message says it closed");
+
+          // The requester's reply is an adjustment for the owner, not an answer to the ended run.
+          yield* sendEvent(fake, replyEvent("1700000010.000100", ts, "U2", "Please also add JSON"));
+          yield* until(
+            "the adjustment",
+            adjustment("1700000010.000100").pipe(Effect.map((row) => row !== undefined)),
+          );
+          assert.strictEqual((yield* adjustment("1700000010.000100"))?.state, "pending");
+          assert.isNull((yield* questionRow(first.questionId))?.answered_at ?? null);
+          // A click on the closed question's button answers nothing either.
+          const buttons = yield* questionButtons(fake, ts, ASK.question);
+          yield* sendInteraction(fake, clickEvent("U2", buttons[0]!));
+          yield* until(
+            "the closed notice",
+            flushOutbox.pipe(
+              Effect.map(() =>
+                fake
+                  .callsOf("chat.postEphemeral")
+                  .some((call) => (call.body.text ?? "").includes("closed")),
+              ),
+            ),
+          );
+          yield* tickReplies;
+          assert.isNull((yield* questionRow(first.questionId))?.answered_at ?? null);
+          assert.lengthOf(messages.delivered, 0, "no answer reaches the handed-back run");
+
+          // The owner accepts: attempt 2 counts against the cap, and its own question is not busy.
+          const dm = ownerDms(fake).findLast((entry) =>
+            postedText(entry).includes("Please also add JSON"),
+          );
+          yield* sendInteraction(fake, clickEvent(OWNER, buttonsOf(dm)[0]!));
+          yield* until("attempt 2", Effect.sync(() => runs.attempts.length === 1));
+          const b = yield* startedRequest(fake, "1700000000.000200", "Fix the header");
+          const c = yield* fileReady(fake, "1700000000.000300", "Rename the file");
+          yield* reaction(fake, OWNER, "white_check_mark", c.ts);
+          yield* until(
+            "the third request queued",
+            requestAt(c.ts).pipe(Effect.map((row) => row?.state === "queued")),
+          );
+          const second = yield* latestRun(a.taskId);
+          const asked = yield* Effect.result(
+            conversation.ask(second.thread_id as string, { ...ASK, question: "Which delimiter?" }),
+          );
+          assert.strictEqual(asked._tag, "Success", "the closed question does not make it busy");
+
+          // A stopped run's question closes too: the requester's reply answers nothing.
+          const stopped = yield* conversation.ask(b.threadId, { ...ASK, question: "Which encoding?" });
+          yield* sql`UPDATE houston_task_runs SET state = 'cancelled', reason = 'stopped' WHERE id = ${b.runId}`;
+          yield* sendEvent(fake, replyEvent("1700000020.000100", "1700000000.000200", "U2", "UTF-8"));
+          yield* tickReplies;
+          yield* flushOutbox;
+          assert.isNull((yield* questionRow(stopped.questionId))?.answered_at ?? null);
+          assert.lengthOf(messages.delivered, 0);
+          assert.isTrue(closedNote("Which encoding?"), "the stopped run's question says it closed");
+        }),
+      { runs, messages },
+    );
+  });
+});

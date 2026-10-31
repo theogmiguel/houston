@@ -56,7 +56,7 @@ const encodeQuestion = Schema.encodeSync(QuestionFormJson);
 const decodeQuestion = Schema.decodeUnknownSync(QuestionFormJson);
 const encodeResult = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
-export type AnswerOutcome = "answered" | "already" | "not_allowed" | "missing";
+export type AnswerOutcome = "answered" | "already" | "closed" | "not_allowed" | "missing";
 
 export class HoustonSlackConversation extends Context.Service<
   HoustonSlackConversation,
@@ -78,8 +78,10 @@ export class HoustonSlackConversation extends Context.Service<
       value: string,
       ts?: string,
     ) => Effect.Effect<AnswerOutcome>;
-    /** The open question of a request, if any. */
+    /** The open question of a request, if any: one whose run has not ended. */
     readonly openQuestion: (requestId: number) => Effect.Effect<number | undefined>;
+    /** Edits each unanswered question of an ended run to say it closed, once. */
+    readonly closeEnded: (requestId: number) => Effect.Effect<void>;
     /** Sends each answer not yet delivered to its run's thread. */
     readonly deliverAnswers: Effect.Effect<void>;
   }
@@ -172,9 +174,20 @@ const make = Effect.gen(function* () {
       hide: [houstonTaskKey(task.number), runRow.branch ?? ""],
     }));
 
+  /** A question is open while its run is the task's latest implementation run and still open. */
+  const runOpen = () => sql`EXISTS (
+    SELECT 1 FROM houston_task_runs tr
+    WHERE tr.id = houston_slack_questions.task_run_id
+      AND tr.state IN ${sql.in([...OPEN_RUN_STATES])}
+      AND tr.id = (
+        SELECT MAX(id) FROM houston_task_runs WHERE task_id = tr.task_id AND kind = 'implementation'
+      )
+  )`;
+
   const openQuestion = (requestId: number) =>
     run(sql<{ readonly id: number }>`
-      SELECT id FROM houston_slack_questions WHERE request_id = ${requestId} AND answered_at IS NULL
+      SELECT id FROM houston_slack_questions
+      WHERE request_id = ${requestId} AND answered_at IS NULL AND ${runOpen()}
       ORDER BY id LIMIT 1
     `).pipe(Effect.map((rows) => rows[0]?.id));
 
@@ -309,6 +322,10 @@ const make = Effect.gen(function* () {
       return "not_allowed";
     }
     if (question.answered_at !== null) return "already";
+    const open = yield* run(sql<{ readonly id: number }>`
+      SELECT id FROM houston_slack_questions WHERE id = ${questionId} AND ${runOpen()}
+    `);
+    if (open.length === 0) return "closed";
     const text = slackText(settings?.language ?? "en");
     const runRow = (yield* run(sql<RunRow>`
       SELECT * FROM houston_task_runs WHERE id = ${question.task_run_id}
@@ -325,7 +342,7 @@ const make = Effect.gen(function* () {
         const updated = yield* run(sql<{ readonly id: number }>`
           UPDATE houston_slack_questions SET answer = ${value}, answered_by = ${user},
             answer_ts = ${ts ?? null}, answered_at = ${now}
-          WHERE id = ${questionId} AND answered_at IS NULL RETURNING id
+          WHERE id = ${questionId} AND answered_at IS NULL AND ${runOpen()} RETURNING id
         `);
         if (updated.length === 0) return { result: "already" as const };
         yield* store.react(request.id, "gear");
@@ -389,7 +406,56 @@ const make = Effect.gen(function* () {
     return (yield* tasks.get({ id: key })).task;
   });
 
-  return HoustonSlackConversation.of({ ask, handback, answer, openQuestion, deliverAnswers });
+  const closeEnded: HoustonSlackConversation["Service"]["closeEnded"] = Effect.fn(
+    "HoustonSlackConversation.closeEnded",
+  )(function* (requestId) {
+    const ended = yield* run(sql<QuestionRow>`
+      SELECT * FROM houston_slack_questions
+      WHERE request_id = ${requestId} AND answered_at IS NULL AND NOT ${runOpen()}
+        AND NOT EXISTS (
+          SELECT 1 FROM houston_slack_outbox
+          WHERE dedupe_key = 'question-closed:' || houston_slack_questions.id
+        )
+      ORDER BY id
+    `);
+    if (ended.length === 0) return;
+    const text = slackText(yield* language);
+    for (const question of ended) {
+      const runRow = (yield* run(sql<RunRow>`
+        SELECT * FROM houston_task_runs WHERE id = ${question.task_run_id}
+      `))[0];
+      const task = runRow === undefined ? undefined : yield* taskStore.taskById(runRow.task_id);
+      const context =
+        task === undefined || runRow === undefined
+          ? { root: null, hide: [] }
+          : yield* contextOf(task, runRow);
+      const body = [
+        questionText(decodeQuestion(question.form_json), (field) => agentText(field, context), text),
+        text.questionClosed,
+      ].join("\n");
+      yield* store.write(
+        store
+          .enqueue({
+            requestId,
+            dedupeKey: `question-closed:${question.id}`,
+            target: "update",
+            text: body,
+            blocks: [section(body)],
+            updateOf: `question:${question.id}`,
+          })
+          .pipe(Effect.as({ result: undefined })),
+      );
+    }
+  });
+
+  return HoustonSlackConversation.of({
+    ask,
+    handback,
+    answer,
+    openQuestion,
+    closeEnded,
+    deliverAnswers,
+  });
 });
 
 export const layer = Layer.effect(HoustonSlackConversation, make);
