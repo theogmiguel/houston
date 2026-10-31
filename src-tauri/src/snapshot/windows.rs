@@ -97,7 +97,7 @@ impl SnapShotPlatform for WindowsPlatform {
                 .lock()
                 .ok()
                 .and_then(|slot| slot.clone())
-                .and_then(|app| WindowFlash::show(&app, active.bounds, options))
+                .and_then(|app| super::windows_feedback::show(&app, active.bounds, options))
                 .map(|flash| Box::new(flash) as Box<dyn CaptureFeedback>)
         } else {
             None
