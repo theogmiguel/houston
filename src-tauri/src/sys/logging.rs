@@ -12,7 +12,7 @@ const MAX_LOG_FILES: usize = 14;
 pub struct LogGuard(#[allow(dead_code)] Option<tracing_appender::non_blocking::WorkerGuard>);
 
 fn build_env_filter() -> EnvFilter {
-    EnvFilter::try_from_default_env().unwrap_or_else(|_| "houston_core=info".into())
+    EnvFilter::try_from_default_env().unwrap_or_else(|_| "houston_tauri=info".into())
 }
 
 fn init_file_writer(
@@ -31,7 +31,7 @@ fn init_file_writer(
     }
     let appender = tracing_appender::rolling::Builder::new()
         .rotation(tracing_appender::rolling::Rotation::DAILY)
-        .filename_prefix("houston-core")
+        .filename_prefix("houston-tauri")
         .filename_suffix("log")
         .max_log_files(MAX_LOG_FILES)
         .build(dir)
