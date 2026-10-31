@@ -20,6 +20,8 @@ export interface FixTaskLink {
   /** `HOU-<n>`. */
   readonly taskKey: string;
   readonly status: HoustonTaskStatus;
+  /** Archived in Tasks: unless done, the task is closed as a canceled one is. */
+  readonly archived: boolean;
   readonly reviewId: number;
   readonly linkedAt: string;
   /** The newest `houston:pr-merged` entry, else when the task became done; null unless done. */
@@ -35,8 +37,13 @@ interface LinkRow {
   readonly created_at: string;
   readonly number: number;
   readonly status: HoustonTaskStatus;
+  readonly archived_at: string | null;
   readonly landed_at: string | null;
 }
+
+/** Whether a linked task is the finding's live work: open in Tasks and not archived. */
+export const isLiveFix = (link: Pick<FixTaskLink, "status" | "archived">) =>
+  !link.archived && link.status !== "done" && link.status !== "canceled";
 
 export class HoustonHarnessFixTasks extends Context.Service<
   HoustonHarnessFixTasks,
@@ -57,7 +64,7 @@ const make = Effect.gen(function* () {
 
   const linkStates: HoustonHarnessFixTasks["Service"]["linkStates"] = (projectId) =>
     sql<LinkRow>`
-      SELECT l.key, l.task_id, l.review_id, l.created_at, t.number, t.status,
+      SELECT l.key, l.task_id, l.review_id, l.created_at, t.number, t.status, t.archived_at,
         CASE WHEN t.status = 'done' THEN COALESCE(
           (SELECT MAX(h.created_at) FROM houston_task_history h
             WHERE h.task_id = t.id AND h.action = 'houston:pr-merged'),
@@ -76,6 +83,7 @@ const make = Effect.gen(function* () {
           taskId: row.task_id,
           taskKey: `HOU-${row.number}`,
           status: row.status,
+          archived: row.archived_at !== null,
           reviewId: row.review_id,
           linkedAt: row.created_at,
           landedAt: row.landed_at,

@@ -806,6 +806,44 @@ describe("fix tasks", () => {
     }),
   );
 
+  it.effect("an archived fix task reopens the finding and allows a new one", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("archived-fix");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const harness = yield* service;
+          const tasks = yield* tasksService;
+          const { projectId } = yield* createProject("archived-fix");
+          yield* seedPublished({ projectId, findings: [{ key: "denied-push" }], endedAt: day(1) });
+          yield* harness.createTask({ projectId, key: "denied-push" });
+          const detail = yield* tasks.get({ id: "HOU-1" });
+          yield* tasks.archive({
+            id: "HOU-1",
+            archived: true,
+            expectedRevision: detail.task.revision,
+          });
+
+          // HOU-1 is still todo, but archived it is no longer the finding's live work.
+          assert.equal((yield* findingOf(projectId, "denied-push"))!.phase, "open");
+          const again = yield* harness.createTask({ projectId, key: "denied-push" });
+          assert.equal(again.task.key, "HOU-2");
+          assert.include(
+            (yield* tasks.get({ id: "HOU-2" })).task.description,
+            "Previous fix task: HOU-1\n",
+          );
+          const fixing = (yield* findingOf(projectId, "denied-push"))!;
+          assert.equal(fixing.phase, "fixing");
+          assert.equal(fixing.task?.key, "HOU-2");
+          const busy = yield* Effect.flip(harness.createTask({ projectId, key: "denied-push" }));
+          assert.equal(kindOf(busy), "busy");
+          assert.include(messageOf(busy), "HOU-2");
+          assert.deepEqual(yield* countRows, { tasks: 2, links: 2 });
+        }),
+      );
+    }),
+  );
+
   it.effect("sessions after landing exclude the task's own threads and reviews", () =>
     Effect.gen(function* () {
       const kit = yield* makeKit("sessions-after");

@@ -45,6 +45,7 @@ import {
   type FixTaskLink,
   HARNESS_ACTOR,
   HoustonHarnessFixTasks,
+  isLiveFix,
   layer as HoustonHarnessFixTasksLayer,
 } from "./FixTasks.ts";
 import { HoustonHarnessRunner } from "./Runner.ts";
@@ -200,7 +201,12 @@ const make = Effect.gen(function* () {
         row.review_ended_at,
       );
       const quotes = textList(row.quotes_json);
-      const link = links.get(row.key);
+      const stored = links.get(row.key);
+      // The phase reads an archived task that has not landed as canceled; the task shows as stored.
+      const link =
+        stored?.archived === true && stored.status !== "done"
+          ? { ...stored, status: "canceled" as const }
+          : stored;
       const verification = verifications.get(row.key);
       const evidence = verification === undefined ? [] : textList(verification.evidence_json);
       const { phase, quotes: shown } = findingPhase({
@@ -238,13 +244,13 @@ const make = Effect.gen(function* () {
         phase,
         lastSeenReviewId: Math.max(latest, row.review_id),
         task:
-          link === undefined
+          stored === undefined
             ? null
             : {
-                taskId: link.taskId,
-                key: link.taskKey,
-                status: link.status,
-                landedAt: link.landedAt,
+                taskId: stored.taskId,
+                key: stored.taskKey,
+                status: stored.status,
+                landedAt: stored.landedAt,
               },
         verification:
           verification === undefined
@@ -545,7 +551,7 @@ const make = Effect.gen(function* () {
         const linked = (yield* fixTasks.linkStates(input.projectId)).filter(
           (link) => link.key === input.key,
         );
-        const open = linked.find((link) => link.status !== "done" && link.status !== "canceled");
+        const open = linked.find(isLiveFix);
         if (open !== undefined) {
           return yield* refuse(
             "busy",
