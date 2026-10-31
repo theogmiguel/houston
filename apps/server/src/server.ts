@@ -121,6 +121,10 @@ import * as HoustonTaskSourceNotion from "./houston/taskSources/NotionClient.ts"
 import * as HoustonTaskSourceOutbox from "./houston/taskSources/Outbox.ts";
 import * as HoustonTaskSourceStore from "./houston/taskSources/SourceStore.ts";
 import { layerTaskSources } from "./houston/taskSources/layer.ts";
+import * as SlackConnection from "./houston/slack/Connection.ts";
+import { layerSlack } from "./houston/slack/layer.ts";
+import * as HoustonSlackStore from "./houston/slack/Store.ts";
+import * as SlackWebApi from "./houston/slack/WebApi.ts";
 import { layerMergeQueue } from "./houston/mergeQueue/layer.ts";
 import * as HoustonMergeQueueStore from "./houston/mergeQueue/Store.ts";
 import * as HoustonMergeQueueThreads from "./houston/mergeQueue/Threads.ts";
@@ -578,6 +582,20 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
   Layer.effectDiscard(HoustonTaskProjectSweep.sweep),
   Layer.effectDiscard(HoustonTaskSourceStore.sweep),
+  Layer.effectDiscard(HoustonSlackStore.sweep),
+  // Slack accepts requests through the same task runs the server offers.
+  layerSlack(Layer.mergeAll(SlackWebApi.layer, SlackConnection.layerSocketTransport)).pipe(
+    Layer.provideMerge(
+      HoustonTaskRuns.layer.pipe(
+        Layer.provide(
+          Layer.merge(
+            RuntimeLayer.layerEventSink,
+            ProviderAdapterRegistry.layerFromProviderInstanceRegistry,
+          ),
+        ),
+      ),
+    ),
+  ),
   // The harness review service and its one reactor, over the orchestration runtime below.
   layerHarnessReview.pipe(
     Layer.provide(HoustonHarnessRunner.layer),
@@ -586,14 +604,6 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ),
   // The Night shift service over the runner and claim the orchestration runtime below exports.
   layerNightShift,
-  HoustonTaskRuns.layer.pipe(
-    Layer.provide(
-      Layer.merge(
-        RuntimeLayer.layerEventSink,
-        ProviderAdapterRegistry.layerFromProviderInstanceRegistry,
-      ),
-    ),
-  ),
 ).pipe(
   // The merge queue reads through the PR page's own service and GitHub client.
   Layer.provideMerge(
@@ -627,6 +637,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
       HoustonNightShiftStore.layer,
     ),
   ),
+  Layer.provideMerge(HoustonSlackStore.layer),
   Layer.provideMerge(HoustonKeychain.layerLive),
   Layer.provideMerge(layerHoustonTaskPersistence),
   Layer.provideMerge(layerPersistence),
@@ -638,15 +649,15 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   // Provider hydration builds the Claude runner, which reports agents to the same scanner the
   // terminal and preview layers share.
   Layer.provideMerge(layerPortScanner),
+);
+
+const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(
     Layer.mergeAll(
       AntigravityInstallation.AntigravityInstallation.layer,
       CodexInstallation.CodexInstallation.layer,
     ),
   ),
-);
-
-const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(layerPtyAdapter),
   Layer.provideMerge(AcpRegistrySupport.layerFromHost.pipe(Layer.provide(ProviderHostLive.layer))),
   Layer.provideMerge(
