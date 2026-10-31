@@ -13,6 +13,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import type { HoustonNightShiftError } from "@t3tools/contracts/houston/nightShift";
+import type { ProviderReadiness } from "@t3tools/contracts/houston/providerReadiness";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -500,6 +501,50 @@ describe("night shift run life", () => {
           assert.isFalse(kit.state.states.get("worker-3")!.activeRun);
           const again = yield* Effect.flip(night.stop(b.runId));
           assert.equal(kindOf(again), "invalid");
+
+          // The stop waits for every crew member, not the first that ends: "slow" ends 5 s
+          // after its cancel, and the orchestrator is stopped only after that.
+          const stopWithClock = Effect.fn("RunnerTest.stopWithClock")(function* (
+            runId: number,
+            seconds: number,
+          ) {
+            const fiber = yield* Effect.forkChild(night.stop(runId));
+            const stopAt: Array<number> = [];
+            for (let second = 0; second < seconds; second += 1) {
+              yield* TestClock.adjust("1 second");
+              if (stopOps(kit).some((op) => op.startsWith("stop:")) && stopAt.length === 0) {
+                stopAt.push(second);
+              }
+            }
+            yield* Fiber.join(fiber);
+            return stopAt[0];
+          });
+          kit.state.ops.length = 0;
+          const third = yield* setUp("hard-stop-c");
+          const c = yield* start(third.projectId, 60);
+          const startedC = (yield* getRun(c.runId)).startedAt;
+          for (const thread of ["fast", "slow"]) {
+            yield* addCrew(c.runId, thread, c.threadId, startedC);
+            busy(kit, thread);
+          }
+          kit.state.cancelDelays.set("slow", 5);
+          yield* stopWithClock(c.runId, 10);
+          const order = kit.state.ops.filter((op) => /^(cancel|ended|stop):/.test(op));
+          assert.include(order, "ended:slow");
+          assert.isBelow(order.indexOf("ended:slow"), order.indexOf(`stop:${c.threadId}`));
+
+          // A member that never ends holds the stop for 60 s, then the orchestrator is stopped.
+          kit.state.ops.length = 0;
+          const fourth = yield* setUp("hard-stop-d");
+          const d = yield* start(fourth.projectId, 60);
+          yield* addCrew(d.runId, "stuck", d.threadId, (yield* getRun(d.runId)).startedAt);
+          busy(kit, "stuck");
+          kit.state.cancelDelays.set("stuck", Number.POSITIVE_INFINITY);
+          const stoppedAfter = yield* stopWithClock(d.runId, 70);
+          assert.isDefined(stoppedAfter);
+          assert.isAtLeast(stoppedAfter!, 58);
+          assert.isAtMost(stoppedAfter!, 61);
+          assert.equal((yield* getRun(d.runId)).stopReason, "stopped");
         }),
       );
     }),
@@ -658,6 +703,31 @@ describe("night shift run life", () => {
           assert.equal(limited.stopReason, "orchestratorLimited");
           assert.include(limited.stopDetail ?? "", "outOfUsage");
           assert.include(limited.stopDetail ?? "", "2026-10-31T04:00:00.000Z");
+
+          // A signed-out or rejected orchestrator settles the run the same way.
+          const withClaude = (readiness: ProviderReadiness) => {
+            kit.state.providers = kit.state.providers.map((provider) =>
+              provider.instanceId === "claudeAgent" ? { ...provider, readiness } : provider,
+            );
+          };
+          const cases: ReadonlyArray<readonly [string, ProviderReadiness]> = [
+            ["signedOut", { state: "signedOut", source: "turn", message: "Sign in again" }],
+            [
+              "rejected",
+              { state: "rejected", code: "invalid_api_key", message: "Key refused", at: NOW },
+            ],
+          ];
+          for (const [state, readiness] of cases) {
+            withClaude({ state: "ready" });
+            const project = yield* setUp(`lost-${state}`);
+            const run = yield* start(project.projectId);
+            withClaude(readiness);
+            yield* tick;
+            const settled = yield* getRun(run.runId);
+            assert.equal(settled.phase, "settled", state);
+            assert.equal(settled.stopReason, "orchestratorLimited", state);
+            assert.include(settled.stopDetail ?? "", state);
+          }
         }),
       );
     }),

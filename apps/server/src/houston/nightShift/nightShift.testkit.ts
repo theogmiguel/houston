@@ -118,8 +118,10 @@ export interface Note {
 }
 
 export interface KitState {
-  /** In order: launch, cancel:<thread>, stop:<thread>, notify:<message id>. */
+  /** In order: launch, cancel:<thread>, ended:<thread>, stop:<thread>, notify:<message id>. */
   readonly ops: Array<string>;
+  /** Seconds of test clock a cancelled crew thread takes to end; Infinity never ends. */
+  readonly cancelDelays: Map<string, number>;
   readonly launches: Array<ThreadLaunchService.ThreadLaunchInput>;
   readonly notes: Array<Note>;
   readonly states: Map<string, ThreadState>;
@@ -147,6 +149,7 @@ const READY: ProviderReadiness = { state: "ready" };
 
 export const freshState = (): KitState => ({
   ops: [],
+  cancelDelays: new Map(),
   launches: [],
   notes: [],
   states: new Map(),
@@ -215,8 +218,16 @@ export const makeKit = Effect.fn("NightShiftKit.make")(function* (
 
 export type Kit = Effect.Success<ReturnType<typeof makeKit>>;
 
-const layerThreads = (state: KitState) =>
-  Layer.succeed(
+const layerThreads = (state: KitState) => {
+  /** When each slow cancelled crew thread's run ends, on the test clock. */
+  const endsAt = new Map<string, number>();
+  const end = (threadId: string) => {
+    const current = state.states.get(threadId);
+    if (current !== undefined) {
+      state.states.set(threadId, { ...current, activeRun: false, lastRunStatus: "cancelled" });
+    }
+  };
+  return Layer.succeed(
     NightShiftThreads,
     NightShiftThreads.of({
       launch: (input) =>
@@ -239,17 +250,17 @@ const layerThreads = (state: KitState) =>
           });
         }),
       cancelCrew: (threadId) =>
-        Effect.sync(() => {
-          state.ops.push(`cancel:${threadId}`);
-          const current = state.states.get(threadId);
-          if (current !== undefined) {
-            state.states.set(threadId, {
-              ...current,
-              activeRun: false,
-              lastRunStatus: "cancelled",
-            });
-          }
-        }),
+        Effect.flatMap(Clock.currentTimeMillis, (nowMs) =>
+          Effect.sync(() => {
+            state.ops.push(`cancel:${threadId}`);
+            const delay = state.cancelDelays.get(threadId);
+            if (delay !== undefined) {
+              endsAt.set(threadId, nowMs + delay * 1000);
+              return;
+            }
+            end(threadId);
+          }),
+        ),
       stop: (threadId) =>
         Effect.sync(() => {
           state.ops.push(`stop:${threadId}`);
@@ -273,12 +284,26 @@ const layerThreads = (state: KitState) =>
           });
         }),
       state: (threadId) =>
-        Effect.sync(
-          () =>
-            state.states.get(threadId) ?? { present: false, activeRun: false, lastRunStatus: null },
+        Effect.flatMap(Clock.currentTimeMillis, (nowMs) =>
+          Effect.sync(() => {
+            const due = endsAt.get(threadId);
+            if (due !== undefined && nowMs >= due) {
+              endsAt.delete(threadId);
+              end(threadId);
+              state.ops.push(`ended:${threadId}`);
+            }
+            return (
+              state.states.get(threadId) ?? {
+                present: false,
+                activeRun: false,
+                lastRunStatus: null,
+              }
+            );
+          }),
         ),
     }),
   );
+};
 
 const layerHostDoubles = (state: KitState) =>
   Layer.mergeAll(
