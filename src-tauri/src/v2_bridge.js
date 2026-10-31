@@ -249,10 +249,10 @@
       return Promise.resolve(storageSet("houston:v2:connection-catalog", catalog));
     },
     discoverSshHosts: function () {
-      return Promise.resolve([]);
+      return invoke("v2_ssh_discover_hosts");
     },
-    resolveSshHost: function () {
-      return Promise.reject(new Error("SSH environments are not available in this Houston build."));
+    resolveSshHost: function (alias) {
+      return invoke("v2_ssh_resolve_host", { alias: alias });
     },
     requestSnapShotPermissions: noop,
     getSnapShotState: function () {
@@ -278,21 +278,49 @@
     setSnapShotAnimationDestination: noop,
     dismissSnapShotAnimation: noop,
     acknowledgeSnapShot: noop,
-    ensureSshEnvironment: function () {
-      return Promise.reject(new Error("SSH environments are not available in this Houston build."));
+    ensureSshEnvironment: function (target, options) {
+      return invoke("v2_ssh_ensure_environment", {
+        target: target,
+        options: options === undefined ? null : options,
+      }).then(function (result) {
+        if (result && result.type === "ssh-password-prompt-cancelled") {
+          throw new Error(
+            typeof result.message === "string" ? result.message : "SSH authentication cancelled.",
+          );
+        }
+        return result;
+      });
     },
-    disconnectSshEnvironment: noop,
-    fetchSshEnvironmentDescriptor: function () {
-      return Promise.reject(new Error("SSH environments are not available in this Houston build."));
+    disconnectSshEnvironment: function (target) {
+      return invoke("v2_ssh_disconnect_environment", { target: target });
     },
-    bootstrapSshBearerSession: function () {
-      return Promise.reject(new Error("SSH environments are not available in this Houston build."));
+    fetchSshEnvironmentDescriptor: function (httpBaseUrl) {
+      return invoke("v2_ssh_fetch_environment_descriptor", { httpBaseUrl: httpBaseUrl });
     },
-    fetchSshSessionState: function () {
-      return Promise.reject(new Error("SSH environments are not available in this Houston build."));
+    bootstrapSshBearerSession: function (httpBaseUrl, credential) {
+      return invoke("v2_ssh_bootstrap_bearer_session", {
+        httpBaseUrl: httpBaseUrl,
+        credential: credential,
+      });
     },
-    onSshPasswordPrompt: noUnsubscribe,
-    resolveSshPasswordPrompt: noop,
+    fetchSshSessionState: function (httpBaseUrl, bearerToken) {
+      return invoke("v2_ssh_fetch_session_state", {
+        httpBaseUrl: httpBaseUrl,
+        bearerToken: bearerToken,
+      });
+    },
+    onSshPasswordPrompt: function (listener) {
+      return listen("v2-ssh-password-prompt", function (request) {
+        if (!request || typeof request.requestId !== "string") return;
+        listener(request);
+      });
+    },
+    resolveSshPasswordPrompt: function (requestId, password) {
+      return invoke("v2_ssh_resolve_password_prompt", {
+        requestId: requestId,
+        password: password === null ? null : password,
+      });
+    },
     getServerExposureState: function () {
       return invoke("v2_server_exposure_state")
         .then(function (state) {
@@ -423,7 +451,7 @@
       });
     },
     probeRemoteEditors: function () {
-      return Promise.resolve([]);
+      return invoke("v2_probe_remote_editors");
     },
     pasteAsText: noop,
     onMenuAction: function (listener) {
