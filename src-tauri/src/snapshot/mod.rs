@@ -46,8 +46,8 @@ use tauri::{Emitter, Manager, State};
 use uuid::Uuid;
 
 use platform::{
-    new_platform, Bounds, CaptureFeedback, CaptureOptions, CaptureOutput, ConfigDesktop,
-    PlatformPaths, ShortcutStatus, SnapShotMode, SnapShotPlatform, SnapShotShortcut,
+    new_platform, CaptureFeedback, CaptureOptions, CaptureOutput, ConfigDesktop, PlatformPaths,
+    ShortcutStatus, SnapShotMode, SnapShotPlatform, SnapShotShortcut,
 };
 
 const SHORTCUT_COOLDOWN: Duration = Duration::from_millis(200);
@@ -731,7 +731,9 @@ pub async fn snap_shot_set_animation_destination(
     destination: Value,
     host: State<'_, Arc<SnapShotHost>>,
 ) -> Result<(), String> {
-    let frame = destination.get("relativeFrame").and_then(parse_bounds);
+    let frame = destination
+        .get("relativeFrame")
+        .and_then(parse_normalized_frame);
     let mut inner = host.lock();
     if let Some((feedback_id, feedback)) = inner.feedback.as_mut() {
         if feedback_id == &id {
@@ -766,18 +768,19 @@ pub async fn snap_shot_request_permissions(_include_accessibility: bool) -> Resu
     Ok(())
 }
 
-fn parse_bounds(value: &Value) -> Option<Bounds> {
-    Some(Bounds {
-        x: value.get("x")?.as_f64()?.round() as i64,
-        y: value.get("y")?.as_f64()?.round() as i64,
-        width: value.get("width")?.as_f64()?.round() as i64,
-        height: value.get("height")?.as_f64()?.round() as i64,
+fn parse_normalized_frame(value: &Value) -> Option<platform::NormalizedFrame> {
+    Some(platform::NormalizedFrame {
+        x: value.get("x")?.as_f64()?,
+        y: value.get("y")?.as_f64()?,
+        width: value.get("width")?.as_f64()?,
+        height: value.get("height")?.as_f64()?,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::snapshot::platform::Bounds;
 
     #[test]
     fn iso_epoch_is_formatted_as_utc() {

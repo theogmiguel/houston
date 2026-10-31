@@ -25,8 +25,8 @@ use super::linux_capture_session::{
 use super::niri_snapshot::{capture_window as capture_niri_window, niri_socket_path};
 use super::platform::{
     Bounds, CaptureFeedback, CaptureOptions, CaptureOutput, CaptureSupport, ChangedCallback,
-    ConfigDesktop, PlatformPaths, ShortcutAvailability, ShortcutStatus, SnapShotMode,
-    SnapShotPlatform, SnapShotShortcut, TriggerCallback, WindowMetadata,
+    ConfigDesktop, NormalizedFrame, PlatformPaths, ShortcutAvailability, ShortcutStatus,
+    SnapShotMode, SnapShotPlatform, SnapShotShortcut, TriggerCallback, WindowMetadata,
 };
 use super::portal_capture_shortcut::PortalCaptureShortcut;
 
@@ -189,19 +189,11 @@ impl CaptureFeedback for ExtensionFeedback {
             .map_err(|error| error.to_string())
     }
 
-    fn animate_to(&mut self, frame: Bounds) -> Result<(), String> {
+    fn animate_to(&mut self, frame: NormalizedFrame) -> Result<(), String> {
         let proxy = Proxy::new(&self.connection, EXTENSION, EXTENSION_PATH, EXTENSION)
             .map_err(|error| error.to_string())?;
         proxy
-            .call::<_, _, ()>(
-                "Animate",
-                &(
-                    frame.x as f64,
-                    frame.y as f64,
-                    frame.width as f64,
-                    frame.height as f64,
-                ),
-            )
+            .call::<_, _, ()>("Animate", &(frame.x, frame.y, frame.width, frame.height))
             .map_err(|error| error.to_string())
     }
 

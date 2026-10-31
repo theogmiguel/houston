@@ -280,6 +280,14 @@ pub struct CaptureOptions {
     pub animate: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct NormalizedFrame {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Bounds {
     pub x: i64,
@@ -306,7 +314,7 @@ pub trait CaptureFeedback: Send {
     fn animation_started(&self) -> bool;
     #[allow(dead_code)]
     fn activate(&mut self, title: &str) -> Result<(), String>;
-    fn animate_to(&mut self, frame: Bounds) -> Result<(), String>;
+    fn animate_to(&mut self, frame: NormalizedFrame) -> Result<(), String>;
     fn complete(&mut self);
     fn close(&mut self);
 }

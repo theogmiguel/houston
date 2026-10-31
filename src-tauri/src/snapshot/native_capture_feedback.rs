@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-use super::platform::{Bounds, CaptureFeedback};
+use super::platform::{Bounds, CaptureFeedback, NormalizedFrame};
 
 const READY_DEADLINE: Duration = Duration::from_secs(2);
 const MAX_LINE_BYTES: usize = 4_096;
@@ -108,7 +108,7 @@ impl CaptureFeedback for NativeCaptureFeedback {
         Ok(())
     }
 
-    fn animate_to(&mut self, frame: Bounds) -> Result<(), String> {
+    fn animate_to(&mut self, frame: NormalizedFrame) -> Result<(), String> {
         if self.flying || !self.animation_started {
             return Ok(());
         }
