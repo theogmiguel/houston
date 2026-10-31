@@ -41,13 +41,13 @@ pub struct WslExe;
 
 impl Runner for WslExe {
     fn run(&self, argv: &[String], stdin: Stdin<'_>) -> io::Result<RunOutput> {
-        let mut cmd = houston_core::spawn::command(WSL_EXE);
+        let mut cmd = crate::sys::spawn::command(WSL_EXE);
         cmd.args(argv).env("WSL_UTF8", "1");
         let stdin = match stdin {
             Stdin::Null => std::process::Stdio::null(),
             Stdin::File(path) => std::process::Stdio::from(std::fs::File::open(path)?),
         };
-        let output = houston_core::spawn::output_within_with_stdin(cmd, RUN_TIMEOUT, stdin)?
+        let output = crate::sys::spawn::output_within_with_stdin(cmd, RUN_TIMEOUT, stdin)?
             .ok_or_else(timed_out)?;
         Ok(RunOutput {
             code: output.status.code(),
@@ -57,7 +57,7 @@ impl Runner for WslExe {
     }
 
     fn spawn_piped(&self, argv: &[String]) -> io::Result<Piped> {
-        let mut child = houston_core::spawn::tokio_command(WSL_EXE)
+        let mut child = crate::sys::spawn::tokio_command(WSL_EXE)
             .args(argv)
             .env("WSL_UTF8", "1")
             .stdin(std::process::Stdio::piped())

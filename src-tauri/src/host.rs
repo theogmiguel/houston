@@ -118,7 +118,7 @@ mod tests {
         serde_json::json!({
             "manage_version": houston_protocol::MANAGE_VERSION,
             "protocol_version": houston_protocol::PROTOCOL_VERSION,
-            "build": houston_core::daemon::build_commit(),
+            "build": crate::sys::build_commit(),
             "pid": std::process::id(), "started_at": "2026-01-01T00:00:00Z",
             "live_sessions": { "count": 0, "ids": [] },
             "routines_enabled": 0, "clients_connected": 0,
@@ -254,7 +254,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut accepted = status();
         accepted["build"] = "accepted-other-build".into();
-        assert_ne!(accepted["build"], houston_core::daemon::build_commit());
+        assert_ne!(accepted["build"], crate::sys::build_commit());
         let (port, server) = fake_manage(
             dir.path(),
             "accepted-boot-token",

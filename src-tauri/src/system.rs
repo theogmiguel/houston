@@ -1,4 +1,4 @@
-use houston_core::paths;
+use crate::sys::paths;
 use tauri::Manager;
 
 #[tauri::command]
@@ -12,7 +12,7 @@ pub fn system_get_log_path() -> Result<String, String> {
 
 #[tauri::command]
 pub fn system_get_home_dir() -> Result<String, String> {
-    houston_core::home_dir::home_dir()
+    crate::sys::home_dir::home_dir()
         .map(|p| p.to_string_lossy().into_owned())
         .ok_or_else(|| "system_get_home_dir: cannot resolve home directory".to_string())
 }
@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn system_get_home_dir_agrees_with_the_shared_home_resolver() {
         let expected =
-            houston_core::home_dir::home_dir().expect("test host must have a resolvable home dir");
+            crate::sys::home_dir::home_dir().expect("test host must have a resolvable home dir");
         let got =
             system_get_home_dir().expect("system_get_home_dir must succeed in a normal test env");
         assert_eq!(got, expected.to_string_lossy());

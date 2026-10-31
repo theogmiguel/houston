@@ -18,6 +18,7 @@ mod shell;
 mod shells;
 mod skills;
 mod spike_webview;
+mod sys;
 mod system;
 #[cfg(test)]
 mod test_home;
@@ -166,7 +167,7 @@ fn main() {
         println!(
             "houston {} ({}) protocol {}",
             env!("CARGO_PKG_VERSION"),
-            houston_core::daemon::build_commit(),
+            crate::sys::build_commit(),
             houston_protocol::PROTOCOL_VERSION,
         );
         return;
@@ -257,7 +258,7 @@ fn main() {
     let daemon_fresh = daemon_fresh_requested();
     let print_target = daemon_host::print_target_requested(&args);
 
-    let home = match houston_core::home_dir::home_dir() {
+    let home = match crate::sys::home_dir::home_dir() {
         Some(home) => home,
         None => {
             eprintln!("houston-tauri: refusing to own a daemon: cannot resolve the home directory");
@@ -275,7 +276,7 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let state_dir = houston_core::paths::dir_for(&home, owning_channel.as_deref());
+    let state_dir = crate::sys::paths::dir_for(&home, owning_channel.as_deref());
     let target_channel_label = owning_channel
         .clone()
         .unwrap_or_else(|| "release".to_string());
@@ -306,8 +307,8 @@ fn main() {
     }
 
     if print_target {
-        let config_dir = houston_core::paths::config_dir();
-        let log_dir = houston_core::paths::log_dir();
+        let config_dir = crate::sys::paths::config_dir();
+        let log_dir = crate::sys::paths::log_dir();
         println!(
             "houston-tauri: --print-target: channel={target_channel_label} state_dir={} \
              config_dir={} log_dir={}",
@@ -324,20 +325,20 @@ fn main() {
         std::process::exit(0);
     }
 
-    let _log_guard = houston_core::logging::init();
+    let _log_guard = crate::sys::logging::init();
     render_overrides.report();
 
-    houston_core::env_hygiene::scrub();
-    houston_core::login_path::adopt();
+    crate::sys::env_hygiene::scrub();
+    crate::sys::login_path::adopt();
 
-    match houston_core::paths::config_dir() {
+    match crate::sys::paths::config_dir() {
         Ok(dir) => println!("houston-tauri: houston-core state dir = {}", dir.display()),
         Err(err) => {
             eprintln!("houston-tauri: failed to resolve houston-core state dir: {err}");
         }
     }
 
-    let channel_label = match houston_core::paths::channel() {
+    let channel_label = match crate::sys::paths::channel() {
         Ok(channel) => channel.unwrap_or_else(|| "release".to_string()),
         Err(err) => {
             eprintln!("houston-tauri: refusing to start: {err}");
@@ -1055,7 +1056,7 @@ fn main() {
             #[cfg(feature = "bench")]
             app.state::<Arc<bench::BootStamps>>().stamp("window-created");
 
-            let app_log_path = match houston_core::paths::config_dir() {
+            let app_log_path = match crate::sys::paths::config_dir() {
                 Ok(dir) => dir.join("app-debug.ndjson"),
                 Err(err) => {
                     eprintln!(
@@ -1071,7 +1072,7 @@ fn main() {
             if run_bench {
                 spawn_bench_watchdog(app.handle().clone());
             }
-            let log_path = match houston_core::paths::config_dir() {
+            let log_path = match crate::sys::paths::config_dir() {
                 Ok(dir) => dir.join("watchdog.ndjson"),
                 Err(err) => {
                     eprintln!(

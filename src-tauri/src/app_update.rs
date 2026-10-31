@@ -146,7 +146,7 @@ fn windows_live_sessions_refusal(channel: &str, live: &proto::ManageLiveSessions
 /// The channel the active state dir belongs to, for messages: an absent suffix
 /// is the release channel, anything else names itself.
 fn active_channel_label(state_dir: &Path) -> String {
-    match houston_core::paths::channel_of_state_dir(state_dir) {
+    match crate::sys::paths::channel_of_state_dir(state_dir) {
         Some(channel) => channel,
         None => "release".to_string(),
     }
@@ -239,14 +239,14 @@ fn linux_relaunch_refusal(bundle: &BundleType, has_appimage_path: bool) -> Optio
 /// Stable installs only a strictly newer version; an equal or older manifest is
 /// not an update.
 fn offers_update(running: &str, manifest: &str) -> bool {
-    houston_core::updates::is_newer(manifest, running)
+    crate::sys::updates::is_newer(manifest, running)
 }
 
 /// The manifest must still publish the exact release the operator was shown.
 /// A feed that moved under the panel refuses by name instead of riding
 /// `compare_versions`' unparseable-reads-as-Equal rule.
 fn expected_version_matches(manifest: &str, expected: &str) -> bool {
-    !expected.trim().is_empty() && houston_core::updates::same_release(manifest, expected)
+    !expected.trim().is_empty() && crate::sys::updates::same_release(manifest, expected)
 }
 
 fn updater_error(

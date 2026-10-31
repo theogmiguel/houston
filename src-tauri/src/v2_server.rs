@@ -445,7 +445,7 @@ fn resolve_server_entry_with(
 
 pub fn resolve_node(override_node: Option<PathBuf>) -> PathBuf {
     override_node
-        .or_else(|| houston_core::exe_path::resolve("node"))
+        .or_else(|| crate::sys::exe_path::resolve("node"))
         .unwrap_or_else(|| PathBuf::from("node"))
 }
 
@@ -526,7 +526,7 @@ fn read_runtime(base_dir: &Path) -> Option<ServerRuntime> {
 }
 
 fn process_alive(pid: i32) -> bool {
-    pid > 0 && houston_core::pid::process_is_alive(pid as u32)
+    pid > 0 && crate::sys::pid::process_is_alive(pid as u32)
 }
 
 async fn health_ok(origin: &str) -> bool {
@@ -543,7 +543,7 @@ async fn health_ok(origin: &str) -> bool {
 }
 
 fn keychain_entry(base_dir: &Path) -> Result<keyring::Entry, String> {
-    let service = houston_core::keychain::scoped_service(KEYCHAIN_SERVICE_PREFIX, base_dir);
+    let service = crate::sys::keychain::scoped_service(KEYCHAIN_SERVICE_PREFIX, base_dir);
     keyring::Entry::new(&service, KEYCHAIN_PROFILE).map_err(|e| {
         format!(
             "opening the system keychain for the v2 desktop secret (service {service:?}) \
@@ -611,7 +611,7 @@ const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 #[cfg(windows)]
 pub fn detached_spawn_flags(breakaway: bool) -> u32 {
     let mut flags =
-        houston_core::spawn::CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
+        crate::sys::spawn::CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
     if breakaway {
         flags |= CREATE_BREAKAWAY_FROM_JOB;
     }
@@ -630,9 +630,9 @@ fn server_command(
         .try_clone()
         .map_err(|e| format!("cloning the v2 server log handle: {e}"))?;
     let mut cmd = match entry {
-        ServerEntry::Bundled(executable) => houston_core::spawn::command(executable),
+        ServerEntry::Bundled(executable) => crate::sys::spawn::command(executable),
         ServerEntry::Node(entry) => {
-            let mut cmd = houston_core::spawn::command(node);
+            let mut cmd = crate::sys::spawn::command(node);
             cmd.arg(entry);
             cmd
         }
@@ -1389,8 +1389,8 @@ mod tests {
         assert_eq!(flags & DETACHED_PROCESS, DETACHED_PROCESS);
         assert_eq!(flags & CREATE_NEW_PROCESS_GROUP, CREATE_NEW_PROCESS_GROUP);
         assert_eq!(
-            flags & houston_core::spawn::CREATE_NO_WINDOW,
-            houston_core::spawn::CREATE_NO_WINDOW
+            flags & crate::sys::spawn::CREATE_NO_WINDOW,
+            crate::sys::spawn::CREATE_NO_WINDOW
         );
         assert_eq!(
             flags & 0x0000_0010,
