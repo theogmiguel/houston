@@ -10,6 +10,8 @@ import {
   type HoustonMergeQueueFailure,
   type HoustonMergeQueueGate,
   type HoustonMergeQueueGitHubHold,
+  type HoustonMergeQueueHandOff,
+  type HoustonMergeQueueLogEntry,
   type HoustonMergeQueueMergeMethod,
   type HoustonMergeQueueSettingsSetInput,
   type HoustonMergeQueueStatus,
@@ -56,7 +58,23 @@ export interface Facts {
     readonly rebase: boolean;
   };
   readonly defaultBranch: string | null;
+  /** What GitHub said about its merge queue and auto-merge; null when the host's schema hid it. */
+  readonly handOff?: HandOffFacts | null;
+  /** The pull request's GraphQL node id, which the hand-off mutations name. */
+  readonly nodeId?: string | null;
 }
+
+export interface HandOffFacts {
+  readonly mergeQueueRequired: boolean;
+  readonly autoMergeAllowed: boolean;
+  readonly queueEntry: { readonly position: number | null; readonly headSha: string | null } | null;
+  readonly autoMerge: { readonly method: string | null } | null;
+  /** GitHub's reason in its newest removal from the merge queue or auto-merge disable. */
+  readonly letGo: string | null;
+}
+
+/** The hand-off GitHub's last visible answer chose, per base branch. */
+export type HandOffCache = Readonly<Record<string, HoustonMergeQueueHandOff>>;
 
 /** A merged dependency as the queue last saw it. */
 export interface Stacked {
@@ -336,14 +354,49 @@ export const gates = (row: QueueRow, review: Review): Array<HoustonMergeQueueGat
   ];
 };
 
+/** Whether the pull request still targets the branch of the dependency that merged ahead of it. */
+export const targetsDependency = (row: Pick<QueueRow, "baseRef" | "stacked">) =>
+  row.stacked !== null && row.baseRef !== null && row.baseRef === row.stacked.headRef;
+
+/** The branch the entry lands on: its dependency's base while it still targets that branch. */
+export const targetBase = (row: Pick<QueueRow, "baseRef" | "stacked">) =>
+  targetsDependency(row) ? row.stacked!.baseRef : row.baseRef;
+
 /** A verification holds for the head it verified or the commit it pushed, on the same base. */
 export const verificationHolds = (row: QueueRow): HoustonMergeQueueVerification | null => {
   const verification = row.verification;
   return verification !== null &&
     (verification.headSha === row.headSha || verification.verifiedSha === row.headSha) &&
-    verification.baseRef === row.baseRef
+    verification.baseRef === targetBase(row)
     ? verification
     : null;
+};
+
+/** What GitHub holds for the entry; only for the head it was handed off at. */
+export const heldBy = (row: QueueRow): HoustonMergeQueueGitHubHold | null =>
+  row.github !== null && row.github.headSha === row.headSha ? row.github : null;
+
+/** Picks the hand-off: GitHub's merge queue, auto-merge with a required check, else Houston. */
+export const handOffMode = (
+  facts: Facts | null,
+  baseRef: string | null,
+  cache: HandOffCache,
+): HoustonMergeQueueHandOff => {
+  const shown = facts === null || facts.error !== null ? null : (facts.handOff ?? null);
+  if (shown === null) return (baseRef === null ? undefined : cache[baseRef]) ?? "houston";
+  if (shown.mergeQueueRequired) return "mergeQueue";
+  if (shown.autoMergeAllowed && facts!.checks.some((check) => check.required)) return "autoMerge";
+  return "houston";
+};
+
+const watchingReason = (row: QueueRow, hold: HoustonMergeQueueGitHubHold) => {
+  if (hold.mode === "mergeQueue") {
+    const position = row.facts?.handOff?.queueEntry?.position ?? null;
+    return position === null
+      ? "In GitHub's merge queue"
+      : `In GitHub's merge queue (position ${position})`;
+  }
+  return `Auto-merge is on${hold.method === undefined ? "" : ` (${hold.method})`}; GitHub merges it once its required checks pass`;
 };
 
 /** The pushed commit's awaited check count while GitHub reports fewer than its old head had. */
@@ -437,6 +490,7 @@ export const line = (
       }
     }
     const failure = failureHolds(row);
+    const hold = heldBy(row);
     const holder =
       row.dependsOn !== null && held.has(row.dependsOn)
         ? { number: row.dependsOn, why: held.get(row.dependsOn)! }
@@ -451,6 +505,13 @@ export const line = (
       held.set(row.number, fixing ? "being fixed" : "parked");
       reason = failure.message;
       position = 0;
+    } else if (hold !== null) {
+      // GitHub lands it; nothing behind it lands on this project until GitHub answers.
+      rank += 1;
+      position = rank;
+      if (turn.kind === "open") turn = { kind: "taken" };
+      status = "watching";
+      reason = watchingReason(row, hold);
     } else if (holder !== null) {
       held.set(row.number, holder.why);
       status = "blocked";
@@ -678,7 +739,13 @@ export const wslRefusal = (path: string, platform: NodeJS.Platform): string | nu
 
 /** How one verification ended. */
 export type VerifyOutcome =
-  | { readonly _tag: "Passed"; readonly baseSha: string; readonly verifiedSha: string }
+  | {
+      readonly _tag: "Passed";
+      readonly baseSha: string;
+      readonly verifiedSha: string;
+      /** The recorded dependency head the restack replayed after, for a restack. */
+      readonly forkSha?: string;
+    }
   | { readonly _tag: "Conflict"; readonly baseSha: string; readonly files: ReadonlyArray<string> }
   | {
       readonly _tag: "Failed";
@@ -743,3 +810,100 @@ export const failureFor = (
       return failure("refused", outcome.message);
   }
 };
+
+/** Files a failure note lists before it counts the rest. */
+const NOTE_MAX_FILES = 20;
+
+/** The one message an owner thread gets for a failure: what failed, where, and what to do. */
+export const failureNote = (input: {
+  readonly number: number;
+  readonly url: string;
+  readonly title: string | null;
+  readonly headRef: string;
+  readonly failure: HoustonMergeQueueFailure;
+}): string => {
+  const { failure } = input;
+  const title = input.title === null ? "" : ` (${input.title})`;
+  const parts = [
+    `The merge queue took PR #${input.number}${title} out of line: ${input.url}`,
+    failure.message,
+  ];
+  if (failure.files.length > 0) {
+    const shown = failure.files.slice(0, NOTE_MAX_FILES).map((file) => `- ${file}`);
+    const rest = failure.files.length - NOTE_MAX_FILES;
+    parts.push(
+      ["Conflicting files:", ...shown, ...(rest > 0 ? [`- and ${rest} more`] : [])].join("\n"),
+    );
+  }
+  if (failure.outputTail !== null && failure.outputTail.length > 0) {
+    parts.push(`Output tail:\n\`\`\`\n${failure.outputTail}\n\`\`\``);
+  }
+  parts.push(
+    `Fix it on ${input.headRef} and push. The queue takes the new head back in line on its own; do not enqueue it again`,
+  );
+  return parts.join("\n\n");
+};
+
+/** The id a note takes in the owner thread, so one head gets one note per failure kind. */
+export const noteMessageId = (
+  projectId: string,
+  number: number,
+  headSha: string,
+  kind: HoustonMergeQueueFailure["kind"],
+) => `message:merge-queue:${projectId}:${number}:${headSha}:${kind}`;
+
+export const baseMovedNote = (base: string, baseSha: string, number: number) =>
+  `The base moved: ${base}@${shortSha(baseSha)} now contains #${number}`;
+
+/** A thread the queue may message about a project's entries. */
+export interface OwnerCandidate {
+  readonly id: string;
+  readonly branch: string | null;
+  readonly worktreePath: string | null;
+  readonly archived: boolean;
+}
+
+/** The enqueuing thread, else a live thread of the project whose worktree is on the head branch. */
+export const ownerThread = (
+  threads: ReadonlyArray<OwnerCandidate>,
+  ownerThreadId: string | null,
+  headRef: string,
+): string | null => {
+  const live = threads.filter((thread) => !thread.archived);
+  if (ownerThreadId !== null && live.some((thread) => thread.id === ownerThreadId)) {
+    return ownerThreadId;
+  }
+  return (
+    live.find((thread) => thread.worktreePath !== null && thread.branch === headRef)?.id ?? null
+  );
+};
+
+/** The heads a merged dependency is known to have had: its last read and its log rows. */
+export const recordedHeads = (
+  stacked: Stacked,
+  log: ReadonlyArray<
+    Pick<HoustonMergeQueueLogEntry, "kind" | "number" | "oldSha" | "newSha" | "headSha">
+  >,
+): Array<string> => {
+  const heads = [stacked.headSha];
+  for (const row of log) {
+    if (row.number !== stacked.number) continue;
+    if (row.kind === "push" || row.kind === "restack")
+      heads.push(row.oldSha ?? "", row.newSha ?? "");
+    if (row.kind === "merge" || row.kind === "park" || row.kind === "hand_off") {
+      heads.push(row.headSha ?? "");
+    }
+  }
+  return [...new Set(heads.filter((sha) => sha.length > 0))];
+};
+
+/** The refusal for a dependent whose fork point no recorded head of its dependency names. */
+export const noForkPoint = (input: {
+  /** `PR #N`, or the branch. */
+  readonly label: string;
+  readonly headRef: string;
+  readonly dependencyRef: string;
+  readonly baseRef: string;
+  readonly recordedHeads: ReadonlyArray<string>;
+}) =>
+  `${input.label} carries commits of ${input.dependencyRef} but none of its recorded heads (${input.recordedHeads.map(shortSha).join(", ")}), so its own commits cannot be told apart. Houston does not guess one. Rebase ${input.headRef} onto ${input.baseRef} and push`;

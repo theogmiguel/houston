@@ -9,14 +9,19 @@ import * as Queue from "effect/Queue";
 import * as Semaphore from "effect/Semaphore";
 
 import { HoustonBuildSlot } from "./BuildSlot.ts";
+import { HoustonMergeQueueGitHub } from "./GitHubQueueClient.ts";
 import { HoustonMergeLanding } from "./Landing.ts";
+import { HoustonMergeQueueOutcomes } from "./Outcomes.ts";
 import { HoustonMergeQueueProject, type ProjectTarget } from "./Project.ts";
 import {
   failingChecks,
   failureFor,
   failureHolds,
   nextUp,
+  recordedHeads,
   shortSha,
+  targetBase,
+  targetsDependency,
   verificationHolds,
   type QueueRow,
 } from "./rules.ts";
@@ -47,6 +52,8 @@ export const makeRunner = Effect.fn("HoustonMergeQueueRunner.make")(function* (o
   const slot = yield* HoustonBuildSlot;
   const verifier = yield* HoustonMergeVerifier;
   const landing = yield* HoustonMergeLanding;
+  const outcomes = yield* HoustonMergeQueueOutcomes;
+  const github = yield* HoustonMergeQueueGitHub;
   const passLock = yield* Semaphore.make(1);
   const projectLocks = new Map<string, Semaphore.Semaphore>();
   let loops = 0;
@@ -62,9 +69,22 @@ export const makeRunner = Effect.fn("HoustonMergeQueueRunner.make")(function* (o
   ) {
     const settings = yield* store.settings(target.projectId);
     const command = settings.verificationCommand.trim();
-    const baseRef = row.baseRef;
+    const baseRef = targetBase(row);
+    const stacked = row.stacked;
+    const stack =
+      stacked === null
+        ? null
+        : {
+            dependency: stacked.headRef,
+            recordedHeads: recordedHeads(
+              stacked,
+              yield* store.logOf(target.projectId, stacked.number),
+            ),
+            targetsDependency: targetsDependency(row),
+            number: row.number,
+          };
     if (baseRef === null) {
-      yield* landing.recordFailure(
+      yield* outcomes.recordFailure(
         target,
         row,
         {
@@ -100,6 +120,7 @@ export const makeRunner = Effect.fn("HoustonMergeQueueRunner.make")(function* (o
             timeLimitMinutes: settings.timeLimitMinutes,
             scratch: verifier.scratchPath,
             protectedRoots: roots,
+            stack,
           }),
         ),
       ),
@@ -114,6 +135,7 @@ export const makeRunner = Effect.fn("HoustonMergeQueueRunner.make")(function* (o
         headSha: row.headSha,
         verifiedSha: outcome.verifiedSha,
         at,
+        ...(outcome.forkSha === undefined ? {} : { forkSha: outcome.forkSha }),
       });
       return true;
     }
@@ -129,7 +151,68 @@ export const makeRunner = Effect.fn("HoustonMergeQueueRunner.make")(function* (o
       yield* store.touch(target.projectId);
       return false;
     }
-    yield* landing.recordFailure(target, row, failure, true);
+    yield* outcomes.recordFailure(target, row, failure, true);
+    return true;
+  });
+
+  /** Settles what GitHub holds: a new head takes it back, a let-go or failing check fails it. */
+  const settleHeld = Effect.fn("HoustonMergeQueueRunner.settleHeld")(function* (
+    target: ProjectTarget,
+    row: QueueRow,
+  ) {
+    const hold = row.github;
+    if (hold === null || hold.mode === "houston") return false;
+    const nodeId = row.facts?.nodeId ?? null;
+    const release =
+      nodeId === null
+        ? Effect.fail(`GitHub gave no node id for PR #${row.number}`)
+        : github.takeBack({ target, number: row.number, nodeId, mode: hold.mode });
+    if (hold.headSha !== row.headSha) {
+      yield* release;
+      yield* store.setGitHub(target.projectId, row.number, null);
+      return true;
+    }
+    const facts = row.facts;
+    if (facts === null || facts.error !== null || facts.state !== "open") return false;
+    const failing = failingChecks(facts);
+    const shown = facts.handOff ?? null;
+    const letGo =
+      shown === null
+        ? null
+        : hold.mode === "mergeQueue" && shown.queueEntry === null
+          ? `GitHub removed PR #${row.number} from its merge queue: ${shown.letGo ?? "GitHub gave no reason"}`
+          : hold.mode === "autoMerge" && shown.autoMerge === null
+            ? `GitHub turned auto-merge off for PR #${row.number}: ${shown.letGo ?? "GitHub gave no reason"}`
+            : null;
+    if (failing.length === 0 && letGo === null) return false;
+    // GitHub already let go of an ejected entry; one with failing checks stays held until released.
+    const takeBack =
+      failing.length > 0
+        ? release
+        : release.pipe(
+            Effect.catch((error: string) =>
+              Effect.logWarning(`Merge queue: taking PR #${row.number} back failed: ${error}`),
+            ),
+          );
+    yield* takeBack;
+    yield* outcomes.recordFailure(
+      target,
+      row,
+      {
+        kind: failing.length > 0 ? "checksFailed" : "ejected",
+        message:
+          failing.length > 0
+            ? `GitHub's checks failed on ${shortSha(hold.headSha)}, which GitHub held: ${failing.join(", ")}`
+            : letGo!,
+        headSha: row.headSha,
+        baseSha: row.verification?.baseSha ?? null,
+        files: [],
+        outputTail: null,
+        notifiedThreadId: null,
+        at: yield* nowIso,
+      },
+      hold.unattended === true,
+    );
     return true;
   });
 
@@ -141,18 +224,31 @@ export const makeRunner = Effect.fn("HoustonMergeQueueRunner.make")(function* (o
       const view = yield* projects.view(target);
       if (view.context.refusal !== null && view.context.commandSet) return false;
       const settings = yield* store.settings(projectId);
-      // A pushed head GitHub's checks failed on leaves the line before anything else moves.
+      for (const row of view.rows) {
+        // A take-back GitHub refuses keeps the hold; the next pass sends it again.
+        const settled = yield* settleHeld(target, row).pipe(
+          Effect.catch((error: string) =>
+            Effect.logWarning(`Merge queue: taking PR #${row.number} back failed: ${error}`).pipe(
+              Effect.as(false),
+            ),
+          ),
+        );
+        if (settled) return true;
+      }
+      // A pushed head GitHub's checks failed on leaves the line before anything else moves;
+      // one GitHub holds is settled above, after its take-back.
       for (const [index, row] of view.rows.entries()) {
         const held = verificationHolds(row);
         const failing = row.facts === null ? [] : failingChecks(row.facts);
         if (
+          row.github === null &&
           view.entries[index]!.position > 0 &&
           held !== null &&
           held.verifiedSha !== held.headSha &&
           row.headSha === held.verifiedSha &&
           failing.length > 0
         ) {
-          yield* landing.recordFailure(
+          yield* outcomes.recordFailure(
             target,
             row,
             {

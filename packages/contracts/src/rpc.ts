@@ -265,6 +265,8 @@ import {
   HoustonMergeQueueEntry,
   HoustonMergeQueueEntryInput,
   HoustonMergeQueueError,
+  HoustonMergeQueueHandToThreadInput,
+  HoustonMergeQueueHandToThreadResult,
   HoustonMergeQueueMergeHeadInput,
   HoustonMergeQueueMergeHeadResult,
   HoustonMergeQueueMessageResult,
@@ -637,6 +639,10 @@ export const WS_METHODS = {
   houstonMergeQueueMergeHead: "houston.mergeQueue.mergeHead",
   houstonMergeQueueSettingsSet: "houston.mergeQueue.settings.set",
   houstonMergeQueuePause: "houston.mergeQueue.pause",
+  houstonMergeQueueRetry: "houston.mergeQueue.retry",
+  houstonMergeQueueHandToThread: "houston.mergeQueue.handToThread",
+  houstonMergeQueueRevert: "houston.mergeQueue.revert",
+  houstonMergeQueueAcknowledge: "houston.mergeQueue.acknowledge",
 
   terminalOpen: "terminal.open",
   terminalAttach: "terminal.attach",
@@ -2137,6 +2143,30 @@ const WsHoustonMergeQueuePauseRpc = Rpc.make(WS_METHODS.houstonMergeQueuePause, 
   error: HoustonMergeQueueRpcError,
 });
 
+const WsHoustonMergeQueueRetryRpc = Rpc.make(WS_METHODS.houstonMergeQueueRetry, {
+  payload: HoustonMergeQueueEntryInput,
+  success: HoustonMergeQueueMessageResult,
+  error: HoustonMergeQueueRpcError,
+});
+
+const WsHoustonMergeQueueHandToThreadRpc = Rpc.make(WS_METHODS.houstonMergeQueueHandToThread, {
+  payload: HoustonMergeQueueHandToThreadInput,
+  success: HoustonMergeQueueHandToThreadResult,
+  error: HoustonMergeQueueRpcError,
+});
+
+const WsHoustonMergeQueueRevertRpc = Rpc.make(WS_METHODS.houstonMergeQueueRevert, {
+  payload: HoustonMergeQueueEntryInput,
+  success: HoustonMergeQueueMessageResult,
+  error: HoustonMergeQueueRpcError,
+});
+
+const WsHoustonMergeQueueAcknowledgeRpc = Rpc.make(WS_METHODS.houstonMergeQueueAcknowledge, {
+  payload: HoustonMergeQueueProjectInput,
+  success: HoustonMergeQueueEmptyResult,
+  error: HoustonMergeQueueRpcError,
+});
+
 const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
   payload: TerminalOpenInput,
   success: TerminalSessionSnapshot,
@@ -2779,6 +2809,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonMergeQueueMergeHeadRpc,
   WsHoustonMergeQueueSettingsSetRpc,
   WsHoustonMergeQueuePauseRpc,
+  WsHoustonMergeQueueRetryRpc,
+  WsHoustonMergeQueueHandToThreadRpc,
+  WsHoustonMergeQueueRevertRpc,
+  WsHoustonMergeQueueAcknowledgeRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
   WsTerminalObserveRpc,

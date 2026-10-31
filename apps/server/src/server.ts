@@ -127,6 +127,7 @@ import * as HoustonSlackStore from "./houston/slack/Store.ts";
 import * as SlackWebApi from "./houston/slack/WebApi.ts";
 import { layerMergeQueue } from "./houston/mergeQueue/layer.ts";
 import * as HoustonMergeQueueStore from "./houston/mergeQueue/Store.ts";
+import * as HoustonMergeQueueThreads from "./houston/mergeQueue/Threads.ts";
 import { layerHarnessReview } from "./houston/harnessReview/layer.ts";
 import * as HoustonHarnessRunner from "./houston/harnessReview/Runner.ts";
 import * as HoustonHarnessStore from "./houston/harnessReview/Store.ts";
@@ -606,7 +607,11 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
 ).pipe(
   // The merge queue reads through the PR page's own service and GitHub client.
   Layer.provideMerge(
-    layerMergeQueue(Layer.mergeAll(GitHubRest.layerWithDependencies, layerPullRequestService)),
+    layerMergeQueue(
+      Layer.mergeAll(GitHubRest.layerWithDependencies, layerPullRequestService).pipe(
+        Layer.merge(HoustonMergeQueueThreads.layer),
+      ),
+    ),
   ),
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer, HoustonTaskV1Import.layer)),

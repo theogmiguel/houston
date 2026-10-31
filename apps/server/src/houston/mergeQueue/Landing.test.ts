@@ -543,6 +543,7 @@ describe("the merge queue has no push but the lease and no unpinned merge", () =
       assert.isNotEmpty(sources);
       // Every git argument list that names `push`, wherever it starts.
       const pushSites: Array<{ readonly file: string; readonly args: string }> = [];
+      const handOffs = new Set<string>();
       for (const file of sources) {
         const text = NodeFS.readFileSync(NodePath.join(directory, file), "utf8");
         for (const match of text.matchAll(/\[[^\]]*["'`]push["'`][^\]]*\]/g)) {
@@ -550,9 +551,24 @@ describe("the merge queue has no push but the lease and no unpinned merge", () =
         }
         assert.notMatch(text, /git push|--mirror|--force-if-includes/, file);
         assert.notMatch(text, /\bupdateRef\b|git\/refs/, file);
-        assert.notMatch(text, /runAction/, file);
-        assert.notMatch(text, /enable-auto-merge|auto_merge|enablePullRequestAutoMerge/, file);
+        // Upstream's actions only open a revert: its merge and auto-merge are not pinned.
+        for (const call of text.matchAll(/runAction\(\{[^}]*\}/g)) {
+          assert.match(call[0], /action: "revert"/, `${file}: ${call[0]}`);
+        }
+        assert.notMatch(text, /"merge"\s*as PullRequestAction|action: "merge"/, file);
+        assert.notMatch(text, /enable-auto-merge|auto_merge/, file);
+        // Every hand-off GitHub mutation is pinned to the commit the gates read.
+        for (const mutation of text.matchAll(
+          /(enqueuePullRequest|enablePullRequestAutoMerge)\(input: \{[^}]*\}/g,
+        )) {
+          assert.match(mutation[0], /expectedHeadOid: \$oid/, `${file}: ${mutation[0]}`);
+          handOffs.add(mutation[1]!);
+        }
       }
+      assert.deepEqual([...handOffs].toSorted(), [
+        "enablePullRequestAutoMerge",
+        "enqueuePullRequest",
+      ]);
       // The one lease push, in Landing.ts, and no other force form.
       assert.deepEqual(
         pushSites.map((site) => site.file),
