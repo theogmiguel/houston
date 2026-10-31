@@ -412,6 +412,10 @@ describe("github's merge, ejection, failure or a new head settle a held entry", 
         assert.include(out.failure?.message, "GitHub removed PR #7 from its merge queue");
         assert.include(out.failure?.message, "MERGE_CONFLICT");
         assert.isNull(out.github);
+        assert.deepEqual(
+          mutationsOf(github).map((mutation) => mutation.name),
+          ["enqueuePullRequest", "dequeuePullRequest"],
+        );
       }),
     );
   });
@@ -437,6 +441,11 @@ describe("github's merge, ejection, failure or a new head settle a held entry", 
           assert.strictEqual(out.failure?.kind, "ejected", JSON.stringify(out));
           assert.include(out.failure?.message, "auto-merge");
           assert.include(out.failure?.message, "the base branch was changed");
+          assert.deepEqual(
+            mutationsOf(github).map((mutation) => mutation.name),
+            ["enablePullRequestAutoMerge", "disablePullRequestAutoMerge"],
+          );
+          assert.isNull(out.github);
         }),
       );
     },
@@ -462,6 +471,13 @@ describe("github's merge, ejection, failure or a new head settle a held entry", 
           assert.strictEqual(out.failure?.kind, "checksFailed", JSON.stringify(out));
           assert.include(out.failure?.message, "build");
           assert.deepEqual(mergesOf(github), []);
+          // Auto-merge is turned off before the entry fails, so the owner's next push cannot merge.
+          assert.deepEqual(
+            mutationsOf(github).map((mutation) => mutation.name),
+            ["enablePullRequestAutoMerge", "disablePullRequestAutoMerge"],
+          );
+          assert.isNull(pull.autoMerge);
+          assert.isNull(out.github);
         }),
       );
     },
@@ -743,6 +759,37 @@ describe("a hold outlives a failed read and is never forgotten without a take-ba
       );
     },
   );
+});
+
+describe("a held entry whose checks fail is failed only once github let go", () => {
+  it.live("a held entry whose checks fail is failed only once github let go", () => {
+    const github = makeGitHub(makeRepos());
+    github.autoMergeAllowed = true;
+    return withQueue(
+      github,
+      Effect.gen(function* () {
+        const queue = yield* HoustonMergeQueueService;
+        const reader = yield* HoustonMergeQueueReader;
+        const runner = yield* HoustonMergeQueueRunner;
+        const projectId = yield* queueScenario(github, [7], { command: "git --version" });
+        const { pull } = yield* handedOff(github, projectId);
+        pull.checks = [{ name: "build", status: "failure", required: true }];
+        yield* reader.readProject(projectId);
+        github.takeBackFailure = "Resource not accessible by integration";
+        yield* runner.step(projectId);
+        const kept = entryOf(yield* queue.get({ projectId }), 7);
+        assert.isNull(kept.failure, JSON.stringify(kept));
+        assert.strictEqual(kept.github?.mode, "autoMerge");
+        assert.isNotNull(pull.autoMerge);
+
+        github.takeBackFailure = null;
+        yield* runner.step(projectId);
+        const out = entryOf(yield* queue.get({ projectId }), 7);
+        assert.strictEqual(out.failure?.kind, "checksFailed", JSON.stringify(out));
+        assert.isNull(pull.autoMerge);
+      }),
+    );
+  });
 });
 
 describe("required checks come from the head and no branch rules are read", () => {

@@ -185,11 +185,15 @@ export const makeRunner = Effect.fn("HoustonMergeQueueRunner.make")(function* (o
             ? `GitHub turned auto-merge off for PR #${row.number}: ${shown.letGo ?? "GitHub gave no reason"}`
             : null;
     if (failing.length === 0 && letGo === null) return false;
-    const takeBack = release.pipe(
-      Effect.catch((error: string) =>
-        Effect.logWarning(`Merge queue: taking PR #${row.number} back failed: ${error}`),
-      ),
-    );
+    // GitHub already let go of an ejected entry; one with failing checks stays held until released.
+    const takeBack =
+      failing.length > 0
+        ? release
+        : release.pipe(
+            Effect.catch((error: string) =>
+              Effect.logWarning(`Merge queue: taking PR #${row.number} back failed: ${error}`),
+            ),
+          );
     yield* takeBack;
     yield* outcomes.recordFailure(
       target,
@@ -231,11 +235,13 @@ export const makeRunner = Effect.fn("HoustonMergeQueueRunner.make")(function* (o
         );
         if (settled) return true;
       }
-      // A pushed head GitHub's checks failed on leaves the line before anything else moves.
+      // A pushed head GitHub's checks failed on leaves the line before anything else moves;
+      // one GitHub holds is settled above, after its take-back.
       for (const [index, row] of view.rows.entries()) {
         const held = verificationHolds(row);
         const failing = row.facts === null ? [] : failingChecks(row.facts);
         if (
+          row.github === null &&
           view.entries[index]!.position > 0 &&
           held !== null &&
           held.verifiedSha !== held.headSha &&
