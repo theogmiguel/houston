@@ -8,6 +8,7 @@ mod dialog;
 mod fs;
 mod fs_allowlist;
 mod notifications;
+mod provider_auth;
 mod shell;
 mod shells;
 mod skills;
@@ -336,6 +337,7 @@ fn main() {
     builder = builder.manage(shells::ShellsCache::new());
     builder = builder.manage(std::sync::Arc::new(app_update::V2UpdateHandle::new()));
     builder = builder.manage(window::ContextMenuState::default());
+    builder = builder.manage(provider_auth::ProviderAuthCallbacks::default());
     builder = builder.manage(app_menu::ZoomState::default());
 
     let launch_transfer = std::env::current_dir()
@@ -396,6 +398,8 @@ fn main() {
             fs::fs_write_file_checked,
             notifications::native_notify,
             notifications::native_notifications_supported,
+            provider_auth::provider_auth_receive,
+            provider_auth::provider_auth_cancel,
             fs::fs_stat,
             fs::fs_exists,
             fs::fs_delete,
