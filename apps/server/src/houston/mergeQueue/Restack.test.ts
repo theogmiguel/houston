@@ -27,6 +27,7 @@ import {
   type FakeGitHub,
   type GitLog,
 } from "./mergeQueue.testkit.ts";
+import { HoustonMergeQueueReader } from "./Reader.ts";
 import { HoustonMergeQueueRunner } from "./Runner.ts";
 import { HoustonMergeQueueService } from "./Service.ts";
 
@@ -165,6 +166,70 @@ describe("a dependent on a squash-merged branch replays only its own commits", (
       }),
     );
   });
+
+  it.live(
+    "a dependent on a squash-merged branch replays only its own commits: the newest of two contained heads",
+    () => {
+      const github = makeGitHub(makeRepos());
+      github.mergeQueueBases.add("main");
+      return withQueue(
+        github,
+        Effect.gen(function* () {
+          const repos = github.repos!;
+          const config = yield* ServerConfig.ServerConfig;
+          const queue = yield* HoustonMergeQueueService;
+          const reader = yield* HoustonMergeQueueReader;
+          const runner = yield* HoustonMergeQueueRunner;
+          const older = pushBranch(repos, "houston/one", { "1.txt": "first\n" });
+          openPull(github, 1, { headRef: "houston/one" });
+          pushBranch(repos, "main", { "main.txt": "moved\n" });
+          addManagedWorktree(repos, config.worktreesDir, "houston/one");
+          const projectId = yield* createProject("stack", repos.checkout);
+          yield* queue.setSettings({ projectId, mergeWhenVerified: false, ...SETTINGS });
+          yield* queue.enqueue({ projectId, pullRequest: 1 });
+
+          // #1 is handed to GitHub's merge queue at its first head: a hand_off row records it.
+          yield* runner.step(projectId);
+          const handed = yield* queue.mergeHead({
+            projectId,
+            number: 1,
+            expectedHeadSha: older,
+          });
+          assert.strictEqual(handed.outcome, "handedOff", handed.message);
+
+          // Its owner pushes a second commit; the queue takes it back and it lands there.
+          const newer = pushBranch(repos, "houston/one", { "1.txt": "second\n" });
+          github.mergeQueueBases.delete("main");
+          yield* reader.readProject(projectId);
+          yield* runner.step(projectId);
+          assert.isNull(entryOf(yield* queue.get({ projectId }), 1).github);
+
+          // #2 is built on #1's newer head, so it contains both recorded heads.
+          pushBranch(repos, "houston/two", { "2.txt": "first\n" }, { from: "houston/one" });
+          pushBranch(repos, "houston/two", { "2.txt": "second\n" });
+          openPull(github, 2, { headRef: "houston/two", baseRef: "houston/one" });
+          addManagedWorktree(repos, config.worktreesDir, "houston/two");
+          yield* queue.enqueue({ projectId, pullRequest: 2, dependsOn: 1 });
+          yield* landNext(projectId, 1);
+          const base = remoteHead(repos, "main")!;
+
+          yield* runner.step(projectId);
+          const two = entryOf(yield* queue.get({ projectId }), 2);
+          assert.isNull(two.failure, JSON.stringify(two.failure));
+          const verification = two.verification!;
+          assert.isNotNull(verification, JSON.stringify(two));
+          // Past the newest contained head, not the older one the hand-off recorded.
+          assert.strictEqual(verification.forkSha, newer);
+          assert.notStrictEqual(verification.forkSha, older);
+          const checkout = repos.checkout;
+          git(checkout, ["fetch", "--quiet", "origin", "+refs/heads/*:refs/fetched/*"]);
+          assert.strictEqual(git(checkout, ["rev-parse", `${verification.verifiedSha}~2`]), base);
+          assert.deepEqual(changed(checkout, verification.verifiedSha), ["2.txt"]);
+          assert.deepEqual(changed(checkout, `${verification.verifiedSha}^`), ["2.txt"]);
+        }),
+      );
+    },
+  );
 });
 
 describe("a dependency in order only is rebased plainly", () => {
