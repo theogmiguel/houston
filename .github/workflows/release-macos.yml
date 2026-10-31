@@ -157,8 +157,13 @@ jobs:
               printf '%s\n' "$CERTIFICATE_PASSWORD"
               echo "HOUSTON_APPLE_CERT_PASSWORD_EOF"
             } >> "$GITHUB_ENV"
+            # The config's ad-hoc "-" must not reach keychain(): it would be
+            # compared against the certificate's identity. An explicit empty
+            # value lets Tauri use the identity inside the certificate.
             if [ -n "$SIGNING_IDENTITY" ]; then
               echo "APPLE_SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
+            else
+              echo "APPLE_SIGNING_IDENTITY=" >> "$GITHUB_ENV"
             fi
             if [ -n "$NOTARY_ID" ] && [ -n "$NOTARY_PASSWORD" ] && [ -n "$NOTARY_TEAM" ]; then
               {
