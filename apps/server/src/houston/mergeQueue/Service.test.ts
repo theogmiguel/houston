@@ -419,6 +419,132 @@ describe("a changed command discards the verifications it passed", () => {
   });
 });
 
+const logRow = (
+  kind: "merge" | "park" | "push",
+  number: number,
+  patch: { readonly unattended?: boolean } = {},
+) => ({
+  kind,
+  number,
+  repository: "o/r",
+  url: pullUrl(number),
+  title: `PR ${number}`,
+  refName: "main",
+  oldSha: null,
+  newSha: null,
+  headSha: "c".repeat(40),
+  forkSha: null,
+  method: kind === "merge" ? ("squash" as const) : null,
+  detail: null,
+  unattended: patch.unattended ?? false,
+});
+
+describe("retry puts a parked entry back in line", () => {
+  it.live("retry puts a parked entry back in line", () => {
+    const github = makeGitHub(makeRepos());
+    return withQueue(
+      Effect.gen(function* () {
+        const queue = yield* HoustonMergeQueueService;
+        const store = yield* HoustonMergeQueueStore;
+        const projectId = yield* githubProject("retry", github, [7, 8]);
+        const seven = yield* queue.enqueue({ projectId, pullRequest: 7 });
+        yield* queue.enqueue({ projectId, pullRequest: 8 });
+        yield* store.setFailure(projectId, 7, {
+          kind: "failed",
+          message: "`make` failed (exit 2)",
+          headSha: seven.headSha,
+          baseSha: "a".repeat(40),
+          files: [],
+          outputTail: "boom",
+          notifiedThreadId: null,
+          at: "2026-10-30T10:00:00.000Z",
+        });
+        const parked = (yield* queue.get({ projectId })).entries.find((entry) => entry.number === 7);
+        assert.strictEqual(parked?.status, "parked");
+
+        const result = yield* queue.retry({ projectId, number: 7 });
+        assert.include(result.message, "PR #7");
+        const back = (yield* queue.get({ projectId })).entries.find((entry) => entry.number === 7);
+        assert.isNull(back?.failure);
+        assert.strictEqual(back?.headSha, seven.headSha);
+        assert.strictEqual(back?.position, 1);
+        assert.notStrictEqual(back?.status, "parked");
+
+        const inLine = yield* failure(queue.retry({ projectId, number: 8 }));
+        assert.strictEqual(inLine.kind, "invalid");
+        assert.strictEqual(inLine.message, "PR #8 is in line, not parked; there is nothing to retry");
+        const missing = yield* failure(queue.retry({ projectId, number: 99 }));
+        assert.strictEqual(missing.kind, "not_found");
+      }),
+      { github },
+    );
+  });
+});
+
+describe("revert opens a revert pull request for a queue merge only", () => {
+  it.live("revert opens a revert pull request for a queue merge only", () => {
+    const github = makeGitHub(makeRepos());
+    return withQueue(
+      Effect.gen(function* () {
+        const queue = yield* HoustonMergeQueueService;
+        const store = yield* HoustonMergeQueueStore;
+        const projectId = yield* githubProject("revert", github, [7, 8]);
+        yield* store.appendLog(projectId, logRow("merge", 7, { unattended: true }));
+        yield* store.appendLog(projectId, logRow("push", 8));
+        const base = git(github.repos!.bare, ["rev-parse", "refs/heads/main"]);
+        const result = yield* queue.revert({ projectId, number: 7 });
+        assert.include(result.message, "PR #7");
+        assert.deepEqual(
+          github.actions.map((action) => [action.number, action.action, action.repository]),
+          [[7, "revert"]].map(([number, action]) => [number, action, "o/r"]),
+        );
+        // Nothing is pushed to the base.
+        assert.strictEqual(git(github.repos!.bare, ["rev-parse", "refs/heads/main"]), base);
+
+        const notMerged = yield* failure(queue.revert({ projectId, number: 8 }));
+        assert.strictEqual(notMerged.kind, "not_found");
+        assert.include(notMerged.message, "PR #8");
+        assert.strictEqual(github.actions.length, 1);
+
+        github.readFailure = "HTTP 403: Resource not accessible by integration";
+        const refused = yield* failure(queue.revert({ projectId, number: 7 }));
+        assert.strictEqual(refused.kind, "remote");
+        assert.include(refused.message, "Resource not accessible by integration");
+      }),
+      { github },
+    );
+  });
+});
+
+describe("the away count covers unattended work since the acknowledgement", () => {
+  it.live("the away count covers unattended work since the acknowledgement", () => {
+    const github = makeGitHub(makeRepos());
+    return withQueue(
+      Effect.gen(function* () {
+        const queue = yield* HoustonMergeQueueService;
+        const store = yield* HoustonMergeQueueStore;
+        const projectId = yield* githubProject("away", github, []);
+        yield* store.appendLog(projectId, logRow("merge", 1, { unattended: true }));
+        yield* store.appendLog(projectId, logRow("merge", 2, { unattended: true }));
+        yield* store.appendLog(projectId, logRow("park", 3, { unattended: true }));
+        // The user's own Merge is not counted.
+        yield* store.appendLog(projectId, logRow("merge", 4));
+        assert.deepEqual((yield* queue.get({ projectId })).away, { merged: 2, parked: 1 });
+
+        yield* queue.acknowledge({ projectId });
+        assert.deepEqual((yield* queue.get({ projectId })).away, { merged: 0, parked: 0 });
+        yield* Effect.sleep("10 millis");
+        yield* store.appendLog(projectId, logRow("merge", 5, { unattended: true }));
+        assert.deepEqual((yield* queue.get({ projectId })).away, { merged: 1, parked: 0 });
+
+        const missing = yield* failure(queue.acknowledge({ projectId: "project-missing" as ProjectId }));
+        assert.strictEqual(missing.kind, "not_found");
+      }),
+      { github },
+    );
+  });
+});
+
 describe("v1 queue state is not read", () => {
   it.live("v1 queue state is not read", () => {
     const baseDir = NodeFS.realpathSync(
