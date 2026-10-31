@@ -132,6 +132,27 @@ export const gitConfigEnv = (
 export const explicitBareRepositoryEnv = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform) =>
   gitConfigEnv(env, "safe.bareRepository", "explicit", platform);
 
+/**
+ * Git's diagnostics are matched as English text, so every Git child runs with a fixed
+ * message locale. Git reads paths and commit messages as bytes and `-z` output is
+ * unquoted, so this does not alter non-ASCII names or commit text. GNU gettext prefers
+ * LANGUAGE, so clear it as well.
+ */
+export const gitStableMessageLocaleEnv = {
+  LC_ALL: "C",
+  LANGUAGE: "",
+} satisfies NodeJS.ProcessEnv;
+
+/** The environment for a Git child: inherited values plus stable diagnostics. */
+export const gitSpawnEnv = (
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+): NodeJS.ProcessEnv => ({
+  ...env,
+  ...gitStableMessageLocaleEnv,
+  ...explicitBareRepositoryEnv(env, platform),
+});
+
 const classifyNonZeroExit = (
   stderr: string,
   classifyFailure: VcsProcessInput["classifyFailure"],
@@ -198,6 +219,7 @@ export const make = Effect.gen(function* () {
     baseError: VcsProcessErrorContext,
   ) {
     let failedExit = false;
+    const baseEnv = { ...process.env, ...input.env };
     const execution = processRunner
       .run({
         command: input.command,
@@ -206,10 +228,10 @@ export const make = Effect.gen(function* () {
         ...(input.spawnCwd !== undefined ? { spawnCwd: input.spawnCwd } : {}),
         ...(input.stdin !== undefined ? { stdin: input.stdin } : {}),
         ...(input.onStdoutChunk !== undefined ? { onStdoutChunk: input.onStdoutChunk } : {}),
-        env: {
-          ...input.env,
-          ...explicitBareRepositoryEnv({ ...process.env, ...input.env }, hostPlatform),
-        },
+        env:
+          input.command === "git"
+            ? gitSpawnEnv(baseEnv, hostPlatform)
+            : { ...input.env, ...explicitBareRepositoryEnv(baseEnv, hostPlatform) },
         timeout: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         maxOutputBytes: input.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
         outputMode: input.outputMode ?? "truncate",

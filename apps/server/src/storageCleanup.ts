@@ -144,7 +144,7 @@ export function storageCleanupActivityAt(thread: OrchestrationV2ThreadShell): nu
   );
 }
 
-/** Only a complete subagent chain within this worktree shares ownership. */
+/** Only a complete subagent or side chat chain within this worktree shares ownership. */
 function worktreeOwner<T extends Pick<OrchestrationV2ThreadShell, "id" | "lineage">>(
   threads: ReadonlyArray<T>,
 ) {
@@ -159,7 +159,8 @@ function worktreeOwner<T extends Pick<OrchestrationV2ThreadShell, "id" | "lineag
     while (current.id !== owner.id) {
       if (
         seen.has(current.id) ||
-        current.lineage.relationshipToParent !== "subagent" ||
+        (current.lineage.relationshipToParent !== "subagent" &&
+          current.lineage.sideChat !== true) ||
         current.lineage.rootThreadId !== owner.lineage.rootThreadId
       )
         return undefined;
@@ -485,14 +486,13 @@ const make = Effect.gen(function* () {
         cwd,
         detail,
       });
-    // Return null for missing/non-repository cwd; force untranslated git diagnostics for matching.
+    // Return null for missing/non-repository cwd; Git diagnostics are pinned to English.
     const read = Effect.fnUntraced(function* (args: string[], allowedExitCode?: number) {
       const result = yield* git
         .execute({
           operation: "StorageCleanup.branchChanged",
           cwd,
           args,
-          env: { LC_ALL: "C" },
           allowNonZeroExit: true,
         })
         .pipe(
