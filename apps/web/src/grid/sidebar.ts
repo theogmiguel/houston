@@ -7,7 +7,7 @@ import {
 import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
 
 import {
-  isSidebarSubagentThread,
+  isSidebarHiddenThread,
   resolveSidebarStatusGlyphState,
   resolveThreadStatusPill,
 } from "../components/Sidebar.logic";
@@ -90,7 +90,7 @@ export function visibleGridThreads(
     (thread) =>
       thread.archivedAt === null &&
       thread.settledOverride !== "settled" &&
-      !isSidebarSubagentThread(thread) &&
+      !isSidebarHiddenThread(thread) &&
       !effectiveSnoozed(thread, { now }),
   );
 }
@@ -119,7 +119,7 @@ export function runningSubagentsByParentThread(
 ): ReadonlyMap<string, number> {
   const counts = new Map<string, number>();
   for (const thread of threads) {
-    if (!isSidebarSubagentThread(thread)) continue;
+    if (!isSidebarHiddenThread(thread)) continue;
     if (thread.archivedAt !== null || thread.deletedAt !== null) continue;
     const parentThreadId = thread.lineage.parentThreadId;
     if (parentThreadId === null) continue;
@@ -149,7 +149,7 @@ export function partitionShelfThreads(
   const closed: EnvironmentThreadShell[] = [];
   for (const thread of threads) {
     if (thread.archivedAt !== null || thread.deletedAt !== null) continue;
-    if (isSidebarSubagentThread(thread)) continue;
+    if (isSidebarHiddenThread(thread)) continue;
     if (!workspaceKeys.has(workspaceKeyOf(thread.environmentId, thread.projectId))) continue;
     if (effectiveSnoozed(thread, { now })) {
       held.push(thread);
