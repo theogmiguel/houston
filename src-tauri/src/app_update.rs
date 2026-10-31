@@ -305,15 +305,11 @@ pub fn v2_update_set_channel(
     Ok(serde_json::to_value(next).expect("V2UpdateState serializes"))
 }
 
-#[tauri::command]
-pub async fn v2_update_check(
-    app: AppHandle,
-    state: State<'_, Arc<V2UpdateHandle>>,
-) -> Result<Value, String> {
-    let enabled = state.snapshot().enabled;
-    if !enabled {
-        let snapshot = state.snapshot();
-        return Ok(json!({ "checked": false, "state": snapshot }));
+/// Runs one check and folds the result into the shared state. `checked` is
+/// false when the check could not run or the updater reported an error.
+async fn perform_update_check(app: &AppHandle, state: &V2UpdateHandle) -> (bool, V2UpdateState) {
+    if !state.snapshot().enabled {
+        return (false, state.snapshot());
     }
     let channel = state.snapshot().channel;
     let checking = state.update(|inner| {
@@ -323,9 +319,9 @@ pub async fn v2_update_check(
         inner.state.message = None;
         inner.state.download_percent = None;
     });
-    v2_emit_state(&app, &checking);
+    v2_emit_state(app, &checking);
 
-    let updater = match v2_updater(&app, &channel) {
+    let updater = match v2_updater(app, &channel) {
         Ok(updater) => updater,
         Err(error) => {
             let failed = state.update(|inner| {
@@ -334,8 +330,8 @@ pub async fn v2_update_check(
                 inner.state.error_context = Some("check".to_string());
                 inner.state.can_retry = true;
             });
-            v2_emit_state(&app, &failed);
-            return Ok(json!({ "checked": false, "state": failed }));
+            v2_emit_state(app, &failed);
+            return (false, failed);
         }
     };
 
@@ -354,8 +350,8 @@ pub async fn v2_update_check(
                 inner.candidate = Some(update);
                 inner.downloaded = None;
             });
-            v2_emit_state(&app, &next);
-            Ok(json!({ "checked": true, "state": next }))
+            v2_emit_state(app, &next);
+            (true, next)
         }
         Ok(None) => {
             let next = state.update(|inner| {
@@ -371,8 +367,8 @@ pub async fn v2_update_check(
                 inner.candidate = None;
                 inner.downloaded = None;
             });
-            v2_emit_state(&app, &next);
-            Ok(json!({ "checked": true, "state": next }))
+            v2_emit_state(app, &next);
+            (true, next)
         }
         Err(error) => {
             let message = updater_error("checking", MANIFEST_URL, &runtime_arch(), error);
@@ -382,10 +378,33 @@ pub async fn v2_update_check(
                 inner.state.error_context = Some("check".to_string());
                 inner.state.can_retry = true;
             });
-            v2_emit_state(&app, &failed);
-            Ok(json!({ "checked": false, "state": failed }))
+            v2_emit_state(app, &failed);
+            (false, failed)
         }
     }
+}
+
+#[tauri::command]
+pub async fn v2_update_check(
+    app: AppHandle,
+    state: State<'_, Arc<V2UpdateHandle>>,
+) -> Result<Value, String> {
+    let check_state = Arc::clone(state.inner());
+    let (checked, snapshot) = perform_update_check(&app, &check_state).await;
+    Ok(json!({ "checked": checked, "state": snapshot }))
+}
+
+/// Menu-initiated check: updates the same state and reports the outcome to the
+/// caller, which shows the native dialog upstream shows from its menu.
+pub async fn check_for_updates_from_menu(app: &AppHandle) -> Result<Option<String>, String> {
+    let handle = app.state::<Arc<V2UpdateHandle>>();
+    let (checked, snapshot) = perform_update_check(app, handle.inner().as_ref()).await;
+    if !checked {
+        return Err(snapshot
+            .message
+            .unwrap_or_else(|| "Automatic updates are not available right now.".to_string()));
+    }
+    Ok(snapshot.available_version)
 }
 
 #[tauri::command]
