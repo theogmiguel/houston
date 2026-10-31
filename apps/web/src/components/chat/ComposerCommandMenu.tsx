@@ -204,7 +204,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
       onClick={() => {
         props.onSelect(props.item);
       }}
-      className="grid min-h-7 cursor-pointer grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-0.5 rounded-(--r-ctl) px-2 py-1 text-headline leading-4 outline-none hover:bg-(--hover)! data-[active=true]:bg-(--sel)! data-[active=true]:text-(--t1)!"
+      className="grid min-h-7 cursor-pointer grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-0.5 rounded-(--r-ctl) px-2 py-1 text-headline leading-4 outline-none sm:text-headline hover:bg-(--hover)! data-[active=true]:bg-(--sel)! data-[active=true]:text-(--t1)!"
     >
       {props.item.type === "path" ? (
         <PierreEntryIcon
