@@ -458,6 +458,16 @@ const validateManifest = (
     }
     folded.set(entry.name.toLowerCase(), entry.name);
   }
+  // An entry cannot be both a file and the folder of another entry.
+  for (const entry of manifest.entries) {
+    const parts = entry.name.toLowerCase().split("/");
+    for (let depth = 1; depth < parts.length; depth += 1) {
+      const file = folded.get(parts.slice(0, depth).join("/"));
+      if (file !== undefined) {
+        throw damaged(operation, [`${file} is also the folder of ${entry.name}`]);
+      }
+    }
+  }
   const listed = new Set(manifest.entries.map((entry) => entry.name));
   const named = (name: string, under: string) => {
     if (!listed.has(name) || !name.startsWith(`${under}/`)) throw damaged(operation, [name]);

@@ -569,6 +569,35 @@ describe("crafted entries are refused before anything is written", () => {
     await unpackTransfer(file, PASSPHRASE, NodePath.join(parent, "scratch"));
   });
 
+  it("an entry that is the folder of another entry is refused", async () => {
+    const dir = tempDir();
+    const parent = NodePath.join(dir, "scratch-parent");
+    NodeFS.mkdirSync(parent);
+    for (const [label, names] of [
+      ["file first", ["checkouts/0/untracked/x", "checkouts/0/untracked/x/y"]],
+      ["file second", ["checkouts/0/untracked/x/y", "checkouts/0/untracked/x"]],
+      ["case folded", ["checkouts/0/untracked/X", "checkouts/0/untracked/x/y"]],
+    ] as const) {
+      const entries = entriesOf(Object.fromEntries(names.map((name) => [name, "x"])));
+      const file = writeFile(
+        dir,
+        "prefix.houston-transfer",
+        await craft([
+          encodeFrame("manifest.json", text(JSON.stringify(baseManifest(entries)))),
+          ...entries.map((entry) => encodeFrame(entry.name, entry.bytes)),
+        ]),
+      );
+      const refusal = await refusalOf(
+        unpackTransfer(file, PASSPHRASE, NodePath.join(parent, "scratch")),
+      );
+      expect(refusal.kind, label).toBe("not_transfer_file");
+      expect(refusal.problem, label).toBe("The file is damaged or was not made by Houston.");
+      expect(refusal.items.join(" "), label).toContain(names[0]);
+      expect(refusal.items.join(" "), label).toContain(names[1]);
+      expect(NodeFS.readdirSync(parent), label).toEqual([]);
+    }
+  });
+
   it("an untracked path through the NTFS short name of .git is refused", async () => {
     const dir = tempDir();
     const parent = NodePath.join(dir, "scratch-parent");
