@@ -1097,8 +1097,16 @@ describe("a reply after the result is an adjustment the owner accepts into a new
 
           // Accept from the owner's DM: attempt 2 on the same branch, the reply fenced.
           yield* conversation.handback(a.threadId, READY);
+          // Another member's reply is not an adjustment: no row, no owner DM, no 👀.
+          yield* sendEvent(fake, replyEvent("1700000009.000100", "1700000000.000100", "U9", "Paint it red"));
           yield* sendEvent(fake, replyEvent("1700000010.000100", "1700000000.000100", "U2", "Make the button blue"));
           yield* until("the adjustment", adjustment("1700000010.000100").pipe(Effect.map((row) => row !== undefined)));
+          yield* flushOutbox;
+          assert.isUndefined(yield* adjustment("1700000009.000100"));
+          assert.isFalse(ownerDms(fake).some((entry) => postedText(entry).includes("Paint it red")));
+          assert.isFalse(
+            fake.callsOf("reactions.add").some((call) => call.body.timestamp === "1700000009.000100"),
+          );
           assert.strictEqual((yield* adjustment("1700000010.000100"))?.state, "pending");
           const dm = yield* adjustmentDm("Make the button blue");
           assert.deepEqual(
@@ -1162,6 +1170,14 @@ describe("a reply after the result is an adjustment the owner accepts into a new
           );
           yield* sendEvent(fake, replyEvent("1700000040.000100", "1700000000.000100", "U2", "Or green"));
           yield* until("the fourth adjustment", adjustment("1700000040.000100").pipe(Effect.map((row) => row !== undefined)));
+          // The owner's own reply is an adjustment too, and waits for the owner's acceptance.
+          yield* sendEvent(fake, replyEvent("1700000045.000100", "1700000000.000100", OWNER, "Add a footer"));
+          yield* until("the owner's adjustment", adjustment("1700000045.000100").pipe(Effect.map((row) => row !== undefined)));
+          assert.strictEqual((yield* adjustment("1700000045.000100"))?.state, "pending");
+          assert.deepEqual(
+            buttonsOf(yield* adjustmentDm("Add a footer")).map((button) => button.text.text),
+            ["Accept", "Ignore"],
+          );
           yield* setTaskStatus(a.taskId, "done");
           yield* tickReplies;
           yield* flushOutbox;

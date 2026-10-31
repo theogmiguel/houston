@@ -751,11 +751,13 @@ const make = Effect.gen(function* () {
       }
       return;
     }
-    if (
-      classified.user !== request.author ||
-      request.task_id === null ||
-      classified.text.length === 0
-    ) {
+    // Only the requester's or the owner's reply joins the task or becomes an adjustment.
+    const fromRequesterOrOwner = answerAllowed({
+      user: classified.user,
+      requester: request.author,
+      ownerUserId: settings?.owner_user_id ?? null,
+    });
+    if (!fromRequesterOrOwner || request.task_id === null || classified.text.length === 0) {
       return;
     }
     if (request.state === "pending" || request.state === "queued") {
@@ -767,7 +769,12 @@ const make = Effect.gen(function* () {
     if (latest?.state === "handed_back" && task?.status === "in_review") {
       return yield* requestAdjustment(request, latest, classified, settings);
     }
-    if (latest !== undefined && OPEN_RUN_STATES.has(latest.state)) {
+    // The owner is not told about their own reply during the work.
+    if (
+      latest !== undefined &&
+      OPEN_RUN_STATES.has(latest.state) &&
+      classified.user === request.author
+    ) {
       yield* midWork(request, classified, settings);
     }
   });
