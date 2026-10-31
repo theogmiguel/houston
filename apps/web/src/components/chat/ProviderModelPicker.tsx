@@ -13,12 +13,12 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { ChatGptSharingControl } from "./ChatGptSharingControl";
-import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { ModelEsque, getDisplayModelName, getTriggerDisplayModelName } from "./providerIconUtils";
 import { type ProviderInstanceEntry } from "../../providerInstances";
 import { ComposerControl, type ComposerControlSize } from "./ComposerControl";
 import { useComposerMenuProps } from "./composerEventScope";
 import { shortcutLabelForCommand } from "../../keybindings";
+import { traitsSplitTriggerClassName, type TraitsSplitPart } from "./modelTraits";
 
 /** Holds the page still behind the open picker; its lifetime is the popup element's. */
 function lockBackgroundScroll(popup: HTMLElement | null) {
@@ -83,6 +83,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   size?: ComposerControlSize;
   compact?: boolean;
   isComposerOwned?: boolean;
+  /** Draws this trigger as the left half of the model/traits split control. */
+  split?: TraitsSplitPart;
   disabled?: boolean;
   terminalOpen?: boolean;
   open?: boolean;
@@ -116,20 +118,17 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     (activeEntry?.driverKind === "opencode" || activeEntry?.driverKind === "antigravity"
       ? undefined
       : selectedInstanceOptions[0]);
-  const selectedModelName = selectedModel ? getDisplayModelName(selectedModel) : null;
-  const providerPrefix =
-    selectedModelName !== null &&
-    activeEntry !== null &&
-    !selectedModelName.toLowerCase().startsWith(activeEntry.displayName.toLowerCase())
-      ? `${activeEntry.displayName} · `
-      : "";
-  const triggerTitle = selectedModel
-    ? `${providerPrefix}${getDisplayModelName(selectedModel)}`
+  // The footer shows the catalog's short name, as the board's split control does.
+  const triggerModelName = selectedModel
+    ? getTriggerDisplayModelName(selectedModel, activeEntry?.driverKind)
+    : null;
+  const triggerTitle = triggerModelName
+    ? triggerModelName
     : props.model === ANTIGRAVITY_DEFAULT_MODEL
       ? "Choose model"
       : props.model || "Choose model";
   const triggerLabel = selectedModel
-    ? `${providerPrefix}${getDisplayModelName(selectedModel)}${selectedModel.isUnavailable ? " (Unavailable)" : ""}`
+    ? `${triggerModelName}${selectedModel.isUnavailable ? " (Unavailable)" : ""}`
     : triggerTitle;
   const setIsMenuOpen = (open: boolean) => {
     props.onOpenChange?.(open);
@@ -205,6 +204,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               props.compact
                 ? "max-w-42 shrink-0"
                 : !props.isComposerOwned && "max-w-48 sm:max-w-56",
+              traitsSplitTriggerClassName(props.split),
               props.triggerClassName,
             )}
             disabled={props.disabled}
@@ -214,33 +214,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         <span
           className={cn("flex min-w-0 flex-1 items-center", size === "xs" ? "gap-1" : "gap-1.5")}
         >
-          {selectedEntries && props.triggerLabel === undefined ? (
-            <span
-              data-chat-provider-model-picker-icon
-              className="flex shrink-0 items-center -space-x-1"
-              aria-hidden="true"
-            >
-              {selectedEntries
-                .slice(0, 3)
-                .map((selection) =>
-                  selection.entry ? (
-                    <ProviderInstanceIcon
-                      key={`${selection.instanceId}:${selection.model}`}
-                      driverKind={selection.entry.driverKind}
-                      displayName={selection.entry.displayName}
-                      accentColor={selection.entry.accentColor}
-                      className="size-4 rounded-full bg-(--chat-composer-glass-surface,var(--background)) ring-2 ring-(--chat-composer-glass-surface,var(--background))"
-                      iconClassName="size-4"
-                    />
-                  ) : null,
-                )}
-              {selectedEntries.length > 3 ? (
-                <span className="relative z-30 flex size-4 items-center justify-center rounded-full bg-(--chat-composer-glass-surface,var(--background)) text-3xs ring-2 ring-(--chat-composer-glass-surface,var(--background))">
-                  +{selectedEntries.length - 3}
-                </span>
-              ) : null}
-            </span>
-          ) : null}
           <Tooltip>
             <TooltipTrigger
               render={
