@@ -17,8 +17,16 @@ describe("shortEffortLabel", () => {
     expect(shortEffortLabel("Max")).toBe("Max");
   });
 
+  it("shortens the extra-high label further on the compact row", () => {
+    expect(shortEffortLabel("Extra High", true)).toBe("Xh");
+    expect(shortEffortLabel("xhigh", true)).toBe("Xh");
+    expect(shortEffortLabel("Medium", true)).toBe("Med");
+    expect(shortEffortLabel("High", true)).toBe("High");
+  });
+
   it("keeps an unknown label intact", () => {
     expect(shortEffortLabel("Ultracode")).toBe("Ultracode");
+    expect(shortEffortLabel("Ultracode", true)).toBe("Ultracode");
   });
 });
 

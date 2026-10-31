@@ -1,5 +1,5 @@
 import type { ChatComposerProps } from "./ChatComposer";
-import type { PromptUltrathink } from "./TraitsPicker";
+import { TraitsKeybindingsContext, type PromptUltrathink } from "./TraitsPicker";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { type AppModelOption } from "../../modelSelection";
 import { CircleAlertIcon } from "lucide-react";
@@ -309,7 +309,7 @@ export function ComposerControlsBar(props: {
     />
   );
   const overflowHidden = compactPane || hiddenRestingBlockIds.length === 0;
-  return showProviderUnavailable ? (
+  const controls = showProviderUnavailable ? (
     <ComposerControl
       type="button"
       disabled={!providerSetupInstanceId}
@@ -378,5 +378,10 @@ export function ComposerControlsBar(props: {
         </div>
       </>
     </>
+  );
+  return (
+    <TraitsKeybindingsContext.Provider value={keybindings}>
+      {controls}
+    </TraitsKeybindingsContext.Provider>
   );
 }
