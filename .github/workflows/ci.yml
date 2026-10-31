@@ -86,8 +86,6 @@ jobs:
         run: bash scripts/check-spawn-window.sh
       - name: check-env-ratchet.sh (direct process-environment access only goes down)
         run: bash scripts/check-env-ratchet.sh
-      - name: check-wsl-bundle.sh (the Windows installer bundles the Linux daemon for WSL)
-        run: bash scripts/check-wsl-bundle.sh
       - name: check-icon-imports.sh (raw lucide-react imports outside components/icons.tsx)
         run: bash scripts/check-icon-imports.sh
       - name: check-native-select.sh (no native <select> — its popup is a GTK window)
@@ -352,20 +350,13 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm --filter @t3tools/web build
-      - name: Stage debug sidecars
-        run: |
-          bash scripts/stage-helper.sh
-          bash scripts/stage-helper.sh --bin houston-core
-          bash scripts/stage-helper.sh --bin houston-supervisor
       - name: Check native formatting and Clippy
         run: |
           cargo fmt --all --check --manifest-path src-tauri/Cargo.toml
           cargo clippy --locked --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
-          cargo clippy --locked --all-targets --features bench --manifest-path src-tauri/Cargo.toml -- -D warnings
       - name: Test native application
         run: |
           bash scripts/with-test-keyring.sh cargo test --locked --manifest-path src-tauri/Cargo.toml -- --test-threads=3
-          bash scripts/with-test-keyring.sh cargo test --locked --features bench --manifest-path src-tauri/Cargo.toml -- --test-threads=3
 
   windows-renderer-checks:
     runs-on: windows-2022
@@ -468,14 +459,6 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cargo test --locked -p houston-core --doc
           exit $LASTEXITCODE
-      - name: Stage debug sidecars
-        run: |
-          cargo build --locked --manifest-path core/Cargo.toml --bin houston-core --bin tr-helper
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          New-Item -ItemType Directory -Force src-tauri/binaries | Out-Null
-          foreach ($name in @('houston-core', 'tr-helper')) {
-            Copy-Item "core/target/debug/$name.exe" "src-tauri/binaries/$name-x86_64-pc-windows-msvc.exe"
-          }
       - name: Check native application
         working-directory: src-tauri
         run: |

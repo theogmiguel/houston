@@ -52,7 +52,7 @@ fn list_distros() -> Result<Vec<V2Distro>, String> {
     if !cfg!(windows) {
         return Err(NOT_WINDOWS.to_string());
     }
-    let output = houston_core::spawn::command(WSL_EXE)
+    let output = crate::sys::spawn::command(WSL_EXE)
         .args(command::list())
         .env("WSL_UTF8", "1")
         .output()

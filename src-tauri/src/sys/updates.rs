@@ -10,20 +10,6 @@ pub fn compare_versions(a: &str, b: &str) -> Ordering {
     }
 }
 
-fn trim_version(s: &str) -> &str {
-    let s = s.trim();
-    s.strip_prefix('v').unwrap_or(s)
-}
-
-/// Whether two strings name the same release exactly, build metadata included.
-/// `compare_versions` reads unparseable input as `Equal`, which is wrong for
-/// "is this the release the operator was shown".
-pub fn same_release(a: &str, b: &str) -> bool {
-    let a = trim_version(a);
-    let b = trim_version(b);
-    !a.is_empty() && a == b && parse_semver(a).is_some()
-}
-
 fn parse_semver(s: &str) -> Option<(u64, u64, u64)> {
     let s = s.trim();
     let s = s.strip_prefix('v').unwrap_or(s);
@@ -78,26 +64,6 @@ mod tests {
         assert_eq!(compare_versions("latest", "1.0.0"), Ordering::Equal);
         assert_eq!(compare_versions("1.0", "1.0.0"), Ordering::Equal);
         assert_eq!(compare_versions("", "1.0.0"), Ordering::Equal);
-    }
-
-    #[test]
-    fn same_release_demands_the_full_identity() {
-        assert!(same_release("1.2.3", "v1.2.3"));
-        assert!(same_release("0.11.0-rc.1", "0.11.0-rc.1"));
-        assert!(
-            !same_release("0.11.0-rc.1", "0.11.0-rc.2"),
-            "a moved candidate is a different release"
-        );
-        assert!(
-            !same_release("0.11.0-rc.1", "0.11.0"),
-            "the base version is not the candidate's identity"
-        );
-        assert!(
-            !same_release("latest", "latest"),
-            "an unidentifiable name never matches anything, even itself"
-        );
-        assert!(!same_release("", ""));
-        assert!(!same_release("1.2.3", "1.2.4"));
     }
 
     #[test]

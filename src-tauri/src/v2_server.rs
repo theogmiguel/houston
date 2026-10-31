@@ -226,9 +226,9 @@ fn is_tailnet_ipv4(address: &str) -> bool {
 }
 
 fn read_tailscale_status() -> Option<TailscaleStatus> {
-    let mut command = houston_core::spawn::command("tailscale");
+    let mut command = crate::sys::spawn::command("tailscale");
     command.args(["status", "--json"]);
-    let output = houston_core::spawn::output_within(command, Duration::from_secs(3)).ok()??;
+    let output = crate::sys::spawn::output_within(command, Duration::from_secs(3)).ok()??;
     if !output.status.success() {
         return None;
     }
@@ -1003,18 +1003,13 @@ fn process_exited(pid: i32) -> bool {
 /// can close its database; a process that ignores it is killed after five
 /// seconds. Only a recorded, positive pid ever reaches the signal helper.
 async fn stop_server(pid: i32) -> Result<(), String> {
-    use houston_core::pid::{signal_process_checked, Signal, SignalOutcome};
+    use crate::sys::pid::{signal_process_checked, Signal, SignalOutcome};
     if process_exited(pid) {
         return Ok(());
     }
     let pid = pid as u32;
     match signal_process_checked(pid, Signal::Term) {
         Ok(SignalOutcome::Delivered | SignalOutcome::NoSuchProcess) => {}
-        Ok(SignalOutcome::IdentityMismatch) => {
-            return Err(format!(
-                "refusing to stop the v2 server: pid {pid} no longer belongs to it"
-            ))
-        }
         Err(error) => return Err(format!("stopping the v2 server (pid {pid}): {error}")),
     }
     for _ in 0..25 {
@@ -1026,11 +1021,6 @@ async fn stop_server(pid: i32) -> Result<(), String> {
     eprintln!("houston-tauri: v2 server (pid {pid}) ignored SIGTERM for 5 s; sending a hard kill");
     match signal_process_checked(pid, Signal::Kill) {
         Ok(SignalOutcome::Delivered | SignalOutcome::NoSuchProcess) => {}
-        Ok(SignalOutcome::IdentityMismatch) => {
-            return Err(format!(
-                "refusing to kill the v2 server: pid {pid} no longer belongs to it"
-            ))
-        }
         Err(error) => return Err(format!("killing the v2 server (pid {pid}): {error}")),
     }
     for _ in 0..25 {
@@ -1411,7 +1401,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn stop_server_accepts_an_unreaped_child_as_stopped() {
-        let mut child = houston_core::spawn::command("sleep")
+        let mut child = crate::sys::spawn::command("sleep")
             .arg("30")
             .spawn()
             .expect("spawn sleep");

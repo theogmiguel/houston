@@ -93,13 +93,10 @@ jobs:
         run: ./scripts/oom-shield.sh true
 
       - uses: dtolnay/rust-toolchain@stable
-      # BOTH workspaces: build-app.sh also builds core's tr-helper under
-      # core/target, so caching only src-tauri left that half cold per release.
       # The key carries the architecture: cached objects are ELF, not portable.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            core
             src-tauri
           key: release-linux-${{ matrix.arch }}
           cache-on-failure: true
@@ -251,7 +248,7 @@ jobs:
           appimage_path=$(realpath "$appimage")
           mkdir "$package_root/appimage"
           (cd "$package_root/appimage" && "$appimage_path" --appimage-extract >/dev/null)
-          for name in houston houston-core houston-supervisor tr-helper; do
+          for name in houston; do
             [ -f "$package_root/deb/usr/bin/$name" ] || { echo "::error::$deb does not contain usr/bin/$name"; exit 1; }
             [ -f "$package_root/appimage/squashfs-root/usr/bin/$name" ] || { echo "::error::$appimage does not contain usr/bin/$name"; exit 1; }
           done
@@ -297,25 +294,11 @@ jobs:
           deb=$(find dist -name '*.deb' -print -quit)
           dpkg-deb -x "$deb" "$package_root"
           qemu-x86_64 -cpu qemu64 "$package_root/usr/bin/houston" --version
-          qemu-x86_64 -cpu qemu64 "$package_root/usr/bin/houston-core" --print-protocol
 
       - uses: actions/upload-artifact@v7
         with:
           name: houston-${{ inputs.version }}-linux-${{ matrix.arch }}
           path: dist/
-          if-no-files-found: error
-
-      # The Windows installer bundles these for WSL distros: the same commit, built on
-      # jammy and gated above through the deb. Not a release asset (publish takes houston-*).
-      - name: Upload the Linux daemon for the Windows installer's WSL support
-        if: matrix.arch == 'x86_64'
-        uses: actions/upload-artifact@v7
-        with:
-          name: wsl-linux-x86_64-${{ inputs.version }}
-          path: |
-            core/target/release/houston-core
-            core/target/release/tr-helper
-            core/target/release/houston-supervisor
           if-no-files-found: error
 
       - name: Record job timing

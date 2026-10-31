@@ -55,10 +55,6 @@ export GGML_F16C=OFF GGML_FMA=OFF GGML_BMI2=OFF
 cargo clean --release --manifest-path core/Cargo.toml -p whisper-rs-sys
 cargo clean --release --manifest-path src-tauri/Cargo.toml -p whisper-rs-sys
 
-./scripts/stage-helper.sh --bin tr-helper --profile release
-./scripts/stage-helper.sh --bin houston-core --profile release
-./scripts/stage-helper.sh --bin houston-supervisor --profile release
-
 echo "[build-app] checking the terminal emulator pin…"
 ./scripts/check-ghostty-vt-pin.sh
 
@@ -66,10 +62,6 @@ echo "[build-app] bundling ($BUNDLES)…"
 tauri_args=(build --bundles "$BUNDLES")
 [ "$VERBOSE" = "1" ] && tauri_args+=(--verbose)
 CARGO_BUILD_JOBS=3 cargo tauri "${tauri_args[@]}"
-
-cp core/target/release/tr-helper src-tauri/target/release/tr-helper
-cp core/target/release/houston-core src-tauri/target/release/houston-core
-cp core/target/release/houston-supervisor src-tauri/target/release/houston-supervisor
 
 echo "[build-app] done. Artifacts:"
 find src-tauri/target/release/bundle -maxdepth 2 -type f \
