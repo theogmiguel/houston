@@ -116,6 +116,7 @@ import * as HoustonTaskSourceService from "./taskSources/SourceService.ts";
 import * as HoustonTaskSourceV1Import from "./taskSources/V1Import.ts";
 import * as HoustonMergeQueueService from "./mergeQueue/Service.ts";
 import * as HoustonHarnessService from "./harnessReview/Service.ts";
+import * as HoustonNightShiftService from "./nightShift/Service.ts";
 
 // Build the production RPC layer; unrelated capabilities fail if these tests call them.
 const layerUnusedRpcServices = Layer.mergeAll(
@@ -147,6 +148,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonTaskSourceV1Import.HoustonTaskSourceV1Import)({}),
   Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
   Layer.mock(HoustonHarnessService.HoustonHarnessService)({}),
+  Layer.mock(HoustonNightShiftService.HoustonNightShiftService)({}),
   Layer.mock(McpAppRequests.McpAppRequests)({}),
   Layer.mock(OtlpEndpointCheck.OtlpEndpointCheck)({}),
   Layer.mock(PairingGrantStore.PairingGrantStore)({}),

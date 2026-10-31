@@ -2,6 +2,7 @@ import type { DesktopWslState } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
   applyWslEnableSelection,
+  resolveShareablePairDeviceUrl,
   selectQrEndpointOption,
   togglePairingScopeSelection,
 } from "./ConnectionsSettings.logic";
@@ -84,6 +85,16 @@ describe("applyWslEnableSelection", () => {
 
     expect(calls).toEqual(["setWslOnly:false", "setWslDistro:Debian", "setWslBackendEnabled:true"]);
     expect(state).toMatchObject({ enabled: true, distro: "Debian", wslOnly: false });
+  });
+});
+
+describe("resolveShareablePairDeviceUrl", () => {
+  it("only resolves a QR URL for endpoints another device can scan", () => {
+    expect(resolveShareablePairDeviceUrl("http://192.168.1.42:4780/pair?token=abc", true)).toBe(
+      "http://192.168.1.42:4780/pair?token=abc",
+    );
+    expect(resolveShareablePairDeviceUrl("http://127.0.0.1:4780/pair?token=abc", false)).toBeNull();
+    expect(resolveShareablePairDeviceUrl(null, true)).toBeNull();
   });
 });
 

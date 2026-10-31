@@ -16,10 +16,6 @@ fail() {
   exit 1
 }
 
-# The generator walks ui's production closure through node_modules; without the
-# install it sees no npm packages at all and would pass a short inventory.
-[ -d ui/node_modules ] || fail "ui/node_modules is missing — the generator cannot see the renderer's dependency closure and would inventory a package set that does not ship. Run: cd ui && bun install --frozen-lockfile"
-
 # Same guard for the pnpm workspace that holds the v2 server packages.
 [ -d node_modules ] || fail "node_modules is missing at the repo root — the generator cannot see the pnpm workspace's dependency closure. Run: npx -y pnpm@12.14.0 install --frozen-lockfile"
 

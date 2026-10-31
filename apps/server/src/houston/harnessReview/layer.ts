@@ -14,7 +14,7 @@ import { HoustonScheduledTaskRunner } from "./ScheduledTaskRunner.ts";
 import * as HoustonHarnessService from "./Service.ts";
 import { HoustonHarnessStore } from "./Store.ts";
 
-const makeClaim = Effect.gen(function* () {
+export const makeClaim = Effect.gen(function* () {
   const store = yield* HoustonHarnessStore;
   const runner = yield* HoustonHarnessRunner.HoustonHarnessRunner;
   const refusals = yield* Ref.make<ReadonlyMap<string, HoustonHarnessErrorType>>(new Map());

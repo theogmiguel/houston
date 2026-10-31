@@ -117,36 +117,15 @@ case "${1:-}" in
         }
         echo \"### HEAD: \$(git rev-parse --short HEAD)\"
 
-        step 'core: cargo fmt --check' \
-          cargo fmt --manifest-path core/Cargo.toml --all -- --check
-        step 'core: clippy -D warnings' \
-          cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings
-        step 'core: cargo nextest run + doctests (shielded, with Secret Service)' \
-          env HOUSTON_CHANNEL=dev ./scripts/oom-shield.sh \
-              dbus-run-session -- bash -c \
-                'eval \"\$(echo -n \"\" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)\"
-                 cargo nextest run --manifest-path core/Cargo.toml && cargo test --doc --manifest-path core/Cargo.toml'
-
         step 'src-tauri: fmt --check' \
           cargo fmt --manifest-path src-tauri/Cargo.toml --check
         step 'src-tauri: clippy -D warnings' \
           cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-        step 'src-tauri: clippy --features bench' \
-          cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features bench -- -D warnings
         step 'src-tauri: cargo test (shielded)' \
           env HOUSTON_CHANNEL=dev ./scripts/oom-shield.sh \
               cargo test --manifest-path src-tauri/Cargo.toml
 
-        step 'ui: bun install'   bash -c 'cd ui && bun install --frozen-lockfile'
-        step 'ui: typecheck'     bash -c 'cd ui && bun run typecheck'
-        step 'ui: test'          bash -c 'cd ui && bun run test'
-        step 'ui: build'         bash -c 'cd ui && bun run build'
-        step 'ui: check:css'     bash -c 'cd ui && bun run check:css'
-        step 'ui: check:bundle'  bash -c 'cd ui && bun run check:bundle'
-
-        for s in check-watchdog check-dev-channel check-kill-guard check-protocol-sync \
-                 check-loop-spawn-sync check-title-tooltip-guard \
-                 check-spawn-window check-env-ratchet; do
+        for s in check-dev-channel check-kill-guard check-spawn-window check-env-ratchet; do
           step \"safety: \$s\" \"./scripts/\$s.sh\"
         done
 
@@ -161,7 +140,6 @@ case "${1:-}" in
 
   build)
     vm_detach build "vmcd $VM_REPO
-(cd ui && bun install --frozen-lockfile)
 ./scripts/build-app.sh --bundles appimage,deb"
     echo "[linux-vm] follow with: ./scripts/linux-vm.sh wait build"
     ;;

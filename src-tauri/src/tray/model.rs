@@ -82,7 +82,6 @@ pub enum TrayItem {
     Group(String),
     Submenu { label: String, items: Vec<TrayItem> },
     Quit,
-    StopDaemon,
 }
 
 pub fn agent_label(kind: &str) -> String {
@@ -280,25 +279,7 @@ pub fn menu_model(payload: &TrayPayload) -> Vec<TrayItem> {
     }
 
     items.push(TrayItem::Quit);
-    items.push(TrayItem::StopDaemon);
     items
-}
-
-pub fn stop_confirm_message(payload: &TrayPayload) -> String {
-    if payload.connection != TrayConnection::Ready {
-        return "This stops the local daemon and connected WSL daemons, ending their sessions and \
-                disarming their routines. The last session count is unavailable."
-            .into();
-    }
-    let live = payload
-        .sessions
-        .iter()
-        .filter(|s| !matches!(s.status, TrayStatus::Done | TrayStatus::Error))
-        .count();
-    format!(
-        "This stops the local daemon and connected WSL daemons, ending their sessions and disarming their routines. The last reported count was {}. Reopening Houston starts the daemons again.",
-        plural(live, "live session")
-    )
 }
 
 #[cfg(test)]
@@ -392,10 +373,6 @@ mod tests {
             }),
             Some("Agents (1)")
         );
-        assert_eq!(
-            stop_confirm_message(&payload),
-            "This stops the local daemon and connected WSL daemons, ending their sessions and disarming their routines. The last reported count was 1 live session. Reopening Houston starts the daemons again."
-        );
     }
 
     #[test]
@@ -478,7 +455,6 @@ mod tests {
                 TrayItem::Open,
                 TrayItem::Separator,
                 TrayItem::Quit,
-                TrayItem::StopDaemon,
             ]
         );
     }
@@ -514,7 +490,6 @@ mod tests {
                 },
                 TrayItem::Separator,
                 TrayItem::Quit,
-                TrayItem::StopDaemon,
             ],
             "the menu's shape must not change under the cursor as the fleet grows"
         );
@@ -702,28 +677,6 @@ mod tests {
             sessions: vec![session(1, "claude", "a", TrayStatus::Running)],
         };
         assert_eq!(icon_state(&payload), TrayIconState::Idle);
-    }
-
-    #[test]
-    fn the_stop_confirm_counts_live_sessions_only() {
-        let message = stop_confirm_message(&ready(vec![
-            session(1, "claude", "a", TrayStatus::Running),
-            session(2, "codex", "b", TrayStatus::NeedsInput),
-            session(3, "shell", "c", TrayStatus::Done),
-        ]));
-        assert!(
-            message.contains("last reported count was 2 live sessions"),
-            "counted the finished pane: {message}"
-        );
-    }
-
-    #[test]
-    fn the_stop_confirm_says_unknown_when_it_cannot_know() {
-        let message = stop_confirm_message(&TrayPayload {
-            connection: TrayConnection::Failed,
-            sessions: vec![],
-        });
-        assert!(message.contains("count is unavailable"), "{message}");
     }
 
     #[test]

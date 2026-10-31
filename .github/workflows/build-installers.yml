@@ -12,7 +12,7 @@ on:
         default: 'main'
         required: true
       platform:
-        description: 'Installer platforms to validate; windows also builds the Linux bundles, whose daemon it carries for WSL'
+        description: 'Installer platforms to validate; windows also builds the Linux bundles'
         type: choice
         options: [all, linux, windows]
         default: all
@@ -47,9 +47,9 @@ jobs:
         run: |
           set -euo pipefail
           version=$(./scripts/check-manifest-versions.sh)
-          # The five are what the bundle filenames and server archive names read;
-          # both lockfiles carry
-          # the workspace crates' own versions and must move with them.
+          # The three manifests are what the bundle filenames and server archive
+          # names read; src-tauri/Cargo.lock carries the host crate's own version
+          # and must move with them.
           ./scripts/set-version.sh --check "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -65,8 +65,7 @@ jobs:
             echo "| version-guard | $elapsed |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # Runs for every platform choice: the Windows installer carries the Linux x86_64
-  # daemon this job builds, for WSL distros.
+  # Runs for every platform choice; the Windows packaging job waits for it.
   linux-bundle:
     needs: version-guard
     uses: ./.github/workflows/release-linux.yml

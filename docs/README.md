@@ -15,22 +15,11 @@ For an installed build, use the documentation at its version tag from the
   Settings ▸ Agents
 - [Context](user/context.md) — the pane-header indicator that shows context use, which
   providers it covers, and how to hide it
-- [Orchestration](user/orchestration.md) — letting an agent open and drive other panes
-- [Routines](user/routines.md) — scheduling repeatable work in an agent pane
 - [Tasks](user/tasks.md) — a global local backlog, workspace access, execution and review
-- [Slack requests](user/slack.md) — filing a Slack mention as a task the owner starts, and what that sends
-- [Review](user/harness-review.md) — session findings, linked fix tasks and verification
 - [MCP servers](user/connections.md) — agent configuration and connection checks in Settings
 - [Changes](user/changes.md) — the git surface
 - [Files, editor and browser panes](user/files-editor-browser.md) — the three non-terminal
   pane types, and the browser pane's consent model
-- [SSH](user/ssh.md) — a remote shell in a pane, and what that does not cover
-- [Remote access](user/remote-access.md) — following and answering panes from a phone or
-  another computer, pairing, ntfy notifications, and what they transmit
-- [WSL](user/wsl.md) — workspaces inside WSL distros on Windows, and what they do not cover
-- [Workspace transfer](user/workspace-transfer.md) — moving a workspace's conversations and code
-  to another computer in an encrypted file, and what the file contains
-- [Dictation](user/voice.md) — local and cloud engines, and what leaves the machine
 - [Usage](user/usage.md) — token and cost figures, and what they do not cover
 - [Keybindings](user/keybindings.md) — what is rebindable, and passing keys through
 - [Appearance](user/appearance.md) — themes, the window background, terminal settings
@@ -48,10 +37,7 @@ changes need no internals change; before adding a paragraph, ask what a contribu
 get wrong without it.
 
 - [Architecture overview](internals/overview.md) — process model, boundaries, repository
-  map, budgets
-- [Daemon](internals/daemon.md) — sessions, the PTY pipeline, scrollback, persistence, loops
-- [Agent lifecycle](internals/agent-lifecycle.md) — hooks, drop files, status, liveness
-- [Orchestration](internals/orchestration.md) — MCP, `pane_*`, credentials, caps, `hs-pane`
+  map
 - [Renderer](internals/renderer.md) — shell, layout tree, terminal engine, transport,
   watchdog
 - [Invariants](internals/invariants.md) — the rules, what enforces them, and why
@@ -60,7 +46,6 @@ get wrong without it.
 - [Style guide](internals/styleguide.md) — tokens, typography, layout, components, motion
 - [CSS conversion patterns](internals/css-conversion-patterns.md) — cookbook for large
   styling sweeps
-- [Wire protocol](../protocol/protocol.md) — every message, current version
 
 ### Runbooks
 

@@ -11,6 +11,7 @@ import { resolveSelectableModel } from "@t3tools/shared/model";
 import { useAtomValue } from "@effect/atom-react";
 import { formatProviderUpdateRequiredNotice } from "@t3tools/client-runtime/providerUpdateRequiredModels";
 import { useNavigate } from "@tanstack/react-router";
+import { Combobox as ComboboxPrimitive } from "@base-ui/react/combobox";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import {
   memo,
@@ -22,7 +23,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronDownIcon, SearchIcon } from "lucide-react";
 import { ModelListRow } from "./ModelListRow";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
 import { resolveModelPickerTraits } from "./modelPickerTraits";
@@ -34,13 +35,7 @@ import {
   parseModelPickerModelKey,
 } from "./modelPickerKeys";
 import { rankModelPickerSearch } from "./modelPickerSearch";
-import {
-  Combobox,
-  ComboboxEmpty,
-  ComboboxSearchInput,
-  ComboboxItem,
-  ComboboxListVirtualized,
-} from "../ui/combobox";
+import { Combobox, ComboboxEmpty, ComboboxItem, ComboboxListVirtualized } from "../ui/combobox";
 import { ModelEsque } from "./providerIconUtils";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { registerModelPickerContent } from "../../modelPickerVisibility";
@@ -588,6 +583,19 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const isSearching = searchQuery.trim().length > 0;
   // Inside one provider's tab the provider line repeats the selected rail icon on every row.
   const rowsMixProviders = isSearching || selectedInstanceId === "favorites";
+  // A cross-provider multi-model selection stays visible in whichever provider tab is open.
+  const crossProviderSelectedModels =
+    isSearching ||
+    isLocked ||
+    selectedInstanceId === "favorites" ||
+    onToggleModel === undefined ||
+    props.selectedModels === undefined
+      ? []
+      : flatModels.filter(
+          (model) =>
+            model.instanceId !== selectedInstanceId &&
+            selectedModelKeySet.has(modelPickerModelKey(model.instanceId, model.slug)),
+        );
   // Fit the tallest tab so switching tabs never resizes the popup and moves the rail under the cursor.
   const tallestTabUnits = (() => {
     const unitsByTab = new Map<ProviderInstanceId | "favorites", number>();
@@ -611,6 +619,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       }
     }
     for (const instanceId of tabsWithLegacyRow) addRow(instanceId, true);
+    for (let index = 0; index < crossProviderSelectedModels.length; index += 1) {
+      addRow(selectedInstanceId, true);
+    }
     return Math.max(0, ...unitsByTab.values());
   })();
   const lockedDisabledInstanceIds = (() => {
@@ -703,12 +714,21 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   })();
 
   const visibleModels = (() => {
-    if (!legacySection) {
-      return filteredModels;
-    }
+    const providerModels = !legacySection
+      ? filteredModels
+      : [
+          ...legacySection.currentModels,
+          ...(legacySection.isExpanded ? legacySection.legacyModels : []),
+        ];
+    if (crossProviderSelectedModels.length === 0) return providerModels;
+    const visibleKeys = new Set(
+      providerModels.map((model) => modelPickerModelKey(model.instanceId, model.slug)),
+    );
     return [
-      ...legacySection.currentModels,
-      ...(legacySection.isExpanded ? legacySection.legacyModels : []),
+      ...providerModels,
+      ...crossProviderSelectedModels.filter(
+        (model) => !visibleKeys.has(modelPickerModelKey(model.instanceId, model.slug)),
+      ),
     ];
   })();
 
@@ -833,7 +853,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       <WindowKeyDownListener onKeyDown={onWindowKeyDown} />
       <div
         ref={pickerContentRef}
-        className="relative flex max-h-86.5 w-screen max-w-lg flex-row dialog-glass overflow-hidden rounded-lg"
+        className="relative flex max-h-86.5 w-[26.75rem] max-w-[calc(100vw-2rem)] flex-row overflow-hidden rounded-lg border border-border bg-(--raised)"
         style={
           isSearching
             ? { height: searchHeight }
@@ -903,72 +923,72 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             }
           }}
         >
-          <div
-            className={cn(
-              "flex min-h-0 flex-1 flex-col overflow-hidden bg-(--raised)",
-              showSidebar && "border-l border-border",
-            )}
-          >
-            <ComboboxSearchInput
-              ref={searchInputRef}
-              appearance="field"
-              placeholder="Search models"
-              value={searchQuery}
-              onChange={(e) => {
-                if (!isSearching) setSearchHeight(pickerContentRef.current?.offsetHeight ?? 0);
-                setSearchQuery(e.target.value);
-              }}
-              onKeyDown={(e) => {
-                if (
-                  showSidebar &&
-                  !e.altKey &&
-                  !e.ctrlKey &&
-                  !e.metaKey &&
-                  ((e.key === "ArrowLeft" && !e.shiftKey && searchQuery.length === 0) ||
-                    (e.key === "Tab" && e.shiftKey))
-                ) {
-                  const sidebar = e.currentTarget
-                    .closest("[data-model-picker-content]")
-                    ?.querySelector("[data-model-picker-sidebar]");
-                  const button =
-                    sidebar?.querySelector<HTMLButtonElement>(
-                      'button[aria-pressed="true"]:not(:disabled)',
-                    ) ?? sidebar?.querySelector<HTMLButtonElement>("button:not(:disabled)");
-                  if (button) {
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="mx-1.5 mt-1.5 mb-1 flex h-7 shrink-0 items-center gap-1.75 rounded-md bg-(--field) px-2 text-(--t3)">
+              <SearchIcon aria-hidden="true" className="size-3.25 shrink-0" />
+              <ComboboxPrimitive.Input
+                ref={searchInputRef}
+                placeholder={onToggleModel ? "Search models · Shift click adds" : "Search models"}
+                className="h-5 min-w-0 flex-1 bg-transparent p-0 text-(--t1) text-xs leading-5 outline-none placeholder:text-(--t3)"
+                value={searchQuery}
+                onChange={(e) => {
+                  if (!isSearching) setSearchHeight(pickerContentRef.current?.offsetHeight ?? 0);
+                  setSearchQuery(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (
+                    showSidebar &&
+                    !e.altKey &&
+                    !e.ctrlKey &&
+                    !e.metaKey &&
+                    ((e.key === "ArrowLeft" && !e.shiftKey && searchQuery.length === 0) ||
+                      (e.key === "Tab" && e.shiftKey))
+                  ) {
+                    const sidebar = e.currentTarget
+                      .closest("[data-model-picker-content]")
+                      ?.querySelector("[data-model-picker-sidebar]");
+                    const button =
+                      sidebar?.querySelector<HTMLButtonElement>(
+                        'button[aria-pressed="true"]:not(:disabled)',
+                      ) ?? sidebar?.querySelector<HTMLButtonElement>("button:not(:disabled)");
+                    if (button) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      button.focus();
+                      return;
+                    }
+                  }
+                  if (e.key === "Escape") {
                     e.preventDefault();
                     e.stopPropagation();
-                    button.focus();
+                    onRequestClose?.();
                     return;
                   }
-                }
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onRequestClose?.();
-                  return;
-                }
-                if (e.key === "Enter" && highlightedModelKeyRef.current) {
-                  (e as typeof e & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const legacyInstanceId = parseModelPickerLegacySectionKey(
-                    highlightedModelKeyRef.current,
-                  );
-                  if (legacyInstanceId) {
-                    toggleLegacySection(legacyInstanceId);
+                  if (e.key === "Enter" && highlightedModelKeyRef.current) {
+                    (
+                      e as typeof e & { preventBaseUIHandler?: () => void }
+                    ).preventBaseUIHandler?.();
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const legacyInstanceId = parseModelPickerLegacySectionKey(
+                      highlightedModelKeyRef.current,
+                    );
+                    if (legacyInstanceId) {
+                      toggleLegacySection(legacyInstanceId);
+                      return;
+                    }
+                    const model = parseModelPickerModelKey(highlightedModelKeyRef.current);
+                    if (model) {
+                      handleModelSelect(model.slug, model.instanceId, e.shiftKey);
+                    }
                     return;
                   }
-                  const model = parseModelPickerModelKey(highlightedModelKeyRef.current);
-                  if (model) {
-                    handleModelSelect(model.slug, model.instanceId, e.shiftKey);
-                  }
-                  return;
-                }
-                e.stopPropagation();
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-            />
+                  e.stopPropagation();
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+              />
+            </div>
 
             <ModelPickerList
               listRef={modelListRef}
@@ -983,19 +1003,20 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                       value={modelKey}
                       aria-expanded={legacySection.isExpanded}
                       className="group w-full cursor-pointer"
+                      data-model-picker-legacy-section="true"
                     >
-                      <div className="min-w-0 flex-1 text-left">
-                        <div className="text-sm font-normal leading-snug">Legacy models</div>
-                        <div className="mt-1 text-xs font-normal leading-snug text-muted-foreground">
-                          {legacySection.legacyModels.length} models
-                        </div>
+                      <div className="flex h-7 min-w-0 flex-1 items-center gap-1.5 px-2 text-(--t3) text-xs">
+                        <ChevronDownIcon
+                          aria-hidden="true"
+                          className={cn(
+                            "size-3.25 shrink-0 transition-transform",
+                            legacySection.isExpanded && "rotate-180",
+                          )}
+                        />
+                        <span className="truncate">
+                          Legacy models · {legacySection.legacyModels.length}
+                        </span>
                       </div>
-                      <ChevronRightIcon
-                        className={cn(
-                          "size-4 transition-transform",
-                          legacySection.isExpanded && "rotate-90",
-                        )}
-                      />
                     </ComboboxItem>
                   );
                 }
@@ -1025,7 +1046,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         ? selectedModelKeySet.has(modelKey)
                         : modelKey === activeModelKey
                     }
-                    showProvider={rowsMixProviders || Boolean(model.subProvider)}
+                    showProvider={
+                      rowsMixProviders ||
+                      model.instanceId !== selectedInstanceId ||
+                      Boolean(model.subProvider)
+                    }
                     multiple={onToggleModel !== undefined}
                     showNewBadge={model.badge === "new"}
                     unavailable={model.isUnavailable === true}
@@ -1050,12 +1075,14 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             {onToggleModel && selectedModelKeySet.size > 1 ? (
               <div
                 data-model-picker-selection-footer="true"
-                className="mt-1.5 flex items-center gap-2 border-t border-border px-1 pt-2 pb-0.5 text-(--t2) text-xs"
+                className="mx-1.5 mb-1.5 flex items-center gap-2 border-t border-border px-1 pt-1.5 pb-0.5 text-(--t3) text-xs"
               >
-                <span className="flex-1">{selectedModelKeySet.size} models selected</span>
+                <span className="flex-1" data-model-picker-selection-count="true">
+                  {selectedModelKeySet.size} models selected
+                </span>
                 <Button
-                  size="xs"
-                  variant="primary"
+                  size="sm"
+                  variant="outline"
                   onClick={() => {
                     onRequestClose?.();
                     onSendSelectedModels?.();

@@ -15,7 +15,7 @@ things at once.
 - UI work follows [`docs/internals/styleguide.md`](docs/internals/styleguide.md) — tokens
   over hex, the chrome constants over ad-hoc classes.
 - Deeper rules on how Houston is built live in [`AGENTS.md`](AGENTS.md); read it before a
-  change that touches the daemon, the wire protocol, or hooks.
+  change that touches the server, the contracts, or an agent CLI's configuration.
 
 ## Local setup
 
@@ -26,14 +26,12 @@ Linux:
 
 ```sh
 ./scripts/dev.sh                 # dev channel, build + run
-./scripts/dev.sh --fresh         # stop+restart the daemon fresh
 ```
 
 Windows, from PowerShell:
 
 ```powershell
 ./scripts/dev.ps1                # dev channel, build + run
-./scripts/dev.ps1 --fresh        # stop+restart the daemon fresh
 ```
 
 Full setup, the dev/release channel split, and every environment knob:
@@ -57,59 +55,40 @@ Avoid:
 
 Run the gates for whatever you touched.
 
-**Per item, in the crate or area you touched** — cheap, run constantly:
+**Per item, in the package or crate you touched** — cheap, run constantly:
 
-- `core`/`src-tauri`: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, the item's
-  own and touched test binaries.
-- `ui`: `bun run typecheck` plus the item's own and touched test files.
+- `src-tauri`: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, the item's own
+  and touched tests.
+- `apps/` and `packages/`: the package's `typecheck` and its touched tests, for example
+  `pnpm --filter houston exec vp test run <files>` for the server.
 
 **Before every push, and at the end of a work block** — the full suites. On Linux,
-run them inside `scripts/oom-shield.sh`. On Windows, set `$env:CARGO_BUILD_JOBS = '3'`
+run Cargo inside `scripts/oom-shield.sh`. On Windows, set `$env:CARGO_BUILD_JOBS = '3'`
 in PowerShell. Never run concurrent Cargo workloads.
 
-**`core/`**:
+**The workspace** (the web build comes first: `src-tauri` embeds its output):
+
+```
+pnpm -r typecheck
+pnpm --filter @t3tools/web build
+pnpm --filter @t3tools/contracts --filter @t3tools/shared test
+pnpm --filter houston exec vp test run src/houston
+node scripts/check-upstream.mjs <upstream clone> --skip apps/web
+```
+
+**`src-tauri/`**:
 
 ```
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
-cargo nextest run
-cargo test --doc
-```
-
-The core suite runs under [cargo-nextest](https://nexte.st/); the pinned install command is in the
-[development runbook](docs/operations/development.md).
-
-**`ui/`** (order matters — the last two read what `build` emitted):
-
-```
-bun run typecheck
-bun run test
-bun run check:complexity
-bun run build
-bun run check:css
-bun run check:bundle
-```
-
-**`bun run test`, never bare `bun test`** — the latter invokes Bun's own test runner and
-fails the jsdom-based suite.
-
-**`src-tauri/`** — test and clippy in both the default and `--features bench`
-configurations, plus `cargo fmt --check`. The renderer must be built first
-(`cd ui && bun run build`), before any cargo step here:
-
-```
-cargo fmt --all --check
-cargo clippy --all-targets -- -D warnings
-cargo clippy --all-targets --features bench -- -D warnings
 cargo test
-cargo test --features bench
 ```
 
 ## Tests
 
-New daemon behaviour gets an integration test under `core/houston-core/tests/`. A bug fix
-gets a regression test that fails before the fix and passes after it — prefer a test that
-would actually catch the regression over one that only walks the happy path.
+Tests come before code. A bug fix gets a regression test that fails before the fix and
+passes after it — prefer a test that would actually catch the regression over one that
+only walks the happy path.
 
 ## Pull requests
 
