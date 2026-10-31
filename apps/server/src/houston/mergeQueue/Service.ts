@@ -1,6 +1,6 @@
 // The houston.mergeQueue.* operations: enqueue checks by rules.ts before GitHub is read, the
 // snapshot and its subscriptions, settings, pause, and the user's Merge through the landing.
-import type { ProjectId } from "@t3tools/contracts";
+import { ThreadId, type ProjectId } from "@t3tools/contracts";
 import {
   HOUSTON_MERGE_QUEUE_LIMITS,
   HoustonMergeQueueError,
@@ -8,6 +8,8 @@ import {
   type HoustonMergeQueueEnqueueInput,
   type HoustonMergeQueueEntry,
   type HoustonMergeQueueEntryInput,
+  type HoustonMergeQueueHandToThreadInput,
+  type HoustonMergeQueueHandToThreadResult,
   type HoustonMergeQueueMergeHeadInput,
   type HoustonMergeQueueMergeHeadResult,
   type HoustonMergeQueueMessageResult,
@@ -27,17 +29,23 @@ import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
+import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
+
 import { HoustonMergeQueueGitHub } from "./GitHubQueueClient.ts";
 import { HoustonMergeLanding } from "./Landing.ts";
-import { HoustonMergeQueueProject, type ProjectInfo } from "./Project.ts";
+import { HoustonMergeQueueProject, type ProjectInfo, type ProjectTarget } from "./Project.ts";
 import {
   checkEnqueue,
   checkSettings,
   failureHolds,
+  failureNote,
+  handOffMode,
   refuse,
   type CheckedSettings,
+  type QueueRow,
 } from "./rules.ts";
 import { HoustonMergeQueueStore } from "./Store.ts";
+import { HoustonMergeQueueThreads } from "./Threads.ts";
 import { HoustonMergeVerifier } from "./Verifier.ts";
 
 const PULL_URL = /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/pull\/(\d+)\/?(?:[?#].*)?$/i;
@@ -72,6 +80,18 @@ export class HoustonMergeQueueService extends Context.Service<
     readonly pause: (
       input: HoustonMergeQueuePauseInput,
     ) => Effect.Effect<HoustonMergeQueueMessageResult, HoustonMergeQueueError>;
+    readonly retry: (
+      input: HoustonMergeQueueEntryInput,
+    ) => Effect.Effect<HoustonMergeQueueMessageResult, HoustonMergeQueueError>;
+    readonly handToThread: (
+      input: HoustonMergeQueueHandToThreadInput,
+    ) => Effect.Effect<HoustonMergeQueueHandToThreadResult, HoustonMergeQueueError>;
+    readonly revert: (
+      input: HoustonMergeQueueEntryInput,
+    ) => Effect.Effect<HoustonMergeQueueMessageResult, HoustonMergeQueueError>;
+    readonly acknowledge: (
+      input: HoustonMergeQueueProjectInput,
+    ) => Effect.Effect<HoustonMergeQueueEmptyResult, HoustonMergeQueueError>;
   }
 >()("houston/houston/mergeQueue/Service/HoustonMergeQueueService") {}
 
@@ -81,6 +101,7 @@ const make = Effect.gen(function* () {
   const github = yield* HoustonMergeQueueGitHub;
   const landing = yield* HoustonMergeLanding;
   const verifier = yield* HoustonMergeVerifier;
+  const threads = yield* HoustonMergeQueueThreads;
 
   const snapshotOf = Effect.fn("HoustonMergeQueueService.snapshotOf")(function* (
     project: ProjectInfo,
@@ -231,6 +252,13 @@ const make = Effect.gen(function* () {
       ownerThreadId: ownerThreadId ?? null,
       facts,
     });
+    if (facts.handOff !== undefined && facts.handOff !== null && facts.baseRef !== null) {
+      yield* store.recordHandOff(
+        target.projectId,
+        facts.baseRef,
+        handOffMode(facts, facts.baseRef, {}),
+      );
+    }
     yield* store.wake;
     const view = yield* projects.view(target);
     return view.entries.find((entry) => entry.number === number)!;
@@ -249,12 +277,161 @@ const make = Effect.gen(function* () {
         `PR #${input.number} is not in the merge queue of ${project.title}`,
       );
     }
-    yield* store.removeEntry(input.projectId, input.number);
     const target = yield* Effect.result(projects.target(operation, input.projectId));
+    if (target._tag === "Success") {
+      // What GitHub holds is taken back first; a refusal keeps the entry.
+      yield* takeBack(target.success, row).pipe(
+        Effect.mapError((error) => refuse("remote", operation, error)),
+      );
+    }
+    yield* store.removeEntry(input.projectId, input.number);
     if (target._tag === "Success") {
       yield* verifier.forget(project.workspaceRoot, target.success.remote, row.headRef);
     }
     yield* store.wake;
+    return {};
+  });
+
+  /** Takes back what GitHub holds for `row` and forgets the hold. */
+  const takeBack = Effect.fn("HoustonMergeQueueService.takeBack")(function* (
+    target: ProjectTarget,
+    row: QueueRow,
+  ) {
+    const hold = row.github;
+    if (hold === null || hold.mode === "houston") return;
+    const nodeId = row.facts?.nodeId ?? null;
+    if (nodeId !== null) {
+      yield* github.takeBack({ target, number: row.number, nodeId, mode: hold.mode });
+    }
+    yield* store.setGitHub(target.projectId, row.number, null);
+  });
+
+  /** Takes back every hold of the project (or of every project) when its queue pauses. */
+  const takeBackAll = (projectIds: ReadonlyArray<ProjectId>) =>
+    Effect.forEach(
+      projectIds,
+      (projectId) =>
+        Effect.gen(function* () {
+          const target = yield* projects.target("houston.mergeQueue.pause", projectId);
+          for (const row of yield* store.rows(projectId)) {
+            yield* takeBack(target, row).pipe(
+              Effect.catch((error: string) =>
+                Effect.logWarning(
+                  `Merge queue: taking PR #${row.number} back on pause failed: ${error}`,
+                ),
+              ),
+            );
+          }
+        }).pipe(Effect.ignore),
+      { discard: true },
+    );
+
+  const entryRow = Effect.fn("HoustonMergeQueueService.entryRow")(function* (
+    operation: string,
+    input: HoustonMergeQueueEntryInput,
+  ) {
+    const project = yield* projects.resolve(operation, input.projectId);
+    const row = (yield* store.rows(input.projectId)).find((value) => value.number === input.number);
+    if (row === undefined) {
+      return yield* refuse(
+        "not_found",
+        operation,
+        `PR #${input.number} is not in the merge queue of ${project.title}`,
+      );
+    }
+    return { project, row };
+  });
+
+  const retry: HoustonMergeQueueService["Service"]["retry"] = Effect.fn(
+    "HoustonMergeQueueService.retry",
+  )(function* (input) {
+    const operation = "houston.mergeQueue.retry";
+    const { row } = yield* entryRow(operation, input);
+    if (failureHolds(row) === null) {
+      return yield* refuse(
+        "invalid",
+        operation,
+        `PR #${row.number} is in line, not parked; there is nothing to retry`,
+      );
+    }
+    yield* store.setFailure(input.projectId, row.number, null);
+    yield* store.wake;
+    return { message: `PR #${row.number} is back in line at ${row.headSha}` };
+  });
+
+  const handToThread: HoustonMergeQueueService["Service"]["handToThread"] = Effect.fn(
+    "HoustonMergeQueueService.handToThread",
+  )(function* (input) {
+    const operation = "houston.mergeQueue.handToThread";
+    const { project, row } = yield* entryRow(operation, input);
+    const failure = failureHolds(row);
+    if (failure === null) {
+      return yield* refuse(
+        "invalid",
+        operation,
+        `PR #${row.number} is in line, not parked or fixing; only a failed entry is handed to a new thread`,
+      );
+    }
+    const threadId = `merge-queue-${yield* randomUuidV4}`;
+    const worktreePath = yield* projects.managedWorktreeOf(project, row.headRef);
+    // The only thread the queue launches, and only on the user's word.
+    const launched = threads.launch({
+      projectId: project.projectId,
+      threadId,
+      title: `Fix PR #${row.number}${row.title === null ? "" : `: ${row.title}`}`,
+      modelSelection: input.modelSelection,
+      branch: row.headRef,
+      worktreePath,
+      messageId: `message:merge-queue:${project.projectId}:${row.number}:${row.headSha}:hand`,
+      text: failureNote({
+        number: row.number,
+        url: row.url,
+        title: row.title,
+        headRef: row.headRef,
+        failure,
+      }),
+    });
+    yield* launched.pipe(
+      Effect.mapError((error) =>
+        refuse("remote", operation, `launching a thread for PR #${row.number} failed: ${error}`),
+      ),
+    );
+    yield* store.setOwner(project.projectId, row.number, threadId);
+    yield* store.setFailure(project.projectId, row.number, {
+      ...failure,
+      notifiedThreadId: threadId,
+    });
+    return { threadId: ThreadId.make(threadId) };
+  });
+
+  const revert: HoustonMergeQueueService["Service"]["revert"] = Effect.fn(
+    "HoustonMergeQueueService.revert",
+  )(function* (input) {
+    const operation = "houston.mergeQueue.revert";
+    const target = yield* projects.target(operation, input.projectId);
+    const merged = (yield* store.logOf(input.projectId, input.number)).some(
+      (row) => row.kind === "merge",
+    );
+    if (!merged) {
+      return yield* refuse(
+        "not_found",
+        operation,
+        `PR #${input.number} has no queue merge in the merge queue log of ${target.title}`,
+      );
+    }
+    yield* github
+      .revert(target, input.number)
+      .pipe(Effect.mapError((error) => refuse("remote", operation, error)));
+    return {
+      message: `GitHub opened a revert pull request for PR #${input.number}; nothing was pushed to the base`,
+    };
+  });
+
+  const acknowledge: HoustonMergeQueueService["Service"]["acknowledge"] = Effect.fn(
+    "HoustonMergeQueueService.acknowledge",
+  )(function* (input) {
+    const project = yield* projects.resolve("houston.mergeQueue.acknowledge", input.projectId);
+    yield* store.acknowledge(project.projectId);
     return {};
   });
 
@@ -294,6 +471,7 @@ const make = Effect.gen(function* () {
     const word = input.paused ? "paused" : "resumed";
     if (input.projectId === undefined) {
       yield* store.setGlobalPaused(input.paused);
+      if (input.paused) yield* takeBackAll(yield* store.projectsWithEntries);
       if (!input.paused) yield* store.wake;
       return { message: `every merge queue is ${word}` };
     }
@@ -302,6 +480,7 @@ const make = Effect.gen(function* () {
       input.projectId as ProjectId,
     );
     yield* store.setPaused(project.projectId, input.paused);
+    if (input.paused) yield* takeBackAll([project.projectId]);
     if (!input.paused) yield* store.wake;
     return { message: `the merge queue of ${project.title} is ${word}` };
   });
@@ -315,6 +494,10 @@ const make = Effect.gen(function* () {
     mergeHead,
     setSettings,
     pause,
+    retry,
+    handToThread,
+    revert,
+    acknowledge,
   });
 });
 

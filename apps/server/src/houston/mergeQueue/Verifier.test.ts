@@ -15,14 +15,23 @@ import * as TestClock from "effect/testing/TestClock";
 import * as ServerConfig from "../../config.ts";
 import { HoustonBuildSlot } from "./BuildSlot.ts";
 import {
+  addManagedWorktree,
+  createProject,
+  entryOf,
   git,
+  githubMerges,
   layerMergeQueueTest,
+  makeGitHub,
   makeRepos,
+  openPull,
   pushBranch,
   remoteHead,
   tryGit,
   type Repos,
 } from "./mergeQueue.testkit.ts";
+import { HoustonMergeQueueReader } from "./Reader.ts";
+import { HoustonMergeQueueRunner } from "./Runner.ts";
+import { HoustonMergeQueueService } from "./Service.ts";
 import { failureFor } from "./rules.ts";
 import {
   HoustonMergeVerifier,
@@ -299,7 +308,130 @@ describe("the project checkout is unchanged by every outcome", () => {
       }),
     ),
   );
+
+  it.live("the project checkout is unchanged by every outcome: a restack", () =>
+    withVerifier((verifier) =>
+      Effect.gen(function* () {
+        const repos = makeRepos();
+        const one = pushBranch(repos, "houston/one", { "1.txt": "one\n" });
+        const two = pushBranch(repos, "houston/two", { "2.txt": "two\n" }, { from: "houston/one" });
+        pushBranch(repos, "main", { "main.txt": "moved\n" });
+        const marker = NodePath.join(repos.root, "hooks.txt");
+        hostileConfig(repos, marker, two);
+        const before = checkoutState(repos);
+        const scratch = scratchOf(verifier);
+        const outcome = yield* verifier.verify(
+          request(repos, scratch, {
+            headRef: "houston/two",
+            headSha: two,
+            command: "git --version",
+            stack: { dependency: "houston/one", recordedHeads: [one], targetsDependency: true },
+          }),
+        );
+        const restacked = passed(outcome);
+        assert.strictEqual(restacked.forkSha, one);
+        assert.deepEqual(checkoutState(repos), before);
+        assert.isFalse(NodeFS.existsSync(scratch));
+        assert.isFalse(NodeFS.existsSync(marker), "a hook of the checkout ran");
+      }),
+    ),
+  );
+
+  it.live("the project checkout is unchanged by every outcome: a restack handed off", () => {
+    const repos = makeRepos();
+    const github = makeGitHub(repos);
+    github.autoMergeAllowed = true;
+    return Effect.gen(function* () {
+      const queue = yield* HoustonMergeQueueService;
+      const runner = yield* HoustonMergeQueueRunner;
+      const reader = yield* HoustonMergeQueueReader;
+      const config = yield* ServerConfig.ServerConfig;
+      pushBranch(repos, "houston/one", { "1.txt": "one\n" });
+      const two = pushBranch(repos, "houston/two", { "2.txt": "two\n" }, { from: "houston/one" });
+      pushBranch(repos, "main", { "main.txt": "moved\n" });
+      openPull(github, 1, { headRef: "houston/one" });
+      openPull(github, 2, { headRef: "houston/two", baseRef: "houston/one" });
+      for (const branch of ["houston/one", "houston/two"]) {
+        addManagedWorktree(repos, config.worktreesDir, branch);
+      }
+      const marker = NodePath.join(repos.root, "hooks.txt");
+      hostileConfig(repos, marker, two);
+      const projectId = yield* createProject("checkout-handoff", repos.checkout);
+      yield* queue.setSettings({
+        projectId,
+        mergeWhenVerified: true,
+        verificationCommand: "git --version",
+        timeLimitMinutes: 30,
+      });
+      yield* queue.enqueue({ projectId, pullRequest: 1 });
+      yield* queue.enqueue({ projectId, pullRequest: 2, dependsOn: 1 });
+      const before = checkoutState(repos);
+
+      yield* runner.pass;
+      assert.strictEqual(entryOf(yield* queue.get({ projectId }), 1).status, "watching");
+      githubMerges(github, 1);
+      yield* reader.readProject(projectId);
+      yield* runner.pass;
+      const held = entryOf(yield* queue.get({ projectId }), 2);
+      assert.strictEqual(held.status, "watching", JSON.stringify(held));
+      assert.strictEqual(github.pulls.get(2)!.baseRef, "main");
+
+      // The lease push records where it left each pushed branch, as git does for its remote;
+      // nothing else in the checkout moved.
+      const after = checkoutState(repos);
+      const pushed = ["refs/remotes/origin/houston/one", "refs/remotes/origin/houston/two"];
+      const without = (refs: string) =>
+        refs
+          .split("\n")
+          .filter((line) => !pushed.some((ref) => line.endsWith(`\t${ref}`)))
+          .join("\n");
+      assert.deepEqual(
+        { ...after, refs: without(after.refs) },
+        { ...before, refs: without(before.refs) },
+      );
+      for (const ref of pushed) {
+        const line = after.refs.split("\n").find((value) => value.endsWith(`\t${ref}`));
+        if (line !== undefined) {
+          assert.strictEqual(
+            line.split(" ")[0],
+            remoteHead(repos, ref.slice("refs/remotes/origin/".length)),
+          );
+        }
+      }
+      assert.isFalse(NodeFS.existsSync(marker), "a hook of the checkout ran");
+    }).pipe(Effect.provide(Layer.fresh(layerMergeQueueTest({ github, loops: false }))));
+  });
 });
+
+/** The user's config that would move branches, sign, recurse or run hooks; local branches beside. */
+const hostileConfig = (repos: Repos, marker: string, head: string) => {
+  for (const [key, value] of [
+    ["rebase.updateRefs", "true"],
+    ["commit.gpgSign", "true"],
+    ["gpg.program", "houston-no-such-gpg"],
+    ["rerere.enabled", "true"],
+    ["submodule.recurse", "true"],
+    ["fetch.recurseSubmodules", "true"],
+    ["fetch.prune", "true"],
+    ["fetch.pruneTags", "true"],
+    ["push.followTags", "true"],
+    ["push.gpgSign", "true"],
+  ] as const) {
+    git(repos.checkout, ["config", key, value]);
+  }
+  git(repos.checkout, ["fetch", "--quiet", "origin", `+${head}:refs/heads/houston/x`]);
+  git(repos.checkout, ["branch", "houston/stack", `${head}^`]);
+  git(repos.checkout, ["tag", "-a", "user-tag", "-m", "the user's", head]);
+  installHooks(repos, marker);
+  const hooks = NodePath.join(repos.checkout, ".git", "hooks");
+  NodeFS.writeFileSync(
+    NodePath.join(hooks, "pre-push"),
+    `#!/bin/sh\necho pre-push >> "${marker.replaceAll("\\", "/")}"\n`,
+    { mode: 0o755 },
+  );
+  NodeFS.writeFileSync(NodePath.join(repos.checkout, "README.md"), "user edit\n");
+  NodeFS.writeFileSync(NodePath.join(repos.checkout, "untracked.txt"), "untracked\n");
+};
 
 describe("a scratch path inside the checkout or a managed worktree is refused", () => {
   it.live("a scratch path inside the checkout or a managed worktree is refused", () =>

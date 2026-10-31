@@ -352,6 +352,8 @@ const project = (name: string, github: FakeGitHub, numbers: ReadonlyArray<number
     return yield* createProject(name, github.repos!.checkout);
   });
 
+const MODEL = { instanceId: "codex", model: "test-model" };
+
 const SETTINGS = {
   mergeWhenVerified: false,
   verificationCommand: "git --version",
@@ -514,6 +516,26 @@ describe("each method requires its declared scope and a known project", () => {
             payload: { paused: true },
           },
           {
+            method: WS_METHODS.houstonMergeQueueRetry,
+            scope: AuthOrchestrationOperateScope,
+            payload: { projectId, number: 1 },
+          },
+          {
+            method: WS_METHODS.houstonMergeQueueHandToThread,
+            scope: AuthOrchestrationOperateScope,
+            payload: { projectId, number: 1, modelSelection: MODEL },
+          },
+          {
+            method: WS_METHODS.houstonMergeQueueRevert,
+            scope: AuthOrchestrationOperateScope,
+            payload: { projectId, number: 1 },
+          },
+          {
+            method: WS_METHODS.houstonMergeQueueAcknowledge,
+            scope: AuthOrchestrationOperateScope,
+            payload: { projectId },
+          },
+          {
             method: WS_METHODS.houstonMergeQueueDequeue,
             scope: AuthOrchestrationOperateScope,
             payload: { projectId, number: 1 },
@@ -545,6 +567,13 @@ describe("each method requires its declared scope and a known project", () => {
           ],
           [WS_METHODS.houstonMergeQueueSettingsSet, { projectId: unknown, ...SETTINGS }],
           [WS_METHODS.houstonMergeQueuePause, { projectId: unknown, paused: true }],
+          [WS_METHODS.houstonMergeQueueRetry, { projectId: unknown, number: 1 }],
+          [
+            WS_METHODS.houstonMergeQueueHandToThread,
+            { projectId: unknown, number: 1, modelSelection: MODEL },
+          ],
+          [WS_METHODS.houstonMergeQueueRevert, { projectId: unknown, number: 1 }],
+          [WS_METHODS.houstonMergeQueueAcknowledge, { projectId: unknown }],
         ] as const) {
           const refused = failureOf(yield* client.call(method, payload));
           assert.strictEqual(refused?.kind, "not_found", method);

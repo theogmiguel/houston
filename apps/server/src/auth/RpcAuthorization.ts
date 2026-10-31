@@ -211,6 +211,10 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.houstonMergeQueueSettingsSet]: AuthSettingsWriteScope,
   // One project's pause; pausing every queue needs AuthSettingsWriteScope (below).
   [WS_METHODS.houstonMergeQueuePause]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonMergeQueueRetry]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonMergeQueueHandToThread]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonMergeQueueRevert]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonMergeQueueAcknowledge]: AuthOrchestrationOperateScope,
   [WS_METHODS.terminalOpen]: AuthTerminalOperateScope,
   [WS_METHODS.terminalAttach]: AuthTerminalOperateScope,
   [WS_METHODS.terminalObserve]: AuthTerminalReadScope,

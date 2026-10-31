@@ -13,7 +13,7 @@ import * as Layer from "effect/Layer";
 import * as ServerConfig from "../../config.ts";
 import * as VcsProcess from "../../vcs/VcsProcess.ts";
 import { GIT_NETWORK_TIMEOUT_MS, git, gitOk, resolvesInside } from "./Project.ts";
-import { keepTail, reportTail, type VerifyOutcome } from "./rules.ts";
+import { keepTail, noForkPoint, reportTail, type VerifyOutcome } from "./rules.ts";
 
 export type { VerifyOutcome } from "./rules.ts";
 
@@ -29,6 +29,18 @@ export interface VerifyRequest {
   readonly scratch: string;
   /** The project root and managed worktrees directories the scratch path may not resolve into. */
   readonly protectedRoots: ReadonlyArray<string>;
+  /** A dependency merged ahead of the entry: the restack replays only the entry's own commits. */
+  readonly stack?: StackRequest | null;
+}
+
+export interface StackRequest {
+  /** The merged dependency's head branch. */
+  readonly dependency: string;
+  /** Every head the queue recorded for the dependency (rules.recordedHeads). */
+  readonly recordedHeads: ReadonlyArray<string>;
+  /** Whether the pull request still targets the dependency's branch on GitHub. */
+  readonly targetsDependency: boolean;
+  readonly number?: number;
 }
 
 /** The private ref a branch is fetched into; the user's remote-tracking refs never move. */
@@ -264,7 +276,60 @@ const make = Effect.gen(function* () {
     return missing.flatMap((key) => ["-c", `${key}=${key === "user.name" ? name : email}`]);
   });
 
-  const inScratch = (request: VerifyRequest, baseSha: string) =>
+  const isAncestor = (repo: string, ancestor: string, descendant: string) =>
+    withVcs(git(repo, ["merge-base", "--is-ancestor", ancestor, descendant])).pipe(
+      Effect.map((result) => result.exitCode === 0),
+      Effect.orElseSucceed(() => false),
+    );
+
+  /** The newest recorded dependency head the head contains; null rebases plainly. */
+  const forkPoint = Effect.fn("HoustonMergeVerifier.forkPoint")(function* (
+    request: VerifyRequest,
+    stack: StackRequest,
+    baseSha: string,
+  ) {
+    const contained: Array<{ readonly sha: string; readonly depth: number }> = [];
+    for (const sha of stack.recordedHeads) {
+      if (!(yield* isAncestor(request.repo, sha, request.headSha))) continue;
+      const depth = yield* withVcs(gitOk(request.repo, ["rev-list", "--count", sha])).pipe(
+        Effect.map(Number),
+        Effect.orElseSucceed(() => 0),
+      );
+      contained.push({ sha, depth });
+    }
+    if (contained.length > 0) {
+      return { fork: contained.toSorted((left, right) => right.depth - left.depth)[0]!.sha };
+    }
+    // The dependency's branch, when it is still on the remote, shows commits it shares.
+    yield* fetch(request.repo, request.remote, [stack.dependency]).pipe(Effect.ignore);
+    const dependencyHead = yield* remoteSha(request.repo, request.remote, stack.dependency).pipe(
+      Effect.orElseSucceed(() => null),
+    );
+    yield* forget(request.repo, request.remote, stack.dependency);
+    let carries = stack.targetsDependency;
+    for (const sha of [
+      ...stack.recordedHeads,
+      ...(dependencyHead === null ? [] : [dependencyHead]),
+    ]) {
+      if (carries) break;
+      const shared = yield* withVcs(gitOk(request.repo, ["merge-base", request.headSha, sha])).pipe(
+        Effect.orElseSucceed(() => ""),
+      );
+      carries = shared.length > 0 && !(yield* isAncestor(request.repo, shared, baseSha));
+    }
+    if (!carries) return { fork: null };
+    return {
+      refusal: noForkPoint({
+        label: stack.number === undefined ? request.headRef : `PR #${stack.number}`,
+        headRef: request.headRef,
+        dependencyRef: stack.dependency,
+        baseRef: request.baseRef,
+        recordedHeads: stack.recordedHeads,
+      }),
+    };
+  });
+
+  const inScratch = (request: VerifyRequest, baseSha: string, fork: string | null) =>
     Effect.gen(function* () {
       const scratch = request.scratch;
       yield* removeScratch(request.repo, scratch);
@@ -284,7 +349,7 @@ const make = Effect.gen(function* () {
           "-c",
           "rebase.updateRefs=false",
           "rebase",
-          baseSha,
+          ...(fork === null ? [baseSha] : ["--onto", baseSha, fork]),
         ]),
       );
       if (rebase.exitCode !== 0) {
@@ -309,7 +374,12 @@ const make = Effect.gen(function* () {
       if (run.timedOut)
         return { _tag: "TimedOut", baseSha, tail: run.tail } satisfies VerifyOutcome;
       return run.code === 0
-        ? ({ _tag: "Passed", baseSha, verifiedSha } satisfies VerifyOutcome)
+        ? ({
+            _tag: "Passed",
+            baseSha,
+            verifiedSha,
+            ...(fork === null ? {} : { forkSha: fork }),
+          } satisfies VerifyOutcome)
         : ({ _tag: "Failed", baseSha, code: run.code, tail: run.tail } satisfies VerifyOutcome);
     }).pipe(Effect.ensuring(removeScratch(request.repo, request.scratch)));
 
@@ -327,7 +397,12 @@ const make = Effect.gen(function* () {
       const found = yield* remoteSha(request.repo, request.remote, request.headRef);
       if (found !== request.headSha) return { _tag: "HeadMoved", found } satisfies VerifyOutcome;
       const baseSha = yield* remoteSha(request.repo, request.remote, request.baseRef);
-      return yield* inScratch(request, baseSha);
+      const stack = request.stack ?? null;
+      const point = stack === null ? { fork: null } : yield* forkPoint(request, stack, baseSha);
+      if ("refusal" in point) {
+        return { _tag: "Refused", message: point.refusal } satisfies VerifyOutcome;
+      }
+      return yield* inScratch(request, baseSha, point.fork);
     },
     Effect.catch((message: string) =>
       Effect.succeed({ _tag: "Refused", message } satisfies VerifyOutcome),

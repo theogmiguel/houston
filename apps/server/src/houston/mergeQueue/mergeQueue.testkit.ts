@@ -11,6 +11,8 @@ import {
   CommandId,
   ProjectId,
   PullRequestOperationError,
+  type ModelSelection,
+  type PullRequestActionInput,
   type PullRequestActivity,
   type PullRequestCheckStatus,
   type PullRequestChecks,
@@ -54,6 +56,7 @@ import {
 import { layerMergeQueue } from "./layer.ts";
 import { HoustonMergeQueueService } from "./Service.ts";
 import * as HoustonMergeQueueStore from "./Store.ts";
+import { HoustonMergeQueueThreads, type LaunchRequest, type QueueThread } from "./Threads.ts";
 
 export const OWNER = "o";
 export const NAME = "r";
@@ -189,6 +192,12 @@ export interface FakePull {
   mergeability: "mergeable" | "conflicting" | "unknown";
   unresolvedThreads: number;
   threadsTruncated: boolean;
+  /** GitHub's merge queue entry, pinned to the commit it was enqueued at. */
+  queued: { position: number; sha: string } | null;
+  /** The auto-merge request, pinned to the commit it was enabled at. */
+  autoMerge: { method: string; sha: string } | null;
+  /** GitHub's reason in the newest removal from its merge queue or auto-merge disable event. */
+  letGo: string | null;
 }
 
 export interface FakeGitHub {
@@ -204,6 +213,19 @@ export interface FakeGitHub {
   readFailure: string | null;
   /** Overrides the answer to a merge request; null answers as GitHub would. */
   mergeAnswer: ((number: number, body: Record<string, unknown>) => Response) | null;
+  /** Bases whose rules require GitHub's merge queue; a REST merge into one is refused. */
+  mergeQueueBases: Set<string>;
+  autoMergeAllowed: boolean;
+  /** An older GitHub Enterprise: the facts query's hand-off fields are a schema error. */
+  schemaLacksHandOff: boolean;
+  /** GitHub accepts a hand-off but no read reports it. */
+  handOffIgnored: boolean;
+  /** The position GitHub's merge queue gives an enqueued pull request. */
+  queuePosition: number;
+  /** When set, a take-back (dequeue or auto-merge disable) fails with this message. */
+  takeBackFailure: string | null;
+  /** Upstream's pull request actions the queue ran, in order. */
+  actions: Array<PullRequestActionInput>;
 }
 
 export const makeGitHub = (repos: Repos | null = null): FakeGitHub => ({
@@ -216,6 +238,13 @@ export const makeGitHub = (repos: Repos | null = null): FakeGitHub => ({
   mergeMethods: { merge: true, squash: true, rebase: true },
   readFailure: null,
   mergeAnswer: null,
+  mergeQueueBases: new Set(),
+  autoMergeAllowed: false,
+  schemaLacksHandOff: false,
+  handOffIgnored: false,
+  queuePosition: 1,
+  takeBackFailure: null,
+  actions: [],
 });
 
 /** An open, green, approved and clean pull request on `headRef`. */
@@ -236,6 +265,9 @@ export const openPull = (github: FakeGitHub, number: number, patch: Partial<Fake
     mergeability: "mergeable",
     unresolvedThreads: 0,
     threadsTruncated: false,
+    queued: null,
+    autoMerge: null,
+    letGo: null,
     ...patch,
   };
   github.pulls.set(number, pull);
@@ -289,27 +321,147 @@ const restRepository = (path: string, body: unknown) => {
   return variables?.owner === undefined ? undefined : `${variables.owner}/${variables.name}`;
 };
 
+/** The node id the fake gives a pull request. */
+export const pullNodeId = (number: number) => `PR_node_${number}`;
+
+/** The GraphQL mutations the queue sent, by name, with their variables. */
+export const mutationsOf = (github: FakeGitHub) =>
+  github.requests.flatMap((request) => {
+    const query = (request.body as { query?: unknown } | null)?.query;
+    if (typeof query !== "string" || !query.trimStart().startsWith("mutation")) return [];
+    const name = /\{\s*(\w+)\s*\(/.exec(query)?.[1] ?? "unknown";
+    return [
+      {
+        name,
+        variables: ((request.body as { variables?: Record<string, unknown> }).variables ??
+          {}) as Record<string, unknown>,
+      },
+    ];
+  });
+
+const graphqlError = (message: string) => json({ data: null, errors: [{ message }] });
+
+const answerMutation = (github: FakeGitHub, query: string, variables: Record<string, unknown>) => {
+  const pull = [...github.pulls.values()].find(
+    (candidate) => pullNodeId(candidate.number) === variables.id,
+  );
+  if (pull === undefined) return graphqlError(`Could not resolve to a node with the global id`);
+  const head = headOf(github, pull);
+  const pinned = () =>
+    variables.oid !== head
+      ? `Head sha didn't match expected head sha ${String(variables.oid)}; it is ${head}`
+      : null;
+  if (query.includes("enqueuePullRequest(")) {
+    if (!github.mergeQueueBases.has(pull.baseRef)) {
+      return graphqlError(`Merge queue is not enabled for ${pull.baseRef}`);
+    }
+    const refused = pinned();
+    if (refused !== null) return graphqlError(refused);
+    if (!github.handOffIgnored) pull.queued = { position: github.queuePosition, sha: head };
+    return json({
+      data: { enqueuePullRequest: { mergeQueueEntry: { position: github.queuePosition } } },
+    });
+  }
+  if (query.includes("enablePullRequestAutoMerge(")) {
+    if (!github.autoMergeAllowed)
+      return graphqlError("Auto merge is not allowed for this repository");
+    const refused = pinned();
+    if (refused !== null) return graphqlError(refused);
+    if (!github.handOffIgnored) {
+      pull.autoMerge = { method: String(variables.method), sha: head };
+    }
+    return json({ data: { enablePullRequestAutoMerge: { pullRequest: { number: pull.number } } } });
+  }
+  const takeBack =
+    query.includes("dequeuePullRequest(") || query.includes("disablePullRequestAutoMerge(");
+  if (takeBack && github.takeBackFailure !== null) return graphqlError(github.takeBackFailure);
+  if (query.includes("dequeuePullRequest(")) {
+    pull.queued = null;
+    return json({ data: { dequeuePullRequest: { mergeQueueEntry: null } } });
+  }
+  if (query.includes("disablePullRequestAutoMerge(")) {
+    pull.autoMerge = null;
+    return json({
+      data: { disablePullRequestAutoMerge: { pullRequest: { number: pull.number } } },
+    });
+  }
+  return graphqlError("unknown mutation");
+};
+
+const answerFacts = (github: FakeGitHub, query: string, variables: Record<string, unknown>) => {
+  const handOff = query.includes("isMergeQueueEnabled");
+  if (handOff && github.schemaLacksHandOff) {
+    return graphqlError("Field 'isMergeQueueEnabled' doesn't exist on type 'PullRequest'");
+  }
+  const pull = github.pulls.get(Number(variables.number));
+  const handOffFields = (value: FakePull) => ({
+    isMergeQueueEnabled: github.mergeQueueBases.has(value.baseRef),
+    mergeQueueEntry:
+      value.queued === null
+        ? null
+        : { position: value.queued.position, headCommit: { oid: value.queued.sha } },
+    autoMergeRequest:
+      value.autoMerge === null ? null : { mergeMethod: value.autoMerge.method.toUpperCase() },
+    timelineItems: {
+      nodes:
+        value.letGo === null
+          ? []
+          : [{ __typename: "RemovedFromMergeQueueEvent", reason: value.letGo }],
+    },
+  });
+  return json({
+    data: {
+      repository: {
+        defaultBranchRef: { name: github.defaultBranch },
+        ...(handOff ? { autoMergeAllowed: github.autoMergeAllowed } : {}),
+        pullRequest:
+          pull === undefined
+            ? null
+            : {
+                id: pullNodeId(pull.number),
+                mergeStateStatus: pull.mergeState,
+                reviewDecision: pull.reviewDecision,
+                isDraft: pull.isDraft,
+                headRefOid: headOf(github, pull),
+                ...(handOff ? handOffFields(pull) : {}),
+              },
+      },
+    },
+  });
+};
+
+/** GitHub merges a pull request it holds: its head squashed onto the base on the bare remote. */
+export const githubMerges = (github: FakeGitHub, number: number) => {
+  const pull = github.pulls.get(number)!;
+  const head = headOf(github, pull);
+  const merged =
+    github.repos === null
+      ? "f".repeat(40)
+      : squashOnRemote(github.repos, pull.baseRef, head, `${pull.title} (#${number})`);
+  pull.headSha = head;
+  pull.state = "merged";
+  pull.queued = null;
+  pull.autoMerge = null;
+  return merged;
+};
+
 const answerRest = (github: FakeGitHub, method: string, path: string, body: unknown) => {
   if (github.readFailure !== null) return json({ message: github.readFailure }, 502);
   if (method === "POST" && path.endsWith("/graphql")) {
-    const variables = (body as { variables?: { number?: number } }).variables ?? {};
-    const pull = github.pulls.get(Number(variables.number));
-    return json({
-      data: {
-        repository: {
-          defaultBranchRef: { name: github.defaultBranch },
-          pullRequest:
-            pull === undefined
-              ? null
-              : {
-                  mergeStateStatus: pull.mergeState,
-                  reviewDecision: pull.reviewDecision,
-                  isDraft: pull.isDraft,
-                  headRefOid: headOf(github, pull),
-                },
-        },
-      },
-    });
+    const request = body as { query?: string; variables?: Record<string, unknown> };
+    const query = request.query ?? "";
+    const variables = request.variables ?? {};
+    return query.trimStart().startsWith("mutation")
+      ? answerMutation(github, query, variables)
+      : answerFacts(github, query, variables);
+  }
+  const retarget = /\/repos\/([^/]+\/[^/]+)\/pulls\/(\d+)$/.exec(path);
+  if (method === "PATCH" && retarget !== null) {
+    const pull = github.pulls.get(Number(retarget[2]));
+    const base = (body as { base?: unknown }).base;
+    if (pull === undefined || typeof base !== "string") return notFound();
+    pull.baseRef = base;
+    return json({ number: pull.number, base: { ref: base } });
   }
   const merge = /\/repos\/([^/]+\/[^/]+)\/pulls\/(\d+)\/merge$/.exec(path);
   if (method === "PUT" && merge !== null) {
@@ -319,6 +471,12 @@ const answerRest = (github: FakeGitHub, method: string, path: string, body: unkn
     const pull = github.pulls.get(number);
     if (pull === undefined || merge[1] !== pull.repository) return notFound();
     if (pull.state !== "open") return json({ message: "Pull Request is not mergeable" }, 405);
+    if (github.mergeQueueBases.has(pull.baseRef)) {
+      return json(
+        { message: `Changes must be made through the merge queue for ${pull.baseRef}` },
+        405,
+      );
+    }
     const head = headOf(github, pull);
     if (request.sha !== head) {
       return json({ message: "Head branch was modified. Review and try the merge again." }, 409);
@@ -484,6 +642,13 @@ export const layerPullRequestFake = (fakes: Fakes) =>
                 ({ state: pull.state, checks: checksOf(pull) }) as unknown as PullRequestChecks,
             ),
           ),
+        runAction: (input: PullRequestActionInput) =>
+          lookup("runAction", input).pipe(
+            Effect.flatMap(({ github }) => {
+              github.actions.push(input);
+              return Effect.void;
+            }),
+          ),
         reportState: (input: PullRequestReportStateInput) =>
           Effect.suspend(() => {
             route(fakes, input.reference.repository).reported.push(input);
@@ -523,9 +688,64 @@ export const layerRecordingVcs = (log: GitLog) =>
     }),
   ).pipe(Layer.provide(ProcessRunner.layer));
 
+/** The project threads the queue may tell, and every note and launch it sent. */
+export interface FakeThreads {
+  readonly threads: Array<QueueThread>;
+  readonly notes: Array<{
+    readonly threadId: string;
+    readonly messageId: string;
+    readonly text: string;
+  }>;
+  readonly launched: Array<LaunchRequest>;
+  launchFailure: string | null;
+}
+
+export const makeThreads = (threads: ReadonlyArray<QueueThread> = []): FakeThreads => ({
+  threads: [...threads],
+  notes: [],
+  launched: [],
+  launchFailure: null,
+});
+
+export const thread = (
+  id: string,
+  projectId: string,
+  patch: Partial<Omit<QueueThread, "id" | "projectId">> = {},
+): QueueThread => ({ id, projectId, branch: null, worktreePath: null, archived: false, ...patch });
+
+export const layerThreadsFake = (fake: FakeThreads) =>
+  Layer.succeed(
+    HoustonMergeQueueThreads,
+    HoustonMergeQueueThreads.of({
+      list: (projectId) =>
+        Effect.sync(() => fake.threads.filter((value) => value.projectId === projectId)),
+      notify: (note) =>
+        Effect.sync(() => {
+          fake.notes.push({ ...note });
+        }),
+      launch: (request) =>
+        fake.launchFailure !== null
+          ? Effect.fail(fake.launchFailure)
+          : Effect.sync(() => {
+              fake.launched.push(request);
+              fake.threads.push(
+                thread(request.threadId, request.projectId, {
+                  branch: request.branch,
+                  worktreePath: request.worktreePath,
+                }),
+              );
+            }),
+    }),
+  );
+
+export const selection = (instanceId = "codex", model = "test-model"): ModelSelection =>
+  ({ instanceId, model }) as ModelSelection;
+
 export interface MergeQueueTestOptions {
   /** One fake, or one per repository. */
   readonly github?: FakeGitHub | ReadonlyArray<FakeGitHub>;
+  /** The project threads; none when absent. */
+  readonly threads?: FakeThreads;
   readonly gitLog?: GitLog;
   /** A database file that outlives the layer; in memory when absent. */
   readonly databaseFile?: string;
@@ -539,7 +759,9 @@ export interface MergeQueueTestOptions {
 export const layerMergeQueueTest = (options: MergeQueueTestOptions = {}) => {
   const github = options.github ?? makeGitHub();
   return layerMergeQueue(
-    Layer.mergeAll(layerGitHubRestFake(github), layerPullRequestFake(github)),
+    Layer.mergeAll(layerGitHubRestFake(github), layerPullRequestFake(github)).pipe(
+      Layer.merge(layerThreadsFake(options.threads ?? makeThreads())),
+    ),
     { loops: options.loops ?? true },
   ).pipe(
     Layer.provideMerge(RuntimeLayer.layerProjectService),
@@ -605,6 +827,10 @@ export interface ScenarioOptions {
   /** Moves main after the branches, so each verification rebases onto a new base. */
   readonly mainMoves?: boolean;
   readonly heads?: Readonly<Record<number, string>>;
+  /** The thread that enqueues each pull request; the user's enqueue when absent. */
+  readonly owners?: Readonly<Record<number, string>>;
+  /** Each pull request's base branch; main when absent. */
+  readonly bases?: Readonly<Record<number, string>>;
 }
 
 /** A project whose pull requests `numbers` are open on GitHub and queued in order. */
@@ -618,8 +844,10 @@ export const queueScenario = Effect.fn("HoustonMergeQueueTest.queueScenario")(fu
   const queue = yield* HoustonMergeQueueService;
   for (const number of numbers) {
     const headRef = options.heads?.[number] ?? `houston/${number}`;
-    pushBranch(repos, headRef, { [`f${number}.txt`]: `${number}\n` });
-    openPull(github, number, { headRef });
+    const baseRef = options.bases?.[number] ?? "main";
+    if (remoteHead(repos, baseRef) === null) pushBranch(repos, baseRef, { "base.txt": baseRef });
+    pushBranch(repos, headRef, { [`f${number}.txt`]: `${number}\n` }, { from: baseRef });
+    openPull(github, number, { headRef, baseRef });
   }
   if (options.mainMoves ?? true) pushBranch(repos, "main", { "main.txt": "moved\n" });
   for (const branch of options.managed ??
@@ -635,7 +863,9 @@ export const queueScenario = Effect.fn("HoustonMergeQueueTest.queueScenario")(fu
       timeLimitMinutes: 30,
     });
   }
-  for (const number of numbers) yield* queue.enqueue({ projectId, pullRequest: number });
+  for (const number of numbers) {
+    yield* queue.enqueue({ projectId, pullRequest: number }, options.owners?.[number]);
+  }
   return projectId;
 });
 

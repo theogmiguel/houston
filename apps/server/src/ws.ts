@@ -3026,6 +3026,11 @@ export const layerWsRpc = (
         [WS_METHODS.houstonMergeQueueMergeHead]: (input) => houstonMergeQueue.mergeHead(input),
         [WS_METHODS.houstonMergeQueueSettingsSet]: (input) => houstonMergeQueue.setSettings(input),
         [WS_METHODS.houstonMergeQueuePause]: (input) => houstonMergeQueue.pause(input),
+        [WS_METHODS.houstonMergeQueueRetry]: (input) => houstonMergeQueue.retry(input),
+        [WS_METHODS.houstonMergeQueueHandToThread]: (input) =>
+          houstonMergeQueue.handToThread(input),
+        [WS_METHODS.houstonMergeQueueRevert]: (input) => houstonMergeQueue.revert(input),
+        [WS_METHODS.houstonMergeQueueAcknowledge]: (input) => houstonMergeQueue.acknowledge(input),
         [WS_METHODS.terminalOpen]: (input) => terminalManager.open(input),
         [WS_METHODS.terminalAttach]: (input, metadata) =>
           terminalManager.attachOutputStream(input, terminalViewerId(metadata)),
