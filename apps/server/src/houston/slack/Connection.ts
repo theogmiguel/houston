@@ -38,6 +38,12 @@ const OPEN_TIMEOUT_MS = 10_000;
 const MAX_BACKOFF_SECONDS = 60;
 const HISTORY_PAGE = 200;
 const LINK_DISABLED = "Socket Mode was turned off for the app";
+// Slack's envelopes are a few KiB; a frame over this closes the socket and Slack redelivers.
+const MAX_FRAME_BYTES = 1024 * 1024;
+// Frames read but not yet handled; past it new frames are dropped and, unacked, redelivered.
+const INCOMING_CAPACITY = 1_000;
+// Acked envelopes waiting for the intake; a full inbox stops reading, so acks wait too.
+const INBOX_CAPACITY = 100;
 
 export type SocketIncoming =
   | { readonly type: "frame"; readonly text: string }
@@ -57,10 +63,14 @@ export class SlackSocketTransport extends Context.Service<
 >()("houston/houston/slack/Connection/SlackSocketTransport") {}
 
 const openSocket = Effect.fn("HoustonSlack.openSocket")(function* (url: string) {
-  const incoming = yield* Queue.unbounded<SocketIncoming>();
+  const incoming = yield* Queue.dropping<SocketIncoming>(INCOMING_CAPACITY);
   const ws = yield* Effect.acquireRelease(
     Effect.callback<InstanceType<typeof NodeWS.WebSocket>, string>((resume) => {
-      const socket = new NodeWS.WebSocket(url, { handshakeTimeout: OPEN_TIMEOUT_MS });
+      const socket = new NodeWS.WebSocket(url, {
+        handshakeTimeout: OPEN_TIMEOUT_MS,
+        maxPayload: MAX_FRAME_BYTES,
+        perMessageDeflate: false,
+      });
       // An error nobody listens to would exit the server.
       socket.on("error", () => undefined);
       socket.once("open", () => resume(Effect.succeed(socket)));
@@ -141,11 +151,11 @@ const make = Effect.gen(function* () {
   const layerScope = yield* Effect.scope;
   const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.orDie(effect);
 
-  // Envelopes are acked, then handled here one at a time, so a slow request never delays an ack.
-  const inbox = yield* Queue.unbounded<{
+  // Envelopes are acked, then handled here one at a time, so one slow request never delays an ack.
+  const inbox = yield* Queue.bounded<{
     readonly envelope: Readonly<Record<string, unknown>>;
     readonly botToken: Redacted.Redacted<string>;
-  }>();
+  }>(INBOX_CAPACITY);
   yield* Effect.gen(function* () {
     for (;;) {
       const { envelope, botToken } = yield* Queue.take(inbox);

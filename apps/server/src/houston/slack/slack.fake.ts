@@ -38,6 +38,8 @@ export interface SlackFakeSocket {
   closed: boolean;
   readonly send: (value: unknown) => void;
   readonly close: (code?: number) => void;
+  /** The client's `Sec-WebSocket-Extensions` offer, or null. */
+  readonly extensions: string | null;
 }
 
 export interface SlackFake {
@@ -219,7 +221,10 @@ export const makeSlackFake = Effect.acquireRelease(
 
     const answering = new NodeWS.WebSocketServer({ noServer: true });
     const silent = new NodeWS.WebSocketServer({ noServer: true, autoPong: false });
-    const onConnection = (socket: InstanceType<typeof NodeWS.WebSocket>) => {
+    const onConnection = (
+      socket: InstanceType<typeof NodeWS.WebSocket>,
+      request: NodeHttp.IncomingMessage,
+    ) => {
       socketIds += 1;
       const entry: SlackFakeSocket = {
         id: socketIds,
@@ -228,6 +233,7 @@ export const makeSlackFake = Effect.acquireRelease(
         closed: false,
         send: (value) => socket.send(JSON.stringify(value)),
         close: (code = 1000) => socket.close(code),
+        extensions: request.headers["sec-websocket-extensions"] ?? null,
       };
       socket.on("message", (data) => {
         try {

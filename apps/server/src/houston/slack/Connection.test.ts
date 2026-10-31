@@ -452,3 +452,40 @@ describe("the server and the harness start one slack loop", () => {
     ),
   );
 });
+
+describe("the socket refuses oversized frames and offers no compression", () => {
+  it.effect("the socket refuses oversized frames and offers no compression", () =>
+    runSlack((fake) =>
+      Effect.gen(function* () {
+        const projectId = yield* createProject("bounded-socket");
+        yield* connectSlack(projectId);
+        yield* untilConnected;
+        const first = fake.sockets.at(-1);
+        assert.isNull(first?.extensions ?? null);
+        // A frame over 1 MiB closes the socket unread: the envelope is never acked.
+        first?.send(
+          mentionEnvelope("oversized", {
+            ...mentionEvent("1700000000.000100", "fix it"),
+            padding: "x".repeat(1024 * 1024),
+          }),
+        );
+        yield* until(
+          "the oversized frame closes the socket",
+          Effect.sync(() => first?.closed === true),
+        );
+        assert.isFalse(
+          (first?.received ?? []).some(
+            (frame) =>
+              typeof frame === "object" &&
+              frame !== null &&
+              (frame as { envelope_id?: unknown }).envelope_id === "oversized",
+          ),
+        );
+        yield* untilAdvancing(
+          "a new socket",
+          Effect.sync(() => fake.sockets.length >= 2),
+        );
+      }),
+    ),
+  );
+});
