@@ -113,9 +113,11 @@ describe("inspect summarises a file without unpacking it", () => {
           assert.strictEqual(checkout!.head, git(repos.checkout, ["rev-parse", "HEAD"]));
           assert.isTrue(checkout!.carriesCommits);
           assert.strictEqual(checkout!.untracked, 3);
+          // A Windows source matches without case, so its `docs/claude.md` is `docs/CLAUDE.md`.
           assert.deepEqual(checkout!.agentConfigPaths, [
             ".claude/settings.local.json",
             "CLAUDE.md",
+            ...(summary.sourceOs === "win32" ? ["docs/claude.md"] : []),
           ]);
           assert.deepEqual(summary.counts, {
             tasks: 1,

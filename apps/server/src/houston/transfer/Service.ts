@@ -178,7 +178,7 @@ const make = Effect.fn("HoustonTransfer.make")(function* (options: ExportOptions
         head: checkout.head,
         carriesCommits: checkout.bundle !== null,
         untracked: checkout.untracked.length,
-        agentConfigPaths: agentConfigPaths(checkout.untracked),
+        agentConfigPaths: agentConfigPaths(checkout.untracked, manifest.sourceOs),
       })),
       counts: manifest.counts,
       proposedProjectId,

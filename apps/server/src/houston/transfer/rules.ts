@@ -255,14 +255,20 @@ const AGENT_FILES = new Set([
   ".gitmodules",
 ]);
 
-/** Carried paths that configure agents or tools, at any depth, in the order given. */
-export const agentConfigPaths = (paths: ReadonlyArray<string>) =>
-  paths.filter((path) => {
-    const parts = path.split("/");
-    return (
-      AGENT_FILES.has(parts.at(-1)!) || parts.slice(0, -1).some((part) => AGENT_FOLDERS.has(part))
-    );
+const FOLDED_AGENT_FILES = new Set([...AGENT_FILES].map((name) => name.toLowerCase()));
+
+/** Carried paths that configure agents or tools, at any depth; a Windows source's without case. */
+export const agentConfigPaths = (
+  paths: ReadonlyArray<string>,
+  sourceOs: "linux" | "win32" = "linux",
+) => {
+  const fold = sourceOs === "win32" ? (name: string) => name.toLowerCase() : (name: string) => name;
+  const files = sourceOs === "win32" ? FOLDED_AGENT_FILES : AGENT_FILES;
+  return paths.filter((path) => {
+    const parts = path.split("/").map(fold);
+    return files.has(parts.at(-1)!) || parts.slice(0, -1).some((part) => AGENT_FOLDERS.has(part));
   });
+};
 
 /** `url` without its userinfo (up to the last `@` before the path, as git splits it). */
 export const stripRemoteCredentials = (url: string | null): string | null => {

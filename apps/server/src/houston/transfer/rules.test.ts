@@ -324,3 +324,22 @@ describe("agent configuration paths are listed at any depth", () => {
     expect(agentConfigPaths([...notListed, ...listed])).toEqual(listed);
   });
 });
+
+describe("a Windows source matches agent configuration paths without letter case", () => {
+  it("a Windows source matches agent configuration paths without letter case", () => {
+    const folded = [
+      ".Claude/settings.json",
+      "Claude.md",
+      "Agents.md",
+      ".GITHUB/workflows/x.yml",
+      "docs/claude.md",
+    ];
+    const plain = ["src/agents.ts", "github/readme.md", "notes.txt"];
+    expect(agentConfigPaths([...plain, ...folded], "win32")).toEqual(folded);
+    expect(agentConfigPaths([...plain, ...folded], "linux")).toEqual([]);
+    expect(agentConfigPaths([".claude/settings.json", "CLAUDE.md"], "linux")).toEqual([
+      ".claude/settings.json",
+      "CLAUDE.md",
+    ]);
+  });
+});
