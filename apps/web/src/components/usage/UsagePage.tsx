@@ -83,6 +83,7 @@ import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { UsageLimitsSection } from "./UsageLimits";
 import { UsagePlanLimits } from "./UsagePlanLimits";
+import { UsageActivity } from "./UsageActivity";
 import { UsagePriceOverrides } from "./UsagePriceOverrides";
 import { UsageProviderChart } from "./UsageProviderChart";
 import { UsageModelDialog } from "./UsageModelDialog";
@@ -489,6 +490,7 @@ export function UsagePage() {
               showingKept={showingKept}
               metric={metric === "tokens" ? "tokens" : "cost"}
               selectedEnvironments={selectedEnvironments}
+              selectedEnvironmentIds={selectedEnvironmentIds}
               hiddenProviders={hiddenProviders}
               refreshingUsage={refreshingUsage}
               cursorAccessEnvironments={cursorAccessEnvironments}
@@ -546,6 +548,7 @@ function UsageOverview({
   showingKept,
   metric,
   selectedEnvironments,
+  selectedEnvironmentIds,
   hiddenProviders,
   refreshingUsage,
   cursorAccessEnvironments,
@@ -562,6 +565,7 @@ function UsageOverview({
   readonly showingKept: boolean;
   readonly metric: "tokens" | "cost";
   readonly selectedEnvironments: readonly EnvironmentUsageStatus[];
+  readonly selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
   readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
   readonly refreshingUsage: boolean;
   readonly cursorAccessEnvironments: readonly EnvironmentUsageStatus[];
@@ -722,6 +726,13 @@ function UsageOverview({
         selectedEnvironmentIds={new Set(selectedEnvironments.map((environment) => environment.environmentId))}
         hiddenProviders={hiddenProviders}
         now={now}
+      />
+
+      <UsageActivity
+        timeZone={shownWindow.timeZone}
+        untilDay={shownWindow.untilDay}
+        selectedEnvironmentIds={selectedEnvironmentIds}
+        hiddenProviders={hiddenProviders}
       />
 
       <section className="flex flex-col gap-2">
