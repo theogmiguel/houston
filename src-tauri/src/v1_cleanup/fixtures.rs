@@ -14,6 +14,25 @@ pub const RELEASE: &str = "--houston-managed";
 
 pub const OPENCODE_USER_PLUGIN: &str = "export const Mine = async () => ({})\n";
 
+/// The shape v1's Codex registration left: `codex mcp add houston --url ...` and the
+/// timeout key v1 then added between its markers.
+pub const CODEX_WITH_MCP: &str = "model = \"o3\"\n\
+\n\
+[mcp_servers.houston]\n\
+url = \"http://127.0.0.1:4242/mcp\"\n\
+bearer_token_env_var = \"HOUSTON_MCP_TOKEN\"\n\
+# >>> houston managed (codex timeout) >>>\n\
+tool_timeout_sec = 630\n\
+# <<< houston managed (codex timeout) <<<\n\
+\n\
+[mcp_servers.mine]\n\
+command = \"my-server\"\n";
+
+pub const CODEX_WITHOUT_MCP: &str = "model = \"o3\"\n\
+\n\
+[mcp_servers.mine]\n\
+command = \"my-server\"\n";
+
 fn user_hook() -> Value {
     json!({"type": "command", "command": "notify-send mine"})
 }
@@ -103,8 +122,39 @@ impl TestHome {
         self.home().join(".codex").join("hooks.json")
     }
 
-    fn codex_config(&self) -> PathBuf {
+    pub fn codex_config(&self) -> PathBuf {
         self.home().join(".codex").join("config.toml")
+    }
+
+    pub fn antigravity_mcp(&self) -> PathBuf {
+        self.home()
+            .join(".gemini")
+            .join("config")
+            .join("mcp_config.json")
+    }
+
+    /// v1's Codex entry (`codex mcp add` plus v1's timeout block) and its marked
+    /// Antigravity entry, beside a user's own server in each file; `eol` ends every line.
+    pub fn write_shared_mcp_entries(&self, eol: &str) {
+        self.write(&self.codex_config(), &CODEX_WITH_MCP.replace('\n', eol));
+        let root = json!({"mcpServers": {
+            "houston": {
+                "serverUrl": "${HOUSTON_MCP_URL}",
+                "headers": {"Authorization": "Bearer ${HOUSTON_MCP_TOKEN}"},
+                "_houston": "managed",
+            },
+            "mine": {"serverUrl": "http://localhost:9/mcp"},
+        }});
+        self.write(&self.antigravity_mcp(), &pretty(&root));
+    }
+
+    /// Writes `text` (relative to the home) as a config file.
+    pub fn write_file(&self, relative: &str, text: &str) -> PathBuf {
+        let path = relative
+            .split('/')
+            .fold(self.home(), |path, part| path.join(part));
+        self.write(&path, text);
+        path
     }
 
     pub fn opencode_plugin(&self) -> PathBuf {

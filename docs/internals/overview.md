@@ -55,8 +55,10 @@ to v2.
 Once per start, on its own thread, the host removes its own channel's v1 hook and MCP entries
 from the Claude, Codex, OpenCode, Antigravity and ZCode configs (`src-tauri/src/v1_cleanup/`).
 It stands down while that channel's v1 daemon is still running, which would
-reinstall them, and it never writes the channel directory. Claude's MCP entry leaves only
-through `claude mcp remove`. WSL distros are not reached.
+reinstall them, and it never writes the channel directory. The `houston` MCP entries of
+Claude, Codex and Antigravity carry no channel marker, so they leave only while no other
+channel's v1 daemon runs; Claude's leaves only through `claude mcp remove`. WSL distros are
+not reached.
 
 ### Detach and shutdown
 

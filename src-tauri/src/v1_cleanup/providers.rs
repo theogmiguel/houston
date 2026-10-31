@@ -149,7 +149,7 @@ fn remove_groups(events: &mut serde_json::Map<String, Value>, sentinel: &str) ->
     removed
 }
 
-fn write_or_remove(path: &Path, root: &Value) -> Result<bool> {
+pub(super) fn write_or_remove(path: &Path, root: &Value) -> Result<bool> {
     if root.as_object().is_some_and(serde_json::Map::is_empty) {
         files::remove(path)?;
     } else {

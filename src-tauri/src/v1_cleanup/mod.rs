@@ -5,6 +5,7 @@
 mod claude_mcp;
 mod files;
 mod providers;
+mod shared_mcp;
 mod v1_daemon;
 mod zcode;
 
@@ -68,7 +69,9 @@ impl Outcome {
                     "removed this channel's v1 Houston entries from {}",
                     path.display()
                 ));
-                self.changed.push(path);
+                if !self.changed.contains(&path) {
+                    self.changed.push(path);
+                }
             }
             Err(e) => self.note(format!("left {} unchanged: {e:#}", path.display())),
         }
@@ -140,7 +143,8 @@ pub fn run(target: &Target) -> Outcome {
         .clone()
         .unwrap_or_else(|| home.clone())
         .join(".claude.json");
-    match other_channel_daemon(target) {
+    let other = other_channel_daemon(target);
+    match &other {
         Some((pid, record)) if claude_json.exists() => outcome.note(format!(
             "left the shared v1 Claude MCP entry `houston`: houston-core (pid {pid}, named by \
              {}) of another channel still uses it",
@@ -152,8 +156,42 @@ pub fn run(target: &Target) -> Outcome {
             }
         }
     }
+    let shared: [(PathBuf, Present, SharedRemover); 2] = [
+        (
+            codex.join("config.toml"),
+            shared_mcp::codex_present,
+            shared_mcp::codex,
+        ),
+        (
+            home.join(".gemini").join("config").join("mcp_config.json"),
+            shared_mcp::antigravity_present,
+            shared_mcp::antigravity,
+        ),
+    ];
+    for (path, present, remove) in shared {
+        if !present(&path) {
+            continue;
+        }
+        match &other {
+            Some((pid, record)) => outcome.note(format!(
+                "left the shared v1 MCP entry `houston` in {}: houston-core (pid {pid}, named \
+                 by {}) of another channel still uses it",
+                path.display(),
+                record.display()
+            )),
+            None => {
+                let result = remove(&path);
+                outcome.apply(path, result);
+            }
+        }
+    }
     outcome
 }
+
+/// Whether a file holds v1's shared MCP entry.
+type Present = fn(&Path) -> bool;
+/// That entry's removal: whether it changed the file, or why it was left.
+type SharedRemover = fn(&Path) -> anyhow::Result<bool>;
 
 /// A live v1 daemon of another channel (`~/.houston` or `~/.houston-<name>`), which still
 /// uses the Claude MCP entry every channel shares.
@@ -475,6 +513,7 @@ fn json_config_keeps_every_user_key_and_value() {
 fn shared_mcp_entries_stay_while_another_channel_daemon_runs() {
     let home = TestHome::new();
     home.write_claude_mcp_entry();
+    home.write_shared_mcp_entries("\n");
     let bin = home.fake_claude();
     let daemon = FakeDaemon::spawn(&home.root().join("fake-daemon"), "houston-core");
     home.write_daemon_json(None, daemon.pid());
@@ -490,8 +529,90 @@ fn shared_mcp_entries_stay_while_another_channel_daemon_runs() {
         .collect();
     assert_eq!(
         named.len(),
-        1,
+        3,
         "one line per shared entry names the PID: {:?}",
         outcome.log
     );
+    for path in [home.codex_config(), home.antigravity_mcp()] {
+        let shown = path.display().to_string();
+        assert!(
+            named.iter().any(|line| line.contains(&shown)),
+            "{shown}: {:?}",
+            outcome.log
+        );
+    }
+}
+
+#[test]
+fn shared_codex_and_antigravity_mcp_entries_leave() {
+    for eol in ["\n", "\r\n"] {
+        let home = TestHome::new();
+        home.write_shared_mcp_entries(eol);
+        let outcome = run(&home.target(Some("dev")));
+        assert_eq!(
+            home.read(&home.codex_config()),
+            CODEX_WITHOUT_MCP.replace('\n', eol),
+            "{eol:?}: {:?}",
+            outcome.log
+        );
+        let antigravity: serde_json::Value =
+            serde_json::from_str(&home.read(&home.antigravity_mcp())).expect("JSON");
+        assert_eq!(
+            antigravity,
+            serde_json::json!({"mcpServers": {"mine": {"serverUrl": "http://localhost:9/mcp"}}})
+        );
+        assert_eq!(
+            sorted(&outcome.changed),
+            sorted(&[home.codex_config(), home.antigravity_mcp()]),
+            "{:?}",
+            outcome.log
+        );
+        let second = run(&home.target(Some("dev")));
+        assert!(second.changed.is_empty(), "{:?}", second.log);
+    }
+}
+
+#[test]
+fn foreign_houston_mcp_entries_stay() {
+    // An entry under the same name that v1 did not write is the user's.
+    let cases = [
+        (
+            ".codex/config.toml",
+            "[mcp_servers.houston]\ncommand = \"my-houston\"\n",
+            false,
+        ),
+        (
+            ".gemini/config/mcp_config.json",
+            "{\"mcpServers\": {\"houston\": {\"serverUrl\": \"http://localhost:9/mcp\"}}}\n",
+            false,
+        ),
+        // v1's entry with a key the user added: left, and the line names the key.
+        (
+            ".codex/config.toml",
+            "[mcp_servers.houston]\nurl = \"http://127.0.0.1:4242/mcp\"\nbearer_token_env_var = \"HOUSTON_MCP_TOKEN\"\nenabled_tools = [\"a\"]\n",
+            true,
+        ),
+    ];
+    for (relative, text, logged) in cases {
+        let home = TestHome::new();
+        let path = home.write_file(relative, text);
+        let outcome = run(&home.target(Some("dev")));
+        assert_eq!(home.read(&path), text);
+        assert!(outcome.changed.is_empty(), "{:?}", outcome.log);
+        let shown = path.display().to_string();
+        let lines: Vec<&String> = outcome
+            .log
+            .iter()
+            .filter(|line| line.contains(&shown))
+            .collect();
+        if logged {
+            assert!(
+                lines.len() == 1 && lines[0].contains("enabled_tools"),
+                "{:?}",
+                outcome.log
+            );
+        } else {
+            assert!(lines.is_empty(), "{:?}", outcome.log);
+        }
+    }
 }

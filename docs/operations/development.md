@@ -82,7 +82,9 @@ and never pass `--channel release` unless you mean to drive the installed app's 
 A v1 install's state (`houston.db`, scrollback and its other files directly under the
 channel directory) is never written by v2. The host's start-up cleanup reads that directory
 only to stand down while a v1 daemon of the same channel still runs, then removes that
-channel's v1 hook and MCP entries from the agent CLI configs.
+channel's v1 hook entries from the agent CLI configs. The `houston` MCP entries v1 shared
+across channels (Claude, Codex and Antigravity) leave only while no other channel's v1
+daemon runs.
 
 `HOUSTON_SESSION` is set inside a pane of the installed v1 release; `dev.sh` uses it to
 refuse `--fresh` from a pane on its own target channel.
