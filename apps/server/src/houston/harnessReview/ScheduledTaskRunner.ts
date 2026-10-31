@@ -2,6 +2,7 @@
 // launches as upstream does; Houston's layer (layer.ts) claims the tasks its features own.
 import type { ScheduledTask, ThreadId } from "@t3tools/contracts";
 import type { HoustonHarnessError } from "@t3tools/contracts/houston/harnessReview";
+import type { HoustonNightShiftError } from "@t3tools/contracts/houston/nightShift";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
@@ -15,7 +16,7 @@ export class HoustonScheduledTaskRunner extends Context.Service<
     readonly run: (
       task: ScheduledTask,
       trigger: ScheduledTaskTrigger,
-    ) => Effect.Effect<ThreadId, HoustonHarnessError>;
+    ) => Effect.Effect<ThreadId, HoustonHarnessError | HoustonNightShiftError>;
     /** The refusal of the task's last claimed run, if it was refused. */
     readonly lastRefusal: (
       task: ScheduledTask["id"],

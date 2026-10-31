@@ -40,6 +40,15 @@ export const HoustonHarnessReviewStartCommand = Schema.Struct({
   text: Schema.String,
 });
 
+/** Houston's queued message to a Night shift orchestrator; internal, once per `messageId`. */
+export const HoustonNightShiftNotifyCommand = Schema.Struct({
+  type: Schema.Literal("houston.night-shift.notify"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  messageId: MessageId,
+  text: Schema.String,
+});
+
 /** The side-thread commands; `orchestrationV2.ts` passes its creation fields (no cycle). */
 export const makeHoustonSideThreadCommands = <const CreationFields extends Schema.Struct.Fields>(
   creationFields: CreationFields,

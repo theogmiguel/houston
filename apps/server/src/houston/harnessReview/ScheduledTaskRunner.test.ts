@@ -428,7 +428,8 @@ describe("startup", () => {
       );
       assert.include(kitSource, "layerHarnessReview");
       // The claim: the scheduled task service gets the Houston runner in the server and the kit.
-      assert.include(runtime, "layerHarnessScheduledTaskRunner");
+      // The server's hook composes this claim with Night shift's (nightShift/ScheduledTaskRunner.ts).
+      assert.include(runtime, "layerHoustonScheduledTaskRunner");
       assert.include(kitSource, "layerHarnessScheduledTaskRunner");
       // Upstream's scheduled-task tests build the service without it and claim nothing.
       const upstreamTest = source("../../scheduledTasks/ScheduledTaskService.test.ts");

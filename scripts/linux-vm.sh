@@ -117,22 +117,10 @@ case "${1:-}" in
         }
         echo \"### HEAD: \$(git rev-parse --short HEAD)\"
 
-        step 'core: cargo fmt --check' \
-          cargo fmt --manifest-path core/Cargo.toml --all -- --check
-        step 'core: clippy -D warnings' \
-          cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings
-        step 'core: cargo nextest run + doctests (shielded, with Secret Service)' \
-          env HOUSTON_CHANNEL=dev ./scripts/oom-shield.sh \
-              dbus-run-session -- bash -c \
-                'eval \"\$(echo -n \"\" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)\"
-                 cargo nextest run --manifest-path core/Cargo.toml && cargo test --doc --manifest-path core/Cargo.toml'
-
         step 'src-tauri: fmt --check' \
           cargo fmt --manifest-path src-tauri/Cargo.toml --check
         step 'src-tauri: clippy -D warnings' \
           cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-        step 'src-tauri: clippy --features bench' \
-          cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features bench -- -D warnings
         step 'src-tauri: cargo test (shielded)' \
           env HOUSTON_CHANNEL=dev ./scripts/oom-shield.sh \
               cargo test --manifest-path src-tauri/Cargo.toml

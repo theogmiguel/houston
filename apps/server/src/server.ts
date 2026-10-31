@@ -126,6 +126,8 @@ import * as HoustonMergeQueueStore from "./houston/mergeQueue/Store.ts";
 import { layerHarnessReview } from "./houston/harnessReview/layer.ts";
 import * as HoustonHarnessRunner from "./houston/harnessReview/Runner.ts";
 import * as HoustonHarnessStore from "./houston/harnessReview/Store.ts";
+import { layerNightShift } from "./houston/nightShift/layer.ts";
+import * as HoustonNightShiftStore from "./houston/nightShift/Store.ts";
 import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
@@ -581,6 +583,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provide(ProjectionStoreV2.layer),
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
   ),
+  // The Night shift service over the runner and claim the orchestration runtime below exports.
+  layerNightShift,
   HoustonTaskRuns.layer.pipe(
     Layer.provide(
       Layer.merge(
@@ -615,6 +619,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
       HoustonTaskSourceStore.layer,
       HoustonMergeQueueStore.layer,
       HoustonHarnessStore.layer,
+      HoustonNightShiftStore.layer,
     ),
   ),
   Layer.provideMerge(HoustonKeychain.layerLive),
