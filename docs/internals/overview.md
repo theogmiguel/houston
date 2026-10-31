@@ -2,587 +2,106 @@
 
 > For maintainers. Using Houston? Start at the [README](../../README.md).
 
-Houston runs one Tauri app, with one detached `houston-core` daemon per channel in each
-enabled environment. The app connects to its local daemon over a loopback WebSocket,
-spawning one if none is running. On Windows, enabled WSL distros each run an additional
-Linux daemon reached through the WSL relay. Each daemon is the execution boundary for
-its environment's PTYs, agent processes, Git calls, hooks and MCP requests, and it outlives
-the app: quitting Houston closes the connection, not the daemon. The
-renderer is a built Vite bundle embedded in the app binary that talks to the daemon over that
-WebSocket and a handful of Tauri commands. Agent CLIs run as children of the daemon and talk
-back to it over MCP. The control endpoint stays on loopback; remote access is a separate,
-opt-in listener for paired devices (see [Remote access](#remote-access)).
-
-The renderer paints Houston's own surfaces over a dithered background field in
-Custom mode: one user image or preset behind the whole window, its output
-luminance clamped into a bounded band so a build-time gate can prove chrome
-legibility against an image it has never seen. Only the overlay tier (popovers, menus,
-modals) uses `backdrop-filter`.
+Houston runs one Tauri host and, per channel, one detached TypeScript server. The host
+starts the server, or attaches to the one already running, and embeds the renderer, a built
+Vite bundle. The renderer talks to the server over one authenticated loopback WebSocket and
+to the host through a small desktop bridge. Agents run as provider sessions owned by the
+server; quitting Houston closes the window and the connection, not the server or its runs.
 
 ```
-┌──────────────────────────────┐     /ws + /manage    ┌────────────────────────────────────┐
-│ houston (Tauri app)          │  (loopback, token)    │ houston-core (daemon, detached)     │
-│                              │◄─────────────────────►│                                      │
-│  ┌─────────────────────┐    │                        │  tokio runtime                      │
-│  │ renderer (WebKitGTK/ │    │                        │  axum: /ws  /manage  /mcp           │
-│  │ WebView2)            │    │                        │        /orchestrate/*               │
-│  │  React 19, ghostty/  │    │                        │  sessions · PTYs · scrollback        │
-│  └─────────────────────┘    │                        │  hooks · mailboxes · routines        │
-│  ┌─────────────────────┐    │                        │  SQLite (WAL) · keychain             │
-│  │ browser panes        │    │                        └──────────────┬───────────────────────┘
-│  │ (native child        │    │                                       │ portable-pty / russh
-│  │  webviews)           │    │                         ┌─────────────▼──────────────────┐
-│  └─────────────────────┘    │                         │ agent CLIs: claude, codex,       │
-│  src-tauri: daemon_host      │                         │ antigravity, opencode,           │
-│  (connect-or-spawn), fs,     │  spawns detached, Linux │ zcode, shell                     │
-│  browser/, watchdog/         │  via houston-supervisor │  hooks → drop files              │
-└──────────────────────────────┘                         │  MCP → POST /mcp (per-pane token)│
-                                                          └──────────────────────────────────┘
+┌──────────────────────────────┐   WebSocket RPC    ┌─────────────────────────────────────┐
+│ houston (Tauri host)         │ (loopback, token)  │ server (apps/server, detached)       │
+│  ┌────────────────────────┐  │◄──────────────────►│  threads · turns · runs              │
+│  │ renderer (apps/web)     │  │                    │  provider adapters · orchestration-v2│
+│  └────────────────────────┘  │                    │  MCP toolkits · SQLite · keychain    │
+│  v2_server (start/attach),   │   spawns detached  └──────────────┬───────────────────────┘
+│  desktop bridge, tray, sys/, │                                   │ SDK / app-server / ACP
+│  v1_cleanup                  │                    ┌──────────────▼───────────────────────┐
+└──────────────────────────────┘                    │ agent runtimes: Claude, Codex, ...    │
+                                                     └──────────────────────────────────────┘
 ```
-
-Quitting the app closes the `/ws` connection only. The daemon (and every session under it)
-keeps running; the next launch of the app reconnects to it via `daemon.json`.
 
 ## Contents
 
 | Doc | Covers |
 |---|---|
-| this file | process model, boundaries, repository map, budgets |
-| [daemon.md](daemon.md) | sessions, the PTY pipeline, scrollback, persistence, background loops |
-| [agent-lifecycle.md](agent-lifecycle.md) | hook installation, drop files, `AgentStatus`, liveness |
-| [orchestration.md](orchestration.md) | the MCP endpoint, `pane_*` verbs, credentials, mailboxes, `hs-pane` |
-| [renderer.md](renderer.md) | the shell, layout tree, terminal engine, transport, watchdog |
-| [`protocol/protocol.md`](../../protocol/protocol.md) | the wire, message by message |
+| this file | process model, boundaries, repository map, data |
+| [invariants.md](invariants.md) | the rules, what enforces them, and why |
+| [renderer.md](renderer.md) | the renderer |
+| [testing.md](testing.md) | where tests live, how to read a failure |
+| [glossary.md](glossary.md) | the words that collide |
 
 ## Process model
 
-### One daemon, one host — and an app that is a client
+### One server per channel, and a host that is a client
 
-`houston-core` has exactly one `main`: `core/houston-core/src/main.rs`. Its boot order:
-create the state dir → mint a UUIDv4 token → `server::bind("127.0.0.1:0")` →
-the bound daemon constructor (restores sessions; needs the port to exist so each restored pane can
-mint an MCP credential) → `server::start_with_listener` → write `daemon.json` → startup
-refresh (hook installers, MCP self-registration, off the paint path) →
-`boot::spawn_background_loops`. `check-loop-spawn-sync.sh` fails if anything besides this
-`main` ever calls that spawn list. The app's `src-tauri/src/daemon_host.rs` implements
-connect-or-spawn: read `daemon.json`, probe an
-existing daemon over `/manage`, or spawn one detached — on Linux through the
-`houston-supervisor` sidecar (forks `houston-core` as its child so the daemon survives an app
-crash, and writes `supervisor.json` beside `daemon.json`), on Windows by spawning
-`houston-core.exe` directly (no supervisor there).
-
-On Linux, the app asks the systemd user manager through D-Bus `StartTransientUnit` to
-start the supervisor in a unique `houston-daemon-<channel>-<id>.service`. The supervisor
-and daemon share that service, independently of the app's desktop scope. Each new PTY
-enters a separate `houston-session-<channel>-<session>-<id>.scope` before executing the
-CLI, then waits for its ownership receipt and startup transaction to commit.
-Descendants inherit its scope without a migration race. The daemon remains
-the PTY owner; PID, session leadership and terminal input are preserved. Killing one
-session scope leaves the daemon and sibling scopes running. A failed scope stop falls
-back to signalling the PTY's process groups and is logged, because some user managers
-(WSL's among them) answer `KillUnit` with `InvalidArgs` while the processes die; a kill,
-and therefore a daemon shutdown, never fails on the scope alone. Units are collected when
-inactive or failed; discovery and adoption retain the channel's existing files and
-authenticated endpoints.
-
-Without a systemd user manager, launch falls back to `setsid` and prints the reason.
-That separates the Unix session but preserves the caller's cgroup, so group termination
-can still end the daemon and its panes. Session scope creation also reports an explicit
-fallback when isolation is unavailable; cold recovery of such a pane can then stop only
-its recorded PTY root and that root's process group. An ambiguous scope request timeout refuses the
-CLI launch, preventing delayed migration from missing descendants. On Windows, detached creation separates the console but does
-not escape a containing job object. An externally imposed job with kill-on-close can
-still terminate the daemon; Houston does not require permission to break away from it.
-
-`houston-core` and `houston-tauri` (the app) both answer three argv aliases before any
-daemon/Tauri setup: `hook` (the hook client), `hs-mail` and `hs-pane` (the agent-facing
-CLIs). The slim `tr-helper` binary executes `hook` without linking GTK/WebKit and returns a
-named refusal for the retired `hs-mail` alias. A hook event through the full app or daemon
-binary would otherwise load approximately 130 shared objects per invocation.
+The host resolves its channel from `--channel` (debug builds default to `dev`), then reads
+`<channel dir>/v2/userdata/server-runtime.json`. When the server it names answers, the host
+attaches; otherwise it spawns one detached (`setsid` on Linux, a job breakaway on Windows)
+and waits for the runtime file. Upstream's server ownership lock makes a second server for
+the same directory exit instead of sharing the database. The host hands the renderer the
+server's origin and a bootstrap credential; the renderer then speaks upstream's typed
+WebSocket RPC, whose messages are defined in `packages/contracts`.
 
 ### Channels
 
-A **channel** is one isolated state universe: `~/.houston` for `release` (the
-installed app) and `~/.houston-<name>` for anything else, `dev` by default in
-development. Everything hangs off the state dir: `houston.db`, `daemon.json`,
-`daemon.lock`, `logs/`, `scrollback/`, `hooks/drop/`, `bin/`, the webview's
-`data_directory`, the single-instance D-Bus id.
+A channel is an isolated state universe: `release` uses `~/.houston`, `dev` uses
+`~/.houston-dev`, and a named channel `~/.houston-<name>`. The server keeps everything under
+`<channel dir>/v2/`. A v1 install's state directly under the channel directory is read-only
+to v2.
 
-The app and daemon share the home resolver: non-empty `HOME`, then `USERPROFILE`,
-then the operating system's home directory. Desktop home and log paths use this
-same resolver so an environment override cannot point them at another state universe.
+### Start-up cleanup of v1 configuration
 
-The app resolves its channel from `--channel`. The daemon accepts either `--channel` or
-`HOUSTON_CHANNEL`, refuses when both identify different channels, and refuses when neither
-is explicit. The resolved daemon channel is propagated to its children before startup,
-so state, logs and hooks agree. A stray invocation cannot own `release` by accident. Channel names are validated (`[a-z0-9-]`,
-1–32 chars) because they become a directory under `$HOME`.
-
-### Singleton and `--fresh`
-
-Mutual exclusion is an advisory `flock(2)` on `<state dir>/daemon.lock`, held by the
-**daemon** only — the app never takes it, so it never leaks a lock across a crash or a
-force-quit. Released by the kernel on any daemon exit, so there is no stale-lock path.
-`daemon.json` (`{ port, token, pid, protocol, pid_creation }`, mode 0600) is written
-tmp+rename beside it — never *as* it, since a rename swaps the inode out from under a lock.
-`pid_creation` is a process-creation token so a recycled pid cannot be mistaken for the
-daemon. On Linux, `supervisor.json` sits beside it, written by `houston-supervisor` for
-whichever daemon it is currently forking as its child.
-
-`--daemon-fresh` (a flag on the app binary) requests an orderly stop through `/manage`'s
-`daemon_shutdown` verb — never a signal — then waits, pid-identity-checked, for the daemon to
-actually exit before starting a fresh one; an unconfirmed shutdown (a non-`ok:true` response,
-or the pid still alive after the wait) refuses rather than starting a second daemon on top of
-the first. It refuses outright when `HOUSTON_SESSION` is set and the pane's channel equals
-the target: you cannot stop the daemon hosting the pane you are running the command from.
-`scripts/dev.sh --fresh` carries the same self-protection guard in bash, and drives the same
-`/manage` call directly (reading `daemon.json` for port/token) so the refusal and the stop are
-immediate rather than waiting on a build.
-
-### Transport
-
-The daemon serves an axum router on `127.0.0.1:<ephemeral>`:
-
-| Route | Client | Purpose |
-|---|---|---|
-| `GET /ws` | renderer | control messages (JSON text frames) and PTY bytes (binary frames) |
-| `POST/GET/DELETE /mcp` | agent CLIs | MCP over streamable HTTP, per-pane bearer token |
-| `/orchestrate/*` | `hs-pane` | the same verbs as plain HTTP for the CLI helper |
-| `/task/*` | `hs-task` | the Tasks backlog as plain HTTP for the `hs-task` CLI (same daemon path as the `task_*` MCP tools) |
-
-The renderer learns port and token from the Tauri command `host_config`, not from
-`daemon.json`. `host.rs` may not log (a unit test greps its own source for `println!` and
-`tracing::`) because the token is in scope. The first `/ws` frame must be `hello`; token
-comparison is constant-time and the protocol version is an exact match.
-After initial startup, connection configuration reads bounded discovery data from the
-same channel and authenticates the current endpoint. A failed probe clears cached
-credentials; reconnect never spawns a daemon or initiates a handoff. Same-protocol builds
-remain connectable when startup has accepted them.
-
-PTY frames flow only for sessions the connection asked about (`session_attach`,
-`session_visibility{visible:true}`, or creating the session on that socket), and each such
-session has its own bounded queue on that connection (`frame_queue.rs`: 4096 frames or 4 MiB).
-The PTY is always drained daemon-side; a client that stops reading fills only its own queues,
-and a queue that drops sends a gap frame anchored where loss began, which the pane answers
-with one fresh attach. Control messages fan out over a `tokio::broadcast` of 4096 slots; a
-connection that lags it is closed with `error{context:"control_lag"}` and reconnects for a
-full state. Input never waits behind output: the connection's loop owns every write, and a
-send to a client that is not reading blocks it, so the socket's read half runs on a separate
-task that writes stdin frames to their PTYs as they arrive. That task hands control text to
-the loop in socket order through a queue bounded at 256 messages and 1 MiB; past either
-bound it stops reading until the loop catches up, so keystrokes wait only behind that many
-unprocessed control messages. A stdin refusal that finds the queue full is logged rather
-than reported, because waiting for room would stall input to every pane. Either half ending
-ends the connection. When the reader ends, the loop drains the messages already queued and
-stops after any send in flight completes or fails. When the loop ends, it aborts and joins
-the reader before the connection is forgotten, so no keystroke arrives for a forgotten
-connection and the socket closes. A control request runs on its own
-task, not on the connection's loop: that loop flushes the connection's PTY frames and acks
-resizes, and a handler awaited there — a `git` shell-out, a CLI probe, a directory scan —
-held both for its whole duration, which is how a resize ack missed the renderer's deadline
-and a CLI drew into an 80×24 box. Only the attach-family messages (`session_create`,
-`session_respawn`, `session_wake`, `session_attach`, `session_visibility`) are ordered by the
-loop, because they edit the connection's own frame set; every other reply comes back through
-a bounded per-connection queue. A spawn (create, respawn, wake) runs on a blocking thread
-while the loop keeps flushing frames and serving replies; when it lands, the loop taps the
-new session and then replies, so none of its frames precede the reply. Until then, later
-attach-family requests and requests naming the spawning session wait in socket order,
-bounded by the inbound queue's 256 messages and 1 MiB. An attach taps its session, then copies and
-encodes the snapshot or replay on a blocking thread while that tap holds its frames; when it
-lands, the loop prunes what the reply covers, replies, and only then flushes the held frames.
-Up to four attaches of different sessions prepare at once; requests naming an attaching
-session wait behind it.
-The scrollback replay is the one base64 payload, riding the JSON channel so it
-orders against the attach that asked for it. Details: [renderer.md](renderer.md).
-
-### Remote access
-
-`remote/` runs a second axum listener, started by `boot.rs` and idle until Settings turns it
-on (`remote_enabled`; default bind `127.0.0.1:47823`, `47824` on the dev channel). It is not
-part of the generation handoff: the new generation binds with backoff while the old one
-releases the port. Its router serves only the embedded web client and `/api/*`; `/ws`,
-`/mcp`, `/orchestrate`, `/task` and `/manage` do not exist there, so nothing reachable on it
-carries the daemon token's or a pane token's authority.
-
-Trust model:
-
-- **Credential.** A paired device holds a 256-bit token minted when it redeems a single-use,
-  ten-minute pairing code from the URL fragment. Only the token's SHA-256 is stored
-  (`remote_devices`); revoking deletes the row. The daemon token and pane tokens are never
-  accepted.
-- **Scope.** The API lists panes, reads a pane's screen as text and its remote feed, and
-  writes input through the desktop's stdin path, either as typed text and keys or as a
-  decision that the per-provider table in `remote/feed.rs` turns into the CLI's own keys.
-  Writing to any pane, shell panes included, makes a device equivalent to a shell as the
-  user. Each device has a tier (`observe` < `drive` < `manage`), checked against the device
-  row on every request: drive adds input, decisions and dictation; manage adds pane
-  lifecycle (provider kinds only, no shell, no `auto_approve`) and commit or push of files the
-  device was shown. Pairing, configuration and revocation stay desktop-only at every tier.
-  One input request per pane runs at a time.
-  With the separate dictation setting on, a device may also post a recording (16 kHz mono
-  PCM16) that the voice engine transcribes; the text returns to that device only.
-  A decision names the feed epoch and entry it answers, so a stale tap is refused, and it
-  consumes the card under the feed lock, so two devices cannot both answer it.
-- **Feed and events.** The feed is filled from applied hook drops and status transitions
-  only while remote access is on (see [invariants](invariants.md)); turning it off clears
-  the feed and starts a new epoch. `/api/events` is a server-sent event stream of change
-  notices without content; the web client reads it through `fetch` so the bearer token
-  stays in a header, and falls back to polling. Streams never end on their own, and axum's
-  graceful shutdown waits for every connection, so the daemon ends them itself when the
-  listener stops or their device is revoked, and stops waiting for other requests after a
-  few seconds.
-- **Transport.** On a loopback bind, TLS is delegated to `tailscale serve` (the Tailscale
-  route) and the listener speaks plain HTTP. When devices reach the listener directly on an
-  address its local certificate authority can certify (Same Wi-Fi, or a private bind), it
-  serves HTTPS only (rustls). The authority is created the first time it is needed; its
-  private key stays in the OS keychain under a per-state-directory service and its
-  certificate, public, in settings. Its name constraints permit only RFC 1918, loopback and
-  IPv6 unique-local addresses and `.local` names, so a leaked key cannot certify a public site
-  to a device that trusts it. The server key is generated in memory at each listener start and
-  reissued, through a certificate resolver and without a restart, when the listener's names
-  change or the authority is regenerated; a change between the two transports restarts the
-  listener. Devices download the authority unauthenticated (`/houston-ca.crt`,
-  `/houston-ca.mobileconfig`) and compare its fingerprint with Settings. A bind on every
-  interface needs a public URL. Any other bind off loopback stays plain HTTP, and Settings
-  warns that a token would cross the network unencrypted.
-- **Defences.** `Host` must be an allowed name (DNS rebinding, 421); a write's `Origin` must
-  be the public URL or `<scheme>://<allowed host>:<port>` (403). Wrong tokens and pairing codes
-  lock their source out for 60 s after ten in a minute; loopback callers share one source and
-  a valid token is never locked out. Bodies, connections (64), idle time (30 s) and request
-  time (20 s) are bounded. The dictation route has its own bounds: a recording of at most
-  two minutes, read only after the refusals that need no audio, 180 s per request, and an
-  idle hold on its connection while the engine runs, since hyper reads the socket to detect
-  a closed peer and a CPU transcription can outlast the idle timeout.
-- **Notifications.** ntfy is an outbound POST with a generic body and a link, never terminal
-  content. The topic URL is a bearer secret kept in the keychain under a per-state-directory
-  service; the database holds only the server origin.
-
-### The emulator, and who answers an unwatched pane's terminal
-
-The daemon owns a real terminal emulator per session — the same libghostty-vt the renderer
-draws with, built natively from one pinned source (`vt.rs`, `core/houston-core/ghostty-vt/`).
-It is fed on the PTY read path, after the token redactor and beside the scrollback ring,
-under one hold of the scrollback lock so the ring offset and the emulator state always agree.
-It is the fourth lawful reader of PTY content and it is never a status source: status stays
-provider-reported through hooks, ACP and Codex's native startup status.
-
-Two things fall out of owning one. A terminal is not only a screen; it answers questions. A
-CLI asks what its terminal is (`ESC [ c`) and whether it does synchronized output
-(`ESC [ ? 2026 $ p`) at startup, and some wait for the reply. `Session::watched` is the gate —
-any Tauri output sink, or any `/ws` connection holding this session in its frame set. While it
-is false the daemon writes the emulator's own replies straight to the PTY backend, never
-through the typed-input path, because this is the terminal replying to the program rather than
-a person at the keyboard. While it is true the daemon stays silent, so a question is never
-answered twice: single query-response ownership, at one call site.
-
-And a pane reattaches from state instead of from bytes. `session_attach` may ask for a
-snapshot; the daemon captures the emulator's cells, both screens, modes, cursor, kitty
-keyboard flags, bounded history and any in-flight escape sequence atomically with the byte
-cutoff, and the renderer imports it and resumes at the cutoff exactly once. A pane you come
-back to looks as you left it, including inside a full-screen program, and an escape sequence
-split across the cutoff is not lost. A client that does not advertise the snapshot format
-version, or a build without the emulator, falls back to the byte replay by name. So does a
-pane whose own grid is not the one the container was captured at: a container carries its
-geometry and importing applies it, and a pane's first attach goes out before its first
-resize reaches the daemon, so a session still at an 80×24 default size would otherwise pin
-the renderer's terminal to 80 columns with nothing to put it back. The pane's measurement
-is the authority; a foreign grid is refused and replayed as bytes.
-
-### Threads and locks
-
-One `tokio` runtime. PTY reads are one OS thread per session (`pty-read-<id>`). Long
-control jobs (SSH connects, git, handoffs) are `tokio::spawn`; the hook/mail tick and usage
-scans are `spawn_blocking`; a dedicated writer thread owns the command-history ledger so
-SQLite stays off the read path. Session maps on `Daemon` are plain `std::sync::Mutex`, never
-held across `.await`.
-
-The SSH driver rotates output, resize and input processing when multiple operations are
-ready. Cancellation is checked first. The same scheduling applies while an input transfer
-waits for the remote receive window, so continuous output cannot postpone a resize.
+Once per start, on its own thread, the host removes its own channel's v1 hook and MCP entries
+from the Claude, Codex, OpenCode, Antigravity and ZCode configs (`src-tauri/src/v1_cleanup/`).
+It stands down while that channel's v1 daemon is still running, which would
+reinstall them, and it never writes the channel directory. Claude's MCP entry leaves only
+through `claude mcp remove`. WSL distros are not reached.
 
 ### Detach and shutdown
 
-Quitting the app (`RunEvent::Exit`, or its own signal handler) only closes the `/ws`
-connection — it never touches `daemon.json`, never checkpoints, never marks a clean
-shutdown. The daemon checkpoints scrollback when its last client detaches.
+Closing the window, or quitting from the tray, ends the host process. The server and its agent
+runs continue; the next launch attaches to the server the runtime file names. Stopping a
+server uses the PID that file names.
 
-SIGTERM/SIGINT, management stop and idle reap share orderly shutdown admission. The stop
-claims its gate exclusively and waits for already admitted launches before checking the
-confirmed session set. It records recoverable sessions as interrupted, terminates their
-owned backends and waits for output readers to drain. This preserves conversation handles
-and lets boot reconcile interrupted instructions and delegations; it does not apply the
-per-pane Kill operation. A concurrent refusal cannot reopen another stop's admission gate.
-
-Only a successful final checkpoint permits the clean marker and removal of discovery
-files. Failed capture remains abnormal on the next boot. The marker describes completed
-process shutdown; it is not a guarantee that every filesystem write survived a power cut.
-
-### The tray, and hide-to-tray
-
-The tray icon lives in the **app**, never in the daemon, and its data flows one way:
-
-```
-daemon --/ws--> renderer --tray_sync--> src-tauri/src/tray --> native menu + icon + tooltip
-```
-
-The renderer is already the one client holding the live roster and the hooks-driven
-status, so it collapses each session into `{id, agent, title, status, needsInput,
-workspace}` — `workspace` is the same display name the sidebar rail shows, looked up by
-`w.path === session.project_dir` — orders them most-recently-active first and hands the
-list plus its own connection state to the `tray_sync` command, coalesced to at most four
-sends a second (`ui/src/renderer/src/houston/tray.ts`). Rust owns everything visible:
-`tray/model.rs` turns one payload into a header line, a tooltip, an icon state and a menu.
-Exceptions sit at the top level — the panes actually waiting on the user, in payload
-order, capped at `ATTENTION_ROW_CAP` (4) with an overflow row past that — and the whole
-inventory sits one click away in an `Agents (N)` submenu, grouped by workspace in
-first-appearance order, each group sorted needs-input/running/idle/done and capped at
-`GROUP_ROW_CAP` (8) with its own overflow row. The top level's shape never changes under
-the cursor: even a single running agent with nothing waiting lives in the submenu, not
-inline. `tray/mod.rs` rebuilds the whole native menu from it, recursing into
-`TrayItem::Submenu` for the one nested level and minting a fresh id for every disabled
-`Group`/`Overflow` row so `muda` never sees a duplicate. Nothing here crosses `/ws` and
-none of it is in `houston-protocol` — a tray in the daemon would mean a second WebSocket
-client and a wire message to publish what one client already knows.
-
-Two menu items go back the other way, as Tauri events the renderer listens for: a session
-row shows the window and emits `tray://focus-pane`, which lands on the same focus action
-the orchestration card uses (it selects the pane's workspace first); "Quit Houston…"
-confirms natively, then emits `tray://stop-daemon`, and the renderer runs the stop through
-the same `/manage` client Settings → Daemon uses before quitting.
-
-That quit is the tray's **only** way out, and it stops the daemon. A tray quit that left
-the agents running would rebuild the state the tray exists to make visible; leaving them
-running is what closing the window already does.
-
-The tray uses the mascot head, rendered to idle/active/attention at eight cuts by
-`ui/scripts/render-icons.mjs` and embedded with `include_bytes!`. Cuts below 32 px
-use `ui/resources/mark-vector.svg`; larger cuts use Lanczos exports of
-`ui/resources/branding/houston-icon-small.png`. Idle uses 0.55 opacity; attention
-adds an amber badge with a transparent gap around it.
-Which cut is uploaded comes from the DESKTOP, not the
-monitor: GNOME's AppIndicator draws 16 logical pixels and Plasma 22, so `base_icon_size`
-reads `XDG_CURRENT_DESKTOP` once at install, multiplies by the primary monitor's scale
-factor and snaps to the nearest bundled size.
-
-**Closing the window hides it** when a tray is actually available and the user has not
-turned the setting off (Settings → Daemon → Background, default on, stored in
-`<state_dir>/tray.json`). The webview keeps running while hidden, which is what keeps the
-tray fed. WebView2 still reports the page visible while the window is hidden, so the hide
-emits `tray://window-hidden` with `true`, and both show paths (`tray::show_main_window` and
-the `window_focus` command) emit it with `false`. The renderer's own background polls
-(rail `git_status`, a browser pane's local servers, `host_info`) skip their ticks until
-the window is shown. Tray data is pushed by the daemon and is unaffected. The app quits
-from the tray's "Quit Houston…" (which stops the daemon first) or from an in-app quit —
-both end at the `app_quit` command, which arms the flag that tells the close handler this
-one is real.
-
-Availability is **probed, not assumed**, and on Linux `tray/probe.rs` asks two questions
-before anything else runs. Who owns `org.kde.StatusNotifierWatcher` on the session bus —
-nothing owning it (a GNOME session without the AppIndicator extension) is the common
-refusal. And whether libappindicator actually loads: `tray-icon` reaches it through
-`libappindicator-sys`, which `dlopen`s it lazily and **panics** when it is absent, from
-inside the `TrayIcon::new` this process calls on the main thread — so a missing library
-cannot be caught after the fact and has to be found before anything triggers that load.
-Either check failing means no icon, no hide-to-tray, and that sentence in Settings; the bus
-answers first because it is cheaper and commoner. Anything that still leaves the process
-without an icon goes through the same `refuse` as the probe, so the close button reads one
-switch. Windows always has a notification area, nothing is dlopened to reach it, and its
-twin returns available unconditionally.
-
-Two build-side consequences of that library, both easy to get backwards. The binary never
-links it, so there is no build dependency for `cargo build`. The **bundle** step does:
-with the `tray-icon` feature on, `cargo tauri build` runs
-`pkg-config ayatana-appindicator3-0.1`, panics without it, copies the `.so.1` into the
-AppImage, and adds `libayatana-appindicator3-1` to the deb's depends itself — which is why
-`release-linux.yml` installs `libayatana-appindicator3-dev` and `tauri.conf.json` does not name
-the runtime package.
-
-### WSL environments (Windows only)
-
-An **environment** is where a daemon runs for the app: `local`, the daemon described
-above, or `wsl:<distro>`, an unchanged Linux daemon inside an enabled WSL 2 distro. The
-distro daemon is the execution boundary for its workspaces, so supervision, live handoff,
-hooks, MCP, login-`PATH` adoption and git work there as on Linux; nothing of the session
-model is reimplemented on Windows. Its channel is the app's own and its state dir is the
-distro user's `~/.houston[-<channel>]`, so a Linux Houston in the same distro on that
-channel shares it. Off Windows the commands refuse by name and Settings lists no section.
-
-- **Install and start.** The installer bundles the x86_64 Linux binaries. Enabling a
-  distro streams them over `wsl.exe` stdin into `~/.local/lib/houston-wsl/<build>/`,
-  never `~/.local/lib/houston/`, which belongs to the Linux desktop install. The app then
-  runs `houston-core wsl-ensure`, which attaches to the channel's live daemon, starts one
-  under `houston-supervisor` in a new session so the short-lived `wsl.exe` can exit, hands
-  a different build off to its own binary, or refuses a daemon with a higher protocol. It
-  prints exactly one JSON line; the app never reads the distro's `daemon.json` itself.
-- **Reach.** WSL 2's default NAT networking does not let the distro reach the host's
-  loopback, and the app does not depend on the reverse. Each environment instead gets a
-  relay: a `127.0.0.1` listener on Windows whose every connection runs
-  `wsl.exe --exec houston-core wsl-proxy`, a stdio splice to the daemon's loopback port.
-  When an upstream closes on its own, the next connection reruns `wsl-ensure` first, at
-  most once a second. `wsl-proxy` does not half-close the daemon socket when its stdin
-  ends, because the HTTP server then drops a request it has not answered; it keeps
-  relaying until the daemon closes, for at most a short grace.
-- **Renderer mux.** With a WSL environment present, the environment mux sits between
-  `HoustonClient` and the sockets. Every `ClientMsg` and `ServerMsg` type is classified in
-  a `Record` keyed by the generated union, so a new type without a route fails
-  `typecheck`. Session-scoped messages go to the session's environment and path-scoped
-  ones to the environment owning the path; list replies are merged; hook and
-  orchestration settings are broadcast. WSL session ids are tagged
-  `0x80000000 | slot<<24 | id` in JSON fields and binary frame headers, and a WSL id at
-  or above `2^24` is refused, because the binary frame's session field is a `u32`. A WSL
-  workspace's renderer path is its POSIX path, and one POSIX path belongs to one
-  environment; the Files surface reaches it as `\\wsl.localhost\<distro>\…`.
-- **Local only.** Daemon-global domains (tasks, projects, routines, harness, Slack,
-  voice, MCP and skill management, keymaps and the other settings) and inbox
-  acknowledgements stay on the local daemon. Inbox row ids are per daemon, so an
-  acknowledgement for a WSL row reaches the wrong daemon. Tags are stripped from WSL
-  sessions, browser tools are not offered to WSL agents, and orchestration does not cross
-  environments: tokens, mailboxes and the inbox are daemon-local.
-- **Lifetime.** A distro daemon outlives the app like the local one. Quitting from the
-  tray or the palette's **Quit and stop daemon** sends `daemon_shutdown` to every
-  environment's daemon; disabling a distro stops only its daemon.
+<!-- Host details (Theo): tray and hide-to-tray, desktop bridge, updates, WSL. -->
 
 ## Boundaries that matter
 
-- **Rust is the schema.** `core/houston-protocol/src/lib.rs` is the whole wire; the TS
-  types were generated by ts-rs; they are committed and frozen. Three scripts enforce that Rust, generated TS,
-  the built renderer and `protocol.md` agree on `PROTOCOL_VERSION`.
-- **Spawning is audited.** Every child process goes through `houston_core::spawn` (window
-  policy on Windows) and every bare command name through `exe_path::resolve`. A clippy
-  `disallowed-methods` entry bans `std::process::Command::new` outside them.
-- **Signals are audited.** `pid.rs` is the only module that may call `kill(2)` or its Win32
-  twin; `checked_pid` refuses `0` and anything above `i32::MAX`, and identity-checked
-  delivery compares the creation token first.
-- **Browser panes hold no authority.** The invoke handler refuses any Tauri command coming
-  from a content-only webview label. Destructive agent actions in the browser
-  (`browser_click`, `browser_type`, `browser_hover`, `browser_press_key`,
-  `browser_select_option`) pass a human confirmation gate.
-- **Secrets never touch the DB.** SSH passwords, passphrases, the Groq key and the ntfy topic
-  URL live in the OS keychain (Secret Service via zbus); the DB holds a reference. `sanitize.rs` redacts
-  known secret shapes from anything persisted or shown to another agent.
-- **Keychain services are per state directory.** SSH credentials, the Groq key, the ntfy topic
-  and the certificate authority's key each live under `<prefix>-<digest of the state
-  directory>` (`keychain.rs`), so a dev or test daemon never reads or replaces another
-  channel's secret. Before services were scoped, SSH and the Groq key used the fixed services
-  `houston-ssh` and `houston-voice`. Only the installed state directory (`~/.houston`) may read
-  those: on first read of an absent entry it copies the legacy one into its scoped service and
-  leaves the legacy entry in place, so an older build still finds it. Clearing a secret on the
-  installed directory removes the legacy entry too, otherwise the next read would restore it.
-  Other channels start with no key.
-- **Other CLIs' config is written only through reversible markers.** Hook entries carry a
-  `--houston-managed[=<channel>]` sentinel matched per whitespace token; MCP
-  self-registration goes through `claude mcp add`, never the file. Houston reads
-  `~/.claude.json` for exactly two purposes, both read-only and fail-soft, and streams
-  `~/.claude/projects/**/*.jsonl` for one (token counts, only while asked). Full terms in
-  [`docs/internals/invariants.md`](../internals/invariants.md).
+- **Status comes from adapters.** Agent status is what a provider adapter's structured stream
+  reports; nothing reads terminal output for it.
+- **Houston code lives under `houston/`.** Upstream files are copied and changed only where
+  Houston differs, each change listed in `upstream.json` `adapted`;
+  `scripts/check-upstream.mjs` reports drift from the pinned commit.
+- **Contracts are the only wire.** A server ↔ renderer message that is not in
+  `packages/contracts` does not exist; a new WebSocket method is also listed in
+  `RpcInstrumentation.ts` and given a scope in `RpcAuthorization.ts`.
+- **The host owns no agent state.** It supervises the server and bridges desktop features;
+  host utilities (`spawn`, `pid`, `paths`, `keychain`, …) live in `src-tauri/src/sys/`.
 
 ## Repository map
 
-```
-core/
-  Cargo.toml              workspace: houston-protocol, houston-core; dev profile strips dep debug info
-  houston-protocol/        the wire, one file (~6.3k lines)
-  houston-core/
-    src/                  the daemon (~89k lines); see daemon.md for the module map
-    tests/                integration tests; harness in tests/common/mod.rs
-    src/bin/tr-helper.rs  slim hook helper; named refusal for legacy hs-mail
-src-tauri/                the app (its own cargo package, not a workspace member)
-  src/main.rs             subcommands, channel, singleton, boot, Tauri builder
-  src/daemon_host.rs      connect-or-spawn, detach on quit, --daemon-fresh over /manage
-  src/browser/            native child webviews + the browser_* MCP tools
-  src/watchdog/           renderer paint-freeze watchdog (pure state machine + probes)
-  src/tray/               the tray: menu model, D-Bus availability probe, hide-to-tray setting
-  icons/tray/             idle/active/attention at 16/20/22/24/32/40/44/48 px, rendered
-                          from the vector/raster mascot head by ui/scripts/render-icons.mjs
-  icons/{32x32,128x128,128x128@2x,icon}.png, icon.ico
-                          the bundle icons tauri.conf.json's bundle.icon names,
-                          rendered by ui/scripts/render-icons.mjs (bun run icons)
-  tauri.conf.json         window (undecorated, 1400×900), bundles: appimage, deb, nsis;
-                          identifier "dev.houston.desktop" (keys the D-Bus lock and webview
-                          storage); externalBin ships tr-helper and houston-core inside every
-                          bundle, so an installed copy needs no app-binary hook fallback
-ui/                       React 19 + Tailwind 4 + Vite; bun, never npm
-  resources/icons/hicolor/ the desktop-entry icon tree (16 to 512 px), rendered by
-                          render-icons.mjs, read by scripts/install-desktop.sh; the night tile
-                          uses the vector cut through 32 px and promo art above it
-  src/renderer/src/
-    ghostty/              the terminal engine: vendored libghostty-vt WASM → Canvas 2D
-    layout/tree.ts        grids, split tree, localStorage persistence
-    pane/                 TerminalPane, write queue
-    houston/               transport client + generated/ (ts-rs output)
-    components/           the UI; chrome constants in *Chrome.ts
-    theme.css             every design token
-protocol/protocol.md      the wire reference
-scripts/                  dev.sh, build-app.sh, install-desktop.sh, oom-shield.sh, check-*.sh
-docs/                     this tree; see docs/README.md
-```
+| Path | Holds |
+|---|---|
+| `apps/server` | the server; Houston's additions under `src/houston/` |
+| `apps/web` | the renderer |
+| `packages/contracts` | the server ↔ renderer schema; Houston's under `src/houston/` |
+| `packages/*` | upstream's provider, source-control, client and shared packages |
+| `native/libghostty-vt` | the pinned terminal-emulation library the renderer's WASM build uses |
+| `src-tauri` | the desktop host |
+| `scripts/` | development, build, installation and safety checks |
+| `upstream.json` | the pinned upstream commit, the imported paths and every adapted file |
 
-## Data model
+## Data
 
-| Store | What | Where |
-|---|---|---|
-| SQLite `houston.db` (WAL) | workspaces, sessions roster, SSH profiles, settings KV, routines and their runs, command history, MCP/skill bookkeeping, legacy swarm tables | `db.rs`; migrations are `CREATE TABLE IF NOT EXISTS` + `add_column_if_missing`, no `user_version` |
-| `scrollback/<id>.bin` | 4 MiB ring per session, written on session end, shutdown and every 30 s while it has new output | `scrollback.rs` |
-| `pr-status-cache.json` | last PR status per directory, so a restarted daemon answers at once before re-asking `gh` | `pr_status_store.rs` |
-| OS keychain | SSH credentials, Groq API key | `ssh_credentials.rs`, `voice/cloud.rs` |
-| `localStorage` (per channel webview) | grids, split trees (written 300 ms after the last change, at once when the page is hidden or unloaded), workspace order and pins, sidebar state, chrome theme | `layout/tree.ts` |
-| in memory only | live sessions, handoff jobs, hook/mail scope state | `daemon.rs` |
-
-The workspace/grid/pane hierarchy is split across two stores on purpose: the daemon knows
-workspaces and sessions; the renderer owns how they are laid out. `LeafNode.id` is a durable
-pane identity distinct from the session in it, so a respawned session keeps its pane: respawn
-mints a new session id, while `SessionInfo.session_origin` retains the initial id in SQLite.
-The renderer saves that origin in its leaf and maps it to the newest session, preserving
-the pane across repeated restarts in workspace grids, stacks and All workspaces.
-
-## Budgets
-
-Acceptance criteria on Linux, mid-range hardware. Enforcement is what actually checks it.
-
-| Metric | Budget | Enforcement |
-|---|---|---|
-| Concurrent full-speed panes, no dropped input | 12 | manual |
-| Keystroke → echo, focused pane, loaded system | p95 < 25 ms | `--features bench`, `scripts/m9-baseline.sh` |
-| PTY write → paint | p95 < 50 ms | bench harness |
-| Rendering regression floor (M9) | p95 ≤ 450 ms, 5-run median | `scripts/m9-baseline.sh` |
-| PTY throughput under ANSI flood | ≥ 5 MiB/s | `tests/it/perf_smoke.rs` (release, `--ignored`, idle machine) |
-| Daemon RSS @ 10 flooding sessions | target 50 MiB; gated at 150 MiB regression ceiling | `tests/it/perf_smoke.rs` |
-| Scrollback resident per session | ~8 MiB stable | `scrollback.rs` capacity ceiling |
-| Cold start to `<App/>` mounted, 0 sessions | < 3 s (measured 2.14 s) | `scripts/boot-baseline.sh` |
-| Warm restore to focused pane typeable, 12 panes | < 3.5 s (measured 2.30 s) | `scripts/boot-baseline.sh` |
-| Boot payload (entry chunk + static closure) | ≤ 804,287 bytes (at 756,406) | `ui/bundle-budget.json`, `check:bundle` |
-
-Boot budgets are 3-run medians on an idle machine, from `--bench=M10`'s stamps;
-`boot-baseline.sh` prints the per-phase breakdown, which is the actionable part —
-a total hides which phase moved. **Typeable** means the focused pane's engine is
-live and its stdin is open: the first instant a keystroke reaches the PTY, which
-is earlier than the scrollback replay painting. The ceilings are ~1.5× the
-measured median, wide enough that ordinary machine noise is not a failure and
-tight enough to catch a phase regressing.
-
-Cold start is dominated by two phases Houston does not own: `main-entry →
-daemon-boot-start` (1043 ms, process and dynamic-link startup) and
-`window-created → page-load-started` (628 ms, WebKitGTK). Shrinking the boot
-payload moves neither; it moves `page-load-finished → renderer-app-mounted`.
-
-Committed tactics: binary frames, bounded rings, no JSON on the PTY path, prescan-gated
-sniffers (Aho-Corasick before regex), Canvas 2D with cached WASM memory views. Known
-deferrals: no read coalescing (one frame per 16 KiB read), no kernel-boundary flow control,
-no pane virtualization, no unix-socket transport (the browser WebSocket API cannot dial one).
+One SQLite database per channel, under `<channel dir>/v2/`. Upstream's tables follow
+upstream's migrations; Houston's tables live on the Houston migration track
+(`houston_sql_migrations`), applied after upstream's and never entering its migrator. Secrets
+live in the OS keychain, scoped by channel directory, project and provider. The one-time Tasks
+and task-source imports read v1's `houston.db` read-only.
 
 ## Platform notes
 
-- Linux uses Unix PTYs and WebKitGTK. Browser panes need Tauri's `unstable` feature for
-  `Window::add_child` and a GTK escape hatch because `Webview::set_bounds` is a no-op there.
-- Windows builds and ships (ConPTY, WebView2, NSIS). A kill *releases* the PTY because
-  conhost's death does not propagate pipe-close. `whisper-rs` is unix-only; the Windows local
-  voice engine is a named refusal. WebView2's web-message switch does not block
-  Tauri's custom-protocol fetch transport. Windows routes that protocol through a
-  native webview-label guard before plugin dispatch, including channel-data fetches;
-  browser content has no application authority.
-- Remote access is axum and reqwest only, the same on Linux and Windows, except that a
-  build without the daemon's emulator (Windows) serves a pane's raw output tail instead of its
-  screen and refuses multi-line input.
-- Tauri's `tracing` feature must never be enabled: it makes `eval_script_with_callback`
-  block, which lets the watchdog supervisor block on the very event loop it watches.
-  `check-watchdog.sh` enforces it.
+Linux and Windows are supported release platforms: WebKitGTK and an AppImage or `.deb` on
+Linux, WebView2 and an NSIS installer on Windows. A platform-specific behaviour has an
+equivalent elsewhere or a named limitation.

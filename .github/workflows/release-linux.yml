@@ -342,7 +342,7 @@ jobs:
             apt-get install -y -qq ${{ matrix.packages }}
           fi
 
-      # --version exits before any window, channel or daemon, so it proves the
+      # --version exits before any window, channel or server, so it proves the
       # full dynamic dependency chain loads on this distribution headlessly.
       - name: Boot the AppImage headless
         shell: bash
