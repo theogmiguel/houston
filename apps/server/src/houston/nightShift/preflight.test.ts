@@ -1,7 +1,14 @@
 import { ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
 import type { ProviderReadiness } from "@t3tools/contracts/houston/providerReadiness";
+import { it as effectIt } from "@effect/vitest";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vite-plus/test";
 
+import { layerMachine, NightShiftMachine, RegistryQuery } from "./Host.ts";
 import { evaluatePreflight, type PreflightInput } from "./preflight.ts";
 import { defaultSettings } from "./rules.ts";
 
@@ -188,5 +195,45 @@ describe("night shift preflight", () => {
     expect(item(linux, "inhibit_unavailable")?.status).toBe("warn");
     expect(item(base, "inhibit_unavailable")).toBeUndefined();
     expect(item({ ...base, platform: "darwin" }, "inhibit_unavailable")?.status).toBe("warn");
+  });
+
+  effectIt.effect("windows registry readings wait without blocking the event loop", () => {
+    const queried: Array<string> = [];
+    const outputs: Record<string, string> = {
+      "HKLM\\SOFTWARE\\Microsoft\\WindowsUpdate\\UX\\Settings":
+        "    ActiveHoursStart    REG_DWORD    0x8\r\n    ActiveHoursEnd    REG_DWORD    0x11\r\n",
+      "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired":
+        "found",
+    };
+    return Effect.gen(function* () {
+      const answer = yield* Deferred.make<void>();
+      const machine = yield* Effect.service(NightShiftMachine).pipe(
+        Effect.provide(
+          layerMachine.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeed(HostProcess.Platform, "win32"),
+                Layer.succeed(HostProcess.Environment, { PATH: "" }),
+                Layer.succeed(RegistryQuery, (args: ReadonlyArray<string>) =>
+                  Effect.sync(() => queried.push(args.join(" "))).pipe(
+                    Effect.andThen(Deferred.await(answer)),
+                    Effect.as(outputs[args[0]!]),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      const reading = yield* Effect.forkChild(machine.readings(process.cwd()));
+      for (let turn = 0; turn < 5; turn += 1) yield* Effect.yieldNow;
+      // The registry has not answered: the reading waits, and this fiber still runs.
+      expect(queried).toHaveLength(3);
+      expect(reading.pollUnsafe()).toBeUndefined();
+      yield* Deferred.succeed(answer, undefined);
+      const readings = yield* Fiber.join(reading);
+      expect(readings.restartPending).toBe(true);
+      expect(readings.activeHours).toEqual({ start: 8, end: 17 });
+    });
   });
 });

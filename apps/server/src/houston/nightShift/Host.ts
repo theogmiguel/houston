@@ -57,18 +57,21 @@ export class NightShiftMergeQueue extends Context.Service<
   { readonly verificationCommand: (projectId: string) => Effect.Effect<string | null> }
 >()("houston/houston/nightShift/Host/NightShiftMergeQueue") {}
 
-const regQuery = (args: ReadonlyArray<string>) => {
-  try {
-    return NodeChildProcess.execFileSync("reg.exe", ["query", ...args], {
-      encoding: "utf8",
-      timeout: 5_000,
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-  } catch {
-    return undefined;
-  }
-};
+/** `reg.exe query <args>` as a child process the event loop does not wait on; undefined if absent. */
+const regQuery = (args: ReadonlyArray<string>) =>
+  Effect.callback<string | undefined>((resume) => {
+    NodeChildProcess.execFile(
+      "reg.exe",
+      ["query", ...args],
+      { encoding: "utf8", timeout: 5_000, windowsHide: true },
+      (error, stdout) => resume(Effect.succeed(error === null ? stdout : undefined)),
+    );
+  });
+
+/** How a Windows registry key is read; tests replace it. */
+export const RegistryQuery = Context.Reference<
+  (args: ReadonlyArray<string>) => Effect.Effect<string | undefined>
+>("houston/houston/nightShift/Host/RegistryQuery", { defaultValue: () => regQuery });
 
 const REBOOT_KEYS = [
   "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\RebootPending",
@@ -106,15 +109,22 @@ const makeMachine = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
   const environment = yield* HostProcess.Environment;
   const path = onPath(environment, platform);
+  const query = yield* RegistryQuery;
   return NightShiftMachine.of({
     readings: Effect.fn("NightShiftMachine.readings")(function* (root) {
         const onBattery = Option.isSome(power)
           ? (yield* power.value.snapshot).onBattery
           : ("unknown" as const);
-        const settings =
+        const [settings, ...reboot] =
           platform === "win32"
-            ? regQuery(["HKLM\\SOFTWARE\\Microsoft\\WindowsUpdate\\UX\\Settings"])
-            : undefined;
+            ? yield* Effect.all(
+                [
+                  query(["HKLM\\SOFTWARE\\Microsoft\\WindowsUpdate\\UX\\Settings"]),
+                  ...REBOOT_KEYS.map((key) => query([key])),
+                ],
+                { concurrency: "unbounded" },
+              )
+            : [undefined];
         const start = activeHoursValue(settings, "ActiveHoursStart");
         const end = activeHoursValue(settings, "ActiveHoursEnd");
         return {
@@ -128,8 +138,7 @@ const makeMachine = Effect.gen(function* () {
               : platform === "win32"
                 ? path("powershell")
                 : false,
-          restartPending:
-            platform === "win32" && REBOOT_KEYS.some((key) => regQuery([key]) !== undefined),
+          restartPending: reboot.some((output) => output !== undefined),
           activeHours: start === null || end === null ? null : { start, end },
         };
       }),
