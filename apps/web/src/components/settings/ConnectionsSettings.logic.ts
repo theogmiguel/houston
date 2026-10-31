@@ -57,6 +57,14 @@ export function isQrShareableEndpoint(endpoint: AdvertisedEndpoint): boolean {
   return endpoint.status !== "unavailable" && endpoint.reachability !== "loopback";
 }
 
+/** Scan-to-pair copy and the QR frame only render for a URL another device can actually open. */
+export function resolveShareablePairDeviceUrl(
+  pairingUrl: string | null,
+  canRenderQr: boolean,
+): string | null {
+  return canRenderQr ? pairingUrl : null;
+}
+
 /** Desktop skips Tailscale probing until network/Serve is enabled to avoid macOS prompts; absence then
  * means unchecked. */
 export function missingTailscaleEndpointDescription(
