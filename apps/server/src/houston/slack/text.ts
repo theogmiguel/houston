@@ -160,6 +160,16 @@ export const slackText = (language: HoustonSlackLanguage) => {
     ),
     // Replies and adjustments.
     addedInSlack: (date: string) => pick(`Adicionado no Slack em ${date}:`, `Added in Slack on ${date}:`),
+    replyTooLong: (chars: number) =>
+      pick(
+        `Sua resposta tem ${chars} caracteres, acima do limite de ${HOUSTON_SLACK_LIMITS.dialogChars}; nada foi feito com ela. Responda de novo de forma mais curta.`,
+        `Your reply is ${chars} characters, over the ${HOUSTON_SLACK_LIMITS.dialogChars}-character limit; nothing was done with it. Reply again more briefly.`,
+      ),
+    replyNotJoined: (why: string) =>
+      pick(
+        `uma resposta na thread não pôde ser adicionada à tarefa: ${why}`,
+        `a thread reply could not be added to the task: ${why}`,
+      ),
     midWork: pick("*Resposta durante o trabalho*", "*Reply during the work*"),
     midWorkHint: pick(
       "O agente não recebe esta mensagem: se ela muda o pedido, passe adiante no Houston ou peça um ajuste depois da entrega.",

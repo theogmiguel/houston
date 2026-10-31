@@ -1194,3 +1194,85 @@ describe("a reply after the result is an adjustment the owner accepts into a new
     );
   });
 });
+
+describe("thread replies are bounded like the dialog and a refused addition reaches the owner", () => {
+  it.effect("thread replies are bounded like the dialog and a refused addition reaches the owner", () =>
+    runSlack((fake) =>
+      Effect.gen(function* () {
+        const tasks = yield* HoustonTaskService.HoustonTaskService;
+        const conversation = yield* HoustonSlackConversation;
+        const sql = yield* SqlClient.SqlClient;
+        yield* connectedProject("bounded");
+        const long = "y".repeat(2_001);
+        const toldOverLimit = (times: number) =>
+          until(
+            `over-long reply ${times} refused`,
+            flushOutbox.pipe(
+              Effect.map(
+                () =>
+                  fake.callsOf("chat.postEphemeral").filter((call) => {
+                    const text = call.body.text ?? "";
+                    return call.body.user === "U2" && text.includes("2001") && text.includes("2000");
+                  }).length === times,
+              ),
+            ),
+          );
+        const eyesOn = (ts: string) =>
+          fake.callsOf("reactions.add").some((call) => call.body.timestamp === ts);
+
+        // Before the work: an over-long reply joins nothing and its writer is told.
+        const ts = "1700000000.000100";
+        yield* mention(fake, ts, "Add a CSV export");
+        yield* until("filed", requestAt(ts).pipe(Effect.map((row) => row?.task_id != null)));
+        const row = (yield* requestAt(ts)) as RequestRow;
+        const before = (yield* tasks.get({ id: String(row.task_id) })).task;
+        yield* sendEvent(fake, replyEvent("1700000001.000100", ts, "U2", long));
+        yield* toldOverLimit(1);
+        assert.strictEqual((yield* tasks.get({ id: String(row.task_id) })).task.revision, before.revision);
+        assert.isFalse(eyesOn("1700000001.000100"));
+
+        // An addition Tasks refuses (the description is at its byte limit) is told to the owner.
+        const room = 65_536 - Buffer.byteLength(before.description, "utf8") - 10;
+        yield* tasks.save({
+          id: before.key,
+          expectedRevision: before.revision,
+          patch: { description: `${before.description}\n${"z".repeat(room)}` },
+        });
+        const full = yield* tasks.get({ id: String(row.task_id) });
+        yield* sendEvent(fake, replyEvent("1700000002.000100", ts, "U2", "Also a JSON one"));
+        yield* until(
+          "the owner told",
+          flushOutbox.pipe(
+            Effect.map(() =>
+              ownerDms(fake).some((dm) => postedText(dm).includes("could not be added to the task")),
+            ),
+          ),
+        );
+        assert.strictEqual(
+          (yield* tasks.get({ id: String(row.task_id) })).task.revision,
+          full.task.revision,
+        );
+        assert.isFalse(eyesOn("1700000002.000100"));
+
+        // While a question is open, an over-long reply is not its answer.
+        const started = yield* startedRequest(fake, "1700000000.000200", "Export the report");
+        const question = yield* conversation.ask(started.threadId, ASK);
+        yield* sendEvent(fake, replyEvent("1700000003.000100", "1700000000.000200", "U2", long));
+        yield* toldOverLimit(2);
+        assert.isNull((yield* questionRow(question.questionId))?.answered_at ?? null);
+        yield* sendEvent(fake, replyEvent("1700000004.000100", "1700000000.000200", "U2", "CSV"));
+        yield* answered(question.questionId);
+
+        // After the hand-back, an over-long reply is not an adjustment.
+        yield* conversation.handback(started.threadId, READY);
+        yield* sendEvent(fake, replyEvent("1700000005.000100", "1700000000.000200", "U2", long));
+        yield* toldOverLimit(3);
+        const adjustments = yield* sql<{ readonly n: number }>`
+          SELECT COUNT(*) AS n FROM houston_slack_adjustments
+        `;
+        assert.strictEqual(adjustments[0]?.n, 0);
+        assert.isFalse(eyesOn("1700000005.000100"));
+      }),
+    ),
+  );
+});

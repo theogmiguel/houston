@@ -736,30 +736,31 @@ const make = Effect.gen(function* () {
       return;
     }
     const settings = yield* store.settings;
-    // While a question is open, the requester's or owner's next reply is its answer.
-    const question = yield* conversation.openQuestion(request.id);
-    if (question !== undefined) {
-      if (
-        classified.text.length > 0 &&
-        answerAllowed({
-          user: classified.user,
-          requester: request.author,
-          ownerUserId: settings?.owner_user_id ?? null,
-        })
-      ) {
-        yield* conversation.answer(question, classified.user, classified.text, classified.ts);
-      }
-      return;
-    }
-    // Only the requester's or the owner's reply joins the task or becomes an adjustment.
+    // Only the requester's or the owner's reply answers, joins the task or becomes an adjustment.
     const fromRequesterOrOwner = answerAllowed({
       user: classified.user,
       requester: request.author,
       ownerUserId: settings?.owner_user_id ?? null,
     });
-    if (!fromRequesterOrOwner || request.task_id === null || classified.text.length === 0) {
+    if (!fromRequesterOrOwner || classified.text.length === 0) return;
+    // Reply text is held to the dialog's bound wherever it goes.
+    const chars = [...classified.text].length;
+    if (chars > HOUSTON_SLACK_LIMITS.dialogChars) {
+      return yield* ephemeral(
+        request,
+        classified.channel,
+        classified.user,
+        `too-long:${classified.ts}`,
+        slackText(language(settings)).replyTooLong(chars),
+      );
+    }
+    // While a question is open, the requester's or owner's next reply is its answer.
+    const question = yield* conversation.openQuestion(request.id);
+    if (question !== undefined) {
+      yield* conversation.answer(question, classified.user, classified.text, classified.ts);
       return;
     }
+    if (request.task_id === null) return;
     if (request.state === "pending" || request.state === "queued") {
       return yield* complement(request, classified, settings);
     }
@@ -829,6 +830,16 @@ const make = Effect.gen(function* () {
     if (saved._tag === "Failure") {
       yield* Effect.logWarning(
         `A Slack reply could not join ${houstonTaskKey(task.number)}: ${saved.failure.message}`,
+      );
+      // The owner hears it once per reply, so a replay does not repeat the message.
+      const prefix = `reply-not-joined:${request.id}:${classified.ts}`;
+      if (yield* queued(`${prefix}:1`)) return;
+      const text = slackText(language(settings));
+      yield* store.write(
+        ownerDm(request, settings, prefix, [
+          `${text.attention}: ${text.replyNotJoined(outboundText(saved.failure.message))}`,
+          quote([...classified.text].slice(0, HOUSTON_SLACK_LIMITS.previewChars).join("")),
+        ]).pipe(Effect.as({ result: undefined, requests: [request.id] })),
       );
       return;
     }
