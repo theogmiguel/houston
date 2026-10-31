@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import type { GridRecord } from "../../grid/gridStore";
-import type { ThreadNode } from "../../grid/tree";
+import { type ThreadNode, threadLeaf } from "../../grid/tree";
 import { GridThreadCell } from "./GridThreadCell";
 
 const state = vi.hoisted(() => ({
@@ -37,6 +37,9 @@ vi.mock("../../state/entities", () => ({
     environmentId: "env-1",
     projectId: "project-1",
     archivedAt: null,
+    modelSelection: { instanceId: "claudeAgent", model: "claude-sonnet" },
+    providerInstanceHistory: [],
+    runtime: null,
   }),
 }));
 
@@ -64,6 +67,7 @@ vi.mock("../../grid/gridStore", () => ({
 
 vi.mock("../Sidebar.logic", () => ({
   resolveThreadStatusPill: () => null,
+  resolveSidebarStatusGlyphState: () => "idle",
 }));
 
 function grid(): GridRecord {
@@ -88,6 +92,7 @@ function render(node: ThreadNode) {
       grid={grid()}
       focused
       availableThreads={[]}
+      providerEntries={new Map()}
       onFocus={() => {}}
       onClose={() => {}}
       onSplit={() => {}}
@@ -100,13 +105,43 @@ describe("GridThreadCell", () => {
   it("renders the thread view for its own thread inside an embedded cell", () => {
     state.draftSession = null;
     const html = render({ kind: "thread", threadId: "thread-a", id: "p1" });
-    expect(html).toContain("Alpha thread");
+    expect(html).not.toContain("data-pane-label");
+    expect(html).not.toContain("<header");
     expect(html).toContain('data-testid="chat-view"');
     expect(html).toContain('data-thread-id="thread-a"');
     expect(html).toContain('data-environment-id="env-1"');
     expect(html).toContain('data-route-kind="server"');
     expect(html).toContain('data-embedded="true"');
     expect(html).toContain('data-focused="true"');
+  });
+
+  it("draws the floating label only when the grid holds more than one thread", () => {
+    state.draftSession = null;
+    const html = renderToStaticMarkup(
+      <GridThreadCell
+        node={{ kind: "thread", threadId: "thread-a", id: "p1" }}
+        grid={{
+          ...grid(),
+          tree: {
+            kind: "split",
+            dir: "row",
+            children: [threadLeaf("thread-a", "p1"), threadLeaf("thread-b", "p2")],
+            weights: [50, 50],
+          },
+        }}
+        focused
+        availableThreads={[]}
+        providerEntries={new Map()}
+        onFocus={() => {}}
+        onClose={() => {}}
+        onSplit={() => {}}
+        onOpenThread={() => {}}
+      />,
+    );
+    expect(html).toContain("data-pane-label");
+    expect(html).toContain("Alpha thread");
+    expect(html).toContain("Archive thread");
+    expect(html).toContain("Close cell");
   });
 
   it("renders a client-side draft in the cell that still carries it", () => {
