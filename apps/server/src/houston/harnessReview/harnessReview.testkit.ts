@@ -102,6 +102,10 @@ export interface KitOptions {
   readonly specs?: ReadonlyArray<DoubleSpec>;
   /** Whether the reactor starts with the layer, as in the server. */
   readonly reactor?: boolean;
+  /** Wraps the real Tasks service, to place a yield or an interrupt inside a Tasks call. */
+  readonly tasks?: (
+    service: HoustonTaskService.HoustonTaskService["Service"],
+  ) => HoustonTaskService.HoustonTaskService["Service"];
 }
 
 /** Thread launches of scheduled tasks Houston does not claim. */
@@ -208,9 +212,19 @@ export const layerKit = (kit: Kit) => {
         )
       : layerHarnessReview
   ).pipe(Layer.provideMerge(HoustonHarnessRunner.layer), Layer.provideMerge(scheduledTasks));
+  const wrapTasks = kit.options.tasks;
+  const taskService =
+    wrapTasks === undefined
+      ? HoustonTaskService.layer
+      : Layer.effect(
+          HoustonTaskService.HoustonTaskService,
+          Effect.gen(function* () {
+            return wrapTasks(yield* HoustonTaskService.HoustonTaskService);
+          }),
+        ).pipe(Layer.provide(HoustonTaskService.layer));
   return harnessReview.pipe(
     // Fix tasks and verdict comments go through the real Tasks service, as in the server.
-    Layer.provideMerge(HoustonTaskService.layer),
+    Layer.provideMerge(taskService),
     Layer.provideMerge(Layer.mergeAll(RuntimeLayer.layerProjectService, ProjectStore.layer)),
     Layer.provideMerge(ProjectionStore.layer),
     Layer.provideMerge(registry),

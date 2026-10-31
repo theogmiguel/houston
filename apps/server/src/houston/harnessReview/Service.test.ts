@@ -698,6 +698,51 @@ describe("fix tasks", () => {
     }),
   );
 
+  it.effect(
+    "create task refuses by name and allows a fix after still present: concurrent calls make one task",
+    () =>
+      Effect.gen(function* () {
+        // Reading Tasks settings yields, as any asynchronous Tasks call does: without the lock a
+        // second call would pass the busy check before the first one links its task.
+        const kit = yield* makeKit("create-task-concurrent", {
+          tasks: (real) => ({
+            ...real,
+            getSettings: (input) =>
+              Effect.gen(function* () {
+                for (let round = 0; round < 20; round += 1) yield* Effect.yieldNow;
+                return yield* real.getSettings(input);
+              }),
+          }),
+        });
+        yield* runKit(
+          kit,
+          Effect.gen(function* () {
+            const harness = yield* service;
+            const { projectId } = yield* createProject("concurrent");
+            yield* seedPublished({
+              projectId,
+              findings: [{ key: "denied-push" }],
+              endedAt: day(1),
+            });
+            const results = yield* Effect.forEach(
+              [1, 2, 3],
+              () => Effect.result(harness.createTask({ projectId, key: "denied-push" })),
+              { concurrency: "unbounded" },
+            );
+            const refused = results.flatMap((result) =>
+              result._tag === "Failure" ? [result.failure] : [],
+            );
+            assert.lengthOf(refused, 2);
+            for (const error of refused) {
+              assert.equal(kindOf(error), "busy");
+              assert.include(messageOf(error), "HOU-1");
+            }
+            assert.deepEqual(yield* countRows, { tasks: 1, links: 1 });
+          }),
+        );
+      }),
+  );
+
   it.effect("a linked task moves the finding to fixing and awaiting verification", () =>
     Effect.gen(function* () {
       const kit = yield* makeKit("fix-phases");
