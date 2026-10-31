@@ -1819,7 +1819,7 @@ export const layer = Layer.effect(
           if (rejectionSlot !== "allowed") {
             if (rejectionSlot === "first_rejected") yield* log("rate_limited");
             yield* observe("rate_limited");
-            return { _tag: "rate_limited", outcome: "rate_limited" } as const;
+            return ({ _tag: "rate_limited", outcome: "rate_limited" } as const);
           }
           if (!task.enabled) {
             yield* log("disabled");
@@ -1872,11 +1872,11 @@ export const layer = Layer.effect(
             }
             yield* refundRejectionSlot;
             yield* observe("filtered");
-            return {
+            return ({
               _tag: "accepted" as const,
               deliveryId,
               outcome: "filtered" as const,
-            };
+            });
           }
 
           const runWindow = (yield* Ref.get(webhookRateWindows)).get(task.id);
@@ -1888,7 +1888,7 @@ export const layer = Layer.effect(
             if ((yield* takeRateSlot(task.id, DateTime.toEpochMillis(now))) === "first_rejected")
               yield* log("rate_limited");
             yield* observe("rate_limited");
-            return { _tag: "rate_limited", outcome: "rate_limited" } as const;
+            return ({ _tag: "rate_limited", outcome: "rate_limited" } as const);
           }
           const reserve = takeRateSlot(task.id, DateTime.toEpochMillis(now)).pipe(
             Effect.flatMap((slot) => (slot === "allowed" ? Effect.void : Effect.fail(slot))),
@@ -1952,7 +1952,7 @@ export const layer = Layer.effect(
             yield* refundRejectionSlot;
             if (deduped.log) yield* log("rate_limited");
             yield* observe(deduped.outcome);
-            return { _tag: "rate_limited", outcome: deduped.outcome } as const;
+            return ({ _tag: "rate_limited", outcome: deduped.outcome } as const);
           }
           if (deduped !== "run") {
             if (deduped !== "coalesced" && deduped !== "coalesced_unlogged")
@@ -1964,7 +1964,8 @@ export const layer = Layer.effect(
                   ? "coalesced"
                   : deduped;
             yield* observe(outcome);
-            if (deduped === "duplicate") return { _tag: "accepted", deliveryId, outcome } as const;
+            if (deduped === "duplicate")
+              return ({ _tag: "accepted", deliveryId, outcome } as const);
             return { _tag: "accepted", deliveryId, outcome } as const;
           }
           const frameId = yield* crypto.randomBytes(6).pipe(
@@ -1983,11 +1984,11 @@ export const layer = Layer.effect(
             });
             yield* releaseReplay(deliveryId);
             yield* observe("prompt_too_long");
-            return {
+            return ({
               _tag: "accepted" as const,
               deliveryId,
               outcome: "prompt_too_long" as const,
-            };
+            });
           }
           // Bound the deliveries one task holds, so steady traffic to a stuck
           // task cannot pile up parked fibers.
@@ -2038,19 +2039,19 @@ export const layer = Layer.effect(
             yield* release;
             if (admitted.log) yield* log("rate_limited");
             yield* observe(admitted.outcome);
-            return {
+            return ({
               _tag: "rate_limited",
               outcome: admitted.outcome,
-            } as const;
+            } as const);
           }
           if (admitted === "duplicate") {
             yield* release;
             yield* observe("duplicate");
-            return {
+            return ({
               _tag: "accepted",
               deliveryId,
               outcome: "duplicate",
-            } as const;
+            } as const);
           }
           yield* observe("accepted");
           const permit = yield* webhookPermit(task.id);
