@@ -1664,14 +1664,14 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
 
   return (
     <div className="group/timeline-row">
-      <div className="relative flex min-w-0 items-center">
+      <div className="relative flex h-7 min-w-0 items-center rounded-(--r-ctl) transition-colors hover:bg-(--hover)">
         <button
           type="button"
           aria-expanded={row.expanded}
           data-scroll-anchor-ignore
           onClick={toggle}
           aria-busy={loading}
-          className="flex h-7 min-w-0 flex-1 cursor-pointer select-none items-center gap-2 rounded-(--r-ctl) px-2 text-left text-body text-(--t2) transition-colors hover:bg-(--hover) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+          className="flex h-7 min-w-0 flex-1 cursor-pointer select-none items-center gap-2 rounded-(--r-ctl) px-2 text-left text-body text-(--t2) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
         >
           <MorphIcon
             className="size-3.5 shrink-0 text-(--t3)"
@@ -1686,7 +1686,7 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
         <TimelineRowTimestamp
           createdAt={row.createdAt}
           timestampFormat={ctx.timestampFormat}
-          className="me-1"
+          className="me-2"
         />
       </div>
       {loading ? <WorkHistorySkeleton /> : null}

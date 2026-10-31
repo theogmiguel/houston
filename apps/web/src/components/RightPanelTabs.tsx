@@ -1664,32 +1664,26 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       {...(props.inlineSize ? { inlineSize: props.inlineSize } : {})}
     >
       {props.fixedTabs ? (
-        <>
-          <div
-            className={cn(
-              "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center justify-end gap-1 border-b border-border bg-pane-head px-3",
-              ownsDesktopTitleBar && "drag-region",
-              ownsDesktopTitleBar &&
-                "wco:pr-(--workspace-native-controls-inset) tauri:pr-(--workspace-native-controls-inset)",
-              props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-            )}
-            data-tauri-drag-region={ownsDesktopTitleBar ? "deep" : undefined}
-          >
-            {props.layoutControls}
-            {ownsDesktopTitleBar ? (
-              <span
-                aria-hidden
-                className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
-              />
-            ) : null}
-          </div>
-          <div
-            className="flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 border-b border-border bg-pane-head px-2"
-            data-right-panel-tabbar
-          >
-            {tabStripContent}
-          </div>
-        </>
+        <div
+          className={cn(
+            "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 border-b border-border bg-pane-head px-2",
+            ownsDesktopTitleBar && "drag-region",
+            ownsDesktopTitleBar &&
+              "wco:pr-(--workspace-native-controls-inset) tauri:pr-(--workspace-native-controls-inset)",
+            props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+          )}
+          data-right-panel-tabbar
+          data-tauri-drag-region={ownsDesktopTitleBar ? "deep" : undefined}
+        >
+          {tabStripContent}
+          {props.layoutControls}
+          {ownsDesktopTitleBar ? (
+            <span
+              aria-hidden
+              className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
+            />
+          ) : null}
+        </div>
       ) : (
         <div
           className={cn(

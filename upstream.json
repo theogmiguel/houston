@@ -600,7 +600,7 @@
     "packages/provider-muse/src/server/textGeneration.ts": "user-visible product name: Houston instead of T3 Code",
     "packages/provider-opencode/src/server/OpenCodeRuntime.ts": "user-visible product name: Houston instead of T3 Code",
     "packages/provider-opencode/src/server/OpenCodeServerLedger.ts": "user-visible product name: Houston instead of T3 Code",
-    "packages/provider-opencode/src/server/status.ts": "user-visible product name: Houston instead of T3 Code",
+    "packages/provider-opencode/src/server/status.ts": "user-visible product name: Houston instead of T3 Code; model capabilities carry the catalog context window size",
     "packages/provider-opencode/src/server/textGeneration.ts": "user-visible product name: Houston instead of T3 Code",
     "packages/provider-opencode/src/server/v2/adapter.ts": "user-visible product name: Houston instead of T3 Code; send intents: session.inbox delivered/cancelled for a steer reports it read or taken back; aside and second opinion: declares readOnlyRun permissionRules; a read-only sandbox denies shell, edit and subagents; sessionRules is exported for its test; tasks backlog: a read-only task planner or reviewer is allowed its own submit tool",
     "packages/provider-opencode/src/server/v2/textGeneration.ts": "user-visible product name: Houston instead of T3 Code",
@@ -1024,6 +1024,21 @@
     "packages/contracts/src/environment.ts": "upstream side chats (#26901) ported ahead of the pin",
     "packages/shared/src/agentAwareness.test.ts": "upstream side chats (#26901) ported ahead of the pin",
     "packages/shared/src/agentAwareness.ts": "upstream side chats (#26901) ported ahead of the pin",
-    "apps/web/src/components/terminal/useThreadTerminalActions.ts": "upstream side chats (#26901) ported ahead of the pin"
+    "apps/web/src/components/terminal/useThreadTerminalActions.ts": "upstream side chats (#26901) ported ahead of the pin",
+    "packages/contracts/src/model.ts": "model capabilities carry the catalog context window size",
+    "packages/shared/src/model.ts": "createModelCapabilities carries the catalog context window size",
+    "apps/server/src/provider/ClaudeModelCatalog.ts": "publishes model context window tokens in capabilities",
+    "apps/server/src/provider/ClaudeModelCatalog.test.ts": "asserts catalog context window tokens reach capabilities",
+    "packages/provider-opencode/src/server/openCode2Catalog.ts": "carries model context window tokens from the catalog",
+    "packages/provider-opencode/src/server/openCode2Catalog.test.ts": "asserts the catalog carries context window tokens",
+    "packages/provider-opencode/src/server/status.test.ts": "asserts OpenCode 2 model capabilities carry context window tokens",
+    "apps/web/src/lib/contextWindow.ts": "compact token label for the model picker",
+    "apps/web/src/lib/contextWindow.test.ts": "compact token label coverage",
+    "apps/web/src/components/chat/modelPickerTraits.ts": "context size from catalog tokens when no descriptor exists",
+    "apps/web/src/components/chat/modelPickerTraits.test.ts": "catalog token fallback coverage",
+    "apps/web/src/components/chat/TraitsPicker.tsx": "read-only context window row for fixed catalogs",
+    "apps/web/src/components/settings/ConnectionsSettings.logic.ts": "pair-device QR visibility for shareable URLs",
+    "apps/web/src/components/settings/ConnectionsSettings.logic.test.ts": "pair-device QR visibility coverage",
+    "apps/web/src/components/settings/AuthorizedClientsSettings.tsx": "pair-device card only for shareable URLs"
   }
 }

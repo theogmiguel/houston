@@ -107,6 +107,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --h-top: 40px;
   --w-window-control: 30px;
   --h-pane-head: 30px;
+  /* Reserved top lane for a grid pane's floating label; the thread itself sets it. */
+  --pane-label-inset: 0px;
   --h-ctl: 28px;
   --h-ctl-mini: 22px;
   --h-row: 28px;
@@ -1164,6 +1166,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --t2: #424245;
   --t3: #5b5b60;
   --border: rgba(0, 0, 0, 0.09);
+  /* Shell dividers: one step above --border so a 1px seam reads on both panes,
+     and below the 16% interactive line so it never reads as a control. */
+  --divider: rgba(0, 0, 0, 0.14);
   --border-hover: rgba(0, 0, 0, 0.16);
   --line-strong: rgba(0, 0, 0, 0.16);
   --line-focus: rgba(0, 0, 0, 0.3);
@@ -1298,6 +1303,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --t2: rgba(255, 255, 255, 0.66);
   --t3: rgba(255, 255, 255, 0.52);
   --border: rgba(255, 255, 255, 0.09);
+  --divider: rgba(255, 255, 255, 0.14);
   --border-hover: rgba(255, 255, 255, 0.16);
   --line-strong: rgba(255, 255, 255, 0.16);
   --line-focus: rgba(255, 255, 255, 0.3);
@@ -1340,6 +1346,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 /* The sidebar is Houston's rail: one tonal step above the canvas, no second
    palette. These repeat the root roles so portaled sheets and settings
    navigation that mount outside `[data-theme]` keep the rail's ink. */
+[data-app-sidebar][data-slot="sidebar-container"] {
+  border-right-color: var(--divider);
+}
+
 [data-app-sidebar] {
   --background: var(--content);
   --foreground: var(--t1);
