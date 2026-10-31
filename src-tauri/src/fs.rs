@@ -1193,8 +1193,21 @@ async fn trash_entry(real: PathBuf, target_path: &str) -> Result<(), String> {
         )
     })?;
     let for_error = real.clone();
-    tokio::task::spawn_blocking(move || trash::delete(&real))
-        .await
+    tokio::task::spawn_blocking(move || {
+        // Upstream's Electron trashItem uses NSFileManager; Finder would drive
+        // the app through Apple Events and TCC for a plain file delete.
+        #[cfg(target_os = "macos")]
+        let context = {
+            use trash::macos::{DeleteMethod, TrashContextExtMacos};
+            let mut context = trash::TrashContext::new();
+            context.set_delete_method(DeleteMethod::NsFileManager);
+            context
+        };
+        #[cfg(not(target_os = "macos"))]
+        let context = trash::TrashContext::new();
+        context.delete(&real)
+    })
+    .await
         .map_err(|e| format!("the trash operation could not be run for {target_path}: {e}"))?
         .map_err(|e| {
             format!(
@@ -3337,7 +3350,7 @@ mod tests {
     static TRASH_ENV: std::sync::RwLock<()> = std::sync::RwLock::new(());
 
     #[allow(clippy::await_holding_lock)]
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "macos")))]
     #[tokio::test]
     async fn fs_delete_moves_a_file_to_the_trash_rather_than_unlinking_it() {
         let _env = TRASH_ENV.read().unwrap();
@@ -3502,7 +3515,7 @@ mod tests {
     }
 
     #[allow(clippy::await_holding_lock)]
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "macos")))]
     #[tokio::test]
     async fn a_delete_that_cannot_be_trashed_reports_it_instead_of_unlinking() {
         let _env = TRASH_ENV.write().unwrap();
