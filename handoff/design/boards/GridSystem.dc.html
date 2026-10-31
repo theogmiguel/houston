@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Houston grid system</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&amp;family=JetBrains+Mono:wght@400;500&amp;family=Source+Serif+4:opsz,wght@8..60,400..600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+[data-theme=graphite]{color-scheme:dark;color:rgba(255,255,255,.92);--rail:#1c1c1f;--content:#161618;--card:#202023;--raised:#26262a;--border:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.16);--field:rgba(255,255,255,.06);--hover:rgba(255,255,255,.05);--sel:rgba(255,255,255,.09);--accent:#2f6fe8;--accent-ink:#64a0ff;--accent-muted:rgba(47,111,232,.15);--t1:rgba(255,255,255,.92);--t2:rgba(255,255,255,.66);--t3:rgba(255,255,255,.52);--warn:#f5a524;--warn-wash:rgba(245,165,36,.08);--warn-line:rgba(245,165,36,.32);--pane:#0f0f11;--pane-head:#18181b;--term:#0f0f11;--border-hover:rgba(255,255,255,.16);--accent-hover:#4f85ec;--ok:#30d158;--ok-ink:#30d158;--stop:#ff6b61;--stop-ink:#ff6b61;--add-bg:rgba(48,209,88,.10);--del-bg:rgba(255,107,97,.10);--code-bg:#18181b;--shadow-1:0 12px 32px -8px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.08);--shadow-2:0 12px 32px -8px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.08);--scrim:rgba(0,0,0,.28);--danger-fill:#d93a30;--danger-wash:rgba(255,107,97,.10);--tog-off:rgba(255,255,255,.18);--claude:#d97757;--codex:rgba(255,255,255,.92);--composer:#18181b}
+[data-theme=paper]{color-scheme:light;color:#1d1d1f;--rail:#ececef;--content:#f5f5f7;--card:#ffffff;--raised:#ffffff;--border:rgba(0,0,0,.09);--line-strong:rgba(0,0,0,.16);--field:rgba(0,0,0,.05);--hover:rgba(0,0,0,.045);--sel:rgba(0,0,0,.09);--accent:#0a63e0;--accent-ink:#0a5cd1;--accent-muted:rgba(10,99,224,.12);--t1:#1d1d1f;--t2:#424245;--t3:#5b5b60;--warn:#b45309;--warn-wash:rgba(180,83,9,.06);--warn-line:rgba(180,83,9,.3);--pane:#ffffff;--pane-head:#f7f7f9;--term:#ffffff;--border-hover:rgba(0,0,0,.16);--accent-hover:#0954be;--ok:#1d7a3a;--ok-ink:#1d7a3a;--stop:#c0362c;--stop-ink:#c0362c;--add-bg:rgba(29,122,58,.09);--del-bg:rgba(192,54,44,.08);--code-bg:#f7f7f9;--shadow-1:0 12px 32px -10px rgba(0,0,0,.18),0 0 0 1px rgba(0,0,0,.08);--shadow-2:0 12px 32px -10px rgba(0,0,0,.18),0 0 0 1px rgba(0,0,0,.08);--scrim:rgba(0,0,0,.12);--danger-fill:#c0362c;--danger-wash:rgba(192,54,44,.08);--tog-off:rgba(0,0,0,.22);--claude:#c25f3f;--codex:#1d1d1f;--composer:#ffffff}
+.hs{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-optical-sizing:auto;font-size:13px;line-height:18px;color:var(--t1);-webkit-font-smoothing:antialiased}
+.hs *{box-sizing:border-box}
+.hs h1,.hs h2,.hs h3,.hs p{margin:0;text-wrap:pretty}
+.mono{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-size:12px}
+.serif{font-family:'Source Serif 4',Georgia,serif}
+.t-large{font-size:26px;line-height:32px;font-weight:700;letter-spacing:-.01em}
+.t-title{font-size:20px;line-height:26px;font-weight:650}
+.t-head{font-size:13px;line-height:18px;font-weight:600}
+.t-callout{font-size:12px;line-height:16px}
+.lbl{font-size:11px;line-height:14px;font-weight:600;letter-spacing:.01em;color:var(--t3)}
+.c2{color:var(--t2)}.c3{color:var(--t3)}
+.kbd{min-width:18px;height:18px;padding:0 4px;border-radius:4px;border:1px solid var(--border);font-size:11px;line-height:1;color:var(--t3);display:inline-flex;align-items:center;justify-content:center;background:var(--field)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px}
+.sec{display:flex;flex-direction:column;gap:14px}
+.wf{background:var(--content);border-radius:6px;display:flex;flex-direction:column;overflow:hidden;min-width:0;min-height:0}
+.wf .h{height:9px;background:var(--rail);flex:none}
+.wf .ln{height:4px;border-radius:2px;background:var(--line-strong)}
+.wf .cp{border-radius:5px;border:1px solid var(--line-strong);background:var(--card)}
+.tierchip{font-size:10px;font-weight:600;letter-spacing:.01em;color:var(--t2);padding:1px 5px;border-radius:4px;background:var(--sel);align-self:flex-start}
+.rule{display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;padding:14px 0;border-bottom:1px solid var(--border)}
+.zone{position:absolute;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600}
+</style>
+</helmet>
+<div class="hs" data-theme="{{theme}}" style="background: var(--content); min-height: 2700px; padding: 56px 24px 96px">
+<div style="max-width: 1280px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px">
+
+<header style="display: flex; flex-direction: column; gap: 14px; max-width: 860px">
+<div style="display: flex; align-items: center; gap: 10px"><img src="/_blob/a93faf84770b904c633e6e01a558806d" alt="" width="28" height="28"><span class="lbl">Houston · grid system</span></div>
+<h1 class="serif" style="font-size: 44px; line-height: 50px; font-weight: 500; letter-spacing: -.02em">One thread reads like a conversation. Six read like a control room.</h1>
+<p class="c2" style="font-size: 14px; line-height: 21px">A thread never changes what it can do as the grid fills. It changes how much it shows. Each pane picks its density from the space it actually has, measured on the pane, not from the number of threads or the window size. The same composer, timeline and approval scale through four steps, so a thread moved from solo into a crowded grid is recognisably the same object.</p>
+</header>
+
+<section class="sec">
+<h2 class="t-title">Four densities</h2>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px">
+<sc-for list="{{tiers}}" as="t" hint-placeholder-count="4">
+<div class="card" style="padding: 16px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; justify-content: space-between; align-items: baseline"><span class="t-head">{{t.name}}</span><span class="mono c3" style="font-size: 11px">{{t.when}}</span></div>
+<div style="height: 150px; background: var(--rail); border-radius: 8px; padding: 8px; display: flex; justify-content: center">
+<div class="wf" style="width: {{t.wfw}}; height: 100%">
+<sc-if value="{{t.header}}" hint-placeholder-val="{{true}}"><div class="h"></div></sc-if>
+<div style="flex: 1; padding: {{t.wfpad}}; display: flex; flex-direction: column; justify-content: flex-end; gap: 5px">
+<sc-for list="{{t.lines}}" as="w" hint-placeholder-count="4"><div class="ln" style="width: {{w}}"></div></sc-for>
+</div>
+<div style="padding: 0 6px 6px"><div class="cp" style="height: {{t.cph}}"></div></div>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<sc-for list="{{t.facts}}" as="f" hint-placeholder-count="5"><div style="display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 8px"><span class="lbl">{{f.k}}</span><span class="t-callout c2">{{f.v}}</span></div></sc-for>
+</div>
+</div>
+</sc-for>
+</div>
+<p class="t-callout c3">Thresholds are measured on the pane after the 6px gutters. A pane re-tiers when a resize ends, with 40px of hysteresis, so dragging a divider never flickers between densities. The floor is the split tree's 240px minimum.</p>
+</section>
+
+<section class="sec">
+<h2 class="t-title">Arrangements as the grid fills</h2>
+<p class="c2" style="max-width: 80ch">Auto arrange places threads in reading order: the first thread keeps the leading, tallest slot because it is usually the one you started with. Every arrangement is a split tree, so any divider can still be dragged afterwards and the result is kept per grid.</p>
+<div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px">
+<sc-for list="{{presets}}" as="p" hint-placeholder-count="6">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="aspect-ratio: 1.38; background: var(--rail); border-radius: 8px; padding: 6px; display: grid; grid-template-columns: {{p.cols}}; grid-template-rows: {{p.rows}}; gap: 4px">
+<sc-for list="{{p.cells}}" as="c" hint-placeholder-count="2"><div class="wf" style="grid-column: {{c.col}}; grid-row: {{c.row}}; padding: 5px; justify-content: flex-end"><span class="tierchip">{{c.tier}}</span></div></sc-for>
+</div>
+<span class="t-head">{{p.name}}</span>
+<span class="t-callout c2">{{p.note}}</span>
+</div>
+</sc-for>
+</div>
+</section>
+
+<section class="sec">
+<h2 class="t-title">Adding, moving and dropping threads</h2>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px">
+<div class="card" style="padding: 16px; display: flex; flex-direction: column; gap: 12px">
+<span class="t-head">Drag a thread from the sidebar onto a pane</span>
+<div style="position: relative; height: 210px; background: var(--rail); border-radius: 8px; padding: 8px">
+<div class="wf" style="position: absolute; inset: 8px"></div>
+<div class="zone" style="left: 14px; top: 14px; bottom: 14px; width: 22%; background: var(--sel); color: var(--t2)">Left</div>
+<div class="zone" style="right: 14px; top: 14px; bottom: 14px; width: 30%; background: var(--accent-muted); box-shadow: inset 0 0 0 1.5px var(--accent-ink); color: var(--t1)">Split right</div>
+<div class="zone" style="left: 25%; right: 34%; top: 14px; height: 24%; background: var(--sel); color: var(--t2)">Top</div>
+<div class="zone" style="left: 25%; right: 34%; bottom: 14px; height: 24%; background: var(--sel); color: var(--t2)">Bottom</div>
+<div class="zone" style="left: 25%; right: 34%; top: 38%; bottom: 38%; background: var(--sel); color: var(--t2)">Replace</div>
+<div style="position: absolute; right: 40px; top: 96px; height: 28px; padding: 0 10px; border-radius: 6px; background: var(--raised); border: 1px solid var(--border); opacity: .9; display: flex; align-items: center; gap: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.35)" class="t-callout"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="4.7" fill="none" stroke="var(--accent-ink)" stroke-width="1.2" stroke-dasharray="1.75 1.93" stroke-linecap="round"></circle></svg>Bundle the Node runtime</div>
+</div>
+<p class="t-callout c2">Only the zone under the pointer lights up. Edges split; the centre replaces, and the replaced thread keeps running in the sidebar. Esc cancels, Ctrl Z undoes the drop.</p>
+</div>
+<div class="card" style="padding: 16px; display: flex; flex-direction: column; gap: 12px">
+<span class="t-head">Drag a thread onto a composer</span>
+<div style="height: 210px; background: var(--rail); border-radius: 8px; padding: 8px; display: flex">
+<div class="wf" style="flex: 1; padding: 10px; justify-content: flex-end; gap: 8px">
+<div class="ln" style="width: 70%"></div><div class="ln" style="width: 52%"></div>
+<div style="border-radius: 10px; border: 1.5px dashed var(--accent-ink); background: var(--accent-muted); height: 66px; display: flex; align-items: center; justify-content: center; gap: 8px" class="t-callout"><span style="height: 22px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); display: inline-flex; align-items: center; gap: 6px">Review #378 PTY slice</span>Add as context</div>
+</div>
+</div>
+<p class="t-callout c2">Kept from upstream: a thread dropped on a composer becomes a reference chip, so one agent can read another's conversation. The drag ghost names the thread and the destination names the result.</p>
+</div>
+<div class="card" style="padding: 16px; display: flex; flex-direction: column; gap: 12px">
+<span class="t-head">Rearrange by the pane header</span>
+<div style="height: 210px; background: var(--rail); border-radius: 8px; padding: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px">
+<div class="wf" style="opacity: .45"><div class="h"></div></div>
+<div style="display: grid; grid-template-rows: 1fr 1fr; gap: 4px"><div class="wf"><div class="h"></div></div><div class="wf" style="box-shadow: inset 0 0 0 1.5px var(--accent-ink)"><div class="h" style="background: var(--accent-muted)"></div></div></div>
+</div>
+<p class="t-callout c2">Grab a header to move a thread; the source dims in place until the drop. Swapping two panes keeps both sizes. Every move is also in the pane's menu, for people who cannot drag.</p>
+</div>
+</div>
+</section>
+
+<section class="sec">
+<h2 class="t-title">Rules</h2>
+<div style="display: flex; flex-direction: column">
+<sc-for list="{{rules}}" as="r" hint-placeholder-count="10">
+<div class="rule"><span class="t-head">{{r.k}}</span><span class="c2">{{r.v}}</span></div>
+</sc-for>
+</div>
+</section>
+
+<section class="sec">
+<h2 class="t-title">Keyboard</h2>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 32px">
+<sc-for list="{{keys}}" as="k" hint-placeholder-count="12">
+<div style="display: flex; align-items: center; gap: 10px; height: 40px; border-bottom: 1px solid var(--border)"><span style="flex: 1">{{k.a}}</span><span style="display: inline-flex; gap: 3px"><sc-for list="{{k.keys}}" as="x" hint-placeholder-count="2"><span class="kbd">{{x}}</span></sc-for></span></div>
+</sc-for>
+</div>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["graphite","paper"],"default":"graphite"},"$preview":{"width":1440,"height":2700}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const f = (k, v) => ({ k, v });
+    return {
+      theme: this.props.theme ?? 'graphite',
+      tiers: [
+        { name: 'Solo', when: 'one thread · ≥ 900px', header: false, wfw: '100%', wfpad: '10px 22%', cph: '30px', lines: ['55%', '90%', '80%', '70%', '40%'], facts: [
+          f('Chrome', 'No pane header. Title, branch and actions move to the window toolbar.'), f('Timeline', '720px measure, 14 / 21 prose, diffs inline.'), f('Composer', '760px, every control labelled, access visible.'), f('Approval', 'Replaces the composer with the full command.'), f('Feels like', 'A single focused conversation.') ] },
+        { name: 'Comfortable', when: '≥ 560 × 520', header: true, wfw: '78%', wfpad: '8px 10px', cph: '24px', lines: ['50%', '92%', '84%', '60%'], facts: [
+          f('Chrome', '30px header: glyph, title, branch when ≥ 640px. Actions on hover or focus.'), f('Timeline', '640px measure, same prose, diffs inline.'), f('Composer', 'Model and effort labelled; access moves into the model menu.'), f('Approval', 'Full card with the command and Always allow.'), f('Feels like', 'Two side by side, reading both.') ] },
+        { name: 'Compact', when: '≥ 400 × 340', header: true, wfw: '58%', wfpad: '6px 8px', cph: '16px', lines: ['40%', '90%', '75%'], facts: [
+          f('Chrome', 'Header keeps glyph and title; branch and diff counts move to its tooltip.'), f('Timeline', 'Latest turn only: work line, 5-line message, changed files as one row.'), f('Composer', 'One line with a single model menu and send.'), f('Approval', 'Title, Decline, Approve. Command in the tooltip.'), f('Feels like', 'Watching, stepping in briefly.') ] },
+        { name: 'Glance', when: '< 400 or < 340', header: true, wfw: '40%', wfpad: '6px', cph: '14px', lines: ['85%', '60%'], facts: [
+          f('Chrome', 'Header only: glyph and title.'), f('Timeline', 'Three lines of the latest message and what is happening now.'), f('Composer', 'One line, send only.'), f('Approval', 'Title, Decline, Approve.'), f('Feels like', 'A status wall. Maximize to work.') ] },
+      ],
+      presets: [
+        { name: '1 thread', note: 'Solo.', cols: '1fr', rows: '1fr', cells: [{ col: '1', row: '1', tier: 'Solo' }] },
+        { name: '2 threads', note: 'Two columns, both comfortable.', cols: '1fr 1fr', rows: '1fr', cells: [{ col: '1', row: '1', tier: 'Comfortable' }, { col: '2', row: '1', tier: 'Comfortable' }] },
+        { name: '3 threads', note: 'The first keeps a full-height slot.', cols: '1.25fr 1fr', rows: '1fr 1fr', cells: [{ col: '1', row: '1 / span 2', tier: 'Comfortable' }, { col: '2', row: '1', tier: 'Compact' }, { col: '2', row: '2', tier: 'Compact' }] },
+        { name: '4 threads', note: 'Two by two.', cols: '1fr 1fr', rows: '1fr 1fr', cells: [{ col: '1', row: '1', tier: 'Compact' }, { col: '2', row: '1', tier: 'Compact' }, { col: '1', row: '2', tier: 'Compact' }, { col: '2', row: '2', tier: 'Compact' }] },
+        { name: '5 threads', note: 'Lead column and four glances.', cols: '1.2fr 1fr 1fr', rows: '1fr 1fr', cells: [{ col: '1', row: '1 / span 2', tier: 'Compact' }, { col: '2', row: '1', tier: 'Glance' }, { col: '3', row: '1', tier: 'Glance' }, { col: '2', row: '2', tier: 'Glance' }, { col: '3', row: '2', tier: 'Glance' }] },
+        { name: '6 threads', note: 'Three by two. More opens a second grid.', cols: '1fr 1fr 1fr', rows: '1fr 1fr', cells: [1, 2, 3].flatMap((c) => [{ col: String(c), row: '1', tier: 'Glance' }, { col: String(c), row: '2', tier: 'Glance' }]) },
+      ],
+      rules: [
+        f('Same abilities everywhere', 'Every density can send, stop, approve, decline, open the terminal and open changes. Density only hides detail, never a capability; hidden detail is one maximize away.'),
+        f('Layout moves only when you act', 'A thread finishing, failing or asking never resizes or reorders panes. Status changes the glyph, the header summary and the composer, nothing else.'),
+        f('Approval takes the composer’s place', 'The question appears where you were about to type, at every density, and owns Enter. It never appears as a banner or a coloured header.'),
+        f('One focused pane', 'The focused pane has a 1px ring and full-strength header text; the others keep their content at full contrast. Clicking anywhere in a pane focuses it.'),
+        f('Maximize is temporary', 'Maximize shows one thread solo and puts “Back to grid · N” in the toolbar. The other threads keep running; their glyphs stay visible in the sidebar.'),
+        f('New threads split the focused pane', 'Split adds the new thread beside the focused pane along its longer side. Auto arrange re-flows to the presets; manual splits are kept until you choose Auto again.'),
+        f('Six per grid', 'A seventh thread offers a new grid instead of a pane below glance size. Grids are tabs in the toolbar and carry their own roll-up glyph.'),
+        f('One drawer per grid', 'Opening a terminal in a comfortable pane opens the drawer under it. From a compact or glance pane it maximizes the thread first, because a drawer there would leave no room for the conversation.'),
+        f('Motion follows the panel curve', 'Tracks resize over 240ms on the panel curve; a new pane fades and settles from 98.5%. Reduced motion makes both instant. Nothing animates while a divider is being dragged.'),
+        f('Gutters are the dividers', 'Panes sit 6px apart on the shell ground. Hovering a gutter shows a 1px handle and the resize cursor; double-clicking it evens the two sides.'),
+      ],
+      keys: [
+        { a: 'Focus pane 1 to 6', keys: ['Ctrl', '1–6'] }, { a: 'Move focus', keys: ['Ctrl', 'Alt', 'Arrow'] }, { a: 'Maximize or restore', keys: ['Ctrl', 'Shift', 'Enter'] },
+        { a: 'Split with a new thread', keys: ['Ctrl', '\\'] }, { a: 'Close pane, keep thread', keys: ['Ctrl', 'W'] }, { a: 'Reopen closed pane', keys: ['Ctrl', 'Shift', 'T'] },
+        { a: 'Next thread that needs you', keys: ['Ctrl', '.'] }, { a: 'Previous or next thread', keys: ['Ctrl', '[ ]'] }, { a: 'Toggle terminal drawer', keys: ['Ctrl', 'J'] },
+        { a: 'Toggle changes', keys: ['Ctrl', 'D'] }, { a: 'Approve the focused request', keys: ['Enter'] }, { a: 'Command palette', keys: ['Ctrl', 'K'] },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

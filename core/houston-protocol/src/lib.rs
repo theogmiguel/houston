@@ -14,8 +14,6 @@ pub use task_trackers::{
 pub const PROTOCOL_VERSION: u32 = 153;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts-gen", ts(export))]
 pub struct PaneSpawnWarning {
     pub code: String,
     pub message: String,
@@ -88,7 +86,6 @@ pub fn decode_gap_frame(buf: &[u8]) -> Option<(u32, u64, u64)> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum AgentKind {
     Claude,
@@ -108,7 +105,6 @@ pub enum AgentKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum McpTransport {
     Stdio,
@@ -117,7 +113,6 @@ pub enum McpTransport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct McpServer {
     pub name: String,
     pub transport: McpTransport,
@@ -134,7 +129,6 @@ pub struct McpServer {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct McpToolState {
     pub tool: AgentKind,
     pub path: String,
@@ -144,24 +138,16 @@ pub struct McpToolState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum McpConnectionCheck {
     NotChecked,
     Checking,
-    Verified {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
-        tool_count: u32,
-    },
-    Failed {
-        message: String,
-    },
+    Verified { tool_count: u32 },
+    Failed { message: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct AgentProfile {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: u32,
     pub agent: AgentKind,
     pub name: String,
@@ -169,15 +155,12 @@ pub struct AgentProfile {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct AgentProfileActive {
     pub agent: AgentKind,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum AgentSignIn {
     SignedIn,
@@ -189,46 +172,36 @@ pub enum AgentSignIn {
 /// The identity one CLI is signed in to for one account directory. Carries only an
 /// identifier (email, plan, provider names), never a credential.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct AgentAccountIdentity {
     pub agent: AgentKind,
     /// `None` is the default account; otherwise the `AgentProfile` id.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub profile_id: Option<u32>,
     pub sign_in: AgentSignIn,
     /// Email address, or "API key" when the CLI authenticates with a key.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub identity: Option<String>,
     /// Organization or plan next to the identity.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub detail: Option<String>,
     /// Provider names the CLI holds credentials for (OpenCode).
     #[serde(default)]
     pub providers: Vec<String>,
     /// Why the state is not `signed_in`: the file read, or what went wrong reading it.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub reason: Option<String>,
     /// False when the storage location was not confirmed against the CLI's own source or docs.
     pub verified: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProfileChoice {
     Default,
-    Profile {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
-        id: u32,
-    },
+    Profile { id: u32 },
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum RoutineKind {
     #[default]
@@ -239,11 +212,9 @@ pub enum RoutineKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct Routine {
     #[serde(default)]
     pub kind: RoutineKind,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: u32,
     pub name: String,
     pub prompt: String,
@@ -251,32 +222,23 @@ pub struct Routine {
     pub enabled: bool,
     /// The working directory a run starts in, and the base an isolated run
     /// branches from.
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub workspace_id: Option<String>,
     /// The provider a run executes with.
     pub engine: AgentKind,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub model: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub effort: Option<ChatEffort>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub next_run_at_ms: i64,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub last_run_at_ms: Option<i64>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub last_run_session_id: Option<u32>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub last_error: Option<String>,
     pub permission_mode: ChatPermissionMode,
     pub isolate: bool,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub last_outcome: Option<RoutineOutcome>,
     pub revision: String,
 }
 
 /// Why one run of a routine started.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum RoutineTrigger {
     Schedule,
@@ -286,7 +248,6 @@ pub enum RoutineTrigger {
 /// The state of one run. `Running` is the only non-terminal arm; every other
 /// arm is the `RoutineOutcome` of the same name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum RoutineRunStatus {
     Running,
@@ -312,26 +273,18 @@ impl From<RoutineOutcome> for RoutineRunStatus {
 /// One execution of a routine, independent of any conversation. A run carries
 /// the pane `session_id` its turn runs in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct RoutineRun {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub routine_id: u32,
     pub trigger: RoutineTrigger,
     pub status: RoutineRunStatus,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub session_id: Option<u32>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub error: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub started_at_ms: i64,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub ended_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum RoutineOutcome {
     Ok,
@@ -342,19 +295,14 @@ pub enum RoutineOutcome {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Cadence {
     Interval {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         seconds: u32,
     },
     Clock {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         hour: u8,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         minute: u8,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number[] | null"))]
         weekdays: Option<Vec<u8>>,
     },
 }
@@ -368,7 +316,6 @@ fn double_option<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum RoutineErrorKind {
     Conflict,
@@ -383,7 +330,6 @@ pub enum RoutineErrorKind {
 /// A harness review's state. `Running` until its pane publishes; a run that
 /// ends without publishing is `Failed`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum HarnessReviewStatus {
     Running,
@@ -393,44 +339,29 @@ pub enum HarnessReviewStatus {
 
 /// One harness review run of a workspace.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct HarnessReview {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: u32,
     pub workspace: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub routine_id: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub run_id: u32,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub session_id: Option<u32>,
     pub status: HarnessReviewStatus,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub started_at_ms: i64,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub ended_at_ms: Option<i64>,
     /// The run's directory, `<workspace>/.houston/harness/r<run_id>`.
     pub run_dir: String,
     /// `[since, until]` as `YYYY-MM-DD`, from the published `findings.json`.
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "[string, string] | null"))]
     pub window: Option<(String, String)>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub sessions: Option<u32>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub prompts: Option<u32>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub cost_usd: Option<f64>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub finding_count: u32,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub summary: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub error: Option<String>,
 }
 
 /// A model from the local model catalog that can be selected for a Harness review.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct HarnessModelOption {
     pub provider: AgentKind,
     pub id: String,
@@ -439,7 +370,6 @@ pub struct HarnessModelOption {
 /// The operator's decision on a finding, kept per workspace and finding key so
 /// it outlives the review that raised it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum HarnessFindingState {
     Open,
@@ -448,7 +378,6 @@ pub enum HarnessFindingState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum HarnessFindingPhase {
     Open,
@@ -460,7 +389,6 @@ pub enum HarnessFindingPhase {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum HarnessVerdict {
     Gone,
@@ -469,23 +397,17 @@ pub enum HarnessVerdict {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct HarnessFindingTask {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub task_id: i64,
     pub key: String,
     pub status: TaskStatus,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub landed_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct HarnessVerification {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub review_id: u32,
     pub verdict: HarnessVerdict,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub sessions_after: u32,
     pub quotes: Vec<String>,
 }
@@ -494,16 +416,13 @@ pub struct HarnessVerification {
 /// decision, unless a later review raised the finding again after it
 /// (`recurred`), which reopens it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct HarnessFinding {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub review_id: u32,
     pub key: String,
     pub title: String,
     pub category: String,
     pub confidence: String,
     pub sessions: Vec<String>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub count: u32,
     pub quotes: Vec<String>,
     pub recommendation_kind: String,
@@ -511,49 +430,33 @@ pub struct HarnessFinding {
     pub recommendation: String,
     pub apply_prompt: String,
     pub state: HarnessFindingState,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub decided_at_ms: Option<i64>,
     pub recurred: bool,
     pub phase: HarnessFindingPhase,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub task: Option<HarnessFindingTask>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub verification: Option<HarnessVerification>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub last_seen_review_id: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct HarnessAttention {
     pub workspace: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub open: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub fixing: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub awaiting_verification: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub not_seen: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub resolved: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub dismissed: u32,
     /// Suspected defects without a decision; they also count in `attention`.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub suspected_defects: u32,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub latest_published_review_id: Option<u32>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub seen_review_id: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub attention: u32,
 }
 
 /// Where a suspected defect was seen: an agent's report, or a daemon detector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum DefectSource {
     Agent,
@@ -562,7 +465,6 @@ pub enum DefectSource {
 
 /// Where an issue for a suspected defect belongs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum DefectDestination {
     /// Houston's own repository.
@@ -573,7 +475,6 @@ pub enum DefectDestination {
 
 /// The operator's answer to a suspected defect; `reopen` withdraws it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum DefectDecision {
     Dismiss,
@@ -584,60 +485,47 @@ pub enum DefectDecision {
 /// One suspected defect, as the Harness view shows it. `state` is the operator's
 /// decision unless a later occurrence reopened it (`recurred`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SuspectedDefect {
     pub workspace: String,
     pub key: String,
     pub title: String,
     pub source: DefectSource,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub detector: Option<String>,
     #[serde(default)]
     pub evidence: Vec<String>,
     pub destination: DefectDestination,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub count: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub first_seen_ms: i64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub last_seen_ms: i64,
     pub state: HarnessFindingState,
     pub recurred: bool,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub issue_url: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub decided_at_ms: Option<i64>,
 }
 
 /// An open issue the draft found for the same words as the defect title.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct DefectIssueMatch {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     pub title: String,
     pub url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct HarnessProviderCoverage {
     pub agent: AgentKind,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub sessions: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TaskOrigin {
     HarnessFinding {
         workspace: String,
         key: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         review_id: u32,
     },
 }
@@ -645,7 +533,6 @@ pub enum TaskOrigin {
 /// A task's workflow state. Archiving is orthogonal: an archived task keeps
 /// its status and leaves the active lists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
     Backlog,
@@ -657,7 +544,6 @@ pub enum TaskStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskDomainKind {
     Delivery,
@@ -665,55 +551,40 @@ pub enum TaskDomainKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskProject {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: i64,
     pub workspace: String,
     pub name: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub external_url: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub tracker_description: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub project_external_id: Option<String>,
     pub local_decisions: Vec<String>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub revision: i64,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub archived_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskReadiness {
     pub ready: bool,
     pub reasons: Vec<String>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub acceptance_total: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub acceptance_verifiable: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub unresolved_questions: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub unresolved_tracker_conflicts: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "Array<number>"))]
     pub unfinished_blockers: Vec<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskPlanAnswer {
     pub question: String,
     pub answer: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskPlanProposal {
     pub description: String,
     pub acceptance: Vec<String>,
@@ -723,43 +594,30 @@ pub struct TaskPlanProposal {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskPlan {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub revision: i64,
     pub proposal: TaskPlanProposal,
     pub answers: Vec<TaskPlanAnswer>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub approved_revision: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskDomain {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub task_id: i64,
     pub kind: TaskDomainKind,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub project_id: Option<i64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub delivery_id: Option<i64>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "Array<number>"))]
     pub blocked_by: Vec<i64>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub slice_total: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub slice_done: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub planning_session_id: Option<u32>,
     pub readiness: TaskReadiness,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub plan: Option<TaskPlan>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub unresolved_tracker_conflicts: u32,
 }
 
@@ -776,7 +634,6 @@ impl TaskStatus {
 
 /// A task's priority; the stored integer runs 0 none, 1 urgent .. 4 low.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskPriority {
     None,
@@ -789,7 +646,6 @@ pub enum TaskPriority {
 /// What the workspace's `tasks_access:<workspace>` setting allows. `off` also
 /// withholds every task tool an agent would be offered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TasksAccess {
     Off,
@@ -801,7 +657,6 @@ pub enum TasksAccess {
 /// revision; `Limit` carries limit and requested; `AccessOff` and `ReadOnly`
 /// name Settings ▸ Tasks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskErrorKind {
     Conflict,
@@ -817,7 +672,6 @@ pub enum TaskErrorKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskRunKind {
     Implementation,
@@ -828,7 +682,6 @@ pub enum TaskRunKind {
 /// attempt on the same worktree and branch, `retry` opens the next attempt
 /// there with the newest reviewer findings appended to the brief.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskRunAction {
     Stop,
@@ -839,7 +692,6 @@ pub enum TaskRunAction {
 /// How a task brief reaches the agent a Start launches: `send` submits it as
 /// the pane's first prompt, `prefill` types it into the input box unsubmitted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskPromptDelivery {
     Send,
@@ -847,7 +699,6 @@ pub enum TaskPromptDelivery {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskRunState {
     Preparing,
@@ -862,7 +713,6 @@ pub enum TaskRunState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum IntakeState {
     /// Waiting for the owner to accept it.
@@ -875,7 +725,6 @@ pub enum IntakeState {
 
 /// The external request a task was created from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskIntake {
     /// `slack`.
     pub source: String,
@@ -884,15 +733,12 @@ pub struct TaskIntake {
     pub state: IntakeState,
     /// 1-based place in the start queue while `queued`.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub queue_position: Option<u32>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub permalink: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SlackChannelMap {
     /// A channel ID (`C…` or `G…`), not a name.
     pub channel_id: String,
@@ -901,7 +747,6 @@ pub struct SlackChannelMap {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum SlackConnection {
     Off,
@@ -915,7 +760,6 @@ pub enum SlackConnection {
 /// in the owner's direct messages and the thread, and the fields the agent is
 /// told to write for the requester.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum SlackLanguage {
     #[default]
@@ -924,220 +768,158 @@ pub enum SlackLanguage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SlackInfo {
     pub enabled: bool,
     /// Both tokens are in the system keychain.
     pub has_tokens: bool,
     pub connection: SlackConnection,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub team: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub bot_user_id: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub owner_user_id: Option<String>,
     pub channels: Vec<SlackChannelMap>,
     #[serde(default)]
     pub language: SlackLanguage,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub last_event_at_ms: Option<i64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub last_catchup_at_ms: Option<i64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub error: Option<String>,
 }
 
 /// A task as the snapshot lists it: no description, so a 5 000-task list stays
 /// bounded; the detail message carries the text.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskSummary {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: i64,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub workspace: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     /// The task's display key, `HOU-<number>`.
     pub key: String,
     pub title: String,
     pub status: TaskStatus,
     pub priority: TaskPriority,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub parent_id: Option<i64>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub ref_url: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub revision: i64,
     pub created_by: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at_ms: i64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub updated_at_ms: i64,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub archived_at_ms: Option<i64>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub acceptance_checked: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub acceptance_total: u32,
     /// Where the task came from when it was not typed into Houston.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub intake: Option<TaskIntake>,
     /// The newest run still in flight for this task, if any; the snapshot
     /// carries it so the list can show the execution card without a detail
     /// fetch. Handed-back and finished runs stay only in `task_detail.runs`.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub open_run: Option<TaskRun>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub origin: Option<TaskOrigin>,
 }
 
 /// One task with its full text. Every mutation bumps `revision`, so a client
 /// that read one can tell its edit is stale.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct Task {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: i64,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub workspace: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     pub key: String,
     pub title: String,
     pub description: String,
     pub status: TaskStatus,
     pub priority: TaskPriority,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub parent_id: Option<i64>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub ref_url: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub revision: i64,
     pub created_by: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at_ms: i64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub updated_at_ms: i64,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub archived_at_ms: Option<i64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub origin: Option<TaskOrigin>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskAcceptanceItem {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: i64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub position: u32,
     pub text: String,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub checked_at_ms: Option<i64>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub checked_by: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskComment {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: i64,
     pub body: String,
     pub author: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at_ms: i64,
 }
 
 /// One recorded change. `changes` is a JSON diff of the fields that moved.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskHistoryEntry {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: i64,
     pub actor: String,
     pub action: String,
     pub changes: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at_ms: i64,
 }
 
 /// One execution attempt of a task. Slice 1 records none; the shape is fixed
 /// so the wire does not change when Start lands.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskRun {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: i64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub task_id: i64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub attempt: u32,
     pub kind: TaskRunKind,
     pub state: TaskRunState,
     pub provider: AgentKind,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub reviewer: Option<AgentKind>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub session_id: Option<u32>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub delegation_id: Option<u32>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub worktree_path: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub branch: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub base_commit: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub initial_revision: i64,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub summary: Option<String>,
     /// Why the run is not running: an interrupted pane, a `gh` that is missing
     /// or unauthenticated during the PR watch, or a refused resume. Cleared
     /// when the run moves again.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub reason: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub started_at_ms: i64,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub ended_at_ms: Option<i64>,
     /// The pull request found for the run's branch when it was handed back.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub pr_url: Option<String>,
     /// A review run's verdict, pinned to the head it read. `outdated` is true
     /// once the branch tip has moved past `head_sha`.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub review: Option<TaskReviewVerdict>,
 }
 
 /// When a review starts on its own: only when asked, when the implementer hands
 /// back, or on every push to the task's open pull request.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskReviewMode {
     #[default]
@@ -1148,7 +930,6 @@ pub enum TaskReviewMode {
 
 /// What the reviewer is asked to look for. The focus becomes part of its brief.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskReviewFocus {
     #[default]
@@ -1159,7 +940,6 @@ pub enum TaskReviewFocus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskReviewSeverity {
     High,
@@ -1169,7 +949,6 @@ pub enum TaskReviewSeverity {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskReviewCategory {
     Bug,
@@ -1181,7 +960,6 @@ pub enum TaskReviewCategory {
 /// A review's outcome. `Skipped` records a diff too small for a reviewer; it
 /// carries `skipped_reason` and no findings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskReviewOutcome {
     Pass,
@@ -1192,11 +970,9 @@ pub enum TaskReviewOutcome {
 /// One structured finding a reviewer reported: where it is, how serious, what
 /// kind of problem and the finding's own words.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskReviewFinding {
     /// Repository-relative; never absolute, a drive path or containing `..`.
     pub path: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub line: u32,
     pub severity: TaskReviewSeverity,
     pub category: TaskReviewCategory,
@@ -1206,7 +982,6 @@ pub struct TaskReviewFinding {
 /// A review verdict as the task view shows it: the reviewed head, the focus the
 /// reviewer used, the findings and whether the branch has moved since.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskReviewVerdict {
     pub head_sha: String,
     pub verdict: TaskReviewOutcome,
@@ -1214,7 +989,6 @@ pub struct TaskReviewVerdict {
     #[serde(default)]
     pub findings: Vec<TaskReviewFinding>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub skipped_reason: Option<String>,
     pub outdated: bool,
 }
@@ -1223,7 +997,6 @@ pub struct TaskReviewVerdict {
 /// daemon fully idle; `notify` detects and triages only; `review` also opens a
 /// read-only review pane for tiers B and C.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewRequestMode {
     #[default]
@@ -1235,7 +1008,6 @@ pub enum ReviewRequestMode {
 /// How much attention a pull request is likely to need. A is not offered until
 /// triage is calibrated, so a qualifying pull request is reported as B.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewTier {
     A,
@@ -1244,7 +1016,6 @@ pub enum ReviewTier {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewRequestState {
     New,
@@ -1257,13 +1028,10 @@ pub enum ReviewRequestState {
 /// reasons triage gave it. `workspace` is the registered checkout whose GitHub
 /// remote matches; absent means no workspace can review it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct ReviewRequest {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: i64,
     pub host: String,
     pub repo: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     pub title: String,
     pub author: String,
@@ -1274,12 +1042,10 @@ pub struct ReviewRequest {
     pub reasons: Vec<String>,
     pub state: ReviewRequestState,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub workspace: Option<String>,
     /// The workspace's default task agent: the provider a `review` mode pane
     /// would use.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub provider: Option<AgentKind>,
 }
 
@@ -1287,15 +1053,12 @@ pub struct ReviewRequest {
 /// recorded with that `session_id`, its task and the run's state. A session
 /// with no run has no binding.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SessionTask {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub task_id: i64,
     /// The task's display key, `HOU-<number>`.
     pub key: String,
     pub title: String,
     pub status: TaskStatus,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub run_id: i64,
     pub run_state: TaskRunState,
 }
@@ -1304,31 +1067,21 @@ pub struct SessionTask {
 /// `tasks` list also carries the archived ones, with `archived_at_ms` set.
 /// `ready` is the queue's pool: todo tasks with no unfinished blocker.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskCounts {
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub ready: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub backlog: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub todo: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub in_progress: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub in_review: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub done: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub canceled: u32,
 }
 
 /// One ready task a `task_queue_run` could not start, with the refusal the
 /// daemon would have answered for a direct Start.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskQueueRefusal {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: i64,
     pub key: String,
     pub message: String,
@@ -1338,48 +1091,38 @@ pub struct TaskQueueRefusal {
 /// `acceptance` are absent-or-value; workspace, parent and URL are three-state,
 /// so absent, null and a value are distinct. `acceptance` replaces the list.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TaskPatch {
     #[serde(
         default,
         deserialize_with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub workspace: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub status: Option<TaskStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub priority: Option<TaskPriority>,
     #[serde(
         default,
         deserialize_with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub parent_id: Option<Option<i64>>,
     #[serde(
         default,
         deserialize_with = "double_option",
         skip_serializing_if = "Option::is_none"
     )]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub ref_url: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "Array<string> | null"))]
     pub acceptance: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SkillEntry {
     pub name: String,
     pub path: String,
@@ -1387,7 +1130,6 @@ pub struct SkillEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SkillToolState {
     pub tool: AgentKind,
     pub path: String,
@@ -1398,30 +1140,24 @@ pub struct SkillToolState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SkillPushRecord {
     pub tool: AgentKind,
     pub skill: String,
     pub path: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub pushed_at: i64,
     pub had_existing: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct McpSyncResult {
     pub tool: AgentKind,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub written: usize,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub removed: usize,
     pub skipped: Vec<String>,
     pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum AgentHookScope {
     Workspace,
@@ -1429,7 +1165,6 @@ pub enum AgentHookScope {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct AgentHookState {
     pub provider: AgentKind,
     pub path: String,
@@ -1444,7 +1179,6 @@ pub struct AgentHookState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum HookTrust {
     NoConfig,
@@ -1453,7 +1187,6 @@ pub enum HookTrust {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "kebab-case")]
 pub enum RestoreReason {
     InvalidCwd,
@@ -1468,14 +1201,12 @@ pub enum RestoreReason {
 /// `Password.profile` are keychain lookup keys, not secrets — the secret
 /// itself never crosses the wire, lands in the DB, or appears in a log.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SshAuth {
     Agent,
     IdentityFile {
         path: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         passphrase_profile: Option<String>,
     },
     Password {
@@ -1485,7 +1216,6 @@ pub enum SshAuth {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SshProfile {
     pub name: String,
     pub host: String,
@@ -1498,14 +1228,12 @@ pub struct SshProfile {
     pub startup_cmd: Option<String>,
     /// Unix SECONDS, unlike the millisecond `_at` fields elsewhere on this wire.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
     pub last_used_at: Option<u64>,
     #[serde(default)]
     pub has_credential: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SshConfigHost {
     pub alias: String,
     pub hostname: String,
@@ -1515,7 +1243,6 @@ pub struct SshConfigHost {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum SwarmStatus {
     Idle,
@@ -1525,7 +1252,6 @@ pub enum SwarmStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum SwarmRole {
     Coordinator,
@@ -1536,7 +1262,6 @@ pub enum SwarmRole {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum SwarmAgentStatus {
     Idle,
@@ -1547,7 +1272,6 @@ pub enum SwarmAgentStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum SwarmMsgKind {
     Message,
@@ -1558,7 +1282,6 @@ pub enum SwarmMsgKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SessionPolicy {
     pub idle_reap_enabled: bool,
     pub idle_reap_minutes: u32,
@@ -1580,7 +1303,6 @@ impl Default for SessionPolicy {
 /// Off means no request is ever made. On, the request carries nothing about the
 /// machine it came from: no version, no OS, no identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct UpdatePolicy {
     pub check: bool,
 }
@@ -1595,7 +1317,6 @@ impl Default for UpdatePolicy {
 /// installer URL rides here, because the app's signed updater manifest picks the
 /// artifact for this exact bundle instead of the daemon guessing one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct UpdateRelease {
     pub version: String,
     /// GitHub's release body, verbatim; empty when the release carries none.
@@ -1604,7 +1325,6 @@ pub struct UpdateRelease {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum UpdateState {
     /// Never asked in this daemon's lifetime — distinct from "asked and found
@@ -1614,23 +1334,19 @@ pub enum UpdateState {
     Disabled,
     Checking,
     UpToDate {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         checked_at_ms: u64,
     },
     Available {
         release: UpdateRelease,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         checked_at_ms: u64,
     },
     Failed {
         error: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         checked_at_ms: u64,
     },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum SwarmSeverity {
     #[default]
@@ -1640,78 +1356,59 @@ pub enum SwarmSeverity {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SwarmInfo {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: u64,
     pub name: String,
     pub root_dir: String,
     pub goal: String,
     pub status: SwarmStatus,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at: u64,
     #[serde(default)]
     pub budget_minutes: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub activated_at: Option<u64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub completed_at: Option<u64>,
     #[serde(default)]
     pub severity: SwarmSeverity,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SwarmAgentInfo {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: u64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub swarm: u64,
     pub label: String,
     pub role: SwarmRole,
     pub agent: AgentKind,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub session: Option<u32>,
     pub auto_approve: bool,
     #[serde(default)]
     pub plan_mode: bool,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub model: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub custom_prompt: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub cmd: Option<Vec<String>>,
     pub status: SwarmAgentStatus,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub activity: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SwarmMessage {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: u64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub swarm: u64,
     pub from: String,
     pub to: String,
     pub body: String,
     pub kind: SwarmMsgKind,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SwarmRosterEntry {
     pub label: String,
     pub role: SwarmRole,
@@ -1720,39 +1417,30 @@ pub struct SwarmRosterEntry {
     #[serde(default)]
     pub plan_mode: bool,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub model: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub custom_prompt: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub cmd: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SessionCwdEntry {
     pub session: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub cwd: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SessionProcsEntry {
     pub session: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub has_procs: Option<bool>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub has_running_procs: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct KeyChord {
     pub code: String,
     pub ctrl: bool,
@@ -1762,7 +1450,6 @@ pub struct KeyChord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct KeymapOverrides {
     pub bindings: std::collections::HashMap<String, KeyChord>,
     #[serde(default = "default_true")]
@@ -1783,7 +1470,6 @@ fn default_true() -> bool {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct RecoverySummary {
     pub respawned: u32,
     pub deferred: u32,
@@ -1791,14 +1477,12 @@ pub struct RecoverySummary {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SafeModeSummary {
     pub disable_auto_restore: bool,
     pub disable_swarm_autolaunch: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum SessionState {
     Running,
@@ -1815,7 +1499,6 @@ impl SessionState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "kebab-case")]
 pub enum AgentStatus {
     Spawning,
@@ -1826,7 +1509,6 @@ pub enum AgentStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum ContextState {
     Unknown,
@@ -1837,7 +1519,6 @@ pub enum ContextState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum ContextSource {
     Reported,
@@ -1847,17 +1528,12 @@ pub enum ContextSource {
 // A session's latest context occupancy, including output. A provider with no
 // readable signal carries `state: Unknown`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SessionContext {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub used_tokens: u64,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub window_tokens: Option<u64>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub used_percent: Option<u8>,
     pub state: ContextState,
     pub source: ContextSource,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub as_of_ms: i64,
 }
 
@@ -1878,36 +1554,29 @@ impl SessionContext {
 /// A plan or rate limit the provider reported for the pane's last turn.
 /// Runtime-only; the provider's next turn start clears it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SessionLimit {
     /// The provider's own error class, e.g. Claude's `rate_limit`.
     pub error: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub details: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub since_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct RoleRoute {
     pub pattern: String,
     pub model: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub effort: Option<ChatEffort>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct OrchestrationCaps {
     pub max_live_children: u32,
     pub max_spawn_depth: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct AcpAgentInfo {
     pub slug: String,
     pub display_name: String,
@@ -1918,14 +1587,12 @@ pub struct AcpAgentInfo {
 pub const DEFAULT_RMS_FLOOR: f32 = 0.01;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum CloudStt {
     Groq,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum VoiceEngine {
     Local { model_id: String },
@@ -1933,7 +1600,6 @@ pub enum VoiceEngine {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum VoiceOutputMode {
     Original,
@@ -1941,7 +1607,6 @@ pub enum VoiceOutputMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum CaptureMode {
     Hold,
@@ -1949,7 +1614,6 @@ pub enum CaptureMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum InsertMode {
     Direct,
@@ -1957,7 +1621,6 @@ pub enum InsertMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum MicPolicy {
     Persistent,
@@ -1965,17 +1628,14 @@ pub enum MicPolicy {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct VoiceSettings {
     pub enabled: bool,
     pub engine: VoiceEngine,
     pub output_mode: VoiceOutputMode,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub input_language: Option<String>,
     pub capture_mode: CaptureMode,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub input_device: Option<String>,
     pub insert_mode: InsertMode,
     pub vocabulary: String,
@@ -2011,7 +1671,6 @@ impl Default for VoiceSettings {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct VoiceDevice {
     pub id: String,
     pub label: String,
@@ -2019,45 +1678,31 @@ pub struct VoiceDevice {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum VoiceModelStatus {
     NotDownloaded,
-    Downloading {
-        progress: f32,
-    },
-    Downloaded {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
-        size_bytes: u64,
-    },
-    Failed {
-        reason: String,
-    },
+    Downloading { progress: f32 },
+    Downloaded { size_bytes: u64 },
+    Failed { reason: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct VoiceModelState {
     pub id: String,
     pub display_name: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub size_bytes: u64,
     pub status: VoiceModelStatus,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub cooldown_remaining_ms: Option<u64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub unavailable_reason: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub guidance: Option<String>,
     #[serde(default)]
     pub linked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct VoiceExternalModel {
     pub path: String,
     pub source: String,
@@ -2066,41 +1711,20 @@ pub struct VoiceExternalModel {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum VoiceFailure {
-    NoModel {
-        model_id: String,
-    },
-    MissingKey {
-        provider: CloudStt,
-    },
-    DeviceUnavailable {
-        device: String,
-    },
-    TooQuiet {
-        rms: f32,
-        floor: f32,
-    },
-    TooShort {
-        seconds: f32,
-        minimum: f32,
-    },
-    RingBufferOverrun {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
-        dropped: u64,
-    },
+    NoModel { model_id: String },
+    MissingKey { provider: CloudStt },
+    DeviceUnavailable { device: String },
+    TooQuiet { rms: f32, floor: f32 },
+    TooShort { seconds: f32, minimum: f32 },
+    RingBufferOverrun { dropped: u64 },
     NoSpeech,
-    TargetGone {
-        session: u32,
-    },
-    Engine {
-        message: String,
-    },
+    TargetGone { session: u32 },
+    Engine { message: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum VoiceState {
     Idle,
@@ -2110,7 +1734,6 @@ pub enum VoiceState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum DelegationState {
     Spawning,
@@ -2124,7 +1747,6 @@ pub enum DelegationState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub enum TurnEndSource {
     #[serde(rename = "stop-hook")]
     StopHook,
@@ -2135,7 +1757,6 @@ pub enum TurnEndSource {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum ChildInputKind {
     Question,
@@ -2145,7 +1766,6 @@ pub enum ChildInputKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum ChildInputOwner {
     Orchestrator,
@@ -2153,7 +1773,6 @@ pub enum ChildInputOwner {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum ChildInputEscalationReason {
     Explicit,
@@ -2162,7 +1781,6 @@ pub enum ChildInputEscalationReason {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct ChildInputRequest {
     pub id: String,
     pub kind: ChildInputKind,
@@ -2171,12 +1789,10 @@ pub struct ChildInputRequest {
     pub escalation_reason: Option<ChildInputEscalationReason>,
     pub escalation_detail: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts-gen", ts(optional))]
     pub permission: Option<PermissionInputDetails>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum ProviderReportedText {
     Reported { text: String },
@@ -2184,7 +1800,6 @@ pub enum ProviderReportedText {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PermissionInputDetails {
     pub provider: AgentKind,
     pub command: ProviderReportedText,
@@ -2192,7 +1807,6 @@ pub struct PermissionInputDetails {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PaneDenyRequest {
     pub child: u32,
     pub episode_id: String,
@@ -2202,40 +1816,31 @@ pub struct PaneDenyRequest {
 pub const PANE_ESCALATION_REASON_MAX: usize = 2000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PaneEscalateRequest {
     pub child: u32,
     pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct DelegationInfo {
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub input_request: Option<ChildInputRequest>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub started_at: u64,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub settled_at: Option<u64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub retained_until: Option<u64>,
     pub parent: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub role: Option<String>,
     pub state: DelegationState,
     pub stalled: bool,
     pub result_staged: bool,
     pub superseded: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub ended_at: Option<u64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub stop_reason: Option<String>,
     pub turn_end_source: TurnEndSource,
     #[serde(default)]
@@ -2243,20 +1848,16 @@ pub struct DelegationInfo {
     #[serde(default)]
     pub inbox_provisional: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub last_result_corrected_by: Option<i64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub capability_note: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub hold_reason: Option<String>,
     #[serde(default)]
     pub reusable: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum InboxKind {
     Restored,
@@ -2274,7 +1875,6 @@ pub enum InboxKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum InboxDeliveredVia {
     Wait,
@@ -2284,22 +1884,17 @@ pub enum InboxDeliveredVia {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct InboxRow {
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub reply_to: Option<i64>,
     pub id: i64,
     pub to_session: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub original_to: Option<u32>,
     pub workspace: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub from_session: Option<u32>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub request_id: Option<u32>,
     pub kind: InboxKind,
     pub urgent: bool,
@@ -2309,33 +1904,24 @@ pub struct InboxRow {
     pub superseded: u32,
     pub provisional: bool,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub corrects: Option<i64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub reason: Option<String>,
     pub created_at: u64,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub ready_at: Option<u64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub resolved_at: Option<u64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub delivered_at: Option<u64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub delivered_via: Option<InboxDeliveredVia>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub confirmed_at: Option<u64>,
     pub attempts: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub from_codename: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub from_role: Option<String>,
 }
 
@@ -2345,7 +1931,6 @@ pub const DELEGATION_RESULT_EXCERPT_MAX_CHARS: usize = 400;
 pub const DELEGATION_RESULTS_MAX_ROWS: usize = 256;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SessionWorktree {
     pub path: String,
     pub branch: String,
@@ -2353,36 +1938,28 @@ pub struct SessionWorktree {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct DelegationResult {
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub message_id: i64,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub request_id: Option<u32>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub from_codename: Option<String>,
     pub child: u32,
     pub role: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub ready_at: Option<u64>,
     #[serde(default)]
     pub provisional: bool,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub reason: Option<String>,
     pub summary: String,
     pub excerpt: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at: u64,
     pub delivered_via: Option<InboxDeliveredVia>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum InstructionMode {
     Queue,
@@ -2391,7 +1968,6 @@ pub enum InstructionMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum InstructionState {
     Queued,
@@ -2402,22 +1978,18 @@ pub enum InstructionState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct InstructionInfo {
     pub id: String,
     pub mode: InstructionMode,
     pub state: InstructionState,
     pub request_id: Option<u32>,
     pub preview: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at: u64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub updated_at: u64,
     pub hold_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct InstructionQueueSnapshot {
     pub session: u32,
     pub queued_count: u32,
@@ -2429,7 +2001,6 @@ pub struct InstructionQueueSnapshot {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct InstructionDetail {
     pub session: u32,
     pub instruction: InstructionInfo,
@@ -2437,7 +2008,6 @@ pub struct InstructionDetail {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct InstructionAcceptance {
     pub instruction_id: String,
     pub accepted: bool,
@@ -2448,7 +2018,6 @@ pub struct InstructionAcceptance {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub enum TitleSource {
     #[default]
     Codename,
@@ -2488,23 +2057,18 @@ impl TitleSource {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SessionInfo {
     pub id: u32,
     pub agent: AgentKind,
     pub project_dir: String,
     pub cwd: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub checkout_root: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub worktree: Option<SessionWorktree>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub checkout: Option<SessionCheckout>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub activity: Option<SessionActivity>,
     pub state: SessionState,
     pub title: String,
@@ -2513,100 +2077,76 @@ pub struct SessionInfo {
     #[serde(default)]
     pub codename: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub detected_agent: Option<AgentKind>,
     /// The agent CLI a shell pane is running right now; `None` once the shell
     /// has its prompt back. Memory-only, never set on a non-shell pane.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub running_agent: Option<AgentKind>,
     #[serde(default)]
     pub hidden: bool,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub ssh_host: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub restore_deferred: Option<RestoreReason>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub status: Option<AgentStatus>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub status_since_ms: Option<u64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub context: Option<SessionContext>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub swarm_agent: Option<u64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub spawned_by: Option<u32>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub acp: Option<String>,
     #[serde(default)]
     pub live_children: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub profile_label: Option<String>,
     #[serde(default)]
     pub children_waiting: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub delegation: Option<DelegationInfo>,
     #[serde(default)]
     pub inbox_unread: u32,
     #[serde(default)]
     pub tags: Vec<u32>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub session_origin: Option<u32>,
     /// The pane holds a conversation id that a Restart without `fresh` resumes.
     #[serde(default)]
     pub resumable: bool,
     /// Why this pane started fresh instead of resuming its conversation.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub resume_notice: Option<String>,
     /// Context compactions the agent reported for this pane; `None` when its
     /// provider reports no compaction event.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub compactions: Option<u32>,
     /// The task this pane is bound to, from the newest run that names it; a
     /// pane launched or claimed by a task carries it so the header can show a
     /// chip without the Tasks tab being open.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub task: Option<SessionTask>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub sleep_notice: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub latest_prompt: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub last_agent_message: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub slept_at_ms: Option<u64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub limit: Option<SessionLimit>,
     /// When this pane's conversation left in a workspace transfer; its process stopped then.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub transferred_at_ms: Option<u64>,
     /// The pane resumed a conversation after it left in a transfer: it continues a fork.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(as = "Option<bool>", optional))]
     pub transfer_fork: bool,
     /// The status line the pane's agent last wrote with `pane_note`.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub note: Option<PaneNote>,
 }
 
@@ -2615,7 +2155,6 @@ pub const PANE_NOTE_MAX_BYTES: usize = 512;
 
 /// Where the agent says its work stands, alongside its note.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PanePhase {
     Todo,
@@ -2625,31 +2164,24 @@ pub enum PanePhase {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PaneNote {
     pub text: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub phase: Option<PanePhase>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub at_ms: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SessionCheckout {
     pub root: String,
     pub kind: CheckoutKind,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub branch: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub head: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum CheckoutKind {
     Primary,
@@ -2658,40 +2190,30 @@ pub enum CheckoutKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SessionActivity {
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub prompt: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub last_message: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub question: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub tool: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrWatchInfo {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     pub url: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub last_checked_at_ms: Option<i64>,
 }
 
 /// Where a merge queue entry stands. Parked and fixing entries are out of line:
 /// the queue moves on without them until their head moves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum MergeQueueStatus {
     Ready,
@@ -2714,7 +2236,6 @@ pub enum MergeQueueStatus {
 /// One gate a merge queue entry must pass. Gates fail closed: an input that has
 /// not been read, or failed to read, is `failed` with the reason.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum MergeQueueGateKind {
     /// GitHub's own merge gate, `merge_disabled_reason`.
@@ -2728,7 +2249,6 @@ pub enum MergeQueueGateKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum MergeQueueGateState {
     Passed,
@@ -2740,38 +2260,31 @@ pub enum MergeQueueGateState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct MergeQueueGate {
     pub kind: MergeQueueGateKind,
     pub state: MergeQueueGateState,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub reason: Option<String>,
 }
 
 /// A passed verification: the head, rebased onto `base_sha`, passed the
 /// workspace's command as `verified_sha`, the commit the queue pushes and merges.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct MergeQueueVerification {
     pub base_ref: String,
     pub base_sha: String,
     pub head_sha: String,
     pub verified_sha: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub at_ms: i64,
     /// A restack replayed only the commits after this one: the newest recorded
     /// head of the merged dependency `stacked_on` that the head contains.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub fork_sha: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub stacked_on: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum MergeQueueFailureKind {
     /// Rebasing onto the base stopped on a conflict; `files` names them.
@@ -2791,7 +2304,6 @@ pub enum MergeQueueFailureKind {
 
 /// Why an entry left the line. It applies to `head_sha` only: a new head re-enters.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct MergeQueueFailure {
     pub kind: MergeQueueFailureKind,
     pub message: String,
@@ -2799,86 +2311,66 @@ pub struct MergeQueueFailure {
     pub files: Vec<String>,
     /// The tail of the command's bounded output.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub output_tail: Option<String>,
     pub head_sha: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub base_sha: Option<String>,
     /// The live owning pane that was told; absent when the entry is parked.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub handed_to: Option<u32>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub at_ms: i64,
 }
 
 /// One pull request in a workspace's merge queue, in queue order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct MergeQueueEntry {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     /// `owner/name`.
     pub repository: String,
     pub url: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub title: Option<String>,
     pub head_ref: String,
     pub head_sha: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub base_ref: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub depends_on: Option<u32>,
     /// The pane that enqueued it; absent when the user did.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub session: Option<u32>,
     /// 1-based rank in line; 1 is the head. 0 for an entry out of line: parked,
     /// fixing, or held behind one of those.
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub position: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub enqueued_at_ms: i64,
     /// When GitHub was last read for this entry; absent before the first read.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub read_at_ms: Option<i64>,
     pub status: MergeQueueStatus,
     /// The single blocking reason; absent when nothing blocks the entry
     /// (`ready`, `verifying` and `waiting_for_slot`).
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub reason: Option<String>,
     pub gates: Vec<MergeQueueGate>,
     /// The verification that still holds for this head, if any.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub verification: Option<MergeQueueVerification>,
     /// Why the entry is fixing or parked.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub failure: Option<MergeQueueFailure>,
     /// The Houston-managed worktree on `head_ref`, where a hand-off pane starts.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub worktree: Option<String>,
     /// When the running verification started, while `status` is `verifying`.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub verifying_since_ms: Option<i64>,
     /// While GitHub owns the entry (`watching`): what was handed to it.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub github: Option<MergeQueueGitHubHold>,
 }
 
 /// Who merges a workspace's verified head.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum MergeQueueHandOff {
     /// Houston merges the verified commit itself.
@@ -2892,13 +2384,10 @@ pub enum MergeQueueHandOff {
 
 /// The hand-off path a workspace's queue uses, as the last pull request read said.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct MergeQueueHandOffInfo {
     pub mode: MergeQueueHandOff,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub base_ref: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub read_at_ms: i64,
     /// Learned from GitHub refusing Houston's own merge, not from a read.
     #[serde(default)]
@@ -2907,35 +2396,29 @@ pub struct MergeQueueHandOffInfo {
 
 /// A verified head GitHub owns: what was handed to it, on which base, and when.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct MergeQueueGitHubHold {
     pub mode: MergeQueueHandOff,
     pub head_sha: String,
     pub base_ref: String,
     pub base_sha: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub method: Option<PrMergeMethod>,
     pub unattended: bool,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub at_ms: i64,
 }
 
 /// A workspace's merge queue settings. Only the user changes them; agents have no verb.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct MergeQueueSettings {
     /// "Merge when verified": the daemon pushes and merges a verified head on its own.
     pub merge_when_verified: bool,
     /// Runs in the scratch worktree; empty means the queue does not verify.
     pub verification_command: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub time_limit_minutes: u32,
     pub paused: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum MergeQueueLogKind {
     /// The daemon pushed a verified commit to a pull request's branch.
@@ -2956,77 +2439,58 @@ pub enum MergeQueueLogKind {
 
 /// One row of the merge log: every daemon push and merge, and every park.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct MergeQueueLogEntry {
     pub kind: MergeQueueLogKind,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     pub repository: String,
     pub url: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub title: Option<String>,
     /// The branch pushed, or the base merged into.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub ref_name: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub old_sha: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub new_sha: Option<String>,
     /// The commit merged, for a merge row.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub head_sha: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub method: Option<PrMergeMethod>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub detail: Option<String>,
     /// The daemon acted on the policy, with nobody clicking.
     pub unattended: bool,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub at_ms: i64,
     /// For a restack row, the commit the replay started after.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub fork_sha: Option<String>,
 }
 
 /// Unattended merges and parks the user has not reviewed yet.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct MergeQueueAway {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub merged: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub parked: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub last_merge_at_ms: Option<i64>,
 }
 
 /// One workspace's parked count, for the rail.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct MergeQueueParkedCount {
     pub workspace: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub parked: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct SessionPrWatches {
     pub session: u32,
     pub watches: Vec<PrWatchInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TagInfo {
     pub id: u32,
     pub name: String,
@@ -3047,20 +2511,17 @@ pub const MAX_CHECK_LOG_LINES: usize = 40;
 pub const MAX_CHECK_LOG_BYTES: usize = 16 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct Workspace {
     pub path: String,
     pub name: String,
     /// The folder is gone on disk, e.g. moved or renamed outside Houston; the
     /// workspace keeps its rows until it is relocated or removed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts-gen", ts(optional))]
     pub missing: Option<bool>,
 }
 
 /// What a `workspace_relocate` re-pointed, so the client can say what followed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct WorkspaceRelocateMoved {
     pub worktrees: u32,
     pub sessions: u32,
@@ -3073,7 +2534,6 @@ pub struct WorkspaceRelocateMoved {
 /// The passphrase of a workspace transfer file. It is sent for one operation and is
 /// never shown by `Debug`, logged or stored.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export, type = "string"))]
 #[serde(transparent)]
 pub struct TransferPassphrase(String);
 
@@ -3103,7 +2563,6 @@ impl Drop for TransferPassphrase {
 
 /// The step a workspace transfer is on, for the dialog's progress line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TransferStage {
     Checking,
@@ -3116,7 +2575,6 @@ pub enum TransferStage {
 
 /// Why a workspace transfer was refused. Every refusal uses `TransferRefusal`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum TransferRefusalCode {
     UnknownWorkspace,
@@ -3151,7 +2609,6 @@ pub enum TransferRefusalCode {
 /// A refusal states what is wrong (`problem`), the exact paths or values involved
 /// (`items`) and the steps that remove it (`steps`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TransferRefusal {
     pub code: TransferRefusalCode,
     pub problem: String,
@@ -3161,20 +2618,17 @@ pub struct TransferRefusal {
 
 /// One pane a transfer file carries.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TransferPane {
     pub session: u32,
     pub title: String,
     pub provider: AgentKind,
     /// `main checkout`, or `worktree <slug>`.
     pub checkout: String,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub profile_label: Option<String>,
 }
 
 /// A pane of the workspace a transfer does not carry, and why.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TransferSkipped {
     pub session: u32,
     pub title: String,
@@ -3182,19 +2636,15 @@ pub struct TransferSkipped {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TransferCliVersion {
     pub provider: AgentKind,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TransferExportSummary {
     pub transfer_id: String,
     pub file: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub bytes: u64,
     pub panes: Vec<TransferPane>,
     pub skipped: Vec<TransferSkipped>,
@@ -3206,7 +2656,6 @@ pub struct TransferExportSummary {
 /// An agent profile a transfer file's panes name, and whether this computer has one
 /// with the same label for that provider.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TransferProfileNeed {
     pub provider: AgentKind,
     pub label: String,
@@ -3215,20 +2664,16 @@ pub struct TransferProfileNeed {
 
 /// What `transfer_inspect` read from a file, before anything changes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TransferFileSummary {
     pub transfer_id: String,
     pub source_os: String,
     pub source_workspace: String,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub remote_url: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at_ms: u64,
     pub panes: Vec<TransferPane>,
     pub skipped: Vec<TransferSkipped>,
     pub cli_versions: Vec<TransferCliVersion>,
     /// The registered workspace whose git remote matches the file's.
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub proposed_workspace: Option<String>,
     pub profiles: Vec<TransferProfileNeed>,
     /// The file continues a transfer this computer exported.
@@ -3238,23 +2683,19 @@ pub struct TransferFileSummary {
 /// The user's answer for a profile label without a match: a local profile label,
 /// or `None` for the default account.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TransferProfileChoice {
     pub provider: AgentKind,
     pub label: String,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub use_profile: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TransferSessionMapping {
     pub from: u32,
     pub to: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct TransferImportResult {
     pub transfer_id: String,
     pub workspace: String,
@@ -3264,12 +2705,10 @@ pub struct TransferImportResult {
     /// Panes of an earlier export from this computer that a return trip resumed.
     pub updated_in_place: Vec<TransferSessionMapping>,
     /// The source workspace's grid entries, unchanged; `None` on a return trip.
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub grids: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct WorkspaceAction {
     pub id: String,
     pub name: String,
@@ -3278,7 +2717,6 @@ pub struct WorkspaceAction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct LocalServer {
     pub port: u16,
     pub process: String,
@@ -3288,7 +2726,6 @@ pub struct LocalServer {
 
 /// A git operation stopped part-way in a checkout, waiting for the user to continue it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum GitOperation {
     Merge,
@@ -3297,7 +2734,6 @@ pub enum GitOperation {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum GitFileState {
     Modified,
@@ -3309,20 +2745,16 @@ pub enum GitFileState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct GitFileStatus {
     pub path: String,
     pub status: GitFileState,
     pub staged: bool,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub added: Option<i64>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub deleted: Option<i64>,
     pub is_sensitive: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum GitReviewScope {
     Staged,
@@ -3331,14 +2763,12 @@ pub enum GitReviewScope {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct GitReviewSection {
     pub scope: GitReviewScope,
     pub patch: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum GitDiscardKind {
     Staged,
@@ -3347,48 +2777,36 @@ pub enum GitDiscardKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct GitBranchInfo {
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub ahead: Option<u32>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub behind: Option<u32>,
     /// Committer time in Unix seconds.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub committed_at: Option<i64>,
     pub name: String,
     pub current: bool,
     pub is_default: bool,
     pub is_remote: bool,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub remote_name: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub upstream: Option<String>,
     /// Set when another worktree has this branch checked out; that worktree
     /// holds the branch, so it cannot be switched to or deleted here.
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub worktree_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct GitBranchCommit {
     pub sha: String,
     pub subject: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub author_time_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct GitWorktreeInfo {
     pub path: String,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub branch: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub head: Option<String>,
     pub is_main: bool,
     pub is_detached: bool,
@@ -3399,7 +2817,6 @@ pub struct GitWorktreeInfo {
 /// Why a managed worktree is still on disk. `None` in its place means a pass found
 /// nothing keeping it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WorktreeKeep {
     Stale {
@@ -3430,7 +2847,6 @@ pub enum WorktreeKeep {
         session: u32,
     },
     Grace {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         until_ms: i64,
     },
     NotMerged {
@@ -3452,7 +2868,6 @@ pub enum WorktreeKeep {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum WorktreeStatus {
     Ready,
@@ -3461,7 +2876,6 @@ pub enum WorktreeStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct ManagedWorktreeInfo {
     pub path: String,
     pub branch: String,
@@ -3469,18 +2883,14 @@ pub struct ManagedWorktreeInfo {
     pub status: WorktreeStatus,
     pub pr: Option<u32>,
     pub keep: Option<WorktreeKeep>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
     pub bytes: Option<u64>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
     pub measured_at_ms: Option<i64>,
     /// `None` until a pass has evaluated it; `keep: None` means nothing only then.
-    #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
     pub checked_at_ms: Option<i64>,
 }
 
 /// The part of a worktree check that could not look.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum WorktreeCheckPart {
     /// Uncommitted files and the age of the newest one.
@@ -3492,14 +2902,12 @@ pub enum WorktreeCheckPart {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct WorktreeCheckGap {
     pub part: WorktreeCheckPart,
     pub reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct WorktreeCheckPane {
     pub session: u32,
     pub title: String,
@@ -3508,11 +2916,9 @@ pub struct WorktreeCheckPane {
 /// What removing a worktree would interrupt or lose. A part that could not look is
 /// `None` with a gap naming why, so a failed check still reads as a finding.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct WorktreeCheckResult {
     pub dirty_files: Option<u32>,
     /// The newest modification among the uncommitted files that still exist.
-    #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
     pub newest_change_ms: Option<i64>,
     pub base: Option<String>,
     pub ahead: Option<u32>,
@@ -3523,29 +2929,24 @@ pub struct WorktreeCheckResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct RemovedWorktree {
     pub path: String,
     pub branch: String,
     pub pr: Option<u32>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
     pub bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct GitCheckpointInfo {
     #[serde(rename = "ref")]
     pub r#ref: String,
     pub label: String,
     pub owner: String,
     pub sha: String,
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub created_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum GitCheckpointAgainst {
     Working,
@@ -3553,7 +2954,6 @@ pub enum GitCheckpointAgainst {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum GitPullStatus {
     Pulled,
@@ -3561,7 +2961,6 @@ pub enum GitPullStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum GhState {
     Missing,
@@ -3571,7 +2970,6 @@ pub enum GhState {
 
 /// Which forge serves a workspace's pull requests, and whether it can be read.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "forge", rename_all = "snake_case")]
 pub enum ForgeAccess {
     Github {
@@ -3587,7 +2985,6 @@ pub enum ForgeAccess {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum BitbucketAccess {
     /// The user has not enabled the reader; nothing is sent.
@@ -3598,7 +2995,6 @@ pub enum BitbucketAccess {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PrChecks {
     None,
@@ -3608,9 +3004,7 @@ pub enum PrChecks {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrInfo {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     pub url: String,
     pub state: String,
@@ -3619,10 +3013,8 @@ pub struct PrInfo {
     #[serde(default)]
     pub head_ref: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub additions: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub deletions: u32,
     #[serde(default)]
     pub is_draft: bool,
@@ -3631,7 +3023,6 @@ pub struct PrInfo {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PullRequestState {
     Open,
@@ -3640,7 +3031,6 @@ pub enum PullRequestState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PullRequestLinkSource {
     Manual,
@@ -3651,46 +3041,33 @@ pub enum PullRequestLinkSource {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PullRequestLink {
     pub host: String,
     pub repository: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     pub url: String,
     pub state: PullRequestState,
     pub source: PullRequestLinkSource,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub title: Option<String>,
     pub is_draft: bool,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub additions: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub deletions: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub changed_files: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub checks: Option<PrChecks>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub review_decision: Option<String>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub linked_at: u64,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub merged_at: Option<u64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub closed_at: Option<u64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub synced_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PrMergeMethod {
     Merge,
@@ -3699,7 +3076,6 @@ pub enum PrMergeMethod {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PrMergeable {
     Mergeable,
@@ -3708,7 +3084,6 @@ pub enum PrMergeable {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PrMergeState {
     Clean,
@@ -3722,7 +3097,6 @@ pub enum PrMergeState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PrCheckState {
     Queued,
@@ -3735,36 +3109,28 @@ pub enum PrCheckState {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrCheck {
     pub name: String,
     pub state: PrCheckState,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub url: Option<String>,
     /// Only a completed check run carries both timestamps; absent otherwise.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub duration_ms: Option<u64>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub run_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrComment {
     /// GitHub's node id, where the read that produced this comment carried one;
     /// it is what an edit or a reaction on the remark names.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub id: Option<String>,
     pub author: String,
     pub body: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at: u64,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub url: Option<String>,
     #[serde(default)]
     pub reactions: Vec<PrReactionCount>,
@@ -3775,17 +3141,14 @@ pub struct PrComment {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrReview {
     /// GitHub's node id, where the read carried one; a reaction on the review
     /// names it.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub id: Option<String>,
     pub author: String,
     pub state: String,
     pub body: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub submitted_at: u64,
     #[serde(default)]
     pub reactions: Vec<PrReactionCount>,
@@ -3795,26 +3158,18 @@ pub struct PrReview {
 /// gate say right now. The identity (number, url, state, title) rides separately
 /// in `PullRequestLink`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrDetail {
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub body: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub author: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub base_ref: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub head_ref: Option<String>,
     pub head_sha: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub commit_count: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at: u64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub updated_at: u64,
     pub mergeable: PrMergeable,
     pub merge_state: PrMergeState,
@@ -3824,27 +3179,21 @@ pub struct PrDetail {
     pub comments: Vec<PrComment>,
     #[serde(default)]
     pub reviews: Vec<PrReview>,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub comments_total: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub reviews_total: u32,
     /// Server-computed gate: `None` means the action is allowed, `Some` names the
     /// fact that blocks it. The UI shows it; the daemon re-checks it before merging.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub merge_disabled_reason: Option<String>,
     /// What GitHub says this viewer may do here, or `None` when that read failed;
     /// `viewer_message` then names why, and no write is offered.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub viewer: Option<PrPermissions>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub viewer_message: Option<String>,
     /// Commits the head is behind its base; `None` when the comparison could not
     /// be made, which is not the same fact as `Some(0)`.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub behind_by: Option<u32>,
     #[serde(default)]
     pub labels: Vec<PrLabel>,
@@ -3864,16 +3213,13 @@ pub struct PrDetail {
     /// Why the thread read is empty, when it failed; a failed thread read leaves
     /// the rest of the detail standing.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub threads_message: Option<String>,
     /// `None` when the host does not report an armed auto-merge; `Some(false)`
     /// when it reports none armed.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub auto_merge_enabled: Option<bool>,
     /// The strategy stored with an armed auto-merge, where gh reports it.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub auto_merge_method: Option<PrMergeMethod>,
     /// The merge methods the repository allows; empty when the read could not say.
     #[serde(default)]
@@ -3885,77 +3231,60 @@ pub struct PrDetail {
     /// What GitHub said about its merge queue and auto-merge for this pull
     /// request; absent when the access read failed.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub github_merge: Option<PrGitHubMerge>,
     /// Why Houston offers no write here, when the forge is read-only.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub read_only: Option<String>,
 }
 
 /// GitHub's own merge tools as one access read saw them. A field GitHub did not
 /// show this viewer is `None`, which the merge queue reads as "Houston merges".
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrGitHubMerge {
     /// `isMergeQueueEnabled`: the base branch merges through GitHub's merge queue.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub merge_queue_required: Option<bool>,
     /// The repository's `autoMergeAllowed`.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub auto_merge_allowed: Option<bool>,
     /// The status checks the base branch's update rule requires; `None` when
     /// GitHub showed no rule.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub required_checks: Option<Vec<String>>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub queue_entry: Option<PrMergeQueueEntry>,
     /// The latest removal from the merge queue or auto-merge disable, with its reason.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub removal: Option<PrMergeRemoval>,
 }
 
 /// The pull request's place in GitHub's merge queue.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrMergeQueueEntry {
     /// GitHub's `MergeQueueEntryState` as it names it, such as `QUEUED` or `AWAITING_CHECKS`.
     pub state: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub position: Option<u32>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub head_sha: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrMergeRemoval {
     pub reason: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub at_ms: i64,
 }
 
 /// One layer of a host-native stack, bottom to top order is the array's.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrStackLayer {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     pub head_ref: String,
     pub state: PullRequestState,
     pub is_draft: bool,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub title: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub head_sha: Option<String>,
 }
 
@@ -3963,10 +3292,8 @@ pub struct PrStackLayer {
 /// and retargets as a unit. Only GitHub offers one; hosts without the preview
 /// answer 404, which the daemon reports as no stack rather than an error.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrStack {
     pub id: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     pub url: String,
     pub base: String,
@@ -3977,9 +3304,7 @@ pub struct PrStack {
 /// One layer's head as the user saw it, which a stack merge pins before any
 /// layer is merged.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrStackHead {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     pub head_sha: String,
 }
@@ -3987,7 +3312,6 @@ pub struct PrStackHead {
 /// One write a pull request accepts, other than the merge itself: merging has its
 /// own message because it re-reads the gate and pins the reviewed head.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PrAction {
     Ready,
@@ -4002,7 +3326,6 @@ pub enum PrAction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PrUpdateMethod {
     Merge,
@@ -4010,7 +3333,6 @@ pub enum PrUpdateMethod {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PrCommentKind {
     IssueComment,
@@ -4018,7 +3340,6 @@ pub enum PrCommentKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PrReviewVerdict {
     Comment,
@@ -4027,7 +3348,6 @@ pub enum PrReviewVerdict {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PrReaction {
     ThumbsUp,
@@ -4041,7 +3361,6 @@ pub enum PrReaction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PrDiffSide {
     Left,
@@ -4049,7 +3368,6 @@ pub enum PrDiffSide {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PrReviewerKind {
     User,
@@ -4057,10 +3375,8 @@ pub enum PrReviewerKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrReviewDraft {
     pub path: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub line: u32,
     pub side: PrDiffSide,
     pub body: String,
@@ -4068,51 +3384,41 @@ pub struct PrReviewDraft {
 
 /// One account or team whose review is outstanding.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrReviewer {
     pub id: String,
     pub kind: PrReviewerKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrReviewerCandidate {
     pub id: String,
     pub kind: PrReviewerKind,
     pub login: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub name: Option<String>,
     pub is_requested: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrLabel {
     pub name: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub color: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrLabelCandidate {
     pub name: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub color: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub description: Option<String>,
     pub is_applied: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrReactionCount {
     pub content: PrReaction,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub count: u32,
     pub reacted: bool,
 }
@@ -4121,7 +3427,6 @@ pub struct PrReactionCount {
 /// review request and ready/draft/close/reopen; labelling is the one action
 /// triage may take without writing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrPermissions {
     pub can_write: bool,
     pub can_triage: bool,
@@ -4133,15 +3438,12 @@ pub struct PrPermissions {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrThreadComment {
     pub id: String,
     pub author: String,
     pub body: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at: u64,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub url: Option<String>,
     #[serde(default)]
     pub reactions: Vec<PrReactionCount>,
@@ -4153,14 +3455,11 @@ pub struct PrThreadComment {
 /// One inline review discussion: its anchor, its resolution, and the remarks in
 /// it. `id` is GitHub's node id, which is what a reply or a resolution names.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrThread {
     pub id: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub path: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub line: Option<u32>,
     pub resolved: bool,
     pub outdated: bool,
@@ -4171,48 +3470,36 @@ pub struct PrThread {
 /// One row of a pull-request listing, which is a read of the repository's pull
 /// requests rather than of the one on screen.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PrListItem {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub number: u32,
     pub title: String,
     pub url: String,
     pub state: PullRequestState,
     pub is_draft: bool,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub author: Option<String>,
     pub head_ref: String,
     pub base_ref: String,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub updated_at: u64,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at: u64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub additions: u32,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub deletions: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub review_decision: Option<String>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub checks: Option<PrChecks>,
     #[serde(default)]
     pub labels: Vec<PrLabel>,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub comments: u32,
     #[serde(default)]
     pub review_requested: bool,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub mergeable: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PrSort {
     #[default]
@@ -4225,7 +3512,6 @@ pub enum PrSort {
 /// ones — gh's own `--state closed` folds them together, so the daemon adds the
 /// `is:unmerged` narrowing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PrListState {
     Open,
@@ -4237,7 +3523,6 @@ pub enum PrListState {
 /// Whose pull requests a listing is about, resolved by the host against the
 /// signed-in account: everything, the viewer's own, or those asking the viewer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PrListInvolvement {
     All,
@@ -4249,7 +3534,6 @@ pub enum PrListInvolvement {
 /// the UI's single in-flight guard honest, and the kind is what tells the panel
 /// which control to release.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum PrMutationKind {
     Edit,
@@ -4265,7 +3549,6 @@ pub enum PrMutationKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatEffort {
     Low,
@@ -4288,7 +3571,6 @@ impl ChatEffort {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatPermissionMode {
     AcceptEdits,
@@ -4306,7 +3588,6 @@ impl ChatPermissionMode {
 
 /// How much a remote-access notification says about the pane that waits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum RemoteNotifyDetail {
     Generic,
@@ -4317,7 +3598,6 @@ pub enum RemoteNotifyDetail {
 /// `Observe` reads, `Drive` also answers panes, `Manage` also changes panes
 /// and commits or pushes. Pairing and configuration stay on the computer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum RemoteTier {
     Observe,
@@ -4343,37 +3623,29 @@ impl RemoteTier {
 
 /// A device paired for remote access; its token never leaves the pairing reply.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct RemoteDevice {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub id: i64,
     pub name: String,
     pub tier: RemoteTier,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub created_at: u64,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub last_seen_at: Option<u64>,
 }
 
 /// Settings ▸ Remote access: the configured values and what the listener is doing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct RemoteInfo {
     pub enabled: bool,
     pub bind: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub public_url: Option<String>,
     /// The address a device opens: `public_url`, else `http://<bind>`.
     pub url: String,
     pub listening: bool,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub error: Option<String>,
     /// Origin of the ntfy server; the topic URL stays in the OS keychain.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub ntfy_server: Option<String>,
     pub notify_delay_secs: u32,
     pub notify_detail: RemoteNotifyDetail,
@@ -4388,7 +3660,6 @@ pub struct RemoteInfo {
     /// SHA-256 of the listener's certificate authority, as a device shows it;
     /// absent until Houston first serves its own HTTPS.
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
     pub ca_fingerprint: Option<String>,
     pub devices: Vec<RemoteDevice>,
 }
@@ -4402,7 +3673,6 @@ pub const DESKTOP_AWAY_SECS: u32 = 180;
 /// grid's reading order. Grids live in renderer storage; this copy is how the
 /// daemon learns them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct RemoteGrid {
     /// The workspace path the grid belongs to.
     pub workspace: String,
@@ -4420,7 +3690,6 @@ pub const REMOTE_GRID_NAME_MAX: usize = 120;
 /// A provider refused for read-only task planning. The planning control shows it
 /// disabled with `reason`; `task_plan_start` still refuses it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct PlanningRefusal {
     pub agent: AgentKind,
     pub reason: String,
@@ -4429,7 +3698,6 @@ pub struct PlanningRefusal {
 /// A routine engine refused under one access level, whatever its model. Pickers
 /// show it disabled with `reason`; `routine_create`/`routine_update` still refuse it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct RoutineEngineRefusal {
     pub engine: AgentKind,
     pub permission_mode: ChatPermissionMode,
@@ -4437,7 +3705,6 @@ pub struct RoutineEngineRefusal {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMsg {
     Hello {
@@ -4446,48 +3713,35 @@ pub enum ClientMsg {
     },
     SessionCreate {
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         request: Option<u32>,
         agent: AgentKind,
         project_dir: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         cmd: Option<Vec<String>>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         cols: Option<u16>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         rows: Option<u16>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         cwd_from: Option<u32>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         shell_integration: Option<bool>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         auto_approve: Option<bool>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         acp: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         profile: Option<ProfileChoice>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         prompt: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         model: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         effort: Option<ChatEffort>,
     },
     SessionKill {
         session: u32,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         confirm_children: Option<bool>,
     },
     OrchestrationSettingsGet,
@@ -4497,12 +3751,10 @@ pub enum ClientMsg {
     DelegationResultsList {
         parent: u32,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         before_message_id: Option<i64>,
     },
     DelegationResultGet {
         parent: u32,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         message_id: i64,
     },
     InstructionQueueList {
@@ -4546,37 +3798,28 @@ pub enum ClientMsg {
     SessionAttach {
         session: u32,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         replay_bytes: Option<u64>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         snapshot: Option<bool>,
         /// The output offset the client already holds. With a matching `generation`
         /// and an offset still inside the ring, the reply carries only the bytes
         /// after it; otherwise it falls back to a `replay_bytes` replay.
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         from_offset: Option<u64>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         generation: Option<u32>,
     },
     SessionRespawn {
         session: u32,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         shell_integration: Option<bool>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         cwd: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         shell: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         force: Option<bool>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         fresh: Option<bool>,
     },
     SessionSleep {
@@ -4615,7 +3858,6 @@ pub enum ClientMsg {
     SessionClose {
         session: u32,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         confirm_children: Option<bool>,
     },
     SessionRename {
@@ -4664,16 +3906,13 @@ pub enum ClientMsg {
     GitStatus {
         dir: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         base: Option<String>,
     },
     GitDiff {
         dir: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         path: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         base: Option<String>,
     },
     GitBranch {
@@ -4719,10 +3958,8 @@ pub enum ClientMsg {
     PrCreate {
         dir: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         title: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         body: Option<String>,
     },
     PrDetail {
@@ -4731,12 +3968,10 @@ pub enum ClientMsg {
         /// One pull request to read without linking it; absent reads the stored
         /// association, else the branch's own.
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         number: Option<u32>,
     },
     PrLink {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         request: u32,
     },
@@ -4746,7 +3981,6 @@ pub enum ClientMsg {
     },
     PrMerge {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         method: PrMergeMethod,
         expected_head_sha: String,
@@ -4754,43 +3988,35 @@ pub enum ClientMsg {
     },
     PrAction {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         action: PrAction,
         /// Meaningful for `enable_auto_merge`; absent takes `merge`.
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         merge_method: Option<PrMergeMethod>,
         /// Meaningful for `update_branch`; absent takes `merge`.
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         update_method: Option<PrUpdateMethod>,
         request: u32,
     },
     PrEdit {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         /// Both absent is refused: a host asked to change nothing answers
         /// differently on each field.
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         title: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         body: Option<String>,
         request: u32,
     },
     PrComment {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         body: String,
         request: u32,
     },
     PrCommentEdit {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         comment_id: String,
         kind: PrCommentKind,
@@ -4799,7 +4025,6 @@ pub enum ClientMsg {
     },
     PrReview {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         verdict: PrReviewVerdict,
         body: String,
@@ -4809,7 +4034,6 @@ pub enum ClientMsg {
     },
     PrThreadReply {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         thread_id: String,
         body: String,
@@ -4817,7 +4041,6 @@ pub enum ClientMsg {
     },
     PrThreadResolve {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         thread_id: String,
         resolved: bool,
@@ -4825,11 +4048,9 @@ pub enum ClientMsg {
     },
     PrReaction {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         /// A remark's node id; absent means the pull request itself.
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         subject_id: Option<String>,
         content: PrReaction,
         reacted: bool,
@@ -4837,13 +4058,11 @@ pub enum ClientMsg {
     },
     PrReviewers {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         request: u32,
     },
     PrReviewerSet {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         reviewers: Vec<PrReviewer>,
         requested: bool,
@@ -4851,13 +4070,11 @@ pub enum ClientMsg {
     },
     PrLabels {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         request: u32,
     },
     PrLabelSet {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         labels: Vec<String>,
         applied: bool,
@@ -4868,9 +4085,7 @@ pub enum ClientMsg {
         state: PrListState,
         involvement: PrListInvolvement,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         query: Option<String>,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         limit: u32,
         #[serde(default)]
         sort: PrSort,
@@ -4878,18 +4093,15 @@ pub enum ClientMsg {
     },
     PrCheckLog {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         run_id: u64,
     },
     PrDiff {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         request: u32,
     },
     PrStack {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         request: u32,
     },
@@ -4898,13 +4110,10 @@ pub enum ClientMsg {
     /// takes no expected head, so a rebase of a moved stack cannot be pinned.
     PrStackMerge {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         stack_number: u32,
         heads: Vec<PrStackHead>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         merge_method: Option<PrMergeMethod>,
         request: u32,
     },
@@ -4918,23 +4127,19 @@ pub enum ClientMsg {
     },
     MergeQueueEnqueue {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         depends_on: Option<u32>,
         request: u32,
     },
     MergeQueueDequeue {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         request: u32,
     },
     /// Merges the queue head, pinned to the head commit the user saw.
     MergeQueueMergeHead {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         expected_head_sha: String,
         method: PrMergeMethod,
@@ -4946,7 +4151,6 @@ pub enum ClientMsg {
         dir: String,
         merge_when_verified: bool,
         verification_command: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         time_limit_minutes: u32,
         request: u32,
     },
@@ -4964,14 +4168,12 @@ pub enum ClientMsg {
     /// Puts a parked or fixing entry back in line at its current head.
     MergeQueueRetry {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         request: u32,
     },
     /// Opens a revert pull request for a queue merge. Nothing is pushed to the base.
     MergeQueueRevert {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         request: u32,
     },
@@ -5011,7 +4213,6 @@ pub enum ClientMsg {
         dir: String,
         name: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         base: Option<String>,
         switch_to: bool,
     },
@@ -5034,7 +4235,6 @@ pub enum ClientMsg {
         dir: String,
         name: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         base: Option<String>,
     },
     GitWorktreeRemove {
@@ -5090,7 +4290,6 @@ pub enum ClientMsg {
     },
     HistoryClear {
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         workspace: Option<String>,
     },
     HistoryCount,
@@ -5098,7 +4297,6 @@ pub enum ClientMsg {
         session: u32,
         provider: AgentKind,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         cmd: Option<Vec<String>>,
     },
     HandoffCancel {
@@ -5108,21 +4306,16 @@ pub enum ClientMsg {
         request: u32,
         host: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         port: Option<u16>,
         user: String,
         auth: SshAuth,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         cols: Option<u16>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         rows: Option<u16>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         profile: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         default_dir: Option<String>,
     },
     SshHostKeyAnswer {
@@ -5134,7 +4327,6 @@ pub enum ClientMsg {
         session: u32,
         local_path: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         remote_name: Option<String>,
     },
     SshProfileSave {
@@ -5166,10 +4358,8 @@ pub enum ClientMsg {
         request: u32,
         session: u32,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         timeout_ms: Option<u64>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         idle_quiet_ms: Option<u64>,
     },
     SessionPolicyGet,
@@ -5187,10 +4377,8 @@ pub enum ClientMsg {
     /// on. Both omitted turns it on with tokens already in the keychain.
     SlackConnect {
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         app_token: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         bot_token: Option<String>,
     },
     /// Closes the connection, turns the connector off and deletes both tokens.
@@ -5199,11 +4387,9 @@ pub enum ClientMsg {
     /// `language` absent keeps the current one.
     SlackConfigure {
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         owner_user_id: Option<String>,
         channels: Vec<SlackChannelMap>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         language: Option<SlackLanguage>,
     },
     KeymapGet,
@@ -5223,7 +4409,6 @@ pub enum ClientMsg {
     },
     McpServerUpsert {
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         previous_name: Option<String>,
         server: McpServer,
     },
@@ -5236,7 +4421,6 @@ pub enum ClientMsg {
     AgentProfileList,
     AgentProfileUpsert {
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         id: Option<u32>,
         agent: AgentKind,
         name: String,
@@ -5248,7 +4432,6 @@ pub enum ClientMsg {
     AgentProfileSetActive {
         agent: AgentKind,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         id: Option<u32>,
     },
     RoutineList,
@@ -5257,71 +4440,52 @@ pub enum ClientMsg {
         prompt: String,
         cadence: Cadence,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         workspace_id: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         engine: Option<AgentKind>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         model: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         effort: Option<ChatEffort>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         permission_mode: Option<ChatPermissionMode>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "boolean | null"))]
         isolate: Option<bool>,
     },
     RoutineUpdate {
         id: u32,
         expected_revision: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         name: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         prompt: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         cadence: Option<Cadence>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "boolean | null"))]
         enabled: Option<bool>,
         #[serde(
             default,
             deserialize_with = "double_option",
             skip_serializing_if = "Option::is_none"
         )]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         workspace_id: Option<Option<String>>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         engine: Option<AgentKind>,
         #[serde(
             default,
             deserialize_with = "double_option",
             skip_serializing_if = "Option::is_none"
         )]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         model: Option<Option<String>>,
         #[serde(
             default,
             deserialize_with = "double_option",
             skip_serializing_if = "Option::is_none"
         )]
-        #[cfg_attr(
-            feature = "ts-gen",
-            ts(optional = nullable, type = "ChatEffort | null")
-        )]
         effort: Option<Option<ChatEffort>>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         permission_mode: Option<ChatPermissionMode>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "boolean | null"))]
         isolate: Option<bool>,
     },
     RoutineDelete {
@@ -5336,7 +4500,6 @@ pub enum ClientMsg {
     /// the latest runs of every routine.
     RoutineRuns {
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         routine_id: Option<u32>,
     },
     /// A workspace's harness review routine, reviews and findings.
@@ -5349,10 +4512,8 @@ pub enum ClientMsg {
         workspace: String,
         engine: AgentKind,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         model: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         effort: Option<ChatEffort>,
         cadence: Cadence,
         enabled: bool,
@@ -5370,7 +4531,6 @@ pub enum ClientMsg {
     NightShiftState {
         workspace: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         preflight_until_ms: Option<i64>,
     },
     NightShiftUpdate {
@@ -5381,7 +4541,6 @@ pub enum ClientMsg {
     /// Starts a run now whose hard stop is `until_ms`.
     NightShiftRunNow {
         routine_id: u32,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         until_ms: i64,
     },
     NightShiftWrapUp {
@@ -5414,12 +4573,10 @@ pub enum ClientMsg {
         workspace: String,
         key: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         agent: Option<AgentKind>,
         #[serde(default)]
         start: bool,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         prompt: Option<String>,
     },
     /// Gets Harness attention counts for all workspaces known to Harness.
@@ -5454,7 +4611,6 @@ pub enum ClientMsg {
         body: String,
         destination_repo: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         comment_on: Option<u32>,
     },
     /// Global task summaries scoped to all, unassigned or a workspace path.
@@ -5480,42 +4636,33 @@ pub enum ClientMsg {
         workspace: String,
     },
     TaskTrackerLinksGet {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         task_id: i64,
     },
     TaskTrackerConflictResolve {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         task_id: i64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         expected_task_revision: i64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
         expected_project_revision: Option<i64>,
         provider: TaskTrackerProvider,
         external_id: String,
         field: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         expected_revision: i64,
         resolution: TaskTrackerConflictResolution,
     },
     /// One task with its acceptance items, comments, history and runs.
     TaskGet {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
     },
     TaskProjectsList {
         workspace: String,
     },
     TaskProjectGet {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
     },
     TaskProjectSave {
         workspace: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         id: Option<i64>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         expected_revision: Option<i64>,
         name: String,
         #[serde(
@@ -5523,105 +4670,79 @@ pub enum ClientMsg {
             deserialize_with = "double_option",
             skip_serializing_if = "Option::is_none"
         )]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         external_url: Option<Option<String>>,
         #[serde(
             default,
             deserialize_with = "double_option",
             skip_serializing_if = "Option::is_none"
         )]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         tracker_description: Option<Option<String>>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "Array<string> | null"))]
         local_decisions: Option<Vec<String>>,
     },
     TaskProjectArchive {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
         archived: bool,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         expected_revision: i64,
     },
     TaskDomainGet {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
     },
     TaskDomainSave {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         expected_revision: i64,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         kind: Option<TaskDomainKind>,
         #[serde(
             default,
             deserialize_with = "double_option",
             skip_serializing_if = "Option::is_none"
         )]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         project_id: Option<Option<i64>>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "Array<number> | null"))]
         blocked_by: Option<Vec<i64>>,
     },
     TaskPlanStart {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         expected_revision: i64,
         agent: AgentKind,
     },
     TaskPlanAnswer {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         expected_revision: i64,
         question: String,
         answer: String,
     },
     TaskPlanApprove {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         expected_revision: i64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         plan_revision: i64,
     },
     /// Creates (id absent) or updates (id present, `expected_revision`
     /// required) one task.
     TaskSave {
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         workspace: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         id: Option<i64>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         expected_revision: Option<i64>,
         patch: TaskPatch,
     },
     TaskComment {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
         body: String,
     },
     /// Ticks one acceptance item of a task.
     TaskCheck {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         item: i64,
         checked: bool,
     },
     /// Archives or restores one task.
     TaskArchive {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
         archived: bool,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         expected_revision: i64,
     },
     /// Starts an implementation run: a worktree on `houston/task/hou-<n>-<slug>`,
@@ -5629,13 +4750,10 @@ pub enum ClientMsg {
     /// the task. `base` is checked out only when the branch is new.
     TaskStart {
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         workspace: Option<String>,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
         agent: AgentKind,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         base: Option<String>,
         #[serde(default)]
         override_readiness: bool,
@@ -5643,7 +4761,6 @@ pub enum ClientMsg {
     /// Stops or resumes one run. `resume` opens attempt N+1 on the same
     /// worktree and branch.
     TaskRunControl {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         run_id: i64,
         action: TaskRunAction,
     },
@@ -5665,9 +4782,7 @@ pub enum ClientMsg {
     TaskReviewSettingsSet {
         workspace: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         reviewer: Option<AgentKind>,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         rework_rounds: u32,
         /// Absent in an older client request means `manual`.
         #[serde(default)]
@@ -5683,23 +4798,18 @@ pub enum ClientMsg {
         mode: ReviewRequestMode,
     },
     ReviewRequestDismiss {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
     },
     ReviewRequestReopen {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
     },
     /// The roster's "Run next N": starts the top `count` ready tasks as children
     /// of `orchestrator_session`, all or nothing. No agent names the workspace's
     /// Start default for each task.
     TaskQueueRun {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         orchestrator_session: u32,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         count: u32,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         agent: Option<AgentKind>,
     },
     TasksAccessGet {
@@ -5816,25 +4926,19 @@ pub enum ClientMsg {
         globs: Vec<String>,
     },
     UsageSummaryGet {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         since_ms: i64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         until_ms: i64,
         #[serde(default)]
         refresh_pricing: bool,
         #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         workspace: Option<String>,
     },
     UsageActivitySummaryGet {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         since_ms: i64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         until_ms: i64,
         #[serde(default)]
         #[serde(skip_serializing_if = "Option::is_none")]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         workspace: Option<String>,
     },
     BrowserRelayRegister {},
@@ -5842,7 +4946,6 @@ pub enum ClientMsg {
         request_id: u64,
         ok: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[cfg_attr(feature = "ts-gen", ts(type = "unknown | null"))]
         output: Option<serde_json::Value>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
@@ -5851,40 +4954,30 @@ pub enum ClientMsg {
     /// Absent fields keep their value; `""` clears `public_url` or `ntfy_url`.
     RemoteConfigure {
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         enabled: Option<bool>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         bind: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         public_url: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         ntfy_url: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         notify_delay_secs: Option<u32>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         notify_detail: Option<RemoteNotifyDetail>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         notify_finished: Option<bool>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         dictation: Option<bool>,
     },
     RemotePairStart,
     /// Replaces the listener's certificate authority; devices must trust the new one.
     RemoteCaRegenerate,
     RemoteDeviceRevoke {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
     },
     /// Sets what a paired device may do; it applies from the device's next request.
     RemoteDeviceSetTier {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
         tier: RemoteTier,
     },
@@ -5930,7 +5023,6 @@ pub enum ClientMsg {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "type", rename_all = "snake_case")]
 // One allocation per message is not worth an indirection: every arm is serialized
 // once on its way out, so the largest payload's bytes never sit on a hot path.
@@ -5951,7 +5043,6 @@ pub enum ServerMsg {
         #[serde(default)]
         tags: Vec<TagInfo>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         recovery: Option<RecoverySummary>,
         safe_mode: SafeModeSummary,
         #[serde(default)]
@@ -5978,13 +5069,10 @@ pub enum ServerMsg {
     SessionMemory {
         session: u32,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         bytes: Option<u64>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         measured_at_ms: Option<u64>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         unavailable_reason: Option<String>,
     },
     SessionList {
@@ -6000,9 +5088,7 @@ pub enum ServerMsg {
         session: u32,
         data: String,
         generation: u32,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         replayed_bytes: u64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         bytes_seen: u64,
         attempt: u32,
     },
@@ -6010,7 +5096,6 @@ pub enum ServerMsg {
         session: u32,
         generation: u32,
         attempt: u32,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         output_offset: u64,
         format_version: u32,
         state: String,
@@ -6067,13 +5152,11 @@ pub enum ServerMsg {
     MergeQueue {
         workspace: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         dir: Option<String>,
         entries: Vec<MergeQueueEntry>,
         /// The last day's merge log, newest first.
         log: Vec<MergeQueueLogEntry>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         settings: Option<MergeQueueSettings>,
         /// Every queue of this daemon is paused.
         #[serde(default)]
@@ -6082,10 +5165,8 @@ pub enum ServerMsg {
         away: MergeQueueAway,
         /// Who merges here, cached from pull request reads; absent before the first.
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         hand_off: Option<MergeQueueHandOffInfo>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         message: Option<String>,
     },
     /// Every workspace with a parked entry, and the global pause.
@@ -6097,11 +5178,9 @@ pub enum ServerMsg {
     MergeQueueReply {
         dir: String,
         request: u32,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         ok: bool,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         message: Option<String>,
     },
     TagList {
@@ -6144,10 +5223,8 @@ pub enum ServerMsg {
         results: Vec<DelegationResult>,
         truncated: bool,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         before_message_id: Option<i64>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         next_message_id: Option<i64>,
     },
     DelegationResultDetail {
@@ -6156,7 +5233,6 @@ pub enum ServerMsg {
     },
     DelegationResultRefused {
         parent: u32,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         message_id: i64,
         message: String,
     },
@@ -6197,7 +5273,6 @@ pub enum ServerMsg {
         not_a_repo: bool,
         /// A merge, rebase or cherry-pick paused in this checkout, read from its git dir.
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         operation: Option<GitOperation>,
     },
     GitDiff {
@@ -6213,18 +5288,15 @@ pub enum ServerMsg {
         /// The work tree's root, absent outside one; two panes share a checkout
         /// exactly when this is equal.
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         toplevel: Option<String>,
         /// The repository's common dir, absent outside one; a main checkout and
         /// its worktrees share it, which is how the same-repository pair is found.
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         common_dir: Option<String>,
     },
     GitBranchCommits {
         dir: String,
         commits: Vec<GitBranchCommit>,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         total: u64,
         truncated: bool,
     },
@@ -6274,7 +5346,6 @@ pub enum ServerMsg {
     PrUnlinked {
         dir: String,
         request: u32,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         number: Option<u32>,
         ok: bool,
         message: Option<String>,
@@ -6282,7 +5353,6 @@ pub enum ServerMsg {
     PrMerged {
         dir: String,
         request: u32,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         ok: bool,
         message: Option<String>,
@@ -6292,7 +5362,6 @@ pub enum ServerMsg {
     PrMutation {
         dir: String,
         request: u32,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         kind: PrMutationKind,
         ok: bool,
@@ -6316,7 +5385,6 @@ pub enum ServerMsg {
     },
     PrList {
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         viewer_login: Option<String>,
         dir: String,
         request: u32,
@@ -6328,7 +5396,6 @@ pub enum ServerMsg {
     },
     PrCheckLog {
         dir: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         run_id: u64,
         lines: Vec<String>,
         truncated: bool,
@@ -6337,7 +5404,6 @@ pub enum ServerMsg {
     PrDiff {
         dir: String,
         request: u32,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         patch: String,
         /// Something in the patch could not be shown: it hit the daemon's byte
@@ -6351,7 +5417,6 @@ pub enum ServerMsg {
         /// `None` when the host serves no stack for this pull request, which is
         /// the answer on every host without the stacks preview.
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         stack: Option<PrStack>,
         message: Option<String>,
     },
@@ -6375,7 +5440,6 @@ pub enum ServerMsg {
         /// Remote-tracking branches, listed apart from the locals.
         remotes: Vec<GitBranchInfo>,
         /// The branch `origin/HEAD` (or `main`/`master`) points at, when one resolves.
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         default_branch: Option<String>,
         /// True when the listing hit the cap and is not the whole repository.
         truncated: bool,
@@ -6384,7 +5448,6 @@ pub enum ServerMsg {
         dir: String,
         worktrees: Vec<GitWorktreeInfo>,
         /// A note about the operation that produced this reply (prune, say).
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         message: Option<String>,
     },
     /// A status reply, and the broadcast after every pass over `dir`.
@@ -6429,7 +5492,6 @@ pub enum ServerMsg {
     },
     AgentRunning {
         session: u32,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         agent: Option<AgentKind>,
     },
     AgentStatus {
@@ -6438,30 +5500,24 @@ pub enum ServerMsg {
     },
     SessionContext {
         session: u32,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         context: Option<SessionContext>,
     },
     SessionLimit {
         session: u32,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         limit: Option<SessionLimit>,
     },
     SessionCheckout {
         id: u32,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         checkout: Option<SessionCheckout>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         checkout_root: Option<String>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         worktree: Option<SessionWorktree>,
     },
     SessionActivity {
         id: u32,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         activity: Option<SessionActivity>,
     },
     OrchestrationState {
@@ -6504,7 +5560,6 @@ pub enum ServerMsg {
         randomart: String,
         changed: bool,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         previous_fingerprint: Option<String>,
     },
     SshUploadDone {
@@ -6516,7 +5571,6 @@ pub enum ServerMsg {
     SshProfiles {
         profiles: Vec<SshProfile>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         keyring_error: Option<String>,
     },
     SshConfigHosts {
@@ -6553,7 +5607,6 @@ pub enum ServerMsg {
     Slack {
         info: SlackInfo,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         refusal: Option<String>,
     },
     TaskTrackerSettings {
@@ -6561,19 +5614,16 @@ pub enum ServerMsg {
         refusal: Option<String>,
     },
     TaskTrackerLinks {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         task_id: i64,
         links: Vec<TaskExternalLink>,
     },
     TaskTrackerSyncState {
         workspace: String,
         provider: TaskTrackerProvider,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number | null"))]
         last_sync_at_ms: Option<i64>,
         error: Option<String>,
     },
     TaskTrackerConflictResolved {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         task_id: i64,
         link: TaskExternalLink,
     },
@@ -6609,18 +5659,14 @@ pub enum ServerMsg {
 
     Routines {
         routines: Vec<Routine>,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number[]"))]
         running: Vec<u32>,
         #[serde(default)]
         engine_refusals: Vec<RoutineEngineRefusal>,
     },
     RoutineRefused {
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         id: Option<u32>,
         kind: RoutineErrorKind,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         limit: Option<u32>,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         requested: Option<u32>,
     },
     /// Every independent run record, newest first.
@@ -6635,7 +5681,6 @@ pub enum ServerMsg {
     /// key, from the most recent review that raised it.
     HarnessState {
         workspace: String,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         routine: Option<Routine>,
         reviews: Vec<HarnessReview>,
         findings: Vec<HarnessFinding>,
@@ -6648,12 +5693,10 @@ pub enum ServerMsg {
     /// `night_shift_update`.
     NightShiftState {
         workspace: String,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         routine: Option<Routine>,
         settings: NightShiftSettings,
         revision: String,
         runs: Vec<NightRun>,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         preflight: Option<Vec<PreflightItem>>,
         machine: NightMachine,
         /// Whether the workspace's merge queue has a verification command,
@@ -6663,7 +5706,6 @@ pub enum ServerMsg {
         /// The global child panes per agent; a run's orchestrator has its own
         /// limit of live workers plus two instead.
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         child_cap: u32,
         #[serde(default)]
         detected: NightDetected,
@@ -6675,12 +5717,10 @@ pub enum ServerMsg {
     /// One per settled run, for the morning: "7 draft PRs, 2 decisions".
     NightShiftNotice {
         workspace: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         run_id: u32,
         headline: String,
     },
     NightShiftReport {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         run_id: u32,
         markdown: String,
         truncated: bool,
@@ -6689,7 +5729,6 @@ pub enum ServerMsg {
         rows: Vec<HarnessAttention>,
     },
     HarnessReport {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         review_id: u32,
         markdown: String,
         truncated: bool,
@@ -6713,7 +5752,6 @@ pub enum ServerMsg {
         destination: DefectDestination,
         destination_repo: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         account: Option<String>,
         title: String,
         body: String,
@@ -6722,7 +5760,6 @@ pub enum ServerMsg {
         duplicates: Vec<DefectIssueMatch>,
         /// Why the duplicate search did not run or returned nothing; still fileable.
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         note: Option<String>,
     },
     /// The issue or comment a defect was filed as. `request` echoes `defect_issue_file`.
@@ -6730,17 +5767,14 @@ pub enum ServerMsg {
         workspace: String,
         key: String,
         request: u32,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         issue_url: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         note: Option<String>,
     },
     /// At most one per workspace per UTC day: a new undecided defect appeared.
     DefectNotice {
         workspace: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         count: u32,
         title: String,
     },
@@ -6762,7 +5796,6 @@ pub enum ServerMsg {
     },
     TaskProjectState {
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         project: Option<TaskProject>,
     },
     TaskProjectsState {
@@ -6771,9 +5804,7 @@ pub enum ServerMsg {
     },
     TaskProjectChanged {
         workspace: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         revision: i64,
     },
     TaskDomainState {
@@ -6782,43 +5813,30 @@ pub enum ServerMsg {
         planning_refusals: Vec<PlanningRefusal>,
     },
     TaskPlanChanged {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         revision: i64,
     },
     TaskPlanStarted {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         session_id: u32,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         revision: i64,
     },
     /// One task changed; a client showing the workspace asks for
     /// `task_snapshot` or `task_get` again.
     TaskChanged {
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         workspace: Option<String>,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         revision: i64,
     },
     /// A task operation was refused; nothing changed. `message` names the
     /// operation, and `Conflict`/`Limit`/access refusals their numbers.
     TaskRefused {
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         id: Option<i64>,
         kind: TaskErrorKind,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         limit: Option<u32>,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         requested: Option<u64>,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         expected: Option<i64>,
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         actual: Option<i64>,
         message: String,
     },
@@ -6837,9 +5855,7 @@ pub enum ServerMsg {
     TaskReviewSettings {
         workspace: String,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         reviewer: Option<AgentKind>,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         rework_rounds: u32,
         #[serde(default)]
         mode: TaskReviewMode,
@@ -6854,19 +5870,15 @@ pub enum ServerMsg {
         #[serde(default)]
         items: Vec<ReviewRequest>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
         paused_until_ms: Option<i64>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         note: Option<String>,
     },
     /// One new review request worth a desktop notification. The first run after
     /// enabling absorbs existing requests and sends none.
     ReviewRequestNotice {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         id: i64,
         repo: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         number: u32,
         title: String,
         tier: ReviewTier,
@@ -6880,9 +5892,7 @@ pub enum ServerMsg {
         #[serde(default)]
         refused: Vec<TaskQueueRefusal>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         ready_count: u32,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         free_children: u32,
     },
     /// The workspace's Tasks access, after a read or a change.
@@ -6938,7 +5948,6 @@ pub enum ServerMsg {
         protocol_version: u32,
         app_version: String,
         build_commit: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         uptime_ms: u64,
         live_sessions: u32,
         restore_budget: u32,
@@ -6946,7 +5955,6 @@ pub enum ServerMsg {
         restore_deferred: u32,
         orchestration_depth_in_use: u32,
         orchestration_max_depth: u32,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         mailbox_files_on_disk: u64,
         mailbox_retention_hours: u32,
         settled_retention_hours: u32,
@@ -6954,68 +5962,50 @@ pub enum ServerMsg {
         worktree_cleanup_grace_hours: u32,
         worktree_idle_removal_days: u32,
         command_history_ignore_glob_count: u32,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         session_db_bytes: u64,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         session_db_wal_bytes: u64,
         /// Free pages inside the database file: what `storage_reclaim` can return to the disk.
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         session_db_free_bytes: u64,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         scrollback_bytes: u64,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         logs_bytes: u64,
     },
     /// Reply to `storage_reclaim`. Sizes are the database plus its WAL; a refusal
     /// leaves both at the current size and changes nothing.
     StorageReclaimed {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         before_bytes: u64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         after_bytes: u64,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         refusal: Option<String>,
     },
     /// Reply to `diagnostics_collect`: the file written, or why none was.
     DiagnosticsCollected {
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         path: Option<String>,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         bytes: u64,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
         error: Option<String>,
     },
     CommandHistoryIgnoreGlobs {
         globs: Vec<String>,
     },
     UsageSummary {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         since_ms: i64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         until_ms: i64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         read_at_ms: i64,
         buckets: Vec<UsageBucket>,
         sources: Vec<UsageSource>,
         #[serde(default)]
-        #[cfg_attr(feature = "ts-gen", ts(optional = nullable))]
         session_counts: Option<UsageSessionCounts>,
         pricing: UsagePricing,
         untracked_agents: Vec<AgentKind>,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         scan_duration_ms: u64,
     },
     UsageActivitySummary {
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         since_ms: i64,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         until_ms: i64,
         days: Vec<UsageActivityDay>,
     },
@@ -7026,7 +6016,6 @@ pub enum ServerMsg {
     BrowserToolCall {
         request_id: u64,
         tool: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "unknown"))]
         args: serde_json::Value,
         session_id: u32,
         workspace_id: String,
@@ -7038,7 +6027,6 @@ pub enum ServerMsg {
     RemotePairing {
         url: String,
         qr_svg: String,
-        #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
         expires_at: u64,
     },
     TransferProgress {
@@ -7064,7 +6052,6 @@ pub enum ServerMsg {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum UsageProvider {
     Claude,
@@ -7083,17 +6070,11 @@ impl UsageProvider {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct UsageTokenTotals {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub uncached_input_tokens: u64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub cached_input_tokens: u64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub cache_creation_tokens: u64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub output_tokens: u64,
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub reasoning_tokens: u64,
 }
 
@@ -7115,7 +6096,6 @@ impl UsageTokenTotals {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum UsageCostSource {
     ProviderReported,
@@ -7124,9 +6104,7 @@ pub enum UsageCostSource {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct UsageBucket {
-    #[cfg_attr(feature = "ts-gen", ts(type = "number"))]
     pub hour_start_ms: i64,
     pub provider: UsageProvider,
     pub model: String,
@@ -7138,7 +6116,6 @@ pub struct UsageBucket {
     pub unpriced_records: u32,
     pub sessions: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub workspace_path: Option<String>,
     pub category_cost_usd: UsageCategoryCost,
     pub fast_cost_usd: f64,
@@ -7148,14 +6125,12 @@ pub struct UsageBucket {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct UsageSessionCounts {
     pub models: Vec<UsageModelSessions>,
     pub days: Vec<UsageSessionDay>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct UsageModelSessions {
     pub provider: UsageProvider,
     pub model: String,
@@ -7164,14 +6139,12 @@ pub struct UsageModelSessions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct UsageSessionDay {
     pub day: String,
     pub sessions: u32,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct UsageCategoryCost {
     pub input_usd: f64,
     pub cache_read_usd: f64,
@@ -7181,7 +6154,6 @@ pub struct UsageCategoryCost {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct UsageActivityDay {
     pub day: String,
     pub cost_usd: f64,
@@ -7189,7 +6161,6 @@ pub struct UsageActivityDay {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum UsageSourceStatus {
     Ok,
@@ -7199,12 +6170,10 @@ pub enum UsageSourceStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct UsageSource {
     pub provider: UsageProvider,
     pub path: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub profile_name: Option<String>,
     pub status: UsageSourceStatus,
     pub scanned_files: u32,
@@ -7212,12 +6181,10 @@ pub struct UsageSource {
     pub failed_files: u32,
     pub distinct_sessions: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum UsagePricingStatus {
     Fresh,
@@ -7226,16 +6193,13 @@ pub enum UsagePricingStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct UsagePricing {
     pub status: UsagePricingStatus,
     pub source: String,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "number | null"))]
     pub fetched_at_ms: Option<i64>,
     pub known_models: u32,
     #[serde(default)]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub message: Option<String>,
 }
 
@@ -7401,7 +6365,6 @@ pub const COMMAND_HISTORY_IGNORE_GLOB_LEN_MAX: u32 = 200;
 pub const MANAGE_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum ManageVerb {
     DaemonStatus,
@@ -7421,7 +6384,6 @@ pub enum ManageVerb {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct ManageRequest {
     pub manage_version: u32,
     pub verb: ManageVerb,
@@ -7429,35 +6391,29 @@ pub struct ManageRequest {
     /// spawn as its successor; absent means it resolves its own executable.
     /// Shape and refusal rules: protocol/protocol.md.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub candidate_bin: Option<String>,
     /// `daemon_shutdown_if_sessions` only: the live session ids the user
     /// confirmed. Any other verb carrying it is refused by name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "Array<number> | null"))]
     pub expected_sessions: Option<Vec<u32>>,
     /// `workspace_open` only, and required there: an absolute directory path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts-gen", ts(optional = nullable, type = "string | null"))]
     pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct ManageLiveSessions {
     pub count: u32,
     pub ids: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct ManageHandoffInfo {
     pub supported: bool,
     pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct ManageDaemonHandoffResult {
     pub accepted: bool,
     pub reason: Option<String>,
@@ -7466,14 +6422,12 @@ pub struct ManageDaemonHandoffResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct ManageReapInfo {
     pub armed: bool,
     pub deadline_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct ManageDaemonStatus {
     pub manage_version: u32,
     pub protocol_version: u32,
@@ -7488,7 +6442,6 @@ pub struct ManageDaemonStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct ManageDaemonShutdownOk {
     pub ok: bool,
     pub stopped_sessions: u32,
@@ -7496,7 +6449,6 @@ pub struct ManageDaemonShutdownOk {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct ManageDaemonShutdownFailed {
     pub ok: bool,
     pub error: String,
@@ -7504,14 +6456,12 @@ pub struct ManageDaemonShutdownFailed {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct ManageWorkspaceOpenOk {
     pub ok: bool,
     pub path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-gen", derive(ts_rs::TS), ts(export))]
 pub struct ManageErrorBody {
     pub error: String,
 }
@@ -8482,22 +7432,6 @@ mod tests {
     }
 
     #[test]
-    fn generated_ts_gives_optional_numbers_their_null_branch() {
-        let generated = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../ui/src/renderer/src/houston/generated/SshProfile.ts"
-        );
-        let src = std::fs::read_to_string(generated)
-            .unwrap_or_else(|e| panic!("reading {generated}: {e}"));
-        assert!(
-            src.contains("last_used_at: number | null"),
-            "Option<u64> lost its null branch in the generated TS — regenerate \
-             with scripts/gen-protocol-types.sh after fixing the ts(type = ...) \
-             override. Found:\n{src}"
-        );
-    }
-
-    #[test]
     fn keymap_overrides_old_blob_defaults_shortcuts_to_enabled() {
         let v31_blob = r#"{"bindings":{"toggle-sidebar":{"code":"KeyJ","ctrl":true,"alt":false,"shift":false,"meta":false}}}"#;
         let overrides: KeymapOverrides = serde_json::from_str(v31_blob).unwrap();
@@ -8658,5 +7592,34 @@ mod tests {
         })
         .unwrap();
         assert_eq!(focus, r#"{"type":"workspace_focus","path":"/home/u/p"}"#);
+    }
+}
+
+// The TypeScript frame codec (packages/contracts/src/houston/terminalFrames.ts)
+// asserts the same literal vectors; change both together or the sides drift.
+#[cfg(test)]
+mod shared_frame_vectors {
+    use super::*;
+
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    #[test]
+    fn shared_frame_vectors() {
+        assert_eq!(
+            hex(&encode_output_frame(u32::MAX, (1u64 << 40) + 7, b"hi")),
+            "01ffffffff00000100000000076869"
+        );
+        assert_eq!(hex(&encode_stdin_frame(u32::MAX, b"hi")), "02ffffffff6869");
+        assert_eq!(
+            hex(&encode_gap_frame(7, 1u64 << 63, 1u64 << 63)),
+            "030000000780000000000000008000000000000000"
+        );
+        // Distinct counters: a swap of bytesSeen and dropped changes the hex.
+        assert_eq!(
+            hex(&encode_gap_frame(0x0102_0304, 1, 2)),
+            "030102030400000000000000010000000000000002"
+        );
     }
 }

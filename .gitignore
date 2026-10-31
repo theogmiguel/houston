@@ -35,6 +35,11 @@ src-tauri/binaries/
 # (scripts/build-app.ps1 fills it) — build output, never source
 src-tauri/wsl/
 
+# The v2 server executable and its runtime node_modules staged as Tauri resources
+# (scripts/stage-v2-server.mjs fills it) — build output, never source
+src-tauri/v2-server/*
+!src-tauri/v2-server/.gitkeep
+
 # Local browser-inspection leftovers (Playwright CLI sessions and their screenshots)
 .playwright-cli/
 output/
@@ -48,3 +53,36 @@ __pycache__/
 
 # Local memory-tool configuration.
 .texas-ranger.toml
+
+# Imported T3 Code tree (v2). node_modules/ and dist/ above already cover every
+# workspace; these are the remaining build and tool outputs upstream ignores.
+.bun/
+.turbo/
+*.tsbuildinfo
+apps/*/node_modules/
+apps/*/dist/
+apps/*/dist-exe/
+packages/*/node_modules/
+packages/*/dist/
+.vite-plus/
+apps/*/.vite-plus/
+packages/*/.vite-plus/
+.t3/
+.tanstack/
+.vitest-*
+__screenshots__/
+apps/web/.playwright/
+apps/web/playwright-report/
+squashfs-root/
+.vercel/
+.gstack/
+.plans/
+audits/
+.showcase/
+.alchemy/
+.pnpm-store/
+.idea/
+
+# vitest reporter output written beside the package under test
+.vitest/
+handoff/design/boards/.render.html

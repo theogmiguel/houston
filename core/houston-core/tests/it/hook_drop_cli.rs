@@ -139,6 +139,46 @@ fn a_hook_writes_a_drop_file_with_no_daemon_and_no_port() {
     assert_eq!(got[0].cwd.as_deref(), Some("/home/dev/proj"));
 }
 
+fn files_under(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).unwrap().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            out.extend(files_under(&path));
+        } else {
+            out.push(path);
+        }
+    }
+    out.sort();
+    out
+}
+
+// Provider configs outside Houston keep calling the helper until the v1 hook blocks are
+// removed from them, so outside a pane it must stay silent and leave no trace.
+#[test]
+fn hook_client_without_session_is_silent() {
+    let f = Fixture::new();
+    let before = files_under(&f.home);
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_tr-helper"));
+    cmd.arg("hook").arg("Stop").arg("--houston-managed");
+    cmd.env_clear();
+    cmd.env("HOME", &f.home);
+    cmd.env("HOUSTON_CHANNEL", CHANNEL);
+    cmd.current_dir(&f.project_dir);
+    let (code, stdout, stderr) = run_with_stdin(cmd, r#"{"session_id":"abc-123"}"#);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout, "", "a hook outside a pane must print nothing");
+    assert!(
+        drops(&f.drop_dir()).is_empty(),
+        "no drop without TR_SESSION"
+    );
+    assert_eq!(
+        files_under(&f.home),
+        before,
+        "no file written without TR_SESSION"
+    );
+}
+
 #[test]
 fn the_prompt_rides_the_prompt_event_only_and_only_its_head() {
     let f = Fixture::new();

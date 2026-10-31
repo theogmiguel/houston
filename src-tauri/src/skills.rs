@@ -258,7 +258,7 @@ async fn list_skills_under(home: &Path, project_dir: Option<&Path>) -> Vec<Skill
 
 #[tauri::command]
 pub async fn system_list_skills(project_dir: Option<String>) -> Result<Vec<Skill>, String> {
-    let home = houston_core::home_dir::home_dir()
+    let home = crate::sys::home_dir::home_dir()
         .ok_or_else(|| "system_list_skills: cannot resolve home directory".to_string())?;
     let project_dir = project_dir.map(PathBuf::from);
     Ok(list_skills_under(&home, project_dir.as_deref()).await)
@@ -417,7 +417,7 @@ pub async fn system_write_skill(
 ) -> WriteSkillResult {
     let project_dir = project_dir.map(PathBuf::from);
     write_skill_with_home(
-        houston_core::home_dir::home_dir(),
+        crate::sys::home_dir::home_dir(),
         &provider,
         &name,
         &content,
@@ -443,7 +443,7 @@ const NO_HOME_ERROR: &str = "cannot resolve a home directory: neither $HOME nor 
 
 #[tauri::command]
 pub async fn system_delete_skill(path: String) -> WriteSkillResult {
-    delete_skill_with_home(houston_core::home_dir::home_dir(), &path).await
+    delete_skill_with_home(crate::sys::home_dir::home_dir(), &path).await
 }
 
 async fn delete_skill_with_home(home: Option<PathBuf>, path: &str) -> WriteSkillResult {
@@ -688,7 +688,7 @@ pub async fn system_install_skill_url(
     project_dir: Option<String>,
     overwrite: bool,
 ) -> InstallSkillResult {
-    let Some(home) = houston_core::home_dir::home_dir() else {
+    let Some(home) = crate::sys::home_dir::home_dir() else {
         return InstallSkillResult::err(NO_HOME_ERROR.to_string());
     };
     let project_dir = project_dir.map(PathBuf::from);

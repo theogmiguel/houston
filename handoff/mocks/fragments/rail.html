@@ -1,0 +1,721 @@
+<!-- @style -->
+/* rail-shell: menus, popovers, rail states, first run, boot. Rail trees swap into the base rail from @script. */
+.rail-v[data-host] { flex: 0 0 0; min-height: 0; overflow: visible }
+.rail-v svg.i.sm { width: 13px; height: 13px }
+
+/* Menus */
+.rail-v .menu { width: 232px; max-height: calc(100vh - 16px); overflow-y: auto }
+.rail-v .menu.w200 { width: 200px } .rail-v .menu.w256 { width: 256px } .rail-v .menu.w280 { width: 280px }
+.menu .mi svg.i { color: var(--t3) }
+.menu .mi:hover svg.i, .menu .mi.on svg.i, .menu .mi.danger svg.i { color: inherit }
+.menu .mi.on { background: var(--accent); color: var(--on-accent) }
+.menu .mi.on kbd, .menu .mi.on .val { color: inherit; border-color: currentColor }
+.menu .mi:hover .val { color: inherit }
+.menu .mi.danger:hover { background: var(--stop); color: var(--rail) } /* rail ink on stop fill: 6.2:1 graphite, 4.7:1 paper */
+.menu .mi[disabled] { color: var(--t3); cursor: default } .menu .mi[disabled]:hover { background: none; color: var(--t3) }
+.menu .mi .val { margin-left: auto; color: var(--t3); font-size: 12px; display: inline-flex; align-items: center; gap: 4px; min-width: 0 }
+.menu .mi > span:not(.val):not(.ck) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.menu .mi.wrap { height: auto; min-height: 28px; padding: 6px 8px; align-items: flex-start }
+.menu .mi.wrap > span { white-space: normal }
+.menu .mi.sub { padding-left: 32px }
+.menu .ml { padding: 8px 8px 2px; color: var(--t3); font: 600 11px/14px var(--font) }
+.menu .ck { width: 14px; flex: none; display: grid; place-items: center }
+.menu .segc { display: flex; margin: 2px 3px 4px } .menu .segc button { flex: 1; padding: 0 4px }
+.menu .mi.back { color: var(--t2); font-weight: 600 }
+.menu .mi.reset { color: var(--accent-ink); font-weight: 500; padding-left: 32px }
+.menu .mi.reset:hover { color: var(--on-accent) }
+.rail-tip { position: fixed; z-index: 22; max-width: 240px; padding: 4px 8px; border-radius: var(--r-ctl); background: var(--raised); box-shadow: var(--shadow-float); color: var(--t1); font-size: 12px; line-height: 16px }
+.rail-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block }
+.rail-tag { height: 18px; display: inline-flex; align-items: center; gap: 5px; padding: 0 7px 0 6px; border-radius: 999px; background: var(--field); color: var(--t1); font: 500 11px/14px var(--font); white-space: nowrap }
+.rail-tag .rail-dot { width: 6px; height: 6px }
+.rail-field { height: 28px; display: flex; align-items: center; padding: 0 8px; border-radius: var(--r-ctl); border: 1px solid var(--line-strong); background: var(--canvas); color: var(--t1); min-width: 0 }
+.rail-field.focus { border-color: var(--accent-ink); box-shadow: 0 0 0 1px var(--accent-ink) }
+.rail-field .caret { width: 1px; height: 14px; background: var(--t1); margin-left: 1px }
+.rail-field.mono { font: 12px var(--mono) }
+.rail-sw { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; padding: 2px 8px 6px }
+.rail-sw i { width: 20px; height: 20px; border-radius: 50%; display: block; justify-self: center }
+.rail-sw i[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--raised), 0 0 0 4px var(--t1) }
+.rail-sw i.cust { background: conic-gradient(red, #ff0, #0f0, #0ff, #00f, #f0f, red) }
+.rail-pop-pad { padding: 0 8px 8px; display: flex; flex-direction: column; gap: 8px }
+.rail-pop-row { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px; border-radius: var(--r-ctl); color: var(--t1) }
+.rail-pop-row .acts { margin-left: auto; display: flex; gap: 2px; opacity: 0 } .rail-pop-row.hov .acts { opacity: 1 }
+.rail-pop-row.hov { background: var(--hover) }
+.rail-confirm { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--r-ctl); background: var(--warn-wash); border: 1px solid var(--warn-line); margin: 2px 0; flex-wrap: wrap }
+.rail-confirm span { flex: 1 1 100%; color: var(--t1) } .rail-confirm .btn { height: 24px; padding: 0 10px }
+.btn.danger { background: var(--stop); border-color: transparent; color: var(--rail); font-weight: 600 }
+.rail-warn { display: flex; align-items: center; gap: 6px; color: var(--warn); font-size: 12px }
+.rail-prompt { padding: 12px }
+.rail-prompt h3 { margin: 0 0 4px; font: 600 13px/18px var(--font) } .rail-prompt p { margin: 0; color: var(--t2); font-size: 12px; line-height: 16px }
+.rail-prompt .acts { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px }
+.rail-prompt .pv { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--t3); font-size: 12px }
+
+/* Rail additions: tree rows, hover actions, notes, pinned group, chips, foot rows */
+.rail [data-ctx] { background: var(--sel) }
+.rail .tools:has([aria-expanded="true"]), .rail.rail-tools .sect .tools { opacity: 1 }
+.rail .iconbtn[aria-expanded="true"] { background: var(--sel); color: var(--t1) }
+.rail .iconbtn:has(.rail-badge) { width: auto; min-width: 24px; padding: 0 5px; gap: 3px }
+.rail-badge { font: 600 11px/14px var(--font); color: var(--accent-ink); font-variant-numeric: tabular-nums }
+.rail-pinhead { display: flex; align-items: center; gap: 6px; height: 28px; padding: 6px 8px 0; color: var(--t3); font: 600 11px/14px var(--font) }
+.rail-pinhead .ct { font-weight: 500 }
+.rail .row .rail-pin { color: var(--t3); display: flex }
+.rail .row .rail-aux { display: none; color: var(--t3) } .rail .row.hov .rail-aux, .rail .row:hover .rail-aux { display: grid }
+.rail .row.hov .ct, .rail .row:hover .ct { display: none }
+.rail .row.hov { background: var(--hover) }
+.rail .gcap { position: relative }
+.rail .gcap .b { min-width: 0; flex: 0 1 auto }
+.rail .gcap .w { font: 400 11px/14px var(--font); color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto }
+.rail .gcap .acts { display: none; margin-left: auto; align-items: center; gap: 4px; color: var(--t3); flex: none }
+.rail .gcap:hover .acts, .rail .gcap.hov .acts, .rail .gcap:focus-within .acts { display: flex }
+.rail .gcap.hov { color: var(--t1) }
+.rail .gcap .acts .iconbtn { width: 20px; height: 20px }
+.rail .gcap .acts .pr { font: 400 11px var(--mono); color: var(--t2) }
+.rail .gcap .acts .tg { display: inline-flex; align-items: center; gap: 2px; font: 500 11px var(--font) }
+.rail .gcap .jn { margin-left: auto } .rail .gcap .jn kbd { border: 0; padding: 0 }
+.rail .gcap.dragged, .rail .row.dragged { opacity: .5 }
+.rail-chiprow { display: flex; align-items: center; gap: 4px; padding: 0 8px 2px 29px; min-height: 22px; flex-wrap: wrap }
+.rail-note { display: flex; align-items: center; gap: 6px; height: 18px; padding: 0 8px 0 29px; color: var(--t3); font-size: 11px; line-height: 14px }
+.rail-note span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.rail-note time { flex: none; font-variant-numeric: tabular-nums } .rail-note .x { margin-left: auto; display: none }
+.rail-note:hover .x { display: grid } .rail-note .x.on { display: grid }
+.rail-note .x { width: 18px; height: 18px }
+.rail-drop { height: 2px; margin: -1px 8px; border-radius: 1px; background: var(--accent-ink) }
+.rail-msg { padding: 6px 8px 6px 29px; color: var(--t3); font-size: 12px; line-height: 16px }
+.rail-chipbar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; padding: 2px 8px 6px; color: var(--t3); font-size: 12px }
+.rail-chipbar .link { margin-left: auto; font-size: 12px }
+.rail-upd { height: 28px; margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: var(--r-ctl); color: var(--t2); font-size: 12px; font-weight: 500; white-space: nowrap }
+.rail-upd:hover { background: var(--hover); color: var(--t1) }
+.rail-upd.avail { color: var(--accent-ink) }
+.rail-upd.fail { color: var(--t1) }
+.rail .search.field { color: var(--t1) } .rail .search.field kbd { margin-left: auto }
+.rail-srow { display: flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 5px 8px; border-radius: var(--r-ctl); width: 100%; text-align: left; color: var(--t1) }
+.rail-srow small { color: var(--t3); font-size: 12px; line-height: 16px }
+.rail-edge { position: fixed; top: 0; bottom: 0; width: 2px; z-index: 6; background: var(--line-strong); pointer-events: none }
+.rail-edge.drag { background: var(--accent-ink) }
+.rail .rename-in { flex: 1; min-width: 0; height: 22px; margin: 0 -4px; padding: 0 4px; border-radius: 4px; border: 1px solid var(--accent-ink); background: var(--canvas); color: var(--t1); font: inherit; font-weight: 600; display: flex; align-items: center; box-shadow: 0 0 0 1px var(--accent-ink) }
+.rail .rename-in.g { font: 600 11px/14px var(--font); height: 20px }
+.rail .rename-in .caret { width: 1px; height: 13px; background: var(--t1); margin-left: 1px }
+.rail-hint { padding: 0 8px 0 29px; color: var(--t3); font-size: 11px; line-height: 14px }
+
+/* Hover card */
+.rail-hc { position: fixed; z-index: 22; width: 300px; padding: 12px; border-radius: var(--r-group); background: var(--raised); box-shadow: var(--shadow-float); display: grid; gap: 8px; font-size: 12px; line-height: 16px }
+.rail-hc b { font: 600 13px/18px var(--font) }
+.rail-hc .ln { display: flex; align-items: center; gap: 6px; color: var(--t2); min-width: 0 }
+.rail-hc .ln svg { color: var(--t3) }
+.rail-hc .pr { border-top: 1px solid var(--line); padding-top: 8px; display: flex; gap: 6px; color: var(--t2) }
+
+/* Notices and floating banner */
+.rail-notices { position: fixed; top: 48px; left: 240px; right: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; z-index: 19 }
+.rail-notice { pointer-events: auto; width: 520px; max-width: calc(100% - 32px); display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 6px 6px 6px 12px; border-radius: var(--r-group); background: var(--raised); box-shadow: var(--shadow-float) }
+.rail-notice .tt { flex: 1; min-width: 0; font-weight: 500 }
+.rail-notice svg.i:first-child { color: var(--t3) } .rail-notice.warn svg.i:first-child { color: var(--warn) }
+.rail-flb { position: fixed; top: 48px; left: 240px; right: 0; display: flex; justify-content: center; pointer-events: none; z-index: 19 }
+.rail-flb .banner { pointer-events: auto; margin: 0; max-width: 480px; background: linear-gradient(var(--warn-wash), var(--warn-wash)), var(--raised); box-shadow: var(--shadow-float); align-items: center }
+.rail-flb .banner .bt { flex-direction: row; gap: 4px; flex-wrap: wrap; font-weight: 500 }
+
+/* Dialogs */
+.rail-dlg { width: 400px; max-width: calc(100% - 32px); background: var(--raised); border-radius: var(--r-dialog); box-shadow: var(--shadow-float); padding: 20px; display: flex; flex-direction: column; gap: 8px }
+.rail-dlg h2 { margin: 0; font: 600 13px/18px var(--font) } .rail-dlg p { margin: 0; color: var(--t2) }
+.rail-dlg .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px }
+.rail-scrim { align-items: center; padding-top: 0 }
+
+/* Window controls */
+.rail-wc { display: flex; align-items: center; gap: 2px; margin-left: 6px }
+.rail-wc button { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; color: var(--t2) }
+.rail-wc button:hover, .rail-wc button.hov { background: var(--hover); color: var(--t1) }
+.rail-wc button.close.hov { background: var(--stop); color: var(--rail) }
+.rail-wc svg { width: 10px; height: 10px }
+.rail-strip { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 14px; background: var(--canvas); border-bottom: 1px solid var(--line); color: var(--t3) }
+.rail-strip .crumb { color: var(--t1); font-weight: 600 } .rail-strip .sp { flex: 1 }
+body.rail-wc-view .mockbar { top: auto; bottom: 8px }
+
+/* Empty states, first run, boot */
+.rail-tiles { display: flex; justify-content: center }
+.rail-tile { width: 48px; height: 48px; border-radius: var(--r-group); border: 1px solid var(--line); background: var(--card); display: grid; place-items: center; color: var(--t2) }
+.rail-tile svg.i { width: 22px; height: 22px }
+.rail-steps { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--t3) }
+.rail-steps .ln { width: 28px; height: 1px; background: var(--line-strong) }
+.rail-steps .s { display: inline-flex; align-items: center; gap: 6px }
+.rail-steps .s[aria-current="step"] { color: var(--t1); font-weight: 600 }
+.rail-steps .n { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line-strong); display: grid; place-items: center; font-size: 11px; font-variant-numeric: tabular-nums }
+.rail-steps .s[aria-current="step"] .n { background: var(--accent); border-color: transparent; color: var(--on-accent) }
+.rail-steps .s.done .n { color: var(--t2) }
+.rail-fr { height: 100%; display: flex; align-items: center; justify-content: center; padding: 24px; overflow: auto }
+.rail-fr .col { width: 100%; max-width: 560px; display: flex; flex-direction: column; align-items: center; gap: 20px; text-align: center }
+.rail-fr h1 { margin: 0; font: 500 34px/40px var(--serif); letter-spacing: -.01em; text-wrap: balance }
+.rail-fr p.lead { margin: 0; color: var(--t2); max-width: 470px; text-wrap: pretty }
+.rail-fr .box { width: 100%; text-align: left }
+.rail-fr .note { color: var(--t3); font-size: 12px; line-height: 16px; max-width: 470px }
+.rail-fr .foot2 { width: 100%; display: flex; align-items: center; gap: 8px; color: var(--t3); font-size: 12px }
+.rail-fr .foot2 .sp { flex: 1 } .rail-fr .foot2 .why { max-width: 180px; text-align: right; color: var(--t2) }
+.rail-hk { display: grid; grid-template-columns: 20px auto 1fr auto 104px; align-items: center; gap: 10px; min-height: 44px; padding: 8px 14px; border-top: 1px solid var(--line) }
+.rail-hk:first-child { border-top: 0 }
+.rail-hk .nm { font-weight: 500 } .rail-hk .vs { font: 12px var(--mono); color: var(--t3) }
+.rail-hk .stt { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--t3); white-space: nowrap }
+.rail-hk .stt.ok { color: var(--ok) }
+.rail-hk .act { display: flex; justify-content: flex-end; color: var(--t3) }
+.rail-hk .btn { height: 24px; padding: 0 10px }
+.rail-hk .err { grid-column: 1 / -1; color: var(--stop); font-size: 12px; padding-left: 30px }
+.rail-hk.off .mark { opacity: .5 }
+.btn[disabled] { opacity: .45; cursor: default } .btn[disabled]:hover { background: var(--field) } .btn.pri[disabled]:hover { filter: none }
+.rail-spin { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--accent-ink); border-right-color: transparent; animation: spin .9s linear infinite; display: inline-block }
+.rail-ref { color: var(--stop); font-size: 12px; line-height: 16px; text-align: center }
+.rail-hints { position: absolute; left: 0; right: 0; bottom: 20px; display: flex; justify-content: center; gap: 16px; color: var(--t3); font-size: 12px }
+.rail-hints.off { flex-direction: column; align-items: center; gap: 4px }
+.rail-hints kbd { margin-right: 6px }
+.rail-boot { position: fixed; inset: 0; z-index: 25; background: var(--canvas); display: grid; grid-template-columns: 240px 1fr; grid-template-rows: 40px 1fr }
+.rail-boot .r { grid-row: 1 / 3; background: var(--rail); border-right: 1px solid var(--line); padding: 8px } .rail-boot .r .hd { height: 36px; display: flex; align-items: center; padding: 0 6px }
+.rail-boot .m { margin: 0 6px 6px; border: 1px solid var(--line); border-radius: var(--r-group); background: var(--term) }
+.rail-fail { position: fixed; inset: 0; z-index: 25; background: var(--canvas); display: flex; flex-direction: column }
+.rail-fail .drag { height: 40px; flex: none }
+.rail-fail .in { flex: 1; display: grid; place-items: center; padding: 24px }
+.rail-fail .col { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 440px; text-align: center }
+.rail-fail .eb { color: var(--t3); font: 600 11px/14px var(--font) }
+.rail-fail h1 { margin: 0; font: 650 20px/26px var(--font); letter-spacing: -.015em }
+.rail-fail p { margin: 0; color: var(--t2); text-wrap: pretty }
+.rail-fail .acts { display: flex; gap: 8px; padding-top: 8px }
+
+.rail-body > *, .rail .tree > * { flex-shrink: 0 }
+.rail .gcap .n { flex: 0 2 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis }
+.rail-v .menu.w256 { width: 256px }
+
+<!-- @views -->
+<!-- map: rail_states -> rail-tree-states -->
+<!-- map: rail_states-paper -> rail-tree-states -->
+<!-- map: rail_plain-selected -> rail-tree-states -->
+<!-- map: rail_workspaces-multi -> rail-tree-states -->
+<!-- map: rail_finished-unseen -> rail-tree-states -->
+<!-- map: rail_agent-focus -> rail-tree-states -->
+<!-- map: rail_card-modes -> rail-tree-states -->
+<!-- map: rail_card-modes-expanded -> rail-tree-states -->
+<!-- map: rail_card-modes-condensed -> rail-tree-states -->
+<!-- map: rail_card-notes -> rail-tree-states -->
+<!-- map: rail_card-modes-hover -> rail-tree-hover -->
+<!-- map: rail_card-modes-tags-dots -> rail-tags-display -->
+<!-- map: rail_card-modes-tags-chips -> rail-tags-display -->
+<!-- map: rail_card-modes-tag-popover -> rail-tags-display -->
+<!-- map: rail_grid-row-graphite-200 -> rail-width-220 -->
+<!-- map: rail_grid-row-paper-200 -> rail-width-220 -->
+<!-- map: rail_grid-row-graphite-240 -> rail-width-240 -->
+<!-- map: rail_grid-row-paper-240 -> rail-width-240 -->
+<!-- map: rail_grid-row-graphite-420 -> rail-width-420 -->
+<!-- map: rail_grid-row-paper-420 -> rail-width-420 -->
+<!-- map: rail_card-modes-hover -> rail-hover-card -->
+<!-- map: rail_empty-workspace -> rail-workspace-empty -->
+<!-- map: shell_workspace-empty -> rail-workspace-empty -->
+<!-- map: rail_empty-filtered -> rail-empty-filtered -->
+<!-- map: rail_tag-filter-active -> rail-tag-filter -->
+<!-- map: rail_sidebar-tag-filter -> rail-tag-filter -->
+<!-- map: rail_card-modes-tags-filtered -> rail-tag-filter -->
+<!-- map: rail_add-menu -> rail-add-menu -->
+<!-- map: rail_ws-menu -> rail-ws-menu -->
+<!-- map: rail_ws-menu-pinned -> rail-ws-menu-pinned -->
+<!-- map: rail_ws-menu-missing -> rail-ws-menu-missing -->
+<!-- map: shell_open-in-submenu -> rail-open-in -->
+<!-- map: rail_grid-menu -> rail-grid-menu -->
+<!-- map: rail_sidebar-grid-menu -> rail-grid-menu -->
+<!-- map: rail_sidebar-grid-tags -> rail-grid-menu-tags -->
+<!-- map: rail_sidebar-grid-close -> rail-grid-close -->
+<!-- map: rail_grid-rename -> rail-grid-rename -->
+<!-- map: rail_renaming-expanded -> rail-ws-rename -->
+<!-- map: rail_renaming -> rail-ws-rename-plain -->
+<!-- map: rail_nav-menu -> rail-nav-menu -->
+<!-- map: rail_sidebar-options -> rail-options -->
+<!-- map: rail_card-modes-options -> rail-options -->
+<!-- map: rail_card-modes-options-sort -> rail-options-sort -->
+<!-- map: rail_card-modes-options-display -> rail-options-display -->
+<!-- map: rail_tag-menu -> rail-tag-pick -->
+<!-- map: rail_tag-menu-empty -> rail-tag-pick-empty -->
+<!-- map: rail_drag -> rail-drag -->
+<!-- map: rail_undo-notice -> rail-undo -->
+<!-- map: rail_states -> rail-update-available -->
+<!-- map: rail_update-running -> rail-update-running -->
+<!-- map: rail_update-failed -> rail-update-failed -->
+<!-- map: rail_resize-handle -> rail-resize-hover -->
+<!-- map: rail_resize-handle-drag -> rail-resize-drag -->
+<!-- map: rail_settings-hit -> rail-settings-hit -->
+<!-- map: rail_settings-nomatch -> rail-settings-none -->
+<!-- map: shell_add-pane-menu -> rail-shell-add-pane -->
+<!-- map: shell_add-pane-profiles -> rail-shell-add-pane-profiles -->
+<!-- map: shell_add-pane-disabled -> rail-shell-add-pane-disabled -->
+<!-- map: shell_window-controls-resize -> rail-shell-window-controls -->
+<!-- map: shell_titlebar-narrow -> rail-shell-titlebar-narrow -->
+<!-- map: shell_rail-offline -> rail-shell-rail-offline -->
+<!-- map: banner_reconnect -> rail-banner-reconnect -->
+<!-- map: banner_reconnect-error -> rail-banner-reconnect-error -->
+<!-- map: shell_workspaces-empty -> rail-shell-workspaces-empty -->
+<!-- map: rail_empty -> rail-shell-workspaces-empty -->
+<!-- map: shell_workspaces-empty-pending -> rail-shell-workspaces-empty-pending -->
+<!-- map: shell_workspaces-empty-refused -> rail-shell-workspaces-empty-refused -->
+<!-- map: shell_workspaces-empty-shortcuts-off -> rail-shell-workspaces-empty-shortcuts-off -->
+<!-- map: firstrun_hooks -> rail-firstrun-hooks -->
+<!-- map: firstrun_hooks-no-cli -> rail-firstrun-hooks-no-cli -->
+<!-- map: firstrun_orchestration -> rail-firstrun-orchestration -->
+<!-- map: firstrun_workspace -> rail-firstrun-workspace -->
+<!-- map: palette_graphite -> rail-palette -->
+<!-- map: palette_paper -> rail-palette -->
+<!-- map: palette_requests -> rail-palette-requests -->
+<!-- map: boot_loading -> rail-boot-loading -->
+<!-- map: boot_failure -> rail-boot-failure -->
+<section class="view rail-v" data-view="rail-tree-states" data-group="Rail and shell" data-label="Rail · pinned, notes, unseen" data-crumb="houston / Hook ordering" data-host="grid" data-rail="tree-states" hidden>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="rail-pencil" viewBox="0 0 24 24"><path d="M4 20v-3.6L15.8 4.6a2 2 0 0 1 2.8 0l.8.8a2 2 0 0 1 0 2.8L7.6 20H4Z"/><path d="m13.5 7 3.5 3.5"/></symbol>
+  <symbol id="rail-pin" viewBox="0 0 24 24"><path d="M9 4h6l-1 6 3 3v1.5H7V13l3-3Z"/><path d="M12 14.5V21"/></symbol>
+  <symbol id="rail-tag" viewBox="0 0 24 24"><path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7a1 1 0 0 1 .7.3l7.6 7.6a1 1 0 0 1 0 1.4l-7.3 7.3a1 1 0 0 1-1.4 0L3.8 12.9a1 1 0 0 1-.3-.7Z"/><circle cx="8" cy="8" r="1.2"/></symbol>
+  <symbol id="rail-eyeoff" viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M10.6 6.2A9.6 9.6 0 0 1 12 6c5 0 8.5 4.2 9.5 6a12 12 0 0 1-2.6 3.2M6.4 7.6A12.6 12.6 0 0 0 2.5 12C3.5 13.8 7 18 12 18c1.3 0 2.5-.3 3.6-.8"/><path d="M9.9 10a3 3 0 0 0 4.1 4.1"/></symbol>
+  <symbol id="rail-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="rail-chevr" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="rail-code" viewBox="0 0 24 24"><path d="m8 8-4.5 4L8 16M16 8l4.5 4L16 16M13.5 5l-3 14"/></symbol>
+  <symbol id="rail-import" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19.5h14"/></symbol>
+  <symbol id="rail-alert" viewBox="0 0 24 24"><path d="M12 4 2.8 19.5h18.4Z"/><path d="M12 10v4.5M12 17v.3"/></symbol>
+  <symbol id="rail-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+  <symbol id="rail-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9c-2.6-2.6-3.8-5.6-3.8-9S9.4 5.6 12 3Z"/></symbol>
+  <symbol id="rail-fork" viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><circle cx="12" cy="6" r="2.5"/><path d="M12 8.5v3M12 11.5c-4 0-6 1.5-6 4M12 11.5c4 0 6 1.5 6 4"/></symbol>
+  <symbol id="rail-folderopen" viewBox="0 0 24 24"><path d="M3.5 18.5v-11a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v1.5"/><path d="m3.5 18.5 2.5-7h15.5l-2.5 7Z"/></symbol>
+  <symbol id="rail-pencil-sm" viewBox="0 0 24 24"><path d="M4 20v-3.6L15.8 4.6a2 2 0 0 1 2.8 0l.8.8a2 2 0 0 1 0 2.8L7.6 20H4Z"/></symbol>
+</svg>
+</section>
+<section class="view rail-v" data-view="rail-tree-hover" data-group="Rail and shell" data-label="Rail · hovered caption and row" data-crumb="houston / Hook ordering" data-host="grid" data-rail="hover" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-tree-alt" data-group="Rail and shell" data-label="Rail · Alt held, jump numbers" data-crumb="houston / Hook ordering" data-host="grid" data-rail="alt" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-tags-display" data-group="Rail and shell" data-label="Rail · tag display on captions" data-crumb="houston / Hook ordering" data-host="grid" data-rail="tags-display" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-width-220" data-group="Rail and shell" data-label="Rail · narrowest (220)" data-crumb="houston / Hook ordering" data-host="grid" data-rail="long" data-railw="220" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-width-240" data-group="Rail and shell" data-label="Rail · default (240)" data-crumb="houston / Hook ordering" data-host="grid" data-rail="long" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-width-420" data-group="Rail and shell" data-label="Rail · wide (420)" data-crumb="houston / Hook ordering" data-host="grid" data-rail="long" data-railw="420" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-hover-card" data-group="Rail and shell" data-label="Rail · hover card" data-crumb="houston / Hook ordering" data-host="grid" hidden>
+<div class="rail-hc" role="tooltip" data-at="g=Hook ordering|right|0|4">
+  <b>Hook ordering</b>
+  <div style="display:grid;gap:4px">
+    <div class="ln"><svg class="i sm"><use href="#i-folder"/></svg>Houston</div>
+    <div class="ln"><svg class="i sm"><use href="#i-term"/></svg>Local</div>
+    <div class="ln"><svg class="i sm"><use href="#i-branch"/></svg><span class="mono">main</span></div>
+    <div class="ln"><span class="mark claude" data-mark="claude"></span><span>opus-5.5</span><span style="color:var(--t3)">+2 agents</span></div>
+    <div class="ln"><svg class="i sm"><use href="#rail-tag"/></svg><span class="rail-tag"><span class="rail-dot" style="background:#5c8fff"></span>ui</span><span class="rail-tag"><span class="rail-dot" style="background:#f59e0b"></span>perf</span></div>
+    <div class="ln warnt"><svg class="i sm"><use href="#rail-alert"/></svg>Waiting for your answer</div>
+  </div>
+  <div class="pr"><svg class="i sm"><use href="#i-pr"/></svg><span class="mono">#95</span><span>Inspector polish</span></div>
+</div>
+</section>
+<section class="view rail-v" data-view="rail-workspace-empty" data-group="Rail and shell" data-label="Rail · workspace with no grids" data-crumb="acme-core" data-rail="empty-ws" hidden>
+<div class="empty"><div class="in">
+  <h1>Nothing running here yet</h1>
+  <p>Open a terminal or an installed agent inside this workspace.</p>
+  <div class="launch"><button><span class="mark claude" data-mark="claude"></span><span><b style="font-weight:600">Claude Code</b></span></button><button><span class="mark codex" data-mark="codex"></span><span><b style="font-weight:600">Codex</b><br><small class="warnt">No status: hooks off</small></span></button><button><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span><b style="font-weight:600">OpenCode</b></span></button><button><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span><b style="font-weight:600">Terminal</b><br><small class="">zsh</small></span></button><button><span class="mark"><svg class="i sm"><use href="#rail-globe"/></svg></span><span><b style="font-weight:600">Browser</b></span></button></div>
+  <div class="actions">Project actions<button class="btn ghost"><svg class="i sm"><use href="#i-play"/></svg>test</button><button class="btn ghost"><svg class="i sm"><use href="#i-play"/></svg>dev</button><button class="btn ghost"><svg class="i sm"><use href="#i-plus"/></svg>Add action</button></div>
+</div></div>
+</section>
+<section class="view rail-v" data-view="rail-empty-filtered" data-group="Rail and shell" data-label="Rail · tag filter hides every grid" data-crumb="houston / Hook ordering" data-host="grid" data-rail="empty-filtered" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-tag-filter" data-group="Rail and shell" data-label="Rail · tag filter active" data-crumb="houston / Hook ordering" data-host="grid" data-rail="tag-filter" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-add-menu" data-group="Rail and shell" data-label="Rail · add workspace menu" data-crumb="houston / Hook ordering" data-host="grid" data-rail="add" hidden>
+<div class="menu w200" id="m-add" role="menu" aria-label="Add workspace" data-at="tool=Add workspace|belowr"><button class="mi " role="menuitem"><svg class="i"><use href="#i-folder"/></svg><span>Local folder…</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-server"/></svg><span>Connect via SSH…</span></button></div>
+</section>
+<section class="view rail-v" data-view="rail-ws-menu" data-group="Rail and shell" data-label="Rail · workspace menu" data-crumb="houston / Hook ordering" data-host="grid" data-rail="ws" hidden>
+<div class="menu w256" id="m-ws" role="menu" aria-label="Houston actions" data-at="ws=Houston|pointer"><div class="mh"><b style="font-weight:600">Houston</b><small>~/ProjetosPessoais/Houston</small></div><hr><button class="mi " role="menuitem"><svg class="i"><use href="#i-plus"/></svg><span>New grid</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-pencil"/></svg><span>Rename workspace</span><kbd>F2</kbd></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-pin"/></svg><span>Pin workspace</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-folder"/></svg><span>Reveal in Files</span></button><button class="mi " role="menuitem" data-k="openin"><svg class="i"><use href="#rail-code"/></svg><span>Open workspace in</span><span class="val"><svg class="i sm"><use href="#rail-chevr"/></svg></span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-handoff"/></svg><span>Export transfer…</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-import"/></svg><span>Import transfer…</span></button><hr><button class="mi danger" role="menuitem"><svg class="i"><use href="#i-x"/></svg><span>Remove workspace</span><kbd>Ctrl Shift W</kbd></button></div>
+</section>
+<section class="view rail-v" data-view="rail-ws-menu-pinned" data-group="Rail and shell" data-label="Rail · pinned workspace menu" data-crumb="houston / Hook ordering" data-host="grid" data-rail="ws-pinned" hidden>
+<div class="menu w256" id="m-ws" role="menu" aria-label="envio_posicoes actions" data-at="ws=envio_posicoes|pointer"><div class="mh"><b style="font-weight:600">envio_posicoes</b><small>~/ProjetosPessoais/envio_posicoes</small></div><hr><button class="mi " role="menuitem"><svg class="i"><use href="#i-plus"/></svg><span>New grid</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-pencil"/></svg><span>Rename workspace</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-pin"/></svg><span>Unpin workspace</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-folder"/></svg><span>Reveal in Files</span></button><button class="mi " role="menuitem" data-k="openin"><svg class="i"><use href="#rail-code"/></svg><span>Open workspace in</span><span class="val"><svg class="i sm"><use href="#rail-chevr"/></svg></span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-handoff"/></svg><span>Export transfer…</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-import"/></svg><span>Import transfer…</span></button><hr><button class="mi danger" role="menuitem"><svg class="i"><use href="#i-x"/></svg><span>Remove workspace</span></button></div>
+</section>
+<section class="view rail-v" data-view="rail-ws-menu-missing" data-group="Rail and shell" data-label="Rail · workspace menu, folder missing" data-crumb="houston / Hook ordering" data-host="grid" data-rail="ws-missing" hidden>
+<div class="menu w256" id="m-ws" role="menu" aria-label="theo actions" data-at="ws=theo|pointer"><div class="mh"><b style="font-weight:600">theo</b><small>~/theo</small></div><hr><button class="mi " role="menuitem"><svg class="i"><use href="#i-plus"/></svg><span>New grid</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-pencil"/></svg><span>Rename workspace</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-pin"/></svg><span>Pin workspace</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-folderopen"/></svg><span>Locate moved folder…</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-folder"/></svg><span>Reveal in Files</span></button><button class="mi " role="menuitem" data-k="openin"><svg class="i"><use href="#rail-code"/></svg><span>Open workspace in</span><span class="val"><svg class="i sm"><use href="#rail-chevr"/></svg></span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-handoff"/></svg><span>Export transfer…</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-import"/></svg><span>Import transfer…</span></button><hr><button class="mi danger" role="menuitem"><svg class="i"><use href="#i-x"/></svg><span>Remove workspace</span></button></div>
+</section>
+<section class="view rail-v" data-view="rail-open-in" data-group="Rail and shell" data-label="Rail · open in submenu" data-crumb="houston / Hook ordering" data-host="grid" data-rail="ws" hidden>
+<div class="menu w256" id="m-ws" role="menu" aria-label="Houston actions" data-at="ws=Houston|pointer"><div class="mh"><b style="font-weight:600">Houston</b><small>~/ProjetosPessoais/Houston</small></div><hr><button class="mi " role="menuitem"><svg class="i"><use href="#i-plus"/></svg><span>New grid</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-pencil"/></svg><span>Rename workspace</span><kbd>F2</kbd></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-pin"/></svg><span>Pin workspace</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-folder"/></svg><span>Reveal in Files</span></button><button class="mi on" role="menuitem" data-k="openin"><svg class="i"><use href="#rail-code"/></svg><span>Open workspace in</span><span class="val"><svg class="i sm"><use href="#rail-chevr"/></svg></span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-handoff"/></svg><span>Export transfer…</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-import"/></svg><span>Import transfer…</span></button><hr><button class="mi danger" role="menuitem"><svg class="i"><use href="#i-x"/></svg><span>Remove workspace</span><kbd>Ctrl Shift W</kbd></button></div><div class="menu w200" id="m-sub" role="menu" aria-label="Open workspace in" data-at="css=#m-ws [data-k=openin]|right"><button class="mi " role="menuitem"><span>Cursor</span></button><button class="mi " role="menuitem"><span>VS Code</span></button><button class="mi " role="menuitem"><span>Zed</span></button></div>
+</section>
+<section class="view rail-v" data-view="rail-open-in-empty" data-group="Rail and shell" data-label="Rail · open in, no editor found" data-crumb="houston / Hook ordering" data-host="grid" data-rail="ws" hidden>
+<div class="menu w256" id="m-ws" role="menu" aria-label="Houston actions" data-at="ws=Houston|pointer"><div class="mh"><b style="font-weight:600">Houston</b><small>~/ProjetosPessoais/Houston</small></div><hr><button class="mi " role="menuitem"><svg class="i"><use href="#i-plus"/></svg><span>New grid</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-pencil"/></svg><span>Rename workspace</span><kbd>F2</kbd></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-pin"/></svg><span>Pin workspace</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-folder"/></svg><span>Reveal in Files</span></button><button class="mi on" role="menuitem" data-k="openin"><svg class="i"><use href="#rail-code"/></svg><span>Open workspace in</span><span class="val"><svg class="i sm"><use href="#rail-chevr"/></svg></span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-handoff"/></svg><span>Export transfer…</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-import"/></svg><span>Import transfer…</span></button><hr><button class="mi danger" role="menuitem"><svg class="i"><use href="#i-x"/></svg><span>Remove workspace</span><kbd>Ctrl Shift W</kbd></button></div><div class="menu w200" id="m-sub" role="menu" aria-label="Open workspace in" data-at="css=#m-ws [data-k=openin]|right"><button class="mi wrap" role="menuitem" disabled><span>No editor found on PATH — code, code-insiders, codium, cursor, zed, windsurf</span></button></div>
+</section>
+<section class="view rail-v" data-view="rail-grid-menu" data-group="Rail and shell" data-label="Rail · grid menu" data-crumb="houston / Hook ordering" data-host="grid" data-rail="grid" hidden>
+<div class="menu " id="m-grid" role="menu" aria-label="Hook ordering actions" data-at="g=Hook ordering|pointer"><button class="mi " role="menuitem"><svg class="i"><use href="#i-grid"/></svg><span>Open</span><kbd>Alt 2</kbd></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-pencil"/></svg><span>Rename</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-pencil"/></svg><span>Reset to automatic name</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-pin"/></svg><span>Pin to top</span></button><hr><button class="mi " role="menuitem" data-k="tags"><svg class="i"><use href="#rail-tag"/></svg><span>Tags</span><span class="val">ui, perf<svg class="i sm"><use href="#rail-chevr"/></svg></span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-branch"/></svg><span>Copy branch name</span></button><hr><button class="mi " role="menuitem"><svg class="i"><use href="#i-pr"/></svg><span>Open pull request #95</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-folder"/></svg><span>Reveal in file manager</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-code"/></svg><span>Open in</span><span class="val"><svg class="i sm"><use href="#rail-chevr"/></svg></span></button><hr><button class="mi danger" role="menuitem"><svg class="i"><use href="#i-x"/></svg><span>Close grid and its 3 agents…</span></button></div>
+</section>
+<section class="view rail-v" data-view="rail-grid-menu-tags" data-group="Rail and shell" data-label="Rail · grid menu, tag picker" data-crumb="houston / Hook ordering" data-host="grid" data-rail="grid" hidden>
+<div class="menu " id="m-grid" role="menu" aria-label="Hook ordering actions" data-at="g=Hook ordering|pointer"><button class="mi " role="menuitem"><svg class="i"><use href="#i-grid"/></svg><span>Open</span><kbd>Alt 2</kbd></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-pencil"/></svg><span>Rename</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-pencil"/></svg><span>Reset to automatic name</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-pin"/></svg><span>Pin to top</span></button><hr><button class="mi on" role="menuitem" data-k="tags"><svg class="i"><use href="#rail-tag"/></svg><span>Tags</span><span class="val">ui, perf<svg class="i sm"><use href="#rail-chevr"/></svg></span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-branch"/></svg><span>Copy branch name</span></button><hr><button class="mi " role="menuitem"><svg class="i"><use href="#i-pr"/></svg><span>Open pull request #95</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-folder"/></svg><span>Reveal in file manager</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#rail-code"/></svg><span>Open in</span><span class="val"><svg class="i sm"><use href="#rail-chevr"/></svg></span></button><hr><button class="mi danger" role="menuitem"><svg class="i"><use href="#i-x"/></svg><span>Close grid and its 3 agents…</span></button></div><div class="menu w200" id="m-tags" role="menu" aria-label="Tags" data-at="css=#m-grid [data-k=tags]|right"><button class="mi" role="menuitemcheckbox" aria-checked="true"><span class="rail-dot" style="background:#5c8fff"></span><span>ui</span><span class="val"><svg class="i sm"><use href="#rail-check"/></svg></span></button><button class="mi" role="menuitemcheckbox" aria-checked="true"><span class="rail-dot" style="background:#f59e0b"></span><span>perf</span><span class="val"><svg class="i sm"><use href="#rail-check"/></svg></span></button><button class="mi" role="menuitemcheckbox" aria-checked="false"><span class="rail-dot" style="background:#4ade80"></span><span>backend</span><span class="val"></span></button><button class="mi" role="menuitemcheckbox" aria-checked="false"><span class="rail-dot" style="background:#c084fc"></span><span>release</span><span class="val"></span></button><button class="mi" role="menuitemcheckbox" aria-checked="false"><span class="rail-dot" style="background:#f472b6"></span><span>api</span><span class="val"></span></button><hr><button class="mi " role="menuitem"><svg class="i"><use href="#i-plus"/></svg><span>New tag…</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-gear"/></svg><span>Manage tags…</span></button></div>
+</section>
+<section class="view rail-v" data-view="rail-grid-close" data-group="Rail and shell" data-label="Rail · close grid confirmation" data-crumb="houston / Hook ordering" data-host="grid" hidden>
+<div class="scrim rail-scrim" style="position:fixed"><div class="rail-dlg" role="alertdialog" aria-label="Close Hook ordering?"><h2>Close Hook ordering?</h2><p>Closing Hook ordering ends its 3 agents and their 2 child agents.</p><div class="acts"><button class="btn">Cancel</button><button class="btn danger">Close grid</button></div></div></div>
+</section>
+<section class="view rail-v" data-view="rail-grid-rename" data-group="Rail and shell" data-label="Rail · renaming a grid" data-crumb="houston / Hook ordering" data-host="grid" data-rail="grid-rename" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-ws-rename" data-group="Rail and shell" data-label="Rail · renaming a workspace" data-crumb="houston / Hook ordering" data-host="grid" data-rail="ws-rename" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-ws-rename-plain" data-group="Rail and shell" data-label="Rail · renaming a workspace, no grids" data-crumb="houston / Hook ordering" data-host="grid" data-rail="ws-rename-plain" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-nav-menu" data-group="Rail and shell" data-label="Rail · nav row menu" data-crumb="houston / Hook ordering" data-host="grid" data-rail="nav" hidden>
+<div class="menu w200" id="m-nav" role="menu" aria-label="Tasks actions" data-at="nav=Tasks|pointer"><div class="mh"><b style="font-weight:600">Tasks</b><small style="font:11px var(--font)">Sidebar</small></div><hr><button class="mi " role="menuitem"><svg class="i"><use href="#rail-eyeoff"/></svg><span>Hide from sidebar</span></button></div>
+</section>
+<section class="view rail-v" data-view="rail-options" data-group="Rail and shell" data-label="Rail · sidebar options" data-crumb="houston / Hook ordering" data-host="grid" data-rail="options" hidden>
+<div class="menu w256" id="m-opt" role="menu" aria-label="Sidebar options" data-at="tool=Filter|railr"><div class="ml">Group by</div><span class="segc"><button aria-pressed="false">None</button><button aria-pressed="false">Status</button><button aria-pressed="false">PR</button><button aria-pressed="true">Workspace</button></span><button class="mi " role="menuitem" data-k="sort"><svg class="i"><use href="#rail-down"/></svg><span>Sort by</span><span class="val">Manual<svg class="i sm"><use href="#rail-chevr"/></svg></span></button><hr><div class="ml">Cards show</div><button class="mi " role="menuitemcheckbox" aria-checked="true"><span class="ck"><svg class="i sm"><use href="#rail-check"/></svg></span><span>Tags</span></button><button class="mi " role="menuitemcheckbox" aria-checked="true"><span class="ck"><svg class="i sm"><use href="#rail-check"/></svg></span><span>Pull request and checks</span></button><button class="mi " role="menuitemcheckbox" aria-checked="true"><span class="ck"><svg class="i sm"><use href="#rail-check"/></svg></span><span>Branch and changes</span></button><button class="mi " role="menuitemcheckbox" aria-checked="true"><span class="ck"><svg class="i sm"><use href="#rail-check"/></svg></span><span>Sessions</span></button><button class="mi reset" role="menuitem"><span>Reset to defaults</span></button><hr><div class="ml">Hide</div><button class="mi " role="menuitemcheckbox" aria-checked="false"><span class="ck"></span><span>Idle grids</span></button><button class="mi " role="menuitemcheckbox" aria-checked="false"><span class="ck"></span><span>Grids on default branch</span></button><button class="mi " role="menuitemcheckbox" aria-checked="false"><span class="ck"></span><span>Empty grids</span></button><hr><button class="mi " role="menuitem" data-k="filter"><svg class="i"><use href="#rail-tag"/></svg><span>Filter by tag</span><span class="val"><svg class="i sm"><use href="#rail-chevr"/></svg></span></button><button class="mi " role="menuitem" data-k="manage"><svg class="i"><use href="#rail-tag"/></svg><span>Manage tags…</span><span class="val"><svg class="i sm"><use href="#rail-chevr"/></svg></span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-grid"/></svg><span>Card display</span><span class="val">Detailed<svg class="i sm"><use href="#rail-chevr"/></svg></span></button></div>
+</section>
+<section class="view rail-v" data-view="rail-options-sort" data-group="Rail and shell" data-label="Rail · sidebar options, sort" data-crumb="houston / Hook ordering" data-host="grid" data-rail="options" hidden>
+<div class="menu w256" id="m-opt" role="menu" aria-label="Sidebar options" data-at="tool=Filter|railr"><button class="mi back" role="menuitem"><svg class="i"><use href="#i-back"/></svg><span>Sort by</span></button><hr><button class="mi" role="menuitemradio" aria-checked="true"><span>Manual</span><span class="val"><svg class="i sm"><use href="#rail-check"/></svg></span></button><button class="mi" role="menuitemradio" aria-checked="false"><span>Agent activity</span><span class="val"></span></button><button class="mi" role="menuitemradio" aria-checked="false"><span>Recent</span><span class="val"></span></button><button class="mi" role="menuitemradio" aria-checked="false"><span>Name</span><span class="val"></span></button></div>
+</section>
+<section class="view rail-v" data-view="rail-options-display" data-group="Rail and shell" data-label="Rail · sidebar options, card display" data-crumb="houston / Hook ordering" data-host="grid" data-rail="options" hidden>
+<div class="menu w256" id="m-opt" role="menu" aria-label="Sidebar options" data-at="tool=Filter|railr"><button class="mi back" role="menuitem"><svg class="i"><use href="#i-back"/></svg><span>Card display</span></button><hr><div class="ml">Layout</div><span class="segc"><button aria-pressed="true">Detailed</button><button aria-pressed="false">Condensed</button></span><div class="ml">Tags display</div><span class="segc"><button aria-pressed="true">Icon</button><button aria-pressed="false">Dots</button><button aria-pressed="false">Chips</button></span></div>
+</section>
+<section class="view rail-v" data-view="rail-tag-pick" data-group="Rail and shell" data-label="Rail · filter by tag" data-crumb="houston / Hook ordering" data-host="grid" data-rail="options-badge" hidden>
+<div class="menu w256" id="m-opt" role="menu" aria-label="Sidebar options" data-at="tool=Filter|railr"><div class="ml">Group by</div><span class="segc"><button aria-pressed="false">None</button><button aria-pressed="false">Status</button><button aria-pressed="false">PR</button><button aria-pressed="true">Workspace</button></span><button class="mi " role="menuitem" data-k="sort"><svg class="i"><use href="#rail-down"/></svg><span>Sort by</span><span class="val">Manual<svg class="i sm"><use href="#rail-chevr"/></svg></span></button><hr><div class="ml">Cards show</div><button class="mi " role="menuitemcheckbox" aria-checked="true"><span class="ck"><svg class="i sm"><use href="#rail-check"/></svg></span><span>Tags</span></button><button class="mi " role="menuitemcheckbox" aria-checked="true"><span class="ck"><svg class="i sm"><use href="#rail-check"/></svg></span><span>Pull request and checks</span></button><button class="mi " role="menuitemcheckbox" aria-checked="true"><span class="ck"><svg class="i sm"><use href="#rail-check"/></svg></span><span>Branch and changes</span></button><button class="mi " role="menuitemcheckbox" aria-checked="true"><span class="ck"><svg class="i sm"><use href="#rail-check"/></svg></span><span>Sessions</span></button><button class="mi reset" role="menuitem"><span>Reset to defaults</span></button><hr><div class="ml">Hide</div><button class="mi " role="menuitemcheckbox" aria-checked="false"><span class="ck"></span><span>Idle grids</span></button><button class="mi " role="menuitemcheckbox" aria-checked="false"><span class="ck"></span><span>Grids on default branch</span></button><button class="mi " role="menuitemcheckbox" aria-checked="false"><span class="ck"></span><span>Empty grids</span></button><hr><button class="mi " role="menuitem" data-k="filter"><svg class="i"><use href="#rail-tag"/></svg><span>Filter by tag</span><span class="val"><span class="rail-dot" style="background:#f59e0b;width:6px;height:6px"></span><svg class="i sm"><use href="#rail-chevr"/></svg></span></button><button class="mi " role="menuitem" data-k="manage"><svg class="i"><use href="#rail-tag"/></svg><span>Manage tags…</span><span class="val"><svg class="i sm"><use href="#rail-chevr"/></svg></span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-grid"/></svg><span>Card display</span><span class="val">Detailed<svg class="i sm"><use href="#rail-chevr"/></svg></span></button></div><div class="menu w200" id="m-tags" role="menu" aria-label="Tags" data-at="css=#m-opt [data-k=filter]|right"><button class="mi" role="menuitemcheckbox" aria-checked="false"><span class="rail-dot" style="background:#5c8fff"></span><span>ui</span><span class="val"></span></button><button class="mi" role="menuitemcheckbox" aria-checked="true"><span class="rail-dot" style="background:#f59e0b"></span><span>perf</span><span class="val"><svg class="i sm"><use href="#rail-check"/></svg></span></button><button class="mi" role="menuitemcheckbox" aria-checked="false"><span class="rail-dot" style="background:#4ade80"></span><span>backend</span><span class="val"></span></button><button class="mi" role="menuitemcheckbox" aria-checked="false"><span class="rail-dot" style="background:#c084fc"></span><span>release</span><span class="val"></span></button><button class="mi" role="menuitemcheckbox" aria-checked="false"><span class="rail-dot" style="background:#f472b6"></span><span>api</span><span class="val"></span></button><hr><button class="mi " role="menuitem"><svg class="i"><use href="#i-plus"/></svg><span>New tag…</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-gear"/></svg><span>Manage tags…</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-x"/></svg><span>Clear filter</span></button></div>
+</section>
+<section class="view rail-v" data-view="rail-tag-pick-empty" data-group="Rail and shell" data-label="Rail · filter by tag, no tags yet" data-crumb="houston / Hook ordering" data-host="grid" data-rail="options" hidden>
+<div class="menu w256" id="m-opt" role="menu" aria-label="Sidebar options" data-at="tool=Filter|railr"><div class="ml">Group by</div><span class="segc"><button aria-pressed="false">None</button><button aria-pressed="false">Status</button><button aria-pressed="false">PR</button><button aria-pressed="true">Workspace</button></span><button class="mi " role="menuitem" data-k="sort"><svg class="i"><use href="#rail-down"/></svg><span>Sort by</span><span class="val">Manual<svg class="i sm"><use href="#rail-chevr"/></svg></span></button><hr><div class="ml">Cards show</div><button class="mi " role="menuitemcheckbox" aria-checked="true"><span class="ck"><svg class="i sm"><use href="#rail-check"/></svg></span><span>Tags</span></button><button class="mi " role="menuitemcheckbox" aria-checked="true"><span class="ck"><svg class="i sm"><use href="#rail-check"/></svg></span><span>Pull request and checks</span></button><button class="mi " role="menuitemcheckbox" aria-checked="true"><span class="ck"><svg class="i sm"><use href="#rail-check"/></svg></span><span>Branch and changes</span></button><button class="mi " role="menuitemcheckbox" aria-checked="true"><span class="ck"><svg class="i sm"><use href="#rail-check"/></svg></span><span>Sessions</span></button><button class="mi reset" role="menuitem"><span>Reset to defaults</span></button><hr><div class="ml">Hide</div><button class="mi " role="menuitemcheckbox" aria-checked="false"><span class="ck"></span><span>Idle grids</span></button><button class="mi " role="menuitemcheckbox" aria-checked="false"><span class="ck"></span><span>Grids on default branch</span></button><button class="mi " role="menuitemcheckbox" aria-checked="false"><span class="ck"></span><span>Empty grids</span></button><hr><button class="mi " role="menuitem" data-k="filter"><svg class="i"><use href="#rail-tag"/></svg><span>Filter by tag</span><span class="val"><svg class="i sm"><use href="#rail-chevr"/></svg></span></button><button class="mi " role="menuitem" data-k="manage"><svg class="i"><use href="#rail-tag"/></svg><span>Manage tags…</span><span class="val"><svg class="i sm"><use href="#rail-chevr"/></svg></span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-grid"/></svg><span>Card display</span><span class="val">Detailed<svg class="i sm"><use href="#rail-chevr"/></svg></span></button></div><div class="menu w200" id="m-tags" role="menu" aria-label="Tags" data-at="css=#m-opt [data-k=filter]|right"><div style="padding:8px;color:var(--t3)">No tags yet</div><hr><button class="mi " role="menuitem"><svg class="i"><use href="#i-plus"/></svg><span>New tag…</span></button></div>
+</section>
+<section class="view rail-v" data-view="rail-tag-manage" data-group="Rail and shell" data-label="Rail · manage tags" data-crumb="houston / Hook ordering" data-host="grid" data-rail="tools" hidden>
+<div class="menu w256" id="m-man" role="menu" aria-label="Manage tags" data-at="tool=Filter|railr|0|110"><div class="rail-pop-row" style="padding:0 4px"><button class="iconbtn" aria-label="Back"><svg class="i sm"><use href="#i-back"/></svg></button><b style="font-weight:600">Manage tags</b></div><hr><div class="rail-confirm" style="margin:0 3px 4px;background:var(--field);border-color:var(--line)"><span style="flex:1 1 auto">Deleted <b style="font-weight:600">api</b></span><button class="link">Undo</button></div><div class="rail-pop-row"><span class="rail-dot" style="background:#5c8fff"></span><span>ui</span></div><div class="rail-pop-row hov"><span class="rail-dot" style="background:#f59e0b"></span><span>perf</span><span class="acts"><button class="iconbtn" aria-label="Edit perf"><svg class="i sm"><use href="#rail-pencil"/></svg></button><button class="iconbtn" aria-label="Delete perf"><svg class="i sm"><use href="#i-x"/></svg></button></span></div><div class="rail-pop-row"><span class="rail-dot" style="background:#4ade80"></span><span>backend</span></div><div class="rail-pop-row"><span class="rail-dot" style="background:#c084fc"></span><span>release</span></div><div class="rail-confirm" data-k="x"><span>Remove <b style="font-weight:600">release</b> from 2 grids?</span><button class="btn">Cancel</button><button class="btn danger">Remove</button></div><hr><button class="mi " role="menuitem"><svg class="i"><use href="#i-plus"/></svg><span>New tag</span></button></div>
+</section>
+<section class="view rail-v" data-view="rail-tag-edit" data-group="Rail and shell" data-label="Rail · new tag" data-crumb="houston / Hook ordering" data-host="grid" data-rail="tools" hidden>
+<div class="menu w256" id="m-edit" role="menu" aria-label="New tag" data-at="tool=Filter|railr|0|110"><div class="rail-pop-row" style="padding:0 4px"><button class="iconbtn" aria-label="Back"><svg class="i sm"><use href="#i-back"/></svg></button><b style="font-weight:600">New tag</b></div><hr><div class="rail-pop-pad"><div class="rail-field focus" role="textbox" aria-label="Tag name">docs<i class="caret"></i></div><div class="ml" style="padding:0">Color</div></div><div class="rail-sw"><i style="background:#f87171" aria-pressed="false"></i><i style="background:#fb923c" aria-pressed="false"></i><i style="background:#f59e0b" aria-pressed="false"></i><i style="background:#a3e635" aria-pressed="true"></i><i style="background:#4ade80" aria-pressed="false"></i><i class="cust" aria-label="Custom color"></i><i style="background:#22d3ee" aria-pressed="false"></i><i style="background:#5c8fff" aria-pressed="false"></i><i style="background:#c084fc" aria-pressed="false"></i><i style="background:#f472b6" aria-pressed="false"></i><i style="background:#94a3b8" aria-pressed="false"></i></div><div class="rail-pop-pad"><div style="display:flex;align-items:center;gap:8px;color:var(--t3);font-size:12px">Preview<span class="rail-tag"><span class="rail-dot" style="background:#a3e635"></span>docs</span></div><div class="rail-warn"><svg class="i sm"><use href="#rail-alert"/></svg>Low contrast on this theme</div><div style="display:flex;justify-content:flex-end;gap:6px"><button class="btn ghost">Cancel</button><button class="btn pri">Save</button></div></div></div>
+</section>
+<section class="view rail-v" data-view="rail-tag-disabled" data-group="Rail and shell" data-label="Rail · filter by tag while tags are hidden" data-crumb="houston / Hook ordering" data-host="grid" data-rail="options" hidden>
+<div class="menu w256" id="m-opt" role="menu" aria-label="Sidebar options" data-at="tool=Filter|railr"><div class="ml">Group by</div><span class="segc"><button aria-pressed="false">None</button><button aria-pressed="false">Status</button><button aria-pressed="false">PR</button><button aria-pressed="true">Workspace</button></span><button class="mi " role="menuitem" data-k="sort"><svg class="i"><use href="#rail-down"/></svg><span>Sort by</span><span class="val">Manual<svg class="i sm"><use href="#rail-chevr"/></svg></span></button><hr><div class="ml">Cards show</div><button class="mi " role="menuitemcheckbox" aria-checked="false"><span class="ck"></span><span>Tags</span></button><button class="mi " role="menuitemcheckbox" aria-checked="true"><span class="ck"><svg class="i sm"><use href="#rail-check"/></svg></span><span>Pull request and checks</span></button><button class="mi " role="menuitemcheckbox" aria-checked="true"><span class="ck"><svg class="i sm"><use href="#rail-check"/></svg></span><span>Branch and changes</span></button><button class="mi " role="menuitemcheckbox" aria-checked="true"><span class="ck"><svg class="i sm"><use href="#rail-check"/></svg></span><span>Sessions</span></button><button class="mi reset" role="menuitem"><span>Reset to defaults</span></button><hr><div class="ml">Hide</div><button class="mi " role="menuitemcheckbox" aria-checked="false"><span class="ck"></span><span>Idle grids</span></button><button class="mi " role="menuitemcheckbox" aria-checked="false"><span class="ck"></span><span>Grids on default branch</span></button><button class="mi " role="menuitemcheckbox" aria-checked="false"><span class="ck"></span><span>Empty grids</span></button><hr><button class="mi " role="menuitem" data-k="filter"><svg class="i"><use href="#rail-tag"/></svg><span>Filter by tag</span><span class="val">Off<svg class="i sm"><use href="#rail-chevr"/></svg></span></button><button class="mi " role="menuitem" data-k="manage"><svg class="i"><use href="#rail-tag"/></svg><span>Manage tags…</span><span class="val"><svg class="i sm"><use href="#rail-chevr"/></svg></span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-grid"/></svg><span>Card display</span><span class="val">Detailed<svg class="i sm"><use href="#rail-chevr"/></svg></span></button></div><div class="menu w256" id="m-dis" role="menu" aria-label="Tags are turned off" data-at="css=#m-opt [data-k=filter]|right"><div class="rail-prompt"><h3>Tags are turned off</h3><p>Grid cards don’t show tags, so filtering by them would hide grids for reasons you can’t see. Turn tags on to filter by them.</p><div class="pv">Cards will show<span class="rail-dot" style="background:#a78bfa"></span><span class="rail-dot" style="background:#7cb7ff"></span><span class="rail-dot" style="background:#22d3ee"></span></div><div class="acts"><button class="btn ghost">Not now</button><button class="btn pri">Show tags</button></div></div></div>
+</section>
+<section class="view rail-v" data-view="rail-drag" data-group="Rail and shell" data-label="Rail · dragging a workspace" data-crumb="houston / Hook ordering" data-host="grid" data-rail="drag" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-drag-refused" data-group="Rail and shell" data-label="Rail · grid drag refused" data-crumb="houston / Hook ordering" data-host="grid" data-rail="drag-refused" hidden>
+<div class="rail-tip" role="tooltip" data-at="g=Hook ordering|rightc|0|0">Grids can only be reordered within the same workspace</div>
+</section>
+<section class="view rail-v" data-view="rail-undo" data-group="Rail and shell" data-label="Rail · undo notice" data-crumb="houston / Hook ordering" data-host="grid" data-rail="undo" hidden>
+<div class="rail-notices"><div class="rail-notice info" role="status"><svg class="i"><use href="#i-info"/></svg><span class="tt">Pinned 3 grids</span><button class="btn ghost" style="height:24px;padding:0 8px;color:var(--accent-ink)">Undo</button><button class="iconbtn" aria-label="Dismiss"><svg class="i"><use href="#i-x"/></svg></button></div></div>
+</section>
+<section class="view rail-v" data-view="rail-undo-missing" data-group="Rail and shell" data-label="Rail · undo, target gone" data-crumb="houston / Hook ordering" data-host="grid" data-rail="undo" hidden>
+<div class="rail-notices"><div class="rail-notice warn" role="status"><svg class="i"><use href="#rail-alert"/></svg><span class="tt">Couldn’t restore 1 grid: it no longer exists</span><button class="iconbtn" aria-label="Dismiss"><svg class="i"><use href="#i-x"/></svg></button></div></div>
+</section>
+<section class="view rail-v" data-view="rail-update-available" data-group="Rail and shell" data-label="Rail · update available" data-crumb="houston / Hook ordering" data-host="grid" data-rail="update-avail" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-update-running" data-group="Rail and shell" data-label="Rail · update installing" data-crumb="houston / Hook ordering" data-host="grid" data-rail="update-run" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-update-failed" data-group="Rail and shell" data-label="Rail · update failed" data-crumb="houston / Hook ordering" data-host="grid" data-rail="update-fail" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-resize-hover" data-group="Rail and shell" data-label="Rail · resize handle, hover" data-crumb="houston / Hook ordering" data-host="grid" hidden>
+<div class="rail-edge" style="left:239px"></div>
+</section>
+<section class="view rail-v" data-view="rail-resize-drag" data-group="Rail and shell" data-label="Rail · resize handle, dragging" data-crumb="houston / Hook ordering" data-host="grid" hidden>
+<div class="rail-edge drag" style="left:239px"></div>
+</section>
+<section class="view rail-v" data-view="rail-settings-hit" data-group="Rail and shell" data-label="Rail · settings search, results" data-crumb="Settings / Appearance" data-host="settings-appearance" data-rail="settings-hit" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-settings-none" data-group="Rail and shell" data-label="Rail · settings search, no match" data-crumb="Settings / Appearance" data-host="settings-appearance" data-rail="settings-none" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-shell-add-pane" data-group="Rail and shell" data-label="Shell · new pane menu" data-crumb="houston / Hook ordering" data-host="grid" data-rail="titlebar-add" hidden>
+<div class="menu w256" id="m-add" role="menu" aria-label="New pane" data-at="css=.titlebar [data-k=addpane]|belowr"><div class="ml">New pane</div><button class="mi " role="menuitem"><svg class="i"><use href="#i-term"/></svg><span>Terminal</span><kbd>T</kbd></button><div class="ml">Actions</div><button class="mi " role="menuitem"><svg class="i"><use href="#i-play"/></svg><span>test</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-play"/></svg><span>dev</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-plus"/></svg><span>Add action</span></button><hr><div class="ml">Agent</div><button class="mi" role="menuitem"><span class="mark claude" data-mark="claude"></span><span>Claude Code</span></button><button class="mi" role="menuitem"><span class="mark codex" data-mark="codex"></span><span>Codex</span></button><button class="mi" role="menuitem"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span>Antigravity</span></button><button class="mi" role="menuitem"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span>OpenCode</span></button><button class="mi" role="menuitem"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span>ZCode</span></button><hr><button class="mi" role="menuitem"><svg class="i"><use href="#i-splitd"/></svg><span>Split down</span></button><button class="mi" role="menuitem"><svg class="i"><use href="#i-grid"/></svg><span>New tab</span></button></div>
+</section>
+<section class="view rail-v" data-view="rail-shell-add-pane-profiles" data-group="Rail and shell" data-label="Shell · new pane menu, accounts" data-crumb="houston / Hook ordering" data-host="grid" data-rail="titlebar-add" hidden>
+<div class="menu w256" id="m-add" role="menu" aria-label="New pane" data-at="css=.titlebar [data-k=addpane]|belowr"><div class="ml">New pane</div><button class="mi " role="menuitem"><svg class="i"><use href="#i-term"/></svg><span>Terminal</span><kbd>T</kbd></button><div class="ml">Actions</div><button class="mi " role="menuitem"><svg class="i"><use href="#i-play"/></svg><span>test</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-play"/></svg><span>dev</span></button><button class="mi " role="menuitem"><svg class="i"><use href="#i-plus"/></svg><span>Add action</span></button><hr><div class="ml">Agent</div><button class="mi" role="menuitem"><span class="mark claude" data-mark="claude"></span><span>Claude Code</span><span class=val><svg class="i sm"><use href="#i-chevd"/></svg></span></button><button class="mi sub" role="menuitem"><span>Default account</span></button><button class="mi sub" role="menuitem"><span>Work account</span></button><button class="mi sub" role="menuitem"><span>Personal account</span></button><button class="mi" role="menuitem"><span class="mark codex" data-mark="codex"></span><span>Codex</span></button><button class="mi" role="menuitem"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span>Antigravity</span></button><button class="mi" role="menuitem"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span>OpenCode</span></button><button class="mi" role="menuitem"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span>ZCode</span></button><hr><button class="mi" role="menuitem"><svg class="i"><use href="#i-splitd"/></svg><span>Split down</span></button><button class="mi" role="menuitem"><svg class="i"><use href="#i-grid"/></svg><span>New tab</span></button></div>
+</section>
+<section class="view rail-v" data-view="rail-shell-add-pane-disabled" data-group="Rail and shell" data-label="Shell · new pane menu, no workspace" data-crumb="houston / Hook ordering" data-host="grid" data-rail="titlebar-add" hidden>
+<div class="menu w256" id="m-add" role="menu" aria-label="New pane" data-at="css=.titlebar [data-k=addpane]|belowr"><div class="ml">New pane</div><button class="mi " role="menuitem"><svg class="i"><use href="#i-term"/></svg><span>Terminal</span><kbd>T</kbd></button><hr><div class="ml">Agent</div><button class="mi" role="menuitem" disabled><span class="mark claude" data-mark="claude"></span><span>Claude Code</span></button><button class="mi" role="menuitem" disabled><span class="mark codex" data-mark="codex"></span><span>Codex</span></button><button class="mi" role="menuitem" disabled><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span>Antigravity</span></button><button class="mi" role="menuitem" disabled><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span>OpenCode</span></button><button class="mi" role="menuitem" disabled><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span>ZCode</span></button><hr><button class="mi" role="menuitem" disabled><svg class="i"><use href="#i-splitd"/></svg><span>Split down</span></button><button class="mi" role="menuitem" disabled><svg class="i"><use href="#i-grid"/></svg><span>New tab</span></button></div><div class="rail-tip" role="tooltip" data-at="css=#m-add .mi[disabled]|right">Open a workspace to spawn an agent</div>
+</section>
+<section class="view rail-v" data-view="rail-shell-window-controls" data-group="Rail and shell" data-label="Shell · window controls" data-crumb="houston / Hook ordering" data-rail="winctl" hidden>
+<div class="page"><div class="grp"><h2>Buttons on the right</h2><div class="box"><div class="rail-strip"><span class="crumb">houston</span><span class="sp"></span><span class="rail-wc"><button class="" aria-label="Minimize"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5h8v1H1z" fill="currentColor"/></svg></button><button class="" aria-label="Maximize"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1v8h8V1H1zm7 7H2V2h6v6z" fill="currentColor"/></svg></button><button class="close hov" aria-label="Close"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/></svg></button></span></div></div><div class="note">Minimize, Maximize, Close. The edges resize the window.</div></div><div class="grp"><h2>Buttons on the left</h2><div class="box"><div class="rail-strip"><span class="rail-wc"><button class="close" aria-label="Close"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/></svg></button><button class="" aria-label="Minimize"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5h8v1H1z" fill="currentColor"/></svg></button><button class="" aria-label="Maximize"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1v8h8V1H1zm7 7H2V2h6v6z" fill="currentColor"/></svg></button></span><span class="crumb">houston</span><span class="sp"></span></div></div><div class="note">Follows the desktop layout setting when it puts the buttons on the left.</div></div><div class="grp"><h2>Maximized</h2><div class="box"><div class="rail-strip"><span class="crumb">houston</span><span class="sp"></span><span class="rail-wc"><button class="" aria-label="Minimize"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5h8v1H1z" fill="currentColor"/></svg></button><button class="" aria-label="Restore"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1v2H1v6h6V7h2V1H3zM6 8H2V4h4v4zM8 6H7V3H4V2h4v4z" fill="currentColor"/></svg></button><button class="close" aria-label="Close"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/></svg></button></span></div></div></div></div>
+</section>
+<section class="view rail-v" data-view="rail-shell-titlebar-narrow" data-group="Rail and shell" data-label="Shell · narrow window titlebar" data-crumb="houston / Hook ordering" data-host="grid" data-body="s-narrow" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-shell-rail-offline" data-group="Rail and shell" data-label="Shell · rail reconnecting" data-crumb="houston / Hook ordering" data-host="grid" data-body="s-offline" hidden>
+
+</section>
+<section class="view rail-v" data-view="rail-banner-reconnect" data-group="Rail and shell" data-label="Shell · reconnect banner" data-crumb="houston / Hook ordering" data-host="grid" hidden>
+<div class="rail-flb"><div class="banner" role="status"><span class="st work" aria-hidden="true"></span><div class="bt"><span>Reconnecting to the daemon · 12s</span></div><button class="link">Retry now</button></div></div>
+</section>
+<section class="view rail-v" data-view="rail-banner-reconnect-error" data-group="Rail and shell" data-label="Shell · reconnect banner, with error" data-crumb="houston / Hook ordering" data-host="grid" hidden>
+<div class="rail-flb"><div class="banner" role="status"><span class="st work" aria-hidden="true"></span><div class="bt"><span>Reconnecting to the daemon · 12s (connection refused)</span></div><button class="link">Retry now</button></div></div>
+</section>
+<section class="view rail-v" data-view="rail-shell-workspaces-empty" data-group="Rail and shell" data-label="Shell · no workspaces" data-crumb="Houston" data-body="s-first" hidden>
+<div class="empty" style="position:relative"><div class="in"><h1>Add a project to start</h1><p>Each folder becomes a workspace. Agents and terminals run in real shells there and keep running when you close the window.</p><button class="btn pri" style="margin-top:6px"><svg class="i sm"><use href="#i-plus"/></svg>Add folder</button></div><div class="rail-hints"><span style="display:flex;gap:16px;"><span><kbd>Ctrl B</kbd>Toggle sidebar</span><span><kbd>Ctrl ,</kbd>Settings</span><span><kbd>?</kbd>Keyboard shortcuts</span></span></div></div>
+</section>
+<section class="view rail-v" data-view="rail-shell-workspaces-empty-pending" data-group="Rail and shell" data-label="Shell · no workspaces, opening picker" data-crumb="Houston" data-body="s-first" hidden>
+<div class="empty" style="position:relative"><div class="in"><h1>Add a project to start</h1><p>Each folder becomes a workspace. Agents and terminals run in real shells there and keep running when you close the window.</p><button class="btn pri" style="margin-top:6px" disabled aria-busy="true"><span class="rail-spin" style="border-color:currentColor;border-right-color:transparent"></span>Opening picker…</button></div><div class="rail-hints"><span style="display:flex;gap:16px;"><span><kbd>Ctrl B</kbd>Toggle sidebar</span><span><kbd>Ctrl ,</kbd>Settings</span><span><kbd>?</kbd>Keyboard shortcuts</span></span></div></div>
+</section>
+<section class="view rail-v" data-view="rail-shell-workspaces-empty-refused" data-group="Rail and shell" data-label="Shell · no workspaces, folder refused" data-crumb="Houston" data-body="s-first" hidden>
+<div class="empty" style="position:relative"><div class="in"><h1>Add a project to start</h1><p>Each folder becomes a workspace. Agents and terminals run in real shells there and keep running when you close the window.</p><button class="btn pri" style="margin-top:6px"><svg class="i sm"><use href="#i-plus"/></svg>Add folder</button><div role="alert" class="rail-ref" style="margin-top:4px">refused: /home/dev/code/acme is already registered as a workspace<br>refused: /tmp/scratch is not a git project folder<br>The picker could not open: no display available</div></div><div class="rail-hints"><span style="display:flex;gap:16px;"><span><kbd>Ctrl B</kbd>Toggle sidebar</span><span><kbd>Ctrl ,</kbd>Settings</span><span><kbd>?</kbd>Keyboard shortcuts</span></span></div></div>
+</section>
+<section class="view rail-v" data-view="rail-shell-workspaces-empty-shortcuts-off" data-group="Rail and shell" data-label="Shell · no workspaces, shortcuts off" data-crumb="Houston" data-body="s-first" hidden>
+<div class="empty" style="position:relative"><div class="in"><h1>Add a project to start</h1><p>Each folder becomes a workspace. Agents and terminals run in real shells there and keep running when you close the window.</p><button class="btn pri" style="margin-top:6px"><svg class="i sm"><use href="#i-plus"/></svg>Add folder</button></div><div class="rail-hints off" style="opacity:1"><span style="color:var(--t3)">Global shortcuts are off (Settings → Shortcuts), so these keys do nothing.</span><span style="display:flex;gap:16px;opacity:.6"><span><kbd>Ctrl B</kbd>Toggle sidebar</span><span><kbd>Ctrl ,</kbd>Settings</span><span><kbd>?</kbd>Keyboard shortcuts</span></span></div></div>
+</section>
+<section class="view rail-v" data-view="rail-firstrun-hooks" data-group="Rail and shell" data-label="First run · hooks" data-crumb="Houston" hidden>
+<div class="rail-fr"><div class="col"><nav class="rail-steps" aria-label="Setup steps"><span class="s done"><span class="n"><svg class="i sm"><use href="#rail-check"/></svg></span>Workspace</span><span class="ln"></span><span class="s done"><span class="n"><svg class="i sm"><use href="#rail-check"/></svg></span>Orchestration</span><span class="ln"></span><span class="s current" aria-current="step"><span class="n">3</span>Hooks</span></nav><div class="rail-tiles"><span class="rail-tile"><svg class="i"><use href="#i-term"/></svg></span></div><h1>Hook up your agents</h1><p class="lead">Houston reads agent status from each CLI’s own lifecycle hooks, never from the screen. Install them for the CLIs you use and panes report Working, Needs you and Finished; skip it and they run fine but stay silent.</p><div class="box"><div class="rail-hk"><span class="mark claude" data-mark="claude"></span><span class="nm">Claude Code</span><span class="vs">2.3.1</span><span class="stt ok"><svg class="i sm"><use href="#rail-check"/></svg>Reporting</span><span class="act"><button class="btn" aria-label="Remove for Claude Code">Remove</button></span></div><div class="rail-hk"><span class="mark codex" data-mark="codex"></span><span class="nm">Codex</span><span class="vs">0.98.0</span><span class="stt">Silent</span><span class="act"><button class="btn" aria-label="Install hooks for Codex">Install hooks</button></span></div><div class="rail-hk"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span class="nm">OpenCode</span><span class="vs">1.4.2</span><span class="stt">Silent</span><span class="act"><button class="btn" aria-label="Install hooks for OpenCode">Install hooks</button></span></div><div class="rail-hk off"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span class="nm">Antigravity</span><span class="vs"></span><span class="stt">Not found on PATH</span><span class="act">—</span></div><div class="rail-hk"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span class="nm">ZCode</span><span class="vs">3.14.4</span><span class="stt">Silent</span><span class="act"><button class="btn" aria-label="Install hooks for ZCode">Install hooks</button></span></div></div><p class="note">Each install writes the hook configuration the CLI requires. Settings → Agents explains what it writes and removes Houston’s hooks.</p><div class="foot2"><span class="sp"></span><button class="btn ghost">Not now</button><button class="btn pri">Install for 3 CLIs</button></div></div></div>
+</section>
+<section class="view rail-v" data-view="rail-firstrun-hooks-no-cli" data-group="Rail and shell" data-label="First run · hooks, no CLI found" data-crumb="Houston" hidden>
+<div class="rail-fr"><div class="col"><nav class="rail-steps" aria-label="Setup steps"><span class="s done"><span class="n"><svg class="i sm"><use href="#rail-check"/></svg></span>Workspace</span><span class="ln"></span><span class="s done"><span class="n"><svg class="i sm"><use href="#rail-check"/></svg></span>Orchestration</span><span class="ln"></span><span class="s current" aria-current="step"><span class="n">3</span>Hooks</span></nav><div class="rail-tiles"><span class="rail-tile"><svg class="i"><use href="#i-term"/></svg></span></div><h1>Hook up your agents</h1><p class="lead">Houston reads agent status from each CLI’s own lifecycle hooks, never from the screen. Install them for the CLIs you use and panes report Working, Needs you and Finished; skip it and they run fine but stay silent.</p><div class="box"><div class="rail-hk off"><span class="mark claude" data-mark="claude"></span><span class="nm">Claude Code</span><span class="vs"></span><span class="stt">Not found on PATH</span><span class="act">—</span></div><div class="rail-hk off"><span class="mark codex" data-mark="codex"></span><span class="nm">Codex</span><span class="vs"></span><span class="stt">Not found on PATH</span><span class="act">—</span></div><div class="rail-hk off"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span class="nm">OpenCode</span><span class="vs"></span><span class="stt">Not found on PATH</span><span class="act">—</span></div><div class="rail-hk off"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span class="nm">Antigravity</span><span class="vs"></span><span class="stt">Not found on PATH</span><span class="act">—</span></div><div class="rail-hk off"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span class="nm">ZCode</span><span class="vs"></span><span class="stt">Not found on PATH</span><span class="act">—</span></div></div><p class="note">Each install writes the hook configuration the CLI requires. Settings → Agents explains what it writes and removes Houston’s hooks.</p><div class="foot2"><span class="sp"></span><button class="btn ghost">Not now</button><span class="why">No supported CLI was found on PATH.</span><button class="link">Open the install guide</button><button class="btn pri" disabled>Install for 0 CLIs</button></div></div></div>
+</section>
+<section class="view rail-v" data-view="rail-firstrun-hooks-error" data-group="Rail and shell" data-label="First run · hooks, install failed" data-crumb="Houston" hidden>
+<div class="rail-fr"><div class="col"><nav class="rail-steps" aria-label="Setup steps"><span class="s done"><span class="n"><svg class="i sm"><use href="#rail-check"/></svg></span>Workspace</span><span class="ln"></span><span class="s done"><span class="n"><svg class="i sm"><use href="#rail-check"/></svg></span>Orchestration</span><span class="ln"></span><span class="s current" aria-current="step"><span class="n">3</span>Hooks</span></nav><div class="rail-tiles"><span class="rail-tile"><svg class="i"><use href="#i-term"/></svg></span></div><h1>Hook up your agents</h1><p class="lead">Houston reads agent status from each CLI’s own lifecycle hooks, never from the screen. Install them for the CLIs you use and panes report Working, Needs you and Finished; skip it and they run fine but stay silent.</p><div class="box"><div class="rail-hk"><span class="mark claude" data-mark="claude"></span><span class="nm">Claude Code</span><span class="vs">2.3.1</span><span class="stt ok"><svg class="i sm"><use href="#rail-check"/></svg>Reporting</span><span class="act"><button class="btn" aria-label="Remove for Claude Code">Remove</button></span></div><div class="rail-hk"><span class="mark codex" data-mark="codex"></span><span class="nm">Codex</span><span class="vs">0.98.0</span><span class="stt">Silent</span><span class="act"><button class="btn" aria-label="Install hooks for Codex">Install hooks</button></span><span class="err" role="alert">Could not write ~/.codex/hooks.json: permission denied (expected a writable file)</span></div><div class="rail-hk"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span class="nm">OpenCode</span><span class="vs">1.4.2</span><span class="stt">Silent</span><span class="act"><button class="btn" aria-label="Install hooks for OpenCode">Install hooks</button></span></div><div class="rail-hk off"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span class="nm">Antigravity</span><span class="vs"></span><span class="stt">Not found on PATH</span><span class="act">—</span></div><div class="rail-hk"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span class="nm">ZCode</span><span class="vs">3.14.4</span><span class="stt">Silent</span><span class="act"><button class="btn" aria-label="Install hooks for ZCode">Install hooks</button></span></div></div><p class="note">Each install writes the hook configuration the CLI requires. Settings → Agents explains what it writes and removes Houston’s hooks.</p><div class="foot2"><span class="sp"></span><button class="btn ghost">Not now</button><button class="btn pri">Install for 3 CLIs</button></div></div></div>
+</section>
+<section class="view rail-v" data-view="rail-firstrun-orchestration" data-group="Rail and shell" data-label="First run · orchestration" data-crumb="Houston" hidden>
+<div class="rail-fr"><div class="col"><nav class="rail-steps" aria-label="Setup steps"><span class="s done"><span class="n"><svg class="i sm"><use href="#rail-check"/></svg></span>Workspace</span><span class="ln"></span><span class="s current" aria-current="step"><span class="n">2</span>Orchestration</span><span class="ln"></span><span class="s upcoming"><span class="n">3</span>Hooks</span></nav><div class="rail-tiles"><span class="rail-tile"><svg class="i"><use href="#rail-fork"/></svg></span></div><h1>Let agents drive agents?</h1><p class="lead">An agent may spawn and drive other panes — up to 3 live children, nested 2 deep. Settings → Orchestration turns it back off.</p><button class="btn pri">Enable spawning</button><div class="foot2"><span class="sp"></span><button class="btn ghost">Not now</button></div></div></div>
+</section>
+<section class="view rail-v" data-view="rail-firstrun-workspace" data-group="Rail and shell" data-label="First run · workspace" data-crumb="Houston" data-body="s-first" hidden>
+<div class="empty" style="position:relative"><div class="in"><nav class="rail-steps" aria-label="Setup steps"><span class="s current" aria-current="step"><span class="n">1</span>Workspace</span><span class="ln"></span><span class="s upcoming"><span class="n">2</span>Orchestration</span><span class="ln"></span><span class="s upcoming"><span class="n">3</span>Hooks</span></nav><h1>Add a project to start</h1><p>Each folder becomes a workspace. Agents and terminals run in real shells there and keep running when you close the window.</p><button class="btn pri" style="margin-top:6px"><svg class="i sm"><use href="#i-plus"/></svg>Add folder</button></div><div class="rail-hints"><span style="flex:1"></span></div></div>
+</section>
+<section class="view rail-v" data-view="rail-palette" data-group="Rail and shell" data-label="Palette · default" data-crumb="houston / Hook ordering" data-host="grid" hidden>
+<div class="scrim" style="position:fixed"><div class="palette" role="dialog" aria-label="Command palette"><div class="in"><svg class="i"><use href="#i-search"/></svg><span style="flex:1">Search panes, workspaces and actions</span><kbd>Esc</kbd></div><div class="grp-h">Recent</div><div class="it"><svg class="i"><use href="#i-panelr"/></svg>Toggle side panel<span class="d"><kbd>G</kbd></span></div><div class="grp-h">Panes</div><div class="it" aria-selected="true"><span class="mark claude" style="color:var(--claude)" data-mark="claude"></span>auth-refactor<span class="d">houston · Needs you</span></div><div class="it"><span class="mark codex" data-mark="codex"></span>migrate-db<span class="d">houston · Working</span></div><div class="grp-h">Panes</div><div class="it"><svg class="i"><use href="#i-plus"/></svg>New terminal<span class="d"><kbd>T</kbd></span></div><div class="it"><svg class="i"><use href="#i-split"/></svg>Split pane<span class="d"><kbd>D</kbd></span></div><div class="it"><svg class="i"><use href="#i-gear"/></svg>Open settings<span class="d"><kbd>Ctrl ,</kbd></span></div><div class="ft"><span><kbd>↑↓</kbd> Move</span><span><kbd>Enter</kbd> Focus pane</span><span><kbd>Esc</kbd> Close</span></div></div></div>
+</section>
+<section class="view rail-v" data-view="rail-palette-requests" data-group="Rail and shell" data-label="Palette · requests" data-crumb="houston / Hook ordering" data-host="grid" hidden>
+<div class="scrim" style="position:fixed"><div class="palette" role="dialog" aria-label="Command palette"><div class="in"><svg class="i"><use href="#i-search"/></svg><span style="flex:1;color:var(--t1)">request<i style="display:inline-block;width:1px;height:16px;background:var(--t1);vertical-align:-3px;margin-left:1px"></i></span><kbd>Esc</kbd></div><div class="grp-h">Go to</div><div class="it" aria-selected="true"><svg class="i"><use href="#i-bell"/></svg>Next request (3)<span class="d"><kbd>!</kbd></span></div><div class="it"><svg class="i"><use href="#i-back"/></svg>Back from request<span class="d"><kbd>Backspace</kbd></span></div><div class="ft"><span><kbd>↑↓</kbd> Move</span><span><kbd>Enter</kbd> Run command</span><span><kbd>Esc</kbd> Close</span></div></div></div>
+</section>
+<section class="view rail-v" data-view="rail-palette-requests-none" data-group="Rail and shell" data-label="Palette · back from request, nothing to return to" data-crumb="houston / Hook ordering" data-host="grid" hidden>
+<div class="scrim" style="position:fixed"><div class="palette" role="dialog" aria-label="Command palette"><div class="in"><svg class="i"><use href="#i-search"/></svg><span style="flex:1;color:var(--t1)">request<i style="display:inline-block;width:1px;height:16px;background:var(--t1);vertical-align:-3px;margin-left:1px"></i></span><kbd>Esc</kbd></div><div class="grp-h">Go to</div><div class="it" aria-selected="true"><svg class="i"><use href="#i-bell"/></svg>Next request (3)<span class="d"><kbd>!</kbd></span></div><div class="it" aria-disabled="true" style="color:var(--t3)"><svg class="i"><use href="#i-back"/></svg><span style="display:flex;flex-direction:column"><span>Back from request</span><span style="font-size:12px;line-height:16px">No request jump to return from</span></span><span class="d"><kbd>Backspace</kbd></span></div><div class="ft"><span><kbd>↑↓</kbd> Move</span><span><kbd>Enter</kbd> Run command</span><span><kbd>Esc</kbd> Close</span></div></div></div>
+</section>
+<section class="view rail-v" data-view="rail-palette-empty" data-group="Rail and shell" data-label="Palette · no match" data-crumb="houston / Hook ordering" data-host="grid" hidden>
+<div class="scrim" style="position:fixed"><div class="palette" role="dialog" aria-label="Command palette"><div class="in"><svg class="i"><use href="#i-search"/></svg><span style="flex:1;color:var(--t1)">zzq<i style="display:inline-block;width:1px;height:16px;background:var(--t1);vertical-align:-3px;margin-left:1px"></i></span><kbd>Esc</kbd></div><div style="padding:28px 14px;display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--t3)"><span>No commands match “zzq”</span><button class="link">Clear search</button></div><div class="ft"><span><kbd>↑↓</kbd> Move</span><span><kbd>Enter</kbd> Run command</span><span><kbd>Esc</kbd> Close</span></div></div></div>
+</section>
+<section class="view rail-v" data-view="rail-boot-loading" data-group="Rail and shell" data-label="Boot · loading" data-crumb="Houston" hidden>
+<div class="rail-boot" aria-busy="true" aria-label="Houston is starting"><div class="r"><div class="hd"><span class="rail-spin" style="width:18px;height:18px;border-width:2px"></span></div></div><div></div><div class="m"></div></div>
+</section>
+<section class="view rail-v" data-view="rail-boot-failure" data-group="Rail and shell" data-label="Boot · failed to load" data-crumb="Houston" hidden>
+<div class="rail-fail"><div class="drag"></div><div class="in"><div class="col"><span class="eb">Bridge not ready</span><h1>Houston failed to start</h1><p>Could not initialize the desktop bridge: module not found: tauri.js</p><div class="acts"><button class="btn ghost">Retry</button><button class="btn pri">Reload app</button></div></div></div></div>
+</section>
+<section class="view rail-v" data-view="rail-boot-failure-timeout" data-group="Rail and shell" data-label="Boot · bridge too slow" data-crumb="Houston" hidden>
+<div class="rail-fail"><div class="drag"></div><div class="in"><div class="col"><span class="eb">Bridge not ready</span><h1>Houston failed to start</h1><p>The desktop bridge is taking longer than 15s to load. The renderer may be wedged after a sleep/wake cycle.</p><div class="acts"><button class="btn ghost">Retry</button><button class="btn pri">Reload app</button></div></div></div></div>
+</section>
+<!-- @script -->
+// rail-shell: toggles the base rail per view and places menus next to their anchors. Mock-only plumbing.
+(() => {
+  const prevGo = go;
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const rail = () => $('.app .rail');
+  let undo = [];
+  const later = (f) => undo.push(f);
+
+  const ST = { work: ['work', 'Working'], needs: ['needs', 'Needs you'], done: ['done', 'Finished'], err: ['err', 'Exited with error'] };
+  const stI = (k) => (k ? `<span class="st ${ST[k][0]}" role="img" aria-label="${ST[k][1]}"></span>` : '<span></span>');
+  const IC = (n, c = 'i sm') => `<svg class="${c}"><use href="#${n}"/></svg>`;
+  const markI = (a) => (a === 'shell' ? `<span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span>` : `<span class="mark ${a}" data-mark="${a}"></span>`);
+  const S = (t, o = {}) => `<button class="sess${o.st === 'needs' ? ' needs' : ''}"${o.cur ? ' aria-current="true"' : ''}>${markI(o.a || 'claude')}<span class="ti">${t}</span>${stI(o.st)}<span class="tm">${o.tm || ''}</span></button>`;
+  const TG = (c) => `<span class="rail-dot" style="background:${c};width:6px;height:6px"></span>`;
+  const tagChip = (n, c) => `<span class="rail-tag"><span class="rail-dot" style="background:${c}"></span>${n}</span>`;
+  const G = (t, o = {}) => {
+    const acts = o.acts ? `<span class="acts">${o.acts}</span>` : '';
+    const jn = o.jn ? `<span class="jn"><kbd>${o.jn}</kbd></span>` : '';
+    return `<div class="gcap${o.hov ? ' hov' : ''}${o.dragged ? ' dragged' : ''}" role="button" tabindex="0" data-g="${t}"><span class="n">${t}</span>${o.w ? `<span class="w">${o.w}</span>` : ''}${o.br ? `<span class="b">${o.br}</span>` : ''}${acts}${jn}</div>${o.chips ? `<div class="rail-chiprow">${o.chips}</div>` : ''}${o.note ? o.note : ''}`;
+  };
+  const NOTE = (txt, age, x) => `<div class="rail-note"><span>${txt}</span><time>${age}</time><button class="iconbtn x${x ? ' on' : ''}" aria-label="Clear the note">${IC('i-x')}</button></div>`;
+  const W = (name, o = {}) => {
+    const id = 'rw-' + name.replace(/\W/g, '');
+    return `<button class="row wsr${o.hov ? ' hov' : ''}${o.dragged ? ' dragged' : ''}" data-w="${name}" data-rt="${id}" aria-expanded="${o.open ? 'true' : 'false'}"${o.cur ? ' aria-current="true"' : ''}><span class="disc${o.open ? '' : ' closed'}">${IC('i-chevd')}</span><span class="lbl">${name}</span>${o.pin ? `<span class="rail-pin">${IC('rail-pin')}</span>` : ''}${o.st ? stI(o.st) : ''}${o.ct ? `<span class="ct">${o.ct}</span>` : ''}${o.aux ? `<span class="iconbtn rail-aux" role="button" aria-label="New session in ${name}">${IC('i-plus')}</span>` : ''}</button><div id="${id}"${o.open ? '' : ' hidden'}>${o.kids || ''}</div>`;
+  };
+  const PIN = (n, ct) => `<div class="rail-pinhead">${IC('rail-pin')}Pinned<span class="ct">${ct}</span></div>`;
+  const MSG = (t) => `<div class="rail-msg">${t}</div>`;
+  const fillMarks = (root) => $$('[data-mark]', root).forEach((m) => { if (!m.innerHTML) m.innerHTML = m.dataset.mark === 'claude' ? CLAUDE : CODEX; });
+
+  const BASE_TREE = () => [
+    W('project_eagle', { kids: G('Landing copy') }),
+    W('envio_posicoes', { open: 1, ct: 1, kids: G('Envio de posições', { br: 'feat/envio-v2' }) + S('Envio v2', { st: 'work', tm: 'now' }) }),
+    W('dispatch', { st: 'needs', ct: 1, kids: G('Retry policy') }),
+    W('Houston', { open: 1, ct: 5, kids: G('Hook ordering', { br: 'main' }) + S('Review', { st: 'work', tm: 'now', cur: 1 }) + S('Tests', { a: 'codex', st: 'needs', tm: '1m' }) + S('shell', { a: 'shell' }) + G('Revisar PRs', { br: 'main' }) + S('Revisar PRs', { st: 'done', tm: '26m' }) + S('Apple HIG pass', { st: 'work', tm: '1m' }) }),
+    W('AGES-IV', { kids: G('Sprint 4') }),
+    W('Moniq', { st: 'done', kids: G('Billing export') }),
+    W('desktop-repos', { st: 'err', ct: 1, kids: G('Sync script') }),
+    W('theo', { kids: G('Dotfiles') }),
+  ].join('');
+
+  // Rail ops, each registers its own reversal.
+  const swapTree = (html) => { const t = $('.rail .tree'); const keep = t.innerHTML; t.innerHTML = html; fillMarks(t); later(() => { t.innerHTML = keep; }); };
+  let curSec = document;
+  const ref = (spec) => {
+    const [k, v] = [spec.slice(0, spec.indexOf('=')), spec.slice(spec.indexOf('=') + 1)];
+    if (k === 'css') return $(v, curSec) || $(v);
+    const r = rail(); const find = (sel, f) => $$(sel, r).find(f);
+    if (k === 'ws') return find('.wsr', (e) => $('.lbl', e)?.textContent === v) || find('.wsr', (e) => e.dataset.w === v);
+    if (k === 'g') return find('.gcap', (e) => e.dataset.g === v || e.firstChild?.textContent === v);
+    if (k === 'sess') return find('.sess', (e) => $('.ti', e)?.textContent === v);
+    if (k === 'nav') return find('.row[data-go]', (e) => $('.lbl', e)?.textContent === v);
+    if (k === 'tool') return $(`.rail [aria-label="${v}"]`);
+    return null;
+  };
+  const attr = (el, a, v) => { if (!el) return; const had = el.getAttribute(a); el.setAttribute(a, v); later(() => (had === null ? el.removeAttribute(a) : el.setAttribute(a, had))); };
+  const cls = (el, c, on = true) => { if (!el) return; const had = el.classList.contains(c); el.classList.toggle(c, on); later(() => el.classList.toggle(c, had)); };
+  const swap = (el, html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); const n = t.content.firstChild; el.replaceWith(n); fillMarks(n); later(() => n.replaceWith(el)); return n; };
+  const inject = (parent, html, where = 'beforeend') => { const t = document.createElement('template'); t.innerHTML = html.trim(); const n = t.content.firstChild; parent.insertAdjacentElement(where, n); fillMarks(n); later(() => n.remove()); return n; };
+  const setHTML = (el, html) => { const keep = el.innerHTML; el.innerHTML = html; fillMarks(el); later(() => { el.innerHTML = keep; }); };
+  const tools = () => cls(rail(), 'rail-tools');
+  const ctx = (spec) => attr(ref(spec), 'data-ctx', '');
+  const expanded = (spec) => attr(ref(spec), 'aria-expanded', 'true');
+  const badge = (spec, n) => inject(ref(spec), `<span class="rail-badge">${n}</span>`);
+  const pinIcon = (spec) => { const r = ref(spec); inject($('.lbl', r), `<span class="rail-pin" style="margin-left:6px;display:inline-flex;vertical-align:-2px">${IC('rail-pin')}</span>`, 'afterend'); };
+  const setSel = (spec) => { $$('.rail [aria-current]').forEach((e) => attr(e, 'aria-current', 'false')); const e = ref(spec); if (e) attr(e, 'aria-current', 'true'); };
+  const clearSel = () => $$('.rail [aria-current="true"]').forEach((e) => { e.setAttribute('aria-current', 'false'); later(() => e.setAttribute('aria-current', 'true')); });
+  const renameWs = (spec, value) => { const r = ref(spec); swap($('.lbl', r), `<span class="rename-in" role="textbox" aria-label="Workspace name">${value}<i class="caret"></i></span>`); };
+  const renameG = (spec, value) => { const r = ref(spec); const keep = r.innerHTML; r.innerHTML = `<span class="rename-in g" role="textbox" aria-label="Grid name">${value}<i class="caret"></i></span>`; later(() => { r.innerHTML = keep; }); };
+  const foot = (html) => inject($('.rail .foot'), html);
+  const railW = (px) => { const a = $('.app'); a.style.gridTemplateColumns = `${px}px 1fr`; later(() => { a.style.gridTemplateColumns = ''; }); };
+  const bodyCls = (c) => { document.body.classList.add(c); later(() => document.body.classList.remove(c)); };
+  const filterBar = (tags) => inject($('.rail .sect'), `<div class="rail-chipbar">Showing ${tags} only<button class="link">Clear</button></div>`, 'afterend');
+  const titlebarAdd = (open) => { const r = $('.titlebar .right'); inject(r, `<button class="iconbtn" aria-label="New pane" aria-haspopup="menu" aria-expanded="${open ? 'true' : 'false'}" data-k="addpane">${IC('i-plus', 'i')}</button>`, 'afterbegin'); };
+  const settingsSearch = (q, hits) => {
+    const s = $('#rail-settings'); const btn = $('.search', s);
+    const field = swap(btn, `<div class="search field" style="margin-top:8px">${IC('i-search')}<span>${q}</span><kbd>Esc</kbd></div>`);
+    const groups = $$('#rail-settings > .sect, #rail-settings > .row[data-go]:not([style])');
+    groups.forEach((g) => { const d = g.style.display; g.style.display = 'none'; later(() => { g.style.display = d; }); });
+    const res = document.createElement('div'); res.innerHTML = hits; field.after(res); later(() => res.remove());
+  };
+
+  const STATES = {
+    'tools': () => tools(),
+    'add': () => { tools(); expanded('tool=Add workspace'); },
+    'ws': () => ctx('ws=Houston'),
+    'ws-pinned': () => { pinIcon('ws=envio_posicoes'); ctx('ws=envio_posicoes'); },
+    'ws-missing': () => ctx('ws=theo'),
+    'grid': () => ctx('g=Hook ordering'),
+    'grid-rename': () => renameG('g=Hook ordering', 'Hook ordering'),
+    'ws-rename': () => renameWs('ws=Houston', 'Houston'),
+    'ws-rename-plain': () => renameWs('ws=theo', 'theo'),
+    'nav': () => ctx('nav=Tasks'),
+    'options': () => { tools(); expanded('tool=Filter'); },
+    'options-badge': () => { tools(); expanded('tool=Filter'); badge('tool=Filter', 1); },
+    'hover': () => {
+      swapTree([
+        W('project_eagle', { kids: G('Landing copy') }),
+        W('envio_posicoes', { open: 1, ct: 1, kids: G('Envio de posições', { br: 'feat/envio-v2' }) + S('Envio v2', { st: 'work', tm: 'now' }) }),
+        W('Houston', { open: 1, hov: 1, aux: 1, ct: 5, kids: G('Hook ordering', { br: 'main', hov: 1, acts: `<span class="tg"><span class="rail-dot" style="background:#5c8fff;width:6px;height:6px"></span>${IC('rail-tag')}+1</span><span class="pr">#95</span><span class="iconbtn" role="button" aria-label="Close grid Hook ordering">${IC('i-x')}</span>` }) + S('Review', { st: 'work', tm: 'now', cur: 1 }) + S('Tests', { a: 'codex', st: 'needs', tm: '1m' }) + S('shell', { a: 'shell' }) + G('Revisar PRs', { br: 'main' }) + S('Revisar PRs', { st: 'done', tm: '26m' }) + S('Apple HIG pass', { st: 'work', tm: '1m' }) }),
+        W('AGES-IV', { kids: G('Sprint 4') }),
+      ].join(''));
+    },
+    'alt': () => {
+      swapTree([
+        W('project_eagle', { kids: G('Landing copy') }),
+        W('envio_posicoes', { open: 1, ct: 1, kids: G('Envio de posições', { br: 'feat/envio-v2', jn: '1' }) + S('Envio v2', { st: 'work', tm: 'now' }) }),
+        W('Houston', { open: 1, ct: 5, kids: G('Hook ordering', { br: 'main', jn: '2' }) + S('Review', { st: 'work', tm: 'now', cur: 1 }) + S('Tests', { a: 'codex', st: 'needs', tm: '1m' }) + S('shell', { a: 'shell' }) + G('Revisar PRs', { br: 'main', jn: '3' }) + S('Revisar PRs', { st: 'done', tm: '26m' }) + S('Apple HIG pass', { st: 'work', tm: '1m' }) }),
+      ].join(''));
+    },
+    'tags-display': () => {
+      const t1 = '#5c8fff', t2 = '#f59e0b', t3 = '#4ade80';
+      swapTree(W('Houston', { open: 1, ct: 3, kids:
+        G('Icon display', { br: 'main', hov: 1, acts: `<span class="tg"><span class="rail-dot" style="background:${t1};width:6px;height:6px"></span>${IC('rail-tag')}+1</span>` }) + S('Review', { st: 'work', tm: 'now' }) +
+        G('Dots display', { br: 'main', hov: 1, acts: `<span class="tg" style="gap:3px">${TG(t1)}${TG(t2)}${TG(t3)}</span>` }) + S('Tests', { a: 'codex', st: 'needs', tm: '1m' }) +
+        G('Chips display', { br: 'main', hov: 1, chips: tagChip('ui', t1) + tagChip('perf', t2) }) + S('Apple HIG pass', { st: 'work', tm: '1m' }) }));
+    },
+    'tree-states': () => {
+      const t1 = '#5c8fff';
+      swapTree([
+        PIN('', 2),
+        G('Messaging access tiers', { w: 'project_eagle' }) + S('Orchestrator', { st: 'work', tm: 'now' }) + S('eagle-tiers-ui', { st: 'needs', tm: '2m' }),
+        G('Terminal', { w: 'dispatch' }) + S('zsh', { a: 'shell', tm: 'now' }),
+        W('project_eagle', { pin: 0 }),
+        W('dispatch', { st: 'needs', ct: 1 }),
+        W('Houston', { open: 1, ct: 4, kids:
+          G('Inspector polish', { br: 'inspector-polish', note: NOTE('In progress · 4 commits in; running the inspector tests', '3m') }) + S('Fix the sidebar flicker', { st: 'work', tm: 'now' }) + S('inspector-polish', { a: 'codex', st: 'done', tm: '6m' }) +
+          G('Pull requests screen', { br: 'houston/pr-list' }) + S('tela de pull requests', { a: 'codex', st: 'needs', tm: '14m' }) +
+          G('Review pass', { br: 'main' }) + S('Revisar PRs', { tm: '2h' }) +
+          G('Scratch', { br: 'main', note: '<div class="rail-note">No sessions</div>' }) }),
+        W('acme-ui', { cur: 1 }),
+        W('finex', { st: 'err', ct: 1 }),
+      ].join(''));
+    },
+    'long': () => {
+      swapTree([
+        W('project_eagle', { kids: G('Landing copy') }),
+        W('envio_posicoes_corretoras_legado', { open: 1, ct: 2, kids: G('Envio de posições consolidadas por corretora', { br: 'feat/envio-v2-consolidado-por-corretora' }) + S('Seguinte, quero apenas o envio das posições', { st: 'work', tm: 'now' }) + S('Review the auth refactor before merging', { st: 'needs', tm: '12m', cur: 1 }) }),
+        W('dispatch', { st: 'needs', ct: 1, kids: G('Retry policy') }),
+        W('Houston', { open: 1, ct: 1, kids: G('Hook ordering', { br: 'main' }) + S('Review', { st: 'work', tm: 'now' }) }),
+      ].join(''));
+    },
+    'empty-ws': () => { swapTree(W('acme-core', { open: 1, cur: 1, kids: MSG('No grids yet. Create one with New grid.') })); },
+    'empty-filtered': () => {
+      swapTree(W('acme-core', { open: 1, kids: MSG('No grid carries that tag. Clear the filter in Sidebar options.') }));
+      badge('tool=Filter', 1); filterBar(tagChip('perf', '#f59e0b'));
+    },
+    'tag-filter': () => {
+      swapTree([
+        W('project_eagle', { open: 1, ct: 1, kids: G('Messaging access tiers', { br: 'feature/tiers' }) + S('Orchestrator', { st: 'work', tm: 'now' }) }),
+        W('Houston', { open: 1, ct: 3, kids: G('Inspector polish', { br: 'inspector-polish' }) + S('Fix the sidebar flicker', { st: 'work', tm: 'now' }) + S('inspector-polish', { a: 'codex', st: 'done', tm: '6m' }) + G('Pull requests screen', { br: 'houston/pr-list' }) + S('tela de pull requests', { a: 'codex', st: 'needs', tm: '14m' }) }),
+        W('finex', {}),
+      ].join(''));
+      badge('tool=Filter', 1); filterBar(tagChip('ui', '#5c8fff'));
+    },
+    'drag': () => {
+      swapTree(BASE_TREE().replace('data-w="AGES-IV"', 'data-w="AGES-IV" data-x').replace(/(<button class="row wsr" data-w="theo")/, '<div class="rail-drop"></div>$1'));
+      cls(ref('ws=AGES-IV'), 'dragged');
+    },
+    'drag-refused': () => { swapTree(BASE_TREE()); cls(ref('g=Envio de posições'), 'dragged'); ctx('g=Hook ordering'); },
+    'undo': () => {
+      swapTree([PIN('', 3),
+        G('Work in', { w: 'acme-api' }) + G('Review pass', { w: 'acme-api' }) + G('Idle tab', { w: 'acme-api' }),
+        W('acme-api', { cur: 1 }), W('bridge', { open: 1, ct: 1, kids: G('Bridge tab') })].join(''));
+    },
+    'update-avail': () => foot(`<button class="rail-upd avail" aria-label="Houston 0.9.9 is available. Open to install">${IC('rail-down')}0.9.9 available</button>`),
+    'update-run': () => foot(`<button class="rail-upd" aria-label="Houston is installing an update. Open to see the steps"><span class="rail-spin" aria-hidden="true"></span>Updating 40%</button>`),
+    'update-fail': () => foot(`<button class="rail-upd fail" aria-label="Houston 0.9.9 did not install. Open to see why and try again"><span class="st err" aria-hidden="true"></span>Update failed</button>`),
+    'resize': () => {},
+    'settings-hit': () => settingsSearch('theme', `<button class="rail-srow">Theme<small>Appearance</small></button><button class="rail-srow">Colors<small>Terminal</small></button>`),
+    'settings-none': () => settingsSearch('zzzz', `<div class="rail-msg" style="padding-left:8px">No settings match your search.</div>`),
+    'titlebar-add': () => titlebarAdd(1),
+    'palette': () => {},
+    'winctl': () => {
+      const r = $('.titlebar .right');
+      const svg = { min: '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5h8v1H1z" fill="currentColor"/></svg>', max: '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1v8h8V1H1zm7 7H2V2h6v6z" fill="currentColor"/></svg>', x: '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/></svg>' };
+      inject(r, `<span class="rail-wc"><button aria-label="Minimize">${svg.min}</button><button aria-label="Maximize">${svg.max}</button><button class="close hov" aria-label="Close">${svg.x}</button></span>`);
+      bodyCls('rail-wc-view');
+    },
+  };
+
+  const RECT = (el) => el.getBoundingClientRect();
+  function place(sec) {
+    curSec = sec;
+    $$('[data-at]', sec).forEach((o) => {
+      const [spec, mode = 'pointer', dx = 0, dy = 0] = o.dataset.at.split('|');
+      const a = ref(spec); if (!a) return;
+      const r = RECT(a), w = o.offsetWidth, h = o.offsetHeight;
+      let x, y;
+      if (mode === 'pointer') { x = r.left + 40; y = r.top + r.height / 2; }
+      else if (mode === 'below') { x = r.left; y = r.bottom + 4; }
+      else if (mode === 'belowr') { x = r.right - w; y = r.bottom + 4; }
+      else if (mode === 'right') { x = r.right + 6; y = r.top - 5; }
+      else if (mode === 'railr') { const rr = RECT(rail()); x = rr.right + 8; y = r.top - 5; }
+      else if (mode === 'rightc') { x = r.right + 6; y = r.top + r.height / 2 - h / 2; }
+      else if (mode === 'above') { x = r.left; y = r.top - h - 4; }
+      x += Number(dx); y += Number(dy);
+      x = Math.max(8, Math.min(x, innerWidth - w - 8)); y = Math.max(8, Math.min(y, innerHeight - h - 8));
+      o.style.left = x + 'px'; o.style.top = y + 'px';
+    });
+  }
+
+  go = function (v, ...rest) {
+    undo.reverse().forEach((f) => f()); undo = [];
+    document.body.classList.remove('s-first', 's-offline', 's-narrow');
+    const sec = $(`section.rail-v[data-view="${v}"]`);
+    if (!sec) return prevGo(v, ...rest);
+    const host = sec.dataset.host;
+    prevGo(host || v, ...rest);
+    sec.hidden = false;
+    curSec = sec;
+    $$('[data-view]').forEach((s) => { if (s !== sec && !(host && s.dataset.view === host)) s.hidden = true; });
+    if (host) $(`[data-view="${host}"]`).hidden = false;
+    const c = (sec.dataset.crumb || '').split(' / ');
+    $('#crumb').innerHTML = c.map((p, i) => (i === c.length - 1 ? `<b>${p}</b>` : `<span>${p}</span><span style="color:var(--t3)">/</span>`)).join('');
+    if (sec.dataset.body) sec.dataset.body.split(' ').forEach((b) => { document.body.classList.add(b); later(() => document.body.classList.remove(b)); });
+    if (sec.dataset.railw) railW(sec.dataset.railw);
+    (sec.dataset.rail || '').split(' ').filter(Boolean).forEach((s) => STATES[s]?.());
+    place(sec);
+    requestAnimationFrame(() => place(sec));
+  };
+  $$('section.rail-v').forEach((s) => fillMarks(s));
+  // Rows in swapped trees still fold.
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('.rail .tree .wsr[data-rt]'); if (!b) return;
+    const el = document.getElementById(b.dataset.rt); if (!el) return;
+    el.hidden = !el.hidden; b.querySelector('.disc').classList.toggle('closed', el.hidden); b.setAttribute('aria-expanded', String(!el.hidden));
+  });
+})();

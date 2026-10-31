@@ -5,9 +5,11 @@
   "version": "0.19.10",
   "identifier": "dev.houston.desktop",
   "build": {
-    "frontendDist": "../ui/out/renderer"
+    "beforeBuildCommand": "pnpm --filter @t3tools/web build",
+    "frontendDist": "../apps/web/dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "Houston",
@@ -16,6 +18,7 @@
         "resizable": true,
         "dragDropEnabled": true,
         "decorations": false,
+        "shadow": true,
         "create": false
       }
     ]
@@ -23,10 +26,16 @@
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": true,
-    "targets": ["appimage", "deb", "nsis"],
+    "targets": [
+      "appimage",
+      "deb",
+      "nsis"
+    ],
     "linux": {
       "deb": {
-        "depends": ["libasound2t64 | libasound2"]
+        "depends": [
+          "libasound2t64 | libasound2"
+        ]
       }
     },
     "icon": [
@@ -36,8 +45,10 @@
       "icons/icon.png",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/tr-helper", "binaries/houston-core"],
-    "resources": ["resources/third-party-licenses.json"],
+    "resources": [
+      "resources/third-party-licenses.json",
+      "v2-server/"
+    ],
     "windows": {
       "nsis": {
         "installerHooks": "windows/hooks/uninstaller.nsi"
@@ -46,8 +57,8 @@
     "category": "DeveloperTool",
     "shortDescription": "Mission control for CLI coding agents",
     "longDescription": "Houston is a local-first mission control for CLI coding agents: a grid of real terminals running your agent CLIs in your own project directories, where an agent can spawn and drive another agent in a new pane.",
-    "publisher": "Théo Miguel",
-    "copyright": "Copyright © 2026 Théo Miguel",
+    "publisher": "Th\u00e9o Miguel",
+    "copyright": "Copyright \u00a9 2026 Th\u00e9o Miguel",
     "homepage": "https://github.com/theogmiguel/houston"
   },
   "plugins": {

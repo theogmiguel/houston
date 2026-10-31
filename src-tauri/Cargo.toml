@@ -18,19 +18,24 @@ tauri-build = { version = "2", features = [] }
 # webview-data-url lets a webview load data: URLs at all -- without it about:blank
 # children never reach LoadEvent::Committed under WebKitGTK and stay unpainted.
 tauri = { version = "2", features = ["unstable", "webview-data-url", "tray-icon", "image-png"] }
-houston-core = { path = "../core/houston-core" }
-houston-protocol = { path = "../core/houston-protocol" }
 anyhow = "1"
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
 dirs = "5"
 base64 = "0.22"
 sha2 = "0.10"
+# The v2 host derives upstream's rotating desktop-bootstrap credential.
+hmac = "0.12"
+keyring = { version = "4.1.6", features = ["v1"] }
 notify = "8"
 tempfile = "3"
 uuid = { version = "1", features = ["v4"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regex = "1"
+# The WHATWG URL parser the provider auth callback checks share upstream's semantics.
+url = "2"
 tauri-runtime = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"
@@ -76,11 +81,17 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_SystemInformation",
   "Win32_Foundation",
   "Win32_System_Threading",
+  "Win32_System_JobObjects",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Pipes",
   "Win32_UI_WindowsAndMessaging",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
   "Win32_System_Com",
+  # Snapshot capture reads the screen through GDI; the flash overlay disables the
+  # DWM show transition so it appears instantly like upstream's Electron overlay.
   "Win32_Graphics_Gdi",
+  "Win32_Graphics_Dwm",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -99,14 +110,6 @@ webkit2gtk = { version = "=2.0.2", features = ["v2_34", "v2_40"] }
 # Pinned to the version wry-0.55.1 depends on, so the JavascriptResult/Value types
 # used by webkit.rs's picker handling unify with wry's own copy.
 javascriptcore-rs = "=1.1.2"
-
-[features]
-bench = ["dep:axum"]
-
-[dependencies.axum]
-version = "0.8"
-features = ["ws"]
-optional = true
 
 [dependencies.tokio]
 version = "1"
@@ -133,8 +136,7 @@ tray-icon = { path = "patches/tray-icon" }
 name = "houston-tauri"
 path = "src/main.rs"
 
-# line-tables-only keeps backtraces exact without full DWARF; this tree carries
-# tauri + wry + the whole gtk/webkit2gtk stack twice (default build + --features bench).
+# line-tables-only keeps backtraces exact without full DWARF.
 # Full DWARF for a real debugging session: `CARGO_PROFILE_DEV_DEBUG=2 cargo build`.
 [profile.dev]
 debug = "line-tables-only"

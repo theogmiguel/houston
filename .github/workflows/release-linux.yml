@@ -93,18 +93,13 @@ jobs:
         run: ./scripts/oom-shield.sh true
 
       - uses: dtolnay/rust-toolchain@stable
-      # BOTH workspaces: build-app.sh also builds core's tr-helper under
-      # core/target, so caching only src-tauri left that half cold per release.
       # The key carries the architecture: cached objects are ELF, not portable.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            core
             src-tauri
           key: release-linux-${{ matrix.arch }}
           cache-on-failure: true
-      - uses: oven-sh/setup-bun@v2
-
       - name: Cache the pinned libghostty-vt source and Zig
         uses: actions/cache@v5
         with:
@@ -122,10 +117,6 @@ jobs:
       - name: Install the pinned Tauri CLI
         if: steps.tauri-cli-cache.outputs.cache-hit != 'true'
         run: cargo install tauri-cli --version ${{ inputs.tauri_cli_version }} --locked
-
-      - name: Install renderer dependencies
-        run: bun install --frozen-lockfile
-        working-directory: ui
 
       # Secrets cannot be used in an `if:`, so they are read into env here and
       # tested; the decision travels on as a step output. A real release
@@ -170,6 +161,23 @@ jobs:
               echo "HOUSTON_SIGNING_PASSWORD_EOF"
             } >> "$GITHUB_ENV"
           fi
+
+      # The embedded v2 server is built with the Node version its SEA build pins
+      # in package.json engines.node, not the runner's default.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: package.json
+          cache: pnpm
+      - name: Install the server workspace
+        run: pnpm install --frozen-lockfile
+      - name: Build and stage the bundled v2 server
+        run: |
+          set -euo pipefail
+          pnpm --filter houston build:exe
+          node scripts/stage-v2-server.mjs
 
       # NO_STRIP: linuxdeploy strips every library it copies, a known failure
       # on newer runners; the app binary is stripped by the release profile.
@@ -234,7 +242,7 @@ jobs:
           appimage_path=$(realpath "$appimage")
           mkdir "$package_root/appimage"
           (cd "$package_root/appimage" && "$appimage_path" --appimage-extract >/dev/null)
-          for name in houston houston-core houston-supervisor tr-helper; do
+          for name in houston; do
             [ -f "$package_root/deb/usr/bin/$name" ] || { echo "::error::$deb does not contain usr/bin/$name"; exit 1; }
             [ -f "$package_root/appimage/squashfs-root/usr/bin/$name" ] || { echo "::error::$appimage does not contain usr/bin/$name"; exit 1; }
           done
@@ -280,25 +288,11 @@ jobs:
           deb=$(find dist -name '*.deb' -print -quit)
           dpkg-deb -x "$deb" "$package_root"
           qemu-x86_64 -cpu qemu64 "$package_root/usr/bin/houston" --version
-          qemu-x86_64 -cpu qemu64 "$package_root/usr/bin/houston-core" --print-protocol
 
       - uses: actions/upload-artifact@v7
         with:
           name: houston-${{ inputs.version }}-linux-${{ matrix.arch }}
           path: dist/
-          if-no-files-found: error
-
-      # The Windows installer bundles these for WSL distros: the same commit, built on
-      # jammy and gated above through the deb. Not a release asset (publish takes houston-*).
-      - name: Upload the Linux daemon for the Windows installer's WSL support
-        if: matrix.arch == 'x86_64'
-        uses: actions/upload-artifact@v7
-        with:
-          name: wsl-linux-x86_64-${{ inputs.version }}
-          path: |
-            core/target/release/houston-core
-            core/target/release/tr-helper
-            core/target/release/houston-supervisor
           if-no-files-found: error
 
       - name: Record job timing

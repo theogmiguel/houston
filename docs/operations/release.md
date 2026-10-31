@@ -14,7 +14,7 @@ and approval. Merging a PR or pushing a tag does not publish a release.
    Linux and Windows release. Leave `resume_tag` empty and `preview_only` unchecked.
 3. Run the workflow. Its summary shows the source commit, next version, previous
    public release, selected platforms and release notes. It checks source CI,
-   updates the four manifests and both lockfiles, pushes the release commit and
+   updates the five manifests and both lockfiles, pushes the release commit and
    tag, builds the installers and creates a **draft**. Nothing is public yet.
 4. Follow the draft link in the summary, or open **Releases** in the repository.
    Review the grouped notes, expand any legacy title-only entries, and save edits
@@ -166,9 +166,10 @@ Only a release changes versions. Feature PRs do not edit the version manifests:
 - `src-tauri/tauri.conf.json`
 - `src-tauri/Cargo.toml`
 - `ui/package.json`
+- `apps/server/package.json` (the server archives and `houston` runtime read it)
 - `core/Cargo.toml` (`workspace.package.version`)
 
-`scripts/set-version.sh X.Y.Z` updates all four and both Cargo lockfiles using
+`scripts/set-version.sh X.Y.Z` updates all five and both Cargo lockfiles using
 `cargo update --workspace`, without updating dependencies. It accepts `X.Y.Z` or
 `X.Y.Z-rc.N`. `scripts/check-manifest-versions.sh` verifies agreement and checks a
 resumed tag's expected version. Cut release runs these scripts; contributors do

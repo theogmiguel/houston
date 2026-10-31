@@ -1,0 +1,91 @@
+import {
+  EnvironmentAuthInvalidError,
+  type PullRequestDiffInput,
+  type PullRequestDiffResult,
+} from "@t3tools/contracts";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import { HttpClient } from "effect/http";
+
+import type { PreparedConnection } from "../connection/model.ts";
+import { type RemoteEnvironmentRequestError } from "../rpc/http.ts";
+import { executeAuthenticatedEnvironmentHttpRequest } from "./environmentHttpAuth.ts";
+
+const DEFAULT_PULL_REQUEST_DIFF_TIMEOUT_MS = 60_000;
+
+export class PullRequestDiffCredentialRejectedError extends Schema.TaggedError<PullRequestDiffCredentialRejectedError>()(
+  "PullRequestDiffCredentialRejectedError",
+  {
+    repository: Schema.String,
+    number: Schema.Number,
+    traceId: Schema.String,
+    cause: EnvironmentAuthInvalidError,
+  },
+) {
+  override get message(): string {
+    return "This environment session is no longer valid (invalid_credential). Refresh the page or quit and reopen Houston.";
+  }
+}
+
+export type PullRequestDiffLoadError =
+  | RemoteEnvironmentRequestError
+  | PullRequestDiffCredentialRejectedError;
+
+export const fetchEnvironmentPullRequestDiff = Effect.fn(
+  "clientRuntime.state.fetchEnvironmentPullRequestDiff",
+)(function* (input: {
+  readonly prepared: PreparedConnection;
+  readonly diff: PullRequestDiffInput;
+  readonly timeoutMs?: number;
+}) {
+  return yield* executeAuthenticatedEnvironmentHttpRequest({
+    ...input,
+    group: "pullRequests",
+    method: "POST",
+    url: (urls) => urls.diff(),
+    timeoutMs: input.timeoutMs ?? DEFAULT_PULL_REQUEST_DIFF_TIMEOUT_MS,
+    request: ({ client, headers }) => client.diff({ payload: input.diff, headers }),
+  }).pipe(
+    Effect.mapError((error) =>
+      error._tag === "EnvironmentAuthInvalidError" && error.reason === "invalid_credential"
+        ? new PullRequestDiffCredentialRejectedError({
+            repository: input.diff.repository,
+            number: input.diff.number,
+            traceId: error.traceId,
+            cause: error,
+          })
+        : error,
+    ),
+  );
+});
+
+export class PullRequestDiffLoader extends Context.Service<
+  PullRequestDiffLoader,
+  {
+    readonly load: (
+      prepared: PreparedConnection,
+      input: PullRequestDiffInput,
+    ) => Effect.Effect<PullRequestDiffResult, PullRequestDiffLoadError>;
+  }
+>()("@t3tools/client-runtime/state/pullRequestDiffHttp/PullRequestDiffLoader") {}
+
+export const layer: Layer.Layer<PullRequestDiffLoader, never, HttpClient.HttpClient> = Layer.effect(
+  PullRequestDiffLoader,
+  Effect.gen(function* () {
+    const httpClient = yield* HttpClient.HttpClient;
+    // The HTTP fetch owns the load span.
+    return PullRequestDiffLoader.of({
+      load: Effect.fnUntraced(
+        function* (prepared, input) {
+          return yield* fetchEnvironmentPullRequestDiff({
+            prepared,
+            diff: input,
+          });
+        },
+        Effect.provideService(HttpClient.HttpClient, httpClient),
+      ),
+    });
+  }),
+);

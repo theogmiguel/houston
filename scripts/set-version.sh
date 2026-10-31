@@ -16,7 +16,7 @@ usage: scripts/set-version.sh <X.Y.Z[-rc.N]>
 Writes the version into the four manifests and both lockfiles:
   src-tauri/tauri.conf.json   .version
   src-tauri/Cargo.toml        [package] version
-  ui/package.json             .version
+  apps/server/package.json    .version
   core/Cargo.toml             [workspace.package] version
   core/Cargo.lock             the workspace crates' entries
   src-tauri/Cargo.lock        the workspace crates' entries
@@ -85,7 +85,7 @@ verify_version() {
   expected="$1"
   bad=0
 
-  for file in src-tauri/tauri.conf.json ui/package.json; do
+  for file in src-tauri/tauri.conf.json apps/server/package.json; do
     got="$(manifest_json_version "$file" version)"
     if [ "$got" != "$expected" ]; then
       echo "set-version: $file .version reads \"${got:-<missing>}\", expected \"$expected\"" >&2
@@ -170,7 +170,7 @@ def write_toml_version(path, table):
         changed.append(path)
 
 write_json("src-tauri/tauri.conf.json", "version")
-write_json("ui/package.json", "version")
+write_json("apps/server/package.json", "version")
 write_toml_version("src-tauri/Cargo.toml", "package")
 write_toml_version("core/Cargo.toml", "workspace.package")
 

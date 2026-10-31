@@ -1,0 +1,93 @@
+import { useLayoutEffect, useRef } from "react";
+
+import { acquireBrowserSurface } from "./browserSurfaceStore";
+import { observeResize } from "../lib/observeResize";
+
+export function BrowserSurfaceSlot(props: {
+  readonly tabId: string;
+  readonly visible: boolean;
+  readonly cornerRadius?: number;
+  readonly zIndex?: number;
+  readonly layoutVersion?: string | number;
+  readonly className?: string;
+  readonly fitSourceContent?: boolean;
+}) {
+  const {
+    tabId,
+    visible,
+    cornerRadius = 0,
+    zIndex = 30,
+    layoutVersion,
+    className,
+    fitSourceContent = false,
+  } = props;
+  const presentationRef = useRef({ visible, cornerRadius, zIndex });
+  const updateRef = useRef<(() => void) | null>(null);
+
+  // The lease lives as long as this element for one tab, so the ref callback owns it.
+  const attachSurface = (element: HTMLDivElement) => {
+    let lease = acquireBrowserSurface(tabId, fitSourceContent);
+    const update = () => {
+      const rect = element.getBoundingClientRect();
+      const presentation = presentationRef.current;
+      const presented = lease.present(
+        {
+          x: Math.round(rect.x),
+          y: Math.round(rect.y),
+          width: Math.max(1, Math.round(rect.width)),
+          height: Math.max(1, Math.round(rect.height)),
+        },
+        presentation.visible && rect.width > 0 && rect.height > 0,
+        presentation.cornerRadius,
+        presentation.zIndex,
+      );
+      if (presentation.visible && !presented) {
+        lease.release();
+        lease = acquireBrowserSurface(tabId, fitSourceContent);
+        lease.present(
+          {
+            x: Math.round(rect.x),
+            y: Math.round(rect.y),
+            width: Math.max(1, Math.round(rect.width)),
+            height: Math.max(1, Math.round(rect.height)),
+          },
+          rect.width > 0 && rect.height > 0,
+          presentation.cornerRadius,
+          presentation.zIndex,
+        );
+      }
+    };
+    updateRef.current = update;
+    update();
+    const observed: Element[] = [element];
+    // Inline shells animate without resizing the slot, so observe the shell too.
+    const panel = element.closest('[data-preview-panel-mode="inline"]');
+    if (panel) observed.push(panel);
+    // Sidebar width changes move the slot without changing its size or column offset.
+    observed.push(...document.querySelectorAll('[data-slot="sidebar-gap"]'));
+    const stopObserving = observeResize(observed, update);
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      stopObserving();
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+      if (updateRef.current === update) updateRef.current = null;
+      lease.release();
+    };
+  };
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes visibility, radius and stacking to the desktop browser surface after layout
+  useLayoutEffect(() => {
+    presentationRef.current = { visible, cornerRadius, zIndex };
+    updateRef.current?.();
+  }, [
+    cornerRadius,
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A layoutVersion bump means the slot moved without resizing, so it re-presents at the new position.
+    layoutVersion,
+    visible,
+    zIndex,
+  ]);
+
+  return <div ref={attachSurface} className={className} data-browser-surface-slot={tabId} />;
+}

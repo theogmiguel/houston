@@ -1,0 +1,1054 @@
+<!-- @style -->
+/* Browser, composer, dictation, drop slots, mascot, primitives. Prefix: .bx- */
+[data-view^="browser-"] { display: flex; flex-direction: column }
+[data-view^="browser-"][hidden] { display: none }
+[data-view^="browser-"] > .page { width: 100% }
+.bx-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 6px; padding: 0 6px 6px }
+.bx-grid.narrow { grid-template-columns: minmax(0, 1fr) 284px }
+.bx-grid.three { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: 1fr 1fr }
+.bx-grid.three > .tall { grid-row: span 2 }
+.bx-grid.side { grid-template-columns: minmax(0, 1fr) 470px }
+.bx-grid.one { grid-template-columns: minmax(0, 1fr) }
+.bx-pane { position: relative }
+.bx-pane .term { padding: 8px 12px; font-size: 12px; line-height: 18px }
+.bx-pane .ph .ico { color: var(--t3); display: flex }
+.bx-pane:not(.focus) .ph .ico { color: var(--t3) }
+
+/* Controls: 28px floor */
+.bx-ib { height: 28px; min-width: 28px; padding: 0; display: inline-grid; place-items: center; border-radius: var(--r-ctl); color: var(--t2); flex: none; transition: background-color .12s, color .12s }
+.bx-ib:hover { background: var(--hover); color: var(--t1) }
+.bx-ib[aria-pressed="true"] { background: var(--sel); color: var(--accent-ink); box-shadow: inset 0 0 0 1px var(--accent-ink) }
+.bx-ib[disabled] { opacity: .4; cursor: default }
+.bx-ib.cnt { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; font-size: 12px; font-variant-numeric: tabular-nums }
+.bx-ib.cnt .n { color: var(--t2) }
+.bx-ib .chv { color: var(--t3) }
+
+/* Toolbar A: one row */
+.bx-bar { height: 40px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 6px; border-bottom: 1px solid var(--line) }
+.bx-bar2 { height: 36px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 6px 0 8px; border-bottom: 1px solid var(--line); background: var(--term-head) }
+.bx-bar2 .sp, .bx-bar .sp { flex: 1 }
+.bx-addr { flex: 1; min-width: 0; height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 8px; margin: 0 4px; border-radius: var(--r-ctl); background: var(--field); color: var(--t1); white-space: nowrap }
+.bx-addr .url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis }
+.bx-addr .url.ph { color: var(--t3) }
+.bx-addr svg.i { color: var(--t3) }
+.bx-fav { width: 16px; height: 16px; border-radius: var(--r-badge); background: var(--sel); color: var(--t2); display: inline-grid; place-items: center; font: 600 11px/16px var(--font); flex: none }
+.bx-sec { display: inline-flex; align-items: center; gap: 4px; color: var(--t1); font-size: 12px; font-weight: 500; flex: none }
+.bx-sec svg.i { color: var(--warn) }
+.bx-cap { font: 11px/14px var(--mono); color: var(--t3); font-variant-numeric: tabular-nums; white-space: nowrap }
+.bx-bar2 .segc button { width: 30px; padding: 0; display: grid; place-items: center }
+.bx-lbl { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 8px; border-radius: var(--r-ctl); color: var(--t2); font-weight: 500; white-space: nowrap }
+.bx-lbl:hover { background: var(--hover); color: var(--t1) }
+.bx-lbl[aria-pressed="true"] { background: var(--sel); color: var(--t1); box-shadow: inset 0 0 0 1px var(--accent-ink) }
+.bx-lbl[aria-pressed="true"] svg.i { color: var(--accent-ink) }
+.bx-sep { width: 1px; height: 16px; background: var(--line-strong); margin: 0 4px; flex: none }
+
+/* Strips under the toolbar: picker */
+.bx-strip { min-height: 32px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-bottom: 1px solid var(--line); background: var(--term-head); color: var(--t1) }
+.bx-strip svg.i { color: var(--accent-ink) }
+.bx-strip.in { padding: 6px 10px }
+.bx-tag { font: 12px/16px var(--mono); color: var(--accent-ink); background: var(--field); border-radius: var(--r-badge); padding: 1px 6px }
+.bx-in { flex: 1; min-width: 0; height: 28px; display: flex; align-items: center; padding: 0 10px; border-radius: var(--r-ctl); border: 1px solid var(--line-strong); background: var(--canvas); color: var(--t1) }
+.bx-in.ph { color: var(--t3) }
+.bx-in .caret { width: 1px; height: 14px; background: var(--t1); margin-left: 1px }
+.bx-btn-off { opacity: .45; pointer-events: none }
+
+/* Stage */
+.bx-stage { flex: 1; min-height: 0; position: relative; overflow: hidden; background: var(--term); display: flex; flex-direction: column }
+.bx-stage.dev { align-items: center; justify-content: center; gap: 10px; background: var(--term-head) }
+.bx-note { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 5 }
+.bx-note.top { top: 8px; bottom: auto }
+.bx-note .banner { margin: 0; background: var(--raised); box-shadow: var(--shadow-float); border-color: var(--warn-line); align-items: center }
+.bx-note .banner.err { border-color: color-mix(in srgb, var(--stop) 40%, transparent) }
+.bx-note .banner svg.i.w { color: var(--warn); margin-top: 1px }
+.bx-note .banner .bt b { font-weight: 600 }
+
+/* The page inside the browser: a simulated website, not themed */
+.bx-site { background: #fff; color: #1d1d1f; font: 14px/20px var(--font); width: 100%; height: 100%; overflow: hidden; display: flex; flex-direction: column; text-align: left }
+.bx-site .s-nav { display: flex; align-items: center; gap: 20px; height: 48px; padding: 0 24px; border-bottom: 1px solid #e3e3e6; flex: none }
+.bx-site .s-nav b { font-size: 16px; margin-right: auto }
+.bx-site .s-nav span { color: #5b5b61 }
+.bx-site .s-body { padding: 40px 24px; display: flex; flex-direction: column; gap: 14px; max-width: 420px; margin: 0 auto; width: 100% }
+.bx-site h1 { margin: 0; font: 700 24px/30px var(--font); letter-spacing: -.01em }
+.bx-site p { margin: 0; color: #5b5b61 }
+.bx-site .s-f { display: flex; flex-direction: column; gap: 4px; position: relative }
+.bx-site .s-f label { font-weight: 500; font-size: 13px }
+.bx-site .s-in { height: 36px; border: 1px solid #c7c7cc; border-radius: 6px; padding: 0 10px; display: flex; align-items: center; color: #1d1d1f; background: #fff }
+.bx-site .s-btn { height: 38px; border-radius: 6px; background: #0a63e0; color: #fff; font-weight: 600; display: grid; place-items: center; margin-top: 6px }
+.bx-site .picked { outline: 2px solid #0a63e0; outline-offset: 2px; position: relative }
+.bx-site .picked::after { content: attr(data-tag); position: absolute; left: 0; bottom: calc(100% + 4px); background: #0a63e0; color: #fff; font: 500 11px/16px var(--mono); padding: 0 6px; border-radius: 4px; white-space: nowrap }
+.bx-site.dim { filter: none }
+.bx-dev { position: relative; flex: none; overflow: hidden; background: #fff; border-radius: var(--r-group); box-shadow: 0 0 0 1px var(--line-strong) }
+.bx-dev .bx-site { transform-origin: 0 0; position: absolute; left: 0; top: 0 }
+.bx-dev.phone { width: 212px; height: 460px }
+.bx-dev.phone .bx-site { width: 393px; height: 852px; transform: scale(.54) }
+.bx-dev.tablet { width: 300px; height: 431px }
+.bx-dev.tablet .bx-site { width: 820px; height: 1180px; transform: scale(.3659) }
+.bx-dev.phone .s-nav span, .bx-dev .s-body { }
+.bx-dev.phone .s-nav span { display: none }
+
+/* Start screen */
+.bx-start { flex: 1; overflow: auto; display: flex; justify-content: center; padding: 40px 24px }
+.bx-start .in { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 6px }
+.bx-start h2.t { margin: 0 0 2px; font: 500 26px/32px var(--serif); letter-spacing: -.01em }
+.bx-start .lead { color: var(--t2); margin-bottom: 16px }
+.bx-start .sect { padding-left: 4px; padding-top: 14px }
+.bx-srv { display: grid; grid-template-columns: 20px 1fr 14px; align-items: center; gap: 10px; min-height: 44px; padding: 0 8px; border-radius: var(--r-ctl); width: 100%; text-align: left }
+.bx-srv:hover { background: var(--hover) }
+.bx-srv .m { display: flex; flex-direction: column; min-width: 0 }
+.bx-srv .m b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.bx-srv .m small { color: var(--t3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.bx-srv .m small .link { font-size: 12px }
+.bx-srv > svg.i { color: var(--t3) }
+.bx-rec { display: grid; grid-template-columns: 1fr 28px; align-items: center; border-radius: var(--r-ctl) }
+.bx-rec:hover { background: var(--hover) }
+.bx-rec .bx-srv { grid-template-columns: 20px 1fr; background: none }
+.bx-rec .x { opacity: 0; color: var(--t3) }
+.bx-rec:hover .x, .bx-rec:focus-within .x { opacity: 1 }
+.bx-hint { color: var(--t3); font-size: 12px; line-height: 16px; padding: 4px 4px 0; max-width: 56ch }
+
+/* Unreachable */
+.bx-fail { flex: 1; display: grid; place-items: center; padding: 24px; overflow: auto }
+.bx-fail .in { width: 100%; max-width: 340px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px }
+.bx-fail .tile { width: 32px; height: 32px; border-radius: var(--r-group); background: var(--field); display: grid; place-items: center; color: var(--stop) }
+.bx-fail h2 { margin: 0; font: 650 15px/20px var(--font) }
+.bx-fail p { margin: 0; color: var(--t2) }
+.bx-fail pre { margin: 0; width: 100%; padding: 8px 10px; border-radius: var(--r-ctl); background: var(--field); font: 12px/18px var(--mono); color: var(--t2); white-space: pre-wrap }
+
+/* Menus anchored inside a pane */
+.bx-menu { position: absolute; z-index: 25; width: 240px }
+.bx-menu .mi.sel { font-weight: 600 }
+.bx-menu .mi .ck { margin-left: auto; color: var(--accent-ink) }
+.bx-menu .mi:hover .ck { color: inherit }
+.bx-menu .mi .meta { margin-left: auto; color: var(--t3); font-size: 12px; font-variant-numeric: tabular-nums }
+.bx-menu .mi:hover .meta { color: inherit }
+.bx-menu .mi.off { color: var(--t3); cursor: default }
+.bx-menu .mi.off:hover { background: none; color: var(--t3) }
+.bx-menu .mlab { padding: 6px 8px 4px; color: var(--t3); font: 600 11px/14px var(--font) }
+.bx-menu .mi .fav { }
+.bx-menu .mi .proc { margin-left: auto; color: var(--t3); font-size: 12px }
+.bx-menu .mi:hover .proc { color: inherit }
+
+/* Tabs (side panel) */
+.bx-tabs { height: 36px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 6px; background: var(--term-head); border-bottom: 1px solid var(--line) }
+.bx-tab { height: 28px; max-width: 168px; display: inline-flex; align-items: center; gap: 6px; padding: 0 4px 0 8px; border-radius: var(--r-ctl); color: var(--t2); white-space: nowrap; min-width: 0 }
+.bx-tab:hover { background: var(--hover) }
+.bx-tab[aria-selected="true"] { background: var(--sel); color: var(--t1) }
+.bx-tab .t { overflow: hidden; text-overflow: ellipsis; min-width: 0 }
+.bx-tab .x { width: 20px; height: 20px; display: grid; place-items: center; border-radius: var(--r-badge); color: var(--t3); opacity: 0 }
+.bx-tab:hover .x, .bx-tab[aria-selected="true"] .x, .bx-tab:focus-within .x { opacity: 1 }
+.bx-tab .x:hover { background: var(--hover); color: var(--t1) }
+.bx-tab > svg.i { color: var(--t3) }
+.bx-tabs .sp { flex: 1 }
+.bx-tabsel { height: 28px; display: inline-flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: var(--r-ctl); color: var(--t1); font-weight: 500; min-width: 0; flex: 0 1 auto }
+.bx-tabsel:hover, .bx-tabsel[aria-expanded="true"] { background: var(--sel) }
+.bx-tabsel .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.bx-tabsel .n { color: var(--t3); font-size: 12px; font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: 2px }
+.bx-tabpop { position: absolute; left: 6px; top: 40px; width: 320px; z-index: 25; background: var(--raised); border-radius: var(--r-group); box-shadow: var(--shadow-float); padding: 5px }
+.bx-tabrow { display: grid; grid-template-columns: 20px 1fr 24px; align-items: center; gap: 8px; min-height: 40px; padding: 0 4px 0 8px; border-radius: var(--r-ctl) }
+.bx-tabrow:hover { background: var(--hover) }
+.bx-tabrow[aria-current="true"] { background: var(--sel) }
+.bx-tabrow .m { display: flex; flex-direction: column; min-width: 0 }
+.bx-tabrow .m b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.bx-tabrow .m small { color: var(--t3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.bx-tabrow .x { color: var(--t3); opacity: 0 }
+.bx-tabrow:hover .x, .bx-tabrow[aria-current="true"] .x { opacity: 1 }
+.bx-tabpop hr { border: 0; border-top: 1px solid var(--line); margin: 5px 4px }
+
+/* Act confirmation */
+.bx-spot { position: relative; z-index: 2; box-shadow: 0 0 0 2px var(--accent-ink), 0 0 0 9999px rgba(0,0,0,.5); border-radius: 6px }
+.bx-spot::before { content: attr(data-ref); position: absolute; left: -2px; bottom: calc(100% + 6px); z-index: 3; background: var(--raised); color: var(--t1); font: 500 11px/16px var(--mono); padding: 0 6px; border-radius: var(--r-badge); box-shadow: var(--shadow-float) }
+.bx-card { position: absolute; z-index: 4; top: calc(100% + 14px); left: -8px; width: 380px; background: var(--raised); border-radius: var(--r-group); box-shadow: var(--shadow-float); padding: 14px; display: flex; flex-direction: column; gap: 10px; color: var(--t1); font: 13px/18px var(--font); text-align: left }
+.bx-card h3, .bx-dlg h3 { margin: 0; font: 650 13px/18px var(--font) }
+.bx-origin { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; color: var(--t2); font-size: 12px }
+.bx-origin .mono { color: var(--t1) }
+.bx-el { display: flex; align-items: center; gap: 8px; min-width: 0 }
+.bx-el .ref { font: 12px/16px var(--mono); color: var(--accent-ink); background: var(--field); border-radius: var(--r-badge); padding: 1px 6px; flex: none }
+.bx-pay { display: flex; flex-direction: column; gap: 4px }
+.bx-pay .l { color: var(--t3); font-size: 12px; line-height: 16px }
+.bx-pay .v { font: 12px/18px var(--mono); background: var(--canvas); border: 1px solid var(--line-strong); border-radius: var(--r-ctl); padding: 6px 10px; color: var(--t1); word-break: break-all }
+.bx-warnbox { display: flex; gap: 8px; padding: 8px 10px; border-radius: var(--r-ctl); background: var(--warn-wash); border: 1px solid var(--warn-line); color: var(--t1); font-size: 12px; line-height: 16px }
+.bx-warnbox svg.i { color: var(--warn); margin-top: 1px }
+.bx-trust { display: flex; align-items: center; gap: 8px; color: var(--t2) }
+.bx-foot { display: flex; align-items: center; gap: 8px }
+.bx-foot .cd { margin-right: auto; color: var(--t3); font-size: 12px; font-variant-numeric: tabular-nums }
+.bx-foot .cd .mono { color: var(--t2) }
+.bx-foot .btn.focus { outline: 2px solid var(--accent-ink); outline-offset: 2px }
+.bx-dlg { width: 440px; max-width: calc(100% - 32px); background: var(--raised); border-radius: var(--r-dialog); box-shadow: var(--shadow-float); padding: 16px; display: flex; flex-direction: column; gap: 12px; color: var(--t1); text-align: left }
+.bx-dlg .fn { color: var(--t3); font-size: 12px; line-height: 16px; margin: 0 }
+.bx-center { align-items: center !important; padding-top: 0 !important }
+
+/* Fullscreen */
+.bx-fs { padding: 28px !important; align-items: stretch !important }
+.bx-fs .panel { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--raised); border-radius: var(--r-dialog); box-shadow: var(--shadow-float); overflow: hidden }
+.bx-fs .tool { height: 48px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--line) }
+.bx-fs .tool .bx-addr { max-width: 720px; margin: 0 8px }
+
+/* Composer */
+.bx-comp { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-group); display: flex; flex-direction: column; position: relative }
+.bx-comp .ta { min-height: 76px; padding: 12px 14px 4px; color: var(--t3) }
+.bx-comp .ta.has { color: var(--t1) }
+.bx-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0 }
+.bx-att { position: relative; display: inline-flex; align-items: center; height: 28px; max-width: 220px; gap: 6px; padding: 0 28px 0 4px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--field); color: var(--t2); font-weight: 500 }
+.bx-att.ro { padding-right: 10px }
+.bx-att .fn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0 }
+.bx-att .rm { position: absolute; right: 4px; top: 4px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; color: var(--t3) }
+.bx-att .rm::after { content: ""; position: absolute; inset: -4px }
+.bx-att .rm:hover { background: var(--hover); color: var(--t1) }
+.bx-att .g { height: 20px; min-width: 24px; padding: 0 4px; border-radius: var(--r-badge); display: inline-grid; place-items: center; font: 600 11px/14px var(--font); flex: none; background: var(--field); color: var(--t2) }
+.bx-att .g.md { background: color-mix(in srgb, var(--accent-ink) 12%, transparent); color: var(--accent-ink) }
+.bx-att .g.pdf { background: color-mix(in srgb, var(--stop) 12%, transparent); color: var(--stop) }
+.bx-att .g.img { background: linear-gradient(135deg, #c0663a, #f4d9a8); padding: 0; min-width: 20px; border-radius: 50% }
+.bx-cbar { display: flex; align-items: center; gap: 6px; padding: 10px 12px 12px }
+.bx-cbar .sp { flex: 1 }
+.bx-pill { height: 28px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 12px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--field); color: var(--t1); font-weight: 500; white-space: nowrap }
+.bx-pill:hover { background: var(--sel) }
+.bx-pill .k { color: var(--t3); font-weight: 400 }
+.bx-pill svg.i { color: var(--t3) }
+.bx-pill[aria-expanded="true"] { background: var(--sel); box-shadow: inset 0 0 0 1px var(--accent-ink) }
+.bx-pill.off { opacity: .55; cursor: default }
+.bx-pill.cnt { padding: 0 12px; color: var(--t2) }
+.bx-mrow { display: flex; align-items: center; gap: 12px; padding: 4px 4px 4px 8px; min-height: 36px }
+.bx-mrow > span:first-child { color: var(--t2); flex: 1 }
+.bx-mrow .sel-ctl { height: 28px; min-width: 96px; justify-content: space-between }
+.bx-pv { position: absolute; z-index: 25; background: var(--raised); border-radius: var(--r-group); box-shadow: var(--shadow-float); padding: 8px; width: 220px; display: flex; flex-direction: column; gap: 6px }
+.bx-pv .th { height: 120px; border-radius: 6px; background: radial-gradient(circle at 50% 50%, #f4d9a8 0 30%, #c0663a 31%) }
+.bx-pv .ty { height: 24px; border-radius: 6px; background: color-mix(in srgb, var(--accent-ink) 18%, transparent); color: var(--accent-ink); font-weight: 600; font-size: 11px; display: grid; place-items: center }
+.bx-pv .nm { padding: 0 2px; color: var(--t1) }
+.bx-board { display: flex; flex-direction: column; gap: 20px }
+.bx-board .cap { color: var(--t3); font-size: 12px; margin: 0 0 6px 4px }
+.bx-tip { position: absolute; z-index: 25; background: var(--raised); color: var(--t1); font-size: 12px; line-height: 16px; padding: 4px 8px; border-radius: var(--r-ctl); box-shadow: var(--shadow-float); white-space: nowrap }
+
+/* Dictation */
+.bx-mic { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px 0 6px; border-radius: 999px; background: var(--field); color: var(--t1); font-size: 12px; font-weight: 500; white-space: nowrap }
+.bx-mic svg.i { color: var(--stop) }
+.bx-mic .ring { position: relative; display: inline-grid; place-items: center; width: 16px; height: 16px }
+.bx-mic .ring::before { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--stop); opacity: .5; animation: bx-pulse 1.4s ease-out infinite }
+@keyframes bx-pulse { from { transform: scale(.7); opacity: .7 } to { transform: scale(1.5); opacity: 0 } }
+.bx-dict { margin: 0 10px 10px; padding: 10px 12px; border-radius: var(--r-group); border: 1px solid var(--line-strong); background: var(--card); display: flex; align-items: center; gap: 10px; font-family: var(--font); white-space: normal }
+.bx-dict svg.i { color: var(--t3) }
+.bx-dict .q { flex: 1; min-width: 0 }
+
+/* Drop slots */
+.bx-drop { position: absolute; z-index: 6; display: grid; place-items: center; border: 2px dashed var(--accent-ink); border-radius: var(--r-group); background: color-mix(in srgb, var(--accent) 12%, transparent); pointer-events: none }
+.bx-drop .lbl { height: 24px; display: inline-flex; align-items: center; padding: 0 10px; border-radius: var(--r-badge); background: var(--accent); color: var(--on-accent); font-weight: 500; box-shadow: var(--shadow-float) }
+.bx-ghost { position: absolute; z-index: 7; display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px 0 10px; border-radius: var(--r-ctl); background: var(--raised); box-shadow: var(--shadow-float); font-weight: 600; cursor: grabbing }
+.bx-pane.lift { opacity: .55 }
+.bx-split { position: absolute; z-index: 5; top: 0; bottom: 0; width: 6px; display: grid; place-items: center }
+.bx-split::after { content: ""; width: 1px; height: 100%; background: var(--t3) }
+.bx-scrim { position: absolute; inset: 0; z-index: 4; background: rgba(0,0,0,.2); pointer-events: none; border-radius: var(--r-group) }
+[data-hx="paper"] .bx-scrim { background: rgba(0,0,0,.08) }
+
+/* Mascot: companion lives in the rail footer; the art is the existing sprite, drawn here as a placeholder orb */
+.bx-mascot { position: relative; margin-top: auto; padding: 0 4px 2px; display: flex; align-items: flex-end; gap: 8px }
+.bx-mascot + .foot { margin-top: 0 }
+.bx-buddy { width: 52px; height: 52px; display: grid; place-items: center; border-radius: var(--r-group); flex: none }
+.bx-buddy:hover { background: var(--hover) }
+.bx-orb { position: relative; width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 38% 32%, #9be7ff, #3f62ff 58%, #22195e) }
+.bx-orb::after { content: ""; position: absolute; left: -9px; right: -9px; top: 10px; height: 10px; border-radius: 50%; border: 2px solid #a78bfa; transform: rotate(-18deg) }
+.bx-bubble { position: relative; margin-bottom: 14px; padding: 6px 10px; border-radius: var(--r-group); background: var(--raised); box-shadow: var(--shadow-float); color: var(--t1); font-size: 12px; line-height: 16px; max-width: 150px }
+.bx-bubble::before { content: ""; position: absolute; left: -4px; bottom: 10px; width: 8px; height: 8px; background: var(--raised); transform: rotate(45deg); border-radius: 1px }
+.bx-meet { position: fixed; left: 252px; bottom: 56px; z-index: 22; width: 272px; padding: 14px; background: var(--raised); border-radius: var(--r-group); box-shadow: var(--shadow-float); display: flex; flex-direction: column; gap: 8px }
+.bx-meet b { font-weight: 650; font-size: 13px }
+.bx-meet p { margin: 0; color: var(--t2) }
+.bx-meet small { color: var(--t3); font-size: 12px; line-height: 16px }
+.bx-meet .acts { display: flex; gap: 8px; margin-top: 4px }
+
+/* Primitives sheet */
+.bx-spec { display: grid; grid-template-columns: 1fr 1fr; gap: 28px 32px }
+.bx-spec .wide { grid-column: 1 / -1 }
+.bx-spec .grp { gap: 10px }
+.bx-r { display: flex; flex-wrap: wrap; align-items: center; gap: 8px }
+.bx-r .lab { color: var(--t3); font-size: 12px; width: 88px; flex: none }
+.bx-ch { height: 24px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: var(--r-badge); background: var(--field); color: var(--t1); font-size: 12px; font-weight: 500; white-space: nowrap }
+.bx-ch.cnt { min-width: 24px; justify-content: center; font-variant-numeric: tabular-nums }
+.bx-ch.ok { color: var(--t1) }
+.bx-ch .sw { width: 8px; height: 8px; border-radius: 50%; background: var(--warn) }
+.bx-ch.line { background: none; border: 1px solid var(--line-strong); color: var(--t2) }
+.bx-choice { height: 28px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: 999px; background: none; border: 1px solid var(--line-strong); color: var(--t2); font-weight: 500 }
+.bx-choice[aria-pressed="true"] { background: var(--sel); color: var(--t1); border-color: transparent }
+.bx-choice[disabled] { opacity: .45 }
+.bx-copy { height: 24px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: var(--r-badge); background: var(--field); font: 12px/16px var(--mono); color: var(--t1) }
+.bx-copy svg.i { color: var(--t3) }
+.bx-stack { display: flex; flex-direction: column; gap: 2px; width: 100% }
+.bx-stack .row.hov { background: var(--hover) }
+.bx-stack .row.foc { outline: 2px solid var(--accent-ink); outline-offset: -2px }
+.bx-stack .row.dis { opacity: .45 }
+.bx-verbs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100% }
+.bx-verbs .btn { justify-content: flex-start }
+.bx-toast { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px 0 10px; border-radius: var(--r-group); background: var(--raised); box-shadow: var(--shadow-float); color: var(--t1); font-weight: 500; width: fit-content }
+.bx-toast svg.i { color: var(--ok) }
+.bx-focusdemo .segc button:nth-child(2) { outline: 2px solid var(--accent-ink); outline-offset: 2px }
+.bx-field { display: flex; flex-direction: column; gap: 4px; min-width: 0 }
+.bx-field > .l { color: var(--t3); font-size: 12px; line-height: 16px }
+.bx-field .sel-ctl, .bx-field .bx-text { height: 28px; width: 100%; justify-content: space-between }
+.bx-field .sel-ctl.edited, .bx-field .bx-text.edited { border-color: var(--warn-line) }
+.bx-text { display: flex; align-items: center; padding: 0 10px; border-radius: var(--r-ctl); border: 1px solid var(--line-strong); background: var(--canvas); color: var(--t1); font-weight: 500 }
+.bx-slot { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-group); padding: 12px; display: flex; flex-direction: column; gap: 12px }
+.bx-slot .hd { display: flex; align-items: center; gap: 8px }
+.bx-slot .hd .no { color: var(--t3); font-variant-numeric: tabular-nums; width: 14px }
+.bx-slot .hd .ed { margin-left: auto; color: var(--warn); font-size: 12px; font-weight: 500 }
+.bx-slot .f2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px }
+.bx-pair { display: grid; grid-template-columns: 1fr 200px; gap: 20px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-group); padding: 18px 18px 18px 20px }
+.bx-pair h2 { margin: 0 0 12px; font: 650 15px/20px var(--font) }
+.bx-steps { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px }
+.bx-step { display: grid; grid-template-columns: 24px 1fr; gap: 12px }
+.bx-step .no { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line-strong); display: grid; place-items: center; color: var(--t2); font-size: 12px; font-variant-numeric: tabular-nums }
+.bx-step.done .no { border-color: var(--ok); color: var(--ok) }
+.bx-step b { font-weight: 600; display: block }
+.bx-step span.d { color: var(--t3); font-size: 12px; line-height: 16px }
+.bx-qr { width: 200px; height: 200px; border-radius: var(--r-group); background: #fff; position: relative; padding: 12px }
+.bx-qr i { position: absolute; width: 52px; height: 52px; background: #000; border-radius: 2px }
+.bx-qr i::before { content: ""; position: absolute; inset: 8px; background: #fff }
+.bx-qr i::after { content: ""; position: absolute; inset: 18px; background: #000 }
+.bx-qr b { position: absolute; width: 8px; height: 8px; background: #000 }
+.bx-qr.off { background: var(--canvas); border: 1px dashed var(--line-strong); display: grid; place-items: center; color: var(--t3) }
+.bx-dev-row { display: grid; grid-template-columns: 1fr auto; align-items: center; min-height: 44px; padding: 0 14px; border-top: 1px solid var(--line) }
+.bx-dev-row:first-child { border-top: 0 }
+.bx-dev-row small { color: var(--t3); font-size: 12px }
+<!-- @views -->
+<!-- map: browser_pane -> browser-pane-a (and browser-pane-b)
+     browser_pane-focused -> browser-pane-a (focused is the only rendered state; inactive disables controls)
+     browser_pane-fresh -> browser-fresh, browser-fresh-empty
+     browser_pane-insecure -> browser-insecure
+     browser_pane-narrow -> browser-narrow-a, browser-narrow-b
+     browser_pane-phone -> browser-phone
+     browser_pane-tablet -> browser-tablet
+     browser_pane-tabs -> browser-tabs-a, browser-tabs-b
+     browser_pane-persist-error -> browser-persist-error
+     browser_fullscreen -> browser-fullscreen
+     browser_act-overlay -> browser-act-overlay
+     browser_act-modal -> browser-act-modal
+     browser_picker-hint -> browser-picker-hint-a, browser-picker-hint-b
+     browser_picker-selected -> browser-picker-selected
+     browser_picker-error -> browser-picker-error
+     composer_attachment-chips, ui-primitives_attachment-chips -> browser-composer
+     composer_attachment-previews -> browser-composer-previews
+     composer_controls-open, ui-primitives_composer-menu -> browser-composer-menu
+     composer_controls-overflow -> browser-composer-overflow
+     composer_controls-states -> browser-composer-states
+     voice_dictation-listening -> browser-dictation-listening
+     voice_dictation-transcribing -> browser-dictation-transcribing
+     layout_drop-slots-splitter -> browser-drop-stack (and browser-drop-split)
+     mascot -> browser-mascot, browser-mascot-meet
+     ui-primitives (unassigned), ui-primitives_chip-shapes, _row-states, _verb-glyphs, _focus-halo, _motion -> browser-primitives
+     ui-primitives_launch-fields, ui-primitives_launch-fields-custom -> browser-launch-fields
+     ui-primitives_phone-pairing -> browser-phone-pairing
+     no story: browser-servers-menu, browser-device-menu, browser-unreachable, browser-mount-failed -->
+<section class="view" data-view="browser-pane-a" data-group="Browser and composer" data-label="Browser pane · page · A" data-crumb="Houston / Browser" hidden>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="bx-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
+  <symbol id="bx-fwd" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="bx-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+  <symbol id="bx-warn" viewBox="0 0 24 24"><path d="M12 4 2.8 19.5h18.4Z"/><path d="M12 10v4.5M12 17v.2"/></symbol>
+  <symbol id="bx-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/></symbol>
+  <symbol id="bx-ext" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="m20 4-9 9"/><path d="M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/></symbol>
+  <symbol id="bx-monitor" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M9 20h6M12 16.5V20"/></symbol>
+  <symbol id="bx-tablet" viewBox="0 0 24 24"><rect x="4.5" y="3" width="15" height="18" rx="2.5"/><path d="M11 18h2"/></symbol>
+  <symbol id="bx-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="bx-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/></symbol>
+  <symbol id="bx-wrap" viewBox="0 0 24 24"><path d="M4 6h16M4 12h12.5a2.5 2.5 0 0 1 0 5H13"/><path d="m15 14.5-2 2.5 2 2.5"/><path d="M4 18h5"/></symbol>
+  <symbol id="bx-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></symbol>
+  <symbol id="bx-sendup" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></symbol>
+</svg><div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">Create your account</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib cnt" aria-label="Device size" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#bx-monitor"/></svg><svg class="i sm chv" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div>
+  <div class="bx-stage"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn">Create account</div></div></div></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-pane-b" data-group="Browser and composer" data-label="Browser pane · page · B" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">Create your account</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label></div><div class="bx-bar2"><span class="segc" role="group" aria-label="Device size"><button aria-label="Desktop" aria-pressed="true"><svg class="i sm" aria-hidden="true"><use href="#bx-monitor"/></svg></button><button aria-label="Phone 393 × 852" aria-pressed="false"><svg class="i sm" aria-hidden="true"><use href="#i-phone"/></svg></button><button aria-label="Tablet 820 × 1180" aria-pressed="false"><svg class="i sm" aria-hidden="true"><use href="#bx-tablet"/></svg></button></span><span class="sp"></span><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-lbl" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg>Select element</button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div>
+  <div class="bx-stage"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn">Create account</div></div></div></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-fresh" data-group="Browser and composer" data-label="Browser pane · start screen" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">New tab</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back" disabled><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload" disabled><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><span class="url ph">Search or enter URL</span></label><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="false" disabled><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib cnt" aria-label="Device size" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#bx-monitor"/></svg><svg class="i sm chv" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-ib" aria-label="Open in system browser" disabled><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen" disabled><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div>
+  <div class="bx-stage"><div class="bx-start"><div class="in"><h2 class="t">Open a page</h2><div class="lead">Enter a URL above, or open a server this workspace is running.</div><div class="sect">Local servers</div><button class="bx-srv"><span class="bx-fav">V</span><span class="m"><b>localhost:5173</b><small>vite · started by <span class="link">Review</span></small></span><svg class="i sm" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-srv"><span class="bx-fav">D</span><span class="m"><b>localhost:3000</b><small>node · started by <span class="link">shell</span></small></span><svg class="i sm" aria-hidden="true"><use href="#bx-fwd"/></svg></button><div class="bx-hint">Servers started by panes in this workspace. Select one to open it here.</div><div class="sect">Recently used</div><div class="bx-rec"><button class="bx-srv"><span class="bx-fav">A</span><span class="m"><b>Create your account</b><small>example.test/signup</small></span></button><button class="iconbtn x" aria-label="Remove example.test/signup from recent"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></div><div class="bx-rec"><button class="bx-srv"><span class="bx-fav">D</span><span class="m"><b>Docs · Acme</b><small>docs.example.test/start</small></span></button><button class="iconbtn x" aria-label="Remove docs.example.test/start from recent"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></div><div class="bx-rec"><button class="bx-srv"><span class="bx-fav">L</span><span class="m"><b>localhost:5173</b><small>localhost:5173</small></span></button><button class="iconbtn x" aria-label="Remove localhost:5173 from recent"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></div></div></div></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-fresh-empty" data-group="Browser and composer" data-label="Browser pane · start screen, nothing yet" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">New tab</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back" disabled><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload" disabled><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><span class="url ph">Search or enter URL</span></label><button class="bx-ib cnt" aria-label="Local servers, 0 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">0</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="false" disabled><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib cnt" aria-label="Device size" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#bx-monitor"/></svg><svg class="i sm chv" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-ib" aria-label="Open in system browser" disabled><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen" disabled><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div>
+  <div class="bx-stage"><div class="bx-start"><div class="in"><h2 class="t">Open a page</h2><div class="lead">Enter a URL above, or open a server this workspace is running.</div><div class="sect">Local servers</div><div class="bx-hint">Servers started by panes in this workspace appear here.</div></div></div></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-insecure" data-group="Browser and composer" data-label="Browser pane · not secure" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">Create your account</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span><span class="bx-sec"><svg class="i sm" aria-hidden="true"><use href="#bx-warn"/></svg>Not secure</span></label><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib cnt" aria-label="Device size" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#bx-monitor"/></svg><svg class="i sm chv" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div>
+  <div class="bx-stage"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn">Create account</div></div></div></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-phone" data-group="Browser and composer" data-label="Browser pane · phone width" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">Create your account</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib cnt" aria-label="Device size" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg><svg class="i sm chv" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div>
+  <div class="bx-stage dev"><div class="bx-dev phone"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn">Create account</div></div></div></div><span class="bx-cap">393 × 852 · 54%</span></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-tablet" data-group="Browser and composer" data-label="Browser pane · tablet width" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">Create your account</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib cnt" aria-label="Device size" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#bx-tablet"/></svg><svg class="i sm chv" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div>
+  <div class="bx-stage dev"><div class="bx-dev tablet"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn">Create account</div></div></div></div><span class="bx-cap">820 × 1180 · 37%</span></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-narrow-a" data-group="Browser and composer" data-label="Browser pane · 284 px wide · A" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid narrow"><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">Create your account</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label><button class="bx-ib" aria-label="Select element" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib" aria-label="More browser actions" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button></div>
+  <div class="bx-stage"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn">Create account</div></div></div></div><div class="menu bx-menu" role="menu" style="right:8px;top:74px" aria-label="More browser actions">
+  <button class="mi" role="menuitem"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg>Local servers<span class="meta">2</span></button>
+  <button class="mi" role="menuitem"><svg class="i" aria-hidden="true"><use href="#bx-monitor"/></svg>Device size<span class="meta">Desktop</span></button>
+  <hr>
+  <button class="mi" role="menuitem"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg>Open in system browser</button>
+  <button class="mi" role="menuitem"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg>Full screen</button>
+</div>
+</article></div>
+</section>
+<section class="view" data-view="browser-narrow-b" data-group="Browser and composer" data-label="Browser pane · 284 px wide · B" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid narrow"><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">Create your account</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label></div><div class="bx-bar2"><span class="segc" role="group" aria-label="Device size"><button aria-label="Desktop" aria-pressed="true"><svg class="i sm" aria-hidden="true"><use href="#bx-monitor"/></svg></button><button aria-label="Phone 393 × 852" aria-pressed="false"><svg class="i sm" aria-hidden="true"><use href="#i-phone"/></svg></button><button aria-label="Tablet 820 × 1180" aria-pressed="false"><svg class="i sm" aria-hidden="true"><use href="#bx-tablet"/></svg></button></span><span class="sp"></span><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div>
+  <div class="bx-stage"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn">Create account</div></div></div></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-servers-menu" data-group="Browser and composer" data-label="Browser pane · local servers menu" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">Create your account</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib cnt" aria-label="Device size" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#bx-monitor"/></svg><svg class="i sm chv" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div>
+  <div class="bx-stage"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn">Create account</div></div></div></div><div class="menu bx-menu" role="menu" style="right:104px;top:78px;width:260px" aria-label="Local servers">
+  <div class="mlab">Local servers</div>
+  <button class="mi" role="menuitem"><span class="bx-fav">V</span><span class="mono">localhost:5173</span><span class="proc">vite</span></button>
+  <button class="mi" role="menuitem"><span class="bx-fav">D</span><span class="mono">localhost:3000</span><span class="proc">node</span></button>
+</div>
+</article></div>
+</section>
+<section class="view" data-view="browser-device-menu" data-group="Browser and composer" data-label="Browser pane · device menu · A" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">Create your account</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib cnt" aria-label="Device size" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#bx-monitor"/></svg><svg class="i sm chv" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div>
+  <div class="bx-stage"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn">Create account</div></div></div></div><div class="menu bx-menu" role="menu" style="right:76px;top:78px;width:230px" aria-label="Device size">
+  <button class="mi sel" role="menuitemradio" aria-checked="true"><svg class="i" aria-hidden="true"><use href="#bx-monitor"/></svg>Desktop<span class="ck"><svg class="i" aria-hidden="true"><use href="#bx-check"/></svg></span></button>
+  <button class="mi" role="menuitemradio" aria-checked="false"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg>Phone<span class="meta">393 × 852</span></button>
+  <button class="mi" role="menuitemradio" aria-checked="false"><svg class="i" aria-hidden="true"><use href="#bx-tablet"/></svg>Tablet<span class="meta">820 × 1180</span></button>
+</div>
+</article></div>
+</section>
+<section class="view" data-view="browser-tabs-a" data-group="Browser and composer" data-label="Browser tabs · side panel · A" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid side"><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus"><div class="bx-tabs" role="tablist" aria-label="Side panel tabs"><div class="bx-tab" role="tab" aria-selected="true"><span class="bx-fav" aria-hidden="true">A</span><span class="t">Create your account</span><button class="x" aria-label="Close Create your account"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></div><div class="bx-tab" role="tab" aria-selected="false"><span class="bx-fav" aria-hidden="true">D</span><span class="t">Docs · Acme</span><button class="x" aria-label="Close Docs · Acme"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></div><div class="bx-tab" role="tab" aria-selected="false"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg><span class="t">New tab</span><button class="x" aria-label="Close New tab"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></div><button class="bx-ib" aria-label="New tab"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg></button><span class="sp"></span><button class="bx-ib" aria-label="Expand side panel"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div><div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib cnt" aria-label="Device size" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#bx-monitor"/></svg><svg class="i sm chv" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div><div class="bx-stage"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn">Create account</div></div></div></div></article></div>
+</section>
+<section class="view" data-view="browser-tabs-b" data-group="Browser and composer" data-label="Browser tabs · side panel · B" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid side"><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus"><div class="bx-tabs"><button class="bx-tabsel" aria-haspopup="menu" aria-expanded="true"><span class="bx-fav" aria-hidden="true">A</span><span class="t">Create your account</span><span class="n">3 tabs<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></span></button><span class="sp"></span><button class="bx-ib" aria-label="New tab"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg></button><button class="bx-ib" aria-label="Expand side panel"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div><div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label></div><div class="bx-bar2"><span class="segc" role="group" aria-label="Device size"><button aria-label="Desktop" aria-pressed="true"><svg class="i sm" aria-hidden="true"><use href="#bx-monitor"/></svg></button><button aria-label="Phone 393 × 852" aria-pressed="false"><svg class="i sm" aria-hidden="true"><use href="#i-phone"/></svg></button><button aria-label="Tablet 820 × 1180" aria-pressed="false"><svg class="i sm" aria-hidden="true"><use href="#bx-tablet"/></svg></button></span><span class="sp"></span><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-lbl" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg>Select element</button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div><div class="bx-stage"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn">Create account</div></div></div></div><div class="bx-tabpop" role="menu" aria-label="Open tabs">
+  <div class="bx-tabrow" aria-current="true" role="menuitem"><span class="bx-fav">A</span><span class="m"><b>Create your account</b><small>example.test/signup</small></span><button class="iconbtn x" aria-label="Close tab"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></div>
+  <div class="bx-tabrow" role="menuitem"><span class="bx-fav">D</span><span class="m"><b>Docs · Acme</b><small>docs.example.test/start</small></span><button class="iconbtn x" aria-label="Close tab"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></div>
+  <div class="bx-tabrow" role="menuitem"><svg class="i" aria-hidden="true"><use href="#bx-globe"/></svg><span class="m"><b>New tab</b></span><button class="iconbtn x" aria-label="Close tab"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></div>
+  <hr><button class="mi" style="display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;width:100%;border-radius:6px;color:var(--t1)" role="menuitem"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>New tab</button>
+</div></article></div>
+</section>
+<section class="view" data-view="browser-unreachable" data-group="Browser and composer" data-label="Browser pane · can’t reach the page" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">localhost:5173</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">L</span><span class="url">localhost:5173</span></label><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib cnt" aria-label="Device size" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#bx-monitor"/></svg><svg class="i sm chv" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div>
+  <div class="bx-stage"><div class="bx-fail" role="alert"><div class="in"><span class="tile"><svg class="i" aria-hidden="true"><use href="#i-plug"/></svg></span><h2>Can't reach localhost:5173</h2>
+<p>Nothing is listening on port 5173. Start the server, then retry.</p>
+<div style="display:flex;align-items:center;gap:8px"><button class="btn"><svg class="i sm" aria-hidden="true"><use href="#i-restart"/></svg>Retry</button><button class="btn ghost">Hide details</button></div>
+<pre>ERR_CONNECTION_REFUSED
+http://localhost:5173/
+3 attempts · last 12 s ago</pre></div></div></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-mount-failed" data-group="Browser and composer" data-label="Browser pane · webview failed to mount" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">Create your account</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib cnt" aria-label="Device size" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#bx-monitor"/></svg><svg class="i sm chv" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div>
+  <div class="bx-stage"><div style="flex:1"></div><div class="bx-note"><div class="banner err" role="alert"><span class="st err" role="img" aria-label="Error"></span><div class="bt"><b>Browser webview failed to mount</b><small>Retry to recreate it.</small></div><button class="btn">Retry</button></div></div></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-persist-error" data-group="Browser and composer" data-label="Browser pane · tab save failed" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">Create your account</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib cnt" aria-label="Device size" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#bx-monitor"/></svg><svg class="i sm chv" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div>
+  <div class="bx-stage"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn">Create account</div></div></div><div class="bx-note"><div class="banner" role="alert"><span class="w"><svg class="i sm w" aria-hidden="true"><use href="#bx-warn"/></svg></span><div class="bt"><b>Open tabs won't be restored</b><small>Writing 142 bytes to browser storage failed (quota exceeded).</small></div><button class="iconbtn" aria-label="Dismiss"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></div></div></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-fullscreen" data-group="Browser and composer" data-label="Browser · full screen" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">Create your account</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib cnt" aria-label="Device size" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#bx-monitor"/></svg><svg class="i sm chv" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div>
+  <div class="bx-stage"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn">Create account</div></div></div></div>
+</article></div><div class="scrim bx-fs" role="presentation"><div class="panel" role="dialog" aria-modal="true" aria-label="Browser, full screen">
+ <div class="tool"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label><span style="flex:1"></span><button class="btn ghost">Exit full screen<kbd>Esc</kbd></button></div>
+ <div style="flex:1;min-height:0;background:#fff;display:flex"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn">Create account</div></div></div></div></div></div>
+</section>
+<section class="view" data-view="browser-act-overlay" data-group="Browser and composer" data-label="Browser · agent action, shown in place" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">Create your account</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib cnt" aria-label="Device size" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#bx-monitor"/></svg><svg class="i sm chv" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div>
+  <div class="bx-stage"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in bx-spot" data-ref="email">old@example.test</div><div class="bx-card" role="dialog" aria-modal="true" aria-label="Confirm browser action"><h3>An agent wants to type in your browser</h3>
+<div class="bx-origin"><svg class="i sm" aria-hidden="true"><use href="#bx-lock"/></svg><span class="mono">example.test</span></div>
+<div class="bx-el"><span class="ref">email</span><span>textbox “Email”</span></div>
+<div class="bx-pay"><div class="l">Text to insert · 19 characters · replaces existing text</div><div class="v">person@example.test</div></div>
+<div class="bx-warnbox"><svg class="i sm" aria-hidden="true"><use href="#bx-warn"/></svg><span>Read this before approving. If it contains anything you did not expect, such as a key, a token or text from another page, deny it.</span></div>
+<div class="bx-trust"><button class="tog" role="switch" aria-checked="false" aria-label="Don't ask again for this workspace this session"></button><span>Don't ask again for this workspace this session</span></div>
+<div class="bx-foot"><span class="cd">Denies in <span class="mono">0:48</span></span><button class="btn focus">Deny</button><button class="btn pri">Approve typing</button></div></div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn">Create account</div></div></div></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-act-modal" data-group="Browser and composer" data-label="Browser · agent action, pane off screen" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid one"><article class="pane bx-pane focus tall">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article></div><div class="scrim bx-center"><div class="bx-dlg" role="dialog" aria-modal="true" aria-label="Confirm browser action"><h3>An agent wants to type in your browser</h3>
+<div class="bx-origin"><svg class="i sm" aria-hidden="true"><use href="#bx-lock"/></svg><span class="mono">example.test</span></div>
+<div class="bx-el"><span class="ref">email</span><span>textbox “Email”</span></div>
+<div class="bx-pay"><div class="l">Text to insert · 19 characters · replaces existing text</div><div class="v">person@example.test</div></div>
+<div class="bx-warnbox"><svg class="i sm" aria-hidden="true"><use href="#bx-warn"/></svg><span>Read this before approving. If it contains anything you did not expect, such as a key, a token or text from another page, deny it.</span></div>
+<div class="bx-trust"><button class="tog" role="switch" aria-checked="false" aria-label="Don't ask again for this workspace this session"></button><span>Don't ask again for this workspace this session</span></div>
+<div class="bx-foot"><span class="cd">Denies in <span class="mono">0:48</span></span><button class="btn focus">Deny</button><button class="btn pri">Approve typing</button></div><p class="fn">The browser pane is not on screen, so this cannot show you the element in place, only describe it. Open the pane and retry if that matters for this action.</p></div></div>
+</section>
+<section class="view" data-view="browser-picker-hint-a" data-group="Browser and composer" data-label="Browser · element picker, hint · A" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">Create your account</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="true"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib cnt" aria-label="Device size" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#bx-monitor"/></svg><svg class="i sm chv" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div><div class="bx-strip" role="status"><svg class="i sm" aria-hidden="true"><use href="#bx-target"/></svg><span>Selecting elements. Links are paused.</span></div>
+  <div class="bx-stage"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn">Create account</div></div></div></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-picker-hint-b" data-group="Browser and composer" data-label="Browser · element picker, hint · B" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">Create your account</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label></div><div class="bx-bar2"><span class="segc" role="group" aria-label="Device size"><button aria-label="Desktop" aria-pressed="true"><svg class="i sm" aria-hidden="true"><use href="#bx-monitor"/></svg></button><button aria-label="Phone 393 × 852" aria-pressed="false"><svg class="i sm" aria-hidden="true"><use href="#i-phone"/></svg></button><button aria-label="Tablet 820 × 1180" aria-pressed="false"><svg class="i sm" aria-hidden="true"><use href="#bx-tablet"/></svg></button></span><span class="sp"></span><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-lbl" aria-pressed="true"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg>Select element</button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div><div class="bx-strip" role="status"><svg class="i sm" aria-hidden="true"><use href="#bx-target"/></svg><span>Selecting elements. Links are paused.</span></div>
+  <div class="bx-stage"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn">Create account</div></div></div></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-picker-selected" data-group="Browser and composer" data-label="Browser · element picker, element chosen" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">Create your account</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="true"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib cnt" aria-label="Device size" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#bx-monitor"/></svg><svg class="i sm chv" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div><div class="bx-strip" role="status"><svg class="i sm" aria-hidden="true"><use href="#bx-target"/></svg><span>Selecting elements. Links are paused.</span></div><div class="bx-strip"><span class="bx-tag">&lt;button&gt;</span><span>SubmitButton</span></div><div class="bx-strip in"><div class="bx-in">Make this button larger<span class="caret"></span></div><span class="sel-ctl" style="height:28px" role="button" aria-haspopup="listbox" aria-label="Agent to send the prompt to">Terminal<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></span><button class="btn pri">Send</button></div>
+  <div class="bx-stage"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn picked" data-tag="button · SubmitButton">Create account</div></div></div></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-picker-error" data-group="Browser and composer" data-label="Browser · element picker, send failed" data-crumb="Houston / Browser" hidden>
+<div class="bx-grid "><article class="pane bx-pane">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane focus">
+  <header class="ph"><span class="ico" aria-hidden="true"><svg class="i sm" aria-hidden="true"><use href="#bx-globe"/></svg></span><span class="name">Create your account</span><span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="bx-bar"><button class="bx-ib" aria-label="Back"><svg class="i" aria-hidden="true"><use href="#i-back"/></svg></button><button class="bx-ib" aria-label="Forward" disabled><svg class="i" aria-hidden="true"><use href="#bx-fwd"/></svg></button><button class="bx-ib" aria-label="Reload"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg></button><label class="bx-addr"><span class="bx-fav" aria-hidden="true">A</span><span class="url">example.test/signup</span></label><button class="bx-ib cnt" aria-label="Local servers, 2 running" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span class="n">2</span></button><button class="bx-ib" aria-label="Select element" aria-pressed="true"><svg class="i" aria-hidden="true"><use href="#bx-target"/></svg></button><button class="bx-ib cnt" aria-label="Device size" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#bx-monitor"/></svg><svg class="i sm chv" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-ib" aria-label="Open in system browser"><svg class="i" aria-hidden="true"><use href="#bx-ext"/></svg></button><button class="bx-ib" aria-label="Full screen"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button></div><div class="bx-strip" role="status"><svg class="i sm" aria-hidden="true"><use href="#bx-target"/></svg><span>Selecting elements. Links are paused.</span></div><div class="bx-strip"><span class="bx-tag">&lt;button&gt;</span><span>SubmitButton</span></div><div class="bx-strip in"><div class="bx-in">Make this button larger<span class="caret"></span></div><span class="sel-ctl" style="height:28px" role="button" aria-haspopup="listbox" aria-label="Agent to send the prompt to">Terminal<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></span><button class="btn pri">Send</button></div>
+  <div class="bx-stage"><div class="bx-site"><div class="s-nav"><b>Acme</b><span>Product</span><span>Pricing</span><span>Docs</span></div>
+<div class="s-body"><h1>Create your account</h1><p>Start your 14-day trial. No card needed.</p>
+<div class="s-f"><label>Email</label><div class="s-in">old@example.test</div></div>
+<div class="s-f"><label>Password</label><div class="s-in">••••••••••</div></div>
+<div class="s-btn picked" data-tag="button · SubmitButton">Create account</div></div></div><div class="bx-note top"><div class="banner err" role="alert"><span class="st err" role="img" aria-label="Error"></span><div class="bt"><b>No terminal is available to receive this prompt</b><small>Focus a live agent pane, then send again.</small></div><button class="iconbtn" aria-label="Dismiss"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></div></div></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-composer" data-group="Browser and composer" data-label="Composer · attachments" data-crumb="Houston / Tasks / New task" hidden>
+<div class="page" style="padding-top:20px"><div class="ph1"><div><h1 class="lt">New task</h1><div class="sub">Describe the work. It runs in its own worktree and ends in a pull request.</div></div></div><div class="bx-comp"><div class="ta has">Add a regression test for the Stop hook ordering and link it from the hooks doc.</div><div class="bx-chips"><span class="bx-att"><span class="g md" aria-hidden="true">MD</span><span class="fn">notes.md</span><button class="rm" aria-label="Remove notes.md"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></span><span class="bx-att"><span class="g pdf" aria-hidden="true">PDF</span><span class="fn">report.pdf</span><button class="rm" aria-label="Remove report.pdf"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></span><span class="bx-att"><span class="g " aria-hidden="true">GZ</span><span class="fn">archive.tar.gz</span><button class="rm" aria-label="Remove archive.tar.gz"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></span><span class="bx-att"><span class="g img" aria-hidden="true"></span><span class="fn">shot.png</span><button class="rm" aria-label="Remove shot.png"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></span><span class="bx-att"><span class="g md" aria-hidden="true">MD</span><span class="fn">a-very-long-filename-that-must-truncate-inside-the-chip-width.markdown</span><button class="rm" aria-label="Remove a-very-long-filename-that-must-truncate-inside-the-chip-width.markdown"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></span></div>
+<div class="bx-cbar"><button class="bx-pill" aria-haspopup="listbox" aria-expanded="false"><span class="k">Model</span>Opus<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-pill" aria-haspopup="listbox" aria-expanded="false"><span class="k">Effort</span>High<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-pill" aria-haspopup="listbox" aria-expanded="false"><span class="k">Mode</span>Plan<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><span class="sp"></span><button class="btn pri">Send</button></div></div></div>
+</section>
+<section class="view" data-view="browser-composer-states" data-group="Browser and composer" data-label="Composer · controls states" data-crumb="Houston / Specimens / Composer" hidden>
+<div class="page"><div class="ph1"><div><h1 class="lt">Composer controls</h1><div class="sub">Default, locked and sending. Specimen only.</div></div></div>
+<div class="bx-board">
+<div><div class="cap">Default</div><div class="bx-comp"><div class="ta">Describe the task…</div>
+<div class="bx-cbar"><button class="bx-pill" aria-haspopup="listbox" aria-expanded="false"><span class="k">Model</span>Opus<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-pill" aria-haspopup="listbox" aria-expanded="false"><span class="k">Effort</span>High<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-pill" aria-haspopup="listbox" aria-expanded="false"><span class="k">Mode</span>Plan<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><span class="sp"></span><button class="btn pri">Send</button></div></div></div>
+<div><div class="cap">A locked chip and an empty message: Send is off</div><div class="bx-comp"><div class="ta">Describe the task…</div>
+<div class="bx-cbar"><button class="bx-pill off" aria-haspopup="listbox" aria-expanded="false" aria-disabled="true"><span class="k">Model</span>Opus<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-pill" aria-haspopup="listbox" aria-expanded="false"><span class="k">Effort</span>High<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><span class="sp"></span><button class="btn pri bx-btn-off">Send</button></div><div class="bx-tip" style="left:12px;bottom:48px">Locked</div></div></div>
+<div><div class="cap">Sending: Send shows progress and stays off</div><div class="bx-comp"><div class="ta has">Add a regression test for the Stop hook ordering and link it from the hooks doc.</div>
+<div class="bx-cbar"><button class="bx-pill" aria-haspopup="listbox" aria-expanded="false"><span class="k">Model</span>Opus<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-pill" aria-haspopup="listbox" aria-expanded="false"><span class="k">Effort</span>High<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><span class="sp"></span><button class="btn pri bx-btn-off" aria-busy="true"><span class="st work" aria-hidden="true"></span>Build</button></div></div></div>
+</div></div>
+</section>
+<section class="view" data-view="browser-composer-menu" data-group="Browser and composer" data-label="Composer · chip menu open" data-crumb="Houston / Tasks / New task" hidden>
+<div class="page" style="padding-top:20px"><div class="ph1"><div><h1 class="lt">New task</h1><div class="sub">Describe the work. It runs in its own worktree and ends in a pull request.</div></div></div><div class="bx-comp"><div class="ta has">Add a regression test for the Stop hook ordering and link it from the hooks doc.</div>
+<div class="bx-cbar"><button class="bx-pill" aria-haspopup="listbox" aria-expanded="true"><span class="k">Model</span>Opus<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-pill" aria-haspopup="listbox" aria-expanded="false"><span class="k">Effort</span>High<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-pill" aria-haspopup="listbox" aria-expanded="false"><span class="k">Mode</span>Plan<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><span class="sp"></span><button class="btn pri">Send</button></div><div class="menu bx-menu" role="listbox" aria-label="Model" style="left:12px;top:calc(100% - 8px);width:200px">
+  <button class="mi sel" role="option" aria-selected="true">Opus<span class="ck"><svg class="i" aria-hidden="true"><use href="#bx-check"/></svg></span></button>
+  <button class="mi" role="option">Sonnet</button><button class="mi off" role="option" aria-disabled="true">Unavailable model</button></div></div></div>
+</section>
+<section class="view" data-view="browser-composer-overflow" data-group="Browser and composer" data-label="Composer · overflow menu" data-crumb="Houston / Tasks / New task" hidden>
+<div class="page" style="padding-top:20px"><div class="ph1"><div><h1 class="lt">New task</h1><div class="sub">Describe the work. It runs in its own worktree and ends in a pull request.</div></div></div><div class="bx-comp"><div class="ta has">Add a regression test for the Stop hook ordering and link it from the hooks doc.</div>
+<div class="bx-cbar"><button class="bx-pill" aria-haspopup="listbox" aria-expanded="false"><span class="k">Model</span>Opus<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-pill" aria-haspopup="listbox" aria-expanded="false"><span class="k">Effort</span>High<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-pill" aria-haspopup="listbox" aria-expanded="false"><span class="k">Mode</span>Plan<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-pill cnt" aria-haspopup="true" aria-expanded="true">+2</button><span class="sp"></span><button class="btn pri">Send</button></div><div class="menu bx-menu" role="group" aria-label="More options" style="left:316px;top:calc(100% - 8px);width:260px">
+  <div class="bx-mrow"><span>Branch</span><span class="sel-ctl">main<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></span></div>
+  <div class="bx-mrow"><span>Sandbox</span><span class="sel-ctl">On<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></span></div></div></div></div>
+</section>
+<section class="view" data-view="browser-composer-previews" data-group="Browser and composer" data-label="Composer · attachment previews" data-crumb="Houston / Tasks / New task" hidden>
+<div class="page" style="padding-top:20px"><div class="ph1"><div><h1 class="lt">New task</h1><div class="sub">Describe the work. It runs in its own worktree and ends in a pull request.</div></div></div><div class="bx-comp"><div class="ta has">Add a regression test for the Stop hook ordering and link it from the hooks doc.</div><div class="bx-chips"><span class="bx-att"><span class="g md" aria-hidden="true">MD</span><span class="fn">notes.md</span><button class="rm" aria-label="Remove notes.md"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></span><span class="bx-att"><span class="g img" aria-hidden="true"></span><span class="fn">shot.png</span><button class="rm" aria-label="Remove shot.png"><svg class="i sm" aria-hidden="true"><use href="#i-x"/></svg></button></span></div>
+<div class="bx-cbar"><button class="bx-pill" aria-haspopup="listbox" aria-expanded="false"><span class="k">Model</span>Opus<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-pill" aria-haspopup="listbox" aria-expanded="false"><span class="k">Effort</span>High<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><button class="bx-pill" aria-haspopup="listbox" aria-expanded="false"><span class="k">Mode</span>Plan<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></button><span class="sp"></span><button class="btn pri">Send</button></div><div class="bx-pv" role="tooltip" style="left:12px;top:150px"><div class="ty">MD</div><div class="nm">notes.md</div></div><div class="bx-pv" role="tooltip" style="left:260px;top:150px"><div class="th"></div><div class="nm">shot.png</div></div></div></div>
+</section>
+<section class="view" data-view="browser-dictation-listening" data-group="Browser and composer" data-label="Dictation · listening" data-crumb="Houston / Hook ordering" hidden>
+<div class="bx-grid three" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:1fr 1fr"><article class="pane bx-pane focus tall">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span><span style="margin-left:auto"></span><span class="bx-mic" role="status" aria-label="Listening in Review. Release Ctrl+Shift+Space to transcribe"><span class="ring"><svg class="i sm" aria-hidden="true"><use href="#i-mic"/></svg></span>Listening</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+<div class="bx-tip" style="left:200px;top:36px">Release Ctrl+Shift+Space to transcribe</div></article><article class="pane bx-pane">
+  <header class="ph"><span class="mark codex" data-mark="codex"></span><span class="name">Tests</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>tests/stop-order</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c1">theo@latitude</span> <span class="c2">~/houston</span> <span class="c4">on</span> <span class="c3">tests/stop-order</span>
+<span class="c4">›</span> cargo test --test hooks_order
+<span class="c4">   Compiling</span> houston-core v0.9.0
+<span class="c3">test</span> stop_after_subagent_stop_is_delivered_last ... <span class="c3">ok</span>
+<span class="c4">›</span> <span class="cursor"></span></div><div class="bx-dict" data-voice-state="pending"><svg class="i" aria-hidden="true"><use href="#i-mic"/></svg><span class="q">Please move the review to Friday.</span><button class="btn ghost" aria-label="Discard dictated text">Discard</button><button class="btn pri" aria-label="Insert dictated text">Insert</button></div>
+</article><article class="pane bx-pane">
+  <header class="ph"><span class="mark"><svg class="i sm" aria-hidden="true"><use href="#i-term"/></svg></span><span class="name">shell</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>main</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c1">theo@latitude</span> <span class="c2">~/houston</span> <span class="c4">on</span> <span class="c3">main</span>
+<span class="c4">›</span> git log --oneline -3
+<span class="c5">f34901c3</span> fix: status notes from every pane
+<span class="c5">662684ae</span> feat: merge queue hands off
+<span class="c4">›</span> <span class="cursor"></span></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-dictation-transcribing" data-group="Browser and composer" data-label="Dictation · transcribing" data-crumb="Houston / Hook ordering" hidden>
+<div class="bx-grid three" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:1fr 1fr"><article class="pane bx-pane focus tall">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span><span style="margin-left:auto"></span><span class="bx-mic" role="status" aria-label="Transcribing in Review"><span class="st work" aria-hidden="true"></span>Transcribing</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane">
+  <header class="ph"><span class="mark codex" data-mark="codex"></span><span class="name">Tests</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>tests/stop-order</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c1">theo@latitude</span> <span class="c2">~/houston</span> <span class="c4">on</span> <span class="c3">tests/stop-order</span>
+<span class="c4">›</span> cargo test --test hooks_order
+<span class="c4">   Compiling</span> houston-core v0.9.0
+<span class="c3">test</span> stop_after_subagent_stop_is_delivered_last ... <span class="c3">ok</span>
+<span class="c4">›</span> <span class="cursor"></span></div><div class="bx-dict" data-voice-state="pending"><svg class="i" aria-hidden="true"><use href="#i-mic"/></svg><span class="q">Please move the review to Friday.</span><button class="btn ghost" aria-label="Discard dictated text">Discard</button><button class="btn pri" aria-label="Insert dictated text">Insert</button></div>
+</article><article class="pane bx-pane">
+  <header class="ph"><span class="mark"><svg class="i sm" aria-hidden="true"><use href="#i-term"/></svg></span><span class="name">shell</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>main</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c1">theo@latitude</span> <span class="c2">~/houston</span> <span class="c4">on</span> <span class="c3">main</span>
+<span class="c4">›</span> git log --oneline -3
+<span class="c5">f34901c3</span> fix: status notes from every pane
+<span class="c5">662684ae</span> feat: merge queue hands off
+<span class="c4">›</span> <span class="cursor"></span></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-drop-split" data-group="Browser and composer" data-label="Drop slots · split right" data-crumb="Houston / Hook ordering" hidden>
+<div class="bx-grid three" style="grid-template-rows:1fr 1fr"><article class="pane bx-pane focus tall">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+<div class="bx-scrim"></div><div class="bx-drop" style="right:0;top:0;width:50%;height:100%"><span class="lbl">Split right</span></div></article><article class="pane bx-pane">
+  <header class="ph"><span class="mark codex" data-mark="codex"></span><span class="name">Tests</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>tests/stop-order</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c1">theo@latitude</span> <span class="c2">~/houston</span> <span class="c4">on</span> <span class="c3">tests/stop-order</span>
+<span class="c4">›</span> cargo test --test hooks_order
+<span class="c4">   Compiling</span> houston-core v0.9.0
+<span class="c3">test</span> stop_after_subagent_stop_is_delivered_last ... <span class="c3">ok</span>
+<span class="c4">›</span> <span class="cursor"></span></div>
+</article><article class="pane bx-pane lift">
+  <header class="ph"><span class="mark"><svg class="i sm" aria-hidden="true"><use href="#i-term"/></svg></span><span class="name">shell</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>main</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c1">theo@latitude</span> <span class="c2">~/houston</span> <span class="c4">on</span> <span class="c3">main</span>
+<span class="c4">›</span> git log --oneline -3
+<span class="c5">f34901c3</span> fix: status notes from every pane
+<span class="c5">662684ae</span> feat: merge queue hands off
+<span class="c4">›</span> <span class="cursor"></span></div>
+</article><div class="bx-ghost" style="left:62%;top:46%"><span class="mark"><svg class="i sm" aria-hidden="true"><use href="#i-term"/></svg></span>shell</div></div>
+</section>
+<section class="view" data-view="browser-drop-stack" data-group="Browser and composer" data-label="Drop slots · stack on the splitter" data-crumb="Houston / Hook ordering" hidden>
+<div class="bx-grid" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr);position:relative"><article class="pane bx-pane tall">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article><article class="pane bx-pane">
+  <header class="ph"><span class="mark codex" data-mark="codex"></span><span class="name">Tests</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>tests/stop-order</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c1">theo@latitude</span> <span class="c2">~/houston</span> <span class="c4">on</span> <span class="c3">tests/stop-order</span>
+<span class="c4">›</span> cargo test --test hooks_order
+<span class="c4">   Compiling</span> houston-core v0.9.0
+<span class="c3">test</span> stop_after_subagent_stop_is_delivered_last ... <span class="c3">ok</span>
+<span class="c4">›</span> <span class="cursor"></span></div>
+</article><div class="bx-split" style="left:calc(50% - 3px)"></div><div class="bx-drop" style="left:6px;top:0;right:12px;bottom:6px"><span class="lbl">Stack</span></div><div class="bx-ghost" style="left:62%;top:46%"><span class="mark"><svg class="i sm" aria-hidden="true"><use href="#i-term"/></svg></span>shell</div></div>
+</section>
+<section class="view" data-view="browser-mascot" data-group="Browser and composer" data-label="Mascot · companion in the rail" data-crumb="Houston / Hook ordering" hidden>
+<div class="bx-grid one"><article class="pane bx-pane focus tall">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article></div>
+</section>
+<section class="view" data-view="browser-mascot-meet" data-group="Browser and composer" data-label="Mascot · first meeting" data-crumb="Houston / Hook ordering" hidden>
+<div class="bx-grid one"><article class="pane bx-pane focus tall">
+  <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm" aria-hidden="true"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+    <span class="acts"><button class="iconbtn" aria-label="Pane actions"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i" aria-hidden="true"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button></span></header>
+  <div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Opened <span class="c1">example.test/signup</span> in the browser pane
+<span class="c4">│</span>  <span class="c3">✓</span> form renders with 2 fields
+<span class="c4">│</span>  <span class="c5">●</span> Waiting for you to pick the element
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 41s · 6.1k tokens</span></div>
+</article></div><div class="bx-meet" role="dialog" aria-label="Meet Houston"><b>Meet Houston</b><p>Houston now has a mascot. It's here to keep you company and doesn't track your agents.</p>
+<div class="acts"><button class="btn pri">Keep it</button><button class="btn">Turn off</button></div><small>You can change this anytime in Settings › Mascot.</small></div>
+</section>
+<section class="view" data-view="browser-primitives" data-group="Browser and composer" data-label="UI primitives · specimen" data-crumb="Houston / Specimens / Primitives" hidden>
+<div class="page"><div class="ph1"><div><h1 class="lt">UI primitives</h1><div class="sub">The roles every screen is composed from, with their states. Specimen only.</div></div></div>
+<div class="bx-spec">
+<div class="grp"><h2>Controls</h2><div class="bx-r"><button class="btn">Default</button><button class="btn pri">Primary</button><button class="btn ghost">Ghost</button><button class="btn bx-btn-off">Disabled</button><button class="btn"><svg class="i sm" aria-hidden="true"><use href="#i-plus"/></svg>With icon</button></div>
+<div class="bx-r"><button class="bx-ib" aria-label="Rest"><svg class="i" aria-hidden="true"><use href="#i-gear"/></svg></button><button class="bx-ib" aria-pressed="true" aria-label="Pressed"><svg class="i" aria-hidden="true"><use href="#i-gear"/></svg></button><button class="bx-ib" disabled aria-label="Disabled"><svg class="i" aria-hidden="true"><use href="#i-gear"/></svg></button><span class="segc"><button aria-pressed="true">Segmented</button><button>Control</button></span><button class="tog" role="switch" aria-checked="true" aria-label="On"></button><button class="tog" role="switch" aria-checked="false" aria-label="Off"></button></div>
+<div class="bx-r"><span class="sel-ctl">Select<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></span><span class="num">14</span><span class="unit">pt</span><kbd>Ctrl K</kbd></div></div><div class="grp"><h2>Focus halo</h2><div class="bx-focusdemo"><span class="segc"><button aria-pressed="true">One</button><button>Two</button></span></div><div class="note">Keyboard focus draws a 2 px ring, 2 px outside the control, on every control.</div></div>
+<div class="grp"><h2>Chips</h2><div class="bx-r"><span class="lab">Values</span><span class="bx-ch">Ready</span><span class="bx-ch cnt">3</span><span class="bx-ch"><span class="sw"></span>Bug</span><span class="bx-ch line">bug</span><span class="bx-ch ok">Open</span></div>
+<div class="bx-r"><span class="lab">Choice</span><button class="bx-choice" aria-pressed="true">Selected</button><button class="bx-choice" aria-pressed="false">Other</button><button class="bx-choice" disabled>Disabled</button></div>
+<div class="bx-r"><span class="lab">Copy</span><span class="bx-copy">gh pr checkout 95<svg class="i sm" aria-hidden="true"><use href="#bx-copy"/></svg></span><button class="bx-choice">Filters <span class="bx-ch cnt" style="margin-left:6px">1</span></button></div>
+<div class="bx-r"><span class="lab">Pane header</span><span class="bx-ch" style="background:none;padding:0;font-size:13px;font-weight:600">Terminal</span><span class="bx-copy">feature/ui<svg class="i sm" aria-hidden="true"><use href="#bx-copy"/></svg></span><span class="bx-ch"><span class="sw"></span>Bug</span><span class="state" style="color:var(--t1)"><span class="st err" aria-hidden="true"></span>Exited</span></div></div><div class="grp"><h2>Status glyphs</h2><div class="bx-r"><span class="state"><span class="st work"></span>Working</span><span class="state" style="color:var(--t1)"><span class="st needs"></span>Needs you</span><span class="state"><span class="st done"></span>Finished</span><span class="state" style="color:var(--t1)"><span class="st err"></span>Exited with error</span></div></div>
+<div class="grp"><h2>Row states</h2><div class="bx-stack"><button class="row"><span class="lbl">Rest</span></button><button class="row hov"><span class="lbl">Hover</span></button><button class="row" aria-current="true"><span class="lbl">Selected</span></button><button class="row foc"><span class="lbl">Focused</span></button><button class="row dis"><span class="lbl">Disabled</span></button></div></div><div class="grp"><h2>Menus</h2><div class="bx-r" style="align-items:flex-start"><div class="menu" style="position:static;width:200px"><button class="mi" role="menuitem">Menu item</button><button class="mi" style="background:var(--accent);color:var(--on-accent)" role="menuitem">Highlighted</button><button class="mi" style="color:var(--t3)" role="menuitem">Disabled item</button><hr><button class="mi danger" role="menuitem">Destructive item</button></div>
+<div class="menu" style="position:static;width:200px"><button class="mi" role="option">Opus<span class="ck" style="margin-left:auto;color:var(--accent-ink)"><svg class="i" aria-hidden="true"><use href="#bx-check"/></svg></span></button><button class="mi" role="option">Sonnet</button></div></div></div>
+<div class="grp"><h2>Verb buttons</h2><div class="bx-verbs"><button class="btn"><svg class="i" aria-hidden="true"><use href="#i-bell"/></svg>Notifications</button><button class="btn"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg>About</button><button class="btn"><svg class="i" aria-hidden="true"><use href="#i-panel"/></svg>Toggle file tree</button><button class="btn"><svg class="i" aria-hidden="true"><use href="#bx-wrap"/></svg>Wrap lines</button><button class="btn"><svg class="i" aria-hidden="true"><use href="#i-folder"/></svg>Reveal in file manager</button><button class="btn"><svg class="i" aria-hidden="true"><use href="#bx-cpu"/></svg>Measure process memory</button><button class="btn"><svg class="i" aria-hidden="true"><use href="#i-grid"/></svg>Overview</button></div></div><div class="grp"><h2>Motion and notices</h2><div class="bx-r"><span class="state" style="color:var(--t1);font-weight:600"><span class="st work"></span>Terminal session</span></div>
+<div class="bx-toast" role="status"><svg class="i" aria-hidden="true"><use href="#bx-check"/></svg>Copied 200 lines</div><div class="bx-toast" role="status"><svg class="i" aria-hidden="true"><use href="#bx-check"/></svg>Saved changes</div><div class="note">Spinners and toasts stop animating under reduced motion; the toast text carries the state.</div></div>
+<div class="grp wide"><h2>Inline notices</h2><div class="banner" style="margin:0"><span class="w" style="color:var(--warn)"><svg class="i sm w" aria-hidden="true"><use href="#bx-warn"/></svg></span><div class="bt"><b>Open tabs won't be restored</b><small>Writing 142 bytes to browser storage failed (quota exceeded).</small></div></div>
+<div class="banner" style="margin:0;border-color:color-mix(in srgb,var(--stop) 40%,transparent)"><span class="st err"></span><div class="bt"><b>Browser webview failed to mount</b><small>Retry to recreate it.</small></div><button class="link">Retry</button></div></div>
+</div></div>
+</section>
+<section class="view" data-view="browser-launch-fields" data-group="Browser and composer" data-label="Launch fields · default and edited" data-crumb="Houston / Specimens / Launch fields" hidden>
+<div class="page" style="max-width:720px"><div class="ph1"><div><h1 class="lt">Launch fields</h1><div class="sub">One card per slot in a launch preset. A field that differs from the preset is outlined and can be reset. Specimen only.</div></div></div><div class="grp"><h2>Unchanged</h2><div class="bx-slot"><div class="hd"><span class="no">1</span><span class="mark claude" data-mark="claude"></span><b style="font-weight:600">builder</b></div><div class="f2"><div class="bx-field"><span class="l">Agent</span><span class="sel-ctl">Claude Code<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></span></div><div class="bx-field"><span class="l">Model</span><span class="sel-ctl">Default model<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></span></div><div class="bx-field"><span class="l">Effort</span><span class="sel-ctl">Default effort<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></span></div><div class="bx-field"><span class="l">Checkout</span><span class="bx-text">This checkout · Houston</span></div></div></div></div><div class="grp"><h2>Edited</h2><div class="bx-slot"><div class="hd"><span class="no">1</span><span class="mark claude" data-mark="claude"></span><b style="font-weight:600">builder</b><span class="ed">Edited</span><button class="btn ghost" style="height:24px;padding:0 8px"><svg class="i sm" aria-hidden="true"><use href="#i-restart"/></svg>Reset</button></div><div class="f2"><div class="bx-field"><span class="l">Agent</span><span class="sel-ctl">Claude Code<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></span></div><div class="bx-field"><span class="l">Model</span><span class="sel-ctl edited">Type model ID…<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></span><span class="bx-text edited">custom-model</span></div><div class="bx-field"><span class="l">Effort</span><span class="sel-ctl">Default effort<svg class="i sm" aria-hidden="true"><use href="#i-chevd"/></svg></span></div><div class="bx-field"><span class="l">Checkout</span><span class="bx-text">This checkout · Houston</span></div></div></div></div></div>
+</section>
+<section class="view" data-view="browser-phone-pairing" data-group="Browser and composer" data-label="Phone pairing card" data-crumb="Houston / Specimens / Phone pairing" hidden>
+<div class="page" style="max-width:760px"><div class="ph1"><div><h1 class="lt">Connect a phone</h1><div class="sub">Pair a phone to reach this computer's sessions. Specimen of the pairing cards.</div></div></div>
+<div class="bx-pair"><div><h2>Connect a phone</h2><div class="bx-steps"><div class="bx-step"><span class="no">1</span><div><b>Show a pairing code</b><span class="d">Choose how your phone reaches this computer.</span></div></div>
+<div class="bx-step done"><span class="no"><svg class="i sm" aria-hidden="true"><use href="#bx-check"/></svg></span><div><b>Listener ready</b><span class="d">The daemon reported its address.</span></div></div></div><button class="btn pri" style="width:100%;justify-content:center">Show pairing code</button></div>
+<div class="bx-qr off" aria-hidden="true"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg></div></div>
+<div class="bx-pair"><div><h2>Scan with your phone</h2><span style="color:var(--t3);font-size:12px">Single use · expires in 9:41</span></div>
+<div class="bx-qr" role="img" aria-label="Pairing code"><i style="left:12px;top:12px"></i><i style="right:12px;top:12px"></i><i style="left:12px;bottom:12px"></i><b style="left:92px;top:20px"></b><b style="left:110px;top:56px"></b><b style="left:76px;top:92px"></b><b style="right:30px;bottom:50px"></b><b style="right:60px;bottom:24px"></b><b style="left:100px;bottom:30px"></b></div></div>
+<div class="grp"><div class="lh">Paired devices<span class="ct">2</span></div><div class="box"><div class="bx-dev-row"><span>Pixel 8</span><span class="state" style="color:var(--t1)"><span class="dot" style="background:var(--ok)"></span>Active now</span></div><div class="bx-dev-row"><span>iPhone 15</span><small>Last seen 3 days ago</small></div></div></div></div>
+</section>
+<!-- @script -->
+// Mascot companion: injected into the base rail while a mascot view is open.
+const bxPrevGo = go;
+go = (...a) => {
+  bxPrevGo(...a);
+  document.getElementById('bx-mascot')?.remove();
+  if (String(a[0]).startsWith('browser-mascot')) {
+    const slot = document.createElement('div');
+    slot.id = 'bx-mascot'; slot.className = 'bx-mascot';
+    slot.innerHTML = '<button class="bx-buddy" aria-label="Houston mascot"><span class="bx-orb"></span></button>' + (a[0] === 'browser-mascot' ? '<div class="bx-bubble" role="status">Beep boop.</div>' : '');
+    document.querySelector('.rail .foot').before(slot);
+  }
+};
+document.querySelectorAll('.bx-ib[aria-pressed], .bx-lbl[aria-pressed]').forEach((b) => b.addEventListener('click', () => b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'))));
+document.querySelectorAll('.bx-choice[aria-pressed]').forEach((b) => b.addEventListener('click', () => b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'))));

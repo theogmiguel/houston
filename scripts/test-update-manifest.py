@@ -65,6 +65,13 @@ class ReleaseFixture:
         (self.artifacts / name).write_text(content)
         return self
 
+    def add_server_archives(self):
+        base = self.version.split("+", 1)[0]
+        for arch in ("x64", "arm64"):
+            self.add_file(f"houston-{base}-linux-{arch}.tar.gz", "archive")
+        self.add_file("SHA256SUMS", "checksums\n")
+        return self
+
     def add_all_bundles(self):
         base = self.version.split("+", 1)[0]
         for name in (
@@ -360,6 +367,22 @@ class AssembleTests(unittest.TestCase):
 
         message = self.refuse()
         self.assertIn("Houston_1.2.3_arm64.AppImage.sig", message)
+
+    def test_server_archives_ride_along_without_entering_the_manifest(self):
+        self.release.add_all_bundles()
+        self.release.add_server_archives()
+        with patch.object(manifest, "verify_signatures", return_value=None):
+            built = self.release.generate()
+
+        self.assertNotIn("linux-x64", built["platforms"])
+        self.assertNotIn("linux-arm64", built["platforms"])
+
+    def test_a_server_archive_from_another_version_is_refused(self):
+        self.release.add_all_bundles()
+        self.release.add_file("houston-9.9.9-linux-x64.tar.gz", "archive")
+
+        message = self.refuse()
+        self.assertIn("houston-9.9.9-linux-x64.tar.gz", message)
 
     def test_unrecognised_artifact_is_refused(self):
         self.release.add_all_bundles()

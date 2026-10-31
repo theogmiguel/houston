@@ -152,6 +152,61 @@ pub async fn dialog_pick_file<R: Runtime>(
     register_and_return(picked, state.inner()).await
 }
 
+/// The renderer refuses to load a larger file into memory; an oversized pick
+/// carries its size and an empty body so the UI can name the limit.
+pub const THEME_FILE_MAX_BYTES: u64 = 256 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PickedThemeFile {
+    pub name: String,
+    pub size: u64,
+    pub text: String,
+}
+
+pub fn read_theme_file(path: &std::path::Path) -> Result<PickedThemeFile, String> {
+    let metadata = std::fs::metadata(path)
+        .map_err(|e| format!("reading theme file metadata {}: {e}", path.display()))?;
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string_lossy().into_owned());
+    let text = if metadata.len() > THEME_FILE_MAX_BYTES {
+        String::new()
+    } else {
+        let bytes = std::fs::read(path)
+            .map_err(|e| format!("reading theme file {}: {e}", path.display()))?;
+        String::from_utf8_lossy(&bytes).into_owned()
+    };
+    Ok(PickedThemeFile {
+        name,
+        size: metadata.len(),
+        text,
+    })
+}
+
+#[tauri::command]
+pub async fn dialog_pick_theme_files<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<Option<Vec<PickedThemeFile>>, String> {
+    let picked = await_pick_many(|cb| {
+        app.dialog()
+            .file()
+            .set_title("Import a theme")
+            .add_filter("Theme files", &["json"])
+            .pick_files(move |paths| cb(to_pick_results("dialog_pick_theme_files", paths)));
+    })
+    .await?;
+    let Some(paths) = picked else {
+        return Ok(None);
+    };
+    let mut files = Vec::with_capacity(paths.len());
+    for path in paths {
+        files.push(read_theme_file(&path)?);
+    }
+    Ok(Some(files))
+}
+
 #[tauri::command]
 pub async fn dialog_pick_image<R: Runtime>(app: AppHandle<R>) -> Result<Option<PathBuf>, String> {
     let picked = await_pick(|cb| {
@@ -517,5 +572,33 @@ mod save_image_tests {
     #[test]
     fn the_size_cap_is_the_constant() {
         assert_eq!(CHAT_IMAGE_MAX_BYTES, 32 * 1024 * 1024);
+    }
+}
+
+#[cfg(test)]
+mod theme_file_tests {
+    use super::*;
+
+    #[test]
+    fn a_theme_file_carries_its_name_size_and_text() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("mine.json");
+        std::fs::write(&path, r#"{"name":"Mine"}"#).expect("write fixture");
+        let file = read_theme_file(&path).expect("read theme");
+        assert_eq!(file.name, "mine.json");
+        assert_eq!(file.size, 15);
+        assert_eq!(file.text, r#"{"name":"Mine"}"#);
+    }
+
+    #[test]
+    fn an_oversized_theme_file_is_named_but_not_loaded() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("huge.json");
+        std::fs::write(&path, vec![b'x'; THEME_FILE_MAX_BYTES as usize + 1])
+            .expect("write fixture");
+        let file = read_theme_file(&path).expect("read theme");
+        assert_eq!(file.name, "huge.json");
+        assert_eq!(file.size, THEME_FILE_MAX_BYTES + 1);
+        assert!(file.text.is_empty(), "oversized bodies must stay empty");
     }
 }

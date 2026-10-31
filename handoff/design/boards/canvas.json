@@ -1,0 +1,676 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Behaviours.dc.html": {
+      "expand": "fill",
+      "h": 1500,
+      "page": "additions",
+      "title": "Behaviours from Capy",
+      "w": 1440,
+      "x": 1520,
+      "y": 2130
+    },
+    "Color.dc.html": {
+      "expand": "fill",
+      "h": 1810,
+      "page": "foundations",
+      "title": "Color",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "ErrorStates.dc.html": {
+      "expand": "fill",
+      "h": 1090,
+      "page": "states",
+      "title": "Errors and recovery",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "Grid1.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "grid",
+      "title": "1 thread — solo",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
+    "Grid2.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "grid",
+      "title": "2 threads — comfortable",
+      "w": 1440,
+      "x": 1520,
+      "y": 1020
+    },
+    "Grid3.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "grid",
+      "title": "3 threads — focus and two compact",
+      "w": 1440,
+      "x": 3040,
+      "y": 1020
+    },
+    "Grid4.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "grid",
+      "title": "4 threads — compact",
+      "w": 1440,
+      "x": 1520,
+      "y": 2040
+    },
+    "Grid6.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "grid",
+      "title": "6 threads — glance",
+      "w": 1440,
+      "x": 3040,
+      "y": 2040
+    },
+    "GridFlow.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "is_interactive": true,
+      "page": "grid",
+      "title": "Grid prototype — add and remove threads",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "GridSystem.dc.html": {
+      "expand": "fill",
+      "h": 2610,
+      "page": "grid",
+      "title": "Grid system",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "Interactions.dc.html": {
+      "expand": "fill",
+      "h": 3198,
+      "page": "components",
+      "title": "Interaction inventory (T3 parity)",
+      "w": 1440,
+      "x": 6080,
+      "y": 0
+    },
+    "Main.dc.html": {
+      "expand": "fill",
+      "h": 1350,
+      "page": "foundations",
+      "title": "Overview",
+      "w": 1469,
+      "x": 0,
+      "y": 0
+    },
+    "Panels.dc.html": {
+      "expand": "fill",
+      "h": 1900,
+      "page": "components",
+      "title": "Panels, overlays, feedback",
+      "w": 1440,
+      "x": 4560,
+      "y": 0
+    },
+    "Primitives.dc.html": {
+      "expand": "fill",
+      "h": 1900,
+      "is_interactive": true,
+      "page": "components",
+      "title": "Primitives",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "Providers.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "page": "additions",
+      "title": "Provider status",
+      "w": 1440,
+      "x": 0,
+      "y": 2130
+    },
+    "PullRequests.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "screens",
+      "title": "Pull requests",
+      "w": 1440,
+      "x": 3040,
+      "y": 1020
+    },
+    "QuickComposer.dc.html": {
+      "expand": "fill",
+      "h": 1100,
+      "page": "additions",
+      "title": "Quick composer",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "S_About.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "settings",
+      "title": "Settings · About",
+      "w": 1440,
+      "x": 3040,
+      "y": 5280
+    },
+    "S_Access.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "settings",
+      "title": "Settings · Sharing & access",
+      "w": 1440,
+      "x": 4560,
+      "y": 3960
+    },
+    "S_Appearance.dc.html": {
+      "expand": "fill",
+      "h": 1140,
+      "page": "settings",
+      "title": "Settings · Appearance",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "S_Archive.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "settings",
+      "title": "Settings · Archive",
+      "w": 1440,
+      "x": 4560,
+      "y": 5280
+    },
+    "S_Browser.dc.html": {
+      "expand": "fill",
+      "h": 1123,
+      "page": "settings",
+      "title": "Settings · Browser",
+      "w": 1440,
+      "x": 0,
+      "y": 2640
+    },
+    "S_Chat.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "settings",
+      "title": "Settings · Chat",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
+    "S_Devices.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "settings",
+      "title": "Settings · Devices",
+      "w": 1440,
+      "x": 1520,
+      "y": 2640
+    },
+    "S_Diffs.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "settings",
+      "title": "Settings · Diffs & pull requests",
+      "w": 1440,
+      "x": 4560,
+      "y": 0
+    },
+    "S_Environments.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "settings",
+      "title": "Settings · Environments",
+      "w": 1440,
+      "x": 3040,
+      "y": 3960
+    },
+    "S_General.dc.html": {
+      "expand": "fill",
+      "h": 986,
+      "page": "settings",
+      "title": "Settings · General",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "S_Keybindings.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "settings",
+      "title": "Settings · Keybindings",
+      "w": 1440,
+      "x": 0,
+      "y": 1320
+    },
+    "S_Labs.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "settings",
+      "title": "Settings · Labs",
+      "w": 1440,
+      "x": 1520,
+      "y": 5280
+    },
+    "S_Maintenance.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "settings",
+      "title": "Settings · Maintenance",
+      "w": 1440,
+      "x": 0,
+      "y": 5280
+    },
+    "S_Projects.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "settings",
+      "title": "Settings · Projects",
+      "w": 1440,
+      "x": 4560,
+      "y": 2640
+    },
+    "S_Providers.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "settings",
+      "title": "Settings · Providers",
+      "w": 1440,
+      "x": 3040,
+      "y": 1320
+    },
+    "S_SnapShots.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "settings",
+      "title": "Settings · SnapShots",
+      "w": 1440,
+      "x": 1520,
+      "y": 1320
+    },
+    "S_Source.dc.html": {
+      "expand": "fill",
+      "h": 907,
+      "page": "settings",
+      "title": "Settings · Source control",
+      "w": 1440,
+      "x": 0,
+      "y": 3960
+    },
+    "S_Tasks.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "settings",
+      "title": "Settings · Scheduled tasks",
+      "w": 1440,
+      "x": 3040,
+      "y": 2640
+    },
+    "S_Threads.dc.html": {
+      "expand": "fill",
+      "h": 1218,
+      "page": "settings",
+      "title": "Settings · Threads",
+      "w": 1440,
+      "x": 4560,
+      "y": 1320
+    },
+    "S_Worktrees.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "settings",
+      "title": "Settings · Worktrees",
+      "w": 1440,
+      "x": 1520,
+      "y": 3960
+    },
+    "ScreenFiles.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "screens",
+      "title": "Thread with Files (read-only)",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
+    "ScreenOffline.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "screens",
+      "title": "Reconnecting",
+      "w": 1440,
+      "x": 1520,
+      "y": 2040
+    },
+    "ScreenPalette.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "screens",
+      "title": "Command palette",
+      "w": 1440,
+      "x": 1520,
+      "y": 1020
+    },
+    "ScreenPreview.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "screens",
+      "title": "Thread with Preview (element picker)",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "ScreenThread.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "screens",
+      "title": "Thread",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "ScreenUpdate.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "screens",
+      "title": "Update available",
+      "w": 1440,
+      "x": 0,
+      "y": 2040
+    },
+    "ScreenWelcome.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "page": "screens",
+      "title": "First run",
+      "w": 1440,
+      "x": 0,
+      "y": 1020
+    },
+    "SideQuestion.dc.html": {
+      "expand": "fill",
+      "h": 1240,
+      "page": "additions",
+      "title": "Aside and second opinion",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
+    "Sidebar.dc.html": {
+      "expand": "fill",
+      "h": 2600,
+      "page": "components",
+      "title": "Sidebar",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "Timeline.dc.html": {
+      "expand": "fill",
+      "h": 2300,
+      "page": "components",
+      "title": "Thread timeline and composer",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
+    "TypeLayout.dc.html": {
+      "expand": "fill",
+      "h": 2420,
+      "page": "foundations",
+      "title": "Type, spacing, radius, materials",
+      "w": 1572,
+      "x": 3040,
+      "y": 0
+    },
+    "UpdateFlow.dc.html": {
+      "expand": "fill",
+      "h": 1380,
+      "page": "states",
+      "title": "Update flow",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "Usage.dc.html": {
+      "expand": "fill",
+      "h": 2010,
+      "is_interactive": true,
+      "page": "additions",
+      "title": "Usage — the v1 page in the v2 shell (interactive)",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "ThreadHtml.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "page": "components",
+      "title": "HTML in chat",
+      "w": 1440,
+      "x": 0,
+      "y": 3400
+    },
+    "ThreadSubagents.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "page": "components",
+      "title": "Subagents",
+      "w": 1440,
+      "x": 1520,
+      "y": 3400
+    },
+    "ThreadModels.dc.html": {
+      "expand": "fill",
+      "h": 1080,
+      "page": "components",
+      "title": "Switching model and provider",
+      "w": 1440,
+      "x": 3040,
+      "y": 3400
+    },
+    "ThreadAnnotations.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "page": "components",
+      "title": "Annotations",
+      "w": 1440,
+      "x": 4560,
+      "y": 3400
+    },
+    "ThreadStash.dc.html": {
+      "expand": "fill",
+      "h": 960,
+      "page": "components",
+      "title": "Prompt stash",
+      "w": 1440,
+      "x": 6080,
+      "y": 3400
+    },
+    "Composer.dc.html": {
+      "expand": "fill",
+      "h": 6200,
+      "page": "screens",
+      "title": "Composer",
+      "w": 1520,
+      "x": 0,
+      "y": 3020
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-10-29T18:40:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "page": "screens",
+    "view": "canvas"
+  },
+  "notes": {
+    "additionsTitle": {
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "additions",
+      "text": "Additions",
+      "w": 480,
+      "x": 0,
+      "y": -300
+    },
+    "componentsTitle": {
+      "kind": "title1",
+      "maxW": 7520,
+      "page": "components",
+      "text": "Components",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "foundationsTitle": {
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "foundations",
+      "text": "Foundations",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "gridTitle": {
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "grid",
+      "text": "Threads in a grid",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "screensTitle": {
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "screens",
+      "text": "Screens",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "settingsTitle": {
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "settings",
+      "text": "Settings",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "statesTitle": {
+      "kind": "title1",
+      "maxW": 4480,
+      "page": "states",
+      "text": "States",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    }
+  },
+  "order": [
+    "ScreenThread.dc.html",
+    "Composer.dc.html",
+    "ScreenWelcome.dc.html",
+    "ScreenPalette.dc.html",
+    "ScreenPreview.dc.html",
+    "ScreenFiles.dc.html",
+    "PullRequests.dc.html",
+    "ScreenUpdate.dc.html",
+    "ScreenOffline.dc.html",
+    "Main.dc.html",
+    "Color.dc.html",
+    "TypeLayout.dc.html",
+    "Primitives.dc.html",
+    "Sidebar.dc.html",
+    "Timeline.dc.html",
+    "Panels.dc.html",
+    "Interactions.dc.html",
+    "GridFlow.dc.html",
+    "Grid1.dc.html",
+    "Grid2.dc.html",
+    "Grid3.dc.html",
+    "Grid4.dc.html",
+    "Grid6.dc.html",
+    "GridSystem.dc.html",
+    "Usage.dc.html",
+    "QuickComposer.dc.html",
+    "SideQuestion.dc.html",
+    "Providers.dc.html",
+    "Behaviours.dc.html",
+    "UpdateFlow.dc.html",
+    "ErrorStates.dc.html",
+    "S_General.dc.html",
+    "S_Appearance.dc.html",
+    "S_Chat.dc.html",
+    "S_Diffs.dc.html",
+    "S_Keybindings.dc.html",
+    "S_SnapShots.dc.html",
+    "S_Providers.dc.html",
+    "S_Threads.dc.html",
+    "S_Browser.dc.html",
+    "S_Devices.dc.html",
+    "S_Tasks.dc.html",
+    "S_Projects.dc.html",
+    "S_Source.dc.html",
+    "S_Worktrees.dc.html",
+    "S_Environments.dc.html",
+    "S_Access.dc.html",
+    "S_Maintenance.dc.html",
+    "S_Labs.dc.html",
+    "S_About.dc.html",
+    "S_Archive.dc.html",
+    "ThreadHtml.dc.html",
+    "ThreadSubagents.dc.html",
+    "ThreadModels.dc.html",
+    "ThreadAnnotations.dc.html",
+    "ThreadStash.dc.html"
+  ],
+  "pages": [
+    {
+      "id": "foundations",
+      "name": "Foundations"
+    },
+    {
+      "id": "components",
+      "name": "Components"
+    },
+    {
+      "id": "grid",
+      "name": "Grid"
+    },
+    {
+      "id": "screens",
+      "name": "Screens"
+    },
+    {
+      "id": "settings",
+      "name": "Settings"
+    },
+    {
+      "id": "states",
+      "name": "States"
+    },
+    {
+      "id": "additions",
+      "name": "Additions"
+    }
+  ],
+  "title": "Houston v2 Design System"
+}

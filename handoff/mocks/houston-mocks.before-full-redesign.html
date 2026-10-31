@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="en" data-hx="graphite">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Houston · Native</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap">
+<style>
+/*
+  Houston, direction B ("Native"). This file is the reference for the app.
+
+  Type      Inter Variable with optical sizing (opsz 14..32): Text cut for UI, Display cut for titles.
+            Source Serif 4 for display moments only (empty states, onboarding). JetBrains Mono for machine values.
+  Scale     largeTitle 26/32 700 · title 20/26 650 · headline 13/18 600 · body 13/18 400 · callout 12/16 400 · caption 11/14 500
+  Icons     15px glyphs at stroke 1.6 (1.0px rendered) beside 13px text; 13px at 1.7 beside 11-12px text.
+  Radius    4 badges/kbd · 6 controls, rows, buttons · 10 panes, groups, menus · 14 dialogs and the palette · 999 pressable chips
+  Space     4pt grid; 28px control and row floor.
+  Contrast  every text tier >= 4.5:1 on every ground it sits on (figures beside the tokens).
+*/
+:root, [data-hx="graphite"] {
+  --canvas: #161618; --rail: #1c1c1f; --card: #202023; --raised: #26262a; --term: #0f0f11; --term-head: #18181b;
+  --field: rgba(255,255,255,.06); --hover: rgba(255,255,255,.05); --sel: rgba(255,255,255,.09);
+  --line: rgba(255,255,255,.09); --line-strong: rgba(255,255,255,.16);
+  --t1: rgba(255,255,255,.92);   /* 13.9-16.2:1 */
+  --t2: rgba(255,255,255,.66);   /* 7.8-8.5:1 */
+  --t3: rgba(255,255,255,.52);   /* 5.4-5.7:1 */
+  --accent: #2f6fe8;             /* fill; white ink 4.61:1 */
+  --accent-ink: #64a0ff;         /* links, focus, working: 6.5:1 */
+  --on-accent: #ffffff;
+  --work: #64a0ff; --warn: #f5a524; --ok: #30d158; --stop: #ff6b61;
+  --warn-wash: rgba(245,165,36,.08); --warn-line: rgba(245,165,36,.32);
+  --tog-off: rgba(255,255,255,.18);
+  --shadow-float: 0 12px 32px -8px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.08);
+  --claude: #d97757; --codex: rgba(255,255,255,.92);
+  --term-fg: #e6e6ea; --term-dim: #7c7c86; --a-blue: #89b4fa; --a-mag: #f5c2e7; --a-green: #a6e3a1; --a-yellow: #f9e2af;
+  color-scheme: dark;
+}
+[data-hx="paper"] {
+  --canvas: #f5f5f7; --rail: #ececef; --card: #ffffff; --raised: #ffffff; --term: #ffffff; --term-head: #f7f7f9;
+  --field: rgba(0,0,0,.05); --hover: rgba(0,0,0,.045); --sel: rgba(0,0,0,.09);
+  --line: rgba(0,0,0,.09); --line-strong: rgba(0,0,0,.16);
+  --t1: #1d1d1f; --t2: #424245;  /* 8.5-10:1 */
+  --t3: #66666b;                 /* 4.8-5.7:1 */
+  --accent: #0a63e0;             /* white ink 5.42:1 */
+  --accent-ink: #0a5cd1; --on-accent: #ffffff;
+  --work: #0a5cd1; --warn: #b45309; --ok: #1d7a3a; --stop: #c0362c;
+  --warn-wash: rgba(180,83,9,.06); --warn-line: rgba(180,83,9,.3);
+  --tog-off: rgba(0,0,0,.22);
+  --shadow-float: 0 12px 32px -10px rgba(0,0,0,.18), 0 0 0 1px rgba(0,0,0,.08);
+  --claude: #c25f3f; --codex: #1d1d1f;
+  --term-fg: #1d1d1f; --term-dim: #6b6b75; --a-blue: #0a5cd1; --a-mag: #a3195b; --a-green: #1d7a3a; --a-yellow: #8a5a00;
+  color-scheme: light;
+}
+:root {
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --serif: "Source Serif 4", Georgia, serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  --page-w: 960px; /* one width for every page, wide enough for list and detail */
+  --r-badge: 4px; --r-ctl: 6px; --r-group: 10px; --r-dialog: 14px;
+  --ease: cubic-bezier(.16, 1, .3, 1);
+}
+* { box-sizing: border-box }
+html, body { height: 100%; margin: 0 }
+body { background: var(--canvas); color: var(--t1); font: 400 13px/18px var(--font); font-optical-sizing: auto; -webkit-font-smoothing: antialiased; overflow: hidden }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer }
+:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; border-radius: var(--r-ctl) }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important } }
+svg.i { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none }
+svg.i.sm { width: 13px; height: 13px; stroke-width: 1.7 }
+.mono { font-family: var(--mono); font-size: 12px }
+kbd { font: 500 11px/16px var(--font); color: var(--t3); border: 1px solid var(--line-strong); border-radius: var(--r-badge); padding: 0 5px; white-space: nowrap }
+
+/* App shell */
+.app { display: grid; grid-template-columns: 240px 1fr; height: 100% }
+.rail { background: var(--rail); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 8px; gap: 1px; min-width: 0; overflow: hidden }
+.brand { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 6px; font-weight: 600 }
+.brand .logo { width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle at 38% 32%, #9be7ff, #3f62ff 58%, #22195e) }
+.brand .sp { margin-left: auto; color: var(--t3); display: flex }
+.search { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border-radius: var(--r-ctl); background: var(--field); color: var(--t3); margin: 2px 0 10px; width: 100%; text-align: left; white-space: nowrap }
+.search span { flex: 1; overflow: hidden; text-overflow: ellipsis }
+.row { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border-radius: var(--r-ctl); color: var(--t2); width: 100%; text-align: left; white-space: nowrap; min-width: 0; transition: background-color .12s }
+.row:hover { background: var(--hover) }
+.row[aria-current="true"] { background: var(--sel); color: var(--t1) }
+.row .lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; min-width: 0 }
+.row .ct { color: var(--t3); font-size: 12px; font-variant-numeric: tabular-nums }
+.sect { display: flex; align-items: center; height: 28px; padding: 12px 8px 0; color: var(--t3); font: 600 11px/14px var(--font); letter-spacing: .01em }
+.sect .tools { margin-left: auto; display: flex; gap: 2px; opacity: 0; transition: opacity .12s }
+.rail:hover .sect .tools, .sect:focus-within .tools { opacity: 1 }
+.iconbtn { width: 24px; height: 24px; display: grid; place-items: center; border-radius: var(--r-ctl); color: var(--t3); transition: background-color .12s, color .12s }
+.iconbtn:hover { background: var(--hover); color: var(--t1) }
+.ws { color: var(--t1); font-weight: 600 }
+.disc { color: var(--t3); display: flex; transition: transform .16s var(--ease) }
+.disc.closed { transform: rotate(-90deg) }
+.grid-row { padding-left: 30px }
+.sess { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; column-gap: 8px; height: 28px; padding: 0 8px 0 30px; border-radius: var(--r-ctl); width: 100%; text-align: left; transition: background-color .12s }
+.sess:hover { background: var(--hover) }
+.sess[aria-current="true"] { background: var(--sel) }
+.sess .ti { color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.sess[aria-current="true"] .ti, .sess.needs .ti { color: var(--t1); font-weight: 500 }
+.mark { width: 14px; height: 14px; display: grid; place-items: center; color: var(--t3); transition: color .12s }
+.mark svg { width: 13px; height: 13px }
+.sess[aria-current="true"] .mark.claude, .sess:hover .mark.claude, .ph .mark.claude { color: var(--claude) }
+.sess[aria-current="true"] .mark.codex, .sess:hover .mark.codex, .ph .mark.codex { color: var(--codex) }
+.state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--t3); white-space: nowrap }
+.dot { width: 6px; height: 6px; border-radius: 50%; flex: none }
+.rail-body { display: flex; flex-direction: column; gap: 1px; flex: 1; min-height: 0; overflow-y: auto }
+.rail-body .sect:first-of-type { padding-top: 6px }
+.foot { margin-top: auto; display: flex; gap: 2px; padding-top: 8px }
+
+.content { min-width: 0; display: flex; flex-direction: column; overflow: hidden }
+.titlebar { height: 40px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 14px; color: var(--t3) }
+.titlebar .crumb { color: var(--t2); display: flex; gap: 6px; align-items: center; white-space: nowrap }
+.titlebar .crumb b { color: var(--t1); font-weight: 600 }
+.titlebar .right { margin-left: auto; display: flex; gap: 2px }
+.view { flex: 1; min-height: 0; overflow: auto }
+
+/* Panes */
+.grid { height: 100%; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 6px; padding: 0 6px 6px }
+.grid .tall { grid-row: span 2 }
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--term); border: 1px solid var(--line); border-radius: var(--r-group); overflow: hidden }
+.pane.focus { border-color: var(--line-strong); box-shadow: 0 0 0 1px var(--line-strong) }
+.ph { height: 30px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 6px 0 10px; background: var(--term-head); border-bottom: 1px solid var(--line); white-space: nowrap; min-width: 0 }
+.ph .name { font-weight: 600; color: var(--t1) }
+.pane:not(.focus) .ph .name { color: var(--t2) }
+.ph .branch { display: inline-flex; align-items: center; gap: 4px; color: var(--t3); font: 12px var(--mono); overflow: hidden; text-overflow: ellipsis; min-width: 0 }
+.ph .acts { margin-left: auto; display: flex; gap: 2px; opacity: 0; transition: opacity .12s }
+.pane:hover .ph .acts, .pane.focus .ph .acts, .ph:focus-within .acts { opacity: 1 }
+.term { flex: 1; padding: 8px 12px; font: 12.5px/19px var(--mono); color: var(--term-fg); white-space: pre; overflow: hidden }
+.c1 { color: var(--a-blue) } .c2 { color: var(--a-mag) } .c3 { color: var(--a-green) } .c4 { color: var(--term-dim) } .c5 { color: var(--a-yellow) }
+.cursor { display: inline-block; width: 7px; height: 15px; vertical-align: -3px; background: var(--term-fg) }
+.ask { margin: 0 10px 10px; padding: 10px 12px; border-radius: var(--r-group); border: 1px solid var(--warn-line); background: var(--warn-wash); display: flex; align-items: center; gap: 12px; font-family: var(--font); white-space: normal }
+.ask .q { flex: 1; min-width: 0 }
+.ask .q b { font-weight: 600 }
+.ask .q .mono { color: var(--t2) }
+
+.btn { height: 28px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: var(--r-ctl); border: 1px solid var(--line-strong); background: var(--field); color: var(--t1); font-weight: 500; white-space: nowrap; transition: background-color .12s }
+.btn:hover { background: var(--sel) }
+.btn.pri { background: var(--accent); border-color: transparent; color: var(--on-accent); font-weight: 600 }
+.btn.pri:hover { filter: brightness(1.08) }
+.btn.ghost { border-color: transparent; background: none; color: var(--t2) }
+.btn.ghost:hover { background: var(--hover); color: var(--t1) }
+
+/* Pages */
+.page { max-width: var(--page-w); margin: 0 auto; padding: 20px 32px 48px; display: flex; flex-direction: column; gap: 28px }
+.ph1 { display: flex; align-items: flex-start; gap: 16px }
+.ph1 > div { flex: 1; min-width: 0 }
+h1.lt { margin: 0; font: 700 26px/32px var(--font); letter-spacing: -.02em; text-wrap: balance }
+.sub { color: var(--t2); margin-top: 4px; max-width: 62ch; text-wrap: pretty }
+.grp { display: flex; flex-direction: column; gap: 8px }
+.grp > h2 { margin: 0; padding: 0 4px; font: 600 13px/18px var(--font); color: var(--t1) }
+.grp > .note { padding: 0 4px; color: var(--t3); font-size: 12px; line-height: 16px }
+.box { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-group); overflow: hidden }
+.srow { display: flex; align-items: center; gap: 16px; min-height: 44px; padding: 8px 14px; border-top: 1px solid var(--line) }
+.srow:first-child { border-top: 0 }
+.srow > .txt { flex: 1; min-width: 0 }
+.srow .rt { color: var(--t1); font-weight: 500 }
+.srow .rd { color: var(--t3); font-size: 12px; line-height: 16px; margin-top: 1px; max-width: 64ch }
+.srow .ctl { flex: none; display: flex; align-items: center; gap: 8px }
+.tog { width: 30px; height: 18px; border-radius: 9px; background: var(--tog-off); position: relative; transition: background-color .16s }
+.tog::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: transform .16s var(--ease) }
+.tog[aria-checked="true"] { background: var(--accent) }
+.tog[aria-checked="true"]::after { transform: translateX(12px) }
+.segc { display: inline-flex; padding: 2px; border-radius: var(--r-ctl); background: var(--field); gap: 2px }
+.segc button { height: 22px; padding: 0 10px; border-radius: 4px; color: var(--t2); font-size: 12px; font-weight: 500 }
+.segc button[aria-pressed="true"] { background: var(--raised); color: var(--t1); box-shadow: 0 1px 2px rgba(0,0,0,.2), 0 0 0 1px var(--line) }
+.sel-ctl { height: 26px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; border-radius: var(--r-ctl); border: 1px solid var(--line-strong); background: var(--field); color: var(--t1); font-weight: 500 }
+.num { width: 64px; height: 26px; border-radius: var(--r-ctl); border: 1px solid var(--line-strong); background: var(--canvas); color: var(--t1); text-align: right; padding: 0 8px; font: 500 12px var(--font); font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; justify-content: flex-end }
+.unit { color: var(--t3); font-size: 12px }
+.themes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px }
+.theme { text-align: left; display: flex; flex-direction: column; gap: 8px }
+.theme .pv { height: 74px; border-radius: var(--r-group); border: 1px solid var(--line); display: grid; grid-template-columns: 30% 1fr; gap: 4px; padding: 5px; overflow: hidden }
+.theme .pv i { border-radius: 5px; display: block }
+.theme[aria-pressed="true"] .pv { outline: 2px solid var(--accent); outline-offset: 2px }
+.theme .cap { padding: 0 2px; display: flex; flex-direction: column }
+.theme .cap span { color: var(--t3); font-size: 12px }
+
+/* Lists */
+.list { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-group); overflow: hidden }
+.li { display: grid; grid-template-columns: 18px 64px 1fr auto; align-items: center; gap: 10px; height: 36px; padding: 0 14px; border-top: 1px solid var(--line) }
+.li:first-child { border-top: 0 }
+.li:hover { background: var(--hover) }
+.li .id { font: 12px var(--mono); color: var(--t3) }
+.li .tt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.li .rt { display: flex; align-items: center; gap: 12px; color: var(--t3); font-size: 12px; white-space: nowrap }
+.li .hoverAct { display: none }
+.li:hover .hoverAct { display: inline-flex }
+.li:hover .age { display: none }
+.lh { display: flex; align-items: center; gap: 8px; padding: 0 4px; color: var(--t2); font-weight: 600 }
+.lh .ct { color: var(--t3); font-weight: 500 }
+.circle { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid currentColor; display: block }
+.circle.half { background: linear-gradient(90deg, currentColor 50%, transparent 50%) }
+
+/* Routines: list and detail without nested cards */
+.split { display: grid; grid-template-columns: 240px 1fr; gap: 24px; align-items: start }
+.rlist { display: flex; flex-direction: column; gap: 1px }
+.rlist .r { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 7px 10px; border-radius: var(--r-ctl); text-align: left; width: 100% }
+.rlist .r:hover { background: var(--hover) }
+.rlist .r[aria-current="true"] { background: var(--sel) }
+.rlist .r .m { color: var(--t3); font-size: 12px; display: flex; gap: 6px; align-items: center }
+.kv { display: grid; grid-template-columns: 120px 1fr; row-gap: 0 }
+.kv > * { padding: 9px 0; border-top: 1px solid var(--line); min-width: 0 }
+.kv > :nth-child(-n+2) { border-top: 0 }
+.kv dt { color: var(--t3) }
+.kv dd { margin: 0; color: var(--t1) }
+.runs .run { display: grid; grid-template-columns: 90px 1fr auto; gap: 12px; align-items: center; height: 36px; border-top: 1px solid var(--line); padding: 0 4px }
+.runs .run:first-child { border-top: 0 }
+.runs .run .when { color: var(--t2); font-variant-numeric: tabular-nums }
+.runs .run .what { color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.link { color: var(--accent-ink); font-weight: 500 }
+.link:hover { text-decoration: underline; text-underline-offset: 2px }
+
+/* Empty state */
+.empty { height: 100%; display: grid; place-items: center; padding: 24px }
+.empty .in { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; max-width: 520px }
+.empty h1 { margin: 0; font: 500 34px/40px var(--serif); letter-spacing: -.01em; text-wrap: balance }
+.empty p { margin: 0; color: var(--t2); text-wrap: balance }
+.launch { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; margin-top: 8px }
+.launch button { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 12px; border-radius: var(--r-group); border: 1px solid var(--line); background: var(--card); text-align: left; transition: border-color .12s, background-color .12s }
+.launch button:hover { border-color: var(--line-strong); background: var(--raised) }
+.launch .mark { color: var(--t2) }
+.launch button:hover .mark.claude { color: var(--claude) }
+.launch small { color: var(--t3); font-size: 12px }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; align-items: center; color: var(--t3); font-size: 12px }
+
+/* Floating: palette and menu */
+.scrim { position: fixed; inset: 0; background: rgba(0,0,0,.28); display: flex; justify-content: center; align-items: flex-start; padding-top: 72px; z-index: 20 }
+[data-hx="paper"] .scrim { background: rgba(0,0,0,.12) }
+.palette { width: 560px; max-width: calc(100% - 32px); background: var(--raised); border-radius: var(--r-dialog); box-shadow: var(--shadow-float); overflow: hidden }
+.palette .in { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 14px; border-bottom: 1px solid var(--line); font-size: 15px; color: var(--t3) }
+.palette .grp-h { padding: 10px 14px 4px; color: var(--t3); font: 600 11px/14px var(--font) }
+.palette .it { display: flex; align-items: center; gap: 10px; height: 34px; margin: 0 6px; padding: 0 8px; border-radius: var(--r-ctl); color: var(--t1) }
+.palette .it .d { color: var(--t3); margin-left: auto; font-size: 12px }
+.palette .it[aria-selected="true"] { background: var(--sel) }
+.palette .ft { display: flex; gap: 14px; padding: 8px 14px; margin-top: 6px; border-top: 1px solid var(--line); color: var(--t3); font-size: 12px }
+.menu { position: fixed; width: 240px; background: var(--raised); border-radius: var(--r-group); box-shadow: var(--shadow-float); padding: 5px; z-index: 21 }
+.menu .mi { display: flex; align-items: center; gap: 10px; height: 28px; padding: 0 8px; border-radius: var(--r-ctl); color: var(--t1); width: 100%; text-align: left }
+.menu .mi:hover { background: var(--accent); color: var(--on-accent) }
+.menu .mi:hover kbd { color: inherit; border-color: currentColor }
+.menu .mi kbd { margin-left: auto; border: 0; padding: 0 }
+.menu .mi.danger { color: var(--stop) }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 5px 4px }
+.menu .mh { padding: 6px 8px 4px; display: flex; flex-direction: column }
+.menu .mh small { color: var(--t3); font: 11px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+
+/* Status: one shape per state, same glyph in sidebar, pane header, lists and palette */
+.st { width: 14px; height: 14px; display: inline-grid; place-items: center; flex: none }
+.st::before { content: ""; display: block }
+.st.work::before { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--work); border-right-color: transparent; animation: spin .9s linear infinite }
+.st.needs::before { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 2.5px var(--warn-line) }
+.st.done::before { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-ink) }
+.st.err::before { content: "!"; width: 11px; height: 11px; border-radius: 50%; background: var(--stop); color: var(--rail); font: 800 9px/11px var(--font); text-align: center }
+@keyframes spin { to { transform: rotate(360deg) } }
+.tm { width: 26px; text-align: right; color: var(--t3); font-size: 11px; font-variant-numeric: tabular-nums; flex: none }
+
+/* Workspace tree */
+.tree { display: flex; flex-direction: column; gap: 1px }
+.wsr .lbl { color: var(--t1); font-weight: 600 }
+.wsr[aria-expanded="true"] .st { display: none }
+.gr { padding-left: 29px }
+.gr .lbl { color: var(--t2) }
+.tree .sess .ti { color: var(--t1); font-weight: 400 }
+.tree .sess[aria-current="true"] .ti { font-weight: 600 }
+.tree .sess { grid-template-columns: 14px 1fr 14px 26px; padding: 0 8px 0 29px }
+/* Grids are captions; every session is a row */
+.gcap { display: flex; align-items: center; gap: 8px; height: 26px; padding: 6px 8px 0 29px; color: var(--t3); font: 600 11px/14px var(--font); width: 100%; text-align: left; white-space: nowrap }
+.gcap:hover { color: var(--t1) }
+.gcap .b { font: 400 11px var(--mono); overflow: hidden; text-overflow: ellipsis }
+
+
+.li.nomark { grid-template-columns: 64px 1fr auto }
+.runs .run { width: 100%; text-align: left; border-radius: var(--r-ctl) }
+.runs .run:hover { background: var(--hover) }
+.runs .run .link { opacity: 0; transition: opacity .12s }
+.runs .run:hover .link, .runs .run:focus-visible .link { opacity: 1 }
+.warnt { color: var(--warn) !important }
+.banner { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 8px; padding: 8px 10px; border-radius: var(--r-ctl); background: var(--warn-wash); border: 1px solid var(--warn-line) }
+.banner .bt { flex: 1; min-width: 0; display: flex; flex-direction: column }
+.banner small { color: var(--t2); font-size: 12px; line-height: 16px }
+.banner .st { margin-top: 2px }
+.tree-empty { display: flex; flex-direction: column; align-items: flex-start; padding: 16px 8px; color: var(--t3) }
+.tasks-empty { display: flex; flex-direction: column; gap: 4px; padding: 32px 4px; color: var(--t3) }
+.tasks-empty b { color: var(--t1); font-weight: 600 }
+.chip { height: 24px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px 0 6px; border-radius: 999px; background: var(--field); color: var(--t1); font-size: 12px; font-weight: 500; margin-left: 8px }
+.exitbar { border-color: var(--line-strong); background: var(--card) }
+/* Mock-only state switcher (not app UI) */
+.mockbar { position: fixed; right: 72px; top: 6px; z-index: 30; display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border-radius: 999px; background: var(--raised); box-shadow: var(--shadow-float); outline: 1px dashed var(--line-strong); outline-offset: 3px; font-size: 12px; color: var(--t3) }
+body:not(.s-offline) .x-offline, body:not(.s-exited) .x-exited, body:not(.s-first) .x-first, body:not(.s-narrow) .x-narrow { display: none !important }
+body.s-first .no-first, body.s-first .rail .sect, body.s-first .tree { display: none !important }
+body.s-narrow .app { max-width: 900px; margin: 0 auto; grid-template-columns: 1fr; border-inline: 1px solid var(--line-strong) }
+body.s-narrow .rail { display: none }
+body.s-exited .cursor { display: none }
+body.s-narrow .titlebar { padding-left: 6px }
+[hidden] { display: none !important }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail" aria-label="Navigation">
+    <div class="brand"><span class="logo" aria-hidden="true"></span><span id="brand-name">Houston</span><button class="sp iconbtn" aria-label="Hide sidebar" data-icon="panel"></button></div>
+    <div class="rail-body" id="rail-main">
+    <button class="search" data-open="palette"><svg class="i sm"><use href="#i-search"/></svg><span>Search</span><kbd>Ctrl K</kbd></button>
+    <div class="banner x-offline" role="status"><span class="st work" aria-hidden="true"></span><div class="bt"><b>Reconnecting to the daemon</b><small>Attempt 3. Sessions keep running.</small></div><button class="link">Retry</button></div>
+    <button class="row" data-go="tasks"><svg class="i"><use href="#i-tasks"/></svg><span class="lbl">Tasks</span><span class="ct no-first">2</span></button>
+    <button class="row" data-go="prs"><svg class="i"><use href="#i-pr"/></svg><span class="lbl">Pull requests</span></button>
+    <button class="row" data-go="routines"><svg class="i"><use href="#i-clock"/></svg><span class="lbl">Routines</span></button>
+    <button class="row" data-go="usage"><svg class="i"><use href="#i-chart"/></svg><span class="lbl">Usage</span></button>
+
+    <div class="tree-empty x-first">No workspaces yet<button class="btn" style="margin-top:8px"><svg class="i sm"><use href="#i-plus"/></svg>Add folder</button></div>
+    <div class="sect">Workspaces<span class="tools"><button class="iconbtn" aria-label="Filter"><svg class="i sm"><use href="#i-sliders"/></svg></button><button class="iconbtn" aria-label="Add workspace"><svg class="i sm"><use href="#i-plus"/></svg></button></span></div>
+    <div class="tree">
+<button class="row wsr" data-toggle="v2-eagle" aria-expanded="false"><span class="disc closed"><svg class="i sm"><use href="#i-chevd"/></svg></span><span class="lbl">project_eagle</span></button>
+<div id="v2-eagle" hidden><button class="gcap" data-go="empty">Landing copy</button></div>
+<button class="row wsr" data-toggle="v2-envio" aria-expanded="true"><span class="disc"><svg class="i sm"><use href="#i-chevd"/></svg></span><span class="lbl">envio_posicoes</span><span class="ct">1</span></button>
+<div id="v2-envio"><button class="gcap" data-go="empty">Envio de posições<span class="b">feat/envio-v2</span></button><button class="sess" data-go="grid"><span class="mark claude" data-mark="claude"></span><span class="ti">Envio v2</span><span class="st work" role="img" aria-label="Working"></span><span class="tm">now</span></button></div>
+<button class="row wsr" data-toggle="v2-dispatch" aria-expanded="false"><span class="disc closed"><svg class="i sm"><use href="#i-chevd"/></svg></span><span class="lbl">dispatch</span><span class="st needs" role="img" aria-label="Needs you"></span><span class="ct">1</span></button>
+<div id="v2-dispatch" hidden><button class="gcap" data-go="empty">Retry policy</button></div>
+<button class="row wsr" data-toggle="v2-houston" aria-expanded="true"><span class="disc"><svg class="i sm"><use href="#i-chevd"/></svg></span><span class="lbl">Houston</span><span class="ct">5</span></button>
+<div id="v2-houston"><button class="gcap" data-go="grid">Hook ordering<span class="b">main</span></button><button class="sess" data-go="grid" data-sess="review"><span class="mark claude" data-mark="claude"></span><span class="ti">Review</span><span class="st work" role="img" aria-label="Working"></span><span class="tm">now</span></button><button class="sess needs" data-go="grid" data-sess="tests"><span class="mark codex" data-mark="codex"></span><span class="ti">Tests</span><span class="st needs" role="img" aria-label="Needs you"></span><span class="tm">1m</span></button><button class="sess" data-go="grid" data-sess="shell"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span class="ti">shell</span><span><span class="st err x-exited" role="img" aria-label="Exited with error"></span></span><span class="tm"><span class="x-exited">2m</span></span></button><button class="gcap" data-go="empty">Revisar PRs<span class="b">main</span></button><button class="sess" data-go="grid"><span class="mark claude" data-mark="claude"></span><span class="ti">Revisar PRs</span><span class="st done" role="img" aria-label="Finished"></span><span class="tm">26m</span></button><button class="sess" data-go="grid"><span class="mark claude" data-mark="claude"></span><span class="ti">Apple HIG pass</span><span class="st work" role="img" aria-label="Working"></span><span class="tm">1m</span></button></div>
+<button class="row wsr" data-toggle="v2-ages" aria-expanded="false"><span class="disc closed"><svg class="i sm"><use href="#i-chevd"/></svg></span><span class="lbl">AGES-IV</span></button>
+<div id="v2-ages" hidden><button class="gcap">Sprint 4</button></div>
+<button class="row wsr" data-toggle="v2-moniq" aria-expanded="false"><span class="disc closed"><svg class="i sm"><use href="#i-chevd"/></svg></span><span class="lbl">Moniq</span><span class="st done" role="img" aria-label="Finished"></span></button>
+<div id="v2-moniq" hidden><button class="gcap">Billing export</button></div>
+<button class="row wsr" data-toggle="v2-desk" aria-expanded="false"><span class="disc closed"><svg class="i sm"><use href="#i-chevd"/></svg></span><span class="lbl">desktop-repos</span><span class="st err" role="img" aria-label="Exited with error"></span><span class="ct">1</span></button>
+<div id="v2-desk" hidden><button class="gcap">Sync script</button></div>
+<button class="row wsr" data-toggle="v2-theo" aria-expanded="false"><span class="disc closed"><svg class="i sm"><use href="#i-chevd"/></svg></span><span class="lbl">theo</span></button>
+<div id="v2-theo" hidden><button class="gcap">Dotfiles</button></div>
+</div>
+    </div>
+    <div class="rail-body" id="rail-settings" hidden>
+      <button class="row" data-go="grid" style="color:var(--t2)"><svg class="i"><use href="#i-back"/></svg><span class="lbl">Workspaces</span><kbd>Esc</kbd></button>
+      <button class="search" style="margin-top:8px"><svg class="i sm"><use href="#i-search"/></svg><span>Search settings</span><kbd>/</kbd></button>
+      <div class="sect">Agents</div>
+      <button class="row" data-go="settings-generic" data-title="Overview"><svg class="i"><use href="#i-agents"/></svg><span class="lbl">Overview</span></button>
+      <button class="row" data-go="settings-clis" data-title="CLIs"><svg class="i"><use href="#i-term"/></svg><span class="lbl">CLIs</span></button>
+      <button class="row" data-go="settings-generic" data-title="Skills"><svg class="i"><use href="#i-bolt"/></svg><span class="lbl">Skills</span></button>
+      <button class="row" data-go="settings-generic" data-title="MCP servers"><svg class="i"><use href="#i-plug"/></svg><span class="lbl">MCP servers</span></button>
+      <button class="row" data-go="settings-generic" data-title="Review"><svg class="i"><use href="#i-clock"/></svg><span class="lbl">Review</span></button>
+      <div class="sect">App</div>
+      <button class="row" data-go="settings" data-title="Appearance"><svg class="i"><use href="#i-palette"/></svg><span class="lbl">Appearance</span></button>
+      <button class="row" data-go="settings-terminal" data-title="Terminal"><svg class="i"><use href="#i-term"/></svg><span class="lbl">Terminal</span></button>
+      <button class="row" data-go="settings-generic" data-title="Shortcuts"><svg class="i"><use href="#i-keyboard"/></svg><span class="lbl">Shortcuts</span></button>
+      <button class="row" data-go="settings-generic" data-title="Notifications"><svg class="i"><use href="#i-bell"/></svg><span class="lbl">Notifications</span></button>
+      <div class="sect">Work</div>
+      <button class="row" data-go="settings-generic" data-title="Workspaces"><svg class="i"><use href="#i-folder"/></svg><span class="lbl">Workspaces</span></button>
+      <button class="row" data-go="settings-generic" data-title="Tasks"><svg class="i"><use href="#i-tasks"/></svg><span class="lbl">Tasks</span></button>
+      <button class="row" data-go="settings-generic" data-title="Orchestration"><svg class="i"><use href="#i-branch"/></svg><span class="lbl">Orchestration</span></button>
+      <button class="row" data-go="settings-generic" data-title="Dictation"><svg class="i"><use href="#i-mic"/></svg><span class="lbl">Dictation</span></button>
+      <div class="sect">Devices</div>
+      <button class="row" data-go="settings-generic" data-title="Phone and remote access"><svg class="i"><use href="#i-phone"/></svg><span class="lbl">Phone and remote access</span></button>
+      <div class="sect">System</div>
+      <button class="row" data-go="settings-generic" data-title="Privacy and data"><svg class="i"><use href="#i-db"/></svg><span class="lbl">Privacy and data</span></button>
+      <button class="row" data-go="settings-generic" data-title="Daemon"><svg class="i"><use href="#i-server"/></svg><span class="lbl">Daemon</span></button>
+      <button class="row" data-go="settings-generic" data-title="About"><svg class="i"><use href="#i-info"/></svg><span class="lbl">About</span></button>
+    </div>
+    <div class="foot">
+      <button class="iconbtn" data-go="settings" aria-label="Settings"><svg class="i"><use href="#i-gear"/></svg></button>
+      <button class="iconbtn" data-theme-toggle aria-label="Switch to Paper"><svg class="i"><use href="#i-moon"/></svg></button>
+    </div>
+  </aside>
+
+  <div class="content">
+    <div class="titlebar"><button class="iconbtn x-narrow" aria-label="Show sidebar"><svg class="i"><use href="#i-panel"/></svg></button><span class="crumb" id="crumb"></span><button class="chip x-narrow"><span class="st needs" aria-hidden="true"></span>1 needs you</button><span class="right">
+      <button class="iconbtn" aria-label="Layouts"><svg class="i"><use href="#i-grid"/></svg></button>
+      <button class="iconbtn" aria-label="Side panel"><svg class="i"><use href="#i-panelr"/></svg></button>
+    </span></div>
+
+    <!-- Workspace grid -->
+    <section class="view" data-view="grid">
+      <div class="grid">
+        <article class="pane focus tall">
+          <header class="ph"><span class="mark claude" data-mark="claude"></span><span class="name">Review</span><span class="branch"><svg class="i sm"><use href="#i-branch"/></svg>review/auth-refactor</span><span class="state"><span class="st work" aria-hidden="true"></span>Working</span>
+            <span class="acts"><button class="iconbtn" data-open="menu" aria-label="Pane actions"><svg class="i"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i"><use href="#i-x"/></svg></button></span></header>
+<div class="term"><span class="c4">╭─</span> <span class="c2">claude</span> <span class="c4">· review/auth-refactor</span>
+<span class="c4">│</span>
+<span class="c4">│</span>  Reading <span class="c1">core/houston-core/src/hooks.rs</span>
+<span class="c4">│</span>  <span class="c3">✓</span> 14 hook kinds mapped to lifecycle events
+<span class="c4">│</span>  <span class="c3">✓</span> drop-file parser handles torn writes
+<span class="c4">│</span>  <span class="c3">✓</span> inbox rows keep emission order
+<span class="c4">│</span>  <span class="c5">●</span> Writing regression test for Stop ordering
+<span class="c4">│</span>
+<span class="c4">│</span>    <span class="c4">tests/hooks_order.rs</span>
+<span class="c4">│</span>    <span class="c3">+ #[test]</span>
+<span class="c4">│</span>    <span class="c3">+ fn stop_after_subagent_stop_is_delivered_last() {</span>
+<span class="c4">│</span>    <span class="c3">+     let mut inbox = Inbox::default();</span>
+<span class="c4">│</span>    <span class="c3">+     inbox.push(Hook::SubagentStop { id: 7 });</span>
+<span class="c4">│</span>    <span class="c3">+     inbox.push(Hook::Stop);</span>
+<span class="c4">│</span>
+<span class="c4">╰─</span> <span class="c4">esc to interrupt · 2m 14s · 18.2k tokens</span></div>
+        </article>
+        <article class="pane">
+          <header class="ph"><span class="mark codex" data-mark="codex"></span><span class="name">Tests</span><span class="branch"><svg class="i sm"><use href="#i-branch"/></svg>tests/stop-order</span><span class="state" style="color:var(--t1)"><span class="st needs" aria-hidden="true"></span>Needs you</span>
+            <span class="acts"><button class="iconbtn" data-open="menu" aria-label="Pane actions"><svg class="i"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i"><use href="#i-x"/></svg></button></span></header>
+<div class="term"><span class="c1">theo@latitude</span> <span class="c2">~/houston</span> <span class="c4">on</span> <span class="c3">tests/stop-order</span>
+<span class="c4">›</span> codex "add a failing test for Stop hook ordering"
+
+<span class="c4">  Plan</span>
+  1. Reproduce out-of-order Stop delivery
+  2. Assert inbox row order</div>
+          <div class="ask"><div class="q"><b>Codex wants to run a command</b><div class="mono">cargo test --test hooks_order</div></div><button class="btn">Deny</button><button class="btn pri">Allow once</button></div>
+        </article>
+        <article class="pane">
+          <header class="ph"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span class="name">shell</span><span class="branch"><svg class="i sm"><use href="#i-branch"/></svg>main</span><span class="state x-exited" style="color:var(--t1)"><span class="st err" aria-hidden="true"></span>Exited with code 1</span>
+            <span class="acts"><button class="iconbtn" data-open="menu" aria-label="Pane actions"><svg class="i"><use href="#i-more"/></svg></button><button class="iconbtn" aria-label="Maximize"><svg class="i"><use href="#i-max"/></svg></button><button class="iconbtn" aria-label="Close pane"><svg class="i"><use href="#i-x"/></svg></button></span></header>
+<div class="term"><span class="c1">theo@latitude</span> <span class="c2">~/houston</span> <span class="c4">on</span> <span class="c3">main</span> <span class="c4">took 3s</span>
+<span class="c4">›</span> git log --oneline -3
+<span class="c5">f34901c3</span> fix: status notes from every pane
+<span class="c5">662684ae</span> feat: merge queue hands off to auto-merge
+<span class="c5">fb6ad314</span> fix: restored agent panes resume
+<span class="c4">›</span> <span class="cursor"></span></div>
+          <div class="ask exitbar x-exited"><div class="q"><b>The shell exited with code 1</b><div style="color:var(--t3);font-size:12px">2 min ago. Output above is kept.</div></div><button class="btn pri"><svg class="i sm"><use href="#i-restart"/></svg>Restart</button></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- First run -->
+    <section class="view" data-view="welcome" hidden>
+      <div class="empty"><div class="in">
+        <h1>Add a project to start</h1>
+        <p>Each folder becomes a workspace. Agents and terminals run in real shells there and keep running when you close the window.</p>
+        <button class="btn pri" style="margin-top:6px"><svg class="i sm"><use href="#i-plus"/></svg>Add folder</button>
+      </div></div>
+    </section>
+
+    <!-- Empty workspace -->
+    <section class="view" data-view="empty" hidden>
+      <div class="empty"><div class="in">
+        <h1>Nothing running in Cleanup cost</h1>
+        <p>Start an agent or a terminal in <span class="mono">~/houston</span>. It keeps running when you close the window.</p>
+        <div class="launch">
+          <button><span class="mark claude" data-mark="claude"></span><span><b style="font-weight:600">Claude Code</b></span></button>
+          <button><span class="mark codex" data-mark="codex"></span><span><b style="font-weight:600">Codex</b><br><small class="warnt">No status: hooks off</small></span></button>
+          <button><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span><b style="font-weight:600">Terminal</b><br><small>zsh</small></span></button>
+        </div>
+        <div class="actions">Project actions<button class="btn ghost"><svg class="i sm"><use href="#i-play"/></svg>test</button><button class="btn ghost"><svg class="i sm"><use href="#i-play"/></svg>dev</button><button class="btn ghost"><svg class="i sm"><use href="#i-plus"/></svg>Add action</button></div>
+      </div></div>
+    </section>
+
+    <!-- Tasks -->
+    <section class="view" data-view="tasks" hidden>
+      <div class="page">
+        <div class="ph1"><div><h1 class="lt">Tasks</h1><div class="sub">Work for you and your agents. Each task runs in its own worktree and ends in a pull request.</div></div><button class="btn">Sources</button><button class="btn pri"><svg class="i sm"><use href="#i-plus"/></svg>New task</button></div>
+        <div class="tasks-empty x-first"><b>No tasks yet</b><span>Create one, or connect a source to pull issues in.</span></div>
+        <div class="grp no-first">
+          <div class="lh"><span class="circle half" style="color:var(--warn)"></span>In progress<span class="ct">2</span></div>
+          <div class="list">
+            <div class="li"><span class="mark claude" data-mark="claude"></span><span class="id">HOU-41</span><span class="tt">pane_spawn refuses an unsafe worktree path</span><span class="rt"><span class="state" style="color:var(--t1)"><span class="st needs" aria-hidden="true"></span>Needs you</span></span></div>
+            <div class="li"><span class="mark claude" data-mark="claude"></span><span class="id">HOU-42</span><span class="tt">Measure cleanup pass cost per worktree</span><span class="rt"><span class="state"><span class="st work" aria-hidden="true"></span>Working</span></span></div>
+          </div>
+        </div>
+        <div class="grp no-first">
+          <div class="lh"><span class="circle" style="color:var(--t3)"></span>Todo<span class="ct">3</span></div>
+          <div class="list">
+            <div class="li nomark"><span class="id">HOU-43</span><span class="tt">Regression test: child stalls on folder-trust prompt</span><span class="rt"><span class="age">1h</span><button class="btn ghost hoverAct">Start</button></span></div>
+            <div class="li nomark"><span class="id">HOU-47</span><span class="tt">hs-pane exits non-zero when a cap is hit</span><span class="rt"><span class="age">25m</span><button class="btn ghost hoverAct">Start</button></span></div>
+            <div class="li nomark"><span class="id">HOU-46</span><span class="tt">A renamed pane keeps its name across respawn</span><span class="rt"><span class="age">2h</span><button class="btn ghost hoverAct">Start</button></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Routines -->
+    <section class="view" data-view="routines" hidden>
+      <div class="page">
+        <div class="ph1"><div><h1 class="lt">Routines</h1><div class="sub">Prompts that run on a schedule, each in its own pane.</div></div><button class="btn pri"><svg class="i sm"><use href="#i-plus"/></svg>New routine</button></div>
+        <div class="split">
+          <nav class="rlist" aria-label="Routines">
+            <div class="sect" style="padding-top:0">Built in</div>
+            <button class="r" aria-current="true"><span>Weekly review</span><span class="m"><span class="st work" aria-hidden="true"></span>Running · 2 workspaces</span></button>
+            <button class="r"><span>Night shift</span><span class="m">Not set up</span></button>
+            <div class="sect">Yours</div>
+            <button class="r"><span>Nightly dependency check</span><span class="m">Daily 02:00 · finex</span></button>
+            <button class="r"><span>Weekly changelog draft</span><span class="m">Fri 17:00 · houston</span></button>
+            <button class="r"><span>Flaky test sweep</span><span class="m">Paused</span></button>
+          </nav>
+          <div style="display:flex;flex-direction:column;gap:24px;min-width:0">
+            <div style="display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="font:650 20px/26px var(--font);letter-spacing:-.015em">Weekly review</div><div class="sub" style="margin-top:2px">Reads recent sessions and looks for mistakes your agents repeat.</div></div></div>
+            <dl class="kv" style="margin:0">
+              <dt>Schedule</dt><dd><span class="segc"><button>Daily</button><button aria-pressed="true">Weekly</button><button>Manual</button></span> <span style="color:var(--t3);margin-left:8px">Mondays at 09:00</span></dd>
+              <dt>Reads</dt><dd>Sessions in houston since the previous review</dd>
+              <dt>Runs with</dt><dd style="display:flex;align-items:center;gap:6px"><span class="mark claude" data-mark="claude"></span>Claude Code <span class="mono" style="color:var(--t3)">sonnet</span></dd>
+              <dt>Status</dt><dd style="display:flex;align-items:center;gap:6px"><span class="st work" aria-hidden="true"></span>Reading sessions, started 3 min ago<button class="link" style="margin-left:auto">Open pane</button></dd>
+            </dl>
+            <div class="grp"><h2 style="margin:0;font:600 13px/18px var(--font)">Recent runs</h2>
+              <div class="runs">
+                <button class="run"><span class="when">Mon Sep 28</span><span class="what">38 sessions · 3 findings · repeated mistakes to address</span><span class="link">Report</span></button>
+                <button class="run"><span class="when">Mon Sep 21</span><span class="what">41 sessions · 2 findings</span><span class="link">Report</span></button>
+                <button class="run"><span class="when">Mon Sep 14</span><span class="what">29 sessions · no findings</span><span class="link">Report</span></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section class="view" data-view="settings-appearance" hidden>
+      <div class="page">
+        <div class="ph1"><div><h1 class="lt">Appearance</h1><div class="sub">How Houston's own chrome looks. Terminal colors and type are under Terminal.</div></div></div>
+        <div class="grp"><h2>Theme</h2>
+          <div class="themes">
+            <button class="theme" data-set-theme="system"><span class="pv" style="background:linear-gradient(90deg,#161618 50%,#f5f5f7 50%)"><i style="background:rgba(127,127,127,.25)"></i><i style="background:rgba(127,127,127,.15)"></i></span><span class="cap"><b style="font-weight:500">System</b><span>Follows your desktop</span></span></button>
+            <button class="theme" data-set-theme="graphite"><span class="pv" style="background:#161618"><i style="background:#1c1c1f"></i><i style="background:#0f0f11"></i></span><span class="cap"><b style="font-weight:500">Graphite</b><span>Dark</span></span></button>
+            <button class="theme" data-set-theme="paper"><span class="pv" style="background:#f5f5f7"><i style="background:#ececef"></i><i style="background:#ffffff"></i></span><span class="cap"><b style="font-weight:500">Paper</b><span>Light</span></span></button>
+          </div>
+        </div>
+        <div class="grp"><h2>Window</h2>
+          <div class="box">
+            <div class="srow"><div class="txt"><div class="rt">Background</div><div class="rd">Solid paints the theme color. Custom puts a picture behind the sidebar and panes.</div></div><div class="ctl"><span class="segc"><button aria-pressed="true">Solid</button><button>Custom</button></span></div></div>
+            <div class="srow"><div class="txt"><div class="rt">Interface size</div><div class="rd">Scales the whole app. Ctrl + and Ctrl − do the same.</div></div><div class="ctl"><span class="segc"><button>90%</button><button aria-pressed="true">100%</button><button>110%</button><button>125%</button></span></div></div>
+          </div>
+        </div>
+        <div class="grp"><h2>Panes</h2>
+          <div class="box">
+            <div class="srow"><div class="txt"><div class="rt">Open the diff when an agent stops</div><div class="rd">Shows the Diff panel when the focused agent finishes with changes in the workspace.</div></div><div class="ctl"><button class="tog" role="switch" aria-checked="false" aria-label="Open the diff when an agent stops"></button></div></div>
+            <div class="srow"><div class="txt"><div class="rt">Context indicator</div><div class="rd">A ring on each agent pane shows how much of its context window is used.</div></div><div class="ctl"><button class="tog" role="switch" aria-checked="true" aria-label="Context indicator"></button></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" data-view="settings-terminal" hidden>
+      <div class="page">
+        <div class="ph1"><div><h1 class="lt">Terminal</h1><div class="sub">Colors, type and behavior for every pane.</div></div></div>
+        <div class="grp"><h2>Colors</h2>
+          <div class="themes">
+            <button class="theme" aria-pressed="true"><span class="pv" style="background:#0f0f11;display:block;padding:10px 12px;font:12px/18px var(--mono);color:#e6e6ea"><span style="color:#89b4fa">›</span> ls -la<br><span style="color:#a6e3a1">src</span> <span style="color:#f9e2af">Cargo.toml</span></span><span class="cap"><b style="font-weight:500">Auto</b><span>Follows the app theme</span></span></button>
+            <button class="theme"><span class="pv" style="background:#002b36;display:block;padding:10px 12px;font:12px/18px var(--mono);color:#93a1a1"><span style="color:#268bd2">›</span> ls -la<br><span style="color:#859900">src</span> <span style="color:#b58900">Cargo.toml</span></span><span class="cap"><b style="font-weight:500">Solarized Dark</b><span>Dark</span></span></button>
+            <button class="theme"><span class="pv" style="background:#ffffff;display:block;padding:10px 12px;font:12px/18px var(--mono);color:#1d1d1f"><span style="color:#0a5cd1">›</span> ls -la<br><span style="color:#1d7a3a">src</span> <span style="color:#8a5a00">Cargo.toml</span></span><span class="cap"><b style="font-weight:500">Light</b><span>Light</span></span></button>
+          </div>
+        </div>
+        <div class="grp"><h2>Type</h2>
+          <div class="box">
+            <div class="srow"><div class="txt"><div class="rt">Font</div><div class="rd">A Nerd Font draws Powerline prompt glyphs; other fonts show empty boxes.</div></div><div class="ctl"><span class="sel-ctl">JetBrains Mono Nerd Font<svg class="i sm"><use href="#i-chevd"/></svg></span></div></div>
+            <div class="srow"><div class="txt"><div class="rt">Size</div><div class="rd">Applies to every pane.</div></div><div class="ctl"><span class="num">14</span><span class="unit">pt</span></div></div>
+            <div class="srow"><div class="txt"><div class="rt">Scrollback</div><div class="rd">Lines kept per pane. A reconnect restores only what the daemon kept.</div></div><div class="ctl"><span class="num">10,000</span><span class="unit">lines</span></div></div>
+          </div>
+          <div class="note">Houston restarts no running pane when these change.</div>
+        </div>
+        <div class="grp"><h2>Behavior</h2>
+          <div class="box">
+            <div class="srow"><div class="txt"><div class="rt">Cursor blink</div></div><div class="ctl"><button class="tog" role="switch" aria-checked="true" aria-label="Cursor blink"></button></div></div>
+            <div class="srow"><div class="txt"><div class="rt">Shift+Enter inserts a newline</div><div class="rd">Write multi-line prompts without sending.</div></div><div class="ctl"><button class="tog" role="switch" aria-checked="true" aria-label="Shift+Enter inserts a newline"></button></div></div>
+            <div class="srow"><div class="txt"><div class="rt">Copy on select</div><div class="rd">Selecting terminal text copies it. Full-screen apps still need Shift and drag.</div></div><div class="ctl"><button class="tog" role="switch" aria-checked="false" aria-label="Copy on select"></button></div></div>
+            <div class="srow"><div class="txt"><div class="rt">Idle quiet window</div><div class="rd">Silence before Houston marks a session idle. 100 to 30,000 ms.</div></div><div class="ctl"><span class="num">400</span><span class="unit">ms</span></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="view" data-view="settings-clis" hidden>
+      <div class="page">
+        <div class="ph1"><div><h1 class="lt">CLIs</h1><div class="sub">The agent CLIs Houston can launch, whether they report status, and the accounts new panes use.</div></div><button class="btn ghost"><svg class="i sm"><use href="#i-restart"/></svg>Check again</button></div>
+        <div class="list">
+          <div class="li" style="grid-template-columns:18px 1fr auto;height:52px"><span class="mark claude" data-mark="claude" style="color:var(--claude)"></span><span><b style="font-weight:500">Claude Code</b> <span class="mono" style="color:var(--t3)">2.1.312</span><br><span style="color:var(--t3);font-size:12px">me@example.com</span></span><span class="state"><span class="dot" style="background:var(--ok)"></span>Reports status</span></div>
+          <div class="li" style="grid-template-columns:18px 1fr auto;height:52px"><span class="mark codex" data-mark="codex" style="color:var(--codex)"></span><span><b style="font-weight:500">Codex</b> <span class="mono" style="color:var(--t3)">0.163.0</span><br><span style="color:var(--t3);font-size:12px">Hooks are off, so status is unknown</span></span><span class="rt"><button class="btn">Turn on hooks</button></span></div>
+          <div class="li" style="grid-template-columns:18px 1fr auto;height:52px"><span class="mark"><svg class="i sm"><use href="#i-term"/></svg></span><span><b style="font-weight:500">ZCode</b><br><span style="color:var(--t3);font-size:12px">Not installed: zcode is not on PATH</span></span><span class="rt"><button class="link">How to install</button></span></div>
+        </div>
+      </div>
+    </section>
+    <section class="view" data-view="settings-generic" hidden>
+      <div class="page"><div class="ph1"><div><h1 class="lt" id="generic-title">Settings</h1><div class="sub">Laid out like Appearance: grouped rows, one title per group.</div></div></div></div>
+    </section>
+    <section class="view" data-view="prs" hidden><div class="page"><div class="ph1"><div><h1 class="lt">Pull requests</h1><div class="sub">Open pull requests in this workspace's repository, grouped by who acts next.</div></div><span class="segc"><button aria-pressed="true">Requests</button><button>Merge queue</button><button>Review requests</button></span></div>
+      <div class="list"><div class="li"><span class="dot" style="background:var(--ok)"></span><span class="id">#364</span><span class="tt">fix: status notes from every pane</span><span class="rt">33/34 checks · 2h</span></div><div class="li"><span class="st needs" aria-hidden="true"></span><span class="id">#362</span><span class="tt">feat: merge queue hands off to ruleset auto-merge</span><span class="rt">Changes requested · 1d</span></div></div></div></section>
+    <section class="view" data-view="usage" hidden><div class="page"><div class="ph1"><div><h1 class="lt">Usage</h1><div class="sub">What your Claude Code and Codex sessions on this machine would cost at API prices. Read locally; nothing is sent.</div></div></div></div></section>
+  </div>
+</div>
+
+<div class="mockbar" aria-label="Mock state">State<span class="segc" id="mock-state"><button aria-pressed="true" data-s="">Normal</button><button data-s="offline">Offline</button><button data-s="exited">Exited</button><button data-s="long">Long names</button><button data-s="first">First run</button><button data-s="narrow">Narrow</button></span></div>
+
+<!-- Palette -->
+<div class="scrim" id="palette" hidden>
+  <div class="palette" role="dialog" aria-label="Command palette">
+    <div class="in"><svg class="i"><use href="#i-search"/></svg><span style="flex:1">Search panes, workspaces and actions</span><kbd>Esc</kbd></div>
+    <div class="grp-h">Panes</div>
+    <div class="it" aria-selected="true"><span class="mark claude" data-mark="claude" style="color:var(--claude)"></span>Review<span class="d">houston · Working</span></div>
+    <div class="it"><span class="mark codex" data-mark="codex"></span>Tests<span class="d">houston · Needs you</span></div>
+    <div class="grp-h">Actions</div>
+    <div class="it"><svg class="i"><use href="#i-plus"/></svg>New Claude Code pane<span class="d"><kbd>N</kbd></span></div>
+    <div class="it"><svg class="i"><use href="#i-split"/></svg>Split right<span class="d"><kbd>D</kbd></span></div>
+    <div class="it"><svg class="i"><use href="#i-gear"/></svg>Open settings<span class="d"><kbd>Ctrl ,</kbd></span></div>
+    <div class="ft"><span><kbd>↑↓</kbd> Move</span><span><kbd>Enter</kbd> Focus pane</span><span><kbd>Esc</kbd> Close</span></div>
+  </div>
+</div>
+
+<!-- Pane menu -->
+<div class="menu" id="menu" role="menu" hidden>
+  <div class="mh"><b style="font-weight:600">Review</b><small>~/ProjetosPessoais/Houston</small></div>
+  <hr>
+  <button class="mi" role="menuitem"><svg class="i"><use href="#i-split"/></svg>Split right<kbd>D</kbd></button>
+  <button class="mi" role="menuitem"><svg class="i"><use href="#i-splitd"/></svg>Split down<kbd>S</kbd></button>
+  <button class="mi" role="menuitem"><svg class="i"><use href="#i-handoff"/></svg>Hand off…</button>
+  <hr>
+  <button class="mi" role="menuitem"><svg class="i"><use href="#i-stop"/></svg>Interrupt<kbd>Ctrl C</kbd></button>
+  <button class="mi" role="menuitem"><svg class="i"><use href="#i-restart"/></svg>Restart</button>
+  <button class="mi" role="menuitem"><svg class="i"><use href="#i-folder"/></svg>Show in file manager</button>
+  <hr>
+  <button class="mi danger" role="menuitem"><svg class="i"><use href="#i-x"/></svg>Close pane and stop agent</button>
+</div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7.5"/><path d="m20.5 20.5-4.2-4.2"/></symbol>
+  <symbol id="i-tasks" viewBox="0 0 24 24"><path d="m3.5 17 2 2 4-4"/><path d="m3.5 7 2 2 4-4"/><path d="M13 7h7.5"/><path d="M13 17h7.5"/></symbol>
+  <symbol id="i-pr" viewBox="0 0 24 24"><circle cx="18" cy="18" r="2.5"/><circle cx="6" cy="6" r="2.5"/><path d="M13 6h3a2 2 0 0 1 2 2v7.5"/><path d="M6 8.5V21"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3.5 3.5v17h17"/><path d="m19 8.5-5 5-3.5-3.5-3.5 3.5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+  <symbol id="i-chevd" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><path d="m4.5 17 5.5-5-5.5-5"/><path d="M12.5 19h7"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/><circle cx="12" cy="12" r="6.8"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.5 13.5A8.5 8.5 0 1 1 10.5 3.5a6.5 6.5 0 0 0 10 10Z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2.5"/><path d="M9.5 4v16"/></symbol>
+  <symbol id="i-panelr" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2.5"/><path d="M14.5 4v16"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M6 3.5v12"/><path d="M18 8.5a9 9 0 0 1-9 9"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="6" cy="12" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="18" cy="12" r=".9"/></symbol>
+  <symbol id="i-max" viewBox="0 0 24 24"><path d="M14.5 4h5.5v5.5"/><path d="m20 4-6 6"/><path d="M9.5 20H4v-5.5"/><path d="m4 20 6-6"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M17.5 6.5l-11 11M6.5 6.5l11 11"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.8v14.4a.8.8 0 0 0 1.2.7l11.5-7.2a.8.8 0 0 0 0-1.4L8.2 4.1A.8.8 0 0 0 7 4.8Z"/></symbol>
+  <symbol id="i-split" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2.5"/><path d="M12 4v16"/></symbol>
+  <symbol id="i-splitd" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2.5"/><path d="M3.5 12h17"/></symbol>
+  <symbol id="i-handoff" viewBox="0 0 24 24"><path d="M7 17 17 7"/><path d="M8.5 7H17v8.5"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><rect x="9" y="9" width="6" height="6" rx="1"/></symbol>
+  <symbol id="i-restart" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3.5 4v5h5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-agents" viewBox="0 0 24 24"><rect x="4" y="7.5" width="16" height="12" rx="3"/><path d="M12 7.5V4"/><path d="M9.5 13v1.5M14.5 13v1.5"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3 5 13.5h6l-1 7.5 8-10.5h-6Z"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3.5v4M15 3.5v4"/><path d="M6.5 7.5h11v3a5.5 5.5 0 0 1-11 0Z"/><path d="M12 16v4.5"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 0 0 0 17c1 0 1.6-.8 1.6-1.6 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.7-1.6 1.6-1.6h1.8a4.6 4.6 0 0 0 4.5-4.6c0-3.7-3.8-6.8-8.5-6.8Z"/><circle cx="7.8" cy="11.5" r=".8"/><circle cx="10.5" cy="7.6" r=".8"/><circle cx="15" cy="7.8" r=".8"/></symbol>
+  <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h1M10 10h1M13.5 10h1M17 10h.5M7.5 14h9"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15Z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 18.5h2"/></symbol>
+  <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.5"/><path d="M4.5 5.5v13c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-13M4.5 12c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="7" rx="2"/><rect x="3.5" y="13" width="17" height="7" rx="2"/><path d="M7 7.5h.5M7 16.5h.5"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5v.5"/></symbol>
+</svg>
+
+<script>
+const CLAUDE = '<svg viewBox="0 0 24 24" aria-hidden="true" style="fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg>';
+const CODEX = '<svg viewBox="0 0 24 24" aria-hidden="true" style="fill:none;stroke:currentColor;stroke-width:1.9;stroke-linejoin:round;stroke-linecap:round"><path d="M12 2.8 20 7.4v9.2L12 21.2 4 16.6V7.4Z"/><path d="M9 10.5 11.5 12 9 13.5M13 14h3"/></svg>';
+document.querySelectorAll('[data-mark]').forEach((m) => { m.innerHTML = m.dataset.mark === 'claude' ? CLAUDE : CODEX; });
+document.querySelectorAll('[data-icon="panel"]').forEach((b) => { b.innerHTML = '<svg class="i"><use href="#i-panel"/></svg>'; });
+
+const crumbs = { welcome: ['Houston'], grid: ['houston', 'Hook ordering'], empty: ['houston', 'Cleanup cost'], tasks: ['Tasks'], routines: ['Routines'], 'settings-appearance': ['Settings', 'Appearance'], 'settings-terminal': ['Settings', 'Terminal'], 'settings-clis': ['Settings', 'Agents', 'CLIs'], 'settings-generic': ['Settings'], prs: ['Pull requests'], usage: ['Usage'] };
+let view = 'grid';
+function go(v, sess, title) {
+  if (v === 'settings') v = 'settings-appearance';
+  view = v;
+  const inSettings = v.startsWith('settings');
+  document.getElementById('rail-main').hidden = inSettings;
+  document.getElementById('rail-settings').hidden = !inSettings;
+  document.getElementById('brand-name').textContent = inSettings ? 'Settings' : 'Houston';
+  document.querySelector('.brand .logo').hidden = inSettings;
+  if (v === 'settings-generic') { document.getElementById('generic-title').textContent = title; crumbs['settings-generic'] = ['Settings', title]; }
+  document.querySelectorAll('[data-view]').forEach((s) => { s.hidden = s.dataset.view !== v; });
+  document.querySelectorAll('.rail [data-go]').forEach((b) => b.removeAttribute('aria-current'));
+  const target = sess ? document.querySelector(`.rail .tree [data-sess="${sess}"]`) : title ? document.querySelector(`.rail .row[data-title="${title}"]`) : document.querySelector(`.rail .row[data-go="${v === 'settings-appearance' ? 'settings' : v}"]`);
+  if (target && !target.classList.contains('iconbtn') && !target.classList.contains('gr')) target.setAttribute('aria-current', 'true');
+  if (v === 'grid' && !sess) document.querySelectorAll('.rail [data-sess="review"]').forEach((b) => b.setAttribute('aria-current', 'true'));
+  const c = crumbs[v];
+  document.getElementById('crumb').innerHTML = c.map((p, i) => (i === c.length - 1 ? `<b>${p}</b>` : `<span>${p}</span><span style="color:var(--t3)">/</span>`)).join('');
+}
+document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go, b.dataset.sess, b.dataset.title)));
+document.querySelectorAll('[data-toggle]').forEach((b) => b.addEventListener('click', () => {
+  const el = document.getElementById(b.dataset.toggle); el.hidden = !el.hidden; b.querySelector('.disc').classList.toggle('closed', el.hidden); b.setAttribute('aria-expanded', String(!el.hidden));
+}));
+
+let theme = 'graphite';
+try { theme = localStorage.getItem('hx-theme') || 'graphite'; } catch (e) {}
+function setTheme(t) {
+  theme = t === 'system' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'paper' : 'graphite') : t;
+  document.documentElement.dataset.hx = theme;
+  document.querySelectorAll('[data-set-theme]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.setTheme === t)));
+  const tb = document.querySelector('[data-theme-toggle]');
+  tb.innerHTML = `<svg class="i"><use href="#i-${theme === 'paper' ? 'sun' : 'moon'}"/></svg>`;
+  tb.setAttribute('aria-label', theme === 'paper' ? 'Switch to Graphite' : 'Switch to Paper');
+  try { localStorage.setItem('hx-theme', t); } catch (e) {}
+}
+document.querySelector('[data-theme-toggle]').addEventListener('click', () => setTheme(theme === 'paper' ? 'graphite' : 'paper'));
+document.querySelectorAll('[data-set-theme]').forEach((b) => b.addEventListener('click', () => setTheme(b.dataset.setTheme)));
+
+const palette = document.getElementById('palette'), menu = document.getElementById('menu');
+function closeAll() { palette.hidden = true; menu.hidden = true; }
+document.querySelectorAll('[data-open="palette"]').forEach((b) => b.addEventListener('click', () => { menu.hidden = true; palette.hidden = false; }));
+palette.addEventListener('click', (e) => { if (e.target === palette) closeAll(); });
+document.querySelectorAll('[data-open="menu"]').forEach((b) => b.addEventListener('click', (e) => {
+  e.stopPropagation(); const r = b.getBoundingClientRect();
+  menu.style.top = `${r.bottom + 4}px`; menu.style.left = `${Math.max(8, r.right - 240)}px`; menu.hidden = false;
+}));
+document.addEventListener('click', (e) => { if (!menu.hidden && !menu.contains(e.target)) menu.hidden = true; });
+document.querySelectorAll('.tog').forEach((t) => t.addEventListener('click', () => t.setAttribute('aria-checked', String(t.getAttribute('aria-checked') !== 'true'))));
+document.querySelectorAll('.segc').forEach((s) => s.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; s.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); }));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { if (palette.hidden && menu.hidden && view.startsWith('settings')) go('grid'); closeAll(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); palette.hidden = !palette.hidden; }
+  if ((e.ctrlKey || e.metaKey) && e.key === ',') { e.preventDefault(); go('settings'); }
+});
+const LONG = [
+  ['.wsr[data-toggle="v2-envio"] .lbl', 'envio_posicoes_corretoras_legado'],
+  ['#v2-envio .gcap', 'Envio de posições consolidadas por corretora<span class="b">feat/envio-v2-consolidado-por-corretora</span>'],
+  ['#v2-envio .sess .ti', 'Seguinte, quero apenas o envio das posições'],
+  ['[data-sess="review"] .ti', 'Review the auth refactor before merging'],
+];
+const orig = LONG.map(([q]) => document.querySelector(q).innerHTML);
+let mockState = '';
+function setState(st) {
+  const wasFirst = mockState === 'first';
+  mockState = st;
+  document.body.className = st ? `s-${st}` : '';
+  LONG.forEach(([q, v], i) => { document.querySelector(q).innerHTML = st === 'long' ? v : orig[i]; });
+  document.querySelectorAll('#mock-state button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.s === st)));
+  if (st === 'first') go('welcome'); else if (wasFirst || st === 'exited' || st === 'narrow') go('grid');
+}
+document.querySelectorAll('#mock-state button').forEach((b) => b.addEventListener('click', () => setState(b.dataset.s)));
+setTheme(theme);
+go('grid');
+</script>
+</body>
+</html>

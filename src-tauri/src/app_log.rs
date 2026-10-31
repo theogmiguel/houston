@@ -7,8 +7,6 @@ use std::sync::mpsc;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::watchdog::clocks::{Clocks, SystemClocks};
-
 pub const SCHEMA_VERSION: u32 = 1;
 
 // Bounded so a caller cannot wedge an unbounded tag into the record position; the
@@ -96,7 +94,10 @@ pub fn build_record(
 
     Ok(Record {
         schema: SCHEMA_VERSION,
-        ts_wall: SystemClocks.sample().wall_ms,
+        ts_wall: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0),
         source,
         message,
         payload,
@@ -112,7 +113,7 @@ const QUEUE_CAPACITY: usize = 32;
 
 // The disk write never runs on the caller's thread: `system_log_debug` is a non-async
 // command Tauri runs on the receiving (GTK main) thread, so a blocking write there is
-// exactly the stall the watchdog detects. One channel, one writer thread.
+// exactly the stall a renderer watchdog would detect. One channel, one writer thread.
 pub struct AppDebugSink {
     tx: mpsc::SyncSender<Record>,
     dropped: AtomicU64,

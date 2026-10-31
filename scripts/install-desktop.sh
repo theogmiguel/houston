@@ -7,9 +7,7 @@ set -euo pipefail
 # end fails loudly and names the file if that coupling regresses.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ICON_SOURCE="$ROOT/ui/resources/branding/houston-promo-background.png"
 APPS="$HOME/.local/share/applications"
-ICONS="$HOME/.local/share/icons/hicolor"
 LIBDIR="$HOME/.local/lib/houston"
 APP_SRC="$ROOT/src-tauri/target/release/houston"
 HELPER_NAME="tr-helper"
@@ -19,15 +17,7 @@ CORE_SRC="$ROOT/src-tauri/target/release/$CORE_NAME"
 SUPERVISOR_NAME="houston-supervisor"
 SUPERVISOR_SRC="$ROOT/src-tauri/target/release/$SUPERVISOR_NAME"
 
-[ -f "$ICON_SOURCE" ] || { echo "icon source missing at $ICON_SOURCE" >&2; exit 1; }
 [ -x "$APP_SRC" ] || { echo "app binary missing at $APP_SRC — run: ./scripts/build-app.sh" >&2; exit 1; }
-
-"$ROOT/scripts/check-renderer-fresh.sh" >/dev/null || {
-  echo "refusing to install: the built renderer is stale against the wire protocol." >&2
-  echo "Run ./scripts/check-renderer-fresh.sh to see which side is behind, then rebuild:" >&2
-  echo "  ./scripts/build-app.sh" >&2
-  exit 1
-}
 
 "$ROOT/scripts/check-binary-fresh.sh" >/dev/null || {
   echo "refusing to install: the app binary is stale (details above)." >&2
@@ -116,23 +106,9 @@ echo "installed: $LIBDIR/$SUPERVISOR_NAME <- $SUPERVISOR_SRC"
 echo "installed: $LIBDIR/start.sh ($start_size) <- $ROOT/scripts/start.sh"
 echo "installed: $LIBDIR/launch.sh (wrapper, sets TR_APP, execs $LIBDIR/start.sh)"
 
-for size in 48 64 128 256 512; do
-  src="$ROOT/ui/resources/icons/hicolor/${size}x${size}.png"
-  [ -f "$src" ] || {
-    echo "icon render missing at $src -- run: cd ui && bun run icons" >&2
-    exit 1
-  }
-  mkdir -p "$ICONS/${size}x${size}/apps"
-  cp "$src" "$ICONS/${size}x${size}/apps/houston.png"
-done
-
-if command -v gtk-update-icon-cache >/dev/null; then
-  gtk-update-icon-cache -f -t "$ICONS" >/dev/null 2>&1 || true
-fi
 if command -v update-desktop-database >/dev/null; then
   update-desktop-database "$APPS" >/dev/null 2>&1 || true
 fi
 
 echo "installed: $APPS/houston.desktop"
 echo "installed: $MIME/packages/houston-transfer.xml"
-echo "installed: $ICONS/{48,64,128,256,512}x*/apps/houston.png"

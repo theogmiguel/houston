@@ -1,5 +1,10 @@
+use std::sync::Mutex;
+
+use tauri::menu::{
+    CheckMenuItem, IsMenuItem, Menu, MenuBuilder, MenuItem, MenuItemKind, SubmenuBuilder,
+};
 use tauri::utils::config::Color;
-use tauri::{Runtime, Webview, Window};
+use tauri::{AppHandle, Emitter, Runtime, State, Webview, Window};
 
 fn unquote_gsettings(raw: &str) -> &str {
     let t = raw.trim();
@@ -12,7 +17,7 @@ fn unquote_gsettings(raw: &str) -> &str {
 
 #[tauri::command]
 pub fn window_button_layout() -> Option<String> {
-    let out = houston_core::spawn::command("gsettings")
+    let out = crate::sys::spawn::command("gsettings")
         .args(["get", "org.gnome.desktop.wm.preferences", "button-layout"])
         .output()
         .ok()?;
@@ -105,6 +110,65 @@ pub fn window_is_focused<R: Runtime>(window: Window<R>) -> Result<bool, String> 
 
 fn fullscreen_target(currently_fullscreen: bool) -> bool {
     !currently_fullscreen
+}
+
+#[tauri::command]
+pub fn window_is_fullscreen<R: Runtime>(window: Window<R>) -> Result<bool, String> {
+    window.is_fullscreen().map_err(|e| {
+        format!(
+            "window_is_fullscreen: failed to read fullscreen state for window {:?}: {e}",
+            window.label()
+        )
+    })
+}
+
+#[tauri::command]
+pub fn window_set_theme<R: Runtime>(window: Window<R>, theme: String) -> Result<(), String> {
+    let theme = parse_theme(&theme)?;
+    window.set_theme(theme).map_err(|e| {
+        format!(
+            "window_set_theme: failed to set theme on window {:?} ({}): {e}",
+            window.label(),
+            theme_name(theme)
+        )
+    })
+}
+
+fn parse_theme(value: &str) -> Result<Option<tauri::Theme>, String> {
+    match value {
+        "light" => Ok(Some(tauri::Theme::Light)),
+        "dark" => Ok(Some(tauri::Theme::Dark)),
+        "system" => Ok(None),
+        other => Err(format!(
+            "window_set_theme: theme must be light, dark or system, got {other:?}"
+        )),
+    }
+}
+
+fn theme_name(theme: Option<tauri::Theme>) -> &'static str {
+    match theme {
+        Some(tauri::Theme::Light) => "light",
+        Some(tauri::Theme::Dark) => "dark",
+        None => "system",
+        Some(_) => "unknown",
+    }
+}
+
+#[tauri::command]
+pub fn window_set_badge_count<R: Runtime>(window: Window<R>, count: i64) -> Result<(), String> {
+    if count < 0 {
+        return Err(format!(
+            "window_set_badge_count: count must be >= 0, got {count}"
+        ));
+    }
+    window
+        .set_badge_count((count > 0).then_some(count))
+        .map_err(|e| {
+            format!(
+                "window_set_badge_count: failed to set badge count {count} on window {:?}: {e}",
+                window.label()
+            )
+        })
 }
 
 #[tauri::command]
@@ -224,9 +288,6 @@ pub fn window_start_resize_dragging<R: Runtime>(
 #[tauri::command]
 pub fn window_set_zoom<R: Runtime>(webview: Webview<R>, factor: f64) -> Result<(), String> {
     validate_zoom_factor(factor)?;
-    if crate::browser::selftest::requested() {
-        return Ok(());
-    }
     webview.set_zoom(factor).map_err(|e| {
         format!(
             "window_set_zoom: failed to set zoom {factor} on webview {:?}: {e}",
@@ -318,6 +379,34 @@ mod tests {
     fn fullscreen_target_toggles_both_ways() {
         assert!(fullscreen_target(false));
         assert!(!fullscreen_target(true));
+    }
+
+    #[test]
+    fn context_menu_ids_round_trip_through_colons_in_the_item_id() {
+        let encoded = context_menu_id("abc-123", "group:delete");
+        assert_eq!(encoded, "v2ctx:abc-123:group:delete");
+        assert_eq!(
+            decode_context_menu_id(&encoded),
+            Some(("abc-123", "group:delete"))
+        );
+        assert_eq!(decode_context_menu_id("other:abc:id"), None);
+        assert_eq!(decode_context_menu_id("v2ctx::id"), None);
+    }
+
+    #[test]
+    fn context_menu_nonces_reject_separators() {
+        assert!(super::valid_nonce("abc-123_X"));
+        assert!(!super::valid_nonce("abc:123"));
+        assert!(!super::valid_nonce(""));
+    }
+
+    #[test]
+    fn parse_theme_maps_the_three_contract_values() {
+        assert_eq!(parse_theme("light").unwrap(), Some(tauri::Theme::Light));
+        assert_eq!(parse_theme("dark").unwrap(), Some(tauri::Theme::Dark));
+        assert_eq!(parse_theme("system").unwrap(), None);
+        let error = parse_theme("sepia").expect_err("unknown theme must be refused");
+        assert!(error.contains("sepia"), "{error}");
     }
 
     #[test]
@@ -718,4 +807,159 @@ mod tests {
             "the error must list what is accepted; got {err}"
         );
     }
+}
+
+/// The v2 bridge's native context menu. Menus must outlive the popup call: the
+/// platform shows them asynchronously, so the host retains the most recent
+/// menus until a newer one replaces them.
+#[derive(Default)]
+pub struct ContextMenuState {
+    menus: Mutex<Vec<Menu<tauri::Wry>>>,
+    pending: Mutex<Option<String>>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextMenuItem {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub disabled: bool,
+    #[serde(default)]
+    pub header: bool,
+    #[serde(default)]
+    pub separator_before: bool,
+    #[serde(default)]
+    pub checked: Option<bool>,
+    #[serde(default)]
+    pub children: Option<Vec<ContextMenuItem>>,
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+pub struct ContextMenuPosition {
+    pub x: f64,
+    pub y: f64,
+}
+
+pub fn context_menu_id(nonce: &str, id: &str) -> String {
+    format!("v2ctx:{nonce}:{id}")
+}
+
+/// Splits `v2ctx:<nonce>:<id>` without trimming colons from the caller's id.
+pub fn decode_context_menu_id(value: &str) -> Option<(&str, &str)> {
+    let mut parts = value.splitn(3, ':');
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some("v2ctx"), Some(nonce), Some(id)) if !nonce.is_empty() => Some((nonce, id)),
+        _ => None,
+    }
+}
+
+fn valid_nonce(nonce: &str) -> bool {
+    !nonce.is_empty()
+        && nonce
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+fn build_context_item<R: Runtime>(
+    app: &AppHandle<R>,
+    nonce: &str,
+    item: &ContextMenuItem,
+) -> Result<MenuItemKind<R>, String> {
+    let id = context_menu_id(nonce, &item.id);
+    if let Some(children) = &item.children {
+        let mut builder = SubmenuBuilder::new(app, &item.label);
+        for child in children {
+            if child.separator_before {
+                builder = builder.separator();
+            }
+            let kind = build_context_item(app, nonce, child)?;
+            builder = builder.item(&kind);
+        }
+        return Ok(builder.build().map_err(|e| e.to_string())?.kind());
+    }
+    if item.header {
+        return MenuItem::with_id(app, id, &item.label, false, None::<&str>)
+            .map(|item| item.kind())
+            .map_err(|e| e.to_string());
+    }
+    match item.checked {
+        Some(checked) => {
+            CheckMenuItem::with_id(app, id, &item.label, !item.disabled, checked, None::<&str>)
+                .map(|item| item.kind())
+                .map_err(|e| e.to_string())
+        }
+        None => MenuItem::with_id(app, id, &item.label, !item.disabled, None::<&str>)
+            .map(|item| item.kind())
+            .map_err(|e| e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub fn v2_show_context_menu(
+    app: AppHandle,
+    window: Window,
+    state: State<'_, ContextMenuState>,
+    nonce: String,
+    items: Vec<ContextMenuItem>,
+    position: Option<ContextMenuPosition>,
+) -> Result<(), String> {
+    if !valid_nonce(&nonce) {
+        return Err(format!(
+            "v2_show_context_menu: nonce must be non-empty ASCII letters, digits, '-' or '_', got {nonce:?}"
+        ));
+    }
+    let mut builder = MenuBuilder::new(&app);
+    for item in &items {
+        if item.separator_before {
+            builder = builder.separator();
+        }
+        let kind = build_context_item(&app, &nonce, item)?;
+        builder = builder.item(&kind);
+    }
+    let menu = builder.build().map_err(|e| e.to_string())?;
+
+    let previous = state
+        .pending
+        .lock()
+        .map(|mut pending| pending.replace(nonce))
+        .unwrap_or(None);
+    if let Some(previous) = previous {
+        let _ = app.emit_to(
+            "main",
+            "v2-context-menu",
+            serde_json::json!({ "nonce": previous, "id": serde_json::Value::Null }),
+        );
+    }
+
+    if let Some(position) = position {
+        window
+            .popup_menu_at(&menu, tauri::LogicalPosition::new(position.x, position.y))
+            .map_err(|e| format!("v2_show_context_menu: popup failed: {e}"))?;
+    } else {
+        window
+            .popup_menu(&menu)
+            .map_err(|e| format!("v2_show_context_menu: popup failed: {e}"))?;
+    }
+    if let Ok(mut menus) = state.menus.lock() {
+        menus.push(menu);
+        if menus.len() > 8 {
+            menus.remove(0);
+        }
+    }
+    Ok(())
+}
+
+/// Routes a menu event to the waiting `desktopBridge.showContextMenu` call.
+/// Returns false for ids this host did not create.
+pub fn handle_context_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) -> bool {
+    let Some((nonce, item)) = decode_context_menu_id(id) else {
+        return false;
+    };
+    let _ = app.emit_to(
+        "main",
+        "v2-context-menu",
+        serde_json::json!({ "nonce": nonce, "id": item }),
+    );
+    true
 }

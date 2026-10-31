@@ -611,7 +611,7 @@ mod tests {
     #[test]
     fn gitignored_files_are_not_searched() {
         let root = tempfile::tempdir().unwrap();
-        let initialized = houston_core::spawn::command("git")
+        let initialized = crate::sys::spawn::command("git")
             .args(["init", "-q"])
             .current_dir(root.path())
             .status();

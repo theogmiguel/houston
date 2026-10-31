@@ -1,0 +1,134 @@
+name: Build server archives (internal)
+
+# Reusable half of Cut release: the Linux server archives boot services and
+# remote installs download. Both are attached to the same draft the installer
+# workflows file, and publish waits for them.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Manifest version; names the archives and must match the checked-out tree'
+        type: string
+        required: true
+      ref:
+        description: 'Commit to build; a cut passes its tag'
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  archive:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Record start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Require the checked-out tree to carry the release version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          base="${VERSION%%+*}"
+          [ -n "$base" ] || { echo "::error::version input '$VERSION' has no base before its + build metadata"; exit 1; }
+          ./scripts/set-version.sh --check "$base"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26.12.1
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the renderer and server bundle
+        run: |
+          set -euo pipefail
+          pnpm --filter @t3tools/web build
+          pnpm --filter houston exec node scripts/cli.ts build
+
+      - name: Build the server single-executable
+        run: pnpm --filter houston run build:exe
+
+      - name: Build the server archive
+        run: |
+          set -euo pipefail
+          node scripts/build-server-archive.mjs \
+            --platform linux --arch ${{ matrix.arch }} \
+            --version "${{ inputs.version }}" \
+            --output-dir release-server
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: houston-server-${{ inputs.version }}-linux-${{ matrix.arch }}
+          path: release-server/*.tar.gz
+          if-no-files-found: error
+
+      - name: Record job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "| Job | Elapsed (s) |"
+            echo "|---|---|"
+            echo "| server-archive (linux-${{ matrix.arch }}) | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # One SHA256SUMS covers both architectures, in the space-separated form
+  # parseChecksums in packages/shared/src/cliRelease.ts reads.
+  finalize:
+    needs: archive
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Record start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: houston-server-${{ inputs.version }}-*
+          path: release-server
+          merge-multiple: true
+
+      - name: Write SHA256SUMS
+        run: |
+          set -euo pipefail
+          cd release-server
+          archives=(houston-*.tar.gz)
+          [ "${#archives[@]}" -eq 2 ] || { echo "::error::expected two server archives, found ${#archives[@]}"; printf '  %s\n' "${archives[@]}"; exit 1; }
+          sha256sum "${archives[@]}" > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: houston-server-archives-${{ inputs.version }}
+          path: release-server/
+          if-no-files-found: error
+
+      - name: Record job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "| Job | Elapsed (s) |"
+            echo "|---|---|"
+            echo "| server-archive (finalize) | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"

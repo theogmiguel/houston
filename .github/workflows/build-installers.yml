@@ -47,7 +47,8 @@ jobs:
         run: |
           set -euo pipefail
           version=$(./scripts/check-manifest-versions.sh)
-          # The four are what the bundle filenames read; both lockfiles carry
+          # The five are what the bundle filenames and server archive names read;
+          # both lockfiles carry
           # the workspace crates' own versions and must move with them.
           ./scripts/set-version.sh --check "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"

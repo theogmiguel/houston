@@ -1,3 +1,9 @@
+# Every text file checks out with LF on every platform, whatever a machine's
+# core.autocrlf says, so two maintainers on different OSes never see each
+# other's checkouts as modified. The index already stores LF; the rules below
+# override this one where a format needs other bytes.
+* text=auto eol=lf
+
 # Line endings for the file types the Windows port adds. cmd locates
 # `call :label` targets by byte offset, so LF-only .cmd files are unreliable;
 # PowerShell is conventionally CRLF on Windows. Existing repo files are

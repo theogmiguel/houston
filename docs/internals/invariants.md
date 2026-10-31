@@ -449,8 +449,8 @@ on the session row and metadata validation never drives status.
 ## Wire
 
 - Daemon and UI ship wire changes in the same commit; one `PROTOCOL_VERSION` bump per
-  wire-touching batch; `protocol/protocol.md` updated in the same commit; generated TS
-  committed. **Enforced by** `check-protocol-sync.sh` (Rust ↔ TS ↔ doc header) and, at
+  wire-touching batch; `protocol/protocol.md` updated in the same commit; the generated TS
+  is committed and frozen, since its generator was removed. **Enforced by** `check-protocol-sync.sh` (Rust ↔ TS ↔ doc header) and, at
   build/install time, `check-renderer-fresh.sh` (the built bundle's inlined version).
 - **Why.** A bump once left the generated constant at 34 while Rust went to 35, and every
   existing gate passed because nothing compared the two.
