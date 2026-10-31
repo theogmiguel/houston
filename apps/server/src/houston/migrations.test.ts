@@ -21,7 +21,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [3, "TaskSources"],
   [4, "TaskRunsCursor"],
   [5, "MergeQueue"],
-  [6, "HarnessReview"],
+  [7, "HarnessReview"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -398,8 +398,8 @@ describe("the harness review migration runs on the Houston track", () => {
         const upstream = yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const history = yield* houstonHistory;
-          assert.deepEqual(history.at(-1), [6, "HarnessReview"]);
-          assert.isTrue(history.slice(0, -1).every(([id]) => id < 6));
+          assert.deepEqual(history.at(-1), [7, "HarnessReview"]);
+          assert.isTrue(history.slice(0, -1).every(([id]) => id < 7));
           assert.deepEqual(yield* harnessTables, HARNESS_TABLES);
 
           // One preparing or running review per project; one per project in two projects is fine.

@@ -488,7 +488,7 @@ const houstonMigrationEntries = [
   [3, "TaskSources", TaskSources],
   [4, "TaskRunsCursor", TaskRunsCursor],
   [5, "MergeQueue", MergeQueue],
-  [6, "HarnessReview", HarnessReview],
+  [7, "HarnessReview", HarnessReview],
 ] as const;
 
 const run = Migrator.make({});
