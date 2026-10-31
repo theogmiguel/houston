@@ -1,7 +1,6 @@
 pub mod model;
 mod probe;
 #[cfg(debug_assertions)]
-pub mod selftest;
 mod settings;
 mod shutdown;
 

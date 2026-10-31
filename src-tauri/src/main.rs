@@ -25,7 +25,6 @@ mod test_home;
 mod transfer_open;
 mod tray;
 mod v2_server;
-mod watchdog;
 mod webview_render;
 mod window;
 mod window_state;
@@ -493,7 +492,6 @@ fn main() {
 
     let tray_host = tray::TrayHost::new(state_dir.clone(), tray::probe());
     builder = builder.manage(Arc::clone(&tray_host));
-    builder = builder.manage(Arc::new(watchdog::RendererHealth::default()));
 
     // Windows keys the single-instance mutex on the bundle identifier, so a dev
     // app would refuse to start beside the installed release app. Register it only
@@ -665,11 +663,6 @@ fn main() {
             browser::browser_set_picker_mode,
             browser::browser_clear_picker_selection,
             browser::browser_submit_picker_prompt,
-            watchdog::wd_paint_generation,
-            watchdog::wd_paint_report,
-            watchdog::wd_request_reload,
-            watchdog::wd_report_wake,
-            watchdog::wd_debug_wedge,
             #[cfg(feature = "bench")]
             bench::bench_channel_blast,
             #[cfg(feature = "bench")]
@@ -742,18 +735,6 @@ fn main() {
                         .try_state::<Arc<tray::TrayHost>>()
                         .map(|host| host.hides_on_close())
                         .unwrap_or(false);
-                    let renderer_unavailable = window.app_handle()
-                        .state::<Arc<watchdog::RendererHealth>>()
-                        .unavailable();
-                    if renderer_unavailable {
-                        if let Some(tracker) = window.app_handle()
-                            .try_state::<Arc<window_state::WindowStateTracker>>() {
-                            tracker.flush();
-                        }
-                        api.prevent_close();
-                        tray::quit(window.app_handle());
-                        return;
-                    }
                     if hides {
                         if let Some(tracker) = window
                             .app_handle()
@@ -1072,33 +1053,9 @@ fn main() {
             if run_bench {
                 spawn_bench_watchdog(app.handle().clone());
             }
-            let log_path = match crate::sys::paths::config_dir() {
-                Ok(dir) => dir.join("watchdog.ndjson"),
-                Err(err) => {
-                    eprintln!(
-                        "houston-tauri: watchdog log falling back to the temp dir: \
-                         cannot resolve the channel state dir: {err}"
-                    );
-                    std::env::temp_dir().join("houston-watchdog.ndjson")
-                }
-            };
-            watchdog::install_termination_logger(app.handle(), "main");
-
-            if let Some(config) = watchdog::Config::from_env(log_path) {
-                watchdog::install(app.handle(), "main", config);
-            }
-            #[cfg(debug_assertions)]
-            if tray::selftest::requested() {
-                tray::selftest::run(app.handle().clone());
-            }
             Ok(())
         })
         .on_page_load(move |webview, payload| {
-            if webview.label() == "main" && payload.event() == PageLoadEvent::Finished {
-                watchdog::note_page_loaded(webview.app_handle());
-                watchdog::maybe_selftest_wedge(webview.app_handle());
-                watchdog::maybe_selftest_terminate(webview.app_handle());
-            }
             #[cfg(debug_assertions)]
             if webview.label() == "main"
                 && payload.event() == PageLoadEvent::Finished
@@ -1243,12 +1200,11 @@ fn main() {
         .expect("error while building houston-tauri")
         .run({
             let requested_code = std::cell::Cell::new(0);
-            move |app_handle, event| {
+            move |_app_handle, event| {
                 if let tauri::RunEvent::ExitRequested { code: Some(code), .. } = &event {
                     requested_code.set(*code);
                 }
                 if let tauri::RunEvent::Exit = event {
-                    watchdog::stop(app_handle);
                     if let Some(handle) = DAEMON_HANDLE.get() {
                         daemon_host::shutdown(handle);
                     }
