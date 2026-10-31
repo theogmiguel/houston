@@ -5,7 +5,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 
-import type { ServerProvider } from "@t3tools/contracts";
+import { ProjectId, type ServerProvider } from "@t3tools/contracts";
 import type { ProviderReadiness } from "@t3tools/contracts/houston/providerReadiness";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
@@ -15,6 +15,7 @@ import * as Option from "effect/Option";
 
 import * as HostPowerMonitor from "../../background/HostPowerMonitor.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
+import * as HoustonMergeQueueStore from "../mergeQueue/Store.ts";
 import { onPath } from "./detect.ts";
 import { localTimeZone } from "./window.ts";
 
@@ -50,7 +51,7 @@ export class NightShiftProviders extends Context.Service<
   { readonly list: Effect.Effect<ReadonlyArray<ProviderState>> }
 >()("houston/houston/nightShift/Host/NightShiftProviders") {}
 
-/** The project's merge queue verification command; none until the merge queue is wired in. */
+/** The project's merge queue verification command, or null when none is set. */
 export class NightShiftMergeQueue extends Context.Service<
   NightShiftMergeQueue,
   { readonly verificationCommand: (projectId: string) => Effect.Effect<string | null> }
@@ -156,11 +157,18 @@ export const layerProviders = Layer.effect(
   }),
 );
 
-export const layerMergeQueueUnset = Layer.succeed(
+/** The project's merge queue verification command as its settings store it; blank is unset. */
+export const layerMergeQueue = Layer.effect(
   NightShiftMergeQueue,
-  NightShiftMergeQueue.of({
-    verificationCommand: Effect.fn("NightShiftMergeQueue.verificationCommand")(() =>
-      Effect.succeed(null),
-    ),
+  Effect.gen(function* () {
+    const store = yield* HoustonMergeQueueStore.HoustonMergeQueueStore;
+    return NightShiftMergeQueue.of({
+      verificationCommand: Effect.fn("NightShiftMergeQueue.verificationCommand")(function* (
+        projectId,
+      ) {
+        const command = (yield* store.settings(ProjectId.make(projectId))).verificationCommand;
+        return command.trim() === "" ? null : command;
+      }),
+    });
   }),
 );

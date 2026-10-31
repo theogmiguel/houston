@@ -625,9 +625,6 @@ const make = Effect.gen(function* () {
     },
   );
 
-  const reportPublished: HoustonNightShiftRunner["Service"]["reportPublished"] = (runId, input) =>
-    store.setReport(runId, input);
-
   const limitOf = Effect.fn("HoustonNightShiftRunner.limitOf")(function* (instanceId: string) {
     const listed = yield* providers.list;
     const readiness = listed.find((provider) => provider.instanceId === instanceId)?.readiness;
@@ -688,15 +685,24 @@ const make = Effect.gen(function* () {
     }
   });
 
+  const evaluateLogged = (run: StoredRun) =>
+    evaluate(run).pipe(
+      Effect.asVoid,
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Night shift could not evaluate a run", { runId: run.id, cause }),
+      ),
+    );
+
   const tick: HoustonNightShiftRunner["Service"]["tick"] = Effect.gen(function* () {
-    for (const run of yield* store.liveRuns) {
-      yield* evaluate(run).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning("Night shift could not evaluate a run", { runId: run.id, cause }),
-        ),
-      );
-    }
+    for (const run of yield* store.liveRuns) yield* evaluateLogged(run);
   });
+
+  // An orchestrator that is already idle settles at once instead of at the next tick.
+  const reportPublished: HoustonNightShiftRunner["Service"]["reportPublished"] = (runId, input) =>
+    store.setReport(runId, input).pipe(
+      Effect.andThen(store.getRun(runId)),
+      Effect.flatMap((run) => (run === undefined ? Effect.void : evaluateLogged(run))),
+    );
 
   const recover: HoustonNightShiftRunner["Service"]["recover"] = Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;

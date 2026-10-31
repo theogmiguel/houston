@@ -3,7 +3,7 @@
 import * as Layer from "effect/Layer";
 
 import * as NightShiftGit from "./Git.ts";
-import { layerMachine, layerMergeQueueUnset, layerProviders } from "./Host.ts";
+import { layerMachine, layerMergeQueue, layerProviders } from "./Host.ts";
 import * as KeepAwake from "./KeepAwake.ts";
 import * as Runner from "./Runner.ts";
 import { layerCatchUp, layerClaim } from "./ScheduledTaskRunner.ts";
@@ -15,7 +15,7 @@ export const layerNightShiftPorts = Layer.mergeAll(
   NightShiftGit.layer,
   layerMachine,
   layerProviders,
-  layerMergeQueueUnset,
+  layerMergeQueue,
   KeepAwake.layer,
 );
 
