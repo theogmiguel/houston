@@ -1636,26 +1636,30 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   );
 
   return (
-    <div className="group/timeline-row border-b border-border/60 pb-2 pe-0.5 pt-1">
-      <div className="relative flex items-center gap-1">
+    <div className="group/timeline-row">
+      <div className="relative flex min-w-0 items-center">
         <button
           type="button"
           aria-expanded={row.expanded}
           data-scroll-anchor-ignore
           onClick={toggle}
           aria-busy={loading}
-          className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+          className="flex h-7 min-w-0 flex-1 cursor-pointer select-none items-center gap-2 rounded-(--r-ctl) px-2 text-left text-body text-(--t2) transition-colors hover:bg-(--hover) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
         >
-          <span>
-            {row.label}
-            {error ? ` · ${error}` : ""}
-          </span>
-          <MorphIcon className="size-3.5" icon={row.expanded ? ChevronDown : ChevronRight} />
+          <MorphIcon
+            className="size-3.5 shrink-0 text-(--t3)"
+            icon={row.expanded ? ChevronDown : ChevronRight}
+          />
+          <span className="shrink-0">{row.label}</span>
+          {row.summary ? (
+            <span className="min-w-0 truncate text-callout text-(--t3)">· {row.summary}</span>
+          ) : null}
+          {error ? <span className="shrink-0 text-callout text-(--t3)">· {error}</span> : null}
         </button>
         <TimelineRowTimestamp
           createdAt={row.createdAt}
           timestampFormat={ctx.timestampFormat}
-          className="ms-auto"
+          className="me-1"
         />
       </div>
       {loading ? <WorkHistorySkeleton /> : null}

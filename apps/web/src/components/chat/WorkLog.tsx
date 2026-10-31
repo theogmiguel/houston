@@ -54,24 +54,17 @@ function WorkLogLine({ icon, label, trailing, wrapLabel }: RowContent) {
   return (
     <div
       className={cn(
-        "flex min-h-6 min-w-0 gap-1.5 text-body select-none [&_*]:select-none",
-        wrapLabel ? "items-start" : "items-center",
+        "flex min-h-7 min-w-0 gap-2 text-body text-(--t2) select-none [&_*]:select-none",
+        wrapLabel ? "items-start py-0.5" : "items-center",
       )}
     >
-      <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         {icon ? (
-          <span className="relative w-6 shrink-0 leading-0">
-            <span className="inline-block size-6 overflow-hidden align-[calc(0.5cap_-_0.75rem)]">
-              <span className="flex size-full items-center justify-center">{icon}</span>
-            </span>
+          <span className="flex size-3.5 shrink-0 items-center justify-center text-(--t3) [&_svg]:size-3.5">
+            {icon}
           </span>
         ) : null}
-        <div
-          className={cn(
-            "min-w-0 flex-1 text-secondary-foreground",
-            !wrapLabel && "truncate [&_*]:whitespace-nowrap",
-          )}
-        >
+        <div className={cn("min-w-0 flex-1", !wrapLabel && "truncate [&_*]:whitespace-nowrap")}>
           {label}
         </div>
       </div>
@@ -81,13 +74,14 @@ function WorkLogLine({ icon, label, trailing, wrapLabel }: RowContent) {
 }
 
 const interactionClassName =
-  "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70";
+  "cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring";
 
 function useRowClassName(interactive: boolean) {
   const grouped = use(GroupedRows);
   return cn(
-    "group/timeline-row relative w-full min-w-0 rounded-md px-0.5 text-left transition-colors",
+    "group/timeline-row relative w-full min-w-0 rounded-(--r-ctl) px-2 text-left transition-colors",
     grouped ? "py-0" : "py-0.5",
+    interactive && "hover:bg-(--hover)",
     interactive && interactionClassName,
   );
 }

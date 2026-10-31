@@ -1757,7 +1757,11 @@ html[data-theme-id="t3-chat"] [data-app-sidebar] {
   );
   --contrast-accent-foreground: color-mix(
     in oklab,
-    color-mix(in oklab, var(--accent-foreground) var(--appearance-contrast-base), var(--accent-surface)),
+    color-mix(
+      in oklab,
+      var(--accent-foreground) var(--appearance-contrast-base),
+      var(--accent-surface)
+    ),
     var(--appearance-contrast-target) var(--appearance-contrast-boost)
   );
   --contrast-secondary-foreground: color-mix(
@@ -2669,4 +2673,33 @@ code {
 [data-workspace-area]:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
+}
+
+/* The timeline prose measure and rhythm: 14/20 in a 720px lane, with one
+   block gap. Values come from the Timeline board's assistant section. */
+.messages-timeline-scroll .chat-markdown {
+  font-size: var(--text-prose);
+  line-height: 1.25rem;
+}
+
+.messages-timeline-scroll .chat-markdown p,
+.messages-timeline-scroll .chat-markdown ul,
+.messages-timeline-scroll .chat-markdown ol,
+.messages-timeline-scroll .chat-markdown blockquote,
+.messages-timeline-scroll .chat-markdown pre,
+.messages-timeline-scroll .chat-markdown .chat-markdown-table-container {
+  margin-block: 0.75rem;
+}
+
+/* Inline code is the board's chip: 12px mono on the field fill with its own
+   hairline, not a tinted text run. */
+.messages-timeline-scroll .chat-markdown :not(pre) > code {
+  border: 1px solid var(--border);
+  border-radius: var(--r-badge);
+  background: var(--field);
+  padding: 1px 5px;
+  color: var(--t1);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+  line-height: inherit;
 }
