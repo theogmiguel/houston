@@ -396,10 +396,12 @@
         });
       });
     },
-    receiveProviderAuthCallback: function () {
-      return Promise.reject(new Error("Provider auth callbacks are not available yet."));
+    receiveProviderAuthCallback: function (authorizationUrl) {
+      return invoke("provider_auth_receive", { authorizationUrl: authorizationUrl });
     },
-    cancelProviderAuthCallback: noop,
+    cancelProviderAuthCallback: function (authorizationUrl) {
+      return invoke("provider_auth_cancel", { authorizationUrl: authorizationUrl });
+    },
     openExternal: function (url) {
       return invoke("shell_open_external", { url: url })
         .then(function (result) {
