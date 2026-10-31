@@ -2774,6 +2774,8 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.26.2",
  "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
  "trash",
  "uuid",
  "webkit2gtk",

@@ -12,7 +12,7 @@ fn unquote_gsettings(raw: &str) -> &str {
 
 #[tauri::command]
 pub fn window_button_layout() -> Option<String> {
-    let out = houston_core::spawn::command("gsettings")
+    let out = crate::sys::spawn::command("gsettings")
         .args(["get", "org.gnome.desktop.wm.preferences", "button-layout"])
         .output()
         .ok()?;

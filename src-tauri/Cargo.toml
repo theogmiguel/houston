@@ -22,6 +22,8 @@ houston-core = { path = "../core/houston-core" }
 houston-protocol = { path = "../core/houston-protocol" }
 anyhow = "1"
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
 dirs = "5"
 base64 = "0.22"
 sha2 = "0.10"
@@ -80,6 +82,9 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_SystemInformation",
   "Win32_Foundation",
   "Win32_System_Threading",
+  "Win32_System_JobObjects",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Pipes",
   "Win32_UI_WindowsAndMessaging",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",

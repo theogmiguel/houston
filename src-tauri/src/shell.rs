@@ -28,13 +28,13 @@ impl PathOpenResult {
 
 fn expand_tilde(input: &str) -> Result<PathBuf, String> {
     if input == "~" {
-        return houston_core::home_dir::home_dir().ok_or_else(|| {
+        return crate::sys::home_dir::home_dir().ok_or_else(|| {
             "cannot resolve home directory (expected $HOME or a platform equivalent to be set)"
                 .to_string()
         });
     }
     if let Some(rest) = input.strip_prefix("~/") {
-        let home = houston_core::home_dir::home_dir().ok_or_else(|| {
+        let home = crate::sys::home_dir::home_dir().ok_or_else(|| {
             "cannot resolve home directory (expected $HOME or a platform equivalent to be set)"
                 .to_string()
         })?;
@@ -67,7 +67,7 @@ impl ExpectedKind {
 
 #[cfg(unix)]
 async fn run_open_command(program: &str, path: &Path) -> Result<(), String> {
-    let output = houston_core::spawn::tokio_command(program)
+    let output = crate::sys::spawn::tokio_command(program)
         .arg(path)
         .output()
         .await
@@ -343,7 +343,7 @@ fn find_editor(id: &str) -> Result<&'static EditorSpec, String> {
 pub async fn shell_list_editors() -> Vec<EditorTarget> {
     EDITOR_CANDIDATES
         .iter()
-        .filter(|spec| houston_core::exe_path::resolve(spec.id).is_some())
+        .filter(|spec| crate::sys::exe_path::resolve(spec.id).is_some())
         .map(|spec| EditorTarget {
             id: spec.id.to_string(),
             label: spec.label.to_string(),
@@ -380,14 +380,14 @@ pub async fn shell_open_in_editor(
         guard.clone()
     };
     let real = crate::fs_allowlist::assert_within_allowed_roots(&path, &roots).await?;
-    let program = houston_core::exe_path::resolve(spec.id).ok_or_else(|| {
+    let program = crate::sys::exe_path::resolve(spec.id).ok_or_else(|| {
         format!(
             "cannot open {path} in {}: no {:?} binary on PATH (expected an executable named {:?} \
              in one of the PATH directories)",
             spec.label, spec.id, spec.id
         )
     })?;
-    let mut cmd = houston_core::spawn::command(&program);
+    let mut cmd = crate::sys::spawn::command(&program);
     cmd.args(editor_args(spec, &real, line, col));
     spawn_editor(cmd).map_err(|e| {
         format!(
@@ -417,7 +417,7 @@ mod tests {
         };
         let (input, control) = pipe();
         let (output, reply) = pipe();
-        let mut command = houston_core::spawn::command("/bin/sh");
+        let mut command = crate::sys::spawn::command("/bin/sh");
         command
             .args([
                 "-c",
@@ -527,7 +527,7 @@ mod tests {
     #[test]
     fn expand_tilde_resolves_bare_tilde_and_tilde_slash() {
         let home =
-            houston_core::home_dir::home_dir().expect("test host must have a resolvable home dir");
+            crate::sys::home_dir::home_dir().expect("test host must have a resolvable home dir");
         assert_eq!(expand_tilde("~").unwrap(), home);
         assert_eq!(
             expand_tilde("~/.houston/memory").unwrap(),
