@@ -44,6 +44,7 @@ import {
   Files,
   Globe2,
   MessagesSquare,
+  MoreHorizontal,
   Plus,
   TerminalSquare,
 } from "lucide-react";
@@ -1045,6 +1046,34 @@ function RightPanelTab(
   );
 }
 
+/**
+ * Above 34rem the panel header shows every control inline. At the default 400px
+ * panel the fixed tab labels need that room, so the same controls move into one
+ * menu button instead of squeezing `Pull request` into a clipped initial.
+ */
+function PanelHeaderControls({ controls }: { controls: ReactNode }) {
+  if (controls === null || controls === undefined) return null;
+  return (
+    <>
+      <div className="@max-[34rem]/right-panel-topbar:hidden flex items-center">{controls}</div>
+      <div className="@max-[34rem]/right-panel-topbar:flex hidden items-center">
+        <Menu>
+          <MenuTrigger
+            render={
+              <Button aria-label="Panel controls" size="icon-xs" variant="ghost-muted" />
+            }
+          >
+            <MoreHorizontal className="size-3.5" />
+          </MenuTrigger>
+          <MenuPopup align="end" side="bottom" sideOffset={6} className="p-1">
+            {controls}
+          </MenuPopup>
+        </Menu>
+      </div>
+    </>
+  );
+}
+
 function BoardPanelTab(props: {
   label: string;
   active: boolean;
@@ -1057,7 +1086,7 @@ function BoardPanelTab(props: {
   onContextMenu: (event: ReactMouseEvent, surface: RightPanelSurface) => void;
 }) {
   const className = cn(
-    "cursor-pointer flex h-7 shrink-0 items-center rounded-md px-2.5 text-xs font-medium",
+    "cursor-pointer flex h-7 shrink-0 items-center rounded-md px-1.5 text-xs font-medium",
     props.ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
     props.disabled
       ? "cursor-default text-secondary-foreground opacity-50"
@@ -1466,7 +1495,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         data-right-panel-tab-list
       >
         <div className="flex h-full w-max min-w-full items-center gap-1">
-          <div role="tablist" aria-label="Right panel" className="flex items-center gap-1">
+          <div role="tablist" aria-label="Right panel" className="flex items-center gap-0.5">
             {boardPanelTabs?.map((tab) => {
               const surface = boardPanelSurfaceByKind.get(tab.kind) ?? null;
               return (
@@ -1666,7 +1695,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       {props.fixedTabs ? (
         <div
           className={cn(
-            "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 border-b border-border bg-pane-head px-2",
+            "@container/right-panel-topbar flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 border-b border-border bg-pane-head px-2",
             ownsDesktopTitleBar && "drag-region",
             ownsDesktopTitleBar &&
               "wco:pr-(--workspace-native-controls-inset) tauri:pr-(--workspace-native-controls-inset)",
@@ -1676,7 +1705,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           data-tauri-drag-region={ownsDesktopTitleBar ? "deep" : undefined}
         >
           {tabStripContent}
-          {props.layoutControls}
+          <PanelHeaderControls controls={props.layoutControls} />
           {ownsDesktopTitleBar ? (
             <span
               aria-hidden

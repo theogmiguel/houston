@@ -914,6 +914,7 @@
     "apps/server/src/vcs/VcsDriver.ts": "CLI binary renamed from t3 to houston",
     "apps/server/src/vcs/VcsDriverRegistry.ts": "CLI binary renamed from t3 to houston",
     "apps/server/src/vcs/VcsProcess.ts": "CLI binary renamed from t3 to houston",
+    "apps/server/src/vcs/VcsProcess.test.ts": "covers the pinned Git message locale on non-English hosts",
     "apps/server/src/vcs/VcsProjectConfig.ts": "CLI binary renamed from t3 to houston",
     "apps/server/src/vcs/VcsProvisioningService.ts": "CLI binary renamed from t3 to houston",
     "apps/server/src/vcs/VcsStatusBroadcaster.ts": "CLI binary renamed from t3 to houston",
