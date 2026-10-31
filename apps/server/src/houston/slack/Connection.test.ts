@@ -386,7 +386,8 @@ describe("each attempt and tick reads the current tokens", () => {
           `;
           const before = reads();
           yield* outbox.tick;
-          assert.strictEqual(reads() - before, 1);
+          // One read of the pair: an entry per token.
+          assert.strictEqual(reads() - before, 2);
           const posted = fake.callsOf("chat.postMessage").at(-1);
           assert.strictEqual(posted?.token, "xoxb-replaced-bot");
           assert.strictEqual(posted?.body.thread_ts, "1700000000.000100");

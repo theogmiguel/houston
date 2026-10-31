@@ -124,8 +124,6 @@ export class HoustonSlackStore extends Context.Service<
     readonly tokenService: string;
     /** Both tokens, read from the OS keychain now. */
     readonly readTokens: Effect.Effect<TokenRead>;
-    /** The bot token alone; null when absent or unreadable. */
-    readonly readBotToken: Effect.Effect<Redacted.Redacted<string> | null>;
     /** The info; `fresh` reads the keychain, otherwise the last read is reported. */
     readonly info: (fresh: boolean) => Effect.Effect<HoustonSlackInfo>;
     readonly setStatus: (patch: Partial<SlackStatus>) => Effect.Effect<void>;
@@ -196,11 +194,6 @@ const make = Effect.gen(function* () {
     yield* Ref.set(tokensSeen, result);
     return result;
   });
-
-  const readBotToken = keychain.get(tokenService, BOT_TOKEN_ACCOUNT).pipe(
-    Effect.map(Option.getOrNull),
-    Effect.orElseSucceed(() => null),
-  );
 
   const info = Effect.fn("HoustonSlackStore.info")(function* (fresh: boolean) {
     const row = yield* settings;
@@ -360,7 +353,6 @@ const make = Effect.gen(function* () {
     channels,
     tokenService,
     readTokens,
-    readBotToken,
     info,
     setStatus,
     requestById,

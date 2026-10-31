@@ -161,8 +161,10 @@ const make = Effect.gen(function* () {
   const tickOnce = Effect.gen(function* () {
     const settings = yield* store.settings;
     if (settings?.enabled !== 1) return;
-    const token = yield* store.readBotToken;
-    if (token === null) return;
+    // One token without the other is an error, so the outbox sends only with both.
+    const tokens = yield* store.readTokens;
+    if (tokens.kind !== "ok") return;
+    const token = tokens.botToken;
     // An edit waits until the message it edits is posted.
     const rows = yield* run(sql<OutboxRow>`
       SELECT o.*, r.channel_id AS request_channel, r.ts AS request_ts

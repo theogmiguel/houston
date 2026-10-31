@@ -208,3 +208,36 @@ describe("the outbox sends in bounded batches, falls back to text and survives a
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });
+
+describe("the outbox sends nothing with one token of the pair", () => {
+  it.effect("the outbox sends nothing with one token of the pair", () => {
+    const keychain = makeMemory();
+    return runSlack(
+      (fake) =>
+        Effect.gen(function* () {
+          const store = yield* HoustonSlackStore;
+          const outbox = yield* HoustonSlackOutbox;
+          const projectId = yield* createProject("half-pair");
+          yield* connectSlack(projectId);
+          yield* untilConnected;
+          const id = yield* insertRequest(projectId);
+          for (const key of [...keychain.entries.keys()]) {
+            if (key.endsWith("\u0000app-token")) keychain.entries.delete(key);
+          }
+          yield* store.enqueue({
+            requestId: id,
+            dedupeKey: "half",
+            target: "thread",
+            text: "half pair",
+            messageTs: "1700000000.000100",
+          });
+          yield* outbox.tick;
+          assert.lengthOf(
+            fake.callsOf("chat.postMessage").filter((call) => call.body.text === "half pair"),
+            0,
+          );
+        }),
+      { keychain },
+    );
+  });
+});
