@@ -285,8 +285,23 @@ const make = Effect.gen(function* () {
       );
       return;
     }
+    // A disconnect during Slack's calls files nothing; a new mention row is dropped so a later
+    // catch-up can file it.
+    const disconnected = Effect.gen(function* () {
+      if ((yield* store.settings)?.enabled === 1) return false;
+      if (existing === undefined) {
+        yield* store.write(
+          run(sql`DELETE FROM houston_slack_requests WHERE id = ${current.id}`).pipe(
+            Effect.as({ result: undefined }),
+          ),
+        );
+      }
+      return true;
+    });
     const permalink = yield* permalinkOf(botToken, request.channel, current.ts);
+    if (yield* disconnected) return;
     const images = yield* collectImages(current.id, request.files, botToken);
+    if (yield* disconnected) return;
     const created = yield* Effect.result(
       tasks.save(
         {

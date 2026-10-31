@@ -7,6 +7,7 @@ import * as NodePath from "node:path";
 import { assert, describe, it } from "@effect/vitest";
 import type { HoustonSlackRequest } from "@t3tools/contracts/houston/slack";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../../config.ts";
@@ -25,6 +26,7 @@ import {
 } from "./slack.fake.ts";
 import {
   OWNER,
+  advance,
   connectSlack,
   makeFakeRuns,
   realTurn,
@@ -34,6 +36,7 @@ import {
   untilConnected,
   type FakeRuns,
 } from "./slack.testkit.ts";
+import { HoustonSlackStore } from "./Store.ts";
 
 interface RequestRow {
   readonly id: number;
@@ -695,6 +698,88 @@ describe("the owner refuses with a reason that reaches the thread as written", (
             .map((call) => call.body.timestamp),
           [first.ts, second.ts],
         );
+      }),
+    ),
+  );
+});
+
+describe("disconnect stops work already in progress", () => {
+  it.effect("disconnect stops work already in progress", () =>
+    runSlack((fake) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const slack = yield* HoustonSlackService;
+        const outbox = yield* HoustonSlackOutbox;
+        const store = yield* HoustonSlackStore;
+        const projectId = yield* connected(fake, "disconnect-midway");
+        // Each first call of `held` waits out a 2-second rate limit.
+        const held = new Set<string>();
+        const holdOnce = (key: string) => {
+          if (held.has(key)) return null;
+          held.add(key);
+          return { status: 429, headers: { "retry-after": "2" }, body: { ok: false } };
+        };
+
+        // An outbox batch: the first row waits, and disconnect lands during the wait.
+        const [request] = yield* sql<{ readonly id: number }>`
+          INSERT INTO houston_slack_requests (channel_id, ts, author, project_id, state, created_at)
+          VALUES ('C1', '1700000000.000900', 'U2', ${projectId}, 'pending', '2026-10-30T00:00:00.000Z')
+          RETURNING id
+        `;
+        for (const index of [1, 2, 3]) {
+          yield* store.enqueue({
+            requestId: request?.id ?? 0,
+            dedupeKey: `midway-${index}`,
+            target: "thread",
+            text: `midway ${index}`,
+            messageTs: "1700000000.000900",
+          });
+        }
+        fake.override = (call) =>
+          call.method === "chat.postMessage" && call.body.text === "midway 1"
+            ? holdOnce("outbox")
+            : null;
+        const batch = yield* outbox.tick.pipe(Effect.forkChild);
+        yield* until(
+          "the held row",
+          Effect.sync(() => held.has("outbox")),
+        );
+        yield* slack.disconnect;
+        yield* advance(3);
+        yield* Fiber.join(batch);
+        const texts = fake.callsOf("chat.postMessage").map((call) => call.body.text);
+        assert.notInclude(texts, "midway 2");
+        assert.notInclude(texts, "midway 3");
+
+        // An event past its enabled check: the permalink waits, and disconnect lands during it.
+        yield* connectSlack(projectId);
+        yield* untilConnected;
+        fake.override = (call) =>
+          call.method === "chat.getPermalink" ? holdOnce("permalink") : null;
+        fake.files.set("/files/midway.png", { body: PNG });
+        const ts = "1700000000.000950";
+        yield* mention(fake, ts, "fix the login", {
+          subtype: "file_share",
+          files: [
+            {
+              id: "Fmidway",
+              name: "midway.png",
+              mimetype: "image/png",
+              url_private_download: `${fake.origin}/files/midway.png`,
+            },
+          ],
+        });
+        yield* until(
+          "the held permalink",
+          Effect.sync(() => held.has("permalink")),
+        );
+        yield* slack.disconnect;
+        yield* advance(3);
+        for (let turn = 0; turn < 20; turn += 1) yield* realTurn;
+        assert.strictEqual(yield* taskCount, 0);
+        assert.deepEqual(fake.fileRequests, []);
+        // The mention is left unfiled, so a catch-up after connecting again can file it.
+        assert.isUndefined(yield* requestAt(ts));
       }),
     ),
   );

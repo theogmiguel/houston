@@ -178,6 +178,8 @@ const make = Effect.gen(function* () {
     `);
     const dmChannels = new Map<string, string>();
     for (const row of rows) {
+      // A disconnect during the batch stops the rest of it.
+      if ((yield* store.settings)?.enabled !== 1) return;
       const result = yield* Effect.result(send(token, row, dmChannels));
       const now = yield* nowIso;
       if (result._tag === "Success") {
