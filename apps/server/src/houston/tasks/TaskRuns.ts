@@ -70,7 +70,7 @@ import {
   taskBranch,
   taskRunStateOf,
 } from "./rules.ts";
-import { fenceSlackRequest } from "../slack/rules.ts";
+import { defangFences, fenceSlackRequest } from "../slack/rules.ts";
 import * as TaskGit from "./TaskGit.ts";
 import { HoustonTaskService, USER_ACTOR } from "./TaskService.ts";
 import {
@@ -315,7 +315,7 @@ const make = Effect.gen(function* () {
     const slack = yield* slackRequestOf(row);
     return buildBrief({
       key: keyOf(row),
-      title: row.title,
+      title: Option.isNone(slack) ? row.title : defangFences(row.title),
       description: Option.isNone(slack)
         ? row.description
         : fenceSlackRequest({

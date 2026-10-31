@@ -407,11 +407,13 @@ export const sniffImage = (data: Uint8Array): SniffedImage | null => {
 export const SLACK_REQUEST_OPEN = "<<<HOUSTON-SLACK-REQUEST";
 export const SLACK_REQUEST_CLOSE = "HOUSTON-SLACK-REQUEST>>>";
 
-/** Shortens any fence marker in Slack text, so the text cannot open or close a fence. */
+/** Shortens every Houston fence marker in Slack text, width variants and invisible characters folded. */
 export const defangFences = (value: string): string =>
   value
-    .replace(/<{3,}(HOUSTON-SLACK-)/gi, "<<$1")
-    .replace(/(HOUSTON-SLACK-[A-Z0-9_-]*)>{3,}/gi, "$1>>");
+    .normalize("NFKC")
+    .replace(/\p{Cf}/gu, "")
+    .replace(/<{3,}\s*(HOUSTON-)/gi, "<<$1")
+    .replace(/(HOUSTON-[A-Z0-9_-]*)\s*>{3,}/gi, "$1>>");
 
 /** The requester's words as a brief carries them: attributed, fenced and defanged. */
 export const fenceSlackRequest = (input: {
