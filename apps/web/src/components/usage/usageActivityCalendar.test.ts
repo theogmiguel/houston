@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { addUsageDay, buildUsageActivityCalendar, usageActivityWindow } from "./usageActivity";
+import { addUsageDay, buildUsageActivityCalendar, usageActivityWindow } from "./usageActivityCalendar";
 
 describe("usage activity calendar", () => {
   it("spans a year ending on the selected day", () => {

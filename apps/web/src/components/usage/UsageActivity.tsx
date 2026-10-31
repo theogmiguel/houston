@@ -4,7 +4,7 @@ import { formatDayShort, formatUsd } from "@t3tools/shared/usageFormat";
 import { useMemo } from "react";
 
 import { useUsage } from "../../state/usage";
-import { buildUsageActivityCalendar, usageActivityWindow } from "./usageActivity";
+import { buildUsageActivityCalendar, usageActivityWindow } from "./usageActivityCalendar";
 
 const LEVEL_BACKGROUND: Readonly<Record<number, string>> = {
   0: "var(--border)",
