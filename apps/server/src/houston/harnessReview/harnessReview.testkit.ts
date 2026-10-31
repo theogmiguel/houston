@@ -290,6 +290,36 @@ export const awaitRun = Effect.fn("HarnessReviewKit.awaitRun")(function* (task: 
   yield* settle;
 });
 
+/** Drives the orchestrator until `done` holds, in real time: a review's files are real disk writes. */
+export const until = Effect.fn("HarnessReviewKit.until")(function* <E, R>(
+  label: string,
+  done: Effect.Effect<boolean, E, R>,
+) {
+  const orchestrator = yield* Orchestrator.OrchestratorV2;
+  const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    if (yield* done) return;
+    yield* worker.drain();
+    yield* orchestrator.resumeQueuedRuns;
+    yield* worker.drain();
+    yield* TestClock.adjust("1 second");
+    yield* realPause;
+  }
+  return yield* Effect.die(new Error(`timed out waiting until ${label}`));
+});
+
+/** Waits until review `reviewId` is stored and `ready` holds for it. */
+export const awaitReview = (
+  reviewId: number,
+  ready: (review: HoustonHarnessStore.StoredReview) => boolean,
+) =>
+  until(
+    `review ${reviewId} is ready`,
+    Effect.flatMap(HoustonHarnessStore.HoustonHarnessStore, (store) =>
+      store.getReview(reviewId),
+    ).pipe(Effect.map((review) => review !== undefined && ready(review))),
+  );
+
 /** The scheduled task a project's review runs as. */
 export const reviewTask = Effect.fn("HarnessReviewKit.reviewTask")(function* (
   projectId: ProjectId,
