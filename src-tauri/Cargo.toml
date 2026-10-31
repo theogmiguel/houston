@@ -88,7 +88,10 @@ windows-sys = { version = "0.61", features = [
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
   "Win32_System_Com",
+  # Snapshot capture reads the screen through GDI; the flash overlay disables the
+  # DWM show transition so it appears instantly like upstream's Electron overlay.
   "Win32_Graphics_Gdi",
+  "Win32_Graphics_Dwm",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

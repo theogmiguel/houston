@@ -4,6 +4,13 @@
 
 mod platform;
 
+#[cfg(any(target_os = "windows", test))]
+mod capture_image;
+#[cfg(any(target_os = "windows", test))]
+mod input_shortcut;
+#[cfg(any(target_os = "windows", test))]
+mod window_identity;
+
 #[cfg(target_os = "linux")]
 mod capture_config_edit;
 #[cfg(target_os = "linux")]
@@ -28,6 +35,14 @@ mod niri_snapshot;
 mod portal_capture_shortcut;
 #[cfg(test)]
 mod snapshot_transition;
+#[cfg(target_os = "windows")]
+mod windows;
+#[cfg(target_os = "windows")]
+mod windows_capture;
+#[cfg(target_os = "windows")]
+mod windows_feedback;
+#[cfg(target_os = "windows")]
+mod windows_input;
 
 use std::fs;
 use std::io::Write;
@@ -43,7 +58,7 @@ use uuid::Uuid;
 
 use platform::{
     new_platform, CaptureFeedback, CaptureOptions, CaptureOutput, ConfigDesktop, PlatformPaths,
-    ShortcutStatus, SnapShotMode, SnapShotPlatform, SnapShotShortcut,
+    ShortcutStatus, SnapShotPlatform, SnapShotShortcut,
 };
 
 const SHORTCUT_COOLDOWN: Duration = Duration::from_millis(200);
@@ -104,23 +119,29 @@ pub struct SnapShotHost {
 
 impl SnapShotHost {
     pub fn new(state_dir: PathBuf, app_id: String) -> Self {
-        let home = dirs::home_dir().unwrap_or_default();
-        let config_home = std::env::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home.join(".config"));
-        let data_home = std::env::var_os("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home.join(".local").join("share"));
+        #[cfg(target_os = "linux")]
+        let paths = PlatformPaths {
+            home: dirs::home_dir().unwrap_or_default(),
+            config_home: std::env::var_os("XDG_CONFIG_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".config")),
+            data_home: std::env::var_os("XDG_DATA_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    dirs::home_dir()
+                        .unwrap_or_default()
+                        .join(".local")
+                        .join("share")
+                }),
+            state_dir: state_dir.clone(),
+        };
+        #[cfg(target_os = "windows")]
+        let paths = PlatformPaths { state_dir };
         Self {
             inner: Mutex::new(Inner::default()),
             captures_dir: state_dir.join("snap-shots"),
             platform: new_platform(),
-            paths: PlatformPaths {
-                home,
-                state_dir,
-                config_home,
-                data_home,
-            },
+            paths,
             app_id,
         }
     }
@@ -132,6 +153,7 @@ impl SnapShotHost {
     }
 
     fn configure_with_app(&self, settings: SnapShotSettings, app: tauri::AppHandle) {
+        self.platform.attach_app(&app);
         let mode = self.platform.mode();
         let mut inner = self.lock();
         let previous_inputs = inner.settings.shortcut_inputs();
@@ -143,11 +165,11 @@ impl SnapShotHost {
             && previous_inputs.1 == next_inputs.1
             && platform::same_shortcut(&previous_inputs.2, &next_inputs.2);
 
-        if !settings.enabled || mode == SnapShotMode::Unavailable {
+        if !settings.enabled || mode.is_unavailable() {
             self.platform.release_shortcut();
             inner.shortcut = None;
             inner.shortcut_verified = false;
-            inner.message = if mode == SnapShotMode::Unavailable {
+            inner.message = if mode.is_unavailable() {
                 Some(unavailable_message())
             } else {
                 None
@@ -256,7 +278,7 @@ impl SnapShotHost {
         if let Some(registered) = status.action_registered {
             map.insert("shortcutActionRegistered".into(), Value::Bool(registered));
         }
-        if mode == SnapShotMode::Portal {
+        if mode.is_portal() {
             if let Some(desktop) = linux_desktop() {
                 map.insert("linuxDesktop".into(), Value::String(desktop));
             }
@@ -288,6 +310,7 @@ impl SnapShotHost {
     }
 
     fn capture_blocking(&self, app: &tauri::AppHandle) -> Result<(), String> {
+        self.platform.attach_app(app);
         let (settings, suppressed, last) = {
             let inner = self.lock();
             (
@@ -304,7 +327,7 @@ impl SnapShotHost {
             self.fail(app, None, &message);
             return Err(message);
         }
-        if self.platform.mode() == SnapShotMode::Unavailable {
+        if self.platform.mode().is_unavailable() {
             let message = unavailable_message();
             self.fail(app, None, &message);
             return Err(message);
