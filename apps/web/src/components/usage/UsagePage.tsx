@@ -356,7 +356,7 @@ export function UsagePage() {
       ? `${formatDateTimeShort(shownWindow.sinceTime, shownWindow.timeZone, hour12)} to ${formatDateTimeShort(shownWindow.untilTime, shownWindow.timeZone, hour12)}`
       : `${formatDayShort(shownWindow.sinceDay)} to ${formatDayShort(shownWindow.untilDay)}`;
   const usageActions = (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
       <UsageEnvironmentFilter
         environments={environments}
         selectedEnvironments={selectedEnvironments}
@@ -373,49 +373,50 @@ export function UsagePage() {
         hiddenProviders={hiddenProviders}
         onChange={(next) => updatePreferences({ hiddenProviders: next })}
       />
-      <div className="min-w-0 flex-1" />
-      {showingLimits ? null : (
+      <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2">
+        {showingLimits ? null : (
+          <ToggleGroup
+            aria-label="Usage period"
+            variant="segmented"
+            value={[String(windowDays)]}
+            onValueChange={(next) => {
+              const value = next[0];
+              if (value) selectWindow(Number(value));
+            }}
+          >
+            {WINDOW_OPTIONS.map((option) => (
+              <Toggle key={option.days} value={String(option.days)} title={shortcutTitle(option)}>
+                {option.label}
+              </Toggle>
+            ))}
+          </ToggleGroup>
+        )}
         <ToggleGroup
-          aria-label="Usage period"
+          aria-label="Usage metric"
           variant="segmented"
-          value={[String(windowDays)]}
+          value={[metric]}
           onValueChange={(next) => {
             const value = next[0];
-            if (value) selectWindow(Number(value));
+            if (isUsageMetric(value)) selectMetric(value);
           }}
         >
-          {WINDOW_OPTIONS.map((option) => (
-            <Toggle key={option.days} value={String(option.days)} title={shortcutTitle(option)}>
+          {METRIC_OPTIONS.map((option) => (
+            <Toggle key={option.value} value={option.value} title={shortcutTitle(option)}>
               {option.label}
             </Toggle>
           ))}
         </ToggleGroup>
-      )}
-      <ToggleGroup
-        aria-label="Usage metric"
-        variant="segmented"
-        value={[metric]}
-        onValueChange={(next) => {
-          const value = next[0];
-          if (isUsageMetric(value)) selectMetric(value);
-        }}
-      >
-        {METRIC_OPTIONS.map((option) => (
-          <Toggle key={option.value} value={option.value} title={shortcutTitle(option)}>
-            {option.label}
-          </Toggle>
-        ))}
-      </ToggleGroup>
-      <Button
-        onClick={refreshWindow}
-        aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
-        aria-busy={isRefreshing}
-        disabled={isRefreshing || (!showingLimits && !canReadDiagnostics)}
-        size="icon-sm"
-        variant="ghost"
-      >
-        <RefreshIcon size="sm" refreshing={isRefreshing} />
-      </Button>
+        <Button
+          onClick={refreshWindow}
+          aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
+          aria-busy={isRefreshing}
+          disabled={isRefreshing || (!showingLimits && !canReadDiagnostics)}
+          size="icon-sm"
+          variant="ghost"
+        >
+          <RefreshIcon size="sm" refreshing={isRefreshing} />
+        </Button>
+      </div>
     </div>
   );
 
@@ -444,8 +445,8 @@ export function UsagePage() {
                 </>
               )}
             </div>
-            <div className="flex min-w-0 flex-1 justify-end pt-1">{usageActions}</div>
           </div>
+          {usageActions}
           {selectedEnvironments.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               {environments.length === 0

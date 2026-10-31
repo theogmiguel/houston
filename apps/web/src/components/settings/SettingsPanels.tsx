@@ -93,6 +93,7 @@ import {
   rememberEnabledProjectGroupingMode,
 } from "./SettingsPanels.logic";
 import {
+  PolicyTooltip,
   SETTINGS_PICKER_TRIGGER_CLASSNAME,
   SettingResetButton,
   SettingsPageContainer,
@@ -1198,6 +1199,14 @@ export function ChatSettingsPanel() {
       <SettingsSection id="follow-ups" title="Follow-ups">
         <SettingsRow
           {...searchableSetting("follow-up-behavior")}
+          title={
+            <span className="inline-flex items-center gap-1.5">
+              {searchableSetting("follow-up-behavior").title}
+              <PolicyTooltip label="Follow-up behavior details">
+                What a message sent while the agent works does.
+              </PolicyTooltip>
+            </span>
+          }
           description="What a message sent while the agent works does."
           resetAction={
             settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior ? (
