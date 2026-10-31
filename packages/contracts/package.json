@@ -15,10 +15,6 @@
       "types": "./src/settings.ts",
       "import": "./src/settings.ts"
     },
-    "./houston/terminalFrames": {
-      "types": "./src/houston/terminalFrames.ts",
-      "import": "./src/houston/terminalFrames.ts"
-    },
     "./houston/providerReadiness": {
       "types": "./src/houston/providerReadiness.ts",
       "import": "./src/houston/providerReadiness.ts"
@@ -46,6 +42,14 @@
     "./houston/mergeQueue": {
       "types": "./src/houston/mergeQueue.ts",
       "import": "./src/houston/mergeQueue.ts"
+    },
+    "./houston/harnessReview": {
+      "types": "./src/houston/harnessReview.ts",
+      "import": "./src/houston/harnessReview.ts"
+    },
+    "./houston/nightShift": {
+      "types": "./src/houston/nightShift.ts",
+      "import": "./src/houston/nightShift.ts"
     }
   },
   "scripts": {
