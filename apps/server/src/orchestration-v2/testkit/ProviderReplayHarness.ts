@@ -43,6 +43,7 @@ import * as ProviderContinuationRequests from "@t3tools/provider-core/server/Pro
 import * as ProviderContinuationService from "../ProviderContinuationService.ts";
 import * as ProviderEventIngestor from "../ProviderEventIngestor.ts";
 import * as MessageDelivery from "../../houston/messageDelivery.ts";
+import { HoustonReadOnlyThreads, layerNoReadOnlyThreads } from "../../houston/sideThreads.ts";
 import * as ProviderInstanceRegistry from "../../provider/ProviderInstanceRegistry.ts";
 import * as ProviderRuntimeRecoveryService from "../ProviderRuntimeRecoveryService.ts";
 import * as ProviderSessionManager from "../ProviderSessionManager.ts";
@@ -289,6 +290,8 @@ export function layerWithRegistry<Error>(
     /** Houston: issue T3 MCP credentials as the server does, through this registry. */
     readonly configureMcp?: boolean;
     readonly mcpSessionRegistry?: Layer.Layer<McpSessionRegistry.McpSessionRegistry>;
+    /** Houston: the planners and reviewers that run read-only; none when absent. */
+    readonly readOnlyThreads?: Layer.Layer<HoustonReadOnlyThreads>;
   } = {},
 ): Layer.Layer<
   | Orchestrator.OrchestratorV2
@@ -320,8 +323,9 @@ export function layerWithRegistry<Error>(
     Layer.provide(Layer.merge(layerContinuationRequests, McpProviderSessions.layer)),
   );
   // Houston: side threads resolve read-only last, so no scenario override reaches them.
+  const layerReadOnlyThreads = options.readOnlyThreads ?? layerNoReadOnlyThreads;
   const layerRuntime = RuntimePolicy.layerReadOnlySideThreads.pipe(
-    Layer.provide(Layer.merge(layerBaseRuntime, layerProvidedRegistry)),
+    Layer.provide(Layer.mergeAll(layerBaseRuntime, layerProvidedRegistry, layerReadOnlyThreads)),
   );
   const layerServerSettings = ServerSettings.layerTest({
     responseStreamingMode: "turn",
@@ -404,6 +408,7 @@ export function layerWithRegistry<Error>(
         IdAllocator.layer,
         McpProviderSessions.layer,
         options.mcpSessionRegistry ?? McpSessionRegistryTestkit.layer,
+        layerReadOnlyThreads,
         layerProviderEventIngestorProvided,
         layerStores,
       ),

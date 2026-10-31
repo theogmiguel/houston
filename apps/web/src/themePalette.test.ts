@@ -27,6 +27,7 @@ import {
   CUSTOM_THEMES_STORAGE_KEY,
   createVividThemeColors,
   getDefaultThemeColors,
+  getThemeDefinition,
   themeColorToHex,
   toCanonicalThemeColor,
   THEME_FILE_VERSION,
@@ -59,6 +60,15 @@ function contrastRatio(first: string, second: string): number {
   const darker = Math.min(luminance(first), luminance(second));
   return (lighter + 0.05) / (darker + 0.05);
 }
+
+describe("built-in theme names", () => {
+  it("names the t3-chat theme for Houston while keeping its stored id", () => {
+    const theme = getThemeDefinition("t3-chat");
+    expect(theme?.id).toBe("t3-chat");
+    expect(theme?.label).toBe("Houston Chat");
+    expect(BUILT_IN_THEMES.find((candidate) => candidate.id === "t3-chat")?.label).toBe("T3 Chat");
+  });
+});
 
 describe("theme files", () => {
   it("keeps built-in and standard search pairs readable and distinct from inline code", () => {
@@ -622,8 +632,8 @@ describe("context chip colors", () => {
 
   it("reads at 5:1 on the standard surfaces as index.css paints them", () => {
     const painted = {
-      light: ["#fcfcfc", "#ffffff", "#ebebed"],
-      dark: ["#000000", "#0a0a0a", "#111111", "#141414", "#1e1e1e"],
+      light: ["#f5f5f7", "#ffffff", "#f6f6f6"],
+      dark: ["#161618", "#202023", "#26262a", "#2d2d30"],
     } as const;
     const properties = new Map<string, string>();
     vi.stubGlobal("window", { localStorage: { getItem: () => null } });

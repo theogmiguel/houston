@@ -20,6 +20,7 @@ import { observeResize } from "~/lib/observeResize";
 
 const MIN_URL_LIFE_MS = 5 * 60_000;
 const FRAME_HEAD_HEIGHT = 32;
+const FRAME_BODY_PADDING = 12;
 
 export function HtmlRenderFrame(props: {
   readonly environmentId: EnvironmentId;
@@ -30,9 +31,10 @@ export function HtmlRenderFrame(props: {
   const { attachmentId, title } = props.htmlRender;
   const [width, setWidth] = useState(HTML_RENDER_COLUMN_WIDTH);
   const observeBox = (box: HTMLDivElement) => {
-    setWidth(box.clientWidth);
+    const widthOf = (width: number) => Math.max(1, width - FRAME_BODY_PADDING * 2);
+    setWidth(widthOf(box.clientWidth));
     return observeResize(box, ([entry]) => {
-      if (entry) setWidth(entry.contentRect.width);
+      if (entry) setWidth(widthOf(entry.contentRect.width));
     });
   };
   // Client fonts can exceed the server-measured height and cause nested scrolling.
@@ -82,12 +84,16 @@ export function HtmlRenderFrame(props: {
   };
 
   return (
-    <div ref={observeBox} className="relative" style={{ height: height + FRAME_HEAD_HEIGHT }}>
-      <div className="flex size-full flex-col overflow-hidden rounded-lg border border-border bg-(--terminal-background)">
-        <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border bg-code px-2.5 text-muted-foreground">
-          <CodeXmlIcon aria-hidden className="size-3.5 shrink-0" />
+    <div
+      ref={observeBox}
+      className="relative"
+      style={{ height: height + FRAME_HEAD_HEIGHT + FRAME_BODY_PADDING * 2 }}
+    >
+      <div className="flex size-full flex-col overflow-hidden rounded-lg border border-border bg-(--pane)">
+        <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border bg-(--pane-head) ps-2.5 pe-1 text-(--t2)">
+          <CodeXmlIcon aria-hidden className="size-3.25 shrink-0 text-(--t3)" />
           <span className="min-w-0 flex-1 truncate font-mono text-xs">{fileName}</span>
-          <span className="inline-flex h-[18px] shrink-0 items-center rounded-sm bg-secondary px-1.5 font-medium text-2xs text-secondary-foreground">
+          <span className="inline-flex h-[18px] shrink-0 items-center rounded-sm bg-(--field) px-1.5 text-2xs font-medium text-(--t2)">
             Interactive
           </span>
           <Tooltip>
@@ -106,26 +112,28 @@ export function HtmlRenderFrame(props: {
             <TooltipPopup side="left">Open full screen</TooltipPopup>
           </Tooltip>
         </div>
-        {src !== null ? (
-          <div className="relative min-h-0 flex-1">
-            <HtmlRenderDocument
-              src={src}
-              title={title}
-              threadRef={props.threadRef}
-              className="block size-full"
-              onContentHeight={setContentHeight}
-              onFullscreenChange={onFullscreenChange}
-            />
-          </div>
-        ) : failed ? (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-3 py-8 text-center">
-            <CircleAlertIcon aria-hidden className="size-4 text-muted-foreground" />
-            <span className="font-medium text-sm">Page unavailable</span>
-            <span className="text-muted-foreground text-xs">
-              Reconnect to the environment and try again.
-            </span>
-          </div>
-        ) : null}
+        <div className="min-h-0 flex-1 p-3">
+          {src !== null ? (
+            <div className="relative size-full">
+              <HtmlRenderDocument
+                src={src}
+                title={title}
+                threadRef={props.threadRef}
+                className="block size-full"
+                onContentHeight={setContentHeight}
+                onFullscreenChange={onFullscreenChange}
+              />
+            </div>
+          ) : failed ? (
+            <div className="flex min-h-[120px] flex-col items-center justify-center gap-1 px-3 py-8 text-center">
+              <CircleAlertIcon aria-hidden className="size-3.75 text-(--t3)" />
+              <span className="font-semibold text-headline">Page unavailable</span>
+              <span className="text-(--t2) text-xs">
+                Reconnect to the environment and try again.
+              </span>
+            </div>
+          ) : null}
+        </div>
       </div>
       {expandedSrc !== null ? (
         <HtmlRenderDialog

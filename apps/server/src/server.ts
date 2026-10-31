@@ -112,6 +112,7 @@ import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as HoustonReviewState from "./houston/reviewState.ts";
 import * as HoustonTaskProjectSweep from "./houston/tasks/ProjectSweep.ts";
+import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskStore from "./houston/tasks/TaskStore.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
@@ -119,6 +120,8 @@ import * as HoustonKeychain from "./houston/secrets/HoustonKeychain.ts";
 import * as HoustonTaskSourceNotion from "./houston/taskSources/NotionClient.ts";
 import * as HoustonTaskSourceStore from "./houston/taskSources/SourceStore.ts";
 import { layerTaskSources } from "./houston/taskSources/layer.ts";
+import { layerMergeQueue } from "./houston/mergeQueue/layer.ts";
+import * as HoustonMergeQueueStore from "./houston/mergeQueue/Store.ts";
 import { layerHarnessReview } from "./houston/harnessReview/layer.ts";
 import * as HoustonHarnessRunner from "./houston/harnessReview/Runner.ts";
 import * as HoustonHarnessStore from "./houston/harnessReview/Store.ts";
@@ -519,6 +522,13 @@ const layerProviderInstallationRefresh = Layer.effectDiscard(
   }),
 );
 
+/** The task store and the read-only record of planners and reviewers, which the runtime policy
+ * and the MCP credential read. Exported so the task-run tests build over the server's own. */
+export const layerHoustonTaskPersistence = Layer.empty.pipe(
+  Layer.provideMerge(HoustonTaskRuns.layerReadOnlyThreads),
+  Layer.provideMerge(HoustonTaskStore.layer),
+);
+
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   layerThreadSettlementWorker,
   layerIdleCompactionWorker,
@@ -568,7 +578,19 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provide(ProjectionStoreV2.layer),
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
   ),
+  HoustonTaskRuns.layer.pipe(
+    Layer.provide(
+      Layer.merge(
+        RuntimeLayer.layerEventSink,
+        ProviderAdapterRegistry.layerFromProviderInstanceRegistry,
+      ),
+    ),
+  ),
 ).pipe(
+  // The merge queue reads through the PR page's own service and GitHub client.
+  Layer.provideMerge(
+    layerMergeQueue(Layer.mergeAll(GitHubRest.layerWithDependencies, layerPullRequestService)),
+  ),
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer, HoustonTaskV1Import.layer)),
   // The task source poller reads GitHub through its own client and the token from the OS keychain.
@@ -585,10 +607,15 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(layerVcs),
   Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
   // Below the orchestration runtime so its ProjectService sees the store on project deletion.
-  Layer.provideMerge(HoustonTaskSourceStore.layer),
-  Layer.provideMerge(HoustonHarnessStore.layer),
+  Layer.provideMerge(
+    Layer.mergeAll(
+      HoustonTaskSourceStore.layer,
+      HoustonMergeQueueStore.layer,
+      HoustonHarnessStore.layer,
+    ),
+  ),
   Layer.provideMerge(HoustonKeychain.layerLive),
-  Layer.provideMerge(HoustonTaskStore.layer),
+  Layer.provideMerge(layerHoustonTaskPersistence),
   Layer.provideMerge(layerPersistence),
   Layer.provideMerge(
     Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),

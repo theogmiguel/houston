@@ -104,7 +104,31 @@ function ComboboxInput({
   );
 }
 
-function ComboboxSearchInput(props: React.ComponentProps<typeof ComboboxInput>) {
+function ComboboxSearchInput({
+  appearance = "underline",
+  ...props
+}: React.ComponentProps<typeof ComboboxInput> & {
+  appearance?: "underline" | "field";
+}) {
+  if (appearance === "field") {
+    return (
+      <div className="min-w-0 shrink-0 px-1.5 pt-1.5 pb-1">
+        <div className="relative flex h-[30px] items-center gap-2 rounded-md bg-(--field) px-2 transition-colors focus-within:ring-1 focus-within:ring-(--line-strong) focus-within:ring-inset">
+          <SearchIcon
+            aria-hidden="true"
+            className="pointer-events-none size-3.25 shrink-0 text-(--t3)"
+          />
+          <ComboboxInput
+            {...props}
+            className="min-w-0 flex-1 [&_input]:h-6 [&_input]:ps-0 [&_input]:font-sans [&_input]:leading-6"
+            showTrigger={false}
+            size="sm"
+            unstyled
+          />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="min-w-0 shrink-0 px-3 pt-2.5">
       <div className="relative -translate-y-px border-b border-border/70 pb-1.5 transition-colors focus-within:border-ring">
@@ -184,15 +208,19 @@ function ComboboxPopup({
 function ComboboxItem({
   className,
   children,
+  density = "default",
   hideIndicator: _hideIndicator = false,
   ...props
 }: ComboboxPrimitive.Item.Props & {
+  density?: "default" | "compact" | "two-line";
   hideIndicator?: boolean;
 }) {
   return (
     <ComboboxPrimitive.Item
       className={cn(
         "flex min-h-8 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer items-center rounded-[var(--r-ctl)] px-2 py-1 text-base outline-none not-data-disabled:hover:bg-foreground/[0.09] data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-selected:bg-foreground/[0.06] data-selected:text-foreground data-highlighted:bg-foreground/[0.09] data-highlighted:text-accent-foreground [&[data-highlighted][data-selected]]:bg-foreground/[0.09] [&[data-highlighted][data-selected]]:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        density === "compact" && "h-7.5 min-h-0 py-0 sm:min-h-0",
+        density === "two-line" && "min-h-11 py-1.5 sm:min-h-11",
         className,
       )}
       data-slot="combobox-item"

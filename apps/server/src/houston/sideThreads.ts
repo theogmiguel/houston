@@ -9,9 +9,12 @@ import {
   type OrchestrationV2Run,
   type OrchestrationV2TurnItem,
   type RunId,
+  type ThreadId,
 } from "@t3tools/contracts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 
 import { isForkableSourceRunStatus } from "../orchestration-v2/ThreadForkService.ts";
 
@@ -122,6 +125,31 @@ export const mayHoldT3Tools = <E, R>(
     Effect.map((read) => !isSideThread(read)),
     Effect.orElseSucceed(() => false),
   );
+
+/** Threads other than side threads that must run read-only: Tasks' planners and reviewers.
+ * It has no default, so an assembly that leaves it out fails to build instead of running every
+ * planner and reviewer with write access. */
+export class HoustonReadOnlyThreads extends Context.Service<
+  HoustonReadOnlyThreads,
+  {
+    readonly isReadOnly: (threadId: ThreadId) => Effect.Effect<boolean>;
+    /** The submit tool of the thread's role, or undefined when it has none or the read fails. */
+    readonly submitToolOf: (threadId: ThreadId) => Effect.Effect<HoustonTaskSubmitTool | undefined>;
+  }
+>()("houston/houston/sideThreads/HoustonReadOnlyThreads") {}
+
+export type HoustonTaskSubmitTool = NonNullable<
+  ProviderAdapter.ProviderAdapterV2RuntimePolicy["houstonTaskSubmitTool"]
+>;
+
+/** For assemblies without Tasks, such as upstream's tests: no thread is a planner or reviewer. */
+export const layerNoReadOnlyThreads = Layer.succeed(HoustonReadOnlyThreads, {
+  isReadOnly: Effect.fn("HoustonReadOnlyThreads.none")(() => Effect.succeed(false)),
+  submitToolOf: Effect.fn("HoustonReadOnlyThreads.noTool")(() =>
+    // @effect-diagnostics-next-line effectSucceedWithVoid:off - the shape returns undefined, not void.
+    Effect.succeed(undefined),
+  ),
+});
 
 export const hasReadOnlyRun = (capabilities: OrchestrationV2ProviderCapabilities) =>
   capabilities.runtimePolicy.readOnlyRun !== undefined;

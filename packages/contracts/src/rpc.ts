@@ -190,6 +190,15 @@ import {
   HoustonTaskSettingsSetInput,
   HoustonTaskStreamEvent,
   HoustonTaskSubscribeInput,
+  HoustonTaskHandbackInput,
+  HoustonTaskPlanAnswerInput,
+  HoustonTaskPlanApproveInput,
+  HoustonTaskPlanStartInput,
+  HoustonTaskReviewStartInput,
+  HoustonTaskRun,
+  HoustonTaskRunControlInput,
+  HoustonTaskStartInput,
+  HoustonTaskStartResult,
 } from "./houston/tasks.ts";
 import {
   HoustonTaskSourceConflictResolveInput,
@@ -224,6 +233,23 @@ import {
   HoustonHarnessSetupInput,
   HoustonHarnessSnapshot,
 } from "./houston/harnessReview.ts";
+import {
+  HoustonMergeQueueEmptyResult,
+  HoustonMergeQueueEnqueueInput,
+  HoustonMergeQueueEntry,
+  HoustonMergeQueueEntryInput,
+  HoustonMergeQueueError,
+  HoustonMergeQueueMergeHeadInput,
+  HoustonMergeQueueMergeHeadResult,
+  HoustonMergeQueueMessageResult,
+  HoustonMergeQueuePauseInput,
+  HoustonMergeQueueProjectInput,
+  HoustonMergeQueueSettings,
+  HoustonMergeQueueSettingsSetInput,
+  HoustonMergeQueueSnapshot,
+  HoustonMergeQueueSummary,
+  HoustonMergeQueueSummaryInput,
+} from "./houston/mergeQueue.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import { OrchestrationSearchThreadsError } from "./threadSearch.ts";
 import {
@@ -535,6 +561,13 @@ export const WS_METHODS = {
   houstonTasksSettingsSet: "houston.tasks.settings.set",
   houstonTasksImportV1Status: "houston.tasks.importV1.status",
   houstonTasksImportV1Run: "houston.tasks.importV1.run",
+  houstonTasksStart: "houston.tasks.start",
+  houstonTasksRunControl: "houston.tasks.runControl",
+  houstonTasksHandback: "houston.tasks.handback",
+  houstonTasksPlanStart: "houston.tasks.plan.start",
+  houstonTasksPlanAnswer: "houston.tasks.plan.answer",
+  houstonTasksPlanApprove: "houston.tasks.plan.approve",
+  houstonTasksReviewStart: "houston.tasks.review.start",
   houstonTaskSourcesSettingsGet: "houston.taskSources.settings.get",
   houstonTaskSourcesSettingsSet: "houston.taskSources.settings.set",
   houstonTaskSourcesCredentialSet: "houston.taskSources.credential.set",
@@ -554,6 +587,14 @@ export const WS_METHODS = {
   houstonHarnessReport: "houston.harness.report",
   houstonHarnessDecide: "houston.harness.decide",
   houstonHarnessMarkSeen: "houston.harness.markSeen",
+  houstonMergeQueueGet: "houston.mergeQueue.get",
+  houstonMergeQueueSubscribe: "houston.mergeQueue.subscribe",
+  houstonMergeQueueSubscribeSummary: "houston.mergeQueue.subscribeSummary",
+  houstonMergeQueueEnqueue: "houston.mergeQueue.enqueue",
+  houstonMergeQueueDequeue: "houston.mergeQueue.dequeue",
+  houstonMergeQueueMergeHead: "houston.mergeQueue.mergeHead",
+  houstonMergeQueueSettingsSet: "houston.mergeQueue.settings.set",
+  houstonMergeQueuePause: "houston.mergeQueue.pause",
 
   terminalOpen: "terminal.open",
   terminalAttach: "terminal.attach",
@@ -1712,6 +1753,48 @@ const WsHoustonTasksImportV1RunRpc = Rpc.make(WS_METHODS.houstonTasksImportV1Run
   error: HoustonTaskRpcError,
 });
 
+const WsHoustonTasksStartRpc = Rpc.make(WS_METHODS.houstonTasksStart, {
+  payload: HoustonTaskStartInput,
+  success: HoustonTaskStartResult,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksRunControlRpc = Rpc.make(WS_METHODS.houstonTasksRunControl, {
+  payload: HoustonTaskRunControlInput,
+  success: HoustonTaskRun,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksHandbackRpc = Rpc.make(WS_METHODS.houstonTasksHandback, {
+  payload: HoustonTaskHandbackInput,
+  success: HoustonTaskRun,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksPlanStartRpc = Rpc.make(WS_METHODS.houstonTasksPlanStart, {
+  payload: HoustonTaskPlanStartInput,
+  success: HoustonTaskDetail,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksPlanAnswerRpc = Rpc.make(WS_METHODS.houstonTasksPlanAnswer, {
+  payload: HoustonTaskPlanAnswerInput,
+  success: HoustonTaskDetail,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksPlanApproveRpc = Rpc.make(WS_METHODS.houstonTasksPlanApprove, {
+  payload: HoustonTaskPlanApproveInput,
+  success: HoustonTaskDetail,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksReviewStartRpc = Rpc.make(WS_METHODS.houstonTasksReviewStart, {
+  payload: HoustonTaskReviewStartInput,
+  success: HoustonTaskDetail,
+  error: HoustonTaskRpcError,
+});
+
 const HoustonTaskSourceRpcError = Schema.Union([
   HoustonTaskSourceError,
   EnvironmentAuthorizationError,
@@ -1843,6 +1926,64 @@ const WsHoustonHarnessMarkSeenRpc = Rpc.make(WS_METHODS.houstonHarnessMarkSeen, 
   payload: HoustonHarnessMarkSeenInput,
   success: HoustonHarnessMarkSeenResult,
   error: HoustonHarnessRpcError,
+});
+
+const HoustonMergeQueueRpcError = Schema.Union([
+  HoustonMergeQueueError,
+  EnvironmentAuthorizationError,
+]);
+
+const WsHoustonMergeQueueGetRpc = Rpc.make(WS_METHODS.houstonMergeQueueGet, {
+  payload: HoustonMergeQueueProjectInput,
+  success: HoustonMergeQueueSnapshot,
+  error: HoustonMergeQueueRpcError,
+});
+
+const WsHoustonMergeQueueSubscribeRpc = Rpc.make(WS_METHODS.houstonMergeQueueSubscribe, {
+  payload: HoustonMergeQueueProjectInput,
+  success: HoustonMergeQueueSnapshot,
+  error: HoustonMergeQueueRpcError,
+  stream: true,
+});
+
+const WsHoustonMergeQueueSubscribeSummaryRpc = Rpc.make(
+  WS_METHODS.houstonMergeQueueSubscribeSummary,
+  {
+    payload: HoustonMergeQueueSummaryInput,
+    success: HoustonMergeQueueSummary,
+    error: HoustonMergeQueueRpcError,
+    stream: true,
+  },
+);
+
+const WsHoustonMergeQueueEnqueueRpc = Rpc.make(WS_METHODS.houstonMergeQueueEnqueue, {
+  payload: HoustonMergeQueueEnqueueInput,
+  success: HoustonMergeQueueEntry,
+  error: HoustonMergeQueueRpcError,
+});
+
+const WsHoustonMergeQueueDequeueRpc = Rpc.make(WS_METHODS.houstonMergeQueueDequeue, {
+  payload: HoustonMergeQueueEntryInput,
+  success: HoustonMergeQueueEmptyResult,
+  error: HoustonMergeQueueRpcError,
+});
+
+const WsHoustonMergeQueueMergeHeadRpc = Rpc.make(WS_METHODS.houstonMergeQueueMergeHead, {
+  payload: HoustonMergeQueueMergeHeadInput,
+  success: HoustonMergeQueueMergeHeadResult,
+  error: HoustonMergeQueueRpcError,
+});
+
+const WsHoustonMergeQueueSettingsSetRpc = Rpc.make(WS_METHODS.houstonMergeQueueSettingsSet, {
+  payload: HoustonMergeQueueSettingsSetInput,
+  success: HoustonMergeQueueSettings,
+  error: HoustonMergeQueueRpcError,
+});
+
+const WsHoustonMergeQueuePauseRpc = Rpc.make(WS_METHODS.houstonMergeQueuePause, {
+  payload: HoustonMergeQueuePauseInput,
+  success: HoustonMergeQueueMessageResult,
+  error: HoustonMergeQueueRpcError,
 });
 
 const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
@@ -2437,6 +2578,13 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTasksSettingsSetRpc,
   WsHoustonTasksImportV1StatusRpc,
   WsHoustonTasksImportV1RunRpc,
+  WsHoustonTasksStartRpc,
+  WsHoustonTasksRunControlRpc,
+  WsHoustonTasksHandbackRpc,
+  WsHoustonTasksPlanStartRpc,
+  WsHoustonTasksPlanAnswerRpc,
+  WsHoustonTasksPlanApproveRpc,
+  WsHoustonTasksReviewStartRpc,
   WsHoustonTaskSourcesSettingsGetRpc,
   WsHoustonTaskSourcesSettingsSetRpc,
   WsHoustonTaskSourcesCredentialSetRpc,
@@ -2456,6 +2604,14 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonHarnessReportRpc,
   WsHoustonHarnessDecideRpc,
   WsHoustonHarnessMarkSeenRpc,
+  WsHoustonMergeQueueGetRpc,
+  WsHoustonMergeQueueSubscribeRpc,
+  WsHoustonMergeQueueSubscribeSummaryRpc,
+  WsHoustonMergeQueueEnqueueRpc,
+  WsHoustonMergeQueueDequeueRpc,
+  WsHoustonMergeQueueMergeHeadRpc,
+  WsHoustonMergeQueueSettingsSetRpc,
+  WsHoustonMergeQueuePauseRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
   WsTerminalObserveRpc,

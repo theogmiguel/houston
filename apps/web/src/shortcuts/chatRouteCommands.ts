@@ -23,6 +23,13 @@ import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../termina
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { useUiStateStore } from "../uiStateStore";
+import {
+  gridById,
+  gridContainingDraft,
+  gridContainingThread,
+  useGridStore,
+} from "../grid/gridStore";
+import { openGridDraft } from "../grid/newThreadDraft";
 import { type CommandHandler, registerCommands } from "./dispatcher";
 
 const CHAT_ROUTE_ID = "/_chat";
@@ -91,8 +98,35 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
     event.stopPropagation();
   };
 
+  const readRouteGrid = () => {
+    const grids = useGridStore.getState().grids;
+    const params = (router.state.matches.at(-1)?.params ?? {}) as Record<
+      string,
+      string | undefined
+    >;
+    if (typeof params.gridId === "string") {
+      return gridById(grids, params.gridId);
+    }
+    const target = readRouteTarget();
+    if (target?.kind === "server") {
+      return gridContainingThread(grids, target.threadRef.environmentId, target.threadRef.threadId);
+    }
+    return target?.kind === "draft" ? gridContainingDraft(grids, target.draftId) : null;
+  };
+
   const startNewLocal: CommandHandler = (event) => {
     claim(event);
+    const grid = readRouteGrid();
+    if (grid !== null) {
+      void openGridDraft(
+        { gridId: grid.id, focusedThreadId: grid.focusedThreadId },
+        handleNewThread,
+      ).then((opened) => {
+        if (opened === null) return;
+        void router.navigate({ to: "/grid/$gridId", params: { gridId: opened.gridId } });
+      });
+      return;
+    }
     void startNewThreadFromContext(readThreadContext());
   };
 
@@ -117,6 +151,10 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
         void scratch.startScratchThread(environmentId);
       },
       "chat.new": (event) => {
+        if (readRouteGrid() !== null) {
+          startNewLocal(event);
+          return;
+        }
         // The boring sidebar's folders already show the context, so it starts in
         // the current project like the legacy sidebar did.
         const { boringSidebarEnabled, legacySidebarEnabled } = getClientSettings();

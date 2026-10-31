@@ -25,19 +25,19 @@ export function ThreadDetailsSection({
       // A row can still render nothing (a fresh draft quiets Git actions), so an empty section
       // collapses, and a divider only follows a section that has content.
       className={cn(
-        "px-2 pt-2 pb-2.5 has-[>div:last-child:empty]:hidden",
-        separated && "border-border/65 [section:not(:has(>div:last-child:empty))~&]:border-t",
+        "px-3 pt-2 pb-2 has-[>div:last-child:empty]:hidden",
+        separated && "border-border [section:not(:has(>div:last-child:empty))~&]:border-t",
       )}
     >
       <div
         className={cn(
-          "mb-1 flex min-h-8 min-w-0 items-center justify-between gap-2 px-2.5",
+          "mb-1 flex h-7 min-w-0 items-center justify-between gap-2 px-2",
           !showHeading && "hidden",
         )}
       >
         <h3
           id={headingId}
-          className="min-w-0 truncate text-2xs font-medium text-muted-foreground select-none"
+          className="min-w-0 truncate text-xs font-medium text-muted-foreground select-none"
         >
           {title}
         </h3>

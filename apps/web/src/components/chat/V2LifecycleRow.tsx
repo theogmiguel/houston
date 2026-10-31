@@ -38,7 +38,7 @@ import {
 import type { TimestampFormat } from "@t3tools/contracts/settings";
 import {
   BotIcon,
-  CheckIcon,
+  CircleCheckIcon,
   ChevronRightIcon,
   CircleDashedIcon,
   CircleStopIcon,
@@ -422,7 +422,7 @@ function SubagentTimelineLink(props: {
     : failed
       ? CircleXIcon
       : status === "completed"
-        ? CheckIcon
+        ? CircleCheckIcon
         : CircleStopIcon;
   const content = (
     <>
@@ -446,7 +446,7 @@ function SubagentTimelineLink(props: {
         className={cn(
           "inline-flex shrink-0 items-center gap-1 text-xs font-medium",
           running
-            ? "text-primary"
+            ? "text-(--accent-ink)"
             : failed
               ? "text-destructive"
               : status === "completed"
@@ -466,7 +466,7 @@ function SubagentTimelineLink(props: {
       {open !== null ? (
         <ChevronRightIcon
           aria-hidden
-          className="size-3.5 shrink-0 text-muted-foreground/60 transition-colors group-hover/subagent:text-foreground"
+          className="size-3.25 shrink-0 text-(--t3) transition-colors group-hover/subagent:text-(--t1)"
         />
       ) : null}
     </>
