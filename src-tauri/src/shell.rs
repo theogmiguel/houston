@@ -206,7 +206,7 @@ async fn resolve_and_check(raw: &str, expected: ExpectedKind) -> Result<PathBuf,
     Ok(path)
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", test))]
+#[cfg(any(target_os = "linux", test))]
 fn reveal_parent(path: &Path) -> PathBuf {
     match path.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),

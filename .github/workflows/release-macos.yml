@@ -108,8 +108,7 @@ jobs:
 
       # Secrets cannot be used in an `if:`, so they are read into env here and
       # tested; the decisions travel on as step outputs. Updater signing is
-      # required for a cut, while Apple signing/notarization is always optional
-      # because it needs the maintainer's Developer ID account.
+      # required for a cut; Apple signing and notarization stay optional.
       - name: Decide which signing paths this run takes
         id: signing
         env:

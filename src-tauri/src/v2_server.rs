@@ -981,10 +981,8 @@ fn form_encode(value: &str) -> String {
 }
 
 /// A detached child stays unreaped until Houston exits, so `kill(pid, 0)`
-/// still succeeds for a zombie. Linux reads the process state from /proc.
-/// Darwin has no /proc, so waitpid(WNOHANG) reaps only the server this app
-/// spawned; ECHILD means it is not ours (an attached server), whose own parent
-/// reaps it. Windows has no zombies, so `kill(pid, 0)` is already final.
+/// still succeeds for a zombie. Linux reads /proc; Darwin reaps only the
+/// server this app spawned with waitpid(WNOHANG). Windows has no zombies.
 fn process_exited(pid: i32) -> bool {
     if pid <= 0 || !process_alive(pid) {
         return true;
