@@ -20,6 +20,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [3, "TaskSources"],
   [4, "TaskRunsCursor"],
   [5, "MergeQueue"],
+  [8, "WorkspaceTransfer"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -264,7 +265,10 @@ describe("the merge queue migration runs on the Houston track", () => {
         const upstream = yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const history = yield* houstonHistory;
-          assert.deepEqual(history.at(-1), [5, "MergeQueue"]);
+          assert.deepEqual(
+            history.find(([id]) => id === 5),
+            [5, "MergeQueue"],
+          );
           assert.deepEqual(
             history.map(([id]) => id),
             HOUSTON_TRACK.map(([id]) => id),
@@ -321,6 +325,84 @@ describe("the merge queue migration runs on the Houston track", () => {
           assert.isNotEmpty(index);
           assert.isFalse(
             (yield* upstreamHistory).some((row) => row.name.toLowerCase().includes("mergequeue")),
+          );
+          return yield* upstreamHistory;
+        }).pipe(Effect.provide(openThroughSqlite(file)));
+
+        // A reopen applies nothing on either track.
+        yield* Effect.gen(function* () {
+          assert.deepEqual(yield* runHoustonMigrations(), []);
+          assert.deepEqual(yield* upstreamHistory, upstream);
+          assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
+        }).pipe(Effect.provide(openThroughSqlite(file)));
+      }),
+    ),
+  );
+});
+
+describe("the workspace transfer migration runs on the Houston track", () => {
+  const TRANSFER_TABLES = [
+    "houston_transfer_exports",
+    "houston_transfer_imports",
+    "houston_transfer_threads",
+  ];
+
+  it.effect("the workspace transfer migration runs on the Houston track", () =>
+    withDatabaseFile((file) =>
+      Effect.gen(function* () {
+        const upstream = yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const history = yield* houstonHistory;
+          const transfer = history.findIndex(([, name]) => name === "WorkspaceTransfer");
+          assert.isAtLeast(transfer, 0);
+          // After every earlier Houston id.
+          for (const [id] of history.slice(0, transfer)) assert.isBelow(id, history[transfer]![0]);
+          const tables = (yield* sql<{ readonly name: string }>`
+            SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name LIKE 'houston_transfer_%' ORDER BY name
+          `).map((row) => row.name);
+          assert.deepEqual(tables, TRANSFER_TABLES);
+
+          const importRow = (id: string, state: string) => sql`
+            INSERT INTO houston_transfer_imports (
+              import_id, transfer_id, project_id, state, journal_json, started_at
+            ) VALUES (${id}, 't', 'p', ${state}, '[]', 'now')
+          `;
+          yield* importRow("i1", "undone");
+          yield* importRow("i2", "done");
+          // One live import per transfer and project; an undone one does not count.
+          assert.isTrue((yield* Effect.exit(importRow("i3", "done")))._tag === "Failure");
+          assert.isTrue((yield* Effect.exit(importRow("i4", "running")))._tag === "Failure");
+          yield* importRow("i5", "undone");
+          assert.isTrue((yield* Effect.exit(importRow("i6", "paused")))._tag === "Failure");
+          const [defaults] = yield* sql<{ readonly notes_json: string; readonly ended_at: null }>`
+            SELECT notes_json, ended_at FROM houston_transfer_imports WHERE import_id = 'i2'
+          `;
+          assert.deepEqual(defaults, { notes_json: "[]", ended_at: null });
+
+          const threadRow = (importId: string) => sql`
+            INSERT INTO houston_transfer_threads (thread_id, import_id, source_thread_id)
+            VALUES ('transfer:i2:0', ${importId}, 'source')
+          `;
+          yield* threadRow("i2");
+          assert.isTrue((yield* Effect.exit(threadRow("i5")))._tag === "Failure");
+
+          yield* sql`
+            INSERT INTO houston_transfer_exports (
+              transfer_id, project_id, file, bytes, threads_json, tree_state_json, created_at
+            ) VALUES ('t', 'p', '/tmp/x.houston-transfer', 10, '[]', '{}', 'now')
+          `;
+          for (const table of TRANSFER_TABLES) {
+            const columns = yield* sql<{ readonly name: string }>`
+              SELECT name FROM pragma_table_info(${table})
+            `;
+            assert.isNotEmpty(columns, table);
+            for (const column of columns) {
+              assert.notMatch(column.name, /passphrase/i, `${table}.${column.name}`);
+            }
+          }
+          assert.isFalse(
+            (yield* upstreamHistory).some((row) => row.name.toLowerCase().includes("transfer")),
           );
           return yield* upstreamHistory;
         }).pipe(Effect.provide(openThroughSqlite(file)));
