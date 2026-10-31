@@ -1,7 +1,6 @@
 // Installed before the first renderer script. Upstream's web app expects the
 // Electron preload's `window.desktopBridge`; this shim supplies the parts a
-// Tauri host can serve now. Methods that need a native feature upstream had in
-// Electron return an explicit safe value instead of pretending to work.
+// Tauri host can serve now, returning an explicit safe value for the rest.
 (function () {
   if (window.desktopBridge) return;
 
@@ -173,7 +172,9 @@
     captureScreenshot: function () {
       return Promise.resolve(null);
     },
-    revealArtifact: noop,
+    revealArtifact: function (path) {
+      return invoke("shell_reveal_item_in_folder", { path: path }).catch(noop);
+    },
     copyArtifactToClipboard: noop,
     pictureInPicture: { open: noop, close: noop },
     recording: {
@@ -424,10 +425,12 @@
         });
       });
     },
-    receiveProviderAuthCallback: function () {
-      return Promise.reject(new Error("Provider auth callbacks are not available yet."));
+    receiveProviderAuthCallback: function (authorizationUrl) {
+      return invoke("provider_auth_receive", { authorizationUrl: authorizationUrl });
     },
-    cancelProviderAuthCallback: noop,
+    cancelProviderAuthCallback: function (authorizationUrl) {
+      return invoke("provider_auth_cancel", { authorizationUrl: authorizationUrl });
+    },
     openExternal: function (url) {
       return invoke("shell_open_external", { url: url })
         .then(function (result) {
@@ -477,6 +480,10 @@
       return unsubscribe;
     },
     getWindowZoomFactor: function () {
+      // Rust writes this global before it resizes the webview, so the synchronous
+      // read matches the viewport instead of trailing the resize event.
+      var live = window.__HOUSTON_V2_ZOOM__;
+      if (typeof live === "number" && isFinite(live) && live > 0) return live;
       return zoomFactor;
     },
     getUpdateState: function () {
@@ -547,5 +554,8 @@
     preview: preview,
   };
 
+  listen("v2-window-zoom", function (factor) {
+    if (typeof factor === "number" && isFinite(factor) && factor > 0) zoomFactor = factor;
+  });
   window.desktopBridge = bridge;
 })();
