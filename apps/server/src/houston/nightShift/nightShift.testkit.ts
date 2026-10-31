@@ -47,8 +47,18 @@ import * as SecretRequests from "../../secrets/SecretRequests.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import { HostedLaunch } from "../baseDir.ts";
 import * as HoustonHarnessStore from "../harnessReview/Store.ts";
-import { ANTIGRAVITY, CLAUDE, CODEX, type DoubleSpec, makeHarness } from "../sideThreads.testkit.ts";
-import { layerProjectMetadata, layerWorkspacePaths, layerInstances } from "../tasks/tasks.testkit.ts";
+import {
+  ANTIGRAVITY,
+  CLAUDE,
+  CODEX,
+  type DoubleSpec,
+  makeHarness,
+} from "../sideThreads.testkit.ts";
+import {
+  layerProjectMetadata,
+  layerWorkspacePaths,
+  layerInstances,
+} from "../tasks/tasks.testkit.ts";
 import * as NightShiftGit from "./Git.ts";
 import {
   NightShiftMachine,
@@ -114,6 +124,8 @@ export interface KitState {
   readonly notes: Array<Note>;
   readonly states: Map<string, ThreadState>;
   launchFailure: string | null;
+  /** A launch that never answers, so a test can interrupt the start. */
+  launchHangs: boolean;
   /** Called with each launch before it answers. */
   onLaunch: (input: ThreadLaunchService.ThreadLaunchInput) => void;
   readings: MachineReadings;
@@ -139,6 +151,7 @@ export const freshState = (): KitState => ({
   notes: [],
   states: new Map(),
   launchFailure: null,
+  launchHangs: false,
   onLaunch: () => undefined,
   readings: {
     onBattery: "false",
@@ -210,6 +223,7 @@ const layerThreads = (state: KitState) =>
           state.launches.push(input);
           state.onLaunch(input);
           if (state.launchFailure !== null) return Effect.fail(state.launchFailure);
+          if (state.launchHangs) return Effect.never;
           const threadId = ThreadId.make(`night-orchestrator:${state.launches.length}`);
           state.states.set(threadId, { present: true, activeRun: true, lastRunStatus: "running" });
           const branch =
@@ -227,7 +241,11 @@ const layerThreads = (state: KitState) =>
           state.ops.push(`cancel:${threadId}`);
           const current = state.states.get(threadId);
           if (current !== undefined) {
-            state.states.set(threadId, { ...current, activeRun: false, lastRunStatus: "cancelled" });
+            state.states.set(threadId, {
+              ...current,
+              activeRun: false,
+              lastRunStatus: "cancelled",
+            });
           }
         }),
       stop: (threadId) =>
@@ -287,7 +305,8 @@ const layerRecordingGit = (state: KitState) =>
     Effect.gen(function* () {
       const real = yield* NightShiftGit.NightShiftGit;
       return NightShiftGit.NightShiftGit.of({
-        origin: (root) => Effect.sync(() => state.gitCalls.push("origin")).pipe(Effect.andThen(real.origin(root))),
+        origin: (root) =>
+          Effect.sync(() => state.gitCalls.push("origin")).pipe(Effect.andThen(real.origin(root))),
         defaultBranch: (root) =>
           Effect.sync(() => state.gitCalls.push("defaultBranch")).pipe(
             Effect.andThen(real.defaultBranch(root)),
@@ -305,7 +324,13 @@ export const layerKeepAwake = (state: KitState) =>
     Layer.provide(
       Layer.succeed(KeepAwake.KeepAwakeSpawner, (command, args) => {
         if (state.spawnFailure !== null) throw new Error(state.spawnFailure);
-        const child: Spawned = { command, args, stdinClosed: false, killed: false, stubborn: false };
+        const child: Spawned = {
+          command,
+          args,
+          stdinClosed: false,
+          killed: false,
+          stubborn: false,
+        };
         state.spawns.push(child);
         return {
           closeStdin: () => {
@@ -543,7 +568,11 @@ export const seedNightShift = Effect.fn("NightShiftKit.seedNightShift")(function
     title: `Night shift · ${projectId}`,
     prompt: Service.TASK_PROMPT,
     enabled: schedule.weekdays.length > 0 && settings.enabled,
-    schedule: { type: "fixed_time", timeOfDay: schedule.timeOfDay, weekdays: [...schedule.weekdays] },
+    schedule: {
+      type: "fixed_time",
+      timeOfDay: schedule.timeOfDay,
+      weekdays: [...schedule.weekdays],
+    },
     projectId,
     workspaceStrategy: { type: "worktree", baseRef: "main" },
     modelSelection: settings.orchestrator,

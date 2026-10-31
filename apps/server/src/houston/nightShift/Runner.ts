@@ -17,10 +17,12 @@ import {
   type NightStopReason,
   type PreflightItem,
 } from "@t3tools/contracts/houston/nightShift";
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -74,7 +76,10 @@ export class HoustonNightShiftRunner extends Context.Service<
     ) => Effect.Effect<HoustonNightShiftPreflightResult, HoustonNightShiftError>;
     readonly start: (
       input: StartInput,
-    ) => Effect.Effect<{ readonly runId: number; readonly threadId: ThreadId }, HoustonNightShiftError>;
+    ) => Effect.Effect<
+      { readonly runId: number; readonly threadId: ThreadId },
+      HoustonNightShiftError
+    >;
     readonly wrapUp: (
       runId: number,
     ) => Effect.Effect<HoustonNightShiftWrapUpResult, HoustonNightShiftError>;
@@ -163,7 +168,11 @@ const make = Effect.gen(function* () {
     const timeZone = yield* machine.timeZone;
     const times: RunTimes =
       input.durationMinutes !== undefined
-        ? runTimes({ kind: "runNow", startMs: input.startMs, durationMinutes: input.durationMinutes })
+        ? runTimes({
+            kind: "runNow",
+            startMs: input.startMs,
+            durationMinutes: input.durationMinutes,
+          })
         : runTimes({
             kind: input.trigger === "manual" ? "upstreamRunNow" : input.trigger,
             startMs: input.startMs,
@@ -228,7 +237,11 @@ const make = Effect.gen(function* () {
     run.orchestratorThreadId === null
       ? Effect.void
       : threads
-          .notify({ threadId: run.orchestratorThreadId, messageId: messageId(run.id, kind, key), text })
+          .notify({
+            threadId: run.orchestratorThreadId,
+            messageId: messageId(run.id, kind, key),
+            text,
+          })
           .pipe(
             Effect.catch((error) =>
               Effect.logWarning("Night shift could not message its orchestrator", {
@@ -272,10 +285,12 @@ const make = Effect.gen(function* () {
       picks: [],
       digest: [],
     });
-    const written = yield* fs.makeDirectory(folder, { recursive: true }).pipe(
-      Effect.andThen(fs.writeFileString(path.join(folder, "brief.md"), brief.text)),
-      Effect.result,
-    );
+    const written = yield* fs
+      .makeDirectory(folder, { recursive: true })
+      .pipe(
+        Effect.andThen(fs.writeFileString(path.join(folder, "brief.md"), brief.text)),
+        Effect.result,
+      );
     if (written._tag === "Failure") {
       return yield* failed(`writing the brief into ${folder} failed: ${written.failure.message}`);
     }
@@ -336,23 +351,37 @@ const make = Effect.gen(function* () {
     return { runId: run.id, threadId };
   });
 
-  const start: HoustonNightShiftRunner["Service"]["start"] = Effect.fn(
-    "HoustonNightShiftRunner.start",
-  )(function* (input) {
-    const project = yield* projectOf(input.operation, input.projectId);
-    const stored = yield* settingsOf(input.operation, input.projectId);
-    const nowMs = yield* Clock.currentTimeMillis;
-    const startMs = input.windowStartMs ?? nowMs;
-    const { times, timeZone } = yield* timesFor({
-      trigger: input.trigger,
-      startMs,
-      durationMinutes: input.durationMinutes,
-      wrapUp: stored.settings.window.wrapUp,
-      hardStop: stored.settings.window.hardStop,
-    });
-    if (!times.ok) return yield* refuse("invalid", input.operation, times.message);
+  /** A start that ended without settling its run: refuses it if still in preflight. */
+  const abandon = Effect.fn("HoustonNightShiftRunner.abandon")(
+    function* (runId: number, cause: Cause.Cause<unknown>) {
+      const current = yield* store.getRun(runId);
+      if (current?.phase !== "preflight") return;
+      const detail = Cause.hasInterruptsOnly(cause)
+        ? "the start was interrupted before the orchestrator was running"
+        : `the start died: ${Cause.pretty(cause)}`;
+      yield* keepAwake.release(runId);
+      yield* store.setKeepAwake(runId, "released");
+      yield* store.refuse(runId, {
+        stopReason: "launchFailed",
+        detail,
+        endedAt: iso(yield* Clock.currentTimeMillis),
+      });
+    },
+    (effect, runId) =>
+      effect.pipe(
+        Effect.catchCause((failure) =>
+          Effect.logWarning("Night shift could not refuse an abandoned start", { runId, failure }),
+        ),
+      ),
+  );
 
-    const run = yield* startLock.withPermits(1)(
+  const openRun = (
+    input: StartInput,
+    settings: StoredRun["settings"],
+    nowMs: number,
+    times: { readonly wrapUpAtMs: number; readonly hardStopAtMs: number },
+  ) =>
+    startLock.withPermits(1)(
       Effect.gen(function* () {
         const live = yield* store.liveRuns;
         const own = live.find((candidate) => candidate.projectId === input.projectId);
@@ -376,7 +405,7 @@ const make = Effect.gen(function* () {
           projectId: input.projectId,
           trigger: input.trigger,
           scheduledTaskId: input.scheduledTaskId,
-          settings: stored.settings,
+          settings,
           startedAt: iso(nowMs),
           wrapUpAt: iso(times.wrapUpAtMs),
           hardStopAt: iso(times.hardStopAtMs),
@@ -385,7 +414,15 @@ const make = Effect.gen(function* () {
       }),
     );
 
-    const items = yield* readingsFor(input.projectId, project.workspaceRoot, stored.settings, {
+  const prepareAndLaunch = Effect.fn("HoustonNightShiftRunner.prepareAndLaunch")(function* (
+    run: StoredRun,
+    root: string,
+    input: StartInput,
+    nowMs: number,
+    times: { readonly hardStopAtMs: number },
+    timeZone: string,
+  ) {
+    const items = yield* readingsFor(input.projectId, root, run.settings, {
       startMs: nowMs,
       hardStopMs: times.hardStopAtMs,
       timeZone,
@@ -402,7 +439,39 @@ const make = Effect.gen(function* () {
       });
       return yield* refuse("blocked", input.operation, message, { items });
     }
-    return yield* launch(run, project.workspaceRoot, items, input.operation);
+    return yield* launch(run, root, items, input.operation);
+  });
+
+  const start: HoustonNightShiftRunner["Service"]["start"] = Effect.fn(
+    "HoustonNightShiftRunner.start",
+  )(function* (input) {
+    const project = yield* projectOf(input.operation, input.projectId);
+    const stored = yield* settingsOf(input.operation, input.projectId);
+    const nowMs = yield* Clock.currentTimeMillis;
+    const startMs = input.windowStartMs ?? nowMs;
+    const { times, timeZone } = yield* timesFor({
+      trigger: input.trigger,
+      startMs,
+      durationMinutes: input.durationMinutes,
+      wrapUp: stored.settings.window.wrapUp,
+      hardStop: stored.settings.window.hardStop,
+    });
+    if (!times.ok) return yield* refuse("invalid", input.operation, times.message);
+
+    // From the run's row on, every exit settles it: a defect or an interruption (a client that
+    // went away) refuses a run still in preflight and releases keep-awake.
+    return yield* Effect.uninterruptibleMask((restore) =>
+      Effect.gen(function* () {
+        const run = yield* openRun(input, stored.settings, nowMs, times);
+        return yield* restore(
+          prepareAndLaunch(run, project.workspaceRoot, input, nowMs, times, timeZone),
+        ).pipe(
+          Effect.onExit((exit) =>
+            Exit.isSuccess(exit) ? Effect.void : abandon(run.id, exit.cause),
+          ),
+        );
+      }),
+    );
   });
 
   /** Runs one settle step, logging a failure without stopping the sequence. */
@@ -417,10 +486,15 @@ const make = Effect.gen(function* () {
 
   const stopCrew = Effect.fn("HoustonNightShiftRunner.stopCrew")(function* (run: StoredRun) {
     const crew = yield* store.crew(run.id);
-    const members = crew.filter((member) => member.role !== "orchestrator" && member.endedAt === null);
+    const members = crew.filter(
+      (member) => member.role !== "orchestrator" && member.endedAt === null,
+    );
     for (const member of members) {
       yield* threads
-        .cancelCrew(member.threadId, CommandId.make(`night-shift:${run.id}:cancel:${member.threadId}`))
+        .cancelCrew(
+          member.threadId,
+          CommandId.make(`night-shift:${run.id}:cancel:${member.threadId}`),
+        )
         .pipe(
           Effect.tap(() => Effect.sync(() => observe(`cancel:${member.threadId}`, run.id))),
           Effect.catch((error) =>
@@ -445,7 +519,10 @@ const make = Effect.gen(function* () {
         .pipe(
           Effect.tap(() => Effect.sync(() => observe(`stop:${run.orchestratorThreadId}`, run.id))),
           Effect.catch((error) =>
-            Effect.logWarning("Night shift could not stop its orchestrator", { runId: run.id, error }),
+            Effect.logWarning("Night shift could not stop its orchestrator", {
+              runId: run.id,
+              error,
+            }),
           ),
         );
       yield* store.endCrew(run.id, run.orchestratorThreadId, endedAt);
@@ -459,7 +536,9 @@ const make = Effect.gen(function* () {
     if (Option.isNone(project) || run.remoteHeads === null) {
       return yield* store.setRemoteChanges(
         run.id,
-        toJson({ error: "the remote heads were not recorded at the start; the audit could not run" }),
+        toJson({
+          error: "the remote heads were not recorded at the start; the audit could not run",
+        }),
       );
     }
     const after = yield* git.lsRemoteHeads(project.value.workspaceRoot).pipe(Effect.result);
@@ -485,7 +564,8 @@ const make = Effect.gen(function* () {
     if (!claimed) return false;
     return yield* Effect.gen(function* () {
       const run = yield* store.getRun(runId);
-      if (run === undefined || (run.phase !== "running" && run.phase !== "wrappingUp")) return false;
+      if (run === undefined || (run.phase !== "running" && run.phase !== "wrappingUp"))
+        return false;
       yield* step("crew", runId, stopCrew(run));
       yield* step("remoteChanges", runId, remoteChanges(run));
       yield* step(
@@ -588,7 +668,8 @@ const make = Effect.gen(function* () {
     "HoustonNightShiftRunner.wrapUp",
   )(function* (runId) {
     const run = yield* store.getRun(runId);
-    if (run === undefined) return yield* refuse("not_found", "wrapUp", `run ${runId} does not exist`);
+    if (run === undefined)
+      return yield* refuse("not_found", "wrapUp", `run ${runId} does not exist`);
     if (run.phase !== "running") {
       return yield* refuse(
         "invalid",
@@ -605,25 +686,25 @@ const make = Effect.gen(function* () {
     return { wrapUpAt };
   });
 
-  const stop: HoustonNightShiftRunner["Service"]["stop"] = Effect.fn("HoustonNightShiftRunner.stop")(
-    function* (runId) {
-      const run = yield* store.getRun(runId);
-      if (run === undefined) return yield* refuse("not_found", "stop", `run ${runId} does not exist`);
-      if (run.phase !== "running" && run.phase !== "wrappingUp") {
-        return yield* refuse(
-          "invalid",
-          "stop",
-          `run ${runId} is ${run.phase}${run.endedAt === null ? "" : ` since ${run.endedAt}`}; only a live run stops`,
-        );
-      }
-      yield* settle(runId, "stopped", null);
-      const after = yield* store.getRun(runId);
-      if (after?.endedAt == null || after.stopReason === null) {
-        return yield* refuse("invalid", "stop", `run ${runId} is still settling`);
-      }
-      return { endedAt: after.endedAt, stopReason: after.stopReason };
-    },
-  );
+  const stop: HoustonNightShiftRunner["Service"]["stop"] = Effect.fn(
+    "HoustonNightShiftRunner.stop",
+  )(function* (runId) {
+    const run = yield* store.getRun(runId);
+    if (run === undefined) return yield* refuse("not_found", "stop", `run ${runId} does not exist`);
+    if (run.phase !== "running" && run.phase !== "wrappingUp") {
+      return yield* refuse(
+        "invalid",
+        "stop",
+        `run ${runId} is ${run.phase}${run.endedAt === null ? "" : ` since ${run.endedAt}`}; only a live run stops`,
+      );
+    }
+    yield* settle(runId, "stopped", null);
+    const after = yield* store.getRun(runId);
+    if (after?.endedAt == null || after.stopReason === null) {
+      return yield* refuse("invalid", "stop", `run ${runId} is still settling`);
+    }
+    return { endedAt: after.endedAt, stopReason: after.stopReason };
+  });
 
   const limitOf = Effect.fn("HoustonNightShiftRunner.limitOf")(function* (instanceId: string) {
     const listed = yield* providers.list;
@@ -665,7 +746,9 @@ const make = Effect.gen(function* () {
     const since = idle
       ? yield* Ref.modify(idleSince, (current) => {
           const known = current.get(run.id);
-          return known !== undefined ? [known, current] : [nowMs, new Map(current).set(run.id, nowMs)];
+          return known !== undefined
+            ? [known, current]
+            : [nowMs, new Map(current).set(run.id, nowMs)];
         })
       : yield* Ref.update(idleSince, (current) => {
           const next = new Map(current);
@@ -717,7 +800,11 @@ const make = Effect.gen(function* () {
         continue;
       }
       if (run.hardStopAt !== null && nowMs >= Date.parse(run.hardStopAt)) {
-        yield* settle(run.id, "serverRestart", `the hard stop ${run.hardStopAt} passed while the server was stopped`);
+        yield* settle(
+          run.id,
+          "serverRestart",
+          `the hard stop ${run.hardStopAt} passed while the server was stopped`,
+        );
         continue;
       }
       const present =
@@ -757,13 +844,11 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const runner = yield* make;
     yield* runner.recover.pipe(
-      Effect.catchCause((cause) => Effect.logWarning("Night shift could not recover its runs", { cause })),
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Night shift could not recover its runs", { cause }),
+      ),
     );
-    yield* runner.tick.pipe(
-      Effect.andThen(Effect.sleep(TICK)),
-      Effect.forever,
-      Effect.forkScoped,
-    );
+    yield* runner.tick.pipe(Effect.andThen(Effect.sleep(TICK)), Effect.forever, Effect.forkScoped);
     return runner;
   }),
 );

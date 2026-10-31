@@ -15,6 +15,7 @@ import {
 import type { HoustonNightShiftError } from "@t3tools/contracts/houston/nightShift";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
@@ -238,7 +239,9 @@ describe("night shift preflight and start", () => {
           kit.state.onLaunch = (input) => {
             const runId = Number(String(input.commandId).split(":")[1]);
             atLaunch = {
-              brief: NodeFS.existsSync(NodePath.join(Store.runFolder(config.baseDir, runId), "brief.md")),
+              brief: NodeFS.existsSync(
+                NodePath.join(Store.runFolder(config.baseDir, runId), "brief.md"),
+              ),
               heads: kit.state.gitCalls.includes("lsRemoteHeads"),
               spawns: kit.state.spawns.length,
             };
@@ -313,6 +316,55 @@ describe("night shift preflight and start", () => {
           assert.equal(runs[0]!.keepAwake, "released");
           assert.lengthOf(kit.state.spawns, 1);
           assert.isTrue(kit.state.spawns[0]!.stdinClosed);
+          assert.lengthOf(yield* store.liveRuns, 0);
+        }),
+      );
+    }),
+  );
+
+  it.effect("a start that dies or is interrupted refuses the run and releases keep-awake", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("launch-defect");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const store = yield* Store.HoustonNightShiftStore;
+          const first = yield* setUp("launch-defect-a");
+          const second = yield* setUp("launch-defect-b");
+
+          // A defect in the launch, not a typed failure.
+          kit.state.onLaunch = () => {
+            throw new Error("the launcher crashed");
+          };
+          const died = yield* Effect.exit(start(first.projectId));
+          assert.equal(died._tag, "Failure");
+          const dead = (yield* store.listRuns(first.projectId, 30))[0]!;
+          assert.equal(dead.phase, "refused");
+          assert.equal(dead.stopReason, "launchFailed");
+          assert.include(dead.stopDetail ?? "", "the launcher crashed");
+          assert.equal(dead.keepAwake, "released");
+          assert.lengthOf(kit.state.spawns, 1);
+          assert.isTrue(kit.state.spawns[0]!.stdinClosed);
+          assert.lengthOf(yield* store.liveRuns, 0);
+
+          // The start's fiber is interrupted while the launch is in flight (a client went away).
+          let launched = () => undefined as void;
+          const began = new Promise<void>((resolve) => {
+            launched = resolve;
+          });
+          kit.state.onLaunch = () => launched();
+          kit.state.launchHangs = true;
+          const fiber = yield* Effect.forkChild(start(second.projectId));
+          yield* Effect.promise(() => began);
+          assert.lengthOf(kit.state.launches, 2, "the second launch began");
+          yield* Fiber.interrupt(fiber);
+          const cut = (yield* store.listRuns(second.projectId, 30))[0]!;
+          assert.equal(cut.phase, "refused");
+          assert.equal(cut.stopReason, "launchFailed");
+          assert.include(cut.stopDetail ?? "", "interrupted");
+          assert.equal(cut.keepAwake, "released");
+          assert.lengthOf(kit.state.spawns, 2);
+          assert.isTrue(kit.state.spawns[1]!.stdinClosed);
           assert.lengthOf(yield* store.liveRuns, 0);
         }),
       );
@@ -535,7 +587,11 @@ describe("night shift run life", () => {
           const a = yield* start(first.projectId);
           yield* addCrew(a.runId, "worker-a", a.threadId, (yield* getRun(a.runId)).startedAt);
           busy(kit, "worker-a");
-          kit.state.states.set(a.threadId, { present: false, activeRun: false, lastRunStatus: null });
+          kit.state.states.set(a.threadId, {
+            present: false,
+            activeRun: false,
+            lastRunStatus: null,
+          });
           yield* tick;
           const deleted = yield* getRun(a.runId);
           assert.equal(deleted.stopReason, "orchestratorEnded");
