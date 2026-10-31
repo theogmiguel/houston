@@ -1,17 +1,21 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { FileDiffContentsLoader, FileDiffMetadata } from "@pierre/diffs";
-import type { ReviewBranchCommitsResult, ScopedThreadRef, RunId } from "@t3tools/contracts";
 import {
-  CheckIcon,
-  ChevronDownIcon,
-  FileText,
-  MoreHorizontalIcon,
-  XIcon,
-} from "lucide-react";
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
+import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+import type { ReviewBranchCommitsResult, ScopedThreadRef, RunId } from "@t3tools/contracts";
+import { CheckIcon, ChevronDownIcon, FileText, MoreHorizontalIcon, XIcon } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide";
 import * as Schema from "effect/Schema";
 import { type MouseEvent, useEffect, useRef, useState } from "react";
 import { useCodeViewFileReveal } from "./diffs/useCodeViewFileReveal";
 import { useFilesystemReadAccess } from "~/state/filesystem";
+import { useOpenInPreferredEditor } from "../editorPreferences";
+import { useFileContextMenuHandler } from "../fileContextMenu";
 import { type DraftId } from "../composerDraftStore";
+import { openDiffFilePrimaryAction } from "../diffFileActions";
 import { toolCallDiff } from "../lib/toolCallDiff";
 import { useCheckpointDiff, useTurnItemDetail } from "~/state/queries";
 import { revisionedQuery } from "~/state/revisionedQuery";
@@ -52,7 +56,9 @@ import { DiffStatLabel } from "./chat/DiffStatLabel";
 import { AnnotatableCodeView } from "./diffs/AnnotatableCodeView";
 import { DiffFileTree } from "./diffs/DiffFileTree";
 import { diffFileTreeEntries } from "./diffs/diffFileTree.logic";
+import { DiffFilePathCopyButton } from "./DiffFilePathCopyButton";
 import { Button } from "./ui/button";
+import { MorphIcon } from "~/components/MorphIcon";
 import { Switch } from "./ui/switch";
 import {
   Combobox,
@@ -81,6 +87,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
+import { serverEnvironment } from "../state/server";
 import { reviewEnvironment } from "../state/review";
 import { vcsEnvironment } from "../state/vcs";
 import { buildBaseRefChoices, filterBaseRefChoices } from "../lib/baseRefChoices";
@@ -88,6 +95,7 @@ import { createGitDiffFileContentsLoader } from "../lib/diffFileContents";
 
 import { useReviewFilePatches } from "./diffs/useReviewFilePatches";
 import { DiffFileLoadingBoundary } from "./diffs/DiffFileLoadingBoundary";
+import { DiffFileStatus } from "./diffs/DiffFileStatus";
 import { useThreadRouteRef } from "../hooks/useThreadRouteTarget";
 import { projectCommitUrl } from "@t3tools/client-runtime/change-request-links";
 import { useOpenLink } from "../browser/useOpenLink";
@@ -114,9 +122,74 @@ function getCachedFileEntry(fileDiff: FileDiffMetadata) {
 
 const EMPTY_COLLAPSED_DIFF_FILE_KEYS: ReadonlySet<string> = new Set();
 
+function DiffFileCollapseToggle({
+  filePath,
+  fileKey,
+  collapsed,
+  unavailable,
+  onToggle,
+}: {
+  filePath: string;
+  fileKey: string;
+  collapsed: boolean;
+  unavailable: boolean;
+  onToggle: (fileKey: string) => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            size="icon"
+            variant="ghost"
+            className="shrink-0 [&_svg]:size-[15px]"
+            aria-label={collapsed ? `Expand ${filePath}` : `Collapse ${filePath}`}
+            aria-expanded={!collapsed}
+            disabled={unavailable}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggle(fileKey);
+            }}
+          />
+        }
+      >
+        <MorphIcon
+          className="size-[15px] text-muted-foreground"
+          icon={collapsed ? ChevronRight : ChevronDown}
+        />
+      </TooltipTrigger>
+      <TooltipPopup side="top">{collapsed ? "Expand diff" : "Collapse diff"}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function DiffFileHeaderSuffix({
+  filePath,
+  hasStat,
+  error,
+  truncated,
+  onRetry,
+}: {
+  filePath: string;
+  hasStat: boolean;
+  error: boolean;
+  truncated: boolean;
+  onRetry: (path: string) => void;
+}) {
+  return (
+    <>
+      <span data-diff-copy-path className="inline-flex">
+        <DiffFilePathCopyButton filePath={filePath} />
+      </span>
+      {hasStat ? (
+        <DiffFileStatus error={error} truncated={truncated} retry={() => onRetry(filePath)} />
+      ) : null}
+    </>
+  );
+}
+
 // The board draws one plain path row above the selected file, so Pierre's per-file header is hidden.
-const SINGLE_FILE_DIFF_HEADER_CSS =
-  "[data-diffs-header] { display: none !important; }";
+const SINGLE_FILE_DIFF_HEADER_CSS = "[data-diffs-header] { display: none !important; }";
 
 interface DiffPanelProps {
   mode?: DiffPanelMode;
@@ -233,6 +306,17 @@ export default function DiffPanel({
       : null,
   );
   const activeCwd = activeThread?.worktreePath ?? activeProject?.workspaceRoot;
+  const activeRepositoryRoot = activeThread?.worktreePath
+    ? undefined
+    : activeProject?.repositoryIdentity?.rootPath;
+  const serverConfig = useAtomValue(
+    serverEnvironment.configValueAtom(activeThread?.environmentId ?? null),
+  );
+  const onFileContextMenu = useFileContextMenuHandler(activeThread?.environmentId ?? null);
+  const openInPreferredEditor = useOpenInPreferredEditor(
+    activeThread?.environmentId ?? null,
+    serverConfig?.availableEditors ?? [],
+  );
   const getDiffFileContents = useAtomCommand(reviewEnvironment.diffFileContents);
   const gitStatusQuery = useEnvironmentQuery(
     activeThread !== null && activeThread !== undefined && activeCwd != null
@@ -539,6 +623,8 @@ export default function DiffPanel({
   const {
     scope: filePatchScope,
     isPending: areFilePatchesPending,
+    fileStates,
+    retry,
     requestFile,
     readyFilePaths,
     renderableFiles,
@@ -693,6 +779,43 @@ export default function DiffPanel({
       externalRevealRef.current = key;
     }
   }, [collapseScopeKey, selectedFilePath, selectedFileRevealRequestId, revealDiffFile]);
+
+  const openDiffFile = (filePath: string) => {
+    openDiffFilePrimaryAction({
+      threadRef: threadRef,
+      filePath,
+      activeCwd,
+      repositoryRoot: activeRepositoryRoot,
+      openInEditor: (targetPath) => {
+        void (async () => {
+          const result = await openInPreferredEditor(targetPath);
+          if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+            console.warn("Failed to open diff file in editor.", {
+              operation: "open-diff-file",
+              ...(threadRef
+                ? {
+                    environmentId: threadRef.environmentId,
+                    threadId: threadRef.threadId,
+                  }
+                : {}),
+              ...safeErrorLogAttributes(squashAtomCommandFailure(result)),
+            });
+          }
+        })();
+      },
+    });
+  };
+  const toggleDiffFileCollapsed = useStableCallback((fileKey: string) => {
+    updateCollapsedDiffFiles((current) => {
+      const next = new Set(current);
+      if (next.has(fileKey)) {
+        next.delete(fileKey);
+      } else {
+        next.add(fileKey);
+      }
+      return next;
+    });
+  });
 
   // Find can ask again before the unfolded file reaches the viewer, so this must never fold.
   const unfoldDiffFile = useStableCallback((fileKey: string) => {
@@ -1226,10 +1349,74 @@ export default function DiffPanel({
                   )}
                 </div>
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                  <div className="flex h-[30px] min-h-[30px] shrink-0 items-center border-b border-border bg-[var(--pane-head)] px-3">
-                    <span className="truncate font-mono text-xs text-secondary-foreground">
+                  <div
+                    className="flex h-[30px] min-h-[30px] shrink-0 items-center gap-1 border-b border-border bg-[var(--pane-head)] ps-1.5 pe-2"
+                    onClickCapture={(event) => {
+                      const composedPath = event.nativeEvent.composedPath?.() ?? [];
+                      for (const node of composedPath) {
+                        if (!(node instanceof HTMLElement)) continue;
+                        // Header buttons own their clicks; bubbling a chevron click would toggle twice.
+                        if (
+                          node instanceof HTMLButtonElement ||
+                          node instanceof HTMLAnchorElement
+                        ) {
+                          return;
+                        }
+                      }
+                      if (selectedCodeViewFile) {
+                        toggleDiffFileCollapsed(selectedCodeViewFile.fileKey);
+                      }
+                    }}
+                    onContextMenuCapture={(event) => {
+                      const composedPath = event.nativeEvent.composedPath?.() ?? [];
+                      const title = composedPath.find(
+                        (node): node is HTMLElement =>
+                          node instanceof HTMLElement && node.hasAttribute("data-title"),
+                      );
+                      const filePath = title?.textContent?.trim() ?? selectedCodeViewFile?.filePath;
+                      if (!filePath) return;
+                      event.preventDefault();
+                      onFileContextMenu(
+                        {
+                          environmentId: activeThread?.environmentId ?? null,
+                          filePath,
+                          workspaceRoot: activeCwd,
+                          repositoryRoot: activeRepositoryRoot,
+                        },
+                        event,
+                      );
+                    }}
+                  >
+                    {selectedCodeViewFile ? (
+                      <DiffFileCollapseToggle
+                        filePath={selectedCodeViewFile.filePath}
+                        fileKey={selectedCodeViewFile.fileKey}
+                        collapsed={selectedCodeViewFile.collapsed}
+                        unavailable={false}
+                        onToggle={toggleDiffFileCollapsed}
+                      />
+                    ) : null}
+                    <button
+                      type="button"
+                      data-title={selectedCodeViewFile?.filePath}
+                      className="min-w-0 flex-1 cursor-pointer truncate text-left font-mono text-xs text-secondary-foreground hover:text-foreground"
+                      onClick={() => {
+                        if (selectedCodeViewFile) openDiffFile(selectedCodeViewFile.filePath);
+                      }}
+                    >
                       {selectedCodeViewFile?.filePath ?? ""}
-                    </span>
+                    </button>
+                    {selectedCodeViewFile ? (
+                      <DiffFileHeaderSuffix
+                        filePath={selectedCodeViewFile.filePath}
+                        hasStat={fileStats.has(selectedCodeViewFile.filePath)}
+                        error={fileStates.get(selectedCodeViewFile.filePath)?.error ?? false}
+                        truncated={
+                          fileStates.get(selectedCodeViewFile.filePath)?.truncated ?? false
+                        }
+                        onRetry={retry}
+                      />
+                    ) : null}
                   </div>
                   <div className="min-h-0 min-w-0 flex-1">
                     <AnnotatableCodeView
