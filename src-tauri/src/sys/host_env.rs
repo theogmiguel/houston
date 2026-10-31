@@ -30,7 +30,7 @@ impl HostEnv {
     }
 
     /// A copy with `name` set (or removed when `value` is `None`).
-    #[cfg(any(test, windows))]
+    #[cfg(test)]
     #[must_use]
     pub fn with(&self, name: &str, value: Option<impl Into<OsString>>) -> Self {
         let mut map = (*self.0).clone();
@@ -43,7 +43,7 @@ impl HostEnv {
         Self(Arc::new(map))
     }
 
-    #[cfg(windows)]
+    #[cfg(all(test, windows))]
     #[must_use]
     pub fn without(&self, name: &str) -> Self {
         self.with(name, None::<&str>)
@@ -74,7 +74,7 @@ impl HostEnv {
             .map(str::to_string)
     }
 
-    #[cfg(windows)]
+    #[cfg(all(test, windows))]
     pub fn names(&self) -> impl Iterator<Item = &OsStr> {
         self.0.keys().map(OsString::as_os_str)
     }
