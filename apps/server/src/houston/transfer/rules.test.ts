@@ -49,6 +49,16 @@ describe("the passphrase is bounded by characters and bytes", () => {
       expect(JSON.stringify(refusal)).not.toContain(entry.passphrase.slice(0, 11));
     }
   });
+
+  it("four-byte characters count once toward the minimum", () => {
+    // Six such characters are twelve UTF-16 units and 24 bytes, but six characters.
+    for (const count of [6, 11]) {
+      const refusal = checkPassphrase("\u{1F600}".repeat(count), EXPORT);
+      expect(refusal?.kind, `${count}`).toBe("invalid");
+      expect(refusal?.limit, `${count}`).toBe(12);
+      expect(refusal?.actual, `${count}`).toBe(count);
+    }
+  });
 });
 
 describe("destinations are absolute paths in an existing folder", () => {

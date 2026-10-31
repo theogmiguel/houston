@@ -258,6 +258,42 @@ describe("a wrong passphrase, a foreign file and an excessive work factor are re
     expect(manifest.format).toBe(2);
     expect(decryptions).toBe(1);
   });
+
+  it("a work factor of 2^20 reaches the decrypter and 2^21 does not", async () => {
+    const dir = tempDir();
+    const whole = NodeFS.readFileSync(await writeValid(dir));
+    const header = whole.subarray(0, whole.indexOf("\n---")).toString("latin1");
+    const scrypt = header.split("\n").find((line) => line.startsWith("-> scrypt "))!;
+    const withFactor = (factor: number) =>
+      writeFile(
+        dir,
+        `factor-${factor}.houston-transfer`,
+        Buffer.from(
+          whole.toString("latin1").replace(scrypt, scrypt.replace(/ \d+$/, ` ${factor}`)),
+          "latin1",
+        ),
+      );
+    let decryptions = 0;
+    // Stands in for the derivation: 2^20 would cost a gigabyte of memory in a test.
+    const spy = () => {
+      decryptions += 1;
+      return {
+        decrypt: async (): Promise<ReadableStream<Uint8Array>> => {
+          throw new Error("no identity matched any of the file's recipients");
+        },
+      } as unknown as Decrypter;
+    };
+
+    const over = await refusalOf(readManifest(withFactor(21), PASSPHRASE, { decrypter: spy }));
+    expect(over.kind).toBe("not_transfer_file");
+    expect(over.problem).toContain("2^21");
+    expect(over.actual).toBe(21);
+    expect(decryptions).toBe(0);
+
+    const at = await refusalOf(readManifest(withFactor(20), PASSPHRASE, { decrypter: spy }));
+    expect(at.kind).toBe("wrong_passphrase");
+    expect(decryptions).toBe(1);
+  });
 });
 
 describe("a Houston 1 file and an unknown format are refused by name", () => {
@@ -445,6 +481,92 @@ describe("crafted entries are refused before anything is written", () => {
     expect(sized.kind).toBe("not_transfer_file");
     expect(sized.limit).toBe(1024);
     expect(NodeFS.readdirSync(parent)).toEqual([]);
+  });
+
+  it("a manifest path outside its own folder is refused", async () => {
+    const dir = tempDir();
+    const parent = NodePath.join(dir, "scratch-parent");
+    NodeFS.mkdirSync(parent);
+    const entries = entriesOf({
+      "checkouts/0/tracked.diff": "diff\n",
+      "threads/0/thread.json": "{}",
+      "threads/0/history.ndjson": "",
+      "threads/0/attachments/a.png": "png",
+      "sections/tasks.json": "{}",
+    });
+    const base = baseManifest(entries) as unknown as {
+      readonly checkouts: ReadonlyArray<Record<string, unknown>>;
+    };
+    const thread = (attachment: string) => ({
+      sourceId: "thread-0",
+      title: "Thread",
+      provider: "claude",
+      checkout: "root",
+      relCwd: "",
+      archiveDir: "threads/0",
+      attachments: [attachment],
+    });
+    const cases: ReadonlyArray<readonly [string, Record<string, unknown>, string]> = [
+      [
+        "an attachment outside threads/0/attachments",
+        { threads: [thread("sections/tasks.json")] },
+        "sections/tasks.json",
+      ],
+      [
+        "a bundle outside its checkout's folder",
+        {
+          threads: [thread("threads/0/attachments/a.png")],
+          checkouts: [{ ...base.checkouts[0], bundle: "threads/0/thread.json" }],
+        },
+        "threads/0/thread.json",
+      ],
+      [
+        "a section outside sections",
+        {
+          threads: [thread("threads/0/attachments/a.png")],
+          sections: { tasks: { version: 1, archivePath: "threads/0/thread.json" } },
+        },
+        "threads/0/thread.json",
+      ],
+    ];
+    for (const [label, patch, named] of cases) {
+      const file = writeFile(
+        dir,
+        "outside.houston-transfer",
+        await craft([
+          encodeFrame("manifest.json", text(JSON.stringify(baseManifest(entries, patch)))),
+          ...entries.map((entry) => encodeFrame(entry.name, entry.bytes)),
+        ]),
+      );
+      const refusal = await refusalOf(
+        unpackTransfer(file, PASSPHRASE, NodePath.join(parent, "scratch")),
+      );
+      expect(refusal.kind, label).toBe("not_transfer_file");
+      expect(refusal.problem, label).toBe("The file is damaged or was not made by Houston.");
+      expect(refusal.items, label).toEqual([named]);
+      expect(NodeFS.readdirSync(parent), label).toEqual([]);
+    }
+
+    // The same entries, each named from its own folder, unpack.
+    const file = writeFile(
+      dir,
+      "inside.houston-transfer",
+      await craft([
+        encodeFrame(
+          "manifest.json",
+          text(
+            JSON.stringify(
+              baseManifest(entries, {
+                threads: [thread("threads/0/attachments/a.png")],
+                sections: { tasks: { version: 1, archivePath: "sections/tasks.json" } },
+              }),
+            ),
+          ),
+        ),
+        ...entries.map((entry) => encodeFrame(entry.name, entry.bytes)),
+      ]),
+    );
+    await unpackTransfer(file, PASSPHRASE, NodePath.join(parent, "scratch"));
   });
 
   it("an untracked path through the NTFS short name of .git is refused", async () => {
