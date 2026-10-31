@@ -26,12 +26,22 @@ const SHORT_EFFORT_LABELS: Readonly<Record<string, string>> = {
   maximum: "Max",
 };
 
+const NARROW_EFFORT_LABELS: Readonly<Record<string, string>> = {
+  "extra high": "Xh",
+  extra: "Xh",
+  xhigh: "Xh",
+};
+
 /**
  * The segmented effort control fits five levels in 300px, so long catalog labels collapse to the
- * board's short forms: "Medium" reads "Med" and "Extra High" reads "Xhigh".
+ * board's short forms: "Medium" reads "Med" and "Extra High" reads "Xhigh". The compact composer
+ * row shortens "Xhigh" to "Xh" as the board's narrow pane does.
  */
-export function shortEffortLabel(label: string): string {
+export function shortEffortLabel(label: string, narrow = false): string {
   const trimmed = label.trim();
-  const mapped = SHORT_EFFORT_LABELS[trimmed.toLowerCase()];
+  const key = trimmed.toLowerCase();
+  const mapped = narrow
+    ? (NARROW_EFFORT_LABELS[key] ?? SHORT_EFFORT_LABELS[key])
+    : SHORT_EFFORT_LABELS[key];
   return mapped ?? trimmed;
 }

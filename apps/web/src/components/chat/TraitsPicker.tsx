@@ -339,6 +339,7 @@ interface TraitsMenuContentProps {
   extraMenuOwnsModeShortcut?: boolean;
   /** Extra tooltip text naming what else the menu holds. */
   extraMenuHint?: string;
+  size?: ComposerControlSize;
 }
 
 const TRAITS_SECTION_HEADER =
@@ -428,6 +429,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
   planModeEnabled,
   isComposerOwned,
   keybindings,
+  size = "sm",
   ...persistence
 }: TraitsMenuContentProps & TraitsPersistence) {
   const modelSelection =
@@ -608,7 +610,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
                       : "text-(--t2) data-highlighted:bg-(--raised) data-highlighted:text-(--t1)",
                   )}
                 >
-                  <span className="truncate">{shortEffortLabel(option.label)}</span>
+                  <span className="truncate">{shortEffortLabel(option.label, size === "xs")}</span>
                 </MenuPrimitive.RadioItem>
               );
             })}
@@ -695,6 +697,18 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
     </>
   );
 });
+
+function ResponsiveEffortLabel(props: { label: string; responsive: boolean }) {
+  const full = shortEffortLabel(props.label);
+  const compact = shortEffortLabel(props.label, true);
+  if (!props.responsive || full === compact) return <>{full}</>;
+  return (
+    <>
+      <span className="@max-[560px]/composer-surface:hidden">{full}</span>
+      <span className="hidden @max-[560px]/composer-surface:inline">{compact}</span>
+    </>
+  );
+}
 
 /** One bolt for Fast. Ultrafast adds an outlined echo behind it, cut away by the surface color. */
 function FastBolt(props: { ultra: boolean }) {
@@ -808,11 +822,15 @@ export const TraitsPicker = memo(function TraitsPicker({
       : null;
   // Workflow levels such as Ultracode always show their name; the setting names every level.
   // Traits the bars cannot show, such as an agent mode, appear as words in the composer.
-  const effortWord = effortGlyph
-    ? (effortGlyph.special ?? (effortDisplay === "label" ? effortGlyph.label : null))
-    : isComposerOwned
-      ? triggerLabel
-      : null;
+  const effortWord = effortGlyph ? (
+    effortGlyph.special !== null ? (
+      effortGlyph.special
+    ) : effortDisplay === "label" ? (
+      <ResponsiveEffortLabel label={effortGlyph.label} responsive={isComposerOwned === true} />
+    ) : null
+  ) : isComposerOwned ? (
+    triggerLabel
+  ) : null;
 
   return (
     <Menu
@@ -925,6 +943,8 @@ export const TraitsPicker = memo(function TraitsPicker({
           reportedModelSelection={reportedModelSelection}
           allowPromptInjectedEffort={allowPromptInjectedEffort}
           planModeEnabled={planModeEnabled}
+          {...(keybindings ? { keybindings } : {})}
+          size={size}
           {...persistence}
         />
         {extraMenuContent ? (

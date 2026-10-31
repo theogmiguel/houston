@@ -9,10 +9,10 @@ import {
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 
+import { APP_DISPLAY_NAME } from "../branding";
 import { openCommandPalette } from "../commandPaletteBus";
 import { isElectron } from "../env";
 import { useScratchProject } from "../hooks/useScratchProject";
-import { isTauriHost } from "../lib/desktopWindow";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import {
   getOnboardingProviderState,
@@ -108,8 +108,12 @@ export function NoProjectsHero() {
       className="h-dvh min-h-0 overflow-hidden overscroll-y-none"
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
-        {/* The desktop window only moves where CSS opts in, so keep a titlebar strip. */}
-        {isElectron || isTauriHost() ? <WorkspacePageHeader electron={isElectron} /> : null}
+        {/* The board's window titlebar names the product above the empty state. */}
+        <WorkspacePageHeader electron={isElectron}>
+          <span className="text-sm font-medium text-foreground md:text-muted-foreground/60">
+            {APP_DISPLAY_NAME}
+          </span>
+        </WorkspacePageHeader>
         <Empty size="welcome" className="flex-1">
           <div className="flex w-full max-w-[560px] flex-col items-center gap-3.5 py-12">
             <EmptyMedia className="mb-0">
