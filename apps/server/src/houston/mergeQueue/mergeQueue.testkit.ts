@@ -222,6 +222,8 @@ export interface FakeGitHub {
   handOffIgnored: boolean;
   /** The position GitHub's merge queue gives an enqueued pull request. */
   queuePosition: number;
+  /** When set, GitHub's merge-queue entry reports this commit instead of the enqueued head. */
+  queueEntrySha: string | null;
   /** When set, a take-back (dequeue or auto-merge disable) fails with this message. */
   takeBackFailure: string | null;
   /** Upstream's pull request actions the queue ran, in order. */
@@ -243,6 +245,7 @@ export const makeGitHub = (repos: Repos | null = null): FakeGitHub => ({
   schemaLacksHandOff: false,
   handOffIgnored: false,
   queuePosition: 1,
+  queueEntrySha: null,
   takeBackFailure: null,
   actions: [],
 });
@@ -357,7 +360,9 @@ const answerMutation = (github: FakeGitHub, query: string, variables: Record<str
     }
     const refused = pinned();
     if (refused !== null) return graphqlError(refused);
-    if (!github.handOffIgnored) pull.queued = { position: github.queuePosition, sha: head };
+    if (!github.handOffIgnored) {
+      pull.queued = { position: github.queuePosition, sha: github.queueEntrySha ?? head };
+    }
     return json({
       data: { enqueuePullRequest: { mergeQueueEntry: { position: github.queuePosition } } },
     });

@@ -311,6 +311,40 @@ describe("a hand-off is pinned to the verified commit and confirmed", () => {
     );
   });
 
+  it.live(
+    "a hand-off is pinned to the verified commit and confirmed: the queue entry holds another commit",
+    () => {
+      const github = makeGitHub(makeRepos());
+      github.mergeQueueBases.add("main");
+      return withQueue(
+        github,
+        Effect.gen(function* () {
+          const queue = yield* HoustonMergeQueueService;
+          const projectId = yield* queueScenario(github, [7], { command: "git --version" });
+          const entry = yield* verified(projectId, 7);
+          // The pull request's head is the commit, but GitHub's queue entry holds the base's.
+          github.queueEntrySha = entry.verification!.baseSha;
+          const failed = yield* refusal(
+            queue.mergeHead({ projectId, number: 7, expectedHeadSha: entry.headSha }),
+          );
+          assert.strictEqual(failed.kind, "refused", failed.message);
+          assert.deepEqual(
+            mutationsOf(github).map((mutation) => mutation.name),
+            ["enqueuePullRequest", "dequeuePullRequest"],
+          );
+          const snapshot = yield* queue.get({ projectId });
+          const out = entryOf(snapshot, 7);
+          assert.include(out.failure?.message, "did not report");
+          assert.isNull(out.github);
+          assert.deepEqual(
+            snapshot.log.filter((row) => row.kind === "hand_off"),
+            [],
+          );
+        }),
+      );
+    },
+  );
+
   it.live("a hand-off is pinned to the verified commit and confirmed: the push guard holds", () => {
     const github = makeGitHub(makeRepos());
     github.autoMergeAllowed = true;
