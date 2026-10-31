@@ -10,6 +10,7 @@ mod notifications;
 mod shell;
 mod shells;
 mod skills;
+mod snapshot;
 mod sys;
 mod system;
 #[cfg(test)]
@@ -319,6 +320,10 @@ fn main() {
         v2_node,
         v2_entry,
     ));
+    let snapshot_host = Arc::new(snapshot::SnapShotHost::new(
+        v2_base_dir.clone(),
+        context.config().identifier.clone(),
+    ));
     eprintln!(
         "houston-tauri: v2 server state directory {} (log {})",
         v2_base_dir.display(),
@@ -331,6 +336,7 @@ fn main() {
     let dbus_id = dbus_id_for(&context.config().identifier, Some(&channel_label));
     let mut builder = tauri::Builder::default();
     builder = builder.manage(Arc::clone(&v2_host));
+    builder = builder.manage(Arc::clone(&snapshot_host));
     builder = builder.manage(fs_allowlist::AllowedRoots::new());
     builder = builder.manage(shells::ShellsCache::new());
     builder = builder.manage(std::sync::Arc::new(app_update::V2UpdateHandle::new()));
@@ -464,6 +470,20 @@ fn main() {
             wsl::v2::v2_wsl_set_enabled,
             wsl::v2::v2_wsl_set_distro,
             wsl::v2::v2_wsl_set_only,
+            snapshot::snap_shot_configure,
+            snapshot::snap_shot_state,
+            snapshot::snap_shot_capture,
+            snapshot::snap_shot_check_shortcut,
+            snapshot::snap_shot_setup,
+            snapshot::snap_shot_preview_config,
+            snapshot::snap_shot_apply_config,
+            snapshot::snap_shot_set_shortcut_suppressed,
+            snapshot::snap_shot_list_pending,
+            snapshot::snap_shot_read,
+            snapshot::snap_shot_acknowledge,
+            snapshot::snap_shot_set_animation_destination,
+            snapshot::snap_shot_dismiss_animation,
+            snapshot::snap_shot_request_permissions,
         ])
         .on_menu_event(|app, event| {
             let id = event.id().0.as_str();
