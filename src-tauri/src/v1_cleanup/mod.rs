@@ -2,6 +2,12 @@
 //! configs, with v1's own uninstall rules; Codex and ZCode exec the v1 launcher directly.
 //! The channel directory is only read: a live v1 daemon there reinstalls them at boot.
 
+mod claude_mcp;
+mod files;
+mod providers;
+mod v1_daemon;
+mod zcode;
+
 use crate::sys::host_env::HostEnv;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -48,9 +54,121 @@ pub struct Outcome {
     pub stood_down: bool,
 }
 
+impl Outcome {
+    fn note(&mut self, line: String) {
+        tracing::info!("v1 cleanup: {line}");
+        self.log.push(line);
+    }
+
+    fn apply(&mut self, path: PathBuf, result: anyhow::Result<bool>) {
+        match result {
+            Ok(false) => {}
+            Ok(true) => {
+                self.note(format!(
+                    "removed this channel's v1 Houston entries from {}",
+                    path.display()
+                ));
+                self.changed.push(path);
+            }
+            Err(e) => self.note(format!("left {} unchanged: {e:#}", path.display())),
+        }
+    }
+}
+
+/// One provider file's removal: whether it changed the file, or why it was left.
+type Remover = fn(&Path, &str) -> anyhow::Result<bool>;
+
+/// v1's sentinel stem; a channel's is `--houston-managed=<channel>`.
+const SENTINEL: &str = "--houston-managed";
+
 pub fn run(target: &Target) -> Outcome {
-    let _ = target;
-    Outcome::default()
+    let mut outcome = Outcome::default();
+    if let Some((pid, record)) = v1_daemon::running(&target.channel_dir) {
+        outcome.stood_down = true;
+        outcome.note(format!(
+            "stood down: houston-core (pid {pid}, named by {}) still runs this channel's v1 \
+             daemon, which reinstalls its entries at boot; no agent CLI config was changed",
+            record.display()
+        ));
+        return outcome;
+    }
+    let sentinel = match &target.channel {
+        None => SENTINEL.to_string(),
+        Some(c) => format!("{SENTINEL}={c}"),
+    };
+    let home = &target.home;
+    let claude_dir = target
+        .claude_config_dir
+        .clone()
+        .unwrap_or_else(|| home.join(".claude"));
+    let codex = home.join(".codex");
+    let config = target
+        .xdg_config
+        .clone()
+        .unwrap_or_else(|| home.join(".config"));
+    let steps: Vec<(PathBuf, Remover)> = vec![
+        (claude_dir.join("settings.json"), providers::claude_settings),
+        (codex.join("hooks.json"), providers::nested_hooks),
+        (codex.join("config.toml"), providers::codex_config),
+        (
+            config
+                .join("opencode")
+                .join("plugins")
+                .join("houston-notify.js"),
+            providers::opencode,
+        ),
+        (
+            home.join(".gemini").join("config").join("hooks.json"),
+            providers::antigravity,
+        ),
+    ];
+    for (path, step) in steps {
+        let result = step(&path, &sentinel);
+        outcome.apply(path, result);
+    }
+    let channel_dir_name = target
+        .channel_dir
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    for path in zcode::settings_files(home) {
+        let result = zcode::uninstall(&path, &sentinel, &channel_dir_name);
+        outcome.apply(path, result);
+    }
+    let claude_json = target
+        .claude_config_dir
+        .clone()
+        .unwrap_or_else(|| home.clone())
+        .join(".claude.json");
+    match other_channel_daemon(target) {
+        Some((pid, record)) if claude_json.exists() => outcome.note(format!(
+            "left the shared v1 Claude MCP entry `houston`: houston-core (pid {pid}, named by \
+             {}) of another channel still uses it",
+            record.display()
+        )),
+        _ => {
+            if let Some(line) = claude_mcp::remove(&claude_json, &target.env) {
+                outcome.note(line);
+            }
+        }
+    }
+    outcome
+}
+
+/// A live v1 daemon of another channel (`~/.houston` or `~/.houston-<name>`), which still
+/// uses the Claude MCP entry every channel shares.
+fn other_channel_daemon(target: &Target) -> Option<(u32, PathBuf)> {
+    std::fs::read_dir(&target.home)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|dir| *dir != target.channel_dir)
+        .filter(|dir| {
+            dir.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n == ".houston" || n.starts_with(".houston-"))
+        })
+        .find_map(|dir| v1_daemon::running(&dir))
 }
 
 /// Runs the cleanup on its own thread the first time `guard` is passed; later calls
@@ -64,10 +182,8 @@ pub fn start(
     }
     std::thread::Builder::new()
         .name("v1-cleanup".to_string())
-        .spawn(move || {
-            let _ = target;
-            Outcome::default()
-        })
+        .spawn(move || run(&target))
+        .map_err(|e| tracing::warn!("v1 cleanup: could not start its thread: {e}"))
         .ok()
 }
 
@@ -111,6 +227,15 @@ fn other_channel_block_stays() {
     for provider in PROVIDERS {
         home.assert_only(provider, &[RELEASE]);
     }
+
+    // Release's sentinel is a prefix of every channel's: its cleanup keeps dev's entries.
+    let home = TestHome::new();
+    home.install_all(&[RELEASE, DEV]);
+    let dev_before = home.sentinel_count(DEV);
+    assert!(dev_before > 0 && home.sentinel_count(RELEASE) > 0);
+    run(&home.target(None));
+    assert_eq!(home.sentinel_count(DEV), dev_before);
+    assert_eq!(home.sentinel_count(RELEASE), 0);
 }
 
 #[test]
@@ -219,7 +344,9 @@ fn missing_claude_cli_leaves_registration() {
 fn live_v1_daemon_stands_down() {
     // No daemon.json, a dead PID and a live PID of another program: the cleanup runs.
     let dead = exited_pid();
-    for record in [None, Some(dead), Some(std::process::id())] {
+    let scratch = tempfile::tempdir().expect("scratch dir");
+    let other = FakeDaemon::spawn(scratch.path(), "other-program");
+    for record in [None, Some(dead), Some(other.pid())] {
         let home = TestHome::new();
         home.install_all(&[DEV]);
         if let Some(pid) = record {
@@ -233,7 +360,7 @@ fn live_v1_daemon_stands_down() {
     // A live houston-core named by the channel's daemon.json: nothing changes.
     let home = TestHome::new();
     home.install_all(&[DEV]);
-    let daemon = FakeDaemon::spawn(&home.root().join("fake-daemon"));
+    let daemon = FakeDaemon::spawn(&home.root().join("fake-daemon"), "houston-core");
     home.write_daemon_json(Some("dev"), daemon.pid());
     let before = home.snapshot();
     let outcome = run(&home.target(Some("dev")));

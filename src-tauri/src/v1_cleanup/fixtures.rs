@@ -151,10 +151,16 @@ impl TestHome {
             Provider::Opencode => vec![(
                 self.opencode_plugin(),
                 sentinels.first().map(|s| {
+                    let idle = self.guarded(s, "hook session.idle --agent opencode");
                     format!(
                         "// Installed by Houston ({s}). Houston rewrites this file on install and\n\
                          // deletes it on uninstall — edit it and Houston will leave it alone instead.\n\
-                         export const HoustonNotify = async () => ({{}})\n"
+                         export const HoustonNotify = async ({{ $, client }}) => {{\n\
+                         \x20 const CMDS = {{\n\
+                         \x20   \"session.idle\": {idle:?},\n\
+                         \x20 }}\n\
+                         \x20 return {{}}\n\
+                         }}\n"
                     )
                 }),
             )],
@@ -401,6 +407,22 @@ impl TestHome {
         }
     }
 
+    /// Occurrences of `sentinel` as a whole token in every file under the home.
+    pub fn sentinel_count(&self, sentinel: &str) -> usize {
+        self.snapshot()
+            .values()
+            .map(|(bytes, _)| {
+                String::from_utf8_lossy(bytes)
+                    .split(|c: char| {
+                        c.is_whitespace()
+                            || matches!(c, '"' | '\'' | ',' | '[' | ']' | ';' | '(' | ')')
+                    })
+                    .filter(|t| *t == sentinel || t.strip_suffix('.') == Some(sentinel))
+                    .count()
+            })
+            .sum()
+    }
+
     pub fn snapshot(&self) -> Snapshot {
         snapshot_of(&self.home())
     }
@@ -412,7 +434,9 @@ pub fn sorted(paths: &[PathBuf]) -> Vec<PathBuf> {
     out
 }
 
-/// Every file and directory below `root`, with its bytes (empty for a directory) and mtime.
+/// Every file below `root` with its bytes and mtime, and every directory. A directory's
+/// mtime is left out: NTFS settles it lazily after a write inside, and its entries
+/// already show a file created or removed there.
 pub fn snapshot_of(root: &Path) -> Snapshot {
     let mut out = Snapshot::new();
     let mut stack = vec![root.to_path_buf()];
@@ -420,11 +444,11 @@ pub fn snapshot_of(root: &Path) -> Snapshot {
         for entry in std::fs::read_dir(&dir).expect("read fixture dir").flatten() {
             let path = entry.path();
             let meta = entry.metadata().expect("fixture metadata");
-            let mtime = meta.modified().expect("mtime");
             if meta.is_dir() {
                 stack.push(path.clone());
-                out.insert(path, (Vec::new(), mtime));
+                out.insert(path, (Vec::new(), SystemTime::UNIX_EPOCH));
             } else {
+                let mtime = meta.modified().expect("mtime");
                 out.insert(
                     path.clone(),
                     (std::fs::read(&path).expect("fixture bytes"), mtime),
@@ -485,24 +509,24 @@ pub fn exited_pid() -> u32 {
     pid
 }
 
-/// A long-running process whose image is named `houston-core`, as v1's daemon was: a
-/// copy of a system binary that waits, killed and reaped on drop.
+/// A long-running process whose image is named `stem` (`houston-core` was v1's daemon):
+/// a copy of a system binary that waits, killed and reaped on drop.
 pub struct FakeDaemon(std::process::Child);
 
 impl FakeDaemon {
-    pub fn spawn(dir: &Path) -> Self {
+    pub fn spawn(dir: &Path, stem: &str) -> Self {
         std::fs::create_dir_all(dir).expect("fake daemon dir");
-        let (source, name, args): (PathBuf, &str, &[&str]) = if cfg!(windows) {
+        let (source, name, args): (PathBuf, String, &[&str]) = if cfg!(windows) {
             let system = std::env::var_os("SystemRoot")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
             (
                 system.join("System32").join("ping.exe"),
-                "houston-core.exe",
+                format!("{stem}.exe"),
                 &["-n", "60", "127.0.0.1"],
             )
         } else {
-            (PathBuf::from("/bin/sleep"), "houston-core", &["60"])
+            (PathBuf::from("/bin/sleep"), stem.to_string(), &["60"])
         };
         let image = dir.join(name);
         std::fs::copy(&source, &image).expect("copy the stand-in daemon binary");
