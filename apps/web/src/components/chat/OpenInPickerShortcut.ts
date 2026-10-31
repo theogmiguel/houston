@@ -9,7 +9,7 @@ import { useEffect } from "react";
 import { usePreferredEditor } from "../../editorPreferences";
 import { editorLabelForPlatform } from "../../editorLabels";
 import { isOpenFavoriteEditorShortcut } from "../../keybindings";
-import { announce } from "../../lib/announce";
+import { announce, cancelAnnouncement } from "../../lib/announce";
 import { openRemoteEditorUrl, useRemoteCapableEditors, useRemoteOpenState } from "../../remoteOpen";
 import { registerCommands } from "../../shortcuts/dispatcher";
 import { shellEnvironment } from "../../state/shell";
@@ -17,6 +17,18 @@ import { useAtomCommand } from "../../state/use-atom-command";
 
 /** Marks an OpenInPicker's primary button as the target of `editor.openFavorite`. */
 export const OPEN_FAVORITE_EDITOR_ATTRIBUTE = "data-open-favorite-editor";
+
+/**
+ * One announcement source for every open-in-editor attempt, so an attempt that fails
+ * cancels a success that is still waiting to be spoken instead of the user hearing
+ * "Opened in …" for an open that was refused. The command's failure path reports the error.
+ */
+const OPEN_IN_EDITOR_ANNOUNCEMENT = "open-in-editor";
+
+export function announceOpenInEditor(label: string, opened: boolean) {
+  if (opened) announce(`Opened in ${label}`, OPEN_IN_EDITOR_ANNOUNCEMENT);
+  else cancelAnnouncement(OPEN_IN_EDITOR_ANNOUNCEMENT);
+}
 
 /**
  * `editor.openFavorite` presses the marked OpenInPicker primary button, so the shortcut opens
@@ -81,9 +93,12 @@ export function useOpenFavoriteEditorShortcut({
           ...remote.host,
           absolutePath: openInCwd,
         });
-        if (url === undefined) return;
+        if (url === undefined) {
+          announceOpenInEditor(label, false);
+          return;
+        }
         void openRemoteEditorUrl(url).then((opened) => {
-          if (opened) announce(`Opened in ${label}`);
+          announceOpenInEditor(label, opened);
         });
         return;
       }
@@ -94,7 +109,7 @@ export function useOpenFavoriteEditorShortcut({
           editor: preferredEditor,
         },
       }).then((result) => {
-        if (result._tag === "Success") announce(`Opened in ${label}`);
+        announceOpenInEditor(label, result._tag === "Success");
       });
     };
     window.addEventListener("keydown", handler);
