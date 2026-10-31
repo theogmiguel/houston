@@ -55,6 +55,15 @@ describe("resolveModelPickerTraits", () => {
     });
   });
 
+  it("uses the catalog token count when the model has no selectable context descriptor", () => {
+    expect(
+      resolveModelPickerTraits({
+        optionDescriptors: [effortDescriptor],
+        contextWindowTokens: 1_000_000,
+      }),
+    ).toEqual({ contextWindow: "1M", effort: "High" });
+  });
+
   it("ignores a choice with no label to show", () => {
     expect(
       resolveModelPickerTraits({
@@ -66,9 +75,7 @@ describe("resolveModelPickerTraits", () => {
 
 describe("formatModelPickerTraits", () => {
   it("joins the labels a model carries, and omits the ones it does not", () => {
-    expect(formatModelPickerTraits({ contextWindow: "200k", effort: "High" })).toBe(
-      "200k · High",
-    );
+    expect(formatModelPickerTraits({ contextWindow: "200k", effort: "High" })).toBe("200k · High");
     expect(formatModelPickerTraits({ contextWindow: null, effort: "High" })).toBe("High");
     expect(formatModelPickerTraits({ contextWindow: "1M", effort: null })).toBe("1M");
     expect(formatModelPickerTraits({ contextWindow: null, effort: null })).toBeNull();

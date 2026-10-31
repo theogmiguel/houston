@@ -30,6 +30,11 @@ import {
 } from "./composerProviderState";
 import type { useComposerProviderModel } from "./useComposerProviderModel";
 import { resolveComposerControlsOwnership } from "./composerControlsOwnership";
+import {
+  SPLIT_CONTROL_CLASS,
+  SPLIT_DIVIDER_CLASS,
+  traitsSplitTriggerClassName,
+} from "./modelTraits";
 
 /**
  * The composer footer controls: model picker, traits, mode controls and the overflow menu for
@@ -68,6 +73,8 @@ export function ComposerControlsBar(props: {
   paneDensity: ChatComposerProps["paneDensity"];
   restingHiddenBlockCount: number;
   iconOnlyBlockCount: number;
+  /** The model label has dropped to its provider icon, ahead of any block moving to the menu. */
+  modelIconOnly: boolean;
   showProviderUnavailable: boolean;
   providerSetupInstanceId: ProviderInstanceId | undefined;
   onOpenProviderSetup: ChatComposerProps["onOpenProviderSetup"];
@@ -118,6 +125,7 @@ export function ComposerControlsBar(props: {
     paneDensity,
     restingHiddenBlockCount: measuredHiddenBlockCount,
     iconOnlyBlockCount,
+    modelIconOnly,
     showProviderUnavailable,
     providerSetupInstanceId,
     onOpenProviderSetup,
@@ -170,8 +178,9 @@ export function ComposerControlsBar(props: {
     onPromptEdit,
     planModeEnabled,
     isComposerOwned: true,
+    keybindings,
     effortDisplay: props.effortDisplay,
-    triggerClassName: cn("ps-1.5 pe-1", TEXT_CONTROL_STATES),
+    triggerClassName: cn(traitsSplitTriggerClassName("end"), "ps-1.5 pe-1", TEXT_CONTROL_STATES),
     // Permissions always live in the effort menu, so the section never unmounts while open.
     extraMenuContent: (
       <ComposerPermissionsSection
@@ -217,43 +226,50 @@ export function ComposerControlsBar(props: {
     extraMenuOwnsModeShortcut: effortOwnsModeShortcut,
   });
   const compactPane = paneDensity === "compact";
-  const restingBlockDefs = compactPane ? [] : [
-    ...(providerTraitsPicker
-      ? [
-          {
-            id: "traits",
-            content: restingProviderTraitsPicker,
-          },
-        ]
-      : []),
-    ...(!showModeBlock
-      ? []
-      : [
-          {
-            id: "mode",
-            content: (
-              <ComposerFooterModeControls
-                showInteractionModeToggle={planModeUiEnabled}
-                interactionMode={interactionMode}
-                runtimeMode={compatibleRuntimeMode}
-                runtimeModeOptions={compatibleRuntimeModeOptions}
-                size={composerControlsCollapsed ? "xs" : "sm"}
-                hidden={composerControlsHidden || restingHiddenBlockCount > 0}
-                accessDisplay={accessDisplay}
-                emphasized={!accessMatchesDefault}
-                onToggleInteractionMode={toggleInteractionMode}
-                onRuntimeModeChange={handleRuntimeModeChange}
-              />
-            ),
-          },
-        ]),
-  ];
+  const restingBlockDefs = compactPane
+    ? []
+    : [
+        ...(providerTraitsPicker
+          ? [
+              {
+                id: "traits",
+                content: restingProviderTraitsPicker,
+              },
+            ]
+          : []),
+        ...(!showModeBlock
+          ? []
+          : [
+              {
+                id: "mode",
+                content: (
+                  <ComposerFooterModeControls
+                    showInteractionModeToggle={planModeUiEnabled}
+                    interactionMode={interactionMode}
+                    runtimeMode={compatibleRuntimeMode}
+                    runtimeModeOptions={compatibleRuntimeModeOptions}
+                    size={composerControlsCollapsed ? "xs" : "sm"}
+                    hidden={composerControlsHidden || restingHiddenBlockCount > 0}
+                    accessDisplay={accessDisplay}
+                    emphasized={!accessMatchesDefault}
+                    onToggleInteractionMode={toggleInteractionMode}
+                    onRuntimeModeChange={handleRuntimeModeChange}
+                  />
+                ),
+              },
+            ]),
+      ];
+  const traitsBlockIndex = restingBlockDefs.findIndex((def) => def.id === "traits");
+  const traitsBlockInOverflow =
+    traitsBlockIndex >= 0 && traitsBlockIndex >= restingBlockDefs.length - restingHiddenBlockCount;
   // Its own element, so typing (which rebuilds the controls around it) leaves it cached.
   const composerModelPicker = (
     <ComposerModelPicker
       environmentId={environmentId}
       compact={false}
       isComposerOwned
+      iconOnly={modelIconOnly}
+      {...(traitsBlockIndex >= 0 && !traitsBlockInOverflow ? { split: "start" as const } : {})}
       disabled={providerCatalogPending || isSendBusy}
       multipleModelsEnabled={multipleModelsEnabled}
       multipleModelSelections={multipleModelSelections}
@@ -319,17 +335,61 @@ export function ComposerControlsBar(props: {
         }
       }}
       data-chat-provider-unavailable="true"
-      className="shrink-0"
+      className="h-6! shrink-0 gap-1.5! px-1.5! text-(--warn)! text-xs!"
     >
       <CircleAlertIcon className="size-4" />
       {providerSetupInstanceId ? "Open provider settings" : "No provider available"}
     </ComposerControl>
   ) : (
     <>
-      {composerModelPicker}
+      <span
+        data-composer-split-control={
+          traitsBlockIndex >= 0 && !traitsBlockInOverflow ? "true" : undefined
+        }
+        className={SPLIT_CONTROL_CLASS}
+      >
+        {composerModelPicker}
+        {traitsBlockIndex >= 0 ? (
+          <>
+            {traitsBlockInOverflow ? null : (
+              <span
+                aria-hidden="true"
+                data-resting-controls-separator="true"
+                className={SPLIT_DIVIDER_CLASS}
+              />
+            )}
+            {(() => {
+              const def = restingBlockDefs[traitsBlockIndex]!;
+              const hidden = traitsBlockIndex >= restingBlockDefs.length - restingHiddenBlockCount;
+              return (
+                <div
+                  key={def.id}
+                  data-resting-block={def.id}
+                  data-composer-block-icon-only={
+                    traitsBlockIndex >= restingBlockDefs.length - iconOnlyBlockCount
+                      ? "true"
+                      : "false"
+                  }
+                  aria-hidden={hidden || undefined}
+                  inert={hidden || undefined}
+                  className={cn(
+                    "flex w-max min-w-max shrink-0 items-center gap-1",
+                    hidden && "pointer-events-none invisible absolute",
+                    traitsBlockIndex >= restingBlockDefs.length - iconOnlyBlockCount &&
+                      "[&_[data-composer-control-label]]:pointer-events-none [&_[data-composer-control-label]]:invisible [&_[data-composer-control-label]]:absolute [&_[data-composer-control-label]]:w-max [&_[data-composer-control-label]]:max-w-none [&_[data-composer-control-compact-icon]]:[visibility:inherit] [&_[data-composer-control-compact-icon]]:relative",
+                  )}
+                >
+                  {def.content}
+                </div>
+              );
+            })()}
+          </>
+        ) : null}
+      </span>
 
       <>
         {restingBlockDefs.map((def, index) => {
+          if (def.id === "traits") return null;
           const hidden = index >= restingBlockDefs.length - restingHiddenBlockCount;
           return (
             <div

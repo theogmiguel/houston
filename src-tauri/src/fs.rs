@@ -313,11 +313,11 @@ fn search_index(index: &[IndexedPath], query: &str, limit: usize) -> PathSearchR
 }
 
 fn collect_git_paths(root: &Path) -> Result<Option<(Vec<IndexedPath>, usize)>, String> {
-    let mut command = houston_core::git::command();
+    let mut command = crate::sys::git_command::command();
     command
         .args(["ls-files", "-co", "--exclude-standard", "-z"])
         .current_dir(root);
-    let output = match houston_core::spawn::output_within(command, INDEX_GIT_TIMEOUT) {
+    let output = match crate::sys::spawn::output_within(command, INDEX_GIT_TIMEOUT) {
         Ok(Some(output)) => output,
         Ok(None) => {
             return Err(format!(
@@ -1455,7 +1455,7 @@ fn capture_path_within(state_dir: &Path, dir_name: &str, path: &str) -> Result<P
 
 #[tauri::command]
 pub async fn fs_read_capture(path: String) -> Result<String, String> {
-    let state_dir = houston_core::paths::config_dir()
+    let state_dir = crate::sys::paths::config_dir()
         .map_err(|e| format!("cannot resolve state directory: {e}"))?;
     read_capture_under(&state_dir, &path).await
 }
@@ -1527,7 +1527,7 @@ pub(crate) async fn save_bytes_under(
     ext: &str,
     bytes: &[u8],
 ) -> Result<String, String> {
-    let state_dir = houston_core::paths::config_dir()
+    let state_dir = crate::sys::paths::config_dir()
         .map_err(|e| format!("cannot resolve state directory: {e}"))?;
     save_bytes_under_base(&state_dir, dir_name, ext, bytes).await
 }
@@ -1595,7 +1595,7 @@ async fn remove_other_ext_slots(dir: &Path, keep_ext: &str) -> Result<(), String
 
 #[tauri::command]
 pub async fn fs_set_window_background(path: String) -> Result<String, String> {
-    let state_dir = houston_core::paths::config_dir()
+    let state_dir = crate::sys::paths::config_dir()
         .map_err(|e| format!("cannot resolve state directory: {e}"))?;
     set_window_background_under(&state_dir, &path).await
 }
@@ -1699,7 +1699,7 @@ async fn unpark_window_background(state_dir: &Path, parked: &Path) -> Result<(),
 
 #[tauri::command]
 pub async fn fs_settle_window_background(keep: String) -> Result<bool, String> {
-    let state_dir = houston_core::paths::config_dir()
+    let state_dir = crate::sys::paths::config_dir()
         .map_err(|e| format!("cannot resolve state directory: {e}"))?;
     settle_window_background_under(&state_dir, &keep).await
 }
@@ -1801,7 +1801,7 @@ async fn read_window_background_bytes(file: &Path) -> Result<Vec<u8>, String> {
 
 #[tauri::command]
 pub async fn fs_read_window_background() -> Result<tauri::ipc::Response, String> {
-    let state_dir = houston_core::paths::config_dir()
+    let state_dir = crate::sys::paths::config_dir()
         .map_err(|e| format!("cannot resolve state directory: {e}"))?;
     let file = find_window_background_slot(&state_dir)
         .await?
@@ -1814,7 +1814,7 @@ pub async fn fs_read_window_background() -> Result<tauri::ipc::Response, String>
 
 #[tauri::command]
 pub async fn fs_window_background_info() -> Result<Option<WindowBackgroundInfo>, String> {
-    let state_dir = houston_core::paths::config_dir()
+    let state_dir = crate::sys::paths::config_dir()
         .map_err(|e| format!("cannot resolve state directory: {e}"))?;
     window_background_info_under(&state_dir).await
 }
@@ -1846,7 +1846,7 @@ async fn window_background_info_under(
 
 #[tauri::command]
 pub async fn fs_remove_window_background() -> Result<(), String> {
-    let state_dir = houston_core::paths::config_dir()
+    let state_dir = crate::sys::paths::config_dir()
         .map_err(|e| format!("cannot resolve state directory: {e}"))?;
     remove_window_background_under(&state_dir).await
 }
@@ -1935,7 +1935,7 @@ pub async fn fs_copy_dropped_file(
     bytes: Vec<u8>,
     state: State<'_, AllowedRoots>,
 ) -> Result<String, String> {
-    let state_dir = houston_core::paths::config_dir()
+    let state_dir = crate::sys::paths::config_dir()
         .map_err(|e| format!("cannot resolve state directory: {e}"))?;
     let file = copy_dropped_file_under_base(&state_dir, &name, &bytes).await?;
     register_allowed_root(&file.to_string_lossy(), state.inner()).await?;
@@ -2432,7 +2432,7 @@ mod tests {
             std::fs::write(root.path().join(format!("file-{n:05}.txt")), "fixture\n").unwrap();
         }
         for args in [["init", "-q"], ["add", "-A"]] {
-            let output = houston_core::git::command()
+            let output = crate::sys::git_command::command()
                 .args(args)
                 .current_dir(root.path())
                 .output()
@@ -2550,7 +2550,7 @@ mod tests {
     #[test]
     fn git_search_excludes_ignored_untracked_files() {
         let root = tempdir().unwrap();
-        let initialized = houston_core::git::command()
+        let initialized = crate::sys::git_command::command()
             .args(["init", "-q"])
             .current_dir(root.path())
             .status();

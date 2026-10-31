@@ -33,37 +33,46 @@ const variantColors: Record<ComposerBannerVariant, string> = {
     "[--chat-composer-attached-outline:color-mix(in_srgb,var(--warning)_32%,transparent)] [--chat-composer-attached-tint:var(--warning-surface)]",
 };
 
+export type ComposerBannerInCard = "notice" | "drawer";
+
 /**
  * An attached surface tucks its bottom under the card below it. A detached one is a whole card
- * of its own, for a notice that sits apart from the composer.
+ * of its own, for a notice that sits apart from the composer. In-card surfaces are flat rows
+ * clipped by the composer card itself.
  */
 function Surface({
   variant = "default",
   detached = false,
+  inCard,
   className,
   ...props
 }: ComponentProps<"div"> & {
   variant?: ComposerBannerVariant;
   detached?: boolean;
+  inCard?: ComposerBannerInCard | undefined;
 }) {
   return (
     <div
-      data-composer-banner-surface={detached ? "detached" : "attached"}
+      data-composer-banner-surface={inCard ? "inline" : detached ? "detached" : "attached"}
       data-variant={variant}
       className={cn(
         surfaceColors,
         "relative isolate border-0 bg-transparent shadow-none [--chat-composer-attached-tint:transparent]",
         variantColors[variant],
-        detached
-          ? "[--chat-composer-attachment-overlap:0px] before:rounded-xl"
-          : // Bleed the mask 1px past the seam to cover Chromium's fractional-pixel backdrop loss.
-            "[--chat-composer-attachment-overlap:calc(1rem+1px)] before:rounded-t-xl before:mask-t-from-transparent before:mask-t-from-4 before:mask-t-to-black before:mask-t-to-4",
-        "before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:border before:border-(--chat-composer-attached-outline)",
-        "before:bg-(--chat-composer-attached-surface)/(--glass-opacity) before:bg-linear-to-b before:from-(--chat-composer-attached-tint) before:to-(--chat-composer-attached-tint) before:backdrop-blur-(--glass-blur) before:backdrop-saturate-(--glass-saturation)",
-        "before:shadow-composer dark:before:shadow-composer-dark",
-        !detached &&
-          "dark:supports-[(backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px))]:before:bg-composer-seam-above",
-        "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:before:bg-(--chat-composer-attached-surface)",
+        inCard
+          ? "border-b border-(--border)"
+          : detached
+            ? "[--chat-composer-attachment-overlap:0px] before:rounded-xl"
+            : // Bleed the mask 1px past the seam to cover Chromium's fractional-pixel backdrop loss.
+              "[--chat-composer-attachment-overlap:calc(1rem+1px)] before:rounded-t-xl before:mask-t-from-transparent before:mask-t-from-4 before:mask-t-to-black before:mask-t-to-4",
+        !inCard && [
+          "before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:border before:border-(--chat-composer-attached-outline)",
+          "before:bg-(--chat-composer-attached-surface)/(--glass-opacity) before:bg-linear-to-b before:from-(--chat-composer-attached-tint) before:to-(--chat-composer-attached-tint) before:backdrop-blur-(--glass-blur) before:backdrop-saturate-(--glass-saturation)",
+          "before:shadow-composer dark:before:shadow-composer-dark",
+          !detached &&
+            "dark:supports-[(backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px))]:before:bg-composer-seam-above",
+          "not-supports-[((backdrop-filter:blur(1px))_or_(-webkit-backdrop-filter:blur(1px)))]:before:bg-(--chat-composer-attached-surface)",
+        ],
         className,
       )}
       {...props}
@@ -116,6 +125,7 @@ function Root({
   density = "default",
   variant = "default",
   width = "fill",
+  inCard,
   ...props
 }: ComponentProps<typeof Surface> & {
   density?: "default" | "comfortable" | "spacious";
@@ -123,18 +133,34 @@ function Root({
 }) {
   return (
     <Surface
+      inCard={inCard}
       className={cn(
-        "min-w-0 px-1 py-(--composer-banner-padding-block) after:block after:h-(--chat-composer-attachment-overlap) text-xs/4 [--composer-banner-icon-column:--spacing(7)] [--composer-banner-padding-block:--spacing(1)] sm:[--composer-banner-icon-column:--spacing(6)]",
-        density === "comfortable" && "[--composer-banner-padding-block:--spacing(1.25)]",
-        density === "spacious" && "px-3 [--composer-banner-padding-block:--spacing(3)]",
+        "min-w-0 text-xs/4",
+        inCard
+          ? [
+              "[--composer-banner-icon-column:--spacing(5)] [--composer-banner-padding-block:--spacing(1.25)]",
+              inCard === "drawer"
+                ? "bg-(--pane-head) px-0 py-0"
+                : "px-2.5 py-1.25 [&>[data-composer-banner-row]]:min-h-8.5 [&>[data-composer-banner-row]]:gap-x-2",
+            ]
+          : [
+              "px-1 py-(--composer-banner-padding-block) after:block after:h-(--chat-composer-attachment-overlap) [--composer-banner-icon-column:--spacing(7)] [--composer-banner-padding-block:--spacing(1)] sm:[--composer-banner-icon-column:--spacing(6)]",
+              density === "comfortable" && "[--composer-banner-padding-block:--spacing(1.25)]",
+              density === "spacious" && "px-3 [--composer-banner-padding-block:--spacing(3)]",
+            ],
+        inCard && variant === "warning" && "[&_[data-slot=composer-banner-icon]]:text-(--warn)",
+        inCard &&
+          variant === "error" &&
+          "[&_[data-slot=composer-banner-icon]]:text-(--danger-fill)",
         width === "content" ? "w-fit max-w-full flex-none" : "@container",
         // A corner button nests inside the banner's radius only when the padding
         // is tight; spacious padding already leaves the default radius concentric.
-        density !== "spacious" && [
-          "[&>[data-composer-banner-row]:first-child>[data-slot=composer-banner-actions]>[data-slot=button]:last-child]:rounded-se-xl",
-          "[&>[data-composer-banner-row]:first-child>[data-slot=composer-banner-actions]>:last-child>[data-slot=button]:last-of-type]:rounded-se-xl",
-          "[&>:first-child>[data-composer-banner-row]:first-child>[data-slot=composer-banner-actions]>[data-slot=button]:last-child]:rounded-se-xl",
-        ],
+        !inCard &&
+          density !== "spacious" && [
+            "[&>[data-composer-banner-row]:first-child>[data-slot=composer-banner-actions]>[data-slot=button]:last-child]:rounded-se-xl",
+            "[&>[data-composer-banner-row]:first-child>[data-slot=composer-banner-actions]>:last-child>[data-slot=button]:last-of-type]:rounded-se-xl",
+            "[&>:first-child>[data-composer-banner-row]:first-child>[data-slot=composer-banner-actions]>[data-slot=button]:last-child]:rounded-se-xl",
+          ],
         className,
       )}
       data-slot="composer-banner"
