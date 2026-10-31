@@ -41,6 +41,7 @@ import {
   failureNote,
   handOffMode,
   refuse,
+  shortSha,
   type CheckedSettings,
   type QueueRow,
 } from "./rules.ts";
@@ -50,6 +51,9 @@ import { HoustonMergeVerifier } from "./Verifier.ts";
 
 const PULL_URL = /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/pull\/(\d+)\/?(?:[?#].*)?$/i;
 const HEAD_SHA = /^[0-9a-f]{40}$/i;
+// One id per pull request dequeued while failed; the oldest goes first past this many.
+const FAILED_HEADS_KEPT = 1_000;
+const failedKey = (projectId: string, number: number) => `${projectId}\u0000${number}`;
 
 export class HoustonMergeQueueService extends Context.Service<
   HoustonMergeQueueService,
@@ -102,6 +106,17 @@ const make = Effect.gen(function* () {
   const landing = yield* HoustonMergeLanding;
   const verifier = yield* HoustonMergeVerifier;
   const threads = yield* HoustonMergeQueueThreads;
+
+  // The head each pull request failed at when it was dequeued, so an agent cannot retry it by
+  // dequeue and enqueue (AD-107). Kept in memory, so a server restart forgets it.
+  const failedHeads = new Map<string, string>();
+  const rememberFailed = (key: string, headSha: string) => {
+    failedHeads.delete(key);
+    failedHeads.set(key, headSha);
+    if (failedHeads.size > FAILED_HEADS_KEPT) {
+      failedHeads.delete(failedHeads.keys().next().value!);
+    }
+  };
 
   const snapshotOf = Effect.fn("HoustonMergeQueueService.snapshotOf")(function* (
     project: ProjectInfo,
@@ -196,12 +211,8 @@ const make = Effect.gen(function* () {
       number = Number(match[2]);
     }
     const dependsOn = input.dependsOn ?? null;
-    const refused = checkEnqueue(
-      yield* store.rows(target.projectId),
-      target.title,
-      number,
-      dependsOn,
-    );
+    const rows = yield* store.rows(target.projectId);
+    const refused = checkEnqueue(rows, target.title, number, dependsOn);
     if (refused !== undefined) return yield* refused;
 
     const read = yield* github
@@ -239,6 +250,18 @@ const make = Effect.gen(function* () {
     if (facts.headRef.trim().length === 0 || facts.headSha.length === 0) {
       return yield* refuse("invalid", operation, `PR #${number} has no head branch`);
     }
+    const queued = rows.find((row) => row.number === number);
+    const failedAt =
+      queued === undefined
+        ? failedHeads.get(failedKey(target.projectId, number))
+        : failureHolds(queued)?.headSha;
+    if (ownerThreadId !== undefined && failedAt === facts.headSha) {
+      return yield* refuse(
+        "refused",
+        operation,
+        `PR #${number} failed in the merge queue at ${shortSha(facts.headSha)}; an agent cannot put the same head back in line. Push a new head, or ask the user to Retry it`,
+      );
+    }
     if (facts.handOff !== undefined && facts.handOff !== null && facts.baseRef !== null) {
       // Unpublished: the entry's write below is the enqueue's one change for subscribers.
       yield* store.recordHandOff(
@@ -261,6 +284,7 @@ const make = Effect.gen(function* () {
       ownerThreadId: ownerThreadId ?? null,
       facts,
     });
+    failedHeads.delete(failedKey(target.projectId, number));
     yield* store.wake;
     const view = yield* projects.view(target);
     return view.entries.find((entry) => entry.number === number)!;
@@ -287,6 +311,8 @@ const make = Effect.gen(function* () {
       );
     }
     yield* store.removeEntry(input.projectId, input.number);
+    const failed = failureHolds(row);
+    if (failed !== null) rememberFailed(failedKey(input.projectId, input.number), failed.headSha);
     if (target._tag === "Success") {
       yield* verifier.forget(project.workspaceRoot, target.success.remote, row.headRef);
     }

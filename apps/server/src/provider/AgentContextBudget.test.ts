@@ -11,6 +11,8 @@ import { ServerConfig } from "../config.ts";
 import { DeviceService } from "../device/DeviceService.ts";
 import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
+import { HoustonMergeQueueProject } from "../houston/mergeQueue/Project.ts";
+import { HoustonMergeQueueService } from "../houston/mergeQueue/Service.ts";
 import { HoustonTaskRuns } from "../houston/tasks/TaskRuns.ts";
 import { HoustonTaskService } from "../houston/tasks/TaskService.ts";
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
@@ -77,6 +79,8 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(ThreadManagementService)({}),
   Layer.mock(ThreadSearch)({}),
   Layer.mock(VcsStatusBroadcaster)({}),
+  Layer.mock(HoustonMergeQueueProject)({}),
+  Layer.mock(HoustonMergeQueueService)({}),
   Layer.mock(HoustonTaskRuns)({}),
   Layer.mock(HoustonTaskService)({}),
 ).pipe(Layer.provideMerge(NodeServices.layer));
