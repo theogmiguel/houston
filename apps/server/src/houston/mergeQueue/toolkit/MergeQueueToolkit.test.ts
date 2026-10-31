@@ -130,7 +130,12 @@ const ALL_CAPABILITIES: ReadonlyArray<McpInvocationContext.McpCapability> = [
 const harnessOf = Effect.gen(function* () {
   const services = yield* Effect.context<QueueServices>();
   const shells = new Map<string, OrchestrationV2ThreadShell>();
-  const caller: Harness["caller"] = (id, projectId, capabilities = ALL_CAPABILITIES, shell = {}) => {
+  const caller: Harness["caller"] = (
+    id,
+    projectId,
+    capabilities = ALL_CAPABILITIES,
+    shell = {},
+  ) => {
     const threadId = ThreadId.make(id);
     shells.set(id, {
       ...liveThreadShell(threadId, { activeRunId: RunId.make(`run-${id}`) }),
@@ -474,9 +479,7 @@ describe("agents enqueue into their own project's queue", () => {
           assert.notStrictEqual(entry.status, "fixing");
           assert.strictEqual(entry.ownerThreadId, "thread-T");
         }).pipe(Effect.provide(toolkitLayer(harness)));
-      }).pipe(
-        Effect.provide(Layer.fresh(layerMergeQueueTest({ github, threads, loops: false }))),
-      );
+      }).pipe(Effect.provide(Layer.fresh(layerMergeQueueTest({ github, threads, loops: false }))));
     },
     TIMEOUT,
   );
@@ -648,9 +651,7 @@ describe("agents enqueue into their own project's queue", () => {
           );
           github.readFailure = null;
         }).pipe(Effect.provide(toolkitLayer(harness)));
-      }).pipe(
-        Effect.provide(Layer.fresh(layerMergeQueueTest({ github, threads, loops: false }))),
-      );
+      }).pipe(Effect.provide(Layer.fresh(layerMergeQueueTest({ github, threads, loops: false }))));
     },
     TIMEOUT,
   );
