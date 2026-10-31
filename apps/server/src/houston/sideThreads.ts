@@ -28,6 +28,8 @@ export const REVIEW_ALREADY_SENT = "This second opinion is already in the thread
 export const ONLY_FINISHED_REVIEW_SENDS =
   "Only a finished second opinion can be sent to the thread.";
 export const SIDE_THREAD_READ_ONLY = "A side thread is read-only.";
+export const SIDE_THREAD_NOT_A_SOURCE =
+  "A side thread is read-only; it cannot be the source of an aside or a second opinion.";
 export const HARNESS_REVIEW_NOT_SENT =
   "A harness review's result reaches Houston when its run ends; it is not sent to a thread.";
 export const NO_DIFF_RECORDED = "No diff is recorded for this turn.";

@@ -175,6 +175,7 @@ import {
   reviewPrompt,
   sentReviewText,
   SIDE_RESULT_ONLY_THROUGH_SEND,
+  SIDE_THREAD_NOT_A_SOURCE,
   SIDE_THREAD_READ_ONLY,
   sideMessageId,
 } from "../houston/sideThreads.ts";
@@ -13416,9 +13417,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         yield* dispatchLinkRequestRecord(command, events, effects);
         break;
       case "houston.aside.start":
+        // A side thread's content (a review's digest quotes) never leaves it for another thread.
+        if ((yield* readThread(command.sourceThreadId)).side !== undefined) {
+          return yield* refuseSideCommand(command, SIDE_THREAD_NOT_A_SOURCE);
+        }
         cancelUnsettledEffects = yield* dispatchAsideStart(command, events, effects);
         break;
       case "houston.second-opinion.request":
+        if ((yield* readThread(command.sourceThreadId)).side !== undefined) {
+          return yield* refuseSideCommand(command, SIDE_THREAD_NOT_A_SOURCE);
+        }
         cancelUnsettledEffects = yield* dispatchSecondOpinionRequest(command, events, effects);
         break;
       case "houston.side-thread.send":

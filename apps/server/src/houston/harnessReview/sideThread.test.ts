@@ -17,6 +17,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   type ProviderReplayTranscript,
+  type RunId,
   ThreadId,
 } from "@t3tools/contracts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -67,6 +68,37 @@ const decodeDispatch = Schema.decodeUnknownExit(OrchestrationV2RpcSchemas.dispat
 
 const REVIEW_SEND_REFUSAL =
   "A harness review's result reaches Houston when its run ends; it is not sent to a thread";
+const SIDE_SOURCE_REFUSAL =
+  "A side thread is read-only; it cannot be the source of an aside or a second opinion.";
+
+/** An aside and a second opinion (on Claude, another provider) taken from a side thread's run. */
+const fromSideThread = (
+  source: ThreadId,
+  runId: RunId,
+  prefix: string,
+): ReadonlyArray<OrchestrationV2ServerCommand> => [
+  {
+    type: "houston.aside.start",
+    commandId: CommandId.make(`${prefix}:aside`),
+    sourceThreadId: source,
+    asideThreadId: ThreadId.make(`${prefix}-aside`),
+    messageId: MessageId.make(`message:${prefix}-aside`),
+    text: "What did you read?",
+    attachments: [],
+    createdBy: "user",
+    creationSource: "web",
+  },
+  {
+    type: "houston.second-opinion.request",
+    commandId: CommandId.make(`${prefix}:second-opinion`),
+    sourceThreadId: source,
+    runId,
+    reviewThreadId: ThreadId.make(`${prefix}-second-opinion`),
+    modelSelection: model("claudeAgent"),
+    createdBy: "user",
+    creationSource: "web",
+  },
+];
 
 /** The capability a refused command names, at any depth of its cause. */
 const refusedCapability = (error: unknown): string | undefined => {
@@ -499,7 +531,24 @@ describe("the review thread's write paths", () => {
           assert.equal(refusedCapability(moved), "read_only_run");
           const after = yield* orchestrator.getThreadProjection(review);
           assert.equal(after.thread.providerInstanceId, "codex");
-          for (const missing of ["review-fork", "review-target"]) {
+          // Its content never starts an aside or reaches another provider as a second opinion.
+          const turnsBefore = kit.harness.log.started.length;
+          for (const command of fromSideThread(review, runId, "review")) {
+            const error = yield* Effect.flip(orchestrator.dispatch(command));
+            assert.include(
+              userFacingDispatchErrorMessage(error) ?? "",
+              SIDE_SOURCE_REFUSAL,
+              command.type,
+            );
+          }
+          yield* settle;
+          assert.lengthOf(kit.harness.log.started, turnsBefore);
+          for (const missing of [
+            "review-fork",
+            "review-target",
+            "review-aside",
+            "review-second-opinion",
+          ]) {
             const exit = yield* Effect.exit(
               orchestrator.getThreadProjection(ThreadId.make(missing)),
             );
@@ -550,6 +599,17 @@ describe("the review thread's write paths", () => {
             ThreadId.make("thread:ordinary-aside"),
           );
           assert.equal(aside.thread.side?.kind, "aside");
+
+          // Any side thread, an aside included, is refused as a source the same way.
+          const asideRun = aside.runs[0]!.id;
+          for (const command of fromSideThread(aside.thread.id, asideRun, "aside")) {
+            const error = yield* Effect.flip(orchestrator.dispatch(command));
+            assert.include(
+              userFacingDispatchErrorMessage(error) ?? "",
+              SIDE_SOURCE_REFUSAL,
+              command.type,
+            );
+          }
         }),
       );
     }),
