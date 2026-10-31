@@ -110,6 +110,7 @@ import * as HoustonTaskSourceV1Import from "../taskSources/V1Import.ts";
 import * as HoustonTaskRuns from "../tasks/TaskRuns.ts";
 import * as HoustonMergeQueueService from "../mergeQueue/Service.ts";
 import {
+  HoustonDefects,
   HoustonHarnessService,
   HoustonHarnessStore,
   createProject,
@@ -454,6 +455,18 @@ describe("scopes and projects", () => {
             findings: [{ key: "denied-push" }],
             endedAt: "2026-10-20T00:00:00.000Z",
           });
+          const defect = yield* (yield* HoustonDefects.HoustonDefects).report({
+            projectId,
+            threadId: ThreadId.make("thread-reporter"),
+            title: "worker re-asked the same question",
+            destination: "houston",
+          });
+          const issue = {
+            key: defect.key,
+            title: "fix(harness): worker re-asked the same question",
+            body: "It asked twice.",
+            repository: "theogmiguel/houston",
+          };
           const unknownProject = "project-never-registered";
           const methods: ReadonlyArray<
             readonly [string, AuthEnvironmentScope, object, object | null]
@@ -512,8 +525,28 @@ describe("scopes and projects", () => {
               { projectId, key: "denied-push" },
               { projectId: unknownProject, key: "denied-push" },
             ],
+            [
+              WS_METHODS.houstonDefectsDecide,
+              AuthOrchestrationOperateScope,
+              { projectId, key: defect.key, decision: "dismiss" },
+              { projectId: unknownProject, key: defect.key, decision: "dismiss" },
+            ],
+            [
+              WS_METHODS.houstonDefectsDraft,
+              AuthOrchestrationOperateScope,
+              { projectId, key: defect.key },
+              { projectId: unknownProject, key: defect.key },
+            ],
+            [
+              WS_METHODS.houstonDefectsFile,
+              AuthOrchestrationOperateScope,
+              { projectId, ...issue },
+              { projectId: unknownProject, ...issue },
+            ],
+            [WS_METHODS.houstonHarnessImportV1Status, AuthOrchestrationReadScope, {}, null],
+            [WS_METHODS.houstonHarnessImportV1Run, AuthSettingsWriteScope, {}, null],
           ];
-          assert.lengthOf(methods, 10);
+          assert.lengthOf(methods, 15);
           for (const [method, scope, payload] of methods) {
             const client = yield* makeWsClient(
               ALL_SCOPES.filter((candidate) => candidate !== scope),
@@ -530,6 +563,11 @@ describe("scopes and projects", () => {
           assert.deepEqual(yield* sql`SELECT COUNT(*) AS n FROM houston_tasks`, [{ n: 0 }]);
           assert.equal(snapshot.seenReviewId, 0);
           assert.isNull((yield* store.settings(projectId))?.scheduledTaskId ?? null);
+          // No defect decision, no issue, no GitHub request and no import.
+          assert.equal(snapshot.defects[0]?.state, "open");
+          assert.isNull(snapshot.defects[0]?.issueUrl ?? null);
+          assert.lengthOf(kit.github.requests, 0);
+          assert.deepEqual(yield* sql`SELECT COUNT(*) AS n FROM houston_harness_import`, [{ n: 0 }]);
 
           const client = yield* makeWsClient(ALL_SCOPES);
           for (const [method, , , unknown] of methods) {

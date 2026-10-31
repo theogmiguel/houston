@@ -11,6 +11,7 @@ import { ServerConfig } from "../config.ts";
 import { DeviceService } from "../device/DeviceService.ts";
 import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
+import { HoustonDefects } from "../houston/harnessReview/defects/Defects.ts";
 import { HoustonTaskRuns } from "../houston/tasks/TaskRuns.ts";
 import { HoustonTaskService } from "../houston/tasks/TaskService.ts";
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
@@ -79,6 +80,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(VcsStatusBroadcaster)({}),
   Layer.mock(HoustonTaskRuns)({}),
   Layer.mock(HoustonTaskService)({}),
+  Layer.mock(HoustonDefects)({}),
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 const utf8Bytes = (text: string) => Buffer.byteLength(text, "utf8");
