@@ -103,6 +103,7 @@ import {
   useComposerDraftStore,
   useComposerThreadDraft,
 } from "../../composerDraftStore";
+import { ComposerPendingAnnotationChips } from "./ComposerPendingAnnotationChips";
 import { ComposerStashBadge } from "./ComposerStashBadge";
 import { ComposerStashMenu } from "./ComposerStashMenu";
 import { useComposerTriggerState } from "./useComposerTriggerState";
@@ -131,16 +132,21 @@ import {
   useAttachmentUploadStore,
 } from "../../lib/attachmentUploadQueue";
 import { attachmentUploadBlockReason } from "../../lib/attachmentUploadState";
-import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
+import {
+  findAssistantCitationSourceAnchor,
+  type AssistantCitationSourceAnchor,
+} from "~/lib/assistantTextSelection";
 import { shortcutLabelForCommand } from "../../keybindings";
 import {
   type TerminalContextDraft,
   type TerminalContextSelection,
 } from "../../lib/terminalContext";
 import {
+  collectComposerContextReferences,
   threadContextRecord,
   toKindScopedComposerContextId,
 } from "@t3tools/shared/composerContextReferences";
+import { collectAssistantCitations } from "@t3tools/shared/assistantCitations";
 import {
   shouldUseCompactComposerPrimaryActions,
   shouldUseCompactComposerFooter,
@@ -230,6 +236,8 @@ const isEnvironmentRequestInvalidError = Schema.is(EnvironmentRequestInvalidErro
 import { toastManager } from "../ui/toast";
 import { PlayIcon } from "lucide-react";
 import { proposedPlanTitle } from "@t3tools/shared/proposedPlanText";
+import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import { tickTextContent } from "~/lib/tickTextContent";
 import { hasProviderSetup } from "./ProviderStatusBanner";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
@@ -370,6 +378,8 @@ export interface ChatComposerProps {
   forceExpandedOnMobile: boolean;
   /** A grid pane's density; glance keeps the composer on one line until focused. */
   paneDensity?: PaneDensity | undefined;
+  /** When the active turn started; the running status in the composer footer. */
+  activeTurnStartedAt?: string | null | undefined;
   projectSelectionRequired: boolean;
 
   phase: SessionPhase;
@@ -522,6 +532,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     promptHistoryMessages,
     forceExpandedOnMobile,
     paneDensity,
+    activeTurnStartedAt,
     projectSelectionRequired,
     phase,
     canInterrupt,
@@ -760,6 +771,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     files: composerFiles,
     uploadsByImageId,
   });
+  const composerPreviewAnnotationsById = new Map(
+    composerPreviewAnnotations.map((annotation) => [
+      previewAnnotationContextId(annotation.id),
+      annotation,
+    ]),
+  );
+  const pendingCitationChips = collectAssistantCitations(prompt).map((occurrence) => ({
+    citation: occurrence.citation,
+    promptStart: occurrence.start,
+    promptEnd: occurrence.end,
+  }));
+  const pendingPreviewAnnotationChips = collectComposerContextReferences(prompt).flatMap(
+    (occurrence) => {
+      if (occurrence.kind !== "preview-annotation") return [];
+      const annotation = composerPreviewAnnotationsById.get(occurrence.contextId);
+      return annotation
+        ? [{ annotation, promptStart: occurrence.start, promptEnd: occurrence.end }]
+        : [];
+    },
+  );
   const needsReattachFileCount = composerFiles.filter(composerFileNeedsReattach).length;
   const fileStagingLimit = fileAttachmentStagingLimit({
     attachmentUploadsCapabilityKnown,
@@ -1024,7 +1055,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // A pending question stays expanded: its card moves into the banner dock,
   // so collapsing would leave the surface empty and squashed beneath it.
   const isComposerCollapsedMobile =
-    (isMobileViewport || paneDensity === "compact" || paneDensity === "glance") &&
+    (isMobileViewport || paneDensity === "glance") &&
     !forceExpandedOnMobile &&
     !isComposerFocused &&
     !hasMultilinePrompt &&
@@ -1799,6 +1830,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const applyPromptReplacementStable = useStableCallback(applyPromptReplacement);
 
+  const removePendingPromptRange = (start: number, end: number) => {
+    const value = promptRef.current;
+    let from = start;
+    let to = end;
+    if (value[to] === " ") to += 1;
+    else if (value[from - 1] === " ") from -= 1;
+    applyPromptReplacementStable(from, to, "", { focusEditorAfterReplace: false });
+  };
+
+  const editPendingCitation = (chip: (typeof pendingCitationChips)[number]) => {
+    const sourceAnchor = findAssistantCitationSourceAnchor(document, chip.citation);
+    composerEditorRef.current?.requestCitationComment({
+      previousValue: promptRef.current,
+      value: promptRef.current,
+      citationStart: chip.promptStart,
+      ...(sourceAnchor ? { sourceAnchor } : {}),
+      insertedSpaces: { before: false, after: false },
+    });
+  };
+
+  const removePendingCitation = (chip: (typeof pendingCitationChips)[number]) => {
+    removePendingPromptRange(chip.promptStart, chip.promptEnd);
+  };
+
+  const removePendingPreviewAnnotation = (chip: (typeof pendingPreviewAnnotationChips)[number]) => {
+    releaseAttachmentUpload(chip.annotation.id);
+    removeComposerDraftPreviewAnnotation(composerDraftTarget, chip.annotation.id);
+  };
+
   const readComposerSnapshot = (): {
     value: string;
     cursor: number;
@@ -2131,6 +2191,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   };
   const submitCitationAndSendStable = useStableCallback(submitCitationAndSend);
+  const submitMultipleModelSelection = () => {
+    submitComposer();
+  };
+  const submitMultipleModelSelectionStable = useStableCallback(submitMultipleModelSelection);
   // A question took the editor while a citation comment was
   // unsaved. Keep the comment in the prompt that comes back afterward.
   const saveCitationDraftToPrompt = (replacedValue: string, savedValue: string) => {
@@ -2254,6 +2318,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setComposerTrigger,
     importContextRecords,
     expandMobileComposer: expandMobileComposerStable,
+    stashShortcutLabel: shortcutLabelForCommand(keybindings, "composer.stash", {
+      context: {
+        terminalFocus: false,
+        terminalOpen,
+        modelPickerOpen: false,
+      },
+    }),
   });
   const hasBlockingComposerTopDrawer = pendingUserInputs.length > 0;
   const composerControlsCollapsed = isComposerCollapsedMobile;
@@ -2329,6 +2400,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       multipleModelsEnabled={routeKind === "draft" && supportsMultipleModels}
       multipleModelSelections={multipleModelSelections}
       onMultipleModelSelectionsChange={setMultipleModelSelections}
+      onSendMultipleModels={submitMultipleModelSelectionStable}
       selectedModelSelection={selectedModelSelection}
       onProviderModelSelect={onProviderModelSelect}
       activeThreadModelSelection={activeThreadModelSelection}
@@ -3084,7 +3156,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onRemoveFile={removeComposerFileFromDraft}
       />
     ) : null;
-  const composerAttachButton = showComposerAttachAction ? (
+  const composerAttachButton =
+    showComposerAttachAction && paneDensity !== "compact" ? (
     <ComposerAttachButton
       addComposerAttachments={addComposerAttachments}
       focusComposer={focusComposer}
@@ -3212,9 +3285,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     (showProviderUnavailable ? "Enable a provider in Settings" : "Ask anything...")}
                 </button>
                 {collapsedComposerImagePreviews}
-                {paneDensity === "compact" ? (
-                  <div className="flex min-w-0 shrink items-center">{composerControls}</div>
-                ) : null}
                 <ComposerStashBadge
                   count={stashQueue.length}
                   menuOpen={isStashMenuOpen}
@@ -3331,6 +3401,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               {composerAttachmentMediaRow}
 
               {composerAttachmentFileList}
+
+              <ComposerPendingAnnotationChips
+                citations={pendingCitationChips}
+                previewAnnotations={pendingPreviewAnnotationChips}
+                onEditCitation={editPendingCitation}
+                onRemoveCitation={removePendingCitation}
+                onRemovePreviewAnnotation={removePendingPreviewAnnotation}
+              />
 
               <div className="relative">
                 {previewFile ? (
@@ -3465,6 +3543,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     pulseKey={stashPulseKey}
                     onToggleMenu={toggleStashMenuStable}
                   />
+                  {phase === "running" && activeTurnStartedAt ? (
+                    <span
+                      role="status"
+                      className="shrink-0 pe-1 text-2xs text-muted-foreground tabular-nums"
+                    >
+                      <span className="text-(--accent-ink)">Running</span> ·{" "}
+                      <span
+                        ref={tickTextContent(
+                          (nowMs) =>
+                            formatDuration(Math.max(1_000, nowMs - Date.parse(activeTurnStartedAt))),
+                          true,
+                        )}
+                      />
+                    </span>
+                  ) : null}
                   <ComposerFooterPrimaryActions
                     compact={isComposerPrimaryActionsCompact}
                     canOperateThread={canOperateThread}

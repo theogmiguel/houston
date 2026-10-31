@@ -3,6 +3,7 @@ import { Spinner } from "~/components/ui/spinner";
 import {
   AlertTriangleIcon,
   CheckIcon,
+  ChevronRightIcon,
   ArrowUpCircleIcon,
   CopyIcon,
   DownloadIcon,
@@ -1115,6 +1116,9 @@ export function ProviderInstanceCard({
             onCheckedChange={(checked) => updateEnabled(Boolean(checked))}
             aria-label={`Enable ${displayName}`}
           />
+          {onSelect ? (
+            <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground/70" />
+          ) : null}
         </span>
       </div>
     );

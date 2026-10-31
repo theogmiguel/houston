@@ -1,7 +1,7 @@
 import type { EnvironmentId, UnifiedSettings } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { PlusIcon } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { serverEnvironment } from "../../state/server";
@@ -27,12 +27,14 @@ export function UsageProviderSettings({
   sources,
   cursorKeychainUsageEnabled,
   readOnly,
+  extraRows,
 }: {
   readonly environmentId: EnvironmentId;
   readonly environmentLabel: string;
   readonly sources: UnifiedSettings["usageLimitSources"];
   readonly cursorKeychainUsageEnabled: boolean;
   readonly readOnly: boolean;
+  readonly extraRows?: ReactNode;
 }) {
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const updateCursorSettings = useAtomCommand(serverEnvironment.updateSettings, {
@@ -63,6 +65,7 @@ export function UsageProviderSettings({
     <>
       <SettingsSection
         {...searchableSetting("usage-providers")}
+        title="Usage"
         headerAction={
           !readOnly ? (
             <Button size="xs" variant="outline" onClick={() => setAdding(true)}>
@@ -114,6 +117,7 @@ export function UsageProviderSettings({
             );
           })
         )}
+        {extraRows}
       </SettingsSection>
       {adding && !readOnly ? (
         <AddUsageLimitSourceDialog

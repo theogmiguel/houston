@@ -32,6 +32,7 @@ import {
   resolveAssistantMessageCopyState,
   type MessagesTimelineRow,
   workEntryDisplayLabel,
+  boardWorkSummary,
 } from "./MessagesTimeline.logic";
 
 describe("resolveAssistantMessageCopyState", () => {
@@ -50,6 +51,31 @@ describe("resolveAssistantMessageCopyState", () => {
       text: "Created [report.xlsx](<outputs/report.xlsx>).\n\nHello World (Document template)",
       visible: true,
     });
+  });
+});
+
+describe("boardWorkSummary", () => {
+  it("counts the Board's read, edit and command line", () => {
+    const entry = (id: string, fields: Record<string, unknown>) =>
+      ({
+        id,
+        createdAt: "2026-10-30T12:00:00Z",
+        label: id,
+        tone: "tool" as const,
+        ...fields,
+      }) as never;
+    const entries = [
+      ...Array.from({ length: 9 }, (_, index) =>
+        entry(`read-${index}`, { requestKind: "file-read" }),
+      ),
+      ...Array.from({ length: 3 }, (_, index) =>
+        entry(`edit-${index}`, { itemType: "file_change" }),
+      ),
+      ...Array.from({ length: 2 }, (_, index) =>
+        entry(`command-${index}`, { itemType: "command_execution" }),
+      ),
+    ];
+    expect(boardWorkSummary(entries)).toBe("read 9 files · edited 3 · ran 2 commands");
   });
 });
 
@@ -1073,6 +1099,7 @@ describe("deriveMessagesTimelineRows", () => {
       expanded.some(
         (row) =>
           row.id === "work-entry-after-text-0" ||
+          row.id.startsWith("work-group:work-entry-after-text-0") ||
           (row.kind === "work-toggle" &&
             row.id === "work-toggle:work-entry-after-text-0" &&
             row.hiddenCount === count),
@@ -1926,7 +1953,7 @@ describe("deriveMessagesTimelineRows", () => {
     expect(shape(expanded)).toEqual([
       "user:launch",
       "fold:Worked for 8s",
-      "work-toggle",
+      "work",
       "assistant:launch-answer",
       "user:resume",
       "fold:Worked for 8s",
@@ -2668,7 +2695,7 @@ describe("v2 run and attempt history", () => {
       "user-entry",
       "turn-fold:turn-1",
       "assistant-thought-entry",
-      "work-toggle:work-entry-1",
+      "work-group:work-entry-1:details",
       "thread-created-entry",
       "assistant-final-entry",
     ]);

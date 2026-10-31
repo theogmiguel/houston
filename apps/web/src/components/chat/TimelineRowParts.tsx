@@ -53,3 +53,28 @@ export function ActivityShimmerOverlay({ children }: { children: ReactNode }) {
     </span>
   );
 }
+
+/** The working arc: a dashed circle that turns while the agent is running. */
+export function StreamingGlyph({ className }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 14 14"
+      className={cn(
+        "size-3.5 shrink-0 animate-spin [animation-duration:1.1s] motion-reduce:animate-none",
+        className,
+      )}
+    >
+      <circle
+        cx="7"
+        cy="7"
+        r="4.7"
+        fill="none"
+        stroke="var(--accent-ink)"
+        strokeWidth="1.2"
+        strokeDasharray="1.75 1.93"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}

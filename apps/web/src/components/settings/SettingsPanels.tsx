@@ -16,7 +16,6 @@ import {
   type DiffLayout,
   MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
-  type ResponseStreamingMode,
   type QuitConfirmationMode,
   SidebarProjectSortOrder,
 } from "@t3tools/contracts/settings";
@@ -27,10 +26,12 @@ import * as Schema from "effect/Schema";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
 import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
 import { MobileAppSettingsRow } from "./MobileAppSettingsRow";
+import { openDesktopUpdateReleaseNotes } from "../desktopUpdate.toast";
+import { getDesktopUpdateReleaseUrl } from "../desktopUpdate.logic";
+import { T3AppIcon } from "../T3AppIcon";
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
-  getDesktopUpdateDisabledReason,
   getDesktopUpdateInstallConfirmationMessage,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
@@ -72,6 +73,7 @@ import { DraftInput } from "../ui/draft-input";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -92,8 +94,7 @@ import {
   SettingsSection,
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
-import { BackgroundActivitySettingsRow } from "./BackgroundActivitySettings";
-import { AdvancedSettings } from "./AdvancedSettings";
+import { BackgroundActivitySettingsRow, GitFetchIntervalRow } from "./BackgroundActivitySettings";
 import { PullRequestLinksOpenInAppSetting } from "./IntegrationsSettings";
 import { StorageCleanupSections } from "./StorageSettings";
 import { UpdateTrackSwitchDialog } from "./UpdateTrackSwitchDialog";
@@ -103,16 +104,6 @@ import { canUpdateServer } from "../ServerUpdateAction";
 import { useUpdateEverythingRun } from "../sidebar/updateEverythingRun";
 import { awaitsTrackSwitch, channelSwitchLabel } from "../sidebar/updateEverything.logic";
 import { isHostedByThisApp } from "../sidebar/useUpdateEverything";
-
-const RESPONSE_STREAMING_MODE_LABELS: Record<ResponseStreamingMode, string> = {
-  turn: "Wait for the full response",
-  paragraph: "Show finished paragraphs",
-};
-
-const RESPONSE_STREAMING_MODE_DESCRIPTIONS: Record<ResponseStreamingMode, string> = {
-  turn: "Text appears once the agent finishes its turn.",
-  paragraph: "Each paragraph or code block appears as soon as it is complete.",
-};
 
 const SIDEBAR_PROJECT_SORT_ORDER_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
@@ -129,7 +120,7 @@ const TIMESTAMP_FORMAT_LABELS = {
 
 const DIFF_LAYOUT_LABELS: Record<DiffLayout, string> = {
   stacked: "Stacked",
-  split: "Split",
+  split: "Side by side",
 };
 
 const QUIT_CONFIRMATION_MODE_LABELS: Record<QuitConfirmationMode, string> = {
@@ -141,9 +132,9 @@ const QUIT_CONFIRMATION_MODE_LABELS: Record<QuitConfirmationMode, string> = {
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
 function AboutVersionTitle() {
   return (
-    <span className="inline-flex items-baseline gap-2">
-      <span>Version</span>
-      <code className="text-2xs font-medium text-muted-foreground">{APP_VERSION}</code>
+    <span className="inline-flex items-center gap-2">
+      <T3AppIcon className="size-8 shrink-0 rounded-md" />
+      <span>Houston {APP_VERSION}</span>
     </span>
   );
 }
@@ -287,7 +278,8 @@ function AboutVersionSection() {
   const description =
     action === "download" || action === "install"
       ? "Update available."
-      : (getDesktopUpdateDisabledReason(updateState) ?? "Current version of the application.");
+      : "Current version of the application.";
+  const releaseNotesUrl = getDesktopUpdateReleaseUrl(APP_VERSION);
 
   return (
     <>
@@ -296,21 +288,34 @@ function AboutVersionSection() {
         title={<AboutVersionTitle />}
         description={description}
         control={
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={buttonDisabled || isUpdateActionPending}
-                  onClick={handleButtonClick}
-                >
-                  {buttonLabel}
-                </Button>
-              }
-            />
-            {buttonTooltip ? <TooltipPopup>{buttonTooltip}</TooltipPopup> : null}
-          </Tooltip>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!hasDesktopBridge || releaseNotesUrl === null}
+              onClick={() => {
+                if (releaseNotesUrl === null) return;
+                void openDesktopUpdateReleaseNotes(window.desktopBridge, releaseNotesUrl);
+              }}
+            >
+              Release notes
+            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={buttonDisabled || isUpdateActionPending}
+                    onClick={handleButtonClick}
+                  >
+                    {buttonLabel}
+                  </Button>
+                }
+              />
+              {buttonTooltip ? <TooltipPopup>{buttonTooltip}</TooltipPopup> : null}
+            </Tooltip>
+          </div>
         }
       />
       {hasDesktopBridge ? (
@@ -769,21 +774,6 @@ export function GeneralSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection id="notifications" title="Notifications">
-        <NotificationSettings />
-        <SettingsRow
-          {...searchableSetting("in-app-notifications")}
-          description="Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."
-          control={
-            <Switch
-              checked={settings.inAppNotificationsEnabled}
-              onCheckedChange={(checked) => updateSettings({ inAppNotificationsEnabled: checked })}
-              aria-label="In-app notifications"
-            />
-          }
-        />
-      </SettingsSection>
-
       <SettingsSection id="sidebar" title="Sidebar">
         <SettingsRow
           {...searchableSetting("project-grouping")}
@@ -883,6 +873,21 @@ export function GeneralSettingsPanel() {
                 updateSettings({ sidebarWorkingShelfEnabled: Boolean(checked) })
               }
               aria-label="Running section"
+            />
+          }
+        />
+      </SettingsSection>
+
+      <SettingsSection id="notifications" title="Notifications">
+        <NotificationSettings />
+        <SettingsRow
+          {...searchableSetting("in-app-notifications")}
+          description="Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."
+          control={
+            <Switch
+              checked={settings.inAppNotificationsEnabled}
+              onCheckedChange={(checked) => updateSettings({ inAppNotificationsEnabled: checked })}
+              aria-label="In-app notifications"
             />
           }
         />
@@ -1057,7 +1062,7 @@ export function GeneralSettingsPanel() {
 export function ChatSettingsPanel() {
   const modifierLabel = isMacPlatform(navigator.platform) ? "⌘" : "Ctrl";
   const sendShortcutOptions = [
-    { value: "enter", label: "Enter" },
+    { value: "enter", label: "Enter sends" },
     { value: "mod-enter-multiline", label: `${modifierLabel} + Enter for multiline prompts` },
     { value: "mod-enter", label: `${modifierLabel} + Enter always` },
   ] as const;
@@ -1139,44 +1144,37 @@ export function ChatSettingsPanel() {
             </Select>
           }
         />
-        <AdvancedSettings targetIds={[searchableSetting("skills-in-slash-menu").id]}>
-          <SettingsRow
-            {...searchableSetting("skills-in-slash-menu")}
-            description="Also include skills in the / command menu. Skills always appear when you type $."
-            resetAction={
-              settings.showSkillsInSlashMenu !== DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu ? (
-                <SettingResetButton
-                  label="skills in slash menu"
-                  onClick={() =>
-                    updateSettings({
-                      showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Switch
-                checked={settings.showSkillsInSlashMenu}
-                onCheckedChange={(checked) =>
-                  updateSettings({ showSkillsInSlashMenu: Boolean(checked) })
+        <SettingsRow
+          {...searchableSetting("skills-in-slash-menu")}
+          description="Also include skills in the / command menu. Skills always appear when you type $."
+          resetAction={
+            settings.showSkillsInSlashMenu !== DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu ? (
+              <SettingResetButton
+                label="skills in slash menu"
+                onClick={() =>
+                  updateSettings({
+                    showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
+                  })
                 }
-                aria-label="Show skills in slash menu"
               />
-            }
-          />
-        </AdvancedSettings>
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.showSkillsInSlashMenu}
+              onCheckedChange={(checked) =>
+                updateSettings({ showSkillsInSlashMenu: Boolean(checked) })
+              }
+              aria-label="Show skills in slash menu"
+            />
+          }
+        />
       </SettingsSection>
 
       <SettingsSection id="follow-ups" title="Follow-ups">
         <SettingsRow
           {...searchableSetting("follow-up-behavior")}
-          description={
-            "Queue follow-ups while the agent runs or steer the current run. " +
-            (settings.sendShortcut === "mod-enter-multiline"
-              ? `Press ${modifierLabel} + Enter for single-line prompts or ${modifierLabel} + Shift + Enter for multiline prompts to do the opposite for one message.`
-              : `Press ${modifierLabel}${settings.sendShortcut === "mod-enter" ? " + Shift" : ""} + Enter to do the opposite for one message.`)
-          }
+          description="What a message sent while the agent works does."
           resetAction={
             settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior ? (
               <SettingResetButton
@@ -1190,24 +1188,20 @@ export function ChatSettingsPanel() {
             ) : null
           }
           control={
-            <Select
-              value={settings.followUpBehavior}
-              onValueChange={(value) => {
+            <ToggleGroup
+              aria-label="Follow-up behavior"
+              variant="segmented"
+              value={[settings.followUpBehavior]}
+              onValueChange={(next) => {
+                const value = next[0];
                 if (value === "queue" || value === "steer") {
                   updateSettings({ followUpBehavior: value });
                 }
               }}
             >
-              <SelectTrigger size="sm" className="w-auto min-w-0" aria-label="Follow-up behavior">
-                <SelectValue>
-                  {settings.followUpBehavior === "queue" ? "Queue" : "Steer"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem value="queue">Queue</SelectItem>
-                <SelectItem value="steer">Steer</SelectItem>
-              </SelectPopup>
-            </Select>
+              <Toggle value="queue">Queue</Toggle>
+              <Toggle value="steer">Steer</Toggle>
+            </ToggleGroup>
           }
         />
       </SettingsSection>
@@ -1241,7 +1235,13 @@ function DiffColorsSettingsRow() {
                 updateSettings({ diffColorScheme: value });
             }}
           >
-            <SelectTrigger size="sm" className="w-full min-w-0" aria-label="Diff colors">
+            <SelectTrigger
+              size="xs"
+              variant="ghost"
+              className="w-auto min-w-0"
+              aria-label="Diff colors"
+              icon={<span aria-hidden="true" />}
+            >
               <span
                 aria-hidden="true"
                 className={
@@ -1253,9 +1253,6 @@ function DiffColorsSettingsRow() {
                 <span className="size-2 rounded-full bg-diff-deletion" />
                 <span className="size-2 rounded-full bg-diff-addition" />
               </span>
-              <SelectValue>
-                {settings.diffColorScheme === "blue-orange" ? "Blue & orange" : "Red & green"}
-              </SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
               <SelectItem value="red-green">Red & green (default)</SelectItem>
@@ -1287,26 +1284,20 @@ export function DiffsSettingsPanel() {
             ) : null
           }
           control={
-            <Select
-              value={settings.diffLayout}
-              onValueChange={(value) => {
+            <ToggleGroup
+              aria-label="Diff layout"
+              variant="segmented"
+              value={[settings.diffLayout]}
+              onValueChange={(next) => {
+                const value = next[0];
                 if (value === "stacked" || value === "split") {
                   updateSettings({ diffLayout: value });
                 }
               }}
             >
-              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Diff layout">
-                <SelectValue>{DIFF_LAYOUT_LABELS[settings.diffLayout]}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="stacked">
-                  {DIFF_LAYOUT_LABELS.stacked}
-                </SelectItem>
-                <SelectItem hideIndicator value="split">
-                  {DIFF_LAYOUT_LABELS.split}
-                </SelectItem>
-              </SelectPopup>
-            </Select>
+              <Toggle value="stacked">{DIFF_LAYOUT_LABELS.stacked}</Toggle>
+              <Toggle value="split">{DIFF_LAYOUT_LABELS.split}</Toggle>
+            </ToggleGroup>
           }
         />
         <SettingsRow
@@ -1350,36 +1341,27 @@ export function DiffsSettingsPanel() {
             ) : null
           }
           control={
-            <Select
-              value={settings.diffFilesCollapsed ? "collapsed" : "expanded"}
-              onValueChange={(value) => {
+            <ToggleGroup
+              aria-label="Default diff file state"
+              variant="segmented"
+              value={[settings.diffFilesCollapsed ? "collapsed" : "expanded"]}
+              onValueChange={(next) => {
+                const value = next[0];
                 if (value === "expanded" || value === "collapsed") {
                   updateSettings({ diffFilesCollapsed: value === "collapsed" });
                 }
               }}
             >
-              <SelectTrigger
-                size="sm"
-                className="w-full sm:w-40"
-                aria-label="Default diff file state"
-              >
-                <SelectValue>{settings.diffFilesCollapsed ? "Collapsed" : "Expanded"}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="expanded">
-                  Expanded
-                </SelectItem>
-                <SelectItem hideIndicator value="collapsed">
-                  Collapsed
-                </SelectItem>
-              </SelectPopup>
-            </Select>
+              <Toggle value="expanded">Expanded</Toggle>
+              <Toggle value="collapsed">Collapsed</Toggle>
+            </ToggleGroup>
           }
         />
         <DiffColorsSettingsRow />
       </SettingsSection>
 
       <SettingsSection id="pull-requests" title="Pull requests">
+        <PullRequestLinksOpenInAppSetting />
         <SettingsRow
           {...searchableSetting("proactive-panels")}
           description="Open linked pull requests first. Otherwise, open Changes for edits to at least 3 files or 50 lines."
@@ -1405,7 +1387,6 @@ export function DiffsSettingsPanel() {
             />
           }
         />
-        <PullRequestLinksOpenInAppSetting />
       </SettingsSection>
     </SettingsPageContainer>
   );
@@ -1533,48 +1514,71 @@ export function ThreadsSettingsPanel() {
   const mixedAddProjectBaseDirectory = useScopedSettingsMixed(["addProjectBaseDirectory"]);
   const mixedTextGenerationModel = useScopedSettingsMixed(["textGenerationModelSelection"]);
 
+  const extraNewThreadRows = (
+    <>
+      <SettingsRow
+        serverScoped
+        settingKeys={["addProjectBaseDirectory"]}
+        {...searchableSetting("add-project-starts-in")}
+        description='Leave empty to use "~/" when the Add Project browser opens.'
+        resetAction={
+          settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
+            <SettingResetButton
+              label="add project base directory"
+              onClick={() =>
+                updateSettings({
+                  addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
+                })
+              }
+            />
+          ) : null
+        }
+        control={
+          <DraftInput
+            size="sm"
+            className="w-full sm:w-72"
+            value={mixedAddProjectBaseDirectory ? "" : settings.addProjectBaseDirectory}
+            onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
+            placeholder={mixedAddProjectBaseDirectory ? "Mixed" : "~/"}
+            spellCheck={false}
+            aria-label="Add project base directory"
+          />
+        }
+      />
+      <SettingsRow
+        serverScoped
+        settingKeys={["responseStreamingMode"]}
+        {...searchableSetting("response-streaming")}
+        resetAction={
+          settings.responseStreamingMode !== DEFAULT_UNIFIED_SETTINGS.responseStreamingMode ? (
+            <SettingResetButton
+              label="response streaming"
+              onClick={() =>
+                updateSettings({
+                  responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
+                })
+              }
+            />
+          ) : null
+        }
+        control={
+          <Switch
+            checked={
+              mixedResponseStreamingMode ? false : settings.responseStreamingMode === "paragraph"
+            }
+            onCheckedChange={(checked) =>
+              updateSettings({ responseStreamingMode: checked ? "paragraph" : "turn" })
+            }
+            aria-label="Response streaming"
+          />
+        }
+      />
+    </>
+  );
+
   return (
     <SettingsPageContainer>
-      <SettingsSection id="new-projects" title="New projects">
-        <SettingsRow
-          serverScoped
-          settingKeys={["addProjectBaseDirectory"]}
-          {...searchableSetting("add-project-starts-in")}
-          description='Leave empty to use "~/" when the Add Project browser opens.'
-          resetAction={
-            settings.addProjectBaseDirectory !==
-            DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
-              <SettingResetButton
-                label="add project base directory"
-                onClick={() =>
-                  updateSettings({
-                    addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <DraftInput
-              size="sm"
-              className="w-full sm:w-72"
-              value={mixedAddProjectBaseDirectory ? "" : settings.addProjectBaseDirectory}
-              onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
-              placeholder={mixedAddProjectBaseDirectory ? "Mixed" : "~/"}
-              spellCheck={false}
-              aria-label="Add project base directory"
-            />
-          }
-        />
-      </SettingsSection>
-
-      <ProjectDefaultsSettings category="general" />
-
-      {!isProjectScope ? (
-        <SettingsSection id="snooze" title="Hold">
-          <SnoozePresetsRow />
-        </SettingsSection>
-      ) : null}
+      <ProjectDefaultsSettings category="general" extraRows={extraNewThreadRows} />
 
       <SettingsSection id="usage-limits" title="Usage limits">
         <SettingsRow
@@ -1609,6 +1613,7 @@ export function ThreadsSettingsPanel() {
             />
           }
         />
+        {!isProjectScope ? <SnoozePresetsRow /> : null}
       </SettingsSection>
 
       {hasServerTargets ? (
@@ -1813,62 +1818,7 @@ export function ThreadsSettingsPanel() {
             )
           }
         />
-        <AdvancedSettings
-          targetIds={[
-            searchableSetting("thread-title-instructions").id,
-            searchableSetting("response-streaming").id,
-          ]}
-        >
-          <ThreadTitleInstructionsSettings />
-          <SettingsRow
-            serverScoped
-            settingKeys={["responseStreamingMode"]}
-            {...searchableSetting("response-streaming")}
-            description={
-              mixedResponseStreamingMode
-                ? "The selected targets use different streaming modes."
-                : RESPONSE_STREAMING_MODE_DESCRIPTIONS[settings.responseStreamingMode]
-            }
-            resetAction={
-              settings.responseStreamingMode !== DEFAULT_UNIFIED_SETTINGS.responseStreamingMode ? (
-                <SettingResetButton
-                  label="response streaming"
-                  onClick={() =>
-                    updateSettings({
-                      responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Select
-                value={mixedResponseStreamingMode ? null : settings.responseStreamingMode}
-                onValueChange={(value) => {
-                  if (value === "turn" || value === "paragraph") {
-                    updateSettings({ responseStreamingMode: value });
-                  }
-                }}
-              >
-                <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Response streaming">
-                  <SelectValue>
-                    {(value: ResponseStreamingMode | null) =>
-                      value === null ? "Mixed" : RESPONSE_STREAMING_MODE_LABELS[value]
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem hideIndicator value="turn">
-                    {RESPONSE_STREAMING_MODE_LABELS.turn}
-                  </SelectItem>
-                  <SelectItem hideIndicator value="paragraph">
-                    {RESPONSE_STREAMING_MODE_LABELS.paragraph}
-                  </SelectItem>
-                </SelectPopup>
-              </Select>
-            }
-          />
-        </AdvancedSettings>
+        <ThreadTitleInstructionsSettings />
       </SettingsSection>
     </SettingsPageContainer>
   );
@@ -1877,9 +1827,8 @@ export function ThreadsSettingsPanel() {
 export function MaintenanceSettingsPanel() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
-  const { scope, environment, connectedEnvironments } = useSettingsScope();
+  const { environment, connectedEnvironments } = useSettingsScope();
   const environmentId = environment?.environmentId ?? null;
-  const isEnvironmentScope = scope.environmentIds.length === 1 && environmentId !== null;
   const hasServerTargets = connectedEnvironments.length > 0;
 
   return (
@@ -1955,31 +1904,31 @@ export function MaintenanceSettingsPanel() {
 
       <SettingsSection id="background" title="Background activity">
         <BackgroundActivitySettingsRow />
+        <GitFetchIntervalRow />
       </SettingsSection>
 
-      <StorageCleanupSections />
-
-      <SettingsSection id="diagnostics-section" title="Diagnostics">
-        <SettingsRow
-          {...searchableSetting("diagnostics")}
-          description={
-            isEnvironmentScope
-              ? "Inspect processes, resource use, and logs on this environment."
-              : "Inspect processes, resource use, and logs on one environment at a time."
-          }
-          control={
-            <Button
-              render={
-                <Link to="/settings/diagnostics" search={{ machine: environmentId ?? undefined }} />
-              }
-              size="sm"
-              variant="outline"
-            >
-              View diagnostics
-            </Button>
-          }
-        />
-      </SettingsSection>
+      <StorageCleanupSections
+        extraRows={
+          <SettingsRow
+            {...searchableSetting("diagnostics")}
+            description="Versions, paths, resource use and recent logs, for a bug report."
+            control={
+              <Button
+                render={
+                  <Link
+                    to="/settings/diagnostics"
+                    search={{ machine: environmentId ?? undefined }}
+                  />
+                }
+                size="sm"
+                variant="ghost"
+              >
+                Open
+              </Button>
+            }
+          />
+        }
+      />
     </SettingsPageContainer>
   );
 }
@@ -1996,6 +1945,40 @@ export function AboutSettingsPanel() {
               id={searchableSetting("app-version").id}
               title={<AboutVersionTitle />}
               description="Current version of the application."
+              control={
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="ghost" disabled>
+                    Release notes
+                  </Button>
+                  <Button size="sm" variant="outline" disabled>
+                    Check for updates
+                  </Button>
+                </div>
+              }
+            />
+            <SettingsRow
+              {...searchableSetting("update-track")}
+              description="Stable gets tested releases. Nightly gets every build."
+              control={
+                <Select value="latest" disabled>
+                  <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Update track">
+                    <SelectValue>Stable</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    <SelectItem value="latest">Stable</SelectItem>
+                  </SelectPopup>
+                </Select>
+              }
+            />
+            <SettingsRow
+              {...searchableSetting("cli-command")}
+              title="hs command"
+              description="Use Houston from a terminal: open projects and start threads."
+              control={
+                <Button size="sm" variant="outline" disabled>
+                  Install
+                </Button>
+              }
             />
           </>
         )}
@@ -2007,12 +1990,8 @@ export function AboutSettingsPanel() {
           {...searchableSetting("open-source-licenses")}
           description="Notices for dependencies, assets, and optional tools used by Houston."
           control={
-            <Button
-              render={<Link to="/settings/open-source-licenses" />}
-              size="sm"
-              variant="outline"
-            >
-              View licenses
+            <Button render={<Link to="/settings/open-source-licenses" />} size="sm" variant="ghost">
+              View
             </Button>
           }
         />

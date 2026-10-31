@@ -406,12 +406,80 @@ const SlackIntake = Effect.gen(function* () {
   `;
 });
 
-// Ids 5 and 6 are claimed by the merge queue and harness review branches.
+// The merge queue, keyed by upstream ProjectId without a foreign key; a deleted project's rows go
+// with its deletion hook. JSON columns hold camelCase facts, verification, failure and holds.
+const MergeQueue = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_merge_queue_entries (
+      project_id TEXT NOT NULL,
+      number INTEGER NOT NULL,
+      repository TEXT NOT NULL,
+      url TEXT NOT NULL,
+      title TEXT,
+      head_ref TEXT NOT NULL,
+      head_sha TEXT NOT NULL,
+      base_ref TEXT,
+      depends_on INTEGER,
+      owner_thread_id TEXT,
+      position INTEGER NOT NULL,
+      enqueued_at TEXT NOT NULL,
+      facts_json TEXT,
+      verification_json TEXT,
+      failure_json TEXT,
+      stacked_json TEXT,
+      github_json TEXT,
+      PRIMARY KEY (project_id, number)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_merge_queue_settings (
+      project_id TEXT PRIMARY KEY,
+      merge_when_verified INTEGER NOT NULL DEFAULT 0,
+      verification_command TEXT NOT NULL DEFAULT '',
+      time_limit_minutes INTEGER NOT NULL DEFAULT 30,
+      paused INTEGER NOT NULL DEFAULT 0,
+      acknowledged_at TEXT,
+      hand_off_json TEXT,
+      revision INTEGER NOT NULL DEFAULT 0
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_merge_queue_log (
+      id INTEGER PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('push', 'merge', 'park', 'restack', 'retarget', 'hand_off')),
+      number INTEGER NOT NULL,
+      repository TEXT NOT NULL,
+      url TEXT NOT NULL,
+      title TEXT,
+      ref_name TEXT,
+      old_sha TEXT,
+      new_sha TEXT,
+      head_sha TEXT,
+      fork_sha TEXT,
+      method TEXT,
+      detail TEXT,
+      unattended INTEGER NOT NULL DEFAULT 0,
+      at TEXT NOT NULL
+    )
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_merge_queue_log_project ON houston_merge_queue_log(project_id, at)`;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_merge_queue_global (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      paused INTEGER NOT NULL
+    )
+  `;
+});
+
+// Id 6 is claimed by the harness review branch.
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
   [3, "TaskSources", TaskSources],
   [4, "TaskRunsCursor", TaskRunsCursor],
+  [5, "MergeQueue", MergeQueue],
   [7, "SlackIntake", SlackIntake],
 ] as const;
 

@@ -241,6 +241,42 @@ export function ComposerPermissionsSection(props: {
   );
 }
 
+/** The same permissions picker as a plain radiogroup, for popovers outside a Menu root. */
+export function ComposerPermissionsPicker(props: {
+  runtimeMode: RuntimeMode;
+  runtimeModeOptions: ReadonlyArray<
+    { mode: RuntimeMode } & (typeof runtimeModeConfig)[RuntimeMode]
+  >;
+  onRuntimeModeChange: (mode: RuntimeMode) => void;
+}) {
+  return (
+    <div data-composer-permissions className="grid w-72 gap-1.5 px-2 py-1.5">
+      <div className="font-medium text-muted-foreground text-xs">Permissions</div>
+      <div role="radiogroup" aria-label="Permissions" className="grid gap-0.5">
+        {props.runtimeModeOptions.map((option) => {
+          const OptionIcon = option.icon;
+          const checked = option.mode === props.runtimeMode;
+          return (
+            <button
+              key={option.mode}
+              type="button"
+              role="radio"
+              aria-checked={checked}
+              onClick={() => {
+                if (!checked) props.onRuntimeModeChange(option.mode);
+              }}
+              className="flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-muted-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset aria-checked:bg-input/72 aria-checked:text-foreground"
+            >
+              <OptionIcon aria-hidden="true" className="size-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate text-sm">{option.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
   compact: boolean;
   canOperateThread: boolean;
@@ -335,6 +371,7 @@ export function ComposerModelPicker({
   multipleModelsEnabled,
   multipleModelSelections,
   onMultipleModelSelectionsChange,
+  onSendMultipleModels,
   selectedModelSelection,
   onProviderModelSelect,
   ...pickerProps
@@ -347,6 +384,7 @@ export function ComposerModelPicker({
   readonly onMultipleModelSelectionsChange: (
     selections: ReadonlyArray<ModelSelection> | null,
   ) => void;
+  readonly onSendMultipleModels: () => void;
   readonly selectedModelSelection: ModelSelection;
   readonly onProviderModelSelect: (
     instanceId: ProviderInstanceId,
@@ -392,6 +430,7 @@ export function ComposerModelPicker({
             onToggleModel: toggleModel,
           }
         : {})}
+      onSendSelectedModels={onSendMultipleModels}
       onInstanceModelChange={(instanceId, model) => {
         onMultipleModelSelectionsChange(null);
         onProviderModelSelect(instanceId, model);

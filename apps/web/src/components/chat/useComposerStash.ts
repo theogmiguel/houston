@@ -1,3 +1,5 @@
+import { BookmarkIcon } from "lucide-react";
+
 import type { ChatComposerProps } from "./ChatComposer";
 import {
   type ComposerContextRecord,
@@ -49,9 +51,11 @@ import { replaceComposerContextReferences } from "@t3tools/shared/composerContex
 import { resizeSnapShotSource } from "../../lib/snapShotSource";
 import { registerCommands } from "../../shortcuts/dispatcher";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../../terminalUiStateStore";
+import { Kbd } from "../ui/kbd";
 import { toastManager } from "../ui/toast";
 import type { useComposerTriggerState } from "./useComposerTriggerState";
 import {
+  createElement,
   type Dispatch,
   type RefObject,
   type SetStateAction,
@@ -96,6 +100,7 @@ export function useComposerStash(input: {
     threadDraftTarget?: ChatComposerProps["composerDraftTarget"],
   ) => ReadonlyMap<string, string>;
   readonly expandMobileComposer: () => void;
+  readonly stashShortcutLabel: string | null;
 }) {
   const {
     environmentId,
@@ -122,6 +127,7 @@ export function useComposerStash(input: {
     setComposerTrigger,
     importContextRecords,
     expandMobileComposer,
+    stashShortcutLabel,
   } = input;
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
@@ -577,6 +583,24 @@ export function useComposerStash(input: {
       setComposerCursor(0);
       setComposerTrigger(null);
       pulseStashBadge();
+      const imageCount = images.length;
+      toastManager.add({
+        title: `Prompt stashed${imageCount > 0 ? ` with ${imageCount} image${imageCount === 1 ? "" : "s"}` : ""}`,
+        description: createElement(
+          "span",
+          { className: "flex items-center gap-2" },
+          createElement(Kbd, null, (stashShortcutLabel ?? "Ctrl S").replaceAll("+", " ")),
+          createElement("span", null, "restores"),
+        ),
+        data: {
+          promptStash: true,
+          leadingIcon: createElement(BookmarkIcon, {
+            className: "size-3.25",
+            "aria-hidden": "true",
+          }),
+          hideCopyButton: true,
+        },
+      });
 
       if (evicted) {
         for (const file of evicted.files ?? []) {

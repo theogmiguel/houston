@@ -147,6 +147,7 @@ export function SnoozePresetsRow() {
   // Environments disagree, so equal-looking edits and Reset must still write to all of them.
   const mixed = useScopedSettingsMixed(["snoozePresets"]);
   const [written, setWritten] = useState<ReadonlyArray<ReadonlyArray<SnoozePresetSetting>>>([]);
+  const [editing, setEditing] = useState(false);
   const freshKeys = (count: number) => {
     setNextKey(nextKey + count);
     return Array.from({ length: count }, (_, index) => nextKey + index);
@@ -180,27 +181,62 @@ export function SnoozePresetsRow() {
   };
   const replaceAt = (index: number, next: SnoozePresetSetting) =>
     save(presets.map((preset, candidate) => (candidate === index ? next : preset)));
+  const resetAction =
+    !mixed && sameSnoozePresets(presets, DEFAULT_SNOOZE_PRESETS) ? null : (
+      <SettingResetButton
+        label="hold options"
+        onClick={() => {
+          const sorted = sortSnoozeRows(
+            DEFAULT_SNOOZE_PRESETS,
+            freshKeys(DEFAULT_SNOOZE_PRESETS.length),
+            now,
+          );
+          save(sorted.presets, sorted.keys);
+        }}
+      />
+    );
+  const summary = presets
+    .map((preset) =>
+      preset.kind === "after"
+        ? preset.minutes % 60 === 0
+          ? `${preset.minutes / 60} h`
+          : `${preset.minutes} m`
+        : WHEN_LABELS[preset.day],
+    )
+    .join(" · ");
+
+  if (!editing) {
+    return (
+      <SettingsRow
+        serverScoped
+        settingKeys={["snoozePresets"]}
+        {...searchableSetting("snooze-options")}
+        title="Hold options"
+        resetAction={resetAction}
+        control={
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">{summary}</span>
+            <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+              Edit
+            </Button>
+          </div>
+        }
+      />
+    );
+  }
 
   return (
     <SettingsRow
       serverScoped
       settingKeys={["snoozePresets"]}
       {...searchableSetting("snooze-options")}
+      title="Hold options"
       description="Choices in every hold menu, listed soonest first. Weekdays mean the next one after today."
-      resetAction={
-        !mixed && sameSnoozePresets(presets, DEFAULT_SNOOZE_PRESETS) ? null : (
-          <SettingResetButton
-            label="hold options"
-            onClick={() => {
-              const sorted = sortSnoozeRows(
-                DEFAULT_SNOOZE_PRESETS,
-                freshKeys(DEFAULT_SNOOZE_PRESETS.length),
-                now,
-              );
-              save(sorted.presets, sorted.keys);
-            }}
-          />
-        )
+      resetAction={resetAction}
+      control={
+        <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+          Done
+        </Button>
       }
     >
       <SnoozePresetList

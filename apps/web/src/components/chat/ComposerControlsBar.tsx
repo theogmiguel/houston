@@ -6,6 +6,7 @@ import { CircleAlertIcon } from "lucide-react";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerControl } from "./ComposerControl";
 import {
+  ComposerPermissionsPicker,
   ComposerPermissionsSection,
   ComposerFooterModeControls,
   ComposerModelPicker,
@@ -75,6 +76,7 @@ export function ComposerControlsBar(props: {
   multipleModelsEnabled: boolean;
   multipleModelSelections: ChatComposerProps["multipleModelSelections"];
   onMultipleModelSelectionsChange: ChatComposerProps["onMultipleModelSelectionsChange"];
+  onSendMultipleModels: () => void;
   selectedModelSelection: ModelSelection;
   onProviderModelSelect: ChatComposerProps["onProviderModelSelect"];
   activeThreadModelSelection: ChatComposerProps["activeThreadModelSelection"];
@@ -124,6 +126,7 @@ export function ComposerControlsBar(props: {
     multipleModelsEnabled,
     multipleModelSelections,
     onMultipleModelSelectionsChange,
+    onSendMultipleModels,
     selectedModelSelection,
     onProviderModelSelect,
     activeThreadModelSelection,
@@ -255,6 +258,7 @@ export function ComposerControlsBar(props: {
       multipleModelsEnabled={multipleModelsEnabled}
       multipleModelSelections={multipleModelSelections}
       onMultipleModelSelectionsChange={onMultipleModelSelectionsChange}
+      onSendMultipleModels={onSendMultipleModels}
       selectedModelSelection={selectedModelSelection}
       onProviderModelSelect={onProviderModelSelect}
       activeInstanceId={
@@ -294,7 +298,7 @@ export function ComposerControlsBar(props: {
       {...(compactPane
         ? {
             menuAccessory: (
-              <ComposerPermissionsSection
+              <ComposerPermissionsPicker
                 runtimeMode={compatibleRuntimeMode}
                 runtimeModeOptions={compatibleRuntimeModeOptions}
                 onRuntimeModeChange={handleRuntimeModeChange}

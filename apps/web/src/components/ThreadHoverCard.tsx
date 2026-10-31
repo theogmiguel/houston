@@ -16,13 +16,15 @@ export function ThreadHoverCard({
   title,
   children,
   footer,
+  className,
 }: {
   title: string;
   children: ReactNode;
   footer?: ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="flex min-w-0 max-w-80 flex-col gap-2 px-1 py-2">
+    <div className={cn("flex min-w-0 max-w-80 flex-col gap-2 px-1 py-2", className)}>
       <div className="min-w-0 truncate text-xs leading-tight font-medium text-foreground">
         {title}
       </div>
