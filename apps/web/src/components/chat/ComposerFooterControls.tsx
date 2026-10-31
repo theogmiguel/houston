@@ -227,18 +227,17 @@ export function ComposerPermissionsSection(props: {
           {option.description}
         </span>
       ))}
-      <div className="grid gap-0.5" aria-hidden="true">
+      <div className="px-2 pt-0.5 pb-1.5 text-xs leading-4" aria-hidden="true">
         <span
           className={
             shownMode === props.runtimeMode
-              ? "text-foreground text-sm"
-              : "text-muted-foreground text-sm"
+              ? "font-medium text-foreground"
+              : "text-muted-foreground"
           }
         >
-          {shown.label}
-        </span>
-        {/* Two lines reserved so the menu does not shift while you preview modes. */}
-        <span className="min-h-8 text-muted-foreground text-xs leading-4">{shown.description}</span>
+          {shown.label}.
+        </span>{" "}
+        <span className="text-muted-foreground">{shown.description}</span>
       </div>
     </div>
   );
