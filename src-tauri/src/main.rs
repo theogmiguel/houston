@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app_log;
+mod app_menu;
 mod app_update;
 mod clipboard;
 mod dialog;
@@ -335,6 +336,7 @@ fn main() {
     builder = builder.manage(shells::ShellsCache::new());
     builder = builder.manage(std::sync::Arc::new(app_update::V2UpdateHandle::new()));
     builder = builder.manage(window::ContextMenuState::default());
+    builder = builder.manage(app_menu::ZoomState::default());
 
     let launch_transfer = std::env::current_dir()
         .ok()
@@ -427,6 +429,7 @@ fn main() {
             transfer_open::transfer_launch_file,
             shell::shell_open_external,
             shell::shell_show_item_in_folder,
+            shell::shell_reveal_item_in_folder,
             shell::shell_open_media_file,
             shell::shell_list_editors,
             shell::shell_open_in_editor,
@@ -452,6 +455,7 @@ fn main() {
             window::window_is_focused,
             window::window_toggle_fullscreen,
             window::window_set_zoom,
+            app_menu::window_zoom,
             window::window_focus,
             window::window_set_background_color,
             window::window_start_dragging,
@@ -467,6 +471,9 @@ fn main() {
         ])
         .on_menu_event(|app, event| {
             let id = event.id().0.as_str();
+            if app_menu::handle_menu_event(app, id) {
+                return;
+            }
             if !window::handle_context_menu_event(app, id) {
                 let _ = app.emit_to("main", "v2-menu-action", id);
             }
@@ -666,6 +673,7 @@ fn main() {
             ));
 
             tray::install(app.handle(), &tray_host);
+            app_menu::install(app.handle()).expect("failed to install the application menu");
 
             #[cfg(debug_assertions)]
             if std::env::var("HOUSTON_DEVTOOLS").as_deref() == Ok("1") {

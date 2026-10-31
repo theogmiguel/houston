@@ -202,6 +202,69 @@ async fn resolve_and_check(raw: &str, expected: ExpectedKind) -> Result<PathBuf,
     Ok(path)
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
+fn reveal_parent(path: &Path) -> PathBuf {
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+        _ => PathBuf::from("."),
+    }
+}
+
+#[cfg(target_os = "linux")]
+async fn reveal_target_in_folder(target: &Path) -> Result<(), String> {
+    let parent = reveal_parent(target);
+    run_open_command("xdg-open", &parent).await
+}
+
+#[cfg(target_os = "macos")]
+async fn reveal_target_in_folder(target: &Path) -> Result<(), String> {
+    let output = crate::sys::spawn::tokio_command("open")
+        .arg("-R")
+        .arg(target)
+        .output()
+        .await
+        .map_err(|e| format!("failed to spawn open -R for {target:?}: {e}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "open -R exited with status {:?} for {target:?}: {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+}
+
+#[cfg(windows)]
+fn explorer_select_argument(target: &Path) -> String {
+    format!("/select,\"{}\"", target.display())
+}
+
+#[cfg(windows)]
+async fn reveal_target_in_folder(target: &Path) -> Result<(), String> {
+    use std::os::windows::process::CommandExt as _;
+    let mut command = crate::sys::spawn::command("explorer");
+    command.raw_arg(explorer_select_argument(target));
+    // explorer.exe reports exit code 1 even when it selects the item.
+    tokio::process::Command::from(command)
+        .status()
+        .await
+        .map_err(|e| format!("failed to spawn explorer for {target:?}: {e}"))?;
+    Ok(())
+}
+
+/// Reveals a file in the platform file manager, matching Electron's
+/// `shell.showItemInFolder`. Linux has no portable select flag, so it opens the
+/// containing directory.
+#[tauri::command]
+pub async fn shell_reveal_item_in_folder(path: String) -> Result<(), String> {
+    let target = expand_tilde(&path)?;
+    tokio::fs::metadata(&target)
+        .await
+        .map_err(|e| format!("shell_reveal_item_in_folder: cannot stat {path:?}: {e}"))?;
+    reveal_target_in_folder(&target).await
+}
+
 #[tauri::command]
 pub async fn shell_show_item_in_folder(full_path: String) -> PathOpenResult {
     open_checked(&full_path, ExpectedKind::Directory).await
@@ -401,6 +464,28 @@ pub async fn shell_open_in_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reveal_parent_of_a_file_is_its_directory() {
+        assert_eq!(
+            reveal_parent(Path::new("/home/user/artifacts/shot.png")),
+            PathBuf::from("/home/user/artifacts")
+        );
+    }
+
+    #[test]
+    fn reveal_parent_of_a_relative_name_is_the_current_directory() {
+        assert_eq!(reveal_parent(Path::new("shot.png")), PathBuf::from("."));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_select_argument_quotes_the_full_path() {
+        assert_eq!(
+            explorer_select_argument(Path::new(r"C:\Users\me\shot.png")),
+            r#"/select,"C:\Users\me\shot.png""#
+        );
+    }
 
     #[cfg(target_os = "linux")]
     fn editor_fixture() -> (std::process::Command, std::fs::File, std::fs::File) {
