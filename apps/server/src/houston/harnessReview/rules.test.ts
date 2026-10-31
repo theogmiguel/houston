@@ -123,6 +123,19 @@ const refusal = (body: string, links = NO_LINKS) => {
 };
 
 describe("the findings parser", () => {
+  it("a refusal quotes at most 2 KB of the offending value", () => {
+    for (const body of [
+      JSON.stringify({ schema: "x".repeat(100_000), findings: [] }),
+      file([finding("k".repeat(1_000_000))]),
+    ]) {
+      expect(refusal(body).length).toBeLessThan(2_048 + 300);
+    }
+    expect(refusal(JSON.stringify({ schema: "x".repeat(100_000), findings: [] }))).toContain(
+      "… (100002 characters)",
+    );
+    expect(refusal('{"schema":2,"findings":[]}')).toContain("schema must be 1; got 2");
+  });
+
   it("the findings parser refuses a wrong shape by path and caps every field", () => {
     expect(refusal("{not json")).toMatch(/not valid JSON/);
     expect(refusal('{"schema":2,"findings":[]}')).toContain("schema must be 1; got 2");

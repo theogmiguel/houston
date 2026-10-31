@@ -31,7 +31,7 @@ import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
-import { hasReadOnlyRun } from "../sideThreads.ts";
+import { HARNESS_REVIEW_THREAD_PREFIX, hasReadOnlyRun } from "../sideThreads.ts";
 import { buildDigest, type DigestThreadInput } from "./digest.ts";
 import { buildInventory } from "./inventory.ts";
 import { runDirectory, writeIgnoreFile } from "./runDirectory.ts";
@@ -45,7 +45,8 @@ import {
 } from "./rules.ts";
 import { HoustonHarnessStore } from "./Store.ts";
 
-export const reviewThreadId = (reviewId: number) => ThreadId.make(`harness-review:${reviewId}`);
+export const reviewThreadId = (reviewId: number) =>
+  ThreadId.make(`${HARNESS_REVIEW_THREAD_PREFIX}${reviewId}`);
 export const reviewMessageId = (reviewId: number) =>
   MessageId.make(`message:harness-review:${reviewId}`);
 export const correctionMessageId = (reviewId: number, correction: number) =>

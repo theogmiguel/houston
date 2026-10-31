@@ -165,7 +165,14 @@ const refuse = (message: string): never => {
   throw new Refusal(`findings.json: ${message}`);
 };
 
-const show = (value: unknown) => JSON.stringify(value) ?? String(value);
+/** Characters of an offending value a refusal quotes; it reaches the correction and the stored error. */
+const SHOWN_CHARS = 2_048;
+const show = (value: unknown) => {
+  const text = JSON.stringify(value) ?? String(value);
+  return text.length <= SHOWN_CHARS
+    ? text
+    : `${text.slice(0, SHOWN_CHARS)}… (${text.length} characters)`;
+};
 
 const KEY = new RegExp(`^[a-z0-9-]{1,${HOUSTON_HARNESS_LIMITS.keyChars}}$`);
 

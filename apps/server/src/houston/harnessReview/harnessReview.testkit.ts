@@ -346,6 +346,13 @@ export const seedPublished = Effect.fn("HarnessReviewKit.seedPublished")(functio
     providerInstanceId: "claudeAgent",
     startedAt: input.endedAt,
   });
+  yield* store.markRunning(review.id, {
+    threadId: ThreadId.make(`seeded-review:${review.id}`),
+    windowSince: input.endedAt,
+    windowUntil: input.endedAt,
+    threads: 1,
+    prompts: 1,
+  });
   yield* store.publish(review.id, {
     endedAt: input.endedAt,
     windowSince: input.endedAt,

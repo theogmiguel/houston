@@ -7,6 +7,7 @@ import {
   type OrchestrationV2AppThread,
   type OrchestrationV2ProviderCapabilities,
   type OrchestrationV2Run,
+  type OrchestrationV2ServerCommand,
   type OrchestrationV2TurnItem,
   type RunId,
   type ThreadId,
@@ -33,6 +34,24 @@ export const SIDE_THREAD_NOT_A_SOURCE =
 export const HARNESS_REVIEW_NOT_SENT =
   "A harness review's result reaches Houston when its run ends; it is not sent to a thread.";
 export const NO_DIFF_RECORDED = "No diff is recorded for this turn.";
+
+/** Review threads are `harness-review:<id>`; no client command may create or target one. */
+export const HARNESS_REVIEW_THREAD_PREFIX = "harness-review:";
+export const reservedThreadIdOf = (command: OrchestrationV2ServerCommand): ThreadId | undefined => {
+  const created =
+    command.type === "thread.create"
+      ? command.threadId
+      : command.type === "thread.fork" || command.type === "thread.merge_back"
+        ? command.targetThreadId
+        : command.type === "houston.aside.start"
+          ? command.asideThreadId
+          : command.type === "houston.second-opinion.request"
+            ? command.reviewThreadId
+            : undefined;
+  return created?.startsWith(HARNESS_REVIEW_THREAD_PREFIX) ? created : undefined;
+};
+export const reservedThreadIdRefusal = (threadId: ThreadId) =>
+  `Thread id ${threadId} is reserved: ids starting "${HARNESS_REVIEW_THREAD_PREFIX}" belong to harness review threads.`;
 export const asideWaitsForTurn = (provider: string) =>
   `${provider} cannot fork a thread while its turn runs, so an aside has to wait for this turn to finish.`;
 

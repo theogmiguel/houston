@@ -274,6 +274,10 @@ const make = Effect.gen(function* () {
       id,
       sql.withTransaction(
         Effect.gen(function* () {
+          // Only a running review publishes: a failed, preparing or published one keeps its state.
+          const [current] = yield* sql<{ status: string }>`
+            SELECT status FROM houston_harness_reviews WHERE id = ${id}`;
+          if (current?.status !== "running") return;
           for (const finding of input.findings) {
             yield* sql`
               INSERT INTO houston_harness_findings (review_id, key, title, category, confidence,
@@ -300,7 +304,7 @@ const make = Effect.gen(function* () {
               threads = COALESCE(${input.threads}, threads), prompts = COALESCE(${input.prompts}, prompts),
               cost_usd = ${input.costUsd}, finding_count = ${input.findings.length},
               summary = ${input.summary}, error = NULL
-            WHERE id = ${id}
+            WHERE id = ${id} AND status = 'running'
           `;
         }),
       ),

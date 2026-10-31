@@ -175,6 +175,8 @@ import {
   reviewPrompt,
   sentReviewText,
   SIDE_RESULT_ONLY_THROUGH_SEND,
+  reservedThreadIdOf,
+  reservedThreadIdRefusal,
   SIDE_THREAD_NOT_A_SOURCE,
   SIDE_THREAD_READ_ONLY,
   sideMessageId,
@@ -13051,6 +13053,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         }
       | undefined;
     let updateDelegatedCompletionOnlyRunId: RunId | undefined;
+    const reserved = reservedThreadIdOf(command);
+    if (reserved !== undefined) {
+      return yield* refuseSideCommand(command, reservedThreadIdRefusal(reserved));
+    }
     switch (command.type) {
       case "thread.create":
         yield* dispatchThreadCreate(command, events);
