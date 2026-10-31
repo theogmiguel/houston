@@ -8,13 +8,15 @@ import { createModelSelection } from "@t3tools/shared/model";
 import { BotIcon, PencilRulerIcon } from "lucide-react";
 import { type ComponentProps, memo, useId, useRef, useState } from "react";
 
+import { cn } from "~/lib/utils";
+
 import type { ContextWindowSnapshot } from "../../lib/contextWindow";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
 import { focusRequestedPermission, useComposerMenuProps } from "./composerEventScope";
-import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
+import { ComposerCompactBeforeSendChip, ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ContextWindowMeter, ContextWindowMeterPlaceholder } from "./ContextWindowMeter";
 import { resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { ProviderModelPicker } from "./ProviderModelPicker";
@@ -42,6 +44,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
 }) {
   const size = props.size ?? "sm";
   const accessDisplay = props.accessDisplay ?? "label";
+  const boardControlClassName = size === "sm" ? "h-6! gap-1! px-1.5! text-xs!" : undefined;
   const composerFloatingLayerProps = useComposerMenuProps();
   const [open, setOpen] = useComposerMenuState(props.hidden);
   const permissionsChipRef = useRef<HTMLButtonElement>(null);
@@ -60,7 +63,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
         render={
           <ComposerControl
             size={size}
-            className="shrink-0 whitespace-nowrap"
+            className={cn("shrink-0 whitespace-nowrap", boardControlClassName)}
             aria-pressed={props.interactionMode === "plan"}
             type="button"
             onClick={props.onToggleInteractionMode}
@@ -113,7 +116,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
                   data-composer-shortcut="composer.mode"
                   size={size}
                   // Mirrors the effort chip's trailing pe-1 so both gaps around the bars match.
-                  className="ps-1.5"
+                  className={cn("ps-1.5", boardControlClassName)}
                   aria-label={`Permissions: ${runtimeModeOption.label}`}
                 />
               }
@@ -317,8 +320,27 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   keepFullHistory: boolean;
   onToggleKeepFullHistory: () => void;
 }) {
+  const showResume = props.canResume && !props.hasSendableContent && !props.isEditingQueuedMessage;
+  const takesPrimaryActionSlot =
+    props.pendingAction !== null ||
+    (props.showPlanFollowUpPrompt && (props.promptHasText || !props.canResume)) ||
+    (props.canInterrupt && !props.hasSendableContent && !props.isEditingQueuedMessage);
+  const showCompactChip =
+    !takesPrimaryActionSlot &&
+    props.compactBeforeSendTokens !== null &&
+    !showResume &&
+    !props.isEditingQueuedMessage;
   return (
     <>
+      {showCompactChip ? (
+        <ComposerCompactBeforeSendChip
+          tokens={props.compactBeforeSendTokens ?? 0}
+          keepFullHistory={props.keepFullHistory}
+          onToggleKeepFullHistory={props.onToggleKeepFullHistory}
+          disabled={!props.canOperateThread}
+          preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
+        />
+      ) : null}
       {props.activeContextWindow ? (
         <ContextWindowMeter
           usage={props.activeContextWindow}

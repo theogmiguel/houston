@@ -217,37 +217,39 @@ export function ComposerControlsBar(props: {
     extraMenuOwnsModeShortcut: effortOwnsModeShortcut,
   });
   const compactPane = paneDensity === "compact";
-  const restingBlockDefs = compactPane ? [] : [
-    ...(providerTraitsPicker
-      ? [
-          {
-            id: "traits",
-            content: restingProviderTraitsPicker,
-          },
-        ]
-      : []),
-    ...(!showModeBlock
-      ? []
-      : [
-          {
-            id: "mode",
-            content: (
-              <ComposerFooterModeControls
-                showInteractionModeToggle={planModeUiEnabled}
-                interactionMode={interactionMode}
-                runtimeMode={compatibleRuntimeMode}
-                runtimeModeOptions={compatibleRuntimeModeOptions}
-                size={composerControlsCollapsed ? "xs" : "sm"}
-                hidden={composerControlsHidden || restingHiddenBlockCount > 0}
-                accessDisplay={accessDisplay}
-                emphasized={!accessMatchesDefault}
-                onToggleInteractionMode={toggleInteractionMode}
-                onRuntimeModeChange={handleRuntimeModeChange}
-              />
-            ),
-          },
-        ]),
-  ];
+  const restingBlockDefs = compactPane
+    ? []
+    : [
+        ...(providerTraitsPicker
+          ? [
+              {
+                id: "traits",
+                content: restingProviderTraitsPicker,
+              },
+            ]
+          : []),
+        ...(!showModeBlock
+          ? []
+          : [
+              {
+                id: "mode",
+                content: (
+                  <ComposerFooterModeControls
+                    showInteractionModeToggle={planModeUiEnabled}
+                    interactionMode={interactionMode}
+                    runtimeMode={compatibleRuntimeMode}
+                    runtimeModeOptions={compatibleRuntimeModeOptions}
+                    size={composerControlsCollapsed ? "xs" : "sm"}
+                    hidden={composerControlsHidden || restingHiddenBlockCount > 0}
+                    accessDisplay={accessDisplay}
+                    emphasized={!accessMatchesDefault}
+                    onToggleInteractionMode={toggleInteractionMode}
+                    onRuntimeModeChange={handleRuntimeModeChange}
+                  />
+                ),
+              },
+            ]),
+      ];
   // Its own element, so typing (which rebuilds the controls around it) leaves it cached.
   const composerModelPicker = (
     <ComposerModelPicker
@@ -319,7 +321,7 @@ export function ComposerControlsBar(props: {
         }
       }}
       data-chat-provider-unavailable="true"
-      className="shrink-0"
+      className="h-6! shrink-0 gap-1.5! px-1.5! text-(--warn)! text-xs!"
     >
       <CircleAlertIcon className="size-4" />
       {providerSetupInstanceId ? "Open provider settings" : "No provider available"}
@@ -342,6 +344,8 @@ export function ComposerControlsBar(props: {
               inert={hidden || undefined}
               className={cn(
                 "flex w-max min-w-max shrink-0 items-center gap-1",
+                def.id === "traits" &&
+                  "relative before:absolute before:top-1/2 before:-left-0.75 before:h-3 before:w-px before:-translate-y-1/2 before:bg-(--border)",
                 hidden && "pointer-events-none invisible absolute",
                 index >= restingBlockDefs.length - iconOnlyBlockCount &&
                   "[&_[data-composer-control-label]]:pointer-events-none [&_[data-composer-control-label]]:invisible [&_[data-composer-control-label]]:absolute [&_[data-composer-control-label]]:w-max [&_[data-composer-control-label]]:max-w-none [&_[data-composer-control-compact-icon]]:[visibility:inherit] [&_[data-composer-control-compact-icon]]:relative",

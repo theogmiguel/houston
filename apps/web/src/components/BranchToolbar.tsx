@@ -651,12 +651,12 @@ export const BranchToolbar = memo(function BranchToolbar({
       ref={attachStrip}
       data-compact={labelsCompact ? "" : undefined}
       data-narrow={labelsNarrow ? "" : undefined}
-      className={cn("gap-1 text-xs font-normal text-foreground/70 dark:text-muted-foreground")}
+      className="gap-px font-normal"
     >
       {!isServerThread ? (
         <>
           <span
-            className="inline-flex h-7 min-w-0 max-w-[7rem] shrink-0 items-center gap-1 border border-transparent px-1.75 font-normal text-muted-foreground/80 text-xs sm:h-6"
+            className="inline-flex min-w-0 max-w-[7rem] shrink-0 items-center gap-1 font-normal"
             data-composer-context-control
           >
             <FolderIcon className="size-3 shrink-0" />
