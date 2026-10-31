@@ -76,15 +76,22 @@ pub fn system_third_party_licenses(app: tauri::AppHandle) -> Result<String, Stri
     }
 }
 
-/// The only settings pane the desktop bridge names. Anything else is a
-/// contract violation, not a silent no-op.
+/// The privacy panes the desktop bridge names. Anything else is a contract
+/// violation, not a silent no-op.
 fn system_settings_pane(pane: &str) -> Result<&'static str, String> {
     match pane {
-        "full-disk-access" => {
-            Ok("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+        "screen-recording" => {
+            Ok("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
         }
+        "accessibility" => {
+            Ok("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        }
+        "full-disk-access" => Ok(
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles",
+        ),
         other => Err(format!(
-            "system settings pane must be \"full-disk-access\", got {other:?}"
+            "system settings pane must be \"screen-recording\", \"accessibility\" or \
+             \"full-disk-access\", got {other:?}"
         )),
     }
 }
@@ -104,12 +111,47 @@ pub fn v2_open_system_settings(pane: String) -> Result<bool, String> {
     }
 }
 
-/// TCC has no supported query, so the bridge reports what it can prove: no
-/// permission pane is granted automatically.
+#[cfg(any(target_os = "macos", test))]
+fn safari_cookie_candidates(home: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let container = home.join("Library/Containers/com.apple.Safari/Data/Library");
+    let mut paths = vec![container.join("Cookies/Cookies.binarycookies")];
+    let stores = container.join("WebKit/WebsiteDataStore");
+    if let Ok(entries) = std::fs::read_dir(&stores) {
+        for entry in entries.flatten() {
+            let candidate = entry.path().join("Cookies/Cookies.binarycookies");
+            if candidate.exists() {
+                paths.push(candidate);
+            }
+        }
+    }
+    paths
+}
+
+/// Upstream proves Full Disk Access by opening Safari's cookie database; TCC
+/// refuses the open until the app holds the grant.
+#[cfg(any(target_os = "macos", test))]
+fn safari_access_granted(home: &std::path::Path) -> bool {
+    safari_cookie_candidates(home)
+        .iter()
+        .any(|path| std::fs::File::open(path).is_ok())
+}
+
+/// On macOS this mirrors upstream's Safari cookie probe; elsewhere upstream has
+/// no permission to query and reports false.
 #[tauri::command]
 pub fn v2_check_system_permission(pane: String) -> Result<bool, String> {
     system_settings_pane(&pane)?;
-    Ok(false)
+    #[cfg(target_os = "macos")]
+    {
+        let Some(home) = crate::sys::home_dir::home_dir() else {
+            return Ok(false);
+        };
+        Ok(safari_access_granted(&home))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(false)
+    }
 }
 
 #[cfg(test)]
@@ -137,10 +179,41 @@ mod tests {
     }
 
     #[test]
-    fn system_settings_panes_accept_only_full_disk_access() {
-        assert!(system_settings_pane("full-disk-access").is_ok());
+    fn system_settings_panes_accept_the_three_privacy_panes_only() {
+        for pane in ["screen-recording", "accessibility", "full-disk-access"] {
+            assert!(
+                system_settings_pane(pane).is_ok(),
+                "{pane} must be accepted"
+            );
+        }
         let error = system_settings_pane("microphone").expect_err("unknown pane must be refused");
         assert!(error.contains("microphone"), "{error}");
+    }
+
+    #[test]
+    fn safari_cookie_candidates_start_with_the_default_container_database() {
+        let home = std::path::Path::new("/home/fixture");
+        let candidates = safari_cookie_candidates(home);
+        assert_eq!(
+            candidates.first().expect("at least the default path"),
+            &home.join(
+                "Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies"
+            )
+        );
+    }
+
+    #[cfg(any(target_os = "macos", test))]
+    #[test]
+    fn safari_access_is_denied_when_no_cookie_database_is_readable() {
+        let home = std::env::temp_dir().join(format!(
+            "houston-safari-fixture-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("the test clock is after the epoch")
+                .as_nanos()
+        ));
+        assert!(!safari_access_granted(&home));
     }
 
     #[test]
