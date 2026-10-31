@@ -25,8 +25,8 @@ import {
   shouldAnimateSnapShotArrival,
 } from "../../lib/snapShotAnimation";
 import { cn } from "~/lib/utils";
+import { useTheme } from "~/hooks/useTheme";
 import { getRestingComposerImagePreviewCounts } from "../composerFooterLayout";
-import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { AttachmentFilePreview } from "../files/AttachmentFilePreview";
 import { AttachmentImage } from "../media/AttachmentImage";
 import { Button } from "../ui/button";
@@ -46,6 +46,102 @@ import {
   SnapShotAttachmentDetails,
 } from "./SnapShotAttachmentDetails";
 import { prepareVideoFirstFrame } from "../../lib/videoFirstFrame";
+
+const ATTACHMENT_TILE_CLASS =
+  "group/tile relative size-14 shrink-0 snap-start overflow-hidden rounded-lg";
+
+function attachmentUploadRatio(progress: number): number {
+  return Math.max(0, Math.min(1, Number.isFinite(progress) ? progress : 0));
+}
+
+/** Board tile progress: a 56px ring tracing the upload plus its percentage. */
+function AttachmentUploadRing(props: { progress: number; overImage?: boolean }) {
+  return (
+    <>
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 56 56"
+        className="pointer-events-none absolute -top-px -left-px size-14"
+      >
+        <rect
+          x="0.75"
+          y="0.75"
+          width="54.5"
+          height="54.5"
+          rx="9"
+          pathLength={100}
+          fill="none"
+          stroke="var(--accent-ink)"
+          strokeWidth={1.5}
+          strokeLinecap="round"
+          strokeDasharray={`${attachmentUploadRatio(props.progress) * 100} 100`}
+        />
+      </svg>
+      <span
+        className={cn(
+          "pointer-events-none absolute top-[5px] right-[5px] text-4xs font-semibold text-(--accent-ink) leading-2.5 tabular-nums",
+          props.overImage && "rounded-(--r-badge) bg-black/50 px-1 py-px text-white",
+        )}
+      >
+        {formatAttachmentUploadProgress(props.progress)}
+      </span>
+    </>
+  );
+}
+
+function AttachmentTileRemoveButton(props: {
+  name: string;
+  overImage?: boolean;
+  onRemove: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={`Remove ${props.name}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        props.onRemove();
+      }}
+      className={cn(
+        "absolute top-1 right-1 z-10 grid size-4 place-items-center rounded-full opacity-0 transition-opacity group-hover/tile:opacity-100 group-focus-within/tile:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
+        props.overImage
+          ? "bg-black/50 text-white hover:bg-black/70"
+          : "text-(--t3) hover:bg-(--hover) hover:text-(--t1)",
+      )}
+    >
+      <XIcon aria-hidden="true" className="size-[11px]" />
+    </button>
+  );
+}
+
+function AttachmentTileRetryButton(props: {
+  name: string;
+  reason: string;
+  disabled: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={`Retry upload for ${props.name}`}
+            disabled={props.disabled}
+            onClick={(event) => {
+              event.stopPropagation();
+              props.onRetry();
+            }}
+            className="grid size-[18px] place-items-center text-(--warn) outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-default disabled:opacity-60"
+          />
+        }
+      >
+        <CircleAlertIcon aria-hidden="true" className="size-[18px]" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">{props.reason}</TooltipPopup>
+    </Tooltip>
+  );
+}
 
 function ComposerVideoThumbnail({ file }: { file: File }) {
   const setVideo = (video: HTMLVideoElement | null) => {
@@ -153,7 +249,7 @@ export function ComposerAttachmentMediaRow({
   return (
     <div
       className={cn(
-        "mb-3 flex max-w-full gap-2",
+        "mb-2 flex max-w-full gap-1.5",
         pendingSnapShotIds.length > 0 ||
           expandedImages.some((image) => image.source?.kind === "snap-shot")
           ? "snap-x snap-proximity overflow-x-auto overscroll-x-contain pb-1 scrollbar-thumb-foreground/18 scrollbar-track-transparent [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-3 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-foreground/18 [&::-webkit-scrollbar-thumb]:bg-clip-content [&::-webkit-scrollbar-thumb:hover]:bg-foreground/28 [&::-webkit-scrollbar-track]:mx-1 [&::-webkit-scrollbar-track]:bg-transparent"
@@ -170,10 +266,10 @@ export function ComposerAttachmentMediaRow({
           const upload =
             ready && supportsAttachmentUploads ? uploadsByImageId[image.id] : undefined;
           const source = ready?.source;
-          const snapShotAnimationPending =
-            source?.kind === "snap-shot" && pendingSnapShotIdSet.has(image.id);
-          const snapShotArrival =
-            source?.kind === "snap-shot" && shouldAnimateSnapShotArrival(source.capturedAt);
+          const isSnapShot = source !== undefined;
+          const snapShotAnimationPending = isSnapShot && pendingSnapShotIdSet.has(image.id);
+          const snapShotArrival = isSnapShot && shouldAnimateSnapShotArrival(source.capturedAt);
+          const uploadFailed = ready !== null && upload?.status === "failed";
           return (
             <SnapShotAttachmentFrame
               key={image.id}
@@ -185,10 +281,11 @@ export function ComposerAttachmentMediaRow({
               animationId={snapShotAnimationPending ? image.id : undefined}
               animationSource={snapShotAnimationPending ? source : undefined}
               className={cn(
-                "group/attachment shrink-0 snap-start bg-background",
-                source?.kind === "snap-shot"
+                "group/tile shrink-0 snap-start bg-(--field)",
+                isSnapShot
                   ? SNAP_SHOT_ATTACHMENT_FRAME_CLASS
-                  : "relative h-16 w-16 overflow-hidden rounded-lg border border-border/80",
+                  : "relative size-14 overflow-hidden rounded-lg border border-transparent",
+                uploadFailed && "border-(--warn-line)",
                 snapShotAnimationPending && "invisible",
               )}
             >
@@ -230,7 +327,7 @@ export function ComposerAttachmentMediaRow({
                   {image.name}
                 </div>
               )}
-              {source?.kind === "snap-shot" ? (
+              {isSnapShot ? (
                 <SnapShotAttachmentDetails
                   source={source}
                   className={cn(
@@ -257,54 +354,30 @@ export function ComposerAttachmentMediaRow({
                   </TooltipPopup>
                 </Tooltip>
               )}
-              {(ready ? upload?.status === "uploading" : supportsAttachmentUploads) && (
-                <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/85 px-1 text-center text-3xs text-foreground">
-                  {formatAttachmentUploadProgress(
-                    upload?.status === "uploading" ? upload.progress : 0,
-                  )}
+              {upload?.status === "uploading" && (
+                <AttachmentUploadRing progress={upload.progress} overImage />
+              )}
+              {uploadFailed && (
+                <span className="absolute top-[6px] left-[6px] z-10 inline-flex rounded bg-black/45 p-0.5">
+                  <AttachmentTileRetryButton
+                    name={image.name}
+                    reason={upload.reason}
+                    disabled={!canOperateThread}
+                    onRetry={() =>
+                      retryAttachmentUpload({
+                        environmentId,
+                        image: ready,
+                        draftTarget: attachmentDraftTarget,
+                      })
+                    }
+                  />
                 </span>
               )}
-              {ready && upload?.status === "failed" && (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="overlay"
-                        size="icon-xs"
-                        className="absolute bottom-1 left-1"
-                        onClick={() =>
-                          retryAttachmentUpload({
-                            environmentId,
-                            image: ready,
-                            draftTarget: attachmentDraftTarget,
-                          })
-                        }
-                        disabled={!canOperateThread}
-                        aria-label={`Retry upload for ${image.name}`}
-                      />
-                    }
-                  >
-                    <RefreshIcon />
-                  </TooltipTrigger>
-                  <TooltipPopup side="top">{upload.reason}</TooltipPopup>
-                </Tooltip>
-              )}
-              <span
-                className={cn(
-                  "absolute right-1 top-1 flex",
-                  source?.kind === "snap-shot" &&
-                    "opacity-0 transition-opacity pointer-coarse:opacity-100 group-hover/attachment:opacity-100 group-focus-within/attachment:opacity-100",
-                )}
-              >
-                <Button
-                  variant="media-close"
-                  size="icon-xs"
-                  onClick={() => onRemoveImage(image.id)}
-                  aria-label={`Remove ${image.name}`}
-                >
-                  <XIcon />
-                </Button>
-              </span>
+              <AttachmentTileRemoveButton
+                name={image.name}
+                overImage
+                onRemove={() => onRemoveImage(image.id)}
+              />
             </SnapShotAttachmentFrame>
           );
         })
@@ -330,10 +403,15 @@ export function ComposerAttachmentMediaRow({
           maxFileAttachmentBytes !== null &&
           file.sizeBytes <= maxFileAttachmentBytes;
         const upload = fileCanUpload ? uploadsByImageId[file.id] : undefined;
+        const uploadFailed = upload?.status === "failed";
         return (
           <div
             key={file.id}
-            className="relative h-16 w-16 shrink-0 snap-start overflow-hidden rounded-lg border border-border/80 bg-black"
+            className={cn(
+              ATTACHMENT_TILE_CLASS,
+              "border border-transparent bg-black",
+              uploadFailed && "border-(--warn-line)",
+            )}
           >
             <button
               type="button"
@@ -358,44 +436,29 @@ export function ComposerAttachmentMediaRow({
               <PlayIcon className="relative z-10 size-4 fill-current drop-shadow-md" />
             </button>
             {upload?.status === "uploading" && (
-              <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/85 px-1 text-center text-3xs text-foreground">
-                {formatAttachmentUploadProgress(upload.progress)}
+              <AttachmentUploadRing progress={upload.progress} overImage />
+            )}
+            {uploadFailed && (
+              <span className="absolute top-[6px] left-[6px] z-10 inline-flex rounded bg-black/45 p-0.5">
+                <AttachmentTileRetryButton
+                  name={file.name}
+                  reason={upload.reason}
+                  disabled={!canOperateThread}
+                  onRetry={() =>
+                    retryAttachmentUpload({
+                      environmentId,
+                      image: file,
+                      draftTarget: attachmentDraftTarget,
+                    })
+                  }
+                />
               </span>
             )}
-            {upload?.status === "failed" && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      variant="overlay"
-                      size="icon-xs"
-                      className="absolute bottom-1 left-1"
-                      onClick={() =>
-                        retryAttachmentUpload({
-                          environmentId,
-                          image: file,
-                          draftTarget: attachmentDraftTarget,
-                        })
-                      }
-                      disabled={!canOperateThread}
-                      aria-label={`Retry upload for ${file.name}`}
-                    />
-                  }
-                >
-                  <RefreshIcon />
-                </TooltipTrigger>
-                <TooltipPopup side="top">{upload.reason}</TooltipPopup>
-              </Tooltip>
-            )}
-            <Button
-              variant="media-close"
-              size="icon-xs"
-              className="absolute right-1 top-1"
-              onClick={() => onRemoveFile(file.id)}
-              aria-label={`Remove ${file.name}`}
-            >
-              <XIcon />
-            </Button>
+            <AttachmentTileRemoveButton
+              name={file.name}
+              overImage
+              onRemove={() => onRemoveFile(file.id)}
+            />
           </div>
         );
       })}
@@ -429,7 +492,7 @@ export function ComposerAttachmentFileList({
 }) {
   const uploadsByImageId = useAttachmentUploadStore((state) => state.uploadsByImageId);
   return (
-    <div className="mb-3 flex flex-col gap-1">
+    <div className="mb-2 flex flex-wrap gap-1.5">
       {files.map((file) => {
         const fileCanUpload =
           supportsAttachmentUploads &&
@@ -438,61 +501,72 @@ export function ComposerAttachmentFileList({
         const upload = fileCanUpload ? uploadsByImageId[file.id] : undefined;
         const needsReattach = composerFileNeedsReattach(file);
         const canReattachFile = fileStagingLimit !== null && file.sizeBytes <= fileStagingLimit;
+        const uploadFailed = !needsReattach && upload?.status === "failed";
+        const tooltip = needsReattach
+          ? canReattachFile
+            ? `${file.name} was not saved with this draft. Attach it again to send it.`
+            : `${file.name} was not saved with this draft. Remove it to send.`
+          : upload?.status === "failed"
+            ? upload.reason
+            : `${file.name}\n${formatAttachmentSize(file.sizeBytes)}`;
         return (
           <div
             key={file.id}
-            className="flex min-w-0 items-center gap-2 py-1 text-sm text-foreground"
+            className={cn(
+              ATTACHMENT_TILE_CLASS,
+              "border border-(--border) bg-(--field)",
+              needsReattach && "border-dashed opacity-60",
+              uploadFailed && "border-(--warn-line)",
+            )}
           >
-            <PierreEntryIcon pathValue={file.name} kind="file" theme={resolvedTheme} />
-            <button
-              type="button"
-              disabled={needsReattach}
-              className="min-w-0 flex-1 truncate text-left hover:underline focus-visible:outline-2"
-              onClick={() => onPreviewFile(file.id)}
-            >
-              {file.name}
-            </button>
-            <span className="shrink-0 text-xs text-secondary-label">
-              {needsReattach
-                ? canReattachFile
-                  ? "Attach again"
-                  : "Remove to send"
-                : upload?.status === "uploading"
-                  ? formatAttachmentUploadProgress(upload.progress)
-                  : formatAttachmentSize(file.sizeBytes)}
-            </span>
-            {!needsReattach && upload?.status === "failed" ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() =>
-                        retryAttachmentUpload({
-                          environmentId,
-                          image: file,
-                          draftTarget: attachmentDraftTarget,
-                        })
-                      }
-                      disabled={!canOperateThread}
-                      aria-label={`Retry upload for ${file.name}`}
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    disabled={needsReattach}
+                    className="absolute inset-0 flex flex-col justify-between p-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-default"
+                    aria-label={
+                      needsReattach
+                        ? `${file.name}, ${canReattachFile ? "attach again" : "remove to send"}`
+                        : `Preview ${file.name}`
+                    }
+                    onClick={() => onPreviewFile(file.id)}
+                  >
+                    <PierreEntryIcon
+                      pathValue={file.name}
+                      kind="file"
+                      theme={resolvedTheme}
+                      className="size-[18px]"
                     />
+                    <span className="w-full truncate text-3xs text-(--t3) leading-3">
+                      {file.name}
+                    </span>
+                  </button>
+                }
+              />
+              <TooltipPopup side="top" className="whitespace-pre-wrap">
+                {tooltip}
+              </TooltipPopup>
+            </Tooltip>
+            {upload?.status === "uploading" && <AttachmentUploadRing progress={upload.progress} />}
+            {uploadFailed && (
+              <span className="absolute top-[6px] left-[5px] z-10 inline-flex">
+                <AttachmentTileRetryButton
+                  name={file.name}
+                  reason={upload.reason}
+                  disabled={!canOperateThread}
+                  onRetry={() =>
+                    retryAttachmentUpload({
+                      environmentId,
+                      image: file,
+                      draftTarget: attachmentDraftTarget,
+                    })
                   }
-                >
-                  <RefreshIcon />
-                </TooltipTrigger>
-                <TooltipPopup side="top">{upload.reason}</TooltipPopup>
-              </Tooltip>
-            ) : null}
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={() => onRemoveFile(file.id)}
-              aria-label={`Remove ${file.name}`}
-            >
-              <XIcon />
-            </Button>
+                />
+              </span>
+            )}
+            <AttachmentTileRemoveButton name={file.name} onRemove={() => onRemoveFile(file.id)} />
           </div>
         );
       })}
@@ -639,31 +713,42 @@ export function ComposerQueuedAttachmentRow({
   }>;
   readonly onRemove: (attachmentId: string) => void;
 }) {
+  const { resolvedTheme } = useTheme();
   return (
-    <div className="mb-3 flex flex-wrap gap-2">
-      {attachments.map(({ attachment, url }) => (
-        <div
-          key={attachment.id}
-          className="relative h-16 w-16 overflow-hidden rounded-lg border border-border/80 bg-background"
-        >
-          {attachment.type === "image" && url ? (
-            <img src={url} alt={attachment.name} className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center px-1 text-center text-3xs text-secondary-label">
-              {attachment.name}
-            </div>
-          )}
-          <Button
-            variant="media-close"
-            size="icon-xs"
-            className="absolute right-1 top-1"
-            onClick={() => onRemove(attachment.id)}
-            aria-label={`Remove ${attachment.name}`}
+    <div className="mb-2 flex flex-wrap gap-1.5">
+      {attachments.map(({ attachment, url }) => {
+        const isImage = attachment.type === "image" && url !== null;
+        return (
+          <div
+            key={attachment.id}
+            className={cn(
+              ATTACHMENT_TILE_CLASS,
+              "border border-(--border) border-dashed bg-(--field) opacity-60",
+            )}
           >
-            <XIcon />
-          </Button>
-        </div>
-      ))}
+            {isImage ? (
+              <img src={url} alt={attachment.name} className="h-full w-full object-cover" />
+            ) : (
+              <div className="absolute inset-0 flex flex-col justify-between p-1.5">
+                <PierreEntryIcon
+                  pathValue={attachment.name}
+                  kind="file"
+                  theme={resolvedTheme}
+                  className="size-[18px]"
+                />
+                <span className="w-full truncate text-3xs text-(--t3) leading-3">
+                  {attachment.name}
+                </span>
+              </div>
+            )}
+            <AttachmentTileRemoveButton
+              name={attachment.name}
+              overImage={isImage}
+              onRemove={() => onRemove(attachment.id)}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }

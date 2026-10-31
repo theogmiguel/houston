@@ -514,7 +514,10 @@ describe("large text preview recovery", () => {
       await vi.waitFor(() => expect(screen.container.textContent).toContain("original"));
       // A cold worker can take longer than waitFor allows to load and index on CI.
       await indexed[0];
-      await vi.waitFor(() => expect(screen.container.textContent).toContain("1,000 lines"));
+      await vi.waitFor(() =>
+        // The header follows the host locale; assert the formatted value for the same locale.
+        expect(screen.container.textContent).toContain(`${(1000).toLocaleString()} lines`),
+      );
       const viewport = screen.container.querySelector<HTMLElement>('[tabindex="0"]')!;
       await act(() =>
         viewport.dispatchEvent(
@@ -1861,10 +1864,14 @@ describe("standalone Mermaid previews", () => {
       .spyOn(HTMLImageElement.prototype, "src", "set")
       .mockImplementation(() => {});
     await using screen = await render(<MermaidFilePreview text={`flowchart LR\n${node}`} />);
-    await vi.waitFor(() =>
-      expect(screen.container.querySelector('[role="alert"]')?.textContent).toContain(
-        "Show Mermaid source",
-      ),
+    // The first preview in this file loads the lazy Mermaid chunk; the default 1 s
+    // waitFor expires while that import is still in flight on a loaded runner.
+    await vi.waitFor(
+      () =>
+        expect(screen.container.querySelector('[role="alert"]')?.textContent).toContain(
+          "Show Mermaid source",
+        ),
+      { timeout: 10_000 },
     );
     expect(imageSource).not.toHaveBeenCalled();
     expect(screen.container.querySelector("svg")).toBeNull();

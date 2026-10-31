@@ -24,7 +24,7 @@ const NOW = "2026-10-20T00:00:00.000Z";
 const START: NotionCursor = { lastEditedTime: "2026-10-01T00:00:00.000Z", continuation: null };
 
 /** The failure message of a request expected to fail. */
-const failureText = <A>(effect: Effect.Effect<A, string>) =>
+const failureText = <A, R>(effect: Effect.Effect<A, string, R>) =>
   effect.pipe(Effect.match({ onFailure: (message) => message, onSuccess: () => "no failure" }));
 
 const withClient = <A, E>(
@@ -262,6 +262,216 @@ describe("a related page of another data source is skipped", () => {
         assert.lengthOf(polled.skipped, 1);
         assert.include(polled.skipped[0], pageId(2));
         assert.include(polled.skipped[0], pageId(102));
+      }),
+    ),
+  );
+});
+
+describe("notion write-back edits existing pages only", () => {
+  const PR_URL = "https://github.com/octo-org/project/pull/4";
+  const writeSettings = (patch: Record<string, unknown> = {}) =>
+    storedSettings(notionSettings({ notionPrUrlPropertyId: "pr", ...patch }));
+
+  /** Schema and page reads, page edits and a comment thread that remembers what was posted. */
+  const serveWrites = (
+    fake: NotionFake,
+    options: {
+      readonly options?: Array<string>;
+      readonly pages?: Array<ReturnType<typeof notionPage>>;
+    } = {},
+  ) => {
+    const comments: Array<unknown> = [];
+    notionServes(fake, () => options.pages ?? [notionPage(1)], {
+      extra: (request) => {
+        if (request.method === "GET" && request.path === `/v1/data_sources/${NOTION_SOURCE}`) {
+          return {
+            body: notionSchema(NOTION_SOURCE, {
+              Status: {
+                id: "St%3Aa",
+                name: "Status",
+                type: "status",
+                status: {
+                  options: (options.options ?? ["Ready", "Doing", "Shipped"]).map((name) => ({
+                    name,
+                  })),
+                },
+              },
+              PR: { id: "pr", name: "PR", type: "url", url: {} },
+            }),
+          };
+        }
+        if (request.method === "PATCH" && request.path === `/v1/pages/${pageId(1)}`) {
+          return { body: notionPage(1) };
+        }
+        if (request.method === "GET" && request.path.startsWith("/v1/comments?")) {
+          return { body: { object: "list", results: comments, has_more: false } };
+        }
+        if (request.method === "POST" && request.path === "/v1/comments") {
+          comments.push(request.body);
+          return { body: { object: "comment" } };
+        }
+        return null;
+      },
+    });
+  };
+
+  const writes = (fake: NotionFake) =>
+    fake.requests.filter((request) => request.method === "PATCH" || request.method === "POST");
+
+  it.effect("the mapped status option is set, an unmapped or removed one fails naming it", () =>
+    withClient((fake) =>
+      Effect.gen(function* () {
+        serveWrites(fake);
+        yield* NotionClient.writeNotion(TOKEN, writeSettings(), "status", {
+          externalId: pageId(1),
+          status: "in_progress",
+        });
+        assert.deepEqual(
+          writes(fake).map((request) => [request.method, request.path, request.body]),
+          [
+            [
+              "PATCH",
+              `/v1/pages/${pageId(1)}`,
+              { properties: { "St%3Aa": { status: { name: "Doing" } } } },
+            ],
+          ],
+        );
+        fake.requests.length = 0;
+        const unmapped = yield* failureText(
+          NotionClient.writeNotion(TOKEN, writeSettings(), "status", {
+            externalId: pageId(1),
+            status: "in_review",
+          }),
+        );
+        assert.include(unmapped, "in_review");
+        assert.lengthOf(writes(fake), 0);
+
+        // The option the mapping names was removed from the data source.
+        serveWrites(fake, { options: ["Ready", "Doing"] });
+        fake.requests.length = 0;
+        const removed = yield* failureText(
+          NotionClient.writeNotion(TOKEN, writeSettings(), "status", {
+            externalId: pageId(1),
+            status: "done",
+          }),
+        );
+        assert.include(removed, "Shipped");
+        assert.lengthOf(writes(fake), 0);
+      }),
+    ),
+  );
+
+  it.effect("the pull request url is an https url of at most 2,048 bytes", () =>
+    withClient((fake) =>
+      Effect.gen(function* () {
+        serveWrites(fake);
+        yield* NotionClient.writeNotion(TOKEN, writeSettings(), "pull_request_url", {
+          externalId: pageId(1),
+          url: PR_URL,
+        });
+        assert.deepEqual(writes(fake).at(-1)?.body, { properties: { pr: { url: PR_URL } } });
+        fake.requests.length = 0;
+        const http = yield* failureText(
+          NotionClient.writeNotion(TOKEN, writeSettings(), "pull_request_url", {
+            externalId: pageId(1),
+            url: "http://github.com/octo-org/project/pull/4",
+          }),
+        );
+        assert.include(http, "https");
+        const long = `https://github.com/${"a".repeat(2_049 - "https://github.com/".length)}`;
+        const tooLong = yield* failureText(
+          NotionClient.writeNotion(TOKEN, writeSettings(), "pull_request_url", {
+            externalId: pageId(1),
+            url: long,
+          }),
+        );
+        assert.include(tooLong, "2048");
+        assert.lengthOf(writes(fake), 0);
+        const exact = `https://github.com/${"a".repeat(2_048 - "https://github.com/".length)}`;
+        yield* NotionClient.writeNotion(TOKEN, writeSettings(), "pull_request_url", {
+          externalId: pageId(1),
+          url: exact,
+        });
+        assert.lengthOf(writes(fake), 1);
+      }),
+    ),
+  );
+
+  it.effect("a handback summary is chunked with its marker and posted once", () =>
+    withClient((fake) =>
+      Effect.gen(function* () {
+        serveWrites(fake);
+        const summary = "é".repeat(4_001);
+        yield* NotionClient.writeNotion(TOKEN, writeSettings(), "handback_summary", {
+          externalId: pageId(1),
+          summary,
+        });
+        const [post] = writes(fake);
+        assert.strictEqual(post?.path, "/v1/comments");
+        const body = post?.body as {
+          parent: { page_id: string };
+          rich_text: Array<{ text: { content: string } }>;
+        };
+        assert.deepEqual(body.parent, { page_id: pageId(1) });
+        assert.lengthOf(body.rich_text, 3);
+        for (const chunk of body.rich_text) assert.isAtMost([...chunk.text.content].length, 2_000);
+        const text = body.rich_text.map((chunk) => chunk.text.content).join("");
+        assert.isTrue(text.startsWith(summary));
+        assert.match(text, /houston-handback:[0-9a-f]{24}$/);
+
+        // The same summary again finds its marker and posts nothing.
+        yield* NotionClient.writeNotion(TOKEN, writeSettings(), "handback_summary", {
+          externalId: pageId(1),
+          summary,
+        });
+        assert.lengthOf(writes(fake), 1);
+      }),
+    ),
+  );
+
+  it("a comment over 6 chunks of 2,000 characters is refused", () => {
+    assert.lengthOf(NotionClient.commentChunks("x".repeat(12_000)) as Array<string>, 6);
+    const refused = NotionClient.commentChunks("x".repeat(12_001));
+    assert.isString(refused);
+    assert.include(refused as string, "6");
+  });
+
+  it.effect("a page of another data source is refused and no page is ever created", () =>
+    withClient((fake) =>
+      Effect.gen(function* () {
+        serveWrites(fake, {
+          pages: [
+            notionPage(1),
+            notionPage(3, { parent: { type: "data_source_id", data_source_id: NOTION_PROJECTS } }),
+          ],
+        });
+        const other = yield* failureText(
+          NotionClient.writeNotion(TOKEN, writeSettings(), "status", {
+            externalId: pageId(3),
+            status: "in_progress",
+          }),
+        );
+        assert.include(other, NOTION_PROJECTS);
+        const missing = yield* failureText(
+          NotionClient.writeNotion(TOKEN, writeSettings(), "status", {
+            externalId: pageId(2),
+            status: "in_progress",
+          }),
+        );
+        assert.include(missing, "404");
+        const notAnId = yield* failureText(
+          NotionClient.writeNotion(TOKEN, writeSettings(), "status", {
+            externalId: "../databases",
+            status: "in_progress",
+          }),
+        );
+        assert.include(notAnId, "../databases");
+        assert.lengthOf(writes(fake), 0);
+        assert.isFalse(
+          fake.requests.some(
+            (request) => request.method === "POST" && request.path === "/v1/pages",
+          ),
+        );
       }),
     ),
   );

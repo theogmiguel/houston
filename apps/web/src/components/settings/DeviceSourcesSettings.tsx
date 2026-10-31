@@ -88,6 +88,9 @@ interface SourceRow {
    */
   readonly shared: boolean;
   readonly actions?: ReactNode;
+  /** Local simulators the environment has discovered, when every active environment answered. */
+  readonly found?: number;
+  readonly onRefresh?: (() => void) | undefined;
 }
 
 type Editing =
@@ -350,6 +353,15 @@ export function DeviceSourcesSettings(props: {
   );
 
   const rows: SourceRow[] = [];
+  const localDevicesKnown =
+    active.length > 0 && active.every((member) => member.state !== undefined);
+  const localDeviceCount = active.reduce((total, member) => {
+    const local = member.state?.hosts.find((host) => host.kind === "local");
+    if (!local) return total;
+    return (
+      total + (member.state?.devices.filter((device) => device.hostId === local.id).length ?? 0)
+    );
+  }, 0);
 
   rows.push({
     key: "local",
@@ -359,6 +371,16 @@ export function DeviceSourcesSettings(props: {
       members.length > 1
         ? "Simulators and emulators installed on each environment's own machine."
         : "Simulators and emulators installed on this environment's machine.",
+    ...(localDevicesKnown ? { found: localDeviceCount } : {}),
+    ...(active.length > 0
+      ? {
+          onRefresh: () => {
+            for (const member of active) {
+              void list({ environmentId: member.environmentId, input: {} });
+            }
+          },
+        }
+      : {}),
     environments: active.map((member) => {
       const local = member.state?.hosts.find((host) => host.kind === "local");
       const status = local ? hostStatus(member.state, local.id) : hostStatus(member.state, "");
@@ -521,7 +543,7 @@ export function DeviceSourcesSettings(props: {
       <MenuTrigger
         render={<Button size="sm" variant="outline" disabled={disabled || editing !== null} />}
       >
-        <PlusIcon className="size-3.5" /> Add source
+        <PlusIcon className="size-3.5" /> Add device source
         <ChevronDownIcon className="size-3.5" />
       </MenuTrigger>
       <MenuPopup align="end">
@@ -792,7 +814,17 @@ function DeviceSourceRow(props: { row: SourceRow }) {
           {pending.status.label}
         </span>
       ) : (
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-2">
+          {row.found !== undefined ? (
+            <span className="inline-flex h-5 items-center rounded-full bg-muted px-2 text-2xs font-medium text-muted-foreground">
+              {row.found} found
+            </span>
+          ) : null}
+          {row.onRefresh ? (
+            <Button size="sm" variant="ghost" onClick={row.onRefresh}>
+              Refresh
+            </Button>
+          ) : null}
           <SourcePlatforms row={row} />
         </div>
       )}

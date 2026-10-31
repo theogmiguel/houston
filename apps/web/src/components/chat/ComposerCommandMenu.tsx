@@ -15,23 +15,23 @@ import {
   type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
 import {
-  BlocksIcon,
-  FolderIcon,
+  BotIcon,
+  ChartNoAxesColumnIcon,
+  CodeIcon,
+  Maximize2Icon,
   MessagesSquareIcon,
-  PackageIcon,
-  SettingsIcon,
-  UserRoundIcon,
-  type LucideIcon,
+  PenLineIcon,
+  SparklesIcon,
+  TerminalIcon,
+  ZapIcon,
 } from "lucide-react";
 import { memo, useLayoutEffect, useRef } from "react";
 
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
 import { cn } from "~/lib/utils";
-import { Badge } from "../ui/badge";
 import { Command, CommandGroup, CommandItem, CommandList } from "../ui/command";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { PierreEntryIcon } from "./PierreEntryIcon";
-import { ComposerBanner } from "./ComposerBanner";
 import { resolvePullRequestState } from "../pullRequest/pullRequestPresentation";
 
 export type ComposerCommandItem =
@@ -122,9 +122,9 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
         );
       }}
     >
-      <ComposerBanner.Surface
+      <div
         ref={listRef}
-        className="flex min-h-0 w-full flex-col overflow-hidden pb-(--chat-composer-attachment-overlap) **:data-[slot=command-item]:rounded-lg **:data-[slot=scroll-area-scrollbar]:data-[orientation=vertical]:my-4"
+        className="flex min-h-0 w-full flex-col overflow-hidden rounded-lg border border-(--border) bg-(--raised) p-0.5 text-headline shadow-(--shadow-1)"
         data-composer-command-drawer="true"
       >
         {props.items.length > 0 ? (
@@ -149,8 +149,8 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
             </CommandGroup>
           </CommandList>
         ) : (
-          <div className="px-5 pt-3.5 pb-7">
-            <p className="text-secondary-label text-xs">
+          <div className="px-3 py-2.5">
+            <p className="text-(--t3) text-xs">
               {props.isLoading
                 ? props.triggerKind === "skill"
                   ? "Searching workspace skills..."
@@ -166,7 +166,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
             </p>
           </div>
         )}
-      </ComposerBanner.Surface>
+      </div>
     </Command>
   );
 });
@@ -186,6 +186,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
     props.triggerKind === "slash-command" && props.item.type === "skill" ? props.item.skill : null;
   const pullRequestPresentation =
     props.item.type === "pull-request" ? resolvePullRequestState(props.item.pullRequest) : null;
+  const isPath = props.item.type === "path";
 
   return (
     <CommandItem
@@ -203,55 +204,92 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
       onClick={() => {
         props.onSelect(props.item);
       }}
+      className="grid min-h-7 cursor-pointer grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-0.5 rounded-(--r-ctl) px-2 py-1 text-headline leading-4 outline-none sm:text-headline hover:bg-(--hover)! data-[active=true]:bg-(--sel)! data-[active=true]:text-(--t1)!"
     >
       {props.item.type === "path" ? (
         <PierreEntryIcon
           pathValue={props.item.path}
           kind={props.item.pathKind}
           theme={props.resolvedTheme}
+          className="col-start-1 row-start-1 size-4 text-(--t3)"
         />
-      ) : null}
-      {props.item.type === "thread" ? (
-        <MessagesSquareIcon aria-hidden="true" className="size-4 shrink-0 text-secondary-label" />
-      ) : null}
-      {props.item.type === "environment" ? (
-        <EnvironmentMachineIcon
-          kind={props.item.machine}
-          aria-hidden="true"
-          className="size-4 shrink-0 text-secondary-label"
-        />
-      ) : null}
-      {pullRequestPresentation ? (
+      ) : pullRequestPresentation ? (
         <pullRequestPresentation.Icon
           role="img"
           aria-label={pullRequestPresentation.label}
-          className={cn("size-4 shrink-0", pullRequestPresentation.toneClassName)}
-        />
-      ) : null}
-      <span className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="min-w-0 max-w-[45%] shrink-0 truncate font-sans text-xs font-medium">
-          {isSlashSkill ? (
-            <>
-              <span className="text-secondary-label">/skill:</span>
-              {formatProviderSkillDisplayName(isSlashSkill)}
-            </>
-          ) : (
-            props.item.label
+          className={cn(
+            "col-start-1 row-start-1 size-4 text-(--t3)",
+            pullRequestPresentation.toneClassName,
           )}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-left text-secondary-label text-xs">
-          {props.item.description}
-        </span>
-        {skillSourceKind ? (
-          <SkillSourceBadge
-            kind={skillSourceKind}
-            showSkillSuffix={props.triggerKind === "skill"}
-          />
-        ) : null}
+        />
+      ) : props.item.type === "environment" ? (
+        <EnvironmentMachineIcon
+          kind={props.item.machine}
+          aria-hidden="true"
+          className="col-start-1 row-start-1 size-4 text-(--t3)"
+        />
+      ) : (
+        <ComposerCommandItemGlyph item={props.item} />
+      )}
+      <span className="col-start-2 row-start-1 min-w-0 truncate text-(--t1) text-headline">
+        {isSlashSkill ? (
+          <>
+            <span className="text-(--t3)">/skill:</span>
+            {formatProviderSkillDisplayName(isSlashSkill)}
+          </>
+        ) : (
+          props.item.label
+        )}
       </span>
+      <span
+        className={cn(
+          "col-start-2 row-start-2 min-w-0 truncate text-(--t3) text-xs leading-4",
+          isPath && "font-mono text-2xs",
+        )}
+      >
+        {props.item.description}
+      </span>
+      {skillSourceKind ? <SkillSourceBadge kind={skillSourceKind} /> : null}
     </CommandItem>
   );
 });
+
+const MENU_ICON_CLASS = "col-start-1 row-start-1 size-4 text-(--t3)";
+
+function ComposerCommandItemGlyph({ item }: { item: ComposerCommandItem }) {
+  switch (item.type) {
+    case "thread":
+      return <MessagesSquareIcon aria-hidden="true" className={MENU_ICON_CLASS} />;
+    case "slash-command":
+      return item.command === "model" ? (
+        <SparklesIcon aria-hidden="true" className={MENU_ICON_CLASS} />
+      ) : item.command === "plan" ? (
+        <PenLineIcon aria-hidden="true" className={MENU_ICON_CLASS} />
+      ) : (
+        <BotIcon aria-hidden="true" className={MENU_ICON_CLASS} />
+      );
+    case "provider-slash-command":
+      return providerSlashCommandGlyph(item.command.name);
+    case "skill":
+      return <ZapIcon aria-hidden="true" className={MENU_ICON_CLASS} />;
+    default:
+      return null;
+  }
+}
+
+function providerSlashCommandGlyph(name: string) {
+  const normalized = name.toLowerCase();
+  if (normalized.includes("compact")) {
+    return <Maximize2Icon aria-hidden="true" className={MENU_ICON_CLASS} />;
+  }
+  if (normalized.includes("usage")) {
+    return <ChartNoAxesColumnIcon aria-hidden="true" className={MENU_ICON_CLASS} />;
+  }
+  if (normalized === "review") {
+    return <CodeIcon aria-hidden="true" className={MENU_ICON_CLASS} />;
+  }
+  return <TerminalIcon aria-hidden="true" className={MENU_ICON_CLASS} />;
+}
 
 export function composerSuggestionOptionId(listId: string, itemId: string): string {
   // JSON escapes lone UTF-16 surrogates before URI encoding without losing identity.
@@ -265,15 +303,6 @@ const LISTBOX_LABEL_BY_TRIGGER: Record<ComposerTriggerKind, string> = {
   skill: "Skills",
 };
 
-const SKILL_SOURCE_ICON_BY_KIND: Record<ProviderSkillSourceKind, LucideIcon> = {
-  app: BlocksIcon,
-  repo: FolderIcon,
-  project: FolderIcon,
-  personal: UserRoundIcon,
-  system: SettingsIcon,
-  other: PackageIcon,
-};
-
 const SKILL_SOURCE_LABEL_BY_KIND: Record<ProviderSkillSourceKind, string> = {
   app: "App",
   repo: "Repo",
@@ -283,13 +312,10 @@ const SKILL_SOURCE_LABEL_BY_KIND: Record<ProviderSkillSourceKind, string> = {
   other: "Provider",
 };
 
-function SkillSourceBadge(props: { kind: ProviderSkillSourceKind; showSkillSuffix: boolean }) {
-  const Icon = SKILL_SOURCE_ICON_BY_KIND[props.kind];
+function SkillSourceBadge(props: { kind: ProviderSkillSourceKind }) {
   return (
-    <Badge className="ms-auto" variant="secondary">
-      <Icon aria-hidden="true" className="text-current" />
+    <span className="col-start-3 row-span-2 row-start-1 self-center rounded-(--r-badge) border border-(--line-strong) px-1 font-semibold text-(--t3) text-3xs leading-4">
       {SKILL_SOURCE_LABEL_BY_KIND[props.kind]}
-      {props.showSkillSuffix ? " Skill" : null}
-    </Badge>
+    </span>
   );
 }

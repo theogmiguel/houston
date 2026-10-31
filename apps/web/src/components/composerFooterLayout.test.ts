@@ -55,10 +55,25 @@ describe("progressive composer controls", () => {
     gap: 4,
     naturalFixedWidth: 140,
     minimumFixedWidth: 80,
+    modelIconOnlyWidth: 80,
     blockWidths: [80, 140],
     iconOnlyBlockWidths: [40, 60],
     overflowWidth: 24,
   };
+
+  it("drops the model label to its icon before any block moves to the menu", () => {
+    const at = (hostWidth: number) =>
+      resolveRestingComposerControlsLayout({ ...measurement, hostWidth });
+    // All labels fit: no icon-only step, no overflow.
+    expect(at(400)).toMatchObject({ hiddenCount: 0, iconOnlyCount: 0, modelIconOnly: false });
+    // Blocks lose their labels first.
+    expect(at(288)).toMatchObject({ hiddenCount: 0, iconOnlyCount: 1, modelIconOnly: false });
+    expect(at(248)).toMatchObject({ hiddenCount: 0, iconOnlyCount: 2, modelIconOnly: false });
+    // The model label drops before the menu appears.
+    expect(at(188)).toMatchObject({ hiddenCount: 0, modelIconOnly: true });
+    expect(at(152)).toMatchObject({ hiddenCount: 1, modelIconOnly: true });
+    expect(at(108)).toMatchObject({ hiddenCount: 2, modelIconOnly: true });
+  });
 
   it("settles through fractional label-width changes at each threshold", () => {
     for (const hostWidth of [368, 288, 248]) {

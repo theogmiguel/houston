@@ -189,3 +189,17 @@ export function formatContextWindowTokens(value: number | null): string {
   }
   return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}m`;
 }
+
+/** Picker-sized label for a token count, such as "200K" or "1M"; null when there is no size. */
+export function formatCompactContextWindowTokens(value: number | null | undefined): string | null {
+  if (value === null || value === undefined || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  if (value < 1_000) {
+    return `${Math.round(value)}`;
+  }
+  if (value < 1_000_000) {
+    return `${Number((value / 1_000).toFixed(1).replace(/\.0$/, ""))}K`;
+  }
+  return `${Number((value / 1_000_000).toFixed(1).replace(/\.0$/, ""))}M`;
+}

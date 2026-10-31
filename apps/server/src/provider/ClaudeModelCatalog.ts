@@ -3,6 +3,7 @@ import {
   type ModelCapabilities,
   type ModelSelection,
   ProviderDriverKind,
+  type ProviderOptionDescriptor,
   type ServerProviderModel,
   type ServerProviderUpdateRequiredModel,
 } from "@t3tools/contracts";
@@ -37,6 +38,28 @@ export interface ClaudeModelCatalog {
   readonly models: ReadonlyArray<ClaudeCatalogModel>;
 }
 
+function claudeCatalogCapabilities(
+  capabilities: ModelCapabilities | null,
+  runtime: ClaudeCodeProfile,
+): ModelCapabilities | null {
+  const contextWindowDescriptor = capabilities?.optionDescriptors?.find(
+    (descriptor): descriptor is Extract<ProviderOptionDescriptor, { type: "select" }> =>
+      descriptor.id === "contextWindow" && descriptor.type === "select",
+  );
+  const contextWindow =
+    contextWindowDescriptor?.currentValue ??
+    contextWindowDescriptor?.options.find((option) => option.isDefault)?.id ??
+    contextWindowDescriptor?.options[0]?.id;
+  const contextWindowTokens =
+    runtime.fixedContextWindowTokens ??
+    (contextWindow === undefined ? undefined : runtime.contextWindowTokens?.[contextWindow]);
+  if (contextWindowTokens === undefined) return capabilities;
+  return {
+    ...(capabilities ?? {}),
+    contextWindowTokens,
+  };
+}
+
 function tryResolveClaudeModelCatalog(
   resolved: ModelCatalog.ProviderCatalog | undefined,
 ): ClaudeModelCatalog | null {
@@ -47,9 +70,14 @@ function tryResolveClaudeModelCatalog(
     const profile = decodeClaudeProfileAdapter(entry.profileAdapter ?? {});
     const adapter = decodeClaudeModelAdapter(entry.adapter ?? {});
     if (Option.isNone(profile) || Option.isNone(adapter)) return null;
+    const runtime = profile.value.claudeCode ?? {};
+    const model = ModelCatalog.catalogServerModel(resolved, entry);
     models.push({
-      model: ModelCatalog.catalogServerModel(resolved, entry),
-      runtime: profile.value.claudeCode ?? {},
+      model: {
+        ...model,
+        capabilities: claudeCatalogCapabilities(model.capabilities, runtime),
+      },
+      runtime,
       compatibility: adapter.value.claudeCode ?? {},
     });
   }

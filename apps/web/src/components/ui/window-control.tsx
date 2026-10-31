@@ -70,7 +70,7 @@ export function WindowControlDisc({
       className={cn(
         "flex size-5 items-center justify-center rounded bg-transparent text-[color-mix(in_srgb,var(--muted-foreground)_55%,var(--foreground))] transition-[background-color,color] duration-100 group-focus-visible/wc:outline-2 group-focus-visible/wc:outline-offset-1 group-focus-visible/wc:outline-ring motion-reduce:transition-none",
         tone === "close"
-          ? "group-hover/wc:bg-[color-mix(in_srgb,var(--stop-ink)_20%,transparent)] group-hover/wc:text-[var(--stop-ink)] group-active/wc:bg-[color-mix(in_srgb,var(--stop-ink)_30%,transparent)]"
+          ? "group-hover/wc:bg-destructive/20 group-hover/wc:text-destructive group-active/wc:bg-destructive/30"
           : "group-hover/wc:bg-primary/16 group-hover/wc:text-primary group-active/wc:bg-primary/24",
         className,
       )}

@@ -4,6 +4,7 @@ import {
   type ProviderDriverKind,
   type ProviderInstanceId,
   type ProviderOptionSelection,
+  type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   type ServerProviderModel,
 } from "@t3tools/contracts";
@@ -64,6 +65,7 @@ type TraitsRenderInput = {
   hidden?: boolean;
   triggerClassName?: string;
   isComposerOwned?: boolean;
+  keybindings?: ResolvedKeybindingsConfig;
   effortDisplay?: EffortDisplay;
   extraMenuContent?: ReactNode;
   extraMenuOwnsModeShortcut?: boolean;
@@ -237,6 +239,7 @@ function renderTraitsControl(
     hidden,
     triggerClassName,
     isComposerOwned,
+    keybindings,
     effortDisplay,
     extraMenuContent,
     extraMenuOwnsModeShortcut,
@@ -280,6 +283,7 @@ function renderTraitsControl(
       {...(hidden !== undefined ? { hidden } : {})}
       {...(triggerClassName !== undefined ? { triggerClassName } : {})}
       {...(isComposerOwned ? { isComposerOwned } : {})}
+      {...(keybindings ? { keybindings } : {})}
       {...(effortDisplay ? { effortDisplay } : {})}
       {...(extraMenuContent ? { extraMenuContent } : {})}
       {...(extraMenuOwnsModeShortcut ? { extraMenuOwnsModeShortcut } : {})}
