@@ -476,6 +476,8 @@ fn main() {
     builder = builder.manage(browser::BrowserRegistry::new());
     builder = builder.manage(browser::confirm::ConfirmRegistry::new());
     builder = builder.manage(app_update::UpdateFlight::new());
+    builder = builder.manage(std::sync::Arc::new(app_update::V2UpdateHandle::new()));
+    builder = builder.manage(window::ContextMenuState::default());
     let render_overrides = Arc::new(render_overrides);
     builder = builder.manage(app_update::ActiveStateDir::new(
         state_dir.clone(),
@@ -525,10 +527,19 @@ fn main() {
             spike_report,
             app_log::system_log_debug,
             app_update::app_update_install,
+            app_update::v2_update_state,
+            app_update::v2_update_set_channel,
+            app_update::v2_update_check,
+            app_update::v2_update_download,
+            app_update::v2_update_install,
             host::host_config,
             v2_server::v2_local_environment_bootstrap,
             v2_server::v2_local_environment_bearer_token,
             v2_server::v2_server_status,
+            v2_server::v2_server_exposure_state,
+            v2_server::v2_server_set_exposure_mode,
+            v2_server::v2_server_set_tailscale_serve,
+            v2_server::v2_server_advertised_endpoints,
             fs_allowlist::fs_add_allowed_root,
             fs_allowlist::fs_set_allowed_roots,
             fs::fs_read_directory,
@@ -565,6 +576,7 @@ fn main() {
             dialog::dialog_pick_directories,
             dialog::dialog_pick_file,
             dialog::dialog_pick_image,
+            dialog::dialog_pick_theme_files,
             dialog::dialog_save_image_url,
             dialog::dialog_save_transfer,
             dialog::dialog_pick_transfer,
@@ -577,6 +589,8 @@ fn main() {
             system::system_get_log_path,
             system::system_third_party_licenses,
             system::system_get_home_dir,
+            system::v2_open_system_settings,
+            system::v2_check_system_permission,
             skills::system_list_skills,
             skills::system_write_skill,
             skills::system_delete_skill,
@@ -587,6 +601,10 @@ fn main() {
             window::window_minimize,
             window::window_maximize,
             window::window_is_maximized,
+            window::window_is_fullscreen,
+            window::window_set_theme,
+            window::window_set_badge_count,
+            window::v2_show_context_menu,
             window::window_is_focused,
             window::window_toggle_fullscreen,
             window::window_set_zoom,
@@ -603,6 +621,10 @@ fn main() {
             wsl::wsl_enable,
             wsl::wsl_disable,
             wsl::env_list,
+            wsl::v2::v2_wsl_state,
+            wsl::v2::v2_wsl_set_enabled,
+            wsl::v2::v2_wsl_set_distro,
+            wsl::v2::v2_wsl_set_only,
             spike_webview::spike_wv_mount,
             spike_webview::spike_wv_set_bounds,
             spike_webview::spike_wv_geometry,
@@ -702,6 +724,12 @@ fn main() {
                 commands(invoke)
             }
         })
+        .on_menu_event(|app, event| {
+            let id = event.id().0.as_str();
+            if !window::handle_context_menu_event(app, id) {
+                let _ = app.emit_to("main", "v2-menu-action", id);
+            }
+        })
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Resized(_)) {
                 browser::follow_window_resize(window);
@@ -750,6 +778,12 @@ fn main() {
                 browser::handle_window_closed(window.app_handle(), window.label());
             }
             if window.label() == "main" {
+                if let Ok(fullscreen) = window.is_fullscreen() {
+                    let _ = window.emit_to("main", "v2-window-fullscreen", fullscreen);
+                }
+                if matches!(event, tauri::WindowEvent::Focused(true)) {
+                    let _ = window.emit_to("main", "v2-notification-badge-clear", ());
+                }
                 match event {
                     tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
                         if let Some(tracker) = window

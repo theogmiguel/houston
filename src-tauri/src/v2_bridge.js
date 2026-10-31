@@ -27,6 +27,29 @@
   var noUnsubscribe = function () {
     return function () {};
   };
+  // Tauri's event API returns a promise for the unsubscribe function. Keep the
+  // listener's lifetime stable for the bridge's whole lifetime and swallow a
+  // missing event plugin rather than breaking bridge construction.
+  var listen = function (eventName, handler) {
+    if (!window.__TAURI__ || !window.__TAURI__.event) return noUnsubscribe();
+    var active = true;
+    var subscription = window.__TAURI__.event
+      .listen(eventName, function (event) {
+        handler(event.payload);
+      })
+      .catch(function () {
+        return noop;
+      });
+    return function () {
+      if (!active) return;
+      active = false;
+      subscription.then(function (unsubscribe) {
+        try {
+          unsubscribe();
+        } catch (error) {}
+      });
+    };
+  };
   var noop = function () {
     return Promise.resolve();
   };
@@ -83,6 +106,28 @@
     wslOnly: false,
     distros: [],
     preflightError: null,
+  };
+  var zoomFactor = 1;
+  var fullscreen = false;
+  var contextMenuWaiters = {};
+  var contextMenuNonce = 0;
+  var contextMenuListening = false;
+  var contextMenuListener = function (payload) {
+    if (!payload || typeof payload.nonce !== "string") return;
+    var waiter = contextMenuWaiters[payload.nonce];
+    if (!waiter) return;
+    delete contextMenuWaiters[payload.nonce];
+    clearTimeout(waiter.timer);
+    waiter.resolve(typeof payload.id === "string" ? payload.id : null);
+  };
+  var ensureContextMenuListener = function () {
+    if (contextMenuListening) return;
+    contextMenuListening = true;
+    listen("v2-context-menu", contextMenuListener);
+  };
+  var nextContextMenuNonce = function () {
+    contextMenuNonce += 1;
+    return "menu" + Date.now().toString(36) + contextMenuNonce.toString(36);
   };
   var snapshotState = {
     mode: "unavailable",
@@ -159,8 +204,13 @@
     getClientPlatform: function () {
       return platform;
     },
-    setNotificationBadge: noop,
-    onNotificationBadgeClear: noUnsubscribe,
+    setNotificationBadge: function (badge) {
+      var count = badge && typeof badge.count === "number" ? Math.max(0, Math.floor(badge.count)) : 0;
+      return invoke("window_set_badge_count", { count: count }).catch(noop);
+    },
+    onNotificationBadgeClear: function (listener) {
+      return listen("v2-notification-badge-clear", listener);
+    },
     onTrackpadScrollEnd: noUnsubscribe,
     revealWindow: function () {
       return invoke("window_focus").catch(noop);
@@ -243,28 +293,62 @@
     onSshPasswordPrompt: noUnsubscribe,
     resolveSshPasswordPrompt: noop,
     getServerExposureState: function () {
-      return Promise.resolve(serverExposure);
+      return invoke("v2_server_exposure_state")
+        .then(function (state) {
+          serverExposure = state;
+          return state;
+        })
+        .catch(function () {
+          return serverExposure;
+        });
     },
-    setServerExposureMode: function () {
-      return Promise.resolve(serverExposure);
+    setServerExposureMode: function (mode) {
+      return invoke("v2_server_set_exposure_mode", { mode: mode }).then(function (state) {
+        serverExposure = state;
+        return state;
+      });
     },
-    setTailscaleServeEnabled: function () {
-      return Promise.resolve(serverExposure);
+    setTailscaleServeEnabled: function (input) {
+      return invoke("v2_server_set_tailscale_serve", {
+        enabled: !!(input && input.enabled),
+        port: input && typeof input.port === "number" ? input.port : null,
+      }).then(function (state) {
+        serverExposure = state;
+        return state;
+      });
     },
     getAdvertisedEndpoints: function () {
-      return Promise.resolve([]);
+      return invoke("v2_server_advertised_endpoints").catch(function () {
+        return [];
+      });
     },
     getWslState: function () {
-      return Promise.resolve(wslState);
+      return invoke("v2_wsl_state")
+        .then(function (state) {
+          wslState = state;
+          return state;
+        })
+        .catch(function () {
+          return wslState;
+        });
     },
-    setWslBackendEnabled: function () {
-      return Promise.resolve(wslState);
+    setWslBackendEnabled: function (enabled) {
+      return invoke("v2_wsl_set_enabled", { enabled: !!enabled }).then(function (state) {
+        wslState = state;
+        return state;
+      });
     },
-    setWslDistro: function () {
-      return Promise.resolve(wslState);
+    setWslDistro: function (distro) {
+      return invoke("v2_wsl_set_distro", { distro: distro == null ? null : distro }).then(function (state) {
+        wslState = state;
+        return state;
+      });
     },
-    setWslOnly: function () {
-      return Promise.resolve(wslState);
+    setWslOnly: function (enabled) {
+      return invoke("v2_wsl_set_only", { enabled: !!enabled }).then(function (state) {
+        wslState = state;
+        return state;
+      });
     },
     pickFolder: function () {
       return invoke("dialog_pick_directory", {})
@@ -279,11 +363,38 @@
       return Promise.resolve(null);
     },
     pickThemeFiles: function () {
-      return Promise.resolve(null);
+      return invoke("dialog_pick_theme_files")
+        .then(function (files) {
+          return files == null ? null : files;
+        })
+        .catch(function () {
+          return null;
+        });
     },
-    setTheme: noop,
-    showContextMenu: function () {
-      return Promise.resolve(null);
+    setTheme: function (theme) {
+      return invoke("window_set_theme", { theme: theme }).catch(noop);
+    },
+    showContextMenu: function (items, position) {
+      ensureContextMenuListener();
+      return new Promise(function (resolve) {
+        var nonce = nextContextMenuNonce();
+        var timer = setTimeout(function () {
+          if (!contextMenuWaiters[nonce]) return;
+          delete contextMenuWaiters[nonce];
+          resolve(null);
+        }, 120000);
+        contextMenuWaiters[nonce] = { resolve: resolve, timer: timer };
+        invoke("v2_show_context_menu", {
+          nonce: nonce,
+          items: items,
+          position: position ? { x: position.x, y: position.y } : null,
+        }).catch(function () {
+          if (!contextMenuWaiters[nonce]) return;
+          delete contextMenuWaiters[nonce];
+          clearTimeout(timer);
+          resolve(null);
+        });
+      });
     },
     receiveProviderAuthCallback: function () {
       return Promise.reject(new Error("Provider auth callbacks are not available yet."));
@@ -298,43 +409,93 @@
           return false;
         });
     },
-    openSystemSettings: function () {
-      return Promise.resolve(false);
+    openSystemSettings: function (pane) {
+      return invoke("v2_open_system_settings", { pane: pane }).catch(function () {
+        return false;
+      });
     },
-    checkSystemPermission: function () {
-      return Promise.resolve(false);
+    checkSystemPermission: function (pane) {
+      return invoke("v2_check_system_permission", { pane: pane }).catch(function () {
+        return false;
+      });
     },
     probeRemoteEditors: function () {
       return Promise.resolve([]);
     },
     pasteAsText: noop,
-    onMenuAction: noUnsubscribe,
+    onMenuAction: function (listener) {
+      return listen("v2-menu-action", listener);
+    },
     onSnapShotEvent: noUnsubscribe,
     onQuitShortcut: noUnsubscribe,
     getWindowFullscreenState: function () {
-      return false;
+      return fullscreen;
     },
-    onWindowFullscreenStateChange: noUnsubscribe,
+    onWindowFullscreenStateChange: function (listener) {
+      var unsubscribe = listen("v2-window-fullscreen", function (value) {
+        var next = !!value;
+        if (next === fullscreen) return;
+        fullscreen = next;
+        listener(next);
+      });
+      invoke("window_is_fullscreen")
+        .then(function (value) {
+          var next = !!value;
+          if (next === fullscreen) return;
+          fullscreen = next;
+          listener(next);
+        })
+        .catch(noop);
+      return unsubscribe;
+    },
     getWindowZoomFactor: function () {
-      return 1;
+      return zoomFactor;
     },
     getUpdateState: function () {
-      return Promise.resolve(updateState);
+      return invoke("v2_update_state")
+        .then(function (state) {
+          updateState = state;
+          return state;
+        })
+        .catch(function () {
+          return updateState;
+        });
     },
-    setUpdateChannel: function (channel) {
-      updateState.channel = channel === "nightly" ? "nightly" : "latest";
-      return Promise.resolve(updateState);
+    setUpdateChannel: function (channel, minimumVersion) {
+      return invoke("v2_update_set_channel", {
+        channel: channel === "nightly" ? "nightly" : "latest",
+        minimumVersion: minimumVersion == null ? null : minimumVersion,
+      }).then(function (state) {
+        updateState = state;
+        return state;
+      });
     },
     checkForUpdate: function () {
-      return Promise.resolve({ checked: false, state: updateState });
+      return invoke("v2_update_check").then(function (result) {
+        if (result && result.state) updateState = result.state;
+        return result;
+      });
     },
     downloadUpdate: function () {
-      return Promise.resolve({ accepted: false, completed: false, state: updateState });
+      return invoke("v2_update_download").then(function (result) {
+        if (result && result.state) updateState = result.state;
+        return result;
+      });
     },
-    installUpdate: function () {
-      return Promise.resolve({ accepted: false, completed: false, state: updateState });
+    installUpdate: function (expectedVersion) {
+      return invoke("v2_update_install", {
+        expectedVersion: expectedVersion == null ? null : expectedVersion,
+      }).then(function (result) {
+        if (result && result.state) updateState = result.state;
+        return result;
+      });
     },
-    onUpdateState: noUnsubscribe,
+    onUpdateState: function (listener) {
+      return listen("v2-update://state", function (state) {
+        updateState = state;
+        listener(state);
+      });
+    },
     cliCommand: {
       getState: function () {
         return Promise.resolve(cliState);

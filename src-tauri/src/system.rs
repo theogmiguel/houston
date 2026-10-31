@@ -76,6 +76,42 @@ pub fn system_third_party_licenses(app: tauri::AppHandle) -> Result<String, Stri
     }
 }
 
+/// The only settings pane the desktop bridge names. Anything else is a
+/// contract violation, not a silent no-op.
+fn system_settings_pane(pane: &str) -> Result<&'static str, String> {
+    match pane {
+        "full-disk-access" => {
+            Ok("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+        }
+        other => Err(format!(
+            "system settings pane must be \"full-disk-access\", got {other:?}"
+        )),
+    }
+}
+
+#[tauri::command]
+pub fn v2_open_system_settings(pane: String) -> Result<bool, String> {
+    let url = system_settings_pane(&pane)?;
+    #[cfg(target_os = "macos")]
+    {
+        let status = std::process::Command::new("open").arg(url).status();
+        return Ok(status.map(|status| status.success()).unwrap_or(false));
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = url;
+        Ok(false)
+    }
+}
+
+/// TCC has no supported query, so the bridge reports what it can prove: no
+/// permission pane is granted automatically.
+#[tauri::command]
+pub fn v2_check_system_permission(pane: String) -> Result<bool, String> {
+    system_settings_pane(&pane)?;
+    Ok(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,6 +134,13 @@ mod tests {
             "release and dev channels must resolve to different log dirs"
         );
         assert!(release.ends_with("logs") && dev.ends_with("logs"));
+    }
+
+    #[test]
+    fn system_settings_panes_accept_only_full_disk_access() {
+        assert!(system_settings_pane("full-disk-access").is_ok());
+        let error = system_settings_pane("microphone").expect_err("unknown pane must be refused");
+        assert!(error.contains("microphone"), "{error}");
     }
 
     #[test]
