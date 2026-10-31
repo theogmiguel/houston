@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - links are made with node:fs; Effect's has no junction type.
+import * as NodeFS from "node:fs";
+
 import { assert, describe, it } from "@effect/vitest";
 import { CommandId, MessageId, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -11,6 +14,7 @@ import { TestClock } from "effect/testing";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 
 import {
+  awaitReview,
   awaitRun,
   HoustonHarnessService,
   HoustonHarnessStore,
@@ -29,6 +33,20 @@ const store = HoustonHarnessStore.HoustonHarnessStore;
 
 const kindOf = (error: unknown) => (error as { readonly kind?: string }).kind;
 const messageOf = (error: unknown) => (error as { readonly message?: string }).message ?? "";
+
+/** A directory link; a junction on Windows, which needs no privilege. */
+const linkDirectory = (target: string, link: string) =>
+  NodeFS.symlinkSync(target, link, "junction");
+
+/** A file link; where Windows refuses file symlinks without developer mode, a junction stands in. */
+const linkFile = (target: string, link: string) => {
+  try {
+    NodeFS.symlinkSync(target, link, "file");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EPERM") throw error;
+    NodeFS.symlinkSync(target, link, "junction");
+  }
+};
 
 const readJson = (file: string) =>
   Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(file)).pipe(
@@ -194,6 +212,99 @@ describe("the run directory", () => {
           assert.include(failedDir!.error ?? "", path.join(blocked.root, ".houston", "harness"));
           assert.isNull(failedDir!.threadId);
           assert.equal(kit.harness.log.started.length, startedBefore);
+        }),
+      );
+    }),
+  );
+
+  it.effect("the run directory never follows a symlink", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("run-directory-links");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const harness = yield* service;
+          const reviews = yield* store;
+
+          // A repository that ships `.houston` or `.houston/harness` as a link to elsewhere.
+          for (const level of [[".houston"], [".houston", "harness"]]) {
+            const name = `links-${level.length}`;
+            const project = yield* createProject(name);
+            const outside = yield* fs.makeTempDirectoryScoped({ prefix: "harness-outside-" });
+            const link = path.join(project.root, ...level);
+            yield* fs.makeDirectory(path.dirname(link), { recursive: true });
+            linkDirectory(outside, link);
+            yield* harness.setup({
+              projectId: project.projectId,
+              modelSelection: model("claudeAgent"),
+              schedule: "manual",
+            });
+            const startedBefore = kit.harness.log.started.length;
+            const refused = yield* Effect.flip(harness.runNow({ projectId: project.projectId }));
+            assert.include(messageOf(refused), `${link} is a symbolic link`, name);
+            const [failed] = yield* reviews.listReviews(project.projectId, 50);
+            assert.equal(failed!.status, "failed", name);
+            assert.include(failed!.error ?? "", link, name);
+            assert.isNull(failed!.threadId, name);
+            assert.equal(kit.harness.log.started.length, startedBefore, name);
+            assert.deepEqual(yield* fs.readDirectory(outside), [], name);
+          }
+
+          // A shipped `.gitignore` link, live or dangling, is left alone and never written through.
+          const ignored = yield* createProject("links-ignore");
+          const outside = yield* fs.makeTempDirectoryScoped({ prefix: "harness-outside-" });
+          const harnessDir = path.join(ignored.root, ".houston", "harness");
+          yield* fs.makeDirectory(harnessDir, { recursive: true });
+          const target = path.join(outside, "tracked.txt");
+          yield* fs.writeFileString(target, "tracked\n");
+          linkFile(target, path.join(harnessDir, ".gitignore"));
+          yield* harness.setup({
+            projectId: ignored.projectId,
+            modelSelection: model("claudeAgent"),
+            schedule: "manual",
+          });
+          kit.harness.script.hold.add(reviewMessageId(3));
+          const live = yield* harness.runNow({ projectId: ignored.projectId });
+          yield* settle;
+          assert.equal((yield* reviews.getReview(live.reviewId))!.status, "running");
+          assert.deepEqual((yield* fs.readDirectory(outside)).toSorted(), ["tracked.txt"]);
+          assert.equal(yield* fs.readFileString(target), "tracked\n");
+
+          // The run directory replaced by a link before the answer: nothing is written through it.
+          const runDir = path.join(
+            ignored.root,
+            ...(yield* reviews.getReview(live.reviewId))!.runDir.split("/"),
+          );
+          yield* fs.remove(runDir, { recursive: true });
+          const swapped = yield* fs.makeTempDirectoryScoped({ prefix: "harness-outside-" });
+          linkDirectory(swapped, runDir);
+          kit.harness.script.replies.set(
+            reviewMessageId(3),
+            'Report\n\n```json\n{"schema":1,"findings":[]}\n```',
+          );
+          yield* kit.harness.release(reviewMessageId(3));
+          yield* awaitReview(live.reviewId, (review) => review.status !== "running");
+          const settled = (yield* reviews.getReview(live.reviewId))!;
+          assert.equal(settled.status, "failed");
+          assert.include(settled.error ?? "", `${runDir} is a symbolic link`);
+          assert.deepEqual(yield* fs.readDirectory(swapped), []);
+
+          // A dangling `.gitignore` link: its target is never created.
+          const dangling = yield* createProject("links-dangling");
+          const danglingDir = path.join(dangling.root, ".houston", "harness");
+          yield* fs.makeDirectory(danglingDir, { recursive: true });
+          const missing = path.join(outside, "missing", "ignore");
+          linkFile(missing, path.join(danglingDir, ".gitignore"));
+          yield* harness.setup({
+            projectId: dangling.projectId,
+            modelSelection: model("claudeAgent"),
+            schedule: "manual",
+          });
+          yield* harness.runNow({ projectId: dangling.projectId });
+          yield* settle;
+          assert.isFalse(yield* fs.exists(missing));
         }),
       );
     }),

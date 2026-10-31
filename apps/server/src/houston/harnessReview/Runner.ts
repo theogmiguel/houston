@@ -34,6 +34,7 @@ import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapter
 import { hasReadOnlyRun } from "../sideThreads.ts";
 import { buildDigest, type DigestThreadInput } from "./digest.ts";
 import { buildInventory } from "./inventory.ts";
+import { runDirectory, writeIgnoreFile } from "./runDirectory.ts";
 import { findingDecision, reviewPrompt, reviewWindow, RUN_DIR_PARENT } from "./rules.ts";
 import { HoustonHarnessStore } from "./Store.ts";
 
@@ -207,17 +208,16 @@ const make = Effect.gen(function* () {
       yield* step(
         "creating the run directory",
         runDir,
-        fs.makeDirectory(runDir, { recursive: true }),
+        runDirectory(project.workspaceRoot, review.runDir, { create: true }).pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
+          Effect.provideService(Path.Path, path),
+        ),
       );
       const ignore = path.join(harnessDir, ".gitignore");
       yield* step(
         "writing the ignore file",
         ignore,
-        fs
-          .exists(ignore)
-          .pipe(
-            Effect.flatMap((exists) => (exists ? Effect.void : fs.writeFileString(ignore, "*\n"))),
-          ),
+        writeIgnoreFile(ignore).pipe(Effect.provideService(FileSystem.FileSystem, fs)),
       );
       const window = reviewWindow(nowMs, earlier);
       const inventory = yield* step(

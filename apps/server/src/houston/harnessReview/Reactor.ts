@@ -15,6 +15,7 @@ import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import { finalAssistantText } from "../sideThreads.ts";
+import { runDirectory } from "./runDirectory.ts";
 import { correctionMessageId } from "./Runner.ts";
 import {
   correctionMessage,
@@ -132,10 +133,19 @@ const make = Effect.gen(function* () {
     const project = yield* projects.get(review.projectId).pipe(Effect.orElseSucceed(Option.none));
     if (Option.isSome(project)) {
       const dir = path.join(project.value.workspaceRoot, ...review.runDir.split("/"));
-      const written = yield* Effect.all([
-        fs.writeFileString(path.join(dir, "report.md"), read.report),
-        fs.writeFileString(path.join(dir, "findings.json"), `${read.findingsJson.trim()}\n`),
-      ]).pipe(Effect.result);
+      const written = yield* runDirectory(project.value.workspaceRoot, review.runDir, {
+        create: false,
+      }).pipe(
+        Effect.flatMap(() =>
+          Effect.all([
+            fs.writeFileString(path.join(dir, "report.md"), read.report),
+            fs.writeFileString(path.join(dir, "findings.json"), `${read.findingsJson.trim()}\n`),
+          ]),
+        ),
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(Path.Path, path),
+        Effect.result,
+      );
       if (written._tag === "Failure") {
         return yield* fail(
           review,
