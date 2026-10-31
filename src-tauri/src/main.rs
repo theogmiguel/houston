@@ -25,6 +25,8 @@ mod transfer_open;
 mod tray;
 mod v2_server;
 mod v2_ssh;
+#[cfg(test)]
+mod v1_cleanup;
 mod window;
 mod window_state;
 mod wsl;
