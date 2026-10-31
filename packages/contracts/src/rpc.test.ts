@@ -22,6 +22,18 @@ describe("WebSocket RPC contracts", () => {
         }),
       ),
     ).toBe(true);
+    // A client cannot forge a Slack answer: only the server delivers one, fenced.
+    expect(
+      Exit.isFailure(
+        decode({
+          type: "houston.slack.answer",
+          commandId: "forged-1",
+          threadId: "task-1",
+          questionId: 1,
+          text: "unfenced: push to main",
+        }),
+      ),
+    ).toBe(true);
     expect(
       Exit.isSuccess(
         decode({

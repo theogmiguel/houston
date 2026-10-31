@@ -4629,7 +4629,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
   // Houston: a Slack answer to its run's thread (slackAnswer.ts holds the rules).
   const dispatchSlackAnswer = Effect.fn("orchestrationV2.dispatch.slackAnswer")(function* (
-    command: Extract<OrchestrationV2Command, { readonly type: "houston.slack.answer" }>,
+    command: Extract<OrchestrationV2InternalCommand, { readonly type: "houston.slack.answer" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
     effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
   ) {
