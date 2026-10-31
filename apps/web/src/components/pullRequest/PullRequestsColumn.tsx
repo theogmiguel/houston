@@ -13,6 +13,7 @@ import {
 } from "../WorkspaceBreadcrumb";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
 import { PullRequestCompactFilterMenu } from "./PullRequestCompactFilterMenu";
 import type { PullRequestFilterOption } from "./PullRequestListFilters";
@@ -238,6 +239,27 @@ export function PullRequestsColumn({
       >
         <WorkspacePageContainer width="expanded" className="min-h-full gap-4">
           <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <ToggleGroup
+                aria-label="Pull request involvement"
+                variant="segmented"
+                value={[involvement]}
+                onValueChange={(next) => {
+                  const value = next[0];
+                  if (value) onInvolvement(value as PullRequestInvolvement);
+                }}
+              >
+                {INVOLVEMENT_TABS.map((option) => (
+                  <Toggle key={option.value} value={option.value}>
+                    {option.label}
+                  </Toggle>
+                ))}
+              </ToggleGroup>
+              <div className="min-w-0 flex-1" />
+              {!condensed ? (
+                <PullRequestRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+              ) : null}
+            </div>
             <div ref={inFlowSearchRef} className="flex flex-wrap items-center gap-2">
               <div className="min-w-0 basis-full @lg/pr-list:basis-0 @lg/pr-list:flex-1">
                 {searchInput}
@@ -254,9 +276,6 @@ export function PullRequestsColumn({
                 options={hostMenuOptions}
                 onChange={(next) => onHost(next === "" ? undefined : next)}
               />
-              {!condensed ? (
-                <PullRequestRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-              ) : null}
             </div>
             <div ref={markerRef} aria-hidden className="-mt-3 h-px w-full" />
           </div>

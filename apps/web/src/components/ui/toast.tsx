@@ -51,6 +51,8 @@ export type ThreadToastData = {
   expandableContent?: ReactNode;
   expandableLabels?: { expand?: string; collapse?: string };
   expandableDescriptionTrigger?: boolean;
+  /** A single-line composer confirmation: title, key hint and trailing word. */
+  promptStash?: boolean;
   actionLayout?: "inline" | "stacked-end";
   actionVariant?:
     | "default"
@@ -353,6 +355,21 @@ function ToastBodyContent({
   const leadingIcon = toastData?.leadingIcon;
   const { className: secondaryActionClassName, ...secondaryActionRest } =
     secondaryActionProps ?? {};
+
+  if (toastData?.promptStash) {
+    return (
+      <div className="flex min-w-0 flex-1 items-center gap-2 text-xs">
+        <div
+          className="flex w-3.25 shrink-0 items-center justify-center [&_svg]:size-3.25"
+          data-slot="toast-icon"
+        >
+          {leadingIcon}
+        </div>
+        <Toast.Title className="min-w-0 flex-1 truncate font-medium" />
+        <Toast.Description className="flex shrink-0 items-center gap-2 text-(--t3)" />
+      </div>
+    );
+  }
 
   return (
     <>
@@ -676,9 +693,15 @@ function Toasts({ position }: { position: ToastPosition }) {
                   // overflow-x:clip preserves visible vertical overflow; hidden would force overflow-y:auto
                   // and clip detail panels.
                   "pointer-events-auto min-h-0 overflow-y-visible pl-3.5 text-sm transition-opacity duration-250 [overflow-x:clip] data-expanded:opacity-100",
-                  stackedActionLayout
-                    ? "flex flex-col gap-2 py-2.5 pr-3.5"
-                    : cn("py-3", "flex items-center justify-between gap-1.5", inlineContentEndPad),
+                  toast.data?.promptStash
+                    ? "flex items-center gap-2 py-2.25 pr-3 pl-3"
+                    : stackedActionLayout
+                      ? "flex flex-col gap-2 py-2.5 pr-3.5"
+                      : cn(
+                          "py-3",
+                          "flex items-center justify-between gap-1.5",
+                          inlineContentEndPad,
+                        ),
                   hideCollapsedContent &&
                     "not-data-expanded:pointer-events-none not-data-expanded:opacity-0",
                 )}

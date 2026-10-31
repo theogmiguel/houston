@@ -692,7 +692,7 @@ export function ThemeLibrary({
 
   const renderModeTiles = () => (
     <div aria-label="Appearance mode" className="grid w-full grid-cols-3 gap-3" role="group">
-      {(["system", "light", "dark"] as const).map((mode) => {
+      {(["system", "dark", "light"] as const).map((mode) => {
         const isActive = appearanceMode === mode;
         return (
           <button
@@ -710,7 +710,7 @@ export function ThemeLibrary({
                 isActive ? "text-foreground" : "text-muted-foreground",
               )}
             >
-              {mode === "system" ? "System" : mode === "light" ? "Paper" : "Graphite"}
+              {mode === "system" ? "System" : mode === "dark" ? "Graphite" : "Paper"}
             </span>
           </button>
         );

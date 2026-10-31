@@ -192,12 +192,12 @@ function FirstRunRecovery({
     <main className="flex h-dvh min-h-0 items-center justify-center bg-background px-6 text-foreground">
       <div className="flex max-w-sm flex-col items-center text-center">
         <h1 className="font-serif text-stat font-medium">
-          {settingsReadFailed ? "Could not read settings" : "Still connecting"}
+          {settingsReadFailed ? "Could not read settings" : "Houston's server isn't running"}
         </h1>
         <p className="mt-1.5 text-xs leading-4 text-muted-foreground">
           {settingsReadFailed
             ? "Your saved settings could not be loaded."
-            : "Houston could not confirm this workspace."}
+            : "Your threads are saved. Start the server to see them."}
         </p>
         <Button
           className="mt-5"
@@ -213,7 +213,7 @@ function FirstRunRecovery({
           }}
         >
           <RefreshIcon refreshing={retrying} />
-          {settingsReadFailed ? "Retry" : "Reload"}
+          {settingsReadFailed ? "Retry" : "Start server"}
         </Button>
       </div>
     </main>
