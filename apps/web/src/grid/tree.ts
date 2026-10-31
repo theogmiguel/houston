@@ -379,6 +379,50 @@ export function reconcileThreads(tree: LayoutNode | null, threadIds: string[]): 
   return appended;
 }
 
+/**
+ * A row or column holds at most three cells. Past that every cell falls below the
+ * 240px floor at the preset widths, so a fourth split regrids instead of stacking
+ * another pane on the axis.
+ */
+const MAX_PANES_PER_AXIS = 3;
+
+function findPath(node: LayoutNode, threadId: PaneKey, path: number[] = []): number[] | null {
+  if (node.kind !== "split") return node.threadId === threadId ? path : null;
+  for (let index = 0; index < node.children.length; index += 1) {
+    const found = findPath(node.children[index]!, threadId, [...path, index]);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+function nodeAtPath(node: LayoutNode, path: readonly number[]): LayoutNode | null {
+  let current: LayoutNode | null = node;
+  for (const index of path) {
+    if (current === null || current.kind !== "split") return null;
+    current = current.children[index] ?? null;
+  }
+  return current;
+}
+
+function replaceAtPath(node: LayoutNode, path: readonly number[], next: LayoutNode): LayoutNode {
+  if (path.length === 0) return next;
+  if (node.kind !== "split") return node;
+  const [index, ...rest] = path;
+  if (index === undefined || index < 0 || index >= node.children.length) return node;
+  return {
+    ...node,
+    children: node.children.map((child, childIndex) =>
+      childIndex === index ? replaceAtPath(child, rest, next) : child,
+    ),
+  };
+}
+
+function hasOversizedSplit(node: LayoutNode): boolean {
+  if (node.kind !== "split") return false;
+  if (node.children.length > MAX_PANES_PER_AXIS) return true;
+  return node.children.some(hasOversizedSplit);
+}
+
 export function insertBeside(
   tree: LayoutNode,
   target: PaneKey,
@@ -387,15 +431,29 @@ export function insertBeside(
 ): LayoutNode {
   const dir: "row" | "col" = side === "left" || side === "right" ? "row" : "col";
   const before = side === "left" || side === "top";
-  const rec = (n: LayoutNode): LayoutNode => {
-    if (n.kind !== "split") {
-      if (n.threadId !== target) return n;
-      const children = before ? [node, n] : [n, node];
-      return { kind: "split", dir, children, weights: [50, 50] };
-    }
-    return { ...n, children: n.children.map(rec) };
-  };
-  return rec(tree);
+  const path = findPath(tree, target);
+  if (path === null) return tree;
+
+  const parentPath = path.slice(0, -1);
+  const parent = nodeAtPath(tree, parentPath);
+  let next: LayoutNode;
+  if (parent !== null && parent.kind === "split" && parent.dir === dir) {
+    const index = path[path.length - 1]! + (before ? 0 : 1);
+    next = replaceAtPath(tree, parentPath, insertChildAt(parent, index, node));
+  } else {
+    const rec = (n: LayoutNode): LayoutNode => {
+      if (n.kind !== "split") {
+        if (n.threadId !== target) return n;
+        const children = before ? [node, n] : [n, node];
+        return { kind: "split", dir, children, weights: [50, 50] };
+      }
+      return { ...n, children: n.children.map(rec) };
+    };
+    next = rec(tree);
+  }
+  // Repeated splits must not nest one axis into a thinner copy of itself. Once an
+  // axis is full, the existing tidy grid keeps every cell at a readable size.
+  return hasOversizedSplit(next) ? (tidy(next) ?? next) : next;
 }
 
 export function moveThread(
