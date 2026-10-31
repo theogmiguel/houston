@@ -1112,6 +1112,9 @@ describe("a reply after the result is an adjustment the owner accepts into a new
               .map((call) => call.body.name),
             "eyes",
           );
+          // A second reply the owner never accepts stays out of every brief.
+          yield* sendEvent(fake, replyEvent("1700000011.000100", "1700000000.000100", "U2", "Make it huge"));
+          yield* until("the pending adjustment", adjustment("1700000011.000100").pipe(Effect.map((row) => row !== undefined)));
           yield* sendInteraction(fake, clickEvent(OWNER, buttonsOf(dm)[0]!));
           yield* until("attempt 2", Effect.sync(() => runs.attempts.length === 1));
           assert.strictEqual(runs.attempts[0]?.runId, a.runId);
@@ -1119,6 +1122,8 @@ describe("a reply after the result is an adjustment the owner accepts into a new
             runs.attempts[0]?.description ?? "",
             "<<<HOUSTON-SLACK-ADJUSTMENT\nMake the button blue\nHOUSTON-SLACK-ADJUSTMENT>>>",
           );
+          assert.strictEqual((yield* adjustment("1700000011.000100"))?.state, "pending");
+          assert.notInclude(runs.attempts[0]?.description ?? "", "Make it huge");
           const second = yield* latestRun(a.taskId);
           assert.strictEqual(second.attempt, 2);
           assert.strictEqual(second.branch, `houston/task-${a.taskId}`);
@@ -1140,6 +1145,7 @@ describe("a reply after the result is an adjustment the owner accepts into a new
           yield* tickReplies;
           yield* until("attempt 3", Effect.sync(() => runs.attempts.length === 2));
           assert.include(runs.attempts[1]?.description ?? "", "And make it bold");
+          assert.notInclude(runs.attempts[1]?.description ?? "", "Make it huge");
           assert.strictEqual((yield* latestRun(a.taskId)).attempt, 3);
 
           // Ignore takes the 👀 away; a pending adjustment loses it when the task is done.
