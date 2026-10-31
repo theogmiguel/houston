@@ -775,7 +775,7 @@ export const BranchToolbar = memo(function BranchToolbar({
       {runningUploads.length > 0 && aggregateUploadProgress !== null ? (
         <span
           data-composer-upload-progress="true"
-          className="inline-flex shrink-0 items-center gap-1 px-1.5 text-2xs text-(--t3) tabular-nums whitespace-nowrap"
+          className="ms-auto inline-flex shrink-0 items-center gap-1 px-1.5 text-2xs text-(--t3) tabular-nums whitespace-nowrap"
         >
           <ArrowUpIcon className="size-3 shrink-0" aria-hidden="true" />
           {runningUploads.length} of {attachmentIds.length} ·{" "}
