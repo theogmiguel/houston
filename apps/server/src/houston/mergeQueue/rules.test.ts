@@ -8,7 +8,9 @@ import {
   checkEnqueue,
   checkSettings,
   failureHolds,
+  failureNote,
   gates,
+  handOffMode,
   line,
   nextUp,
   order,
@@ -570,5 +572,132 @@ describe("the push guard refuses bases, defaults and branches houston did not cr
     expect(guard("t3/abc", { baseRef: "t3/abc" })).toContain("it is the base");
     // An unknown default branch refuses rather than guesses.
     expect(guard("t3/abc", { defaultBranch: null })).toContain("default branch");
+  });
+});
+
+describe("the hand-off follows the read, then the cache for the base, then houston", () => {
+  const shown = (patch: Partial<NonNullable<Facts["handOff"]>> = {}) => ({
+    mergeQueueRequired: false,
+    autoMergeAllowed: false,
+    queueEntry: null,
+    autoMerge: null,
+    letGo: null,
+    ...patch,
+  });
+  const optional = [{ name: "lint", status: "success" as const, required: false }];
+
+  it("the hand-off follows the read, then the cache for the base, then houston", () => {
+    const cases: ReadonlyArray<{
+      readonly name: string;
+      readonly facts: Facts;
+      readonly cache?: Readonly<Record<string, "houston" | "autoMerge" | "mergeQueue">>;
+      readonly expected: "houston" | "autoMerge" | "mergeQueue";
+    }> = [
+      {
+        name: "the base requires github's merge queue",
+        facts: facts({ handOff: shown({ mergeQueueRequired: true, autoMergeAllowed: true }) }),
+        expected: "mergeQueue",
+      },
+      {
+        name: "auto-merge allowed and one required check",
+        facts: facts({ handOff: shown({ autoMergeAllowed: true }) }),
+        expected: "autoMerge",
+      },
+      {
+        name: "auto-merge allowed and no required check",
+        facts: facts({ handOff: shown({ autoMergeAllowed: true }), checks: optional }),
+        expected: "houston",
+      },
+      {
+        name: "auto-merge not allowed",
+        facts: facts({ handOff: shown() }),
+        expected: "houston",
+      },
+      {
+        name: "fields hidden: the cached mode for the same base",
+        facts: facts({ handOff: null }),
+        cache: { main: "mergeQueue" },
+        expected: "mergeQueue",
+      },
+      {
+        name: "fields hidden and nothing cached",
+        facts: facts({ handOff: null }),
+        expected: "houston",
+      },
+      {
+        name: "fields hidden: a cache for another base is ignored",
+        facts: facts({ handOff: null }),
+        cache: { release: "mergeQueue" },
+        expected: "houston",
+      },
+      {
+        name: "a shown answer wins over the cache",
+        facts: facts({ handOff: shown() }),
+        cache: { main: "mergeQueue" },
+        expected: "houston",
+      },
+    ];
+    for (const value of cases) {
+      expect(handOffMode(value.facts, "main", value.cache ?? {}), value.name).toBe(value.expected);
+    }
+    // A read that never happened or failed leaves the cache to answer.
+    expect(handOffMode(null, "main", { main: "autoMerge" })).toBe("autoMerge");
+    expect(handOffMode(null, "main", {})).toBe("houston");
+  });
+});
+
+describe("the failure note names the files and the output tail", () => {
+  it("the failure note names the files and the output tail", () => {
+    const files = Array.from({ length: 22 }, (_, index) => `src/file-${index + 1}.ts`);
+    const note = failureNote({
+      number: 7,
+      url: "https://github.com/o/r/pull/7",
+      title: "Fix the parser",
+      headRef: "houston/7",
+      failure: {
+        kind: "conflict",
+        message: "Rebasing onto main@0000090 stopped on a conflict in 22 files",
+        headSha: sha(7),
+        baseSha: sha(90),
+        files,
+        outputTail: "error: line 1\nerror: line 2",
+        notifiedThreadId: null,
+        at: "2026-10-30T10:00:00.000Z",
+      },
+    });
+    expect(note).toContain("PR #7");
+    expect(note).toContain("https://github.com/o/r/pull/7");
+    expect(note).toContain("Rebasing onto main@0000090 stopped on a conflict in 22 files");
+    for (const file of files.slice(0, 20)) expect(note).toContain(`- ${file}`);
+    expect(note).not.toContain("src/file-21.ts");
+    expect(note).not.toContain("src/file-22.ts");
+    expect(note).toContain("- and 2 more");
+    expect(note).toContain("```\nerror: line 1\nerror: line 2\n```");
+    expect(note).toContain("Fix it on houston/7 and push.");
+    expect(note).toContain(
+      "The queue takes the new head back in line on its own; do not enqueue it again",
+    );
+    expect(note.trimEnd().endsWith("do not enqueue it again")).toBe(true);
+
+    // No files and no output: neither section is written.
+    const bare = failureNote({
+      number: 8,
+      url: "https://github.com/o/r/pull/8",
+      title: null,
+      headRef: "t3/eight",
+      failure: {
+        kind: "refused",
+        message: "refusing to push to t3/eight: Houston created no worktree on that branch",
+        headSha: sha(8),
+        baseSha: null,
+        files: [],
+        outputTail: null,
+        notifiedThreadId: null,
+        at: "2026-10-30T10:00:00.000Z",
+      },
+    });
+    expect(bare).not.toContain("```");
+    expect(bare).not.toContain("- and");
+    expect(bare).toContain("Fix it on t3/eight and push.");
   });
 });

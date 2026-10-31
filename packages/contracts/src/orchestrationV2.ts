@@ -47,6 +47,7 @@ import {
   HoustonSideThread,
   makeHoustonSideThreadCommands,
 } from "./houston/sideThreads.ts";
+import { HoustonMergeQueueNotifyCommand } from "./houston/mergeQueue.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import {
   OrchestrationSearchThreadsInput,
@@ -3344,6 +3345,7 @@ export const OrchestrationV2Command = Schema.Union([
     modelSelection: ModelSelection,
   }),
   ...makeHoustonSideThreadCommands(OrchestrationV2CreationFields),
+  HoustonMergeQueueNotifyCommand,
 ]);
 export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 
