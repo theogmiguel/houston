@@ -109,6 +109,7 @@ import * as HoustonTaskSourceService from "../taskSources/SourceService.ts";
 import * as HoustonTaskSourceV1Import from "../taskSources/V1Import.ts";
 import * as HoustonTaskRuns from "../tasks/TaskRuns.ts";
 import * as HoustonMergeQueueService from "../mergeQueue/Service.ts";
+import * as HoustonSlackService from "../slack/Service.ts";
 import {
   HoustonHarnessService,
   HoustonHarnessStore,
@@ -150,6 +151,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonNightShiftService.HoustonNightShiftService)({}),
   Layer.mock(HoustonTaskRuns.HoustonTaskRuns)({}),
   Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
+  Layer.mock(HoustonSlackService.HoustonSlackService)({}),
   Layer.mock(KnownWorkspaces.KnownWorkspaces)({}),
   Layer.mock(McpAppRequests.McpAppRequests)({}),
   Layer.mock(OtlpEndpointCheck.OtlpEndpointCheck)({}),

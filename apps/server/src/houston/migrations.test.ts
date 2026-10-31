@@ -23,6 +23,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [5, "MergeQueue"],
   [6, "TaskSourceMarkerKey"],
   [7, "HarnessReview"],
+  [8, "SlackIntake"],
   [9, "NightShift"],
 ];
 const TASK_TABLES = [
@@ -254,6 +255,86 @@ describe("the task sources migration runs on the Houston track", () => {
   );
 });
 
+describe("the slack intake migration runs on the Houston track", () => {
+  const SLACK_TABLES = [
+    "houston_slack_adjustments",
+    "houston_slack_channels",
+    "houston_slack_import",
+    "houston_slack_outbox",
+    "houston_slack_questions",
+    "houston_slack_requests",
+    "houston_slack_results",
+    "houston_slack_settings",
+  ];
+
+  it.effect("the slack intake migration runs on the Houston track", () =>
+    withDatabaseFile((file) =>
+      Effect.gen(function* () {
+        const upstream = yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const history = yield* houstonHistory;
+          const slack = history.findIndex(([, name]) => name === "SlackIntake");
+          assert.deepEqual(history[slack], [8, "SlackIntake"]);
+          const names = history.map(([, name]) => name);
+          assert.isBelow(names.indexOf("TaskSources"), names.indexOf("SlackIntake"));
+          assert.isTrue(history.slice(0, slack).every(([id]) => id < 8));
+          const tables = (yield* sql<{ readonly name: string }>`
+            SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name LIKE 'houston_slack_%' ORDER BY name
+          `).map((row) => row.name);
+          assert.deepEqual(tables, SLACK_TABLES);
+          const request = (ts: string) => sql`
+            INSERT INTO houston_slack_requests (channel_id, ts, author, project_id, state, created_at)
+            VALUES ('C1', ${ts}, 'U2', 'p', 'pending', 'now')
+          `;
+          yield* request("1.000100");
+          yield* request("1.000200");
+          assert.isTrue((yield* Effect.exit(request("1.000100")))._tag === "Failure");
+          const outbox = (key: string) => sql`
+            INSERT INTO houston_slack_outbox (request_id, dedupe_key, target, text, created_at)
+            VALUES (1, ${key}, 'thread', 'x', 'now')
+          `;
+          yield* outbox("a");
+          assert.isTrue((yield* Effect.exit(outbox("a")))._tag === "Failure");
+          const settings = (id: number) => sql`
+            INSERT INTO houston_slack_settings (id, enabled, language, updated_at)
+            VALUES (${id}, 0, 'en', 'now')
+          `;
+          yield* settings(1);
+          assert.isTrue((yield* Effect.exit(settings(2)))._tag === "Failure");
+          for (const table of SLACK_TABLES) {
+            const columns = yield* sql<{ readonly name: string }>`
+              SELECT name FROM pragma_table_info(${table})
+            `;
+            assert.isNotEmpty(columns, table);
+            for (const column of columns) {
+              assert.notMatch(column.name, /token|secret/i, `${table}.${column.name}`);
+            }
+          }
+          // Task sources' provider check is unchanged: Slack has no row there.
+          const refused = yield* Effect.exit(sql`
+            INSERT INTO houston_task_source_settings (
+              project_id, provider, enabled, settings_json, updated_at
+            ) VALUES ('p', 'slack', 0, '{}', 'now')
+          `);
+          assert.isTrue(refused._tag === "Failure");
+          assert.isFalse(
+            (yield* upstreamHistory).some((row) => row.name.toLowerCase().includes("slack")),
+          );
+          return yield* upstreamHistory;
+        }).pipe(Effect.provide(openThroughSqlite(file)));
+
+        // A reopen applies nothing on either track.
+        yield* Effect.gen(function* () {
+          assert.deepEqual(yield* runHoustonMigrations(), []);
+          assert.deepEqual(yield* upstreamHistory, upstream);
+          assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
+        }).pipe(Effect.provide(openThroughSqlite(file)));
+      }),
+    ),
+  );
+});
+
 describe("the merge queue migration runs on the Houston track", () => {
   const QUEUE_TABLES = [
     "houston_merge_queue_entries",
@@ -268,7 +349,10 @@ describe("the merge queue migration runs on the Houston track", () => {
         const upstream = yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const history = yield* houstonHistory;
-          assert.deepEqual(history[4], [5, "MergeQueue"]);
+          assert.deepEqual(
+            history.find(([id]) => id === 5),
+            [5, "MergeQueue"],
+          );
           assert.deepEqual(
             history.map(([id]) => id),
             HOUSTON_TRACK.map(([id]) => id),
