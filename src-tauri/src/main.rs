@@ -17,6 +17,7 @@ mod test_home;
 mod transfer_open;
 mod tray;
 mod v2_server;
+mod v2_ssh;
 mod window;
 mod window_state;
 mod wsl;
@@ -314,6 +315,7 @@ fn main() {
     });
     let v2_node =
         v2_server::resolve_node(std::env::var_os("HOUSTON_NODE").map(std::path::PathBuf::from));
+    let v2_ssh = Arc::new(v2_ssh::V2SshHost::new(v2_node.clone(), v2_entry.clone()));
     let v2_host = Arc::new(v2_server::V2Host::new(
         v2_base_dir.clone(),
         v2_node,
@@ -331,6 +333,7 @@ fn main() {
     let dbus_id = dbus_id_for(&context.config().identifier, Some(&channel_label));
     let mut builder = tauri::Builder::default();
     builder = builder.manage(Arc::clone(&v2_host));
+    builder = builder.manage(Arc::clone(&v2_ssh));
     builder = builder.manage(fs_allowlist::AllowedRoots::new());
     builder = builder.manage(shells::ShellsCache::new());
     builder = builder.manage(std::sync::Arc::new(app_update::V2UpdateHandle::new()));
@@ -384,6 +387,15 @@ fn main() {
             v2_server::v2_server_set_exposure_mode,
             v2_server::v2_server_set_tailscale_serve,
             v2_server::v2_server_advertised_endpoints,
+            v2_ssh::v2_ssh_discover_hosts,
+            v2_ssh::v2_ssh_resolve_host,
+            v2_ssh::v2_ssh_ensure_environment,
+            v2_ssh::v2_ssh_disconnect_environment,
+            v2_ssh::v2_ssh_fetch_environment_descriptor,
+            v2_ssh::v2_ssh_bootstrap_bearer_session,
+            v2_ssh::v2_ssh_fetch_session_state,
+            v2_ssh::v2_ssh_resolve_password_prompt,
+            v2_ssh::v2_probe_remote_editors,
             fs_allowlist::fs_add_allowed_root,
             fs_allowlist::fs_set_allowed_roots,
             fs::fs_read_directory,
