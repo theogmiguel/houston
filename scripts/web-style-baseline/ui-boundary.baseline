@@ -72,7 +72,7 @@
 21 apps/web/src/components/chat/McpAppFrame.tsx
 8 apps/web/src/components/chat/MermaidDiagram.tsx
 1 apps/web/src/components/chat/MessageCopyButton.tsx
-70 apps/web/src/components/chat/MessagesTimeline.tsx
+71 apps/web/src/components/chat/MessagesTimeline.tsx
 19 apps/web/src/components/chat/ModelListRow.tsx
 29 apps/web/src/components/chat/ModelPickerContent.tsx
 19 apps/web/src/components/chat/ModelPickerSidebar.tsx
@@ -86,6 +86,7 @@
 9 apps/web/src/components/chat/ProviderSubagentBar.tsx
 32 apps/web/src/components/chat/QueuedRunsControl.tsx
 15 apps/web/src/components/chat/SecretRequestCard.tsx
+6 apps/web/src/components/chat/SideChatPane.tsx
 1 apps/web/src/components/chat/ShellCommandBlock.tsx
 2 apps/web/src/components/chat/SkillInlineText.tsx
 42 apps/web/src/components/chat/SnapShotAttachmentDetails.tsx
@@ -301,7 +302,7 @@
 18 apps/web/src/components/PullRequestThreadDialog.tsx
 7 apps/web/src/components/QuitHoldOverlay.tsx
 1 apps/web/src/components/RightPanelSheet.tsx
-53 apps/web/src/components/RightPanelTabs.tsx
+57 apps/web/src/components/RightPanelTabs.tsx
 3 apps/web/src/components/search/HighlightedSearchLine.tsx
 39 apps/web/src/components/search/ProjectContentSearchDialog.tsx
 13 apps/web/src/components/ServerUpdateAction.tsx
