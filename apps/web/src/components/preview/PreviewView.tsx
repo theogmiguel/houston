@@ -870,6 +870,8 @@ export function PreviewView({
         pictureInPictureDisabled={
           isUnreachable || (!isServerTab && !desktopOverlay?.hasWebContents)
         }
+        onDeviceSize={tabId && runtimeTabId ? handleToggleDeviceToolbar : undefined}
+        deviceSizeActive={viewport._tag !== "fill"}
         onPickElement={previewBridge && tabId && !isServerTab ? handlePickElement : undefined}
         pickActive={pickActive}
         pickDisabled={!tabId || isUnreachable}
