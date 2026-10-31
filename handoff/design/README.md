@@ -30,7 +30,8 @@ rm handoff/design/boards/.render.html
 | Tokens, type scale, sizes | `Color`, `TypeLayout`, `Primitives` |
 | Window top bar and controls | every screen's `header.titlebar` + `.wc` (no native title bar) |
 | Main sidebar | **`SidebarFinal`** (approved; overrides `Sidebar` and the sidebar column of every screen board) |
-| Thread view, timeline, composer | `ScreenThread`, `Timeline`, `Behaviours`, `Interactions` |
+| Thread view, timeline | `ScreenThread`, `Timeline`, `Behaviours`, `Interactions` |
+| Composer | **`Composer`** (approved; overrides the composer drawn on every other board) |
 | Right panel (Changes, Files, Preview) | `Panels`, `ScreenFiles`, `ScreenPreview` |
 | Grid | `GridFlow`, `Grid1`..`Grid6`, `GridSystem` |
 | Settings | `S_*` (20 pages, one per upstream settings route) |
@@ -89,5 +90,9 @@ rm handoff/design/boards/.render.html
   right-click opens "Show in thread details". Only the look changes: board tokens, 28px rows with
   no icons, a title on every section (Workspace, Version control, Servers, Automations, Lineage,
   Usage), `--raised` surface and `--shadow-1`.
-- **Composer focus is neutral**: the focused composer's 1px border goes from `--line-strong` to
-  `--line-focus` (a lighter neutral, 30% alpha), not the board's `--accent-ink`. No ring or halo.
+- **Composer** follows the `Composer` board: the context strip (BranchToolbar) is a tab behind the
+  card, attachments are 56px tiles with an upload ring, model and traits share one split control,
+  and the footer ends in one primary action whose icon names what Enter does. The card border does
+  not change on focus; keyboard focus rings on its controls stay. Every composer behaviour in the
+  ported code survives; one the board does not place goes under the `...` overflow menu.
+- **Grid pane focus** keeps its current treatment; the `Composer` board's pane frames do not change it.
