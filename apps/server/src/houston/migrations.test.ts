@@ -20,7 +20,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [3, "TaskSources"],
   [4, "TaskRunsCursor"],
   [5, "MergeQueue"],
-  [7, "SlackIntake"],
+  [8, "SlackIntake"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -269,10 +269,10 @@ describe("the slack intake migration runs on the Houston track", () => {
         const upstream = yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const history = yield* houstonHistory;
-          assert.deepEqual(history.at(-1), [7, "SlackIntake"]);
+          assert.deepEqual(history.at(-1), [8, "SlackIntake"]);
           const names = history.map(([, name]) => name);
           assert.isBelow(names.indexOf("TaskSources"), names.indexOf("SlackIntake"));
-          assert.isTrue(history.slice(0, -1).every(([id]) => id < 7));
+          assert.isTrue(history.slice(0, -1).every(([id]) => id < 8));
           const tables = (yield* sql<{ readonly name: string }>`
             SELECT name FROM sqlite_master
             WHERE type = 'table' AND name LIKE 'houston_slack_%' ORDER BY name

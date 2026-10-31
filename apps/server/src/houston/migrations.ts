@@ -473,14 +473,14 @@ const MergeQueue = Effect.gen(function* () {
   `;
 });
 
-// Id 6 is claimed by the harness review branch.
+// Ids 6 and 7 are claimed by the task sources writeback and harness review branches.
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
   [3, "TaskSources", TaskSources],
   [4, "TaskRunsCursor", TaskRunsCursor],
   [5, "MergeQueue", MergeQueue],
-  [7, "SlackIntake", SlackIntake],
+  [8, "SlackIntake", SlackIntake],
 ] as const;
 
 const run = Migrator.make({});
