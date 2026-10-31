@@ -1,6 +1,6 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { useSortable } from "@dnd-kit/sortable";
-import { ChevronDownIcon } from "lucide-react";
+import { ArchiveIcon, PauseCircleIcon } from "lucide-react";
 import { CSS } from "@dnd-kit/utilities";
 import { type ReactNode, useLayoutEffect } from "react";
 import { cn } from "~/lib/utils";
@@ -110,7 +110,8 @@ export function SidebarDragBoundary(props: {
 
 /**
  * A shelf header for lists that are not dnd-kit sortable, such as the grid
- * rail. It keeps the same label, count and chevron as the thread sidebar.
+ * rail. The rail treats the shelves as an archive area: a leading icon names
+ * each list, and the muted count stays right of the label.
  */
 export function SidebarShelfHeader(props: {
   shelf: "snoozed" | "settled";
@@ -122,6 +123,7 @@ export function SidebarShelfHeader(props: {
   toggle: { expanded: boolean; onToggle: () => void };
 }) {
   if (props.variant === "rail") {
+    const ShelfIcon = props.shelf === "snoozed" ? PauseCircleIcon : ArchiveIcon;
     return (
       <button
         type="button"
@@ -132,7 +134,7 @@ export function SidebarShelfHeader(props: {
         onClick={props.toggle.onToggle}
         aria-expanded={props.toggle.expanded}
         className={cn(
-          "flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-left text-xs font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+          "flex h-7 w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 text-left text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
           props.isDropTarget
             ? "bg-(--accent-muted) text-primary"
             : props.dragging
@@ -140,15 +142,9 @@ export function SidebarShelfHeader(props: {
               : "text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-secondary-foreground",
         )}
       >
-        <ChevronDownIcon
-          aria-hidden
-          className={cn(
-            "size-3 shrink-0 transition-transform",
-            !props.toggle.expanded && "-rotate-90",
-          )}
-        />
+        <ShelfIcon aria-hidden className="size-3.5 shrink-0" data-shelf-icon={props.shelf} />
         <span className="shrink-0">{props.label}</span>
-        <span className="ml-auto font-normal tabular-nums">{props.count}</span>
+        <span className="ml-auto font-normal text-secondary-label tabular-nums">{props.count}</span>
       </button>
     );
   }

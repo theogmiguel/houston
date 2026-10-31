@@ -44,7 +44,6 @@ import {
   Files,
   Globe2,
   MessagesSquare,
-  MoreHorizontal,
   Plus,
   TerminalSquare,
 } from "lucide-react";
@@ -109,8 +108,6 @@ import { surfaceShortcutKey } from "~/lib/surfaceShortcutKey";
 
 export interface RightPanelTabsProps {
   mode: PreviewPanelMode;
-  /** Draws the board's fixed Changes / Files / Preview / Pull request tabs before extra surfaces. */
-  fixedTabs?: boolean;
   maximized?: boolean;
   open?: boolean;
   keybindings: ResolvedKeybindingsConfig;
@@ -571,26 +568,6 @@ function RightPanelEmptyState(props: {
   );
 }
 
-type BoardPanelKind = "diff" | "files" | "preview" | "pull-request";
-
-interface BoardPanelTabSpec {
-  readonly kind: BoardPanelKind;
-  readonly label: string;
-  readonly available: boolean;
-  readonly disabledReason: string;
-  readonly onClick: () => void;
-}
-
-/** The tab a board tab stands for: the active surface of that kind, else the newest one. */
-function boardPanelSurface(
-  kind: BoardPanelKind,
-  surfaces: readonly RightPanelSurface[],
-  activeSurfaceId: string | null,
-): RightPanelSurface | null {
-  const matching = surfaces.filter((surface) => surface.kind === kind);
-  return matching.find((surface) => surface.id === activeSurfaceId) ?? matching.at(-1) ?? null;
-}
-
 function surfaceTitle(
   surface: RightPanelSurface,
   sessions: Readonly<Record<string, PreviewSessionSnapshot>>,
@@ -1046,85 +1023,6 @@ function RightPanelTab(
   );
 }
 
-/**
- * Above 34rem the panel header shows every control inline. At the default 400px
- * panel the fixed tab labels need that room, so the same controls move into one
- * menu button instead of squeezing `Pull request` into a clipped initial.
- */
-function PanelHeaderControls({ controls }: { controls: ReactNode }) {
-  if (controls === null || controls === undefined) return null;
-  return (
-    <>
-      <div className="@max-[34rem]/right-panel-topbar:hidden flex items-center">{controls}</div>
-      <div className="@max-[34rem]/right-panel-topbar:flex hidden items-center">
-        <Menu>
-          <MenuTrigger
-            render={
-              <Button aria-label="Panel controls" size="icon-xs" variant="ghost-muted" />
-            }
-          >
-            <MoreHorizontal className="size-3.5" />
-          </MenuTrigger>
-          <MenuPopup align="end" side="bottom" sideOffset={6} className="p-1">
-            {controls}
-          </MenuPopup>
-        </Menu>
-      </div>
-    </>
-  );
-}
-
-function BoardPanelTab(props: {
-  label: string;
-  active: boolean;
-  disabled: boolean;
-  disabledReason: string;
-  surface: RightPanelSurface | null;
-  ownsDesktopTitleBar: boolean;
-  onActivate: () => void;
-  onAuxClick: (event: ReactMouseEvent, surface: RightPanelSurface) => void;
-  onContextMenu: (event: ReactMouseEvent, surface: RightPanelSurface) => void;
-}) {
-  const className = cn(
-    "cursor-pointer flex h-7 shrink-0 items-center rounded-md px-1.5 text-xs font-medium",
-    props.ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
-    props.disabled
-      ? "cursor-default text-secondary-foreground opacity-50"
-      : props.active
-        ? "bg-selected text-foreground"
-        : "text-secondary-foreground hover:bg-accent hover:text-foreground",
-  );
-  const tab = (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={props.active}
-      aria-disabled={props.disabled || undefined}
-      disabled={props.disabled}
-      onClick={props.onActivate}
-      className={className}
-    >
-      {props.label}
-    </button>
-  );
-  if (props.disabled) {
-    return <DisabledReasonTooltip reason={props.disabledReason} trigger={tab} />;
-  }
-  const surface = props.surface;
-  return (
-    <div
-      data-active-tab={props.active}
-      onMouseDown={preventTabMiddleButtonDefault}
-      onMouseUp={preventTabMiddleButtonDefault}
-      onAuxClick={surface ? (event) => props.onAuxClick(event, surface) : undefined}
-      onContextMenu={surface ? (event) => props.onContextMenu(event, surface) : undefined}
-      className="flex shrink-0"
-    >
-      {tab}
-    </div>
-  );
-}
-
 export function RightPanelTabs(props: RightPanelTabsProps) {
   const focusedSurface = props.surfaces.find((surface) => surface.id === props.activeSurfaceId);
   const ownsDesktopTitleBar = (isElectron || isTauriHost()) && props.mode === "inline";
@@ -1272,66 +1170,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       : []),
   ] as const;
 
-  const boardPanelTabs: readonly BoardPanelTabSpec[] | null = props.fixedTabs
-    ? [
-        {
-          kind: "diff",
-          label: "Changes",
-          available: props.diffAvailable,
-          disabledReason: SURFACE_UNAVAILABLE_HINTS.diff,
-          onClick: props.onAddDiff,
-        },
-        {
-          kind: "files",
-          label: "Files",
-          available: props.filesAvailable,
-          disabledReason: SURFACE_UNAVAILABLE_HINTS.files,
-          onClick: props.onAddFiles,
-        },
-        {
-          kind: "preview",
-          label: "Preview",
-          available: props.browserAvailable,
-          disabledReason: SURFACE_UNAVAILABLE_HINTS.browser,
-          onClick: props.onAddBrowser,
-        },
-        {
-          kind: "pull-request",
-          label: "Pull request",
-          available: props.pullRequestAvailable,
-          disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
-          onClick: props.onAddPullRequest,
-        },
-      ]
-    : null;
-  const boardPanelSurfaceByKind = new Map<BoardPanelKind, RightPanelSurface>();
-  if (boardPanelTabs) {
-    for (const tab of boardPanelTabs) {
-      const surface = boardPanelSurface(tab.kind, props.surfaces, props.activeSurfaceId);
-      if (surface) boardPanelSurfaceByKind.set(tab.kind, surface);
-    }
-  }
-  const boardPanelSurfaceIds = new Set(
-    [...boardPanelSurfaceByKind.values()].map((surface) => surface.id),
-  );
-  const extraSurfaces = boardPanelTabs
-    ? props.surfaces.filter((surface) => !boardPanelSurfaceIds.has(surface.id))
-    : props.surfaces;
-  // Changes, Files and Pull request are fixed tabs; the menu keeps the surfaces the board
-  // does not draw, including additional browser tabs.
-  const menuSurfaceActions = boardPanelTabs
-    ? addSurfaceActions.filter(
-        (action) =>
-          action.kind === "preview" ||
-          action.kind === "terminal" ||
-          action.kind === "pull-requests" ||
-          action.kind === "device" ||
-          action.kind === "side-chat",
-      )
-    : addSurfaceActions;
-
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const action = surfaceShortcutActionForKey(menuSurfaceActions, event.nativeEvent);
+    const action = surfaceShortcutActionForKey(addSurfaceActions, event.nativeEvent);
     if (!action) return;
     event.preventDefault();
     event.stopPropagation();
@@ -1484,8 +1324,84 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     };
   };
 
+  const addSurfaceMenu =
+    props.open !== false ? (
+      <Menu open={addSurfaceMenuOpen} onOpenChange={setAddSurfaceMenuOpen}>
+        <MenuTrigger
+          ref={addSurfaceTriggerRef}
+          render={
+            <Button
+              aria-label="Add panel surface"
+              className="shrink-0"
+              size="icon-xs"
+              variant="ghost-muted"
+            />
+          }
+        >
+          <Plus className="size-3.5" />
+        </MenuTrigger>
+        <MenuPopup
+          align="start"
+          side="bottom"
+          sideOffset={6}
+          onKeyDownCapture={handleAddSurfaceMenuKeyDown}
+        >
+          {addSurfaceActions.map((action) => {
+            const Icon = action.icon;
+            if (action.label === "Browser" && action.available) {
+              return (
+                <MenuSub key={action.label}>
+                  <MenuSubTrigger
+                    className="[&>svg:last-child]:ms-0"
+                    aria-keyshortcuts={action.shortcut}
+                    onClick={(event) => {
+                      const pointerType =
+                        "pointerType" in event.nativeEvent &&
+                        typeof event.nativeEvent.pointerType === "string"
+                          ? event.nativeEvent.pointerType
+                          : undefined;
+                      if (!shouldOpenDefaultBrowserProfileFromMenuClick(pointerType)) return;
+                      setAddSurfaceMenuOpen(false);
+                      action.onClick();
+                    }}
+                  >
+                    <Icon />
+                    {action.label}
+                    <MenuShortcut>{action.shortcut}</MenuShortcut>
+                  </MenuSubTrigger>
+                  <MenuSubPopup className="max-w-56">
+                    {browserProfiles.map((profile) => (
+                      <MenuItem
+                        key={profile.id}
+                        onClick={() => props.onAddBrowserInProfile(profile.id)}
+                      >
+                        <span className="min-w-0 truncate">{profile.name}</span>
+                      </MenuItem>
+                    ))}
+                  </MenuSubPopup>
+                </MenuSub>
+              );
+            }
+            return (
+              <SurfaceMenuItem
+                key={action.label}
+                available={action.available}
+                disabledReason={action.disabledReason}
+                shortcut={action.shortcut}
+                onClick={action.onClick}
+              >
+                <Icon />
+                {action.label}
+              </SurfaceMenuItem>
+            );
+          })}
+        </MenuPopup>
+      </Menu>
+    ) : null;
+
   const tabStripContent = (
     <>
+      {addSurfaceMenu}
       <ScrollArea
         radius="none"
         ref={attachTabList}
@@ -1496,25 +1412,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       >
         <div className="flex h-full w-max min-w-full items-center gap-1">
           <div role="tablist" aria-label="Right panel" className="flex items-center gap-0.5">
-            {boardPanelTabs?.map((tab) => {
-              const surface = boardPanelSurfaceByKind.get(tab.kind) ?? null;
-              return (
-                <BoardPanelTab
-                  key={tab.kind}
-                  label={tab.label}
-                  active={surface !== null && surface.id === props.activeSurfaceId}
-                  disabled={surface === null && !tab.available}
-                  disabledReason={tab.disabledReason}
-                  surface={surface}
-                  ownsDesktopTitleBar={ownsDesktopTitleBar}
-                  onActivate={() => (surface ? onActivateTab(surface) : tab.onClick())}
-                  onAuxClick={onTabAuxClick}
-                  onContextMenu={onTabContextMenu}
-                />
-              );
-            })}
-            <SortableTabList surfaces={extraSurfaces} onMove={props.onMoveSurface}>
-              {extraSurfaces.map((surface) => {
+            <SortableTabList surfaces={props.surfaces} onMove={props.onMoveSurface}>
+              {props.surfaces.map((surface) => {
                 const previewTabId = previewTabIdOf(surface, props.previewSessions);
                 const favicon = previewFaviconOf(
                   surface,
@@ -1554,79 +1453,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
               })}
             </SortableTabList>
           </div>
-          {props.open !== false ? (
-            <Menu open={addSurfaceMenuOpen} onOpenChange={setAddSurfaceMenuOpen}>
-              <MenuTrigger
-                ref={addSurfaceTriggerRef}
-                render={
-                  <Button
-                    aria-label="Add panel surface"
-                    className="shrink-0"
-                    size="icon-xs"
-                    variant="ghost-muted"
-                  />
-                }
-              >
-                <Plus className="size-3.5" />
-              </MenuTrigger>
-              <MenuPopup
-                align="start"
-                side="bottom"
-                sideOffset={6}
-                onKeyDownCapture={handleAddSurfaceMenuKeyDown}
-              >
-                {menuSurfaceActions.map((action) => {
-                  const Icon = action.icon;
-                  if (action.label === "Browser" && action.available) {
-                    return (
-                      <MenuSub key={action.label}>
-                        <MenuSubTrigger
-                          className="[&>svg:last-child]:ms-0"
-                          aria-keyshortcuts={action.shortcut}
-                          onClick={(event) => {
-                            const pointerType =
-                              "pointerType" in event.nativeEvent &&
-                              typeof event.nativeEvent.pointerType === "string"
-                                ? event.nativeEvent.pointerType
-                                : undefined;
-                            if (!shouldOpenDefaultBrowserProfileFromMenuClick(pointerType)) return;
-                            setAddSurfaceMenuOpen(false);
-                            action.onClick();
-                          }}
-                        >
-                          <Icon />
-                          {action.label}
-                          <MenuShortcut>{action.shortcut}</MenuShortcut>
-                        </MenuSubTrigger>
-                        <MenuSubPopup className="max-w-56">
-                          {browserProfiles.map((profile) => (
-                            <MenuItem
-                              key={profile.id}
-                              onClick={() => props.onAddBrowserInProfile(profile.id)}
-                            >
-                              <span className="min-w-0 truncate">{profile.name}</span>
-                            </MenuItem>
-                          ))}
-                        </MenuSubPopup>
-                      </MenuSub>
-                    );
-                  }
-                  return (
-                    <SurfaceMenuItem
-                      key={action.label}
-                      available={action.available}
-                      disabledReason={action.disabledReason}
-                      shortcut={action.shortcut}
-                      onClick={action.onClick}
-                    >
-                      <Icon />
-                      {action.label}
-                    </SurfaceMenuItem>
-                  );
-                })}
-              </MenuPopup>
-            </Menu>
-          ) : null}
         </div>
       </ScrollArea>
       {tabScrollState.hasOverflow ? (
@@ -1692,53 +1518,30 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       {...(props.defaultWidth !== undefined ? { defaultWidth: props.defaultWidth } : {})}
       {...(props.inlineSize ? { inlineSize: props.inlineSize } : {})}
     >
-      {props.fixedTabs ? (
-        <div
-          className={cn(
-            "@container/right-panel-topbar flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 border-b border-border bg-pane-head px-2",
-            ownsDesktopTitleBar && "drag-region",
-            ownsDesktopTitleBar &&
-              "wco:pr-(--workspace-native-controls-inset) tauri:pr-(--workspace-native-controls-inset)",
-            props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-          )}
-          data-right-panel-tabbar
-          data-tauri-drag-region={ownsDesktopTitleBar ? "deep" : undefined}
-        >
-          {tabStripContent}
-          <PanelHeaderControls controls={props.layoutControls} />
-          {ownsDesktopTitleBar ? (
-            <span
-              aria-hidden
-              className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
-            />
-          ) : null}
-        </div>
-      ) : (
-        <div
-          className={cn(
-            "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 border-b border-border bg-pane-head pl-2",
-            props.mode === "inline" && !props.layoutControls ? "pr-28" : "pr-3",
-            ownsDesktopTitleBar && "drag-region",
-            ownsDesktopTitleBar &&
-              "wco:pr-(--workspace-native-controls-inset) tauri:pr-(--workspace-native-controls-inset)",
-            props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-          )}
-          data-right-panel-tabbar
-          data-tauri-drag-region={ownsDesktopTitleBar ? "deep" : undefined}
-        >
-          {tabStripContent}
-          {props.layoutControls}
-          {ownsDesktopTitleBar && !props.layoutControls ? (
-            <span aria-hidden className="hidden w-24 shrink-0 wco:block" />
-          ) : null}
-          {ownsDesktopTitleBar ? (
-            <span
-              aria-hidden
-              className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
-            />
-          ) : null}
-        </div>
-      )}
+      <div
+        className={cn(
+          "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 border-b border-(--divider) bg-pane-head pl-2",
+          props.mode === "inline" && !props.layoutControls ? "pr-3" : "pr-1",
+          ownsDesktopTitleBar && "drag-region",
+          ownsDesktopTitleBar &&
+            "wco:pr-(--workspace-native-controls-inset) tauri:pr-(--workspace-native-controls-inset)",
+          props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+        )}
+        data-right-panel-tabbar
+        data-tauri-drag-region={ownsDesktopTitleBar ? "deep" : undefined}
+      >
+        {tabStripContent}
+        {props.layoutControls}
+        {ownsDesktopTitleBar && !props.layoutControls ? (
+          <span aria-hidden className="hidden w-24 shrink-0 wco:block" />
+        ) : null}
+        {ownsDesktopTitleBar ? (
+          <span
+            aria-hidden
+            className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
+          />
+        ) : null}
+      </div>
       <div className="flex min-h-0 flex-1 flex-col" data-right-panel-surface-content>
         {props.activeSurfaceId === null ? (
           <RightPanelEmptyState
