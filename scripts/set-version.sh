@@ -5,24 +5,23 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-# One command writes all seven, because seven hand edits is six chances to disagree
+# One command writes all six, because six hand edits is five chances to disagree
 # and `version-guard` only tells you afterwards, once a tag has already been pushed.
-# `--check` performs the same seven reads and writes nothing.
+# `--check` performs the same six reads and writes nothing.
 usage() {
   cat >&2 <<'EOF'
 usage: scripts/set-version.sh <X.Y.Z[-rc.N]>
        scripts/set-version.sh --check <X.Y.Z[-rc.N]>
 
-Writes the version into the five manifests and both lockfiles:
+Writes the version into the four manifests and both lockfiles:
   src-tauri/tauri.conf.json   .version
   src-tauri/Cargo.toml        [package] version
-  ui/package.json             .version
   apps/server/package.json    .version
   core/Cargo.toml             [workspace.package] version
   core/Cargo.lock             the workspace crates' entries
   src-tauri/Cargo.lock        the workspace crates' entries
 
-With --check it writes nothing: each of the seven must already read the version,
+With --check it writes nothing: each of the six must already read the version,
 or the script names the file that disagrees and exits 1.
 
 It writes nothing else: no tag, no commit, no release notes.
@@ -86,7 +85,7 @@ verify_version() {
   expected="$1"
   bad=0
 
-  for file in src-tauri/tauri.conf.json ui/package.json apps/server/package.json; do
+  for file in src-tauri/tauri.conf.json apps/server/package.json; do
     got="$(manifest_json_version "$file" version)"
     if [ "$got" != "$expected" ]; then
       echo "set-version: $file .version reads \"${got:-<missing>}\", expected \"$expected\"" >&2
@@ -126,7 +125,7 @@ verify_version() {
 
 if [ "$check" = "1" ]; then
   verify_version "$version" || exit 1
-  echo "set-version --check: the five manifests and both lockfiles all read $version"
+  echo "set-version --check: the four manifests and both lockfiles all read $version"
   exit 0
 fi
 
@@ -171,7 +170,6 @@ def write_toml_version(path, table):
         changed.append(path)
 
 write_json("src-tauri/tauri.conf.json", "version")
-write_json("ui/package.json", "version")
 write_json("apps/server/package.json", "version")
 write_toml_version("src-tauri/Cargo.toml", "package")
 write_toml_version("core/Cargo.toml", "workspace.package")
@@ -185,7 +183,7 @@ PY
 cargo update --workspace --manifest-path core/Cargo.toml --quiet
 cargo update --workspace --manifest-path src-tauri/Cargo.toml --quiet
 
-# The write proves itself: a silent miss in any of the seven would otherwise
+# The write proves itself: a silent miss in any of the six would otherwise
 # surface as a release whose runtime version disagrees with its filename.
 verify_version "$version" || exit 1
 

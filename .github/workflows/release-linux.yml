@@ -100,8 +100,6 @@ jobs:
             src-tauri
           key: release-linux-${{ matrix.arch }}
           cache-on-failure: true
-      - uses: oven-sh/setup-bun@v2
-
       - name: Cache the pinned libghostty-vt source and Zig
         uses: actions/cache@v5
         with:
@@ -119,10 +117,6 @@ jobs:
       - name: Install the pinned Tauri CLI
         if: steps.tauri-cli-cache.outputs.cache-hit != 'true'
         run: cargo install tauri-cli --version ${{ inputs.tauri_cli_version }} --locked
-
-      - name: Install renderer dependencies
-        run: bun install --frozen-lockfile
-        working-directory: ui
 
       # Secrets cannot be used in an `if:`, so they are read into env here and
       # tested; the decision travels on as a step output. A real release
