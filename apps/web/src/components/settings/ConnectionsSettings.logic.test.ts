@@ -89,7 +89,7 @@ describe("applyWslEnableSelection", () => {
 });
 
 describe("resolveShareablePairDeviceUrl", () => {
-  it("only offers the pair card when the URL can be scanned from another device", () => {
+  it("only resolves a QR URL for endpoints another device can scan", () => {
     expect(resolveShareablePairDeviceUrl("http://192.168.1.42:4780/pair?token=abc", true)).toBe(
       "http://192.168.1.42:4780/pair?token=abc",
     );

@@ -877,7 +877,7 @@ export const PairDeviceSection = memo(function PairDeviceSection({
     endpoint !== null
       ? isQrShareableEndpoint(endpoint)
       : !isLoopbackHostname(window.location.hostname);
-  const shareablePairingUrl = resolveShareablePairDeviceUrl(pairingUrl, canRenderQr);
+  const qrPairingUrl = resolveShareablePairDeviceUrl(pairingUrl, canRenderQr);
   const expiresAtMs = pairingLink ? new Date(pairingLink.expiresAt).getTime() : null;
   const remainingSeconds =
     expiresAtMs === null ? null : Math.max(0, Math.floor((expiresAtMs - nowMs) / 1000));
@@ -895,30 +895,43 @@ export const PairDeviceSection = memo(function PairDeviceSection({
     },
   });
 
-  return shareablePairingUrl === null ? null : (
+  return (
     <SettingsSection id="pair-a-device" title="Pair a device">
       <div className="flex items-start gap-3 px-3.5 py-3.5">
-        <div className="shrink-0 rounded-lg bg-white p-1.5">
-          <QRCodeSvg
-            value={shareablePairingUrl}
-            size={96}
-            level="M"
-            marginSize={1}
-            title="Pairing link. Scan to open on another device"
-          />
-        </div>
+        {qrPairingUrl ? (
+          <div className="shrink-0 rounded-lg bg-white p-1.5">
+            <QRCodeSvg
+              value={qrPairingUrl}
+              size={96}
+              level="M"
+              marginSize={1}
+              title="Pairing link. Scan to open on another device"
+            />
+          </div>
+        ) : null}
         <div className="min-w-0 flex-1">
-          <h3 className="text-headline leading-4.5 font-medium text-foreground">Scan to pair</h3>
+          <h3 className="text-headline leading-4.5 font-medium text-foreground">
+            {qrPairingUrl ? "Scan to pair" : "Pairing link"}
+          </h3>
           <p className="mt-px text-xs leading-4 text-muted-foreground">
-            {`Open the link on the other device, or scan it.${
-              expiresLabel ? ` The code expires in ${expiresLabel}.` : ""
-            }`}
+            {qrPairingUrl
+              ? `Open the link on the other device, or scan it.${
+                  expiresLabel ? ` The code expires in ${expiresLabel}.` : ""
+                }`
+              : pairingUrl
+                ? `Open the link on the other device.${
+                    expiresLabel ? ` The link expires in ${expiresLabel}.` : ""
+                  }`
+                : "Create a pairing link below to pair another device."}
           </p>
         </div>
         <Button
           size="sm"
           variant="outline"
-          onClick={() => copyToClipboard(shareablePairingUrl, { value: shareablePairingUrl })}
+          disabled={!pairingUrl}
+          onClick={() => {
+            if (pairingUrl) copyToClipboard(pairingUrl, { value: pairingUrl });
+          }}
         >
           Copy link
         </Button>
