@@ -12,6 +12,8 @@ pub type RawPid = u32;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Signal {
     Check,
+    // Only Linux child-group cleanup sends it; other targets just match on it.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Kill,
 }
 

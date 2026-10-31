@@ -30,7 +30,7 @@ impl HostEnv {
     }
 
     /// A copy with `name` set (or removed when `value` is `None`).
-    #[cfg(test)]
+    #[cfg(any(test, windows))]
     #[must_use]
     pub fn with(&self, name: &str, value: Option<impl Into<OsString>>) -> Self {
         let mut map = (*self.0).clone();
