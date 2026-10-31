@@ -9,6 +9,8 @@ import {
   type OrchestrationV2DomainEvent,
   type OrchestrationV2Run,
   type ProjectId,
+  type ProviderInteractionMode,
+  type RuntimeMode,
   ThreadId,
   type ThreadPullRequestLink,
 } from "@t3tools/contracts";
@@ -61,7 +63,9 @@ import {
   checkAcceptance,
   checkDescription,
   checkFindings,
+  checkSummary,
   conflictRefusal,
+  cutBytes,
   formatFindings,
   limitRefusal,
   refuse,
@@ -187,6 +191,8 @@ export class HoustonTaskRuns extends Context.Service<
       agent: HoustonTaskAgent,
       input: {
         readonly id: string;
+        /** Already resolved within the agent's own modes. */
+        readonly modes: HoustonTaskChildModes;
         readonly modelSelection?: ModelSelection;
         readonly reviewer?: ModelSelection;
       },
@@ -206,6 +212,22 @@ export interface HoustonTaskAgent {
   readonly provider: string;
 }
 
+export interface HoustonTaskChildModes {
+  readonly runtimeMode: RuntimeMode;
+  readonly interactionMode: ProviderInteractionMode;
+}
+
+/** Who a run's thread is launched for: the user's own start runs full-access. */
+interface LaunchAuthority extends HoustonTaskChildModes {
+  readonly createdBy: "user" | "agent";
+}
+
+const USER_LAUNCH: LaunchAuthority = {
+  runtimeMode: "full-access",
+  interactionMode: "default",
+  createdBy: "user",
+};
+
 const HandbackResult = Schema.Struct({
   checked: Schema.Array(Schema.String),
   summary: Schema.String,
@@ -213,6 +235,9 @@ const HandbackResult = Schema.Struct({
 const decodeHandbackResult = Schema.decodeUnknownOption(HandbackResult);
 const decodeExecuteReviewer = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Struct({ reviewer: ModelSelection })),
+);
+const decodeExecuteParent = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ parent: Schema.String })),
 );
 
 interface InitiativeRow {
@@ -445,7 +470,7 @@ const make = Effect.gen(function* () {
     Effect.flatMap(nowIso, (now) =>
       run(sql`
         INSERT INTO houston_task_comments (task_id, body, author, created_at)
-        VALUES (${taskId}, ${body.slice(0, HOUSTON_TASK_LIMITS.commentBytes)}, ${author}, ${now})
+        VALUES (${taskId}, ${cutBytes(body, HOUSTON_TASK_LIMITS.commentBytes)}, ${author}, ${now})
       `),
     );
 
@@ -469,8 +494,10 @@ const make = Effect.gen(function* () {
       readonly message: string | null;
       /** The thread the brief comes from, when an agent started the run. */
       readonly senderThreadId?: ThreadId;
+      readonly authority?: LaunchAuthority;
     },
   ) {
+    const authority = input.authority ?? USER_LAUNCH;
     const launched = yield* launcher
       .launch({
         commandId: CommandId.make(`houston-task-run:${runRow.id}`),
@@ -478,8 +505,8 @@ const make = Effect.gen(function* () {
         projectId: row.project_id as ProjectId,
         title: input.title,
         modelSelection: input.modelSelection,
-        runtimeMode: "full-access",
-        interactionMode: "default",
+        runtimeMode: authority.runtimeMode,
+        interactionMode: authority.interactionMode,
         workspaceStrategy: input.workspaceStrategy,
         ...(input.message === null
           ? {}
@@ -493,7 +520,7 @@ const make = Effect.gen(function* () {
                 attachments: [],
               },
             }),
-        createdBy: "user",
+        createdBy: authority.createdBy,
         creationSource: "server",
       })
       .pipe(
@@ -524,7 +551,7 @@ const make = Effect.gen(function* () {
     by: {
       readonly actor: string;
       readonly action: "houston:start" | "houston:execute";
-      readonly agent?: HoustonTaskAgent;
+      readonly agent?: { readonly caller: HoustonTaskAgent; readonly modes: HoustonTaskChildModes };
       readonly reviewer?: ModelSelection;
     } = { actor: USER_ACTOR, action: "houston:start" },
   ) {
@@ -583,7 +610,7 @@ const make = Effect.gen(function* () {
     const branch = taskBranch(row.number, row.title);
     const started = {
       branch,
-      ...(by.agent === undefined ? {} : { parent: by.agent.threadId }),
+      ...(by.agent === undefined ? {} : { parent: by.agent.caller.threadId }),
       ...(by.reviewer === undefined ? {} : { reviewer: by.reviewer }),
     };
     const recorded = yield* store.write(
@@ -616,7 +643,12 @@ const make = Effect.gen(function* () {
       modelSelection,
       workspaceStrategy: { type: "worktree", baseRef, branch },
       message: send ? brief : null,
-      ...(by.agent === undefined ? {} : { senderThreadId: by.agent.threadId }),
+      ...(by.agent === undefined
+        ? {}
+        : {
+            senderThreadId: by.agent.caller.threadId,
+            authority: { ...by.agent.modes, createdBy: "agent" as const },
+          }),
     });
     return { run: toRun(launched), ...(send ? {} : { brief }) };
   });
@@ -635,7 +667,7 @@ const make = Effect.gen(function* () {
       {
         actor: agent.actor,
         action: "houston:execute",
-        agent,
+        agent: { caller: agent, modes: input.modes },
         ...(input.reviewer === undefined ? {} : { reviewer: input.reviewer }),
       },
     ).pipe(Effect.map((result) => result.run));
@@ -741,7 +773,29 @@ const make = Effect.gen(function* () {
       previous.provider === settings.startModel.instanceId
         ? settings.startModel
         : { ...settings.startModel, instanceId: previous.provider as ModelSelection["instanceId"] };
+    // An automatic rework acts for whoever started the previous attempt, never more broadly;
+    // when the previous thread cannot be read, the rework runs approval-required.
+    const authority =
+      options.action === "houston:rework"
+        ? yield* orchestrator.getThreadProjection(previous.thread_id as ThreadId).pipe(
+            Effect.map(({ thread }): LaunchAuthority =>
+              thread.createdBy === "user"
+                ? USER_LAUNCH
+                : {
+                    runtimeMode: thread.runtimeMode,
+                    interactionMode: thread.interactionMode,
+                    createdBy: "agent",
+                  },
+            ),
+            Effect.orElseSucceed((): LaunchAuthority => ({
+              runtimeMode: "approval-required",
+              interactionMode: "default",
+              createdBy: "agent",
+            })),
+          )
+        : USER_LAUNCH;
     return yield* launchRun(operation, row, recorded, {
+      authority,
       title: `${keyOf(row)} ${row.title} (attempt ${attempt})`,
       modelSelection,
       workspaceStrategy: {
@@ -810,6 +864,20 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  /** The thread whose execute started the task's newest line of attempts, if one did. */
+  const executeParent = (taskId: number) =>
+    run(sql<{ readonly action: string; readonly changes: string }>`
+      SELECT action, changes FROM houston_task_history
+      WHERE task_id = ${taskId} AND action IN ('houston:start', 'houston:execute', 'houston:claim')
+      ORDER BY id DESC LIMIT 1
+    `).pipe(
+      Effect.map(([latest]) =>
+        latest?.action === "houston:execute"
+          ? Option.getOrNull(Option.map(decodeExecuteParent(latest.changes), (c) => c.parent))
+          : null,
+      ),
+    );
+
   const handback: HoustonTaskRuns["Service"]["handback"] = Effect.fn("HoustonTaskRuns.handback")(
     function* (input, actor = USER_ACTOR) {
       const operation = "houston.tasks.handback";
@@ -817,6 +885,8 @@ const make = Effect.gen(function* () {
       if (input.summary.trim().length === 0) {
         return yield* refuse("invalid", operation, "a handback needs a summary");
       }
+      const tooLong = checkSummary(operation, input.summary);
+      if (tooLong !== undefined) return yield* tooLong;
       const [open] = yield* liveImplementation(row.id);
       if (open === undefined) {
         return yield* refuse("invalid", operation, `${keyOf(row)} has no live run to hand back`);
@@ -1529,34 +1599,45 @@ const make = Effect.gen(function* () {
     "HoustonTaskRuns.agentHandback",
   )(function* (agent, input) {
     const operation = "houston_task_handback";
+    const row = yield* store.resolve(operation, input.id);
+    const [open] = yield* liveImplementation(row.id);
+    if (open !== undefined && open.thread_id !== agent.threadId) {
+      const parent = yield* executeParent(row.id);
+      if (parent !== agent.threadId) {
+        return yield* refuse(
+          "busy",
+          operation,
+          `${keyOf(row)} is held by thread ${open.thread_id ?? "none"}${parent === null ? "" : `, executed by thread ${parent}`}; only they may hand it back`,
+        );
+      }
+    }
     if (input.result === undefined) {
       if (input.summary === undefined) {
         return yield* refuse("invalid", operation, "a handback needs a summary or a result");
       }
+      const tooLong = checkSummary(operation, input.summary);
+      if (tooLong !== undefined) return yield* tooLong;
       return yield* handback({ id: input.id, summary: input.summary }, agent.actor);
     }
-    const row = yield* store.resolve(operation, input.id);
     const result = decodeHandbackResult(input.result);
     if (Option.isNone(result)) {
-      const [open] = yield* liveImplementation(row.id);
       if (open === undefined) {
         return yield* refuse("invalid", operation, `${keyOf(row)} has no live run to hand back`);
       }
       // The task stays where it is: a person reads the raw result and decides.
       const raw = toJsonText(input.result);
+      const label = "Handback result is not {checked, summary}; the raw result:\n";
       const settled = yield* store.write(
         Effect.gen(function* () {
           const result = yield* setRunState(
             open.id,
             "needs_review",
             "the handback result is malformed",
-            {
-              summary: raw,
-            },
+            { summary: cutBytes(raw, HOUSTON_TASK_LIMITS.commentBytes) },
           );
           yield* addComment(
             row.id,
-            `Handback result is not {checked, summary}; the raw result:\n${raw}`,
+            `${label}${cutBytes(raw, HOUSTON_TASK_LIMITS.commentBytes - Buffer.byteLength(label, "utf8"))}`,
             agent.actor,
           );
           yield* store.recordHistory(row.id, agent.actor, "houston:handback-malformed", {
@@ -1567,6 +1648,8 @@ const make = Effect.gen(function* () {
       );
       return toRun(settled);
     }
+    const tooLong = checkSummary(operation, result.value.summary);
+    if (tooLong !== undefined) return yield* tooLong;
     const acceptance = (yield* store.detail(row)).acceptance;
     const items: Array<number> = [];
     for (const name of result.value.checked) {

@@ -9,7 +9,9 @@ import {
   type OrchestrationV2ThreadShell,
   type ProjectId,
   ProviderInstanceId,
+  type ProviderInteractionMode,
   RunId,
+  type RuntimeMode,
   ThreadId,
 } from "@t3tools/contracts";
 import type {
@@ -82,6 +84,8 @@ interface CallerOptions {
   readonly capabilities?: ReadonlyArray<McpInvocationContext.McpCapability>;
   readonly subagent?: boolean;
   readonly side?: boolean;
+  readonly runtimeMode?: RuntimeMode;
+  readonly interactionMode?: ProviderInteractionMode;
 }
 
 interface ToolResult {
@@ -178,7 +182,13 @@ const withToolkit = <A, E>(
         const otherProjectId = yield* createProject(`toolkit-${name}-other`);
         const caller: ToolkitContext["caller"] = (id, options) => {
           const threadId = ThreadId.make(id);
-          const shell = liveThreadShell(threadId, { activeRunId: RunId.make(`run-${id}`) });
+          const shell = liveThreadShell(threadId, {
+            activeRunId: RunId.make(`run-${id}`),
+            ...(options.runtimeMode === undefined ? {} : { runtimeMode: options.runtimeMode }),
+            ...(options.interactionMode === undefined
+              ? {}
+              : { interactionMode: options.interactionMode }),
+          });
           shells.set(id, {
             ...shell,
             projectId: options.projectId,
@@ -458,9 +468,72 @@ describe("a submit-only credential reaches only the two submit tools of the regi
   );
 });
 
+/** A planner and a reviewer the user started, each recorded and holding the submit-only scope. */
+const recordedSubmitters = (context: ToolkitContext, name: string) =>
+  Effect.gen(function* () {
+    const initiative = yield* context.tasks.saveInitiative({
+      projectId: context.projectId,
+      name: `Initiative ${name}`,
+    });
+    const plannable = yield* context.readyTask(`Plan me ${name}`);
+    yield* context.tasks.saveDomain({
+      id: plannable.key,
+      expectedRevision: plannable.revision,
+      kind: "delivery",
+      initiativeId: initiative.id,
+    });
+    const planned = yield* context.runs.planStart({
+      id: plannable.key,
+      expectedRevision: (yield* context.detail(plannable)).task.revision,
+      modelSelection: selection("codex"),
+    });
+    const planner = context.caller(planned.planning?.threadId ?? "", {
+      projectId: context.projectId,
+      capabilities: ["houston-task-submit"],
+    });
+
+    // A handed-back implementation run under review.
+    const reviewable = yield* context.readyTask(`Review me ${name}`);
+    const started = yield* context.runs.start({ id: reviewable.key });
+    yield* context.until(
+      "the implementation waits for input",
+      context
+        .detail(reviewable)
+        .pipe(
+          Effect.map(
+            (detail) =>
+              detail.runs.find((run) => run.id === started.run.id)?.state === "waiting_for_input",
+          ),
+        ),
+    );
+    const implementation = (yield* context.detail(reviewable)).runs.find(
+      (run) => run.id === started.run.id,
+    )!;
+    commitLines(implementation.worktreePath ?? "", "review.ts", 40);
+    yield* context.runs.handback({ id: reviewable.key, summary: "ready for review" });
+    const reviewing = yield* context.runs.reviewStart({ runId: implementation.id });
+    const review = reviewing.runs.find((run) => run.kind === "review")!;
+    const reviewer = context.caller(review.threadId ?? "", {
+      projectId: context.projectId,
+      capabilities: ["houston-task-submit"],
+    });
+    return { plannable, planner, implementation, review, reviewer };
+  });
+
+const planSubmitArgs = (task: Pick<HoustonTask, "key">) => ({
+  id: task.key,
+  proposal: {
+    description: "the plan",
+    acceptance: ["planned item"],
+    pointers: [],
+    outOfScope: [],
+    questions: [],
+  },
+});
+
 describe("project access gates every tool", () => {
   it.effect(
-    "off refuses all 13, read refuses the 10 writes, write lets all 13 succeed",
+    "off refuses the 11 gated tools, read refuses their 8 writes, write lets all 11 succeed",
     () =>
       withToolkit("access", (context) =>
         Effect.gen(function* () {
@@ -473,56 +546,7 @@ describe("project access gates every tool", () => {
           const item = (yield* context.detail(readable)).acceptance[0]!.id;
           const claimable = yield* context.readyTask("Claim me");
           const executable = yield* context.readyTask("Execute me");
-
-          // A recorded planner.
-          const initiative = yield* context.tasks.saveInitiative({
-            projectId: context.projectId,
-            name: "Auth",
-          });
-          const plannable = yield* context.readyTask("Plan me");
-          yield* context.tasks.saveDomain({
-            id: plannable.key,
-            expectedRevision: plannable.revision,
-            kind: "delivery",
-            initiativeId: initiative.id,
-          });
-          const planned = yield* context.runs.planStart({
-            id: plannable.key,
-            expectedRevision: (yield* context.detail(plannable)).task.revision,
-            modelSelection: selection("codex"),
-          });
-          const plannerId = planned.planning?.threadId ?? "";
-          const planner = context.caller(plannerId, {
-            projectId: context.projectId,
-            capabilities: ["houston-task-submit"],
-          });
-
-          // A recorded reviewer of a handed-back implementation run.
-          const reviewable = yield* context.readyTask("Review me");
-          const started = yield* context.runs.start({ id: reviewable.key });
-          yield* context.until(
-            "the implementation waits for input",
-            context
-              .detail(reviewable)
-              .pipe(
-                Effect.map(
-                  (detail) =>
-                    detail.runs.find((run) => run.id === started.run.id)?.state ===
-                    "waiting_for_input",
-                ),
-              ),
-          );
-          const implementation = (yield* context.detail(reviewable)).runs.find(
-            (run) => run.id === started.run.id,
-          )!;
-          commitLines(implementation.worktreePath ?? "", "review.ts", 40);
-          yield* context.runs.handback({ id: reviewable.key, summary: "ready for review" });
-          const reviewing = yield* context.runs.reviewStart({ runId: implementation.id });
-          const review = reviewing.runs.find((run) => run.kind === "review")!;
-          const reviewer = context.caller(review.threadId ?? "", {
-            projectId: context.projectId,
-            capabilities: ["houston-task-submit"],
-          });
+          const { implementation } = yield* recordedSubmitters(context, "gated");
 
           const calls: ReadonlyArray<
             readonly [
@@ -544,31 +568,12 @@ describe("project access gates every tool", () => {
             ["houston_task_check", agent, { id: readable.key, item }],
             ["houston_task_claim", agent, { id: claimable.key }],
             ["houston_task_handback", agent, { id: claimable.key, summary: "claimed and done" }],
-            [
-              "houston_task_plan_submit",
-              planner,
-              {
-                id: plannable.key,
-                proposal: {
-                  description: "the plan",
-                  acceptance: ["planned item"],
-                  pointers: [],
-                  outOfScope: [],
-                  questions: [],
-                },
-              },
-            ],
-            [
-              "houston_task_review_submit",
-              reviewer,
-              { runId: review.id, verdict: "pass", findings: [] },
-            ],
             ["houston_task_execute", agent, { id: executable.key }],
             ["houston_task_review", agent, { runId: implementation.id }],
           ];
           assert.deepEqual(
             calls.map(([name]) => name),
-            ALL_TOOLS,
+            ALL_TOOLS.filter((name) => !SUBMIT_TOOLS.includes(name)),
           );
 
           for (const access of ["off", "read", "write"] as const) {
@@ -582,6 +587,48 @@ describe("project access gates every tool", () => {
                 refused(result, label, "read_only", ACCESS_SETTING, "read");
               else succeeded(result, label);
             }
+          }
+        }),
+      ),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "a planner and a reviewer the user started submit under access read and off",
+    () =>
+      withToolkit("access-submits", (context) =>
+        Effect.gen(function* () {
+          for (const access of ["read", "off"] as const) {
+            yield* context.setAccess("write");
+            const { plannable, planner, review, reviewer } = yield* recordedSubmitters(
+              context,
+              access,
+            );
+            yield* context.setAccess(access);
+            succeeded(
+              yield* context.call(planner, "houston_task_plan_submit", planSubmitArgs(plannable)),
+              `plan submit with access ${access}`,
+            );
+            succeeded(
+              yield* context.call(reviewer, "houston_task_review_submit", {
+                runId: review.id,
+                verdict: "pass",
+                findings: [],
+              }),
+              `review submit with access ${access}`,
+            );
+            const planned = yield* context.detail(plannable);
+            assert.strictEqual(
+              planned.domain.plan?.proposal.description,
+              "the plan",
+              `the plan is stored under ${access}`,
+            );
+            const reviewed = yield* context.detail(yield* context.runs.taskOfRun(review.id));
+            assert.strictEqual(
+              reviewed.runs.find((run) => run.id === review.id)?.review?.verdict,
+              "pass",
+              `the review settles under ${access}`,
+            );
           }
         }),
       ),
@@ -655,6 +702,78 @@ describe("agents write only their own project or unassigned tasks", () => {
             (yield* context.detail(unassigned)).task.title,
             "Unassigned task, edited",
           );
+        }),
+      ),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "all 8 task-targeting writes to project B's tasks and runs are read-only and change nothing",
+    () =>
+      withToolkit("write-scope-all", (context) =>
+        Effect.gen(function* () {
+          const agent = context.caller("agent-a", { projectId: context.projectId });
+          const owner = context.caller("agent-b", { projectId: context.otherProjectId });
+          const otherTask = (title: string) =>
+            context.tasks.save({
+              patch: {
+                title,
+                status: "todo",
+                acceptance: ["it works"],
+                projectId: context.otherProjectId,
+              },
+            });
+          const open = yield* otherTask("B open task");
+          const item = (yield* context.detail(open)).acceptance[0]!.id;
+          const claimed = yield* otherTask("B claimed task");
+          succeeded(
+            yield* context.call(owner, "houston_task_claim", { id: claimed.key }),
+            "project B's own claim",
+          );
+          const runId = (yield* context.detail(claimed)).runs[0]!.id;
+          const before = {
+            open: yield* context.detail(open),
+            claimed: yield* context.detail(claimed),
+          };
+
+          const writes: ReadonlyArray<readonly [string, Record<string, unknown>, string]> = [
+            ["houston_task_create", { title: "Into B", projectId: context.otherProjectId }, ""],
+            [
+              "houston_task_update",
+              { id: open.key, expectedRevision: open.revision, title: "Taken" },
+              open.key,
+            ],
+            ["houston_task_comment", { id: open.key, body: "not mine" }, open.key],
+            ["houston_task_check", { id: open.key, item }, open.key],
+            ["houston_task_claim", { id: open.key }, open.key],
+            ["houston_task_handback", { id: claimed.key, summary: "not mine" }, claimed.key],
+            ["houston_task_execute", { id: open.key }, open.key],
+            ["houston_task_review", { runId }, claimed.key],
+          ];
+          assert.deepEqual(
+            writes.map(([name]) => name),
+            WRITE_TOOLS.filter((name) => !SUBMIT_TOOLS.includes(name)),
+          );
+          for (const [name, args, key] of writes) {
+            refused(
+              yield* context.call(agent, name, args),
+              name,
+              "read_only",
+              context.otherProjectId,
+              OTHER_WORKSPACE,
+              key,
+            );
+          }
+          const after = {
+            open: yield* context.detail(open),
+            claimed: yield* context.detail(claimed),
+          };
+          for (const which of ["open", "claimed"] as const) {
+            assert.deepEqual(after[which].task, before[which].task, `${which} is unchanged`);
+            assert.deepEqual(after[which].runs, before[which].runs, `${which}'s runs`);
+            assert.deepEqual(after[which].comments, before[which].comments, `${which}'s comments`);
+            assert.deepEqual(after[which].acceptance, before[which].acceptance);
+          }
         }),
       ),
     TIMEOUT,
@@ -818,6 +937,174 @@ describe("a structured handback ticks acceptance and a malformed one needs revie
       ),
     TIMEOUT,
   );
+
+  it.effect(
+    "only the run's holder or its execute parent hands it back; anyone else is busy",
+    () =>
+      withToolkit("handback-holder", (context) =>
+        Effect.gen(function* () {
+          yield* context.setSettings({ reviewer: null, reviewMode: "manual" });
+          const holder = context.caller("agent-a", { projectId: context.projectId });
+          const rival = context.caller("agent-b", { projectId: context.projectId });
+          const unchanged = (task: Pick<HoustonTask, "key">, label: string) =>
+            Effect.gen(function* () {
+              const detail = yield* context.detail(task);
+              assert.strictEqual(detail.task.status, "in_progress", label);
+              assert.isTrue(
+                detail.runs.every(
+                  (run) => run.state !== "handed_back" && run.state !== "needs_review",
+                ),
+                label,
+              );
+              assert.lengthOf(detail.comments, 0, label);
+            });
+
+          // Agent B hands back agent A's claimed run, by summary and by a malformed result.
+          const claimed = yield* context.readyTask("Claimed by A");
+          succeeded(
+            yield* context.call(holder, "houston_task_claim", { id: claimed.key }),
+            "claim",
+          );
+          for (const args of [
+            { id: claimed.key, summary: "B finished it" },
+            { id: claimed.key, result: { checked: ["it works"], summary: "B finished it" } },
+            { id: claimed.key, result: { note: "malformed, from B" } },
+          ]) {
+            refused(
+              yield* context.call(rival, "houston_task_handback", args),
+              `B's handback ${JSON.stringify(args)}`,
+              "busy",
+              "agent-a",
+            );
+          }
+          yield* unchanged(claimed, "A's claim after B's handbacks");
+
+          // An agent hands back a run the user started.
+          const userTask = yield* context.readyTask("Started by the user");
+          const started = yield* context.runs.start({ id: userTask.key });
+          yield* context.until(
+            "the user's run waits for input",
+            context
+              .detail(userTask)
+              .pipe(Effect.map((detail) => detail.runs[0]?.state === "waiting_for_input")),
+          );
+          for (const args of [
+            { id: userTask.key, summary: "an agent finished it" },
+            { id: userTask.key, result: { note: "malformed" } },
+          ]) {
+            refused(
+              yield* context.call(holder, "houston_task_handback", args),
+              `an agent's handback of the user's run ${JSON.stringify(args)}`,
+              "busy",
+              started.run.threadId ?? "",
+            );
+          }
+          yield* unchanged(userTask, "the user's run after an agent's handbacks");
+
+          // The holder hands back its claim; an execute parent hands back its child's run.
+          succeeded(
+            yield* context.call(holder, "houston_task_handback", {
+              id: claimed.key,
+              summary: "A finished it",
+            }),
+            "the holder's handback",
+          );
+          assert.strictEqual((yield* context.detail(claimed)).task.status, "in_review");
+          const executable = yield* context.readyTask("Executed by A");
+          succeeded(
+            yield* context.call(holder, "houston_task_execute", { id: executable.key }),
+            "execute",
+          );
+          yield* context.until(
+            "the child's run waits for input",
+            context
+              .detail(executable)
+              .pipe(Effect.map((detail) => detail.runs[0]?.state === "waiting_for_input")),
+          );
+          refused(
+            yield* context.call(rival, "houston_task_handback", {
+              id: executable.key,
+              summary: "B finished it",
+            }),
+            "B's handback of A's child",
+            "busy",
+          );
+          succeeded(
+            yield* context.call(holder, "houston_task_handback", {
+              id: executable.key,
+              summary: "my child finished it",
+            }),
+            "the execute parent's handback",
+          );
+          assert.strictEqual((yield* context.detail(executable)).task.status, "in_review");
+        }),
+      ),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "an over-long summary is refused with limit; a malformed result is stored cut, saying so",
+    () =>
+      withToolkit("handback-bounds", (context) =>
+        Effect.gen(function* () {
+          yield* context.setSettings({ reviewer: null, reviewMode: "manual" });
+          const agent = context.caller("agent-a", { projectId: context.projectId });
+          const limit = 16_384;
+          const long = "s".repeat(limit + 1);
+
+          const task = yield* context.readyTask("Summarize me");
+          succeeded(yield* context.call(agent, "houston_task_claim", { id: task.key }), "claim");
+          for (const args of [
+            { id: task.key, summary: long },
+            { id: task.key, result: { checked: [], summary: long } },
+          ]) {
+            refused(
+              yield* context.call(agent, "houston_task_handback", args),
+              `an over-long summary${"result" in args ? " in a result" : ""}`,
+              "limit",
+              "houston_task_handback",
+              String(limit),
+              String(limit + 1),
+              "summary",
+            );
+          }
+          const kept = yield* context.detail(task);
+          assert.strictEqual(kept.task.status, "in_progress", "a refused summary moves nothing");
+          assert.strictEqual(kept.runs[0]?.state, "running");
+          assert.lengthOf(kept.comments, 0);
+          succeeded(
+            yield* context.call(agent, "houston_task_handback", {
+              id: task.key,
+              summary: "s".repeat(limit),
+            }),
+            "a summary at the limit",
+          );
+
+          const malformed = yield* context.readyTask("Malformed and huge");
+          succeeded(
+            yield* context.call(agent, "houston_task_claim", { id: malformed.key }),
+            "claim",
+          );
+          const note = "r".repeat(200 * 1024);
+          yield* context.call(agent, "houston_task_handback", {
+            id: malformed.key,
+            result: { note },
+          });
+          const full = Buffer.byteLength(JSON.stringify({ note }), "utf8");
+          const raw = yield* context.detail(malformed);
+          const run = raw.runs[0]!;
+          assert.strictEqual(run.state, "needs_review");
+          const bytes = (text: string) => Buffer.byteLength(text, "utf8");
+          assert.isAtMost(bytes(run.summary ?? ""), limit, "the stored raw result is bounded");
+          assert.include(run.summary ?? "", `${full} bytes`, "the stored cut names the full size");
+          const comment = raw.comments.at(-1)?.body ?? "";
+          assert.isAtMost(bytes(comment), limit, "the comment is bounded");
+          assert.include(comment, '{"note":"rrrr');
+          assert.include(comment, `${full} bytes`, "the comment states its cut and the full size");
+        }),
+      ),
+    TIMEOUT,
+  );
 });
 
 describe("agent reads are capped and writes are attributed", () => {
@@ -958,6 +1245,195 @@ describe("execute starts a child for a delegating caller only", () => {
           const review = reviewed.runs.find((candidate) => candidate.kind === "review");
           assert.isDefined(review, "the handback review started");
           assert.strictEqual(review?.provider, "codex");
+        }),
+      ),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "the child runs within its caller's modes, created by an agent; a broader mode is refused",
+    () =>
+      withToolkit("execute-modes", (context) =>
+        Effect.gen(function* () {
+          yield* context.setSettings({ reviewer: null, reviewMode: "manual" });
+          const callers = [
+            {
+              label: "an approval-required caller",
+              scope: context.caller("approver", {
+                projectId: context.projectId,
+                runtimeMode: "approval-required",
+              }),
+              child: { runtimeMode: "approval-required", interactionMode: "default" },
+              broader: { runtimeMode: "full-access" },
+              code: "runtime_mode_escalation_denied",
+            },
+            {
+              label: "a plan-mode caller",
+              scope: context.caller("planner-mode", {
+                projectId: context.projectId,
+                interactionMode: "plan",
+              }),
+              child: { runtimeMode: "full-access", interactionMode: "plan" },
+              broader: { interactionMode: "default" },
+              code: "interaction_mode_escalation_denied",
+            },
+            {
+              label: "a full-access caller",
+              scope: context.caller("full", { projectId: context.projectId }),
+              child: { runtimeMode: "full-access", interactionMode: "default" },
+              broader: undefined,
+              code: undefined,
+            },
+          ] as const;
+          for (const caller of callers) {
+            if (caller.broader !== undefined) {
+              const refusedTask = yield* context.readyTask(`Broader from ${caller.label}`);
+              refused(
+                yield* context.call(caller.scope, "houston_task_execute", {
+                  id: refusedTask.key,
+                  ...caller.broader,
+                }),
+                `a broader child from ${caller.label}`,
+                caller.code,
+              );
+              const after = yield* context.detail(refusedTask);
+              assert.lengthOf(after.runs, 0, `no run from ${caller.label}'s refused execute`);
+              assert.strictEqual(after.task.status, "todo");
+            }
+            const task = yield* context.readyTask(`Executed by ${caller.label}`);
+            const executed = yield* context.call(caller.scope, "houston_task_execute", {
+              id: task.key,
+            });
+            succeeded(executed, `execute from ${caller.label}`);
+            const projection = yield* context.orchestrator.getThreadProjection(
+              ThreadId.make(executed.value.threadId),
+            );
+            assert.strictEqual(
+              projection.thread.runtimeMode,
+              caller.child.runtimeMode,
+              `the child of ${caller.label}`,
+            );
+            assert.strictEqual(
+              projection.thread.interactionMode,
+              caller.child.interactionMode,
+              `the child of ${caller.label}`,
+            );
+            assert.strictEqual(
+              projection.thread.createdBy,
+              "agent",
+              `the child of ${caller.label}`,
+            );
+          }
+        }),
+      ),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "an automatic rework of an executed child keeps the child's modes",
+    () =>
+      withToolkit("execute-rework", (context) =>
+        Effect.gen(function* () {
+          yield* context.setSettings({
+            reviewer: selection("codex"),
+            reviewMode: "handback",
+            reworkRounds: 1,
+          });
+          const approver = context.caller("approver", {
+            projectId: context.projectId,
+            runtimeMode: "approval-required",
+          });
+          const task = yield* context.readyTask("Rework my child");
+          succeeded(
+            yield* context.call(approver, "houston_task_execute", { id: task.key }),
+            "execute",
+          );
+          yield* context.until(
+            "the child waits for input",
+            context
+              .detail(task)
+              .pipe(Effect.map((detail) => detail.runs[0]?.state === "waiting_for_input")),
+          );
+          const first = (yield* context.detail(task)).runs[0]!;
+          commitLines(first.worktreePath ?? "", "child.ts", 40);
+          yield* context.runs.handback({ id: task.key, summary: "the child's work" });
+          yield* context.until(
+            "an open review",
+            context
+              .detail(task)
+              .pipe(
+                Effect.map((detail) =>
+                  detail.runs.some((run) => run.kind === "review" && run.threadId !== null),
+                ),
+              ),
+          );
+          const review = (yield* context.detail(task)).runs.find((run) => run.kind === "review")!;
+          yield* context.runs.reviewSubmit(ThreadId.make(review.threadId ?? ""), {
+            runId: review.id,
+            verdict: "fail",
+            findings: [{ path: "a.ts", line: 1, severity: "high", category: "bug", message: "no" }],
+          });
+          yield* context.until(
+            "attempt 2",
+            context
+              .detail(task)
+              .pipe(
+                Effect.map((detail) =>
+                  detail.runs.some((run) => run.kind === "implementation" && run.attempt === 2),
+                ),
+              ),
+          );
+          const second = (yield* context.detail(task)).runs.find(
+            (run) => run.kind === "implementation" && run.attempt === 2,
+          )!;
+          const projection = yield* context.orchestrator.getThreadProjection(
+            ThreadId.make(second.threadId ?? ""),
+          );
+          assert.strictEqual(projection.thread.runtimeMode, "approval-required");
+          assert.strictEqual(projection.thread.interactionMode, "default");
+          assert.strictEqual(projection.thread.createdBy, "agent");
+        }),
+      ),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "review starts a reviewer for a delegating caller only",
+    () =>
+      withToolkit("review-delegation", (context) =>
+        Effect.gen(function* () {
+          yield* context.setSettings({ reviewer: null, reviewMode: "manual" });
+          const holder = context.caller("agent-a", { projectId: context.projectId });
+          const task = yield* context.readyTask("Review my claim");
+          succeeded(yield* context.call(holder, "houston_task_claim", { id: task.key }), "claim");
+          const runId = (yield* context.detail(task)).runs[0]!.id;
+
+          for (const [label, scope] of [
+            [
+              "a thread without orchestration",
+              context.caller("leaf", { projectId: context.projectId, capabilities: [] }),
+            ],
+            [
+              "a delegated subagent",
+              context.caller("subagent", { projectId: context.projectId, subagent: true }),
+            ],
+            [
+              "a side thread",
+              context.caller("aside", { projectId: context.projectId, side: true }),
+            ],
+            ["a read-only MCP client", readOnlyClient],
+          ] as const) {
+            refused(
+              yield* context.call(scope, "houston_task_review", { runId }),
+              `review from ${label}`,
+              "capability_denied",
+            );
+          }
+          assert.deepEqual(
+            (yield* context.detail(task)).runs.map((run) => run.kind),
+            ["implementation"],
+            "no denied call started a review",
+          );
         }),
       ),
     TIMEOUT,

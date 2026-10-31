@@ -3,6 +3,8 @@ import {
   ModelSelection,
   NonNegativeInt,
   OrchestratorMcpFailure,
+  OrchestratorMcpInteractionMode,
+  OrchestratorMcpRuntimeMode,
   PositiveInt,
   ProjectId,
   ThreadId,
@@ -202,11 +204,13 @@ const ReviewSubmitTool = Tool.make("houston_task_review_submit", {
 const ExecuteTool = Tool.make("houston_task_execute", {
   ...shared,
   description:
-    "Start a ready task of your project in its own worktree and branch, briefed from you. `reviewer` reviews its handback.",
+    "Start a ready task of your project in its own worktree and branch, briefed from you. `reviewer` reviews its handback. Modes inherit yours and cannot be broader.",
   parameters: Schema.Struct({
     id,
     modelSelection: Schema.optional(ModelSelection),
     reviewer: Schema.optional(ModelSelection),
+    runtimeMode: Schema.optional(OrchestratorMcpRuntimeMode),
+    interactionMode: Schema.optional(OrchestratorMcpInteractionMode),
   }),
   success: StartedResult,
 })

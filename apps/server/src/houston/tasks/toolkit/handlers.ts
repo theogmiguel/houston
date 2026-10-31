@@ -11,7 +11,8 @@ import * as Stream from "effect/Stream";
 
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../../mcp/McpToolAccess.ts";
-import { loadCaller } from "../../../mcp/threadAccess.ts";
+import { resolveInteractionMode, resolveRuntimeMode } from "../../../mcp/delegatedTaskModes.ts";
+import { type CallerLimits, loadCaller } from "../../../mcp/threadAccess.ts";
 import { compareReady, refuse } from "../rules.ts";
 import { HoustonTaskRuns, type HoustonTaskAgent } from "../TaskRuns.ts";
 import { HoustonTaskService } from "../TaskService.ts";
@@ -90,6 +91,16 @@ const agentFor = Effect.fn("HoustonTaskToolkit.agentFor")(function* (tool: strin
     );
   }
   const projectId = caller.projectId;
+  const agent = {
+    threadId,
+    projectId,
+    actor: `agent:${threadId} (${caller.title})`,
+    provider: threadScope.thread.providerInstanceId,
+    limits: { runtimeMode: caller.runtimeMode, interactionMode: caller.interactionMode },
+  } satisfies HoustonTaskAgent & { readonly limits: CallerLimits };
+  // A planner or reviewer the user started submits whatever the access: its credential is
+  // already bound to its own task and round, and gating it would leave its session open.
+  if (SUBMIT_TOOLS.has(tool)) return agent;
   const settings = yield* (yield* HoustonTaskService).getSettings({ projectId });
   if (settings.access === "off") {
     return yield* refuse(
@@ -105,12 +116,7 @@ const agentFor = Effect.fn("HoustonTaskToolkit.agentFor")(function* (tool: strin
       `${ACCESS_SETTING} is read for project ${projectId}, so agents may only read tasks`,
     );
   }
-  return {
-    threadId,
-    projectId,
-    actor: `agent:${threadId} (${caller.title})`,
-    provider: threadScope.thread.providerInstanceId,
-  } satisfies HoustonTaskAgent;
+  return agent;
 });
 
 const otherWorkspace = (tool: string, what: string, projectId: string) =>
@@ -330,8 +336,17 @@ export const layer = McpToolAccess.toLayer(HoustonTaskToolkit, {
       const tool = "houston_task_execute";
       const agent = yield* agentFor(tool, "delegate");
       yield* ownTask(tool, agent, input.id);
+      // The child runs unattended, so it never runs broader than the caller that started it.
+      const modes = {
+        runtimeMode: yield* resolveRuntimeMode(agent.limits.runtimeMode, input.runtimeMode),
+        interactionMode: yield* resolveInteractionMode(
+          agent.limits.interactionMode,
+          input.interactionMode,
+        ),
+      };
       const run = yield* (yield* HoustonTaskRuns).execute(agent, {
         id: input.id,
+        modes,
         ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
         ...(input.reviewer === undefined ? {} : { reviewer: input.reviewer }),
       });
