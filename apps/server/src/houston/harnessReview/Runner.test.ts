@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - links are made with node:fs; Effect's has no junction type.
 import * as NodeFS from "node:fs";
 
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { CommandId, MessageId, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -19,6 +20,7 @@ import {
   HoustonHarnessService,
   HoustonHarnessStore,
   createProject,
+  type Kit,
   makeKit,
   model,
   reviewTask,
@@ -148,7 +150,8 @@ describe("the run directory", () => {
           });
           const first = yield* harness.runNow({ projectId });
           yield* settle;
-          const dir = path.join(root, ".houston", "harness", `review-${first.reviewId}`);
+          const runDir = (yield* reviews.getReview(first.reviewId))!.runDir;
+          const dir = path.join(root, ...runDir.split("/"));
           for (const file of [
             "inventory.json",
             "digest.jsonl",
@@ -158,9 +161,9 @@ describe("the run directory", () => {
             assert.isTrue(yield* fs.exists(path.join(dir, file)), file);
           }
           assert.equal((yield* readJson(path.join(dir, "inventory.json"))).v, 1);
-          assert.equal(
-            (yield* reviews.getReview(first.reviewId))!.runDir,
-            `.houston/harness/review-${first.reviewId}`,
+          assert.match(
+            runDir,
+            new RegExp(`^\\.houston/harness/review-${first.reviewId}-[0-9a-f]{8}$`),
           );
           const ignore = path.join(root, ".houston", "harness", ".gitignore");
           assert.equal(yield* fs.readFileString(ignore), "*\n");
@@ -310,6 +313,109 @@ describe("the run directory", () => {
     }),
   );
 
+  it.effect("run directories are unique per database and the newest ten are kept", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "harness-shared-" });
+      const base = yield* fs.makeTempDirectoryScoped({ prefix: "harness-databases-" });
+      const databaseFile = path.join(base, "first.sqlite");
+
+      // Two databases (a dev and a release channel, say) review the same folder as review 1.
+      const reviewOne = (kit: Kit) =>
+        runKit(
+          kit,
+          Effect.gen(function* () {
+            const harness = yield* service;
+            const reviews = yield* store;
+            const project = yield* createProject("shared", root);
+            yield* harness.setup({
+              projectId: project.projectId,
+              modelSelection: model("claudeAgent"),
+              schedule: "manual",
+            });
+            kit.harness.script.hold.add(reviewMessageId(1));
+            const started = yield* harness.runNow({ projectId: project.projectId });
+            assert.equal(started.reviewId, 1);
+            return (yield* reviews.getReview(1))!.runDir;
+          }),
+        );
+      const firstDir = yield* reviewOne(yield* makeKit("unique-first", { databaseFile }));
+      assert.match(firstDir, /^\.houston\/harness\/review-1-[0-9a-f]{8}$/);
+      const firstReport = path.join(root, ...firstDir.split("/"), "report.md");
+      yield* fs.writeFileString(firstReport, "# From the first database\n");
+      const firstDigest = yield* fs.readFileString(
+        path.join(root, ...firstDir.split("/"), "digest.jsonl"),
+      );
+      const secondDir = yield* reviewOne(yield* makeKit("unique-second"));
+      assert.notEqual(secondDir, firstDir);
+      assert.isTrue(yield* fs.exists(path.join(root, ...secondDir.split("/"), "digest.jsonl")));
+      assert.equal(
+        yield* fs.readFileString(path.join(root, ...firstDir.split("/"), "digest.jsonl")),
+        firstDigest,
+      );
+      const reopened = yield* makeKit("unique-reopened", { databaseFile, reactor: false });
+      const report = yield* runKit(
+        reopened,
+        Effect.flatMap(service, (harness) => harness.report({ reviewId: 1 })),
+      );
+      assert.equal(report.markdown, "# From the first database\n");
+
+      // Retention: a new review keeps the run directories of this database's newest ten reviews.
+      const kit = yield* makeKit("retention");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const harness = yield* service;
+          const reviews = yield* store;
+          const project = yield* createProject("retention");
+          const dirOf = (runDir: string) => path.join(project.root, ...runDir.split("/"));
+          const seeded: Array<string> = [];
+          for (let index = 0; index < 11; index += 1) {
+            const id = yield* seedPublished({
+              projectId: project.projectId,
+              findings: [],
+              endedAt: `2026-10-${String(10 + index)}T00:00:00.000Z`,
+            });
+            const runDir = (yield* reviews.getReview(id))!.runDir;
+            yield* fs.makeDirectory(dirOf(runDir), { recursive: true });
+            yield* fs.writeFileString(path.join(dirOf(runDir), "report.md"), `review ${id}\n`);
+            seeded.push(runDir);
+          }
+          // The oldest is a link: removing it must not reach what it points at.
+          const outside = yield* fs.makeTempDirectoryScoped({ prefix: "harness-outside-" });
+          yield* fs.writeFileString(path.join(outside, "keep.txt"), "keep\n");
+          yield* fs.remove(dirOf(seeded[0]!), { recursive: true });
+          linkDirectory(outside, dirOf(seeded[0]!));
+          // A v1 run directory and one this database never wrote are not its to remove.
+          const v1Dir = path.join(project.root, ".houston", "harness", "r3");
+          const foreign = path.join(project.root, ".houston", "harness", "review-1-0badc0de");
+          for (const dir of [v1Dir, foreign]) yield* fs.makeDirectory(dir, { recursive: true });
+
+          yield* harness.setup({
+            projectId: project.projectId,
+            modelSelection: model("claudeAgent"),
+            schedule: "manual",
+          });
+          kit.harness.script.hold.add(reviewMessageId(12));
+          const started = yield* harness.runNow({ projectId: project.projectId });
+          assert.equal(started.reviewId, 12);
+          assert.isFalse(yield* fs.exists(dirOf(seeded[1]!)), "the second oldest is removed");
+          assert.equal(yield* fs.readFileString(path.join(outside, "keep.txt")), "keep\n");
+          for (const runDir of seeded.slice(2)) {
+            assert.isTrue(yield* fs.exists(dirOf(runDir)), runDir);
+          }
+          const newest = (yield* reviews.getReview(12))!.runDir;
+          assert.isTrue(yield* fs.exists(path.join(dirOf(newest), "digest.jsonl")));
+          assert.isTrue(yield* fs.exists(v1Dir));
+          assert.isTrue(yield* fs.exists(foreign));
+          const gone = yield* Effect.flip(harness.report({ reviewId: 2 }));
+          assert.equal(kindOf(gone), "not_found");
+        }),
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("digest content reaches only the run directory the review's provider reads", () => {
     const logs: Array<string> = [];
     const logger = Logger.make((options) => {
@@ -362,7 +468,8 @@ describe("the run directory", () => {
           const started = yield* harness.runNow({ projectId });
           yield* settle;
 
-          const dir = path.join(root, ".houston", "harness", `review-${started.reviewId}`);
+          const runDir = (yield* (yield* store).getReview(started.reviewId))!.runDir;
+          const dir = path.join(root, ...runDir.split("/"));
           assert.include(yield* fs.readFileString(path.join(dir, "digest.jsonl")), MARKER);
           assert.isTrue(dir.startsWith(root), "the run directory is inside the review's cwd");
           // The prompt names the files; the provider reads them in its read-only run.
@@ -421,14 +528,9 @@ describe("the run directory", () => {
             schedule: "manual",
           });
           const started = yield* harness.runNow({ projectId: p.projectId });
+          const runDir = (yield* (yield* store).getReview(started.reviewId))!.runDir;
           const decisions = yield* readJson(
-            path.join(
-              p.root,
-              ".houston",
-              "harness",
-              `review-${started.reviewId}`,
-              "decisions.json",
-            ),
+            path.join(p.root, ...runDir.split("/"), "decisions.json"),
           );
           assert.equal(decisions.schema, 2);
           assert.equal(decisions.minimum_sessions_after_landing, 3);

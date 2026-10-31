@@ -35,7 +35,14 @@ import { hasReadOnlyRun } from "../sideThreads.ts";
 import { buildDigest, type DigestThreadInput } from "./digest.ts";
 import { buildInventory } from "./inventory.ts";
 import { runDirectory, writeIgnoreFile } from "./runDirectory.ts";
-import { findingDecision, reviewPrompt, reviewWindow, RUN_DIR_PARENT } from "./rules.ts";
+import {
+  findingDecision,
+  OWN_RUN_DIR,
+  reviewPrompt,
+  reviewWindow,
+  RUN_DIR_PARENT,
+  RUN_DIRS_KEPT,
+} from "./rules.ts";
 import { HoustonHarnessStore } from "./Store.ts";
 
 export const reviewThreadId = (reviewId: number) => ThreadId.make(`harness-review:${reviewId}`);
@@ -256,6 +263,16 @@ const make = Effect.gen(function* () {
       for (const [name, content] of files) {
         const file = path.join(runDir, name);
         yield* step(`writing ${name}`, file, fs.writeFileString(file, content));
+      }
+      // Run directories beyond the newest RUN_DIRS_KEPT go; a missing or linked one is skipped.
+      for (const old of yield* store.runDirsBeyond(input.projectId, RUN_DIRS_KEPT)) {
+        if (!OWN_RUN_DIR.test(old)) continue;
+        yield* runDirectory(project.workspaceRoot, old, { create: false }).pipe(
+          Effect.flatMap((dir) => fs.remove(dir, { recursive: true })),
+          Effect.provideService(FileSystem.FileSystem, fs),
+          Effect.provideService(Path.Path, path),
+          Effect.ignoreCause,
+        );
       }
 
       const threadId = reviewThreadId(review.id);

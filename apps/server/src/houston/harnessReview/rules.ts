@@ -15,7 +15,13 @@ export const MIN_WINDOW_DAYS = 7;
 export const MAX_WINDOW_DAYS = 30;
 
 export const RUN_DIR_PARENT = ".houston/harness";
-export const runDirOf = (reviewId: number) => `${RUN_DIR_PARENT}/review-${reviewId}`;
+/** `review-<id>-<8 hex>`: the suffix keeps another database's review `<id>` out of this folder. */
+export const runDirOf = (reviewId: number, suffix: string) =>
+  `${RUN_DIR_PARENT}/review-${reviewId}-${suffix}`;
+/** Run directories of a project's newest reviews kept: about 20 MiB at the 2 MiB digest cap. */
+export const RUN_DIRS_KEPT = 10;
+/** A run directory this server names; v1's imported `r<run>` directories are never removed. */
+export const OWN_RUN_DIR = /^\.houston\/harness\/review-\d+-[0-9a-f]{8}$/;
 
 export interface ReviewWindow {
   readonly sinceMs: number;

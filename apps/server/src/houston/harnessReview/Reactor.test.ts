@@ -147,7 +147,7 @@ describe("publishing a review", () => {
             14 * 86_400_000,
           );
           assert.equal(review.corrections, 0);
-          const dir = path.join(project.root, ".houston", "harness", "review-1");
+          const dir = path.join(project.root, ...review.runDir.split("/"));
           const report = yield* fs.readFileString(path.join(dir, "report.md"));
           assert.include(report, "Two things slowed the agents down.");
           assert.notInclude(report, '"schema"');

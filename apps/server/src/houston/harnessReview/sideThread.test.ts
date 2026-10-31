@@ -55,6 +55,7 @@ import { materializeReplayTranscriptRuntimeInstructions } from "../../orchestrat
 import { selection } from "../sideThreads.testkit.ts";
 import {
   HoustonHarnessService,
+  HoustonHarnessStore,
   createProject,
   makeKit,
   model,
@@ -155,7 +156,9 @@ describe("starting the review thread", () => {
             first?.text,
             reviewPrompt({
               reviewId: started.reviewId,
-              runDir: `.houston/harness/review-${started.reviewId}`,
+              runDir: (yield* (yield* HoustonHarnessStore.HoustonHarnessStore).getReview(
+                started.reviewId,
+              ))!.runDir,
             }),
           );
           assert.equal(first?.id, reviewMessageId(started.reviewId));
