@@ -125,7 +125,13 @@ import * as HoustonTaskSourceService from "../taskSources/SourceService.ts";
 import * as HoustonTaskSourceV1Import from "../taskSources/V1Import.ts";
 import { createProject } from "../tasks/tasks.testkit.ts";
 import { HoustonSlackOutbox } from "./Outbox.ts";
-import { makeSlackFake, mentionEnvelope, mentionEvent, type SlackFake } from "./slack.fake.ts";
+import {
+  FAKE_TICKET,
+  makeSlackFake,
+  mentionEnvelope,
+  mentionEvent,
+  type SlackFake,
+} from "./slack.fake.ts";
 import {
   APP_TOKEN,
   BOT_TOKEN,
@@ -490,7 +496,8 @@ describe("slack tokens reach no file, log, trace or reply", () => {
               if (call.method !== "apps.connections.open") return null;
               opens += 1;
               if (opens === 1) return { body: { ok: false, error: "invalid_auth" } };
-              if (opens === 2) return { body: { ok: true, url: "ws://127.0.0.1:1/link" } };
+              if (opens === 2)
+                return { body: { ok: true, url: `ws://127.0.0.1:1/link?ticket=${FAKE_TICKET}` } };
               return null;
             };
             fake.sockets[0]?.close();
@@ -538,7 +545,7 @@ describe("slack tokens reach no file, log, trace or reply", () => {
         : [];
       assert.isTrue(NodeFS.existsSync(paths.trace), "the trace file was written");
       assert.isNotEmpty(NodeFS.readFileSync(paths.trace, "utf8"));
-      for (const token of [APP_TOKEN, BOT_TOKEN]) {
+      for (const token of [APP_TOKEN, BOT_TOKEN, FAKE_TICKET]) {
         const needle = Buffer.from(token, "utf8");
         for (const file of [databaseFile, `${databaseFile}-wal`, paths.trace, ...secrets]) {
           if (!NodeFS.existsSync(file)) continue;

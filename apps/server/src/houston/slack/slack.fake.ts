@@ -8,6 +8,8 @@ import * as Effect from "effect/Effect";
 
 export const FAKE_TEAM = "T1";
 export const FAKE_BOT = "UBOT";
+/** The secret Socket Mode URLs carry; like a token, it must reach no file, log or reply. */
+export const FAKE_TICKET = "fake-socket-ticket-7d3a91c0e5";
 
 export interface SlackFakeCall {
   readonly method: string;
@@ -128,7 +130,7 @@ export const makeSlackFake = Effect.acquireRelease(
           return {
             body: {
               ok: true,
-              url: `${fake.origin.replace("http:", "ws:")}/link?n=${socketIds + 1}`,
+              url: `${fake.origin.replace("http:", "ws:")}/link?ticket=${FAKE_TICKET}-${socketIds + 1}`,
             },
           };
         case "chat.getPermalink":
