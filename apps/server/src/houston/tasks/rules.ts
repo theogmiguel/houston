@@ -98,6 +98,26 @@ export const checkComment = (operation: string, body: string): HoustonTaskError 
     : undefined;
 };
 
+/** A handback summary becomes a comment, so it is refused where a comment would be. */
+export const checkSummary = (operation: string, summary: string): HoustonTaskError | undefined => {
+  const bytes = utf8Bytes(summary);
+  return bytes > HOUSTON_TASK_LIMITS.commentBytes
+    ? limitRefusal(operation, HOUSTON_TASK_LIMITS.commentBytes, bytes, "bytes in the summary")
+    : undefined;
+};
+
+/** At most `limit` UTF-8 bytes of `text`; a cut ends with a note naming the full size. */
+export const cutBytes = (text: string, limit: number): string => {
+  const bytes = utf8Bytes(text);
+  if (bytes <= limit) return text;
+  const note = `\n… [cut at ${limit} bytes; the full text is ${bytes} bytes]`;
+  const kept = Buffer.from(text, "utf8")
+    .subarray(0, Math.max(0, limit - utf8Bytes(note)))
+    .toString("utf8")
+    .replace(/�+$/, "");
+  return `${kept}${note}`;
+};
+
 /** The trimmed acceptance list, or the refusal naming the item cap or the empty item. */
 export const checkAcceptance = (
   operation: string,
