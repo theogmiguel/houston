@@ -5,6 +5,8 @@ import { useEffect, useState, type CSSProperties } from "react";
 
 import ChatView from "../ChatView";
 import { resolveThreadStatusPill } from "../Sidebar.logic";
+import { SidebarThreadStatusGlyph } from "../sidebar/SidebarStatusGlyph";
+import { SidebarProviderStack, type SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { type DraftId, useComposerDraftStore } from "../../composerDraftStore";
@@ -24,6 +26,7 @@ export function GridThreadCell({
   grid,
   focused,
   availableThreads,
+  providerEntries,
   onFocus,
   onClose,
   onSplit,
@@ -34,6 +37,7 @@ export function GridThreadCell({
   grid: GridRecord;
   focused: boolean;
   availableThreads: ReadonlyArray<{ threadId: string; title: string }>;
+  providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
   onFocus: () => void;
   onClose: () => void;
   onSplit: (side: SplitSide, threadId: string) => void;
@@ -105,11 +109,11 @@ export function GridThreadCell({
               ? "100%"
               : `${layout.composerMaxWidth ?? layout.timelineMaxWidth}px`,
           ...(density === "solo" ? { "--text-prose--line-height": "1.3125rem" } : {}),
+          ...(threadCount > 1 || draftId !== undefined ? { "--pane-label-inset": "2.625rem" } : {}),
         } as CSSProperties
       }
       className={cn(
-        "relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-background",
-        focused ? "ring-1 ring-primary/40 ring-inset" : "ring-1 ring-border/60 ring-inset",
+        "group/pane relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-pane",
         density === "solo" && "[&_.chat-content-lane]:max-w-[45rem]",
         density === "compact" &&
           "[&_[data-thread-find-text]]:line-clamp-5 [&_[data-chat-composer-resting-row]]:hidden [&_[data-chat-composer-surface]]:flex [&_[data-chat-composer-surface]]:items-center [&_[data-chat-composer-body]]:min-w-0 [&_[data-chat-composer-body]]:flex-1 [&_[data-chat-composer-body]]:pt-2 [&_[data-chat-composer-body]]:pb-2 [&_[data-chat-composer-footer]]:w-auto [&_[data-chat-composer-footer]]:shrink-0 [&_[data-chat-composer-footer]]:pb-2",
@@ -117,27 +121,26 @@ export function GridThreadCell({
           "[&_[data-chat-composer-resting-row]]:hidden [&_[data-thread-find-text]]:line-clamp-3 [&_[data-changed-files-state=tree]]:hidden [&_[data-changed-files-bar]]:hidden",
       )}
     >
-      {layout.showHeader || draftId !== undefined ? (
-        <header className="group flex h-[30px] shrink-0 items-center gap-1.5 border-b border-border/60 bg-card/60 px-2">
+      {threadCount > 1 || draftId !== undefined ? (
+        <div
+          data-pane-label=""
+          className="group/label absolute top-2 left-2 z-20 flex h-[26px] max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-[7px] border border-(--divider) bg-(--pane-head) ps-2 pe-1 shadow-[var(--shadow-1)]"
+        >
+          <span className="grid size-3.5 shrink-0 place-items-center">
+            {shell !== null ? (
+              <SidebarProviderStack thread={shell} providerEntryByInstanceId={providerEntries} />
+            ) : null}
+          </span>
           <span
             className={cn(
-              "size-1.5 shrink-0 rounded-full",
-              status?.dotClass ?? "bg-muted-foreground/40",
-              status?.pulse && "animate-status-pulse",
+              "max-w-48 min-w-0 truncate text-xs leading-4 font-medium",
+              focused ? "text-(--t1)" : "text-(--t3)",
             )}
-            aria-hidden
-          />
-          <span className="truncate text-xs font-medium text-foreground">{title}</span>
-          {layout.showBranch && shell?.branch ? (
-            <span className="truncate font-mono text-2xs text-muted-foreground">
-              {shell.branch}
-            </span>
-          ) : null}
-          {layout.showStatusLabel && status !== null ? (
-            <span className="truncate text-2xs text-muted-foreground">{status.label}</span>
-          ) : null}
-          <span className="flex-1" />
-          <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+          >
+            {title}
+          </span>
+          <SidebarThreadStatusGlyph status={status} label={status?.label} />
+          <div className="flex max-w-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[max-width,opacity] duration-150 ease-out group-hover/pane:max-w-40 group-hover/pane:opacity-100 group-focus-within/label:max-w-40 group-focus-within/label:opacity-100 motion-reduce:transition-none">
             {availableThreads.length > 0 || onNewThread !== undefined ? (
               <>
                 <SplitMenu
@@ -157,7 +160,7 @@ export function GridThreadCell({
             {draftId === undefined ? (
               <Button
                 variant="ghost-muted"
-                size="icon-micro"
+                size="icon-sm"
                 aria-label="Archive thread"
                 onClick={() => void archiveThread(threadRef, {})}
               >
@@ -166,16 +169,16 @@ export function GridThreadCell({
             ) : null}
             <Button
               variant="ghost-muted"
-              size="icon-micro"
+              size="icon-sm"
               aria-label="Close cell"
               onClick={discardDraft}
             >
               <XIcon />
             </Button>
           </div>
-        </header>
+        </div>
       ) : null}
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-(--pane-label-inset)">
         <ThreadOpenProvider open={onOpenThread}>
           {showDraft ? (
             <ChatView
@@ -220,7 +223,7 @@ function SplitMenu({
         render={
           <Button
             variant="ghost-muted"
-            size="icon-micro"
+            size="icon-sm"
             aria-label={horizontal ? "Split cell right" : "Split cell down"}
           >
             {horizontal ? <ArrowRightIcon /> : <ArrowDownIcon />}

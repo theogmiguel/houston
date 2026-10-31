@@ -279,8 +279,6 @@ import {
   PanelLayoutControls,
   type PanelLayoutControlsProps,
   RightPanelMaximizeControl,
-  ThreadPanelHeaderControl,
-  WorkspaceTitlebarControls,
 } from "./chat/PanelLayoutControls";
 import type { ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel } from "./chat/ThreadDetailsPanel";
@@ -1083,9 +1081,6 @@ export default function ChatView(props: ChatViewProps) {
     panelAnimationDurationMs,
   );
   const rightPanelPresent = rightPanelPresence.present;
-  const rightPanelControlsInPanel =
-    shouldUsePlanSidebarSheet && rightPanelPresent && rightPanelOpen;
-  const rightPanelControlsAtRoot = rightPanelPresent && !shouldUsePlanSidebarSheet;
   const renderedRightPanelSurface = rightPanelPresence.value?.activeSurface ?? null;
   const renderedRightPanelSurfaces = rightPanelPresence.value?.surfaces ?? [];
   const previewMiniPlayerVisible = shouldRenderPreviewMiniPlayer(
@@ -3226,26 +3221,7 @@ export default function ChatView(props: ChatViewProps) {
     onToggleThreadPanel: toggleThreadPanelStable,
     onToggleRightPanel: toggleRightPanelStable,
   } satisfies PanelLayoutControlsProps;
-  const panelToggleControls = (
-    <PanelLayoutControls
-      {...panelToggleControlProps}
-      showThreadPanelControl={!inlineRightPanelOwnsTitleBar}
-    />
-  );
-  const threadPanelHeaderControl = (
-    <ThreadPanelHeaderControl {...panelToggleControlProps} gridLayoutControl={undefined} />
-  );
-  const panelLayoutControls = (
-    <WorkspaceTitlebarControls
-      showMaximizeControl={!shouldUsePlanSidebarSheet}
-      rightPanelOpen={rightPanelOpen}
-      animationsActive={panelAnimationsActive}
-      maximized={rightPanelMaximized}
-      onToggleMaximized={toggleRightPanelMaximizedStable}
-    >
-      {panelToggleControls}
-    </WorkspaceTitlebarControls>
-  );
+  const panelToggleControls = <PanelLayoutControls {...panelToggleControlProps} />;
   const workspaceFileDropHandlers = makeWorkspaceFileDropHandlers({
     setDragActive: setIsWorkspaceFileDragActive,
     addFiles: addDroppedFilesToComposer,
@@ -3262,7 +3238,6 @@ export default function ChatView(props: ChatViewProps) {
         threadRef={activeThreadRef}
         state={deviceState}
       />
-      {rightPanelControlsAtRoot ? panelLayoutControls : null}
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
@@ -3280,7 +3255,7 @@ export default function ChatView(props: ChatViewProps) {
             data-chat-header
             data-tauri-drag-region="deep"
             className={cn(
-              "relative bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
+              "relative border-b border-(--divider) bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
               isElectron
                 ? cn(
                     "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5 tauri:pr-(--workspace-native-controls-inset)",
@@ -3292,14 +3267,6 @@ export default function ChatView(props: ChatViewProps) {
               COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
             )}
           >
-            {isElectron && rightPanelControlsAtRoot ? (
-              <span
-                aria-hidden
-                className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
-              />
-            ) : null}
-            {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
-            {inlineRightPanelOwnsTitleBar ? threadPanelHeaderControl : null}
             <ChatHeader
               activeThreadEnvironmentId={activeThread.environmentId}
               activeThreadId={activeThread.id}
@@ -3309,12 +3276,12 @@ export default function ChatView(props: ChatViewProps) {
               activeProject={activeProject ?? null}
               parentThreadLink={headerParentThreadLink}
               onOpenThread={onOpenRelatedThreadStable}
-              rightPanelOpen={inlineRightPanelOwnsTitleBar}
               {...(activeDraftLogicalProjectKey
                 ? { onOpenProjectSettings: handleOpenDraftProjectSettingsStable }
                 : {})}
               {...(threadFindEnabled ? { onFindInThread: openThreadFindStable } : {})}
             />
+            {rightPanelOpen ? null : panelToggleControls}
           </header>
         )}
 
@@ -3327,7 +3294,7 @@ export default function ChatView(props: ChatViewProps) {
           </div>
         ) : null}
 
-        <div className="relative mx-1.5 mb-1.5 flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-(--r-group) border border-border bg-pane">
+        <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-pane">
           <ThreadFindCanvas
             findOptions={{
               skills: timelineSkills,
@@ -3915,7 +3882,7 @@ export default function ChatView(props: ChatViewProps) {
                   maximized={rightPanelMaximized}
                   onToggle={toggleRightPanelMaximizedStable}
                 />
-                {panelToggleControls}
+                {embedded ? null : panelToggleControls}
               </div>
             ) : null
           }
