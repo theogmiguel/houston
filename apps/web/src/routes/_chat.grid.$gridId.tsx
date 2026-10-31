@@ -5,6 +5,7 @@ import { useEffect } from "react";
 
 import { GridEmptyDraft } from "../components/grid/GridEmptyDraft";
 import { GridHost } from "../components/grid/GridHost";
+import { GridThreadBranch } from "../components/grid/GridThreadBranch";
 import { GridThreadCell } from "../components/grid/GridThreadCell";
 import { GridTopBarControls } from "../components/grid/GridTopBarControls";
 import { SidebarInset } from "../components/ui/sidebar";
@@ -147,9 +148,10 @@ function GridRoute() {
               <span aria-hidden>/</span>
               <span className="truncate font-medium text-foreground">{soloThread.title}</span>
               {soloThread.branch ? (
-                <span className="hidden truncate font-mono text-muted-foreground sm:inline">
-                  {soloThread.branch}
-                </span>
+                <GridThreadBranch
+                  branch={soloThread.branch}
+                  worktreePath={soloThread.worktreePath}
+                />
               ) : null}
             </>
           )}
