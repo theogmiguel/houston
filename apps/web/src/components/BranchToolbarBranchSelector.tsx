@@ -726,7 +726,7 @@ export function BranchToolbarBranchSelector({
               )}
             />
             <ComposerContextLabel displayMode={displayMode}>
-              <span className={displayMode === "panel" ? "font-mono" : undefined}>
+              <span className="font-mono">
                 <MiddleTruncate
                   value={triggerLabel}
                   variant={displayMode === "panel" ? "cap-aligned" : "default"}

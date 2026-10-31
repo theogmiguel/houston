@@ -1,5 +1,6 @@
 import type { ModelCapabilities, ProviderOptionDescriptor } from "@t3tools/contracts";
 import { REASONING_EFFORT_OPTION_IDS } from "@t3tools/client-runtime/state/thread-execution";
+import { formatCompactContextWindowTokens } from "~/lib/contextWindow";
 
 type SelectDescriptor = Extract<ProviderOptionDescriptor, { type: "select" }>;
 
@@ -40,13 +41,17 @@ function descriptorLabel(descriptor: SelectDescriptor | null): string | null {
 export function resolveModelPickerTraits(
   capabilities: ModelCapabilities | null | undefined,
 ): ModelPickerTraits {
-  const contextWindow = descriptorLabel(selectDescriptor(capabilities, ["contextWindow"]));
+  const contextWindow =
+    formatCompactContextWindowTokens(capabilities?.contextWindowTokens) ??
+    descriptorLabel(selectDescriptor(capabilities, ["contextWindow"]));
   const effort = descriptorLabel(selectDescriptor(capabilities, REASONING_EFFORT_OPTION_IDS));
   if (contextWindow === null && effort === null) return NO_MODEL_PICKER_TRAITS;
   return { contextWindow, effort };
 }
 
-/** One muted line for the row's trailing column, e.g. "200k · High". */
+/** One muted line for the row's trailing column, e.g. "200K · High". */
 export function formatModelPickerTraits(traits: ModelPickerTraits): string | null {
-  return [traits.contextWindow, traits.effort].filter((label) => label !== null).join(" · ") || null;
+  return (
+    [traits.contextWindow, traits.effort].filter((label) => label !== null).join(" · ") || null
+  );
 }

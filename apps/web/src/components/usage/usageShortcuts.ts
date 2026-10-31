@@ -10,7 +10,7 @@ export const METRIC_OPTIONS = [
 ] as const satisfies readonly { value: UsageMetric; label: string; command: KeybindingCommand }[];
 
 export const WINDOW_OPTIONS = [
-  { days: 1, label: "Past 24h", command: "usage.period.day" },
+  { days: 1, label: "24 hours", command: "usage.period.day" },
   { days: 7, label: "7 days", command: "usage.period.week" },
   { days: 30, label: "30 days", command: "usage.period.month" },
   { days: 90, label: "90 days", command: "usage.period.quarter" },

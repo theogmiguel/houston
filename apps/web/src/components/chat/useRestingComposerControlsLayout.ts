@@ -16,8 +16,9 @@ export function useRestingComposerControlsLayout(
   const [layout, setLayout] = useState<{
     hiddenCount: number;
     iconOnlyCount?: number;
+    modelIconOnly: boolean;
     visible: boolean;
-  }>({ hiddenCount: 0, visible: true });
+  }>({ hiddenCount: 0, modelIconOnly: false, visible: true });
 
   const measure = () => {
     const currentHost = useControlsAsHost ? controls : host;
@@ -39,6 +40,7 @@ export function useRestingComposerControlsLayout(
       });
       return next.hiddenCount === current.hiddenCount &&
         next.iconOnlyCount === current.iconOnlyCount &&
+        next.modelIconOnly === current.modelIconOnly &&
         next.visible === current.visible
         ? current
         : next;
@@ -80,6 +82,7 @@ export function useRestingComposerControlsLayout(
     attachControls,
     hiddenBlockCount: layout.hiddenCount,
     iconOnlyBlockCount: layout.iconOnlyCount ?? 0,
+    modelIconOnly: layout.modelIconOnly,
     controlsVisible: layout.visible,
   };
 }

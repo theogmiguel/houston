@@ -12,7 +12,11 @@ import {
 } from "@t3tools/contracts";
 import { makeThreadProjectionFixture } from "../test-fixtures";
 import { shouldOfferResumeCompaction } from "../components/chat/ContextWindowMeter.logic";
-import { deriveLatestContextWindowSnapshot, latestProviderTurnTokenUsage } from "./contextWindow";
+import {
+  deriveLatestContextWindowSnapshot,
+  formatCompactContextWindowTokens,
+  latestProviderTurnTokenUsage,
+} from "./contextWindow";
 
 const decodeTokenUsage = Schema.decodeSync(OrchestrationV2ProviderTurnTokenUsage);
 
@@ -202,5 +206,21 @@ describe("latestProviderTurnTokenUsage", () => {
     ]) {
       expect(latestProviderTurnTokenUsage([], { ...projection, contextTransfers })).toBeNull();
     }
+  });
+});
+
+describe("formatCompactContextWindowTokens", () => {
+  it("formats a catalog size the way the model picker shows it", () => {
+    expect(formatCompactContextWindowTokens(200_000)).toBe("200K");
+    expect(formatCompactContextWindowTokens(1_000_000)).toBe("1M");
+    expect(formatCompactContextWindowTokens(400_000)).toBe("400K");
+    expect(formatCompactContextWindowTokens(258_400)).toBe("258.4K");
+  });
+
+  it("reports no size for a missing or unusable value", () => {
+    expect(formatCompactContextWindowTokens(null)).toBeNull();
+    expect(formatCompactContextWindowTokens(undefined)).toBeNull();
+    expect(formatCompactContextWindowTokens(0)).toBeNull();
+    expect(formatCompactContextWindowTokens(Number.NaN)).toBeNull();
   });
 });

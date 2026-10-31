@@ -13,6 +13,7 @@ import {
   formatDuration,
   formatResetsIn,
   type LimitPace,
+  type LimitPresentations,
   paceOf,
   paceRemainingPercent,
   remainingPercent,
@@ -368,11 +369,25 @@ export function UsageLimitsSection({
   readonly cursorPrompt?: ReactNode;
 }) {
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
+  return (
+    <UsageLimitsPooled
+      presentations={limitPresentationsFor(presentations, selectedEnvironmentIds, hiddenProviders)}
+      now={now}
+      cursorPrompt={cursorPrompt}
+    />
+  );
+}
+
+export function limitPresentationsFor(
+  presentations: LimitPresentations,
+  selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null,
+  hiddenProviders: ReadonlySet<UsageProviderKind>,
+): LimitPresentations {
   const hiddenDrivers = new Set<ServerProvider["driver"]>(
     [...hiddenProviders].map((provider) => PROVIDER_PRESENTATION[provider].driverKind),
   );
   const isVisible = (driver: ServerProvider["driver"]) => !hiddenDrivers.has(driver);
-  const selected = new Map(
+  return new Map(
     [...presentations].flatMap(([id, presentation]) => {
       if (selectedEnvironmentIds !== null && !selectedEnvironmentIds.has(id)) return [];
       const config = presentation.serverConfig;
@@ -397,5 +412,4 @@ export function UsageLimitsSection({
       ];
     }),
   );
-  return <UsageLimitsPooled presentations={selected} now={now} cursorPrompt={cursorPrompt} />;
 }
