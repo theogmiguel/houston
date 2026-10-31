@@ -1140,3 +1140,37 @@ describe("the marker namespace is fixed once written", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });
+
+describe("the marker key is random, written once and kept", () => {
+  it.effect("the marker key is random, written once and kept", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-sources-marker-key-" });
+      const options: SourcesTestOptions = {
+        databaseFile: NodePath.join(dir, "state.sqlite"),
+        baseDir: dir,
+      };
+      const first = yield* Effect.gen(function* () {
+        const key = yield* markerKey;
+        assert.match(key, /^[0-9a-f]{32}$/);
+        assert.notStrictEqual(key, yield* namespace);
+        assert.strictEqual(yield* markerKey, key);
+        const sql = yield* SqlClient.SqlClient;
+        assert.deepEqual(
+          yield* sql`SELECT marker_key FROM houston_task_source_identity WHERE id = 1`,
+          [{ marker_key: key }],
+        );
+        return key;
+      }).pipe(Effect.provide(layerSources({ ...options, github: makeGithubFake() })));
+      const reopened = yield* markerKey.pipe(
+        Effect.provide(layerSources({ ...options, github: makeGithubFake() })),
+      );
+      assert.strictEqual(reopened, first);
+      // Another installation draws another key.
+      const other = yield* markerKey.pipe(
+        Effect.provide(layerSources({ github: makeGithubFake() })),
+      );
+      assert.notStrictEqual(other, first);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+});
