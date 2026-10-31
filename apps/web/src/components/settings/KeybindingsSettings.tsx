@@ -134,8 +134,8 @@ function KeybindingsSearchInput({
           if (query.length > 0) onChange("");
           else event.currentTarget.blur();
         }}
-        placeholder="Search keybindings"
-        aria-label="Search keybindings"
+        placeholder="Search commands or keys"
+        aria-label="Search commands or keys"
         size="sm"
       />
     </InputGroup>
@@ -983,37 +983,6 @@ function KeybindingHoverRowMenu(props: {
   );
 }
 
-function KeybindingSettingsRow(props: KeybindingRowProps) {
-  const { row, isSaving, anchorId, allRows, variables, onSave, onReset, onRemove } = props;
-  const editor = useKeybindingRowEditor({ row, allRows, onSave });
-
-  return (
-    <SettingsRow
-      id={anchorId}
-      className="group/row rounded-none"
-      title={<KeybindingRowTitle row={row} />}
-      description={<KeybindingRowWhen row={row} editor={editor} variables={variables} />}
-      control={
-        <div className="flex flex-wrap items-center justify-end gap-1.5">
-          <KeybindingConflictWarning labels={editor.conflictLabels} />
-          <KeybindingHoverRowMenu
-            row={row}
-            isSaving={isSaving}
-            onReset={onReset}
-            onRemove={onRemove}
-          />
-          <KeybindingKeyControl
-            row={row}
-            editor={editor}
-            isSaving={isSaving}
-            pillClassName="-mr-1.5"
-          />
-        </div>
-      }
-    />
-  );
-}
-
 function useNewKeybindingDraft({
   allRows,
   onSave,
@@ -1229,21 +1198,70 @@ interface KeybindingsGroupsProps extends KeybindingRowActions {
   savingCommand: KeybindingCommand | null;
 }
 
+function KeybindingTableRow(props: KeybindingRowProps) {
+  const { row, isSaving, anchorId, allRows, variables, onSave, onReset, onRemove } = props;
+  const editor = useKeybindingRowEditor({ row, allRows, onSave });
+  return (
+    <tr
+      id={anchorId}
+      className="group/row border-t border-border/70 outline-none first:border-t-0 hover:bg-accent focus-visible:bg-accent"
+    >
+      <td className="px-3.5 py-2.5 align-middle">
+        <KeybindingRowTitle row={row} />
+        <div className="mt-0.5">
+          <KeybindingRowWhen row={row} editor={editor} variables={variables} />
+        </div>
+      </td>
+      <td className="px-3.5 py-2.5 text-right align-middle">
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          <KeybindingConflictWarning labels={editor.conflictLabels} />
+          <KeybindingKeyControl
+            row={row}
+            editor={editor}
+            isSaving={isSaving}
+            pillClassName="-mr-1.5"
+          />
+        </div>
+      </td>
+      <td className="w-10 py-2.5 pe-2 text-right align-middle">
+        <KeybindingHoverRowMenu
+          row={row}
+          isSaving={isSaving}
+          onReset={onReset}
+          onRemove={onRemove}
+        />
+      </td>
+    </tr>
+  );
+}
+
 function KeybindingsGroups(props: KeybindingsGroupsProps) {
   const { groups, anchorIds, savingCommand, ...rowActions } = props;
-  return groups.map((group) => (
-    <SettingsSection key={group.id} id={`keybindings-${group.id}`} title={group.title}>
-      {group.rows.map((row) => (
-        <KeybindingSettingsRow
-          key={row.id}
-          row={row}
-          anchorId={anchorIds.get(row.id)}
-          isSaving={savingCommand === row.command}
-          {...rowActions}
-        />
-      ))}
-    </SettingsSection>
-  ));
+  const rows = groups.flatMap((group) => group.rows);
+  return (
+    <div className="overflow-hidden rounded-[var(--r-group)] border border-border bg-card">
+      <table className="w-full border-collapse text-[13px]">
+        <thead>
+          <tr className="h-8 text-[11px] font-semibold text-muted-foreground">
+            <th className="px-3.5 text-left font-semibold">Command</th>
+            <th className="px-3.5 text-right font-semibold">Shortcut</th>
+            <th className="w-10 pe-2" aria-hidden="true" />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <KeybindingTableRow
+              key={row.id}
+              row={row}
+              anchorId={anchorIds.get(row.id)}
+              isSaving={savingCommand === row.command}
+              {...rowActions}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function BrowserKeybindingNotice() {
@@ -1442,11 +1460,7 @@ export function KeybindingsSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection
-        {...searchableSetting("keybindings")}
-        variant="plain"
-        hideTitle
-      >
+      <SettingsSection {...searchableSetting("keybindings")} variant="plain" hideTitle>
         <div className="flex flex-wrap items-center gap-2">
           <KeybindingsSearchInput query={query} onChange={setQuery} inputRef={searchInputRef} />
           <Button
@@ -1501,12 +1515,18 @@ export function KeybindingsSettingsPanel() {
         ) : null}
 
         {groups.length > 0 ? (
-          <KeybindingsGroups
-            groups={groups}
-            anchorIds={anchorIds}
-            savingCommand={savingCommand}
-            {...rowActions}
-          />
+          <div className="flex flex-col gap-2">
+            <KeybindingsGroups
+              groups={groups}
+              anchorIds={anchorIds}
+              savingCommand={savingCommand}
+              {...rowActions}
+            />
+            <p className="px-1 text-xs leading-4 text-muted-foreground">
+              Shortcuts are stored in keybindings.json on the server. Edits there appear here
+              without a restart.
+            </p>
+          </div>
         ) : (
           <SettingsGroup>
             <div className="px-4 py-12 text-center text-sm text-muted-foreground">

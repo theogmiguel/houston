@@ -55,6 +55,7 @@ import { readEnvironmentScope } from "~/state/session";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 import { ConnectionStatusDot } from "../ConnectionStatusDot";
 import { ITEM_ROW_CLASSNAME, ITEM_ROW_INNER_CLASSNAME } from "./itemRows";
+import { SettingsSection } from "./settingsLayout";
 import {
   formatAccessTimestamp,
   selectPairingEndpoint,
@@ -111,10 +112,7 @@ function AccessScopeSummary({
 }
 
 function endpointRowClassName(isAvailable: boolean) {
-  return cn(
-    "relative px-3.5 py-3",
-    !isAvailable && "bg-muted/15",
-  );
+  return cn("relative px-3.5 py-3", !isAvailable && "bg-muted/15");
 }
 
 type PairingLinkListRowProps = {
@@ -379,8 +377,8 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
             </DialogPopup>
           </Dialog>
           <Button
-            size="xs"
-            variant="destructive-outline"
+            size="sm"
+            variant="ghost"
             disabled={!canRevoke || revokingPairingLinkId === pairingLink.id}
             onClick={() => void onRevoke(pairingLink.id)}
           >
@@ -504,23 +502,34 @@ const ConnectedClientListRow = memo(function ConnectedClientListRow({
     : lastConnectedAt
       ? `Last connected at ${formatAccessTimestamp(lastConnectedAt)}`
       : "Not connected yet.";
-  const deviceInfoBits = [
-    clientSession.client.deviceType !== "unknown"
-      ? clientSession.client.deviceType[0]?.toUpperCase() + clientSession.client.deviceType.slice(1)
-      : null,
-    clientSession.client.os ?? null,
-    clientSession.client.browser ?? null,
-    clientSession.client.ipAddress ?? null,
-  ].filter((value): value is string => value !== null);
+  const lastSeen = (isoDate: string) => {
+    const elapsedMs = Math.max(0, nowMs - new Date(isoDate).getTime());
+    const minutes = Math.floor(elapsedMs / 60_000);
+    if (minutes < 1) return "just now";
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} hr ago`;
+    const days = Math.floor(hours / 24);
+    return `${days} ${days === 1 ? "day" : "days"} ago`;
+  };
   const primaryLabel =
     clientSession.client.label ??
     ([clientSession.client.os, clientSession.client.browser].filter(Boolean).join(" · ") ||
       clientSession.subject);
 
+  const pairedDate = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }).format(new Date(clientSession.issuedAt));
+  const pairedLabel = `Paired ${pairedDate}`;
+  const lastSeenLabel = `last seen ${
+    isLive ? "just now" : lastSeen(lastConnectedAt ?? clientSession.issuedAt)
+  }`;
+
   return (
     <div className={ITEM_ROW_CLASSNAME}>
       <div className={ITEM_ROW_INNER_CLASSNAME}>
-        <div className="min-w-0 flex-1 space-y-1">
+        <div className="min-w-0 flex-1">
           <div className="flex min-h-5 items-center gap-1.5">
             <ConnectionStatusDot
               tooltipText={statusTooltip}
@@ -535,20 +544,14 @@ const ConnectedClientListRow = memo(function ConnectedClientListRow({
             ) : null}
           </div>
           <p className="text-xs text-muted-foreground">
-            {deviceInfoBits.length > 0 ? (
-              <>
-                {deviceInfoBits.join(" · ")}
-                <span aria-hidden> · </span>
-              </>
-            ) : null}
-            <AccessScopeSummary scopes={clientSession.scopes} label="Client scopes" />
+            {pairedLabel} · {lastSeenLabel}
           </p>
         </div>
         <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
           {!clientSession.current ? (
             <Button
-              size="xs"
-              variant="destructive-outline"
+              size="sm"
+              variant="ghost"
               disabled={!canRevoke || revokingClientSessionId === clientSession.sessionId}
               onClick={() => void onRevokeSession(clientSession.sessionId)}
             >
@@ -627,8 +630,8 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
   return (
     <div className="flex items-center gap-2">
       <Button
-        size="xs"
-        variant="destructive-outline"
+        size="sm"
+        variant="ghost"
         disabled={isRevokingOtherClients || !canRevokeOtherClients(clientSessions)}
         onClick={() => void onRevokeOtherClients()}
       >
@@ -648,7 +651,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
       >
         <DialogTrigger
           render={
-            <Button size="xs" variant="default">
+            <Button size="sm" variant="ghost">
               <PlusIcon className="size-3" />
               Create link
             </Button>
@@ -783,6 +786,8 @@ type PairingClientsListProps = {
   onRevokePairingLink: (id: string) => void;
   onRevokeClientSession: (sessionId: ServerClientSessionRecord["sessionId"]) => void;
   canRevoke: boolean;
+  showPairingLinks?: boolean;
+  showClientSessions?: boolean;
 };
 
 export const PairingClientsList = memo(function PairingClientsList({
@@ -798,39 +803,136 @@ export const PairingClientsList = memo(function PairingClientsList({
   onRevokePairingLink,
   onRevokeClientSession,
   canRevoke,
+  showPairingLinks = true,
+  showClientSessions = true,
 }: PairingClientsListProps) {
   return (
     <>
-      {pairingLinks.map((pairingLink) => (
-        <PairingLinkListRow
-          key={pairingLink.id}
-          pairingLink={pairingLink}
-          credential={createdPairingCredentials.get(pairingLink.id)}
-          endpointUrl={endpointUrl}
-          endpoints={endpoints}
-          defaultEndpointKey={defaultEndpointKey}
-          revokingPairingLinkId={revokingPairingLinkId}
-          onRevoke={onRevokePairingLink}
-          canRevoke={canRevoke}
-        />
-      ))}
+      {showPairingLinks &&
+        pairingLinks.map((pairingLink) => (
+          <PairingLinkListRow
+            key={pairingLink.id}
+            pairingLink={pairingLink}
+            credential={createdPairingCredentials.get(pairingLink.id)}
+            endpointUrl={endpointUrl}
+            endpoints={endpoints}
+            defaultEndpointKey={defaultEndpointKey}
+            revokingPairingLinkId={revokingPairingLinkId}
+            onRevoke={onRevokePairingLink}
+            canRevoke={canRevoke}
+          />
+        ))}
 
-      {clientSessions.map((clientSession) => (
-        <ConnectedClientListRow
-          key={clientSession.sessionId}
-          clientSession={clientSession}
-          revokingClientSessionId={revokingClientSessionId}
-          onRevokeSession={onRevokeClientSession}
-          canRevoke={canRevoke}
-        />
-      ))}
+      {showClientSessions &&
+        clientSessions.map((clientSession) => (
+          <ConnectedClientListRow
+            key={clientSession.sessionId}
+            clientSession={clientSession}
+            revokingClientSessionId={revokingClientSessionId}
+            onRevokeSession={onRevokeClientSession}
+            canRevoke={canRevoke}
+          />
+        ))}
 
-      {pairingLinks.length === 0 && clientSessions.length === 0 && !isLoading ? (
+      {showPairingLinks &&
+      showClientSessions &&
+      pairingLinks.length === 0 &&
+      clientSessions.length === 0 &&
+      !isLoading ? (
         <div className={ITEM_ROW_CLASSNAME}>
           <p className="text-xs text-muted-foreground/60">No pairing links or client sessions.</p>
         </div>
       ) : null}
     </>
+  );
+});
+
+type PairDeviceSectionProps = {
+  pairingLink: ServerPairingLinkRecord | null;
+  credential: string | undefined;
+  endpointUrl: string | null | undefined;
+  endpoints: ReadonlyArray<AdvertisedEndpoint>;
+  defaultEndpointKey: string | null;
+};
+
+/** The board's Pair a device card: live QR and link for the newest created credential. */
+export const PairDeviceSection = memo(function PairDeviceSection({
+  pairingLink,
+  credential,
+  endpointUrl,
+  endpoints,
+  defaultEndpointKey,
+}: PairDeviceSectionProps) {
+  const nowMs = useNowSecond();
+  const endpoint = selectPairingEndpoint(endpoints, defaultEndpointKey);
+  const pairingUrl = (() => {
+    if (!credential) return null;
+    if (endpoint) return resolveAdvertisedEndpointPairingUrl(endpoint, credential);
+    if (endpointUrl != null && endpointUrl !== "")
+      return resolveDesktopPairingUrl(endpointUrl, credential);
+    return resolveCurrentOriginPairingUrl(credential);
+  })();
+  const canRenderQr =
+    endpoint !== null
+      ? isQrShareableEndpoint(endpoint)
+      : !isLoopbackHostname(window.location.hostname);
+  const expiresAtMs = pairingLink ? new Date(pairingLink.expiresAt).getTime() : null;
+  const remainingSeconds =
+    expiresAtMs === null ? null : Math.max(0, Math.floor((expiresAtMs - nowMs) / 1000));
+  const expiresLabel =
+    remainingSeconds === null || remainingSeconds <= 0
+      ? null
+      : `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, "0")}`;
+  const { copyToClipboard } = useCopyToClipboard<{ value: string }>({
+    onCopy: () => {
+      toastManager.add({
+        type: "success",
+        title: "Pairing URL copied",
+        description: "Open it on the device you want to connect.",
+      });
+    },
+  });
+
+  return (
+    <SettingsSection id="pair-a-device" title="Pair a device">
+      <div className="flex items-start gap-3 px-3.5 py-3.5">
+        {canRenderQr && pairingUrl ? (
+          <div className="shrink-0 rounded-lg bg-white p-1.5">
+            <QRCodeSvg
+              value={pairingUrl}
+              size={96}
+              level="M"
+              marginSize={1}
+              title="Pairing link. Scan to open on another device"
+            />
+          </div>
+        ) : (
+          <div className="grid size-24 shrink-0 place-items-center rounded-lg border border-border bg-muted/30">
+            <QrCodeIcon aria-hidden className="size-6 text-muted-foreground" />
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <h3 className="text-headline leading-4.5 font-medium text-foreground">Scan to pair</h3>
+          <p className="mt-px text-xs leading-4 text-muted-foreground">
+            {pairingUrl
+              ? `Open the link on the other device, or scan it.${
+                  expiresLabel ? ` The code expires in ${expiresLabel}.` : ""
+                }`
+              : "Create a pairing link below to pair another device."}
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!pairingUrl}
+          onClick={() => {
+            if (pairingUrl) copyToClipboard(pairingUrl, { value: pairingUrl });
+          }}
+        >
+          Copy link
+        </Button>
+      </div>
+    </SettingsSection>
   );
 });
 

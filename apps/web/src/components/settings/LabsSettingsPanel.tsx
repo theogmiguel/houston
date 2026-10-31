@@ -11,10 +11,16 @@ import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings"
 export function LabsSettingsPanel() {
   return (
     <SettingsPageContainer>
-      <SettingsSection id="beta" title="Beta">
+      <p className="px-1 text-sm text-muted-foreground">
+        Experiments that may change or disappear. Each one is off unless you turn it on.
+      </p>
+      <SettingsSection id="labs-sidebar" title="Sidebar">
         <BoringSidebarRow />
         <BoringSidebarMultilineRow />
+      </SettingsSection>
+      <SettingsSection id="labs-environments" title="Environments">
         <LinkedEnvironmentsRow />
+        <GuestLinksRow />
         <SimlockHostsRow />
       </SettingsSection>
       <LegacyFeaturesSection />
@@ -91,6 +97,17 @@ function LinkedEnvironmentsRow() {
           aria-label="Linked environments"
         />
       }
+    />
+  );
+}
+
+/** The board draws Guest links; no guest-link setting exists yet. */
+function GuestLinksRow() {
+  return (
+    <SettingsRow
+      title="Guest links"
+      description="Share a read-only link to a thread."
+      control={<Switch checked={false} disabled aria-label="Guest links" />}
     />
   );
 }

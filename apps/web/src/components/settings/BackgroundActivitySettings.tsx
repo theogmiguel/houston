@@ -44,7 +44,7 @@ import { PolicyTooltip, SettingResetButton, SettingsRow } from "./settingsLayout
 import { searchableSetting } from "./settingsSearch";
 
 const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, string> = {
-  balanced: "Balanced",
+  balanced: "Normal",
   performance: "Performance",
   "battery-saver": "Battery saver",
 };
@@ -63,6 +63,14 @@ const BACKGROUND_ACTIVITY_PROFILE_DESCRIPTIONS: Record<BackgroundActivityProfile
 };
 
 const ADVANCED_BACKGROUND_ACTIVITY_DESCRIPTION = "Uses custom intervals.";
+const GIT_FETCH_INTERVAL_OPTIONS = [
+  { seconds: 30, label: "Every 30 seconds" },
+  { seconds: 60, label: "Every minute" },
+  { seconds: 300, label: "Every 5 minutes" },
+  { seconds: 900, label: "Every 15 minutes" },
+  { seconds: 1800, label: "Every 30 minutes" },
+  { seconds: 3600, label: "Every hour" },
+] as const;
 
 const BACKGROUND_ACTIVITY_BOOLEAN_OVERRIDES: ReadonlyArray<{
   readonly key:
@@ -369,6 +377,56 @@ function BackgroundActivityAdvancedDialog({
         </DialogFooter>
       </DialogPopup>
     </Dialog>
+  );
+}
+
+export function GitFetchIntervalRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const resolvedBackgroundActivity = resolveServerBackgroundActivitySettings(settings);
+  const automaticGitFetchIntervalSeconds = durationToSeconds(
+    resolvedBackgroundActivity.automaticGitFetchInterval,
+  );
+  return (
+    <SettingsRow
+      serverScoped
+      settingKeys={["backgroundActivity"]}
+      {...searchableSetting("git-fetch-interval")}
+      description="How often each project fetches its remote."
+      control={
+        <Select
+          value={String(automaticGitFetchIntervalSeconds)}
+          onValueChange={(value) => {
+            const seconds = Number(value);
+            if (!Number.isInteger(seconds) || seconds <= 0) return;
+            updateSettings(
+              backgroundActivityOverrideSettings(
+                settings.backgroundActivity,
+                resolvedBackgroundActivity,
+                {
+                  automaticGitFetchInterval: Duration.seconds(normalizeIntervalSeconds(seconds)),
+                },
+              ),
+            );
+          }}
+        >
+          <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Git fetch interval">
+            <SelectValue>
+              {GIT_FETCH_INTERVAL_OPTIONS.find(
+                (option) => option.seconds === automaticGitFetchIntervalSeconds,
+              )?.label ?? `${automaticGitFetchIntervalSeconds}s`}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            {GIT_FETCH_INTERVAL_OPTIONS.map((option) => (
+              <SelectItem hideIndicator key={option.seconds} value={String(option.seconds)}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+      }
+    />
   );
 }
 

@@ -113,6 +113,7 @@ import * as HoustonTaskRuns from "./tasks/TaskRuns.ts";
 import * as HoustonTaskV1Import from "./tasks/V1Import.ts";
 import * as HoustonTaskSourceService from "./taskSources/SourceService.ts";
 import * as HoustonTaskSourceV1Import from "./taskSources/V1Import.ts";
+import * as HoustonMergeQueueService from "./mergeQueue/Service.ts";
 
 // Build the production RPC layer; unrelated capabilities fail if these tests call them.
 const layerUnusedRpcServices = Layer.mergeAll(
@@ -165,6 +166,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonTaskV1Import.HoustonTaskV1Import)({}),
   Layer.mock(HoustonTaskSourceService.HoustonTaskSourceService)({}),
   Layer.mock(HoustonTaskSourceV1Import.HoustonTaskSourceV1Import)({}),
+  Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
   Layer.mock(ServerLifecycleEvents.ServerLifecycleEvents)({}),
