@@ -13,8 +13,7 @@ third-party server configuration here. Houston's own pane tools are configured s
 see [Installing Houston](install.md#providers).
 
 Slack setup is available from Tasks ▸ Sources ▸ Slack. It can turn a mention into a task you
-choose to start and return updates to the original thread; see [Slack requests](slack.md)
-for permissions and network use.
+choose to start and return updates to the original thread.
 
 Connection checks run or contact the configured MCP server. Network-backed servers receive
 the connection test; local servers run on this machine. Adding, editing or removing a

@@ -43,8 +43,6 @@ packages only.
 
 There is no AUR package and no winget entry — install one of the artifacts above directly.
 
-The Windows installer also carries the Linux daemon that Houston copies into a WSL distro
-when you enable one; see [WSL](wsl.md).
 
 A release is a draft until the maintainer smoke-tests it; each release's notes list what
 changed.
@@ -64,9 +62,9 @@ have narrower support:
 |---|---|---|
 | [Updates with live sessions](updating.md) | Keep sessions running when daemon handoff is available | Stop sessions before installing |
 | [Native desktop notifications](notifications.md) | Supported by the desktop notification service | Supported when Houston is installed with its installer |
-| [Dictation](voice.md) | Local Whisper or Groq | Groq; the local engine is unavailable |
+| Dictation | Local Whisper or Groq | Groq; the local engine is unavailable |
 | [Browser element picking and agent DOM actions](files-editor-browser.md) | Supported with consent | Unavailable; navigation, history and normal reload work |
-| [WSL environments](wsl.md) | Unavailable | Experimental; x86_64 WSL 2 distros with glibc 2.35 or newer |
+| WSL environments | Unavailable | Experimental; x86_64 WSL 2 distros with glibc 2.35 or newer |
 
 Provider-specific hook and restore limits are described below and in
 [Agent status](agent-status.md) and [Panes and grids](panes-and-grids.md).
@@ -189,7 +187,7 @@ pane.
 
 Sign in with ZCode itself: `zcode login zai` for the international Z.ai service, or
 `zcode login bigmodel` for BigModel in mainland China. ZCode has no command-line model
-option, so Houston refuses a model named for a ZCode pane, for example in `pane_spawn`;
+option, so Houston refuses a model named for a ZCode pane;
 choose the model inside ZCode with `/model`. ZCode takes no prompt on its command line
 either: Houston pastes a pane's first prompt into ZCode's input once that input is ready
 to take it, which on a cold start can be several seconds after the pane opens (after a
