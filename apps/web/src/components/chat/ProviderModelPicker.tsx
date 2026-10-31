@@ -5,7 +5,8 @@ import {
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
-import { memo, useRef, useState } from "react";
+import { memo, useRef, useState, type ReactNode } from "react";
+import { ChevronDownIcon } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -14,7 +15,7 @@ import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPick
 import { ChatGptSharingControl } from "./ChatGptSharingControl";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { ModelEsque, getDisplayModelName, getTriggerDisplayModelName } from "./providerIconUtils";
-import { shouldShowInstanceBadge, type ProviderInstanceEntry } from "../../providerInstances";
+import { type ProviderInstanceEntry } from "../../providerInstances";
 import { ComposerControl, type ComposerControlSize } from "./ComposerControl";
 import { useComposerMenuProps } from "./composerEventScope";
 import { shortcutLabelForCommand } from "../../keybindings";
@@ -71,6 +72,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   model: string;
   selectedModels?: ReadonlyArray<{ instanceId: ProviderInstanceId; model: string }>;
   onToggleModel?: (instanceId: ProviderInstanceId, model: string) => void;
+  onSendSelectedModels?: (() => void) | undefined;
   lockedProvider: ProviderDriverKind | null;
   lockedContinuationGroupKey?: string | null;
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
@@ -87,6 +89,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   triggerClassName?: string;
   triggerLabel?: string;
   triggerAriaLabel?: string;
+  /** Extra menu content below the model list, such as access in a compact pane. */
+  menuAccessory?: ReactNode;
   onOpenChange?: (open: boolean) => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
@@ -112,17 +116,21 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     (activeEntry?.driverKind === "opencode" || activeEntry?.driverKind === "antigravity"
       ? undefined
       : selectedInstanceOptions[0]);
+  const selectedModelName = selectedModel ? getDisplayModelName(selectedModel) : null;
+  const providerPrefix =
+    selectedModelName !== null &&
+    activeEntry !== null &&
+    !selectedModelName.toLowerCase().startsWith(activeEntry.displayName.toLowerCase())
+      ? `${activeEntry.displayName} · `
+      : "";
   const triggerTitle = selectedModel
-    ? getTriggerDisplayModelName(selectedModel, activeEntry?.driverKind)
+    ? `${providerPrefix}${getDisplayModelName(selectedModel)}`
     : props.model === ANTIGRAVITY_DEFAULT_MODEL
       ? "Choose model"
       : props.model || "Choose model";
   const triggerLabel = selectedModel
-    ? `${getDisplayModelName(selectedModel)}${selectedModel.isUnavailable ? " (Unavailable)" : ""}`
+    ? `${providerPrefix}${getDisplayModelName(selectedModel)}${selectedModel.isUnavailable ? " (Unavailable)" : ""}`
     : triggerTitle;
-  const showInstanceBadge =
-    activeEntry !== null && shouldShowInstanceBadge(activeEntry, props.instanceEntries);
-
   const setIsMenuOpen = (open: boolean) => {
     props.onOpenChange?.(open);
     if (props.open === undefined) {
@@ -232,25 +240,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
                 </span>
               ) : null}
             </span>
-          ) : activeEntry && props.triggerLabel === undefined ? (
-            // Narrow compacted composers hide the provider icon before truncating the name.
-            <span data-chat-provider-model-picker-icon className="contents">
-              <ProviderInstanceIcon
-                driverKind={activeEntry.driverKind}
-                displayName={activeEntry.displayName}
-                accentColor={activeEntry.accentColor}
-                acpRegistryAgentId={activeEntry.acpRegistryAgentId}
-                acpRegistryIconUrl={activeEntry.acpRegistryIconUrl}
-                showBadge={showInstanceBadge}
-                className="size-4"
-                iconClassName={cn("size-4", props.activeProviderIconClassName)}
-                indicatorBackground={props.instanceIndicatorBackground ?? "var(--contrast-input)"}
-                badgeClassName={cn(
-                  "right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3 px-0.5 text-5xs",
-                  size === "xs" && "shadow-none",
-                )}
-              />
-            </span>
           ) : null}
           <Tooltip>
             <TooltipTrigger
@@ -270,6 +259,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               Unavailable
             </Badge>
           ) : null}
+          <ChevronDownIcon aria-hidden className="size-3.25 shrink-0 text-(--t3)" />
         </span>
       </PopoverTrigger>
       <PopoverPopup
@@ -292,6 +282,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
                 onToggleModel: (instanceId: ProviderInstanceId, model: string) => {
                   if (!props.disabled) props.onToggleModel?.(instanceId, model);
                 },
+                ...(props.onSendSelectedModels
+                  ? { onSendSelectedModels: props.onSendSelectedModels }
+                  : {}),
               }
             : {})}
           lockedProvider={props.lockedProvider}
@@ -312,6 +305,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         {props.selectedModels === undefined ? (
           <ChatGptSharingControl provider={activeEntry?.snapshot ?? null} />
         ) : null}
+        {props.menuAccessory}
       </PopoverPopup>
     </Popover>
   );

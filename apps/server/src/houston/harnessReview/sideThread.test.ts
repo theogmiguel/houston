@@ -17,6 +17,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   type ProviderReplayTranscript,
+  type RunId,
   ThreadId,
 } from "@t3tools/contracts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -54,6 +55,7 @@ import { materializeReplayTranscriptRuntimeInstructions } from "../../orchestrat
 import { selection } from "../sideThreads.testkit.ts";
 import {
   HoustonHarnessService,
+  HoustonHarnessStore,
   createProject,
   makeKit,
   model,
@@ -67,6 +69,37 @@ const decodeDispatch = Schema.decodeUnknownExit(OrchestrationV2RpcSchemas.dispat
 
 const REVIEW_SEND_REFUSAL =
   "A harness review's result reaches Houston when its run ends; it is not sent to a thread";
+const SIDE_SOURCE_REFUSAL =
+  "A side thread is read-only; it cannot be the source of an aside or a second opinion.";
+
+/** An aside and a second opinion (on Claude, another provider) taken from a side thread's run. */
+const fromSideThread = (
+  source: ThreadId,
+  runId: RunId,
+  prefix: string,
+): ReadonlyArray<OrchestrationV2ServerCommand> => [
+  {
+    type: "houston.aside.start",
+    commandId: CommandId.make(`${prefix}:aside`),
+    sourceThreadId: source,
+    asideThreadId: ThreadId.make(`${prefix}-aside`),
+    messageId: MessageId.make(`message:${prefix}-aside`),
+    text: "What did you read?",
+    attachments: [],
+    createdBy: "user",
+    creationSource: "web",
+  },
+  {
+    type: "houston.second-opinion.request",
+    commandId: CommandId.make(`${prefix}:second-opinion`),
+    sourceThreadId: source,
+    runId,
+    reviewThreadId: ThreadId.make(`${prefix}-second-opinion`),
+    modelSelection: model("claudeAgent"),
+    createdBy: "user",
+    creationSource: "web",
+  },
+];
 
 /** The capability a refused command names, at any depth of its cause. */
 const refusedCapability = (error: unknown): string | undefined => {
@@ -123,7 +156,9 @@ describe("starting the review thread", () => {
             first?.text,
             reviewPrompt({
               reviewId: started.reviewId,
-              runDir: `.houston/harness/review-${started.reviewId}`,
+              runDir: (yield* (yield* HoustonHarnessStore.HoustonHarnessStore).getReview(
+                started.reviewId,
+              ))!.runDir,
             }),
           );
           assert.equal(first?.id, reviewMessageId(started.reviewId));
@@ -417,6 +452,60 @@ describe("the review thread runs read-only", () => {
   );
 });
 
+describe("the review thread id namespace", () => {
+  it.effect("no client thread takes a harness review thread id", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("reserved-ids");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const { project, harness } = yield* startReview("reserved-ids", "codex");
+          const reserved = ThreadId.make("harness-review:1");
+          const refusal = yield* Effect.flip(
+            orchestrator.dispatch({
+              type: "thread.create",
+              commandId: CommandId.make("client:squat"),
+              threadId: reserved,
+              projectId: project.projectId,
+              title: "Squatter",
+              modelSelection: model("codex"),
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              branch: null,
+              worktreePath: project.root,
+              createdBy: "user",
+              creationSource: "web",
+            }),
+          );
+          assert.include(
+            userFacingDispatchErrorMessage(refusal) ?? "",
+            'Thread id harness-review:1 is reserved: ids starting "harness-review:" belong to harness review threads.',
+          );
+          const forked = yield* Effect.flip(
+            orchestrator.dispatch({
+              type: "thread.fork",
+              commandId: CommandId.make("client:squat-fork"),
+              sourceThreadId: ThreadId.make("thread:anything"),
+              targetThreadId: ThreadId.make("harness-review:2"),
+              sourcePoint: { type: "latest_stable" },
+              createdBy: "user",
+              creationSource: "web",
+            }),
+          );
+          assert.include(userFacingDispatchErrorMessage(forked) ?? "", "is reserved");
+
+          // Review 1 still gets its thread.
+          const started = yield* harness.runNow({ projectId: project.projectId });
+          assert.equal(started.threadId, "harness-review:1");
+          const projection = yield* orchestrator.getThreadProjection(reserved);
+          assert.equal(projection.thread.side?.kind, "harnessReview");
+        }),
+      );
+    }),
+  );
+});
+
 describe("the review thread's write paths", () => {
   it.effect("a review thread refuses every write path", () =>
     Effect.gen(function* () {
@@ -499,7 +588,24 @@ describe("the review thread's write paths", () => {
           assert.equal(refusedCapability(moved), "read_only_run");
           const after = yield* orchestrator.getThreadProjection(review);
           assert.equal(after.thread.providerInstanceId, "codex");
-          for (const missing of ["review-fork", "review-target"]) {
+          // Its content never starts an aside or reaches another provider as a second opinion.
+          const turnsBefore = kit.harness.log.started.length;
+          for (const command of fromSideThread(review, runId, "review")) {
+            const error = yield* Effect.flip(orchestrator.dispatch(command));
+            assert.include(
+              userFacingDispatchErrorMessage(error) ?? "",
+              SIDE_SOURCE_REFUSAL,
+              command.type,
+            );
+          }
+          yield* settle;
+          assert.lengthOf(kit.harness.log.started, turnsBefore);
+          for (const missing of [
+            "review-fork",
+            "review-target",
+            "review-aside",
+            "review-second-opinion",
+          ]) {
             const exit = yield* Effect.exit(
               orchestrator.getThreadProjection(ThreadId.make(missing)),
             );
@@ -550,6 +656,17 @@ describe("the review thread's write paths", () => {
             ThreadId.make("thread:ordinary-aside"),
           );
           assert.equal(aside.thread.side?.kind, "aside");
+
+          // Any side thread, an aside included, is refused as a source the same way.
+          const asideRun = aside.runs[0]!.id;
+          for (const command of fromSideThread(aside.thread.id, asideRun, "aside")) {
+            const error = yield* Effect.flip(orchestrator.dispatch(command));
+            assert.include(
+              userFacingDispatchErrorMessage(error) ?? "",
+              SIDE_SOURCE_REFUSAL,
+              command.type,
+            );
+          }
         }),
       );
     }),

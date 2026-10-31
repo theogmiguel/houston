@@ -1,7 +1,10 @@
 // Masks secrets in text an agent or a thread wrote before it leaves the server. Ordinary sentences
 // and numbers stay as they are; the path replacements of a defect report come with defects.
+import { applyCredentialRules, credentialRules } from "../../redact.ts";
 
 const REDACTED = "<redacted>";
+// Header, `name: value` and JSON credentials, shared with the merge queue.
+const CREDENTIALS = credentialRules(REDACTED);
 
 const SECRET_NAME = /[A-Za-z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|AUTH|CREDENTIAL)[A-Za-z0-9_]*/i;
 
@@ -33,5 +36,5 @@ export function maskSecrets(text: string): string {
   for (const [pattern, replace] of RULES) {
     masked = masked.replace(pattern, replace as (substring: string, ...args: unknown[]) => string);
   }
-  return masked;
+  return applyCredentialRules(masked, CREDENTIALS);
 }

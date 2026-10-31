@@ -4,20 +4,23 @@ The approved design for the v2 renderer. Each board is a self-contained HTML fil
 markup and `<style>` hold the exact values (sizes, spacing, colors, type).
 
 - `boards/*.dc.html` - the boards. `{{theme}}` is `graphite` (dark) or `paper` (light). Boards
-  with other `{{...}}` placeholders (`GridFlow`, the `Grid*` frames) are templates and only render
-  fully in the design canvas; read their markup and CSS instead.
+  with other `{{...}}` placeholders (`GridFlow`, the `Grid*` frames, `Primitives`) are templates;
+  `boards/support.js` is a small stand-in for the design canvas runtime that fills them in, so they
+  render with the command below once the theme is substituted.
 - `shell.css`, `pages.css` - the shared shell and page CSS the boards are built from.
 - `boards/canvas.json` - which page each board sits on.
 - `read-board.py` - prints a board with one CSS declaration and one tag per line. Several boards
   have lines of tens of KB that stall line-oriented tools; read them through this script:
   `python3 handoff/design/read-board.py handoff/design/boards/ScreenThread.dc.html --css | sed -n 1,120p`.
 
-Render a board for a visual check (headless Chrome, either theme):
+Render a board for a visual check (headless Chrome, either theme). The rendered copy sits next to
+the boards so `./support.js` and the shared CSS resolve:
 
 ```
-sed 's/{{theme}}/graphite/g' handoff/design/boards/ScreenThread.dc.html > .agent-tmp/board.html
+sed 's/{{theme}}/graphite/g' handoff/design/boards/ScreenThread.dc.html > handoff/design/boards/.render.html
 google-chrome --headless=new --hide-scrollbars --window-size=1920,1400 \
-  --screenshot=.agent-tmp/board.png "file://$PWD/.agent-tmp/board.html"
+  --virtual-time-budget=3000 --screenshot=.agent-tmp/board.png "file://$PWD/handoff/design/boards/.render.html"
+rm handoff/design/boards/.render.html
 ```
 
 ## Board to renderer area
@@ -44,6 +47,10 @@ google-chrome --headless=new --hide-scrollbars --window-size=1920,1400 \
    the board's structure would put it (a menu, the right panel, settings), never back into an
    upstream-only popover or card. Never drop a setting, handler or test; never invent behaviour
    a board shows but the code lacks: report it instead. Copy text from the code when it differs.
+   **Only the boards and mocks are approved.** Everything a board draws ships exactly as drawn:
+   controls, labels, order, sizes. When unsure, match the board. What a board does not draw stays,
+   styled with the board's tokens and components, and is listed in the PR under "Not on the board
+   (kept, restyled)" for a later decision.
 2. The accent is used only where a board uses it (selection, running state, primary actions such
    as Allow). Send buttons, focus rings of fields and banners stay neutral unless their board
    colours them.
@@ -82,3 +89,5 @@ google-chrome --headless=new --hide-scrollbars --window-size=1920,1400 \
   right-click opens "Show in thread details". Only the look changes: board tokens, 28px rows with
   no icons, a title on every section (Workspace, Version control, Servers, Automations, Lineage,
   Usage), `--raised` surface and `--shadow-1`.
+- **Composer focus is neutral**: the focused composer's 1px border goes from `--line-strong` to
+  `--line-focus` (a lighter neutral, 30% alpha), not the board's `--accent-ink`. No ring or halo.

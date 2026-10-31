@@ -75,6 +75,13 @@ export function shouldTypeToFocusComposer(event: KeyboardEvent): boolean {
   if (event.key.length !== 1) return false;
   if (!shouldRedirectInputToComposer(event)) return false;
   if (isSurfaceLauncherKey(event)) return false;
+  // A grid uses plain T for a new draft pane, so it must not type into the composer.
+  if (
+    event.key.toLowerCase() === "t" &&
+    document.querySelector("[data-grid-new-thread-shortcut]") !== null
+  ) {
+    return false;
+  }
 
   return true;
 }

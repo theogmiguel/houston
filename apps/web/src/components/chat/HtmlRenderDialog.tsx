@@ -30,25 +30,25 @@ export function HtmlRenderDialog(props: {
         initialFocus={closeButtonRef}
       >
         <DialogTitle className="sr-only">Expanded {props.title} preview</DialogTitle>
-        <div className="dialog-glass flex w-[min(92vw,72rem)] flex-col overflow-hidden rounded-xl border">
-          <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3.5 text-muted-foreground">
+        <div className="dialog-glass flex w-[min(92vw,72rem)] flex-col overflow-hidden rounded-xl">
+          <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border ps-3.5 pe-1 text-(--t2)">
             <span className="min-w-0 flex-1 truncate font-mono text-xs">{fileName}</span>
             <div className="flex shrink-0 items-center gap-0.5">
               <Button
                 aria-label="Zoom out"
-                size="icon-sm"
+                size="icon"
                 variant="ghost"
                 disabled={zoom === MIN_ZOOM}
                 onClick={() => setZoom((value) => Math.max(MIN_ZOOM, value - ZOOM_STEP))}
               >
                 <MinusIcon />
               </Button>
-              <span className="w-9 text-center font-mono text-xs tabular-nums">
+              <span className="w-[38px] text-center font-mono text-xs tabular-nums">
                 {Math.round(zoom * 100)}%
               </span>
               <Button
                 aria-label="Zoom in"
-                size="icon-sm"
+                size="icon"
                 variant="ghost"
                 disabled={zoom === MAX_ZOOM}
                 onClick={() => setZoom((value) => Math.min(MAX_ZOOM, value + ZOOM_STEP))}
@@ -62,14 +62,14 @@ export function HtmlRenderDialog(props: {
             <Button
               ref={closeButtonRef}
               aria-label="Close"
-              size="icon-sm"
+              size="icon"
               variant="ghost"
               onClick={props.onClose}
             >
               <XIcon />
             </Button>
           </div>
-          <div className="h-[min(86vh,calc(100vh-160px))] overflow-auto overscroll-contain bg-(--terminal-background) p-4 [container-type:size]">
+          <div className="h-[min(86vh,calc(100vh-160px))] overflow-auto overscroll-contain bg-(--pane) p-4 [container-type:size]">
             <div className="h-[100cqh] w-[100cqw]" style={{ zoom }}>
               <HtmlRenderDocument
                 src={props.src}

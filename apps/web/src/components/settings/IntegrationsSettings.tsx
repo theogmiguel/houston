@@ -94,6 +94,7 @@ import {
   SelectValue,
 } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   getClientSettings,
@@ -111,7 +112,6 @@ import {
   SettingsSection,
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
-import { AdvancedSettings } from "./AdvancedSettings";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { BrowserImportWizard, type WizardTarget } from "./BrowserImportWizard";
 import type { ImportOutcome } from "./browserImportWizard.logic";
@@ -279,7 +279,7 @@ const viewportSelectValue = (viewport: PreviewViewportSetting): string => {
 /** Inline options lack an items map; bare SelectValue would display the stored fill token. */
 const viewportSelectLabel = (viewport: PreviewViewportSetting): string => {
   const value = viewportSelectValue(viewport);
-  if (value === FILL_VALUE) return "Fill panel";
+  if (value === FILL_VALUE) return "Fill";
   if (value === RESPONSIVE_VALUE) return "Responsive";
   return PREVIEW_VIEWPORT_PRESETS.find((preset) => preset.id === value)?.label ?? "Responsive";
 };
@@ -370,7 +370,7 @@ function BrowserViewportSetting({ disabled }: { readonly disabled: boolean }) {
               <SelectValue>{viewportSelectLabel(viewport)}</SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
-              <SelectItem value={FILL_VALUE}>Fill panel</SelectItem>
+              <SelectItem value={FILL_VALUE}>Fill</SelectItem>
               <SelectItem value={RESPONSIVE_VALUE}>Responsive</SelectItem>
               <SelectGroup>
                 <SelectGroupLabel>Standard</SelectGroupLabel>
@@ -497,7 +497,7 @@ function BrowserAppearanceSetting({ disabled }: { readonly disabled: boolean }) 
   return (
     <SettingsRow
       {...searchableSetting("browser-default-appearance")}
-      description="The color scheme pages are told to prefer. System follows your OS setting."
+      description="The color scheme pages are told to prefer. System follows your system setting."
       resetAction={
         !disabled && appearance !== DEFAULT_PREVIEW_APPEARANCE ? (
           <SettingResetButton
@@ -507,30 +507,24 @@ function BrowserAppearanceSetting({ disabled }: { readonly disabled: boolean }) 
         ) : null
       }
       control={
-        <Select
+        <ToggleGroup
+          aria-label="Default browser appearance"
+          variant="segmented"
+          value={[appearance]}
           disabled={disabled}
-          value={appearance}
-          onValueChange={(value) => {
+          onValueChange={(next) => {
+            const value = next[0];
             if (value === "system" || value === "light" || value === "dark") {
               updateSettings({ browserDefaultAppearance: value });
             }
           }}
         >
-          <SelectTrigger
-            size="sm"
-            className="w-full sm:w-40"
-            aria-label="Default browser appearance"
-          >
-            <SelectValue>{APPEARANCE_LABELS[appearance]}</SelectValue>
-          </SelectTrigger>
-          <SelectPopup align="end" alignItemWithTrigger={false}>
-            {Object.entries(APPEARANCE_LABELS).map(([value, label]) => (
-              <SelectItem hideIndicator key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
+          {Object.entries(APPEARANCE_LABELS).map(([value, label]) => (
+            <Toggle key={value} value={value}>
+              {label}
+            </Toggle>
+          ))}
+        </ToggleGroup>
       }
     />
   );
@@ -593,39 +587,32 @@ function BrowserRecordingFrameRateSetting({ disabled }: { readonly disabled: boo
         ) : null
       }
       control={
-        <Select
+        <ToggleGroup
+          aria-label="Browser recording frame rate"
+          variant="segmented"
+          value={[String(frameRate)]}
           disabled={disabled}
-          value={String(frameRate)}
-          onValueChange={(value) => {
-            const next = BROWSER_RECORDING_FRAME_RATES.find((rate) => String(rate) === value);
-            if (next !== undefined) {
-              updateSettings({ browserRecordingFrameRate: next });
+          onValueChange={(next) => {
+            const value = BROWSER_RECORDING_FRAME_RATES.find((rate) => String(rate) === next[0]);
+            if (value !== undefined) {
+              updateSettings({ browserRecordingFrameRate: value });
             }
           }}
         >
-          <SelectTrigger
-            size="sm"
-            className="w-full sm:w-40"
-            aria-label="Browser recording frame rate"
-          >
-            <SelectValue>{frameRate} fps</SelectValue>
-          </SelectTrigger>
-          <SelectPopup align="end" alignItemWithTrigger={false}>
-            {BROWSER_RECORDING_FRAME_RATES.map((rate) => (
-              <SelectItem hideIndicator key={rate} value={String(rate)}>
-                {rate} fps
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
+          {BROWSER_RECORDING_FRAME_RATES.map((rate) => (
+            <Toggle key={rate} value={String(rate)}>
+              {rate} fps
+            </Toggle>
+          ))}
+        </ToggleGroup>
       }
     />
   );
 }
 
 const LINK_TARGET_LABELS: Readonly<Record<BrowserLinkTarget, string>> = {
-  system: "Your default browser",
   app: "Houston",
+  system: "Default browser",
 };
 
 function BrowserLinkTargetSetting({ disabled }: { readonly disabled: boolean }) {
@@ -645,26 +632,24 @@ function BrowserLinkTargetSetting({ disabled }: { readonly disabled: boolean }) 
         ) : null
       }
       control={
-        <Select
+        <ToggleGroup
+          aria-label="Open links in"
+          variant="segmented"
+          value={[linkTarget]}
           disabled={disabled}
-          value={linkTarget}
-          onValueChange={(value) => {
+          onValueChange={(next) => {
+            const value = next[0];
             if (value === "system" || value === "app") {
               updateSettings({ browserLinkTarget: value });
             }
           }}
         >
-          <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Open links in">
-            <SelectValue>{LINK_TARGET_LABELS[linkTarget]}</SelectValue>
-          </SelectTrigger>
-          <SelectPopup align="end" alignItemWithTrigger={false}>
-            {(Object.keys(LINK_TARGET_LABELS) as ReadonlyArray<BrowserLinkTarget>).map((target) => (
-              <SelectItem hideIndicator key={target} value={target}>
-                {LINK_TARGET_LABELS[target]}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
+          {(Object.keys(LINK_TARGET_LABELS) as ReadonlyArray<BrowserLinkTarget>).map((target) => (
+            <Toggle key={target} value={target}>
+              {LINK_TARGET_LABELS[target]}
+            </Toggle>
+          ))}
+        </ToggleGroup>
       }
     />
   );
@@ -926,6 +911,33 @@ function DeviceIntegrationControls({
   return (
     <>
       <SettingsRow
+        {...searchableSetting("agent-device-access")}
+        serverScoped
+        settingKeys={["enableAgentDeviceAccess"]}
+        description="Let agents install builds on and drive the devices below."
+        control={
+          <>
+            {pending === "agent" ? <AgentDeviceSetupStatus state={state} pending compact /> : null}
+            <ScopedSwitch
+              settingKeys={["enableAgentDeviceAccess"]}
+              checked={agentAccessEnabled}
+              disabled={
+                !canConfigure ||
+                connectedEnvironments.length === 0 ||
+                (!projectScope && (!loaded || !anyHubEnabled || busy)) ||
+                pending !== null
+              }
+              aria-label="Agent device access"
+              onCheckedChange={(checked) =>
+                projectScope
+                  ? updateSettings({ enableAgentDeviceAccess: Boolean(checked) })
+                  : void update("agent", { agentAccessEnabled: Boolean(checked) })
+              }
+            />
+          </>
+        }
+      />
+      <SettingsRow
         {...searchableSetting("device-hub")}
         serverScoped
         settingKeys={["enableDeviceSupport"]}
@@ -959,42 +971,6 @@ function DeviceIntegrationControls({
                   enabled: Boolean(checked),
                   ...(checked ? {} : { agentAccessEnabled: false }),
                 })
-              }
-            />
-          </>
-        }
-      />
-      <SettingsRow
-        {...searchableSetting("agent-device-access")}
-        serverScoped
-        settingKeys={["enableAgentDeviceAccess"]}
-        description={
-          <>
-            New agent sessions can open and drive these devices. agent-device:{" "}
-            <DeviceToolVersions
-              action={versionActions("agent")}
-              kind="agent"
-              tools={state.hosts.find((host) => host.kind === "local")?.tools}
-            />
-          </>
-        }
-        control={
-          <>
-            {pending === "agent" ? <AgentDeviceSetupStatus state={state} pending compact /> : null}
-            <ScopedSwitch
-              settingKeys={["enableAgentDeviceAccess"]}
-              checked={agentAccessEnabled}
-              disabled={
-                !canConfigure ||
-                connectedEnvironments.length === 0 ||
-                (!projectScope && (!loaded || !anyHubEnabled || busy)) ||
-                pending !== null
-              }
-              aria-label="Agent device access"
-              onCheckedChange={(checked) =>
-                projectScope
-                  ? updateSettings({ enableAgentDeviceAccess: Boolean(checked) })
-                  : void update("agent", { agentAccessEnabled: Boolean(checked) })
               }
             />
           </>
@@ -1079,6 +1055,50 @@ function BrowserAutoShowFloatingPreviewSetting({ disabled }: { readonly disabled
           }
           aria-label="Auto-show floating preview"
         />
+      }
+    />
+  );
+}
+
+function BrowserDefaultProfileSetting({ disabled }: { readonly disabled: boolean }) {
+  const userProfiles = useClientSettings((settings) => settings.browserProfiles);
+  const defaultProfileId = useClientSettings((settings) => settings.browserDefaultProfileId);
+  const settingsHydrated = useClientSettingsHydrated();
+  const updateSettings = useUpdatePrimarySettings();
+  const profiles = resolveBrowserProfiles(userProfiles).filter(
+    (profile) => profile.kind !== "incognito",
+  );
+  const resolvedDefaultId =
+    findBrowserProfile(profiles, defaultProfileId)?.id ?? DEFAULT_BROWSER_PROFILE_ID;
+
+  return (
+    <SettingsRow
+      {...searchableSetting("browser-default-profile")}
+      title="Default browser profile"
+      description="Profiles keep separate cookies and storage."
+      control={
+        <Select
+          disabled={disabled || !settingsHydrated}
+          value={resolvedDefaultId}
+          onValueChange={(value) => {
+            if (settingsHydrated && value !== null) {
+              updateSettings({ browserDefaultProfileId: value });
+            }
+          }}
+        >
+          <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Default browser profile">
+            <SelectValue>
+              {profiles.find((profile) => profile.id === resolvedDefaultId)?.name ?? "Default"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            {profiles.map((profile) => (
+              <SelectItem hideIndicator key={profile.id} value={profile.id}>
+                {profile.name}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
       }
     />
   );
@@ -1552,31 +1572,31 @@ export function BrowserSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection id="browser-agent-access" title="Agent access">
-        <AgentBrowserAccessSetting />
-      </SettingsSection>
-      <SettingsSection id="browser" title="Browsing">
+      <SettingsSection id="browser-links" title="Links">
         <SettingsUnavailableGroup message={desktopOnlyMessage}>
-          <BrowserProfilesSetting disabled={desktopOnly} />
           <BrowserLinkTargetSetting disabled={desktopOnly} />
-          <BrowserAutoShowFloatingPreviewSetting disabled={desktopOnly} />
         </SettingsUnavailableGroup>
         {/* Not desktop-only: web clients search from server-run browser tabs too. */}
         <BrowserSearchEngineSetting />
-        <AdvancedSettings
-          targetIds={[
-            searchableSetting("browser-default-viewport").id,
-            searchableSetting("browser-default-zoom").id,
-            searchableSetting("browser-default-appearance").id,
-          ]}
-        >
-          <SettingsUnavailableGroup message={desktopOnlyMessage}>
-            <BrowserViewportSetting disabled={desktopOnly} />
-            <BrowserZoomSetting disabled={desktopOnly} />
-            <BrowserAppearanceSetting disabled={desktopOnly} />
-          </SettingsUnavailableGroup>
-        </AdvancedSettings>
       </SettingsSection>
+
+      <SettingsSection id="browser-agent-access" title="Agents">
+        <AgentBrowserAccessSetting />
+        <SettingsUnavailableGroup message={desktopOnlyMessage}>
+          <BrowserAutoShowFloatingPreviewSetting disabled={desktopOnly} />
+        </SettingsUnavailableGroup>
+      </SettingsSection>
+
+      <SettingsSection id="browser" title="New tabs">
+        <SettingsUnavailableGroup message={desktopOnlyMessage}>
+          <BrowserDefaultProfileSetting disabled={desktopOnly} />
+          <BrowserViewportSetting disabled={desktopOnly} />
+          <BrowserZoomSetting disabled={desktopOnly} />
+          <BrowserAppearanceSetting disabled={desktopOnly} />
+          <BrowserProfilesSetting disabled={desktopOnly} />
+        </SettingsUnavailableGroup>
+      </SettingsSection>
+
       <SettingsSection id="browser-recordings" title="Recordings">
         <SettingsUnavailableGroup message={desktopOnlyMessage}>
           <BrowserRecordingFrameRateSetting disabled={desktopOnly} />

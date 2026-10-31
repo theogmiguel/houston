@@ -122,7 +122,7 @@ export function SubagentTooltipContent(props: {
         ? CheckIcon
         : CircleDashedIcon;
   return (
-    <ThreadHoverCard title={props.title}>
+    <ThreadHoverCard className="w-[264px] gap-1.5 py-0" title={props.title}>
       <div className="flex min-w-0 items-center gap-2">
         {driver ? (
           <ProviderInstanceIcon

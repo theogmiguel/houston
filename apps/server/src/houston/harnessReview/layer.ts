@@ -40,6 +40,14 @@ export const makeClaim = Effect.gen(function* () {
             message: `scheduled task ${task.id} reviews no project; set up the harness review first`,
           });
         }
+        // A webhook would let any caller that holds its URL start reviews of the project.
+        if (trigger === "webhook") {
+          return yield* new HoustonHarnessError({
+            kind: "unsupported",
+            operation: "scheduledRun",
+            message: `a harness review never runs from a webhook; give scheduled task ${task.id} a weekly, daily or manual schedule`,
+          });
+        }
         if (projectId !== task.projectId) {
           return yield* new HoustonHarnessError({
             kind: "invalid",
@@ -50,7 +58,7 @@ export const makeClaim = Effect.gen(function* () {
         const started = yield* runner.start({
           projectId,
           modelSelection: task.modelSelection,
-          trigger: trigger === "scheduled" ? "scheduled" : "manual",
+          trigger,
           scheduledTaskId: task.id,
         });
         return started.threadId;

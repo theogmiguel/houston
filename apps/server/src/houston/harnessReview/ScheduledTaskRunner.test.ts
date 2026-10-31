@@ -18,6 +18,7 @@ import {
   runKit,
   settle,
 } from "./harnessReview.testkit.ts";
+import { HoustonScheduledTaskRunner } from "./ScheduledTaskRunner.ts";
 
 const service = HoustonHarnessService.HoustonHarnessService;
 const store = HoustonHarnessStore.HoustonHarnessStore;
@@ -50,6 +51,79 @@ const upsertFrom = (task: ScheduledTask, patch: Partial<ScheduledTask>) =>
       ...patch,
     } as never),
   );
+
+describe("what may start a review", () => {
+  it.effect("a webhook never starts a review and only a running review publishes", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("webhook-publish");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const harness = yield* service;
+          const reviews = yield* store;
+          const claim = yield* HoustonScheduledTaskRunner;
+          const { projectId } = yield* createProject("webhook");
+          yield* harness.setup({
+            projectId,
+            modelSelection: model("claudeAgent"),
+            schedule: "manual",
+          });
+          const task = (yield* reviewTask(projectId))!;
+          assert.isTrue(yield* claim.claims(task));
+          const refused = yield* Effect.flip(claim.run(task, "webhook"));
+          assert.equal(kindOf(refused), "unsupported");
+          assert.include(messageOf(refused), "webhook");
+          assert.include(messageOf(refused), "weekly, daily or manual");
+          assert.lengthOf(yield* reviews.listReviews(projectId, 50), 0);
+          assert.lengthOf(kit.harness.log.started, 0);
+
+          // publish settles only a running review: a failed or preparing one keeps its state.
+          const findings = [
+            {
+              key: "late",
+              title: "Late",
+              category: "tools",
+              confidence: "high",
+              sessions: ["t-1"],
+              count: 1,
+              quotes: ["q"],
+              recommendationKind: "claude-md",
+              target: "CLAUDE.md",
+              recommendation: "Say it",
+              applyPrompt: "Add a line",
+            },
+          ];
+          const publishInput = {
+            endedAt: "2026-10-30T09:10:00.000Z",
+            windowSince: null,
+            windowUntil: null,
+            threads: null,
+            prompts: null,
+            costUsd: null,
+            summary: "1 findings",
+            findings,
+            verifications: [],
+          };
+          const preparing = yield* reviews.openReview({
+            projectId,
+            trigger: "manual",
+            scheduledTaskId: null,
+            providerInstanceId: "claudeAgent",
+            startedAt: "2026-10-30T09:00:00.000Z",
+          });
+          yield* reviews.publish(preparing.id, publishInput);
+          assert.equal((yield* reviews.getReview(preparing.id))!.status, "preparing");
+          yield* reviews.fail(preparing.id, { endedAt: "2026-10-30T09:05:00.000Z", error: "x" });
+          yield* reviews.publish(preparing.id, publishInput);
+          const failed = (yield* reviews.getReview(preparing.id))!;
+          assert.equal(failed.status, "failed");
+          assert.equal(failed.error, "x");
+          assert.lengthOf(yield* reviews.findingRows(projectId), 0);
+        }),
+      );
+    }),
+  );
+});
 
 describe("setting up a review", () => {
   it.effect("setup creates the review as a scheduled task for each schedule", () =>

@@ -187,7 +187,7 @@ export type ComposerCitationCommentRequest = {
   previousValue: string;
   value: string;
   citationStart: number;
-  sourceAnchor: AssistantCitationSourceAnchor;
+  sourceAnchor?: AssistantCitationSourceAnchor | undefined;
   insertedSpaces: CitationInsertedSpaces;
 };
 
@@ -195,7 +195,7 @@ type CitationInsertedSpaces = { before: boolean; after: boolean };
 
 type OpenCitationComment = {
   key: string;
-  sourceAnchor?: AssistantCitationSourceAnchor;
+  sourceAnchor?: AssistantCitationSourceAnchor | undefined;
   removeOnCancel?: CitationInsertedSpaces;
 };
 
@@ -442,7 +442,7 @@ function ComposerCitationNodeView({ node, editor, getPos }: NodeViewProps) {
   return (
     <NodeViewWrapper
       as="span"
-      className={CHIP_NODE_SELECTION_CLASS_NAME}
+      style={{ display: "none" }}
       contentEditable={false}
       spellCheck={false}
       data-composer-citation-chip="true"
@@ -516,6 +516,18 @@ const ComposerContextReferenceExtension = Node.create({
 
 function ComposerContextReferenceNodeView({ node, editor, getPos }: NodeViewProps) {
   const label = (node.attrs.label as string) ?? "";
+  // Pending preview annotations read as chips above the composer instead of inline.
+  if (node.attrs.kind === "preview-annotation") {
+    return (
+      <NodeViewWrapper
+        as="span"
+        style={{ display: "none" }}
+        contentEditable={false}
+        data-composer-context-chip="true"
+        data-composer-preview-annotation-chip="true"
+      />
+    );
+  }
   const remove = () => {
     if (!editor.isEditable) return;
     const pos = getPos();

@@ -209,9 +209,11 @@ import * as ReviewService from "./review/ReviewService.ts";
 import * as HoustonReviewState from "./houston/reviewState.ts";
 import * as HoustonRpcSerialization from "./houston/rpcSerialization.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
+import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
 import * as HoustonTaskSourceService from "./houston/taskSources/SourceService.ts";
 import * as HoustonTaskSourceV1Import from "./houston/taskSources/V1Import.ts";
+import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
 import * as HoustonHarnessService from "./houston/harnessReview/Service.ts";
 import * as HoustonNightShiftService from "./houston/nightShift/Service.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
@@ -1306,8 +1308,10 @@ export const layerWsRpc = (
       const houstonReview = yield* HoustonReviewState.HoustonReviewState;
       const houstonTasks = yield* HoustonTaskService.HoustonTaskService;
       const houstonTaskImport = yield* HoustonTaskV1Import.HoustonTaskV1Import;
+      const houstonTaskRuns = yield* HoustonTaskRuns.HoustonTaskRuns;
       const houstonTaskSources = yield* HoustonTaskSourceService.HoustonTaskSourceService;
       const houstonTaskSourceImport = yield* HoustonTaskSourceV1Import.HoustonTaskSourceV1Import;
+      const houstonMergeQueue = yield* HoustonMergeQueueService.HoustonMergeQueueService;
       const houstonHarness = yield* HoustonHarnessService.HoustonHarnessService;
       const houstonNightShift = yield* HoustonNightShiftService.HoustonNightShiftService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
@@ -2995,6 +2999,13 @@ export const layerWsRpc = (
         [WS_METHODS.houstonTasksSettingsSet]: (input) => houstonTasks.setSettings(input),
         [WS_METHODS.houstonTasksImportV1Status]: () => houstonTaskImport.status,
         [WS_METHODS.houstonTasksImportV1Run]: () => houstonTaskImport.run,
+        [WS_METHODS.houstonTasksStart]: (input) => houstonTaskRuns.start(input),
+        [WS_METHODS.houstonTasksRunControl]: (input) => houstonTaskRuns.runControl(input),
+        [WS_METHODS.houstonTasksHandback]: (input) => houstonTaskRuns.handback(input),
+        [WS_METHODS.houstonTasksPlanStart]: (input) => houstonTaskRuns.planStart(input),
+        [WS_METHODS.houstonTasksPlanAnswer]: (input) => houstonTaskRuns.planAnswer(input),
+        [WS_METHODS.houstonTasksPlanApprove]: (input) => houstonTaskRuns.planApprove(input),
+        [WS_METHODS.houstonTasksReviewStart]: (input) => houstonTaskRuns.reviewStart(input),
         [WS_METHODS.houstonTaskSourcesSettingsGet]: (input) =>
           houstonTaskSources.getSettings(input),
         [WS_METHODS.houstonTaskSourcesSettingsSet]: (input) =>
@@ -3031,6 +3042,15 @@ export const layerWsRpc = (
         [WS_METHODS.houstonNightShiftRunNow]: (input) => houstonNightShift.runNow(input),
         [WS_METHODS.houstonNightShiftWrapUp]: (input) => houstonNightShift.wrapUp(input),
         [WS_METHODS.houstonNightShiftStop]: (input) => houstonNightShift.stop(input),
+        [WS_METHODS.houstonMergeQueueGet]: (input) => houstonMergeQueue.get(input),
+        [WS_METHODS.houstonMergeQueueSubscribe]: (input) => houstonMergeQueue.subscribe(input),
+        [WS_METHODS.houstonMergeQueueSubscribeSummary]: (input) =>
+          houstonMergeQueue.subscribeSummary(input),
+        [WS_METHODS.houstonMergeQueueEnqueue]: (input) => houstonMergeQueue.enqueue(input),
+        [WS_METHODS.houstonMergeQueueDequeue]: (input) => houstonMergeQueue.dequeue(input),
+        [WS_METHODS.houstonMergeQueueMergeHead]: (input) => houstonMergeQueue.mergeHead(input),
+        [WS_METHODS.houstonMergeQueueSettingsSet]: (input) => houstonMergeQueue.setSettings(input),
+        [WS_METHODS.houstonMergeQueuePause]: (input) => houstonMergeQueue.pause(input),
         [WS_METHODS.terminalOpen]: (input) => terminalManager.open(input),
         [WS_METHODS.terminalAttach]: (input, metadata) =>
           terminalManager.attachOutputStream(input, terminalViewerId(metadata)),

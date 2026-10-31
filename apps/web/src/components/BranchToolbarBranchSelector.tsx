@@ -716,7 +716,7 @@ export function BranchToolbarBranchSelector({
                 <ComposerControl size="xs" />
               )
             }
-            className="min-w-0 max-w-full active:scale-100"
+            className="min-w-0 flex-1 max-w-full active:scale-100"
             disabled={isInitialBranchesLoadPending || isBranchActionPending}
           >
             <GitBranchIcon
@@ -726,11 +726,13 @@ export function BranchToolbarBranchSelector({
               )}
             />
             <ComposerContextLabel displayMode={displayMode}>
-              <MiddleTruncate
-                value={triggerLabel}
-                variant={displayMode === "panel" ? "cap-aligned" : "default"}
-                className="w-full"
-              />
+              <span className={displayMode === "panel" ? "font-mono" : undefined}>
+                <MiddleTruncate
+                  value={triggerLabel}
+                  variant={displayMode === "panel" ? "cap-aligned" : "default"}
+                  className="w-full"
+                />
+              </span>
             </ComposerContextLabel>
           </ComboboxTrigger>
         </span>

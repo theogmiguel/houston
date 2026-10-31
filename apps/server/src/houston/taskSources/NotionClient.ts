@@ -1,5 +1,8 @@
 // The Notion API client: HTTPS to api.notion.com only, no redirects, bounded responses and one
 // bounded wait on a rate limit. The token is borrowed per call and sent only as the bearer.
+// @effect-diagnostics nodeBuiltinImport:off - hashes a handback summary into its marker.
+import * as NodeCrypto from "node:crypto";
+
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -14,7 +17,15 @@ import {
   NOTION_MAX_PAGES,
   NOTION_MAX_RESPONSE_BYTES,
   NOTION_MAX_RETRY_AFTER_SECONDS,
+  RECORD_LIMITS,
+  WRITE_LIMITS,
   checkNotionSchema,
+  cutChars,
+  findProperty,
+  isNotionId,
+  notionHandbackMarker,
+  notionProperties,
+  quote,
   notionPollEnd,
   notionPollStart,
   notionProject,
@@ -28,6 +39,7 @@ import {
 } from "./rules.ts";
 
 export const NOTION_ORIGIN = "https://api.notion.com";
+type NotionMethod = "GET" | "POST" | "PATCH";
 const REQUEST_TIMEOUT_MS = 30_000;
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
@@ -36,7 +48,7 @@ export class NotionClient extends Context.Service<
   {
     readonly request: (
       token: Redacted.Redacted<string>,
-      method: "GET" | "POST",
+      method: NotionMethod,
       path: string,
       body?: unknown,
     ) => Effect.Effect<unknown, string>;
@@ -64,7 +76,7 @@ export const make = Effect.fn("HoustonTaskSources.makeNotionClient")(function* (
 
   const once = Effect.fnUntraced(function* (
     token: Redacted.Redacted<string>,
-    method: "GET" | "POST",
+    method: NotionMethod,
     path: string,
     body: unknown,
   ) {
@@ -108,7 +120,7 @@ export const make = Effect.fn("HoustonTaskSources.makeNotionClient")(function* (
 
   const request: NotionClient["Service"]["request"] = Effect.fn("NotionClient.request")(function* (
     token: Redacted.Redacted<string>,
-    method: "GET" | "POST",
+    method: NotionMethod,
     path: string,
     body?: unknown,
   ): Effect.fn.Return<unknown, string> {
@@ -277,4 +289,169 @@ export const retrievePage = Effect.fn("HoustonTaskSources.retrieveNotionPage")(f
   const client = yield* NotionClient;
   const page = yield* client.request(token, "GET", `v1/pages/${pageId}`);
   return yield* hydrate(token, page, settings, schema);
+});
+
+// Write-back: edits of existing pages and comments on them; a page is never created.
+
+const sameId = (left: string, right: string) =>
+  left.replaceAll("-", "").toLowerCase() === right.replaceAll("-", "").toLowerCase();
+
+/** A comment's rich text: chunks of at most 2,000 characters, at most 6; a string refuses it. */
+export const commentChunks = (body: string): ReadonlyArray<string> | string => {
+  const characters = [...body];
+  const chunks: Array<string> = [];
+  for (let start = 0; start < characters.length; start += WRITE_LIMITS.notionChunkChars) {
+    chunks.push(characters.slice(start, start + WRITE_LIMITS.notionChunkChars).join(""));
+  }
+  return chunks.length > WRITE_LIMITS.notionChunks
+    ? `the Notion comment needs ${chunks.length} rich-text chunks of ${WRITE_LIMITS.notionChunkChars} characters, over the limit of ${WRITE_LIMITS.notionChunks}`
+    : chunks;
+};
+
+const commentText = (comment: unknown) =>
+  isObject(comment) && Array.isArray(comment.rich_text)
+    ? comment.rich_text
+        .map((part) =>
+          isObject(part)
+            ? typeof part.plain_text === "string"
+              ? part.plain_text
+              : isObject(part.text) && typeof part.text.content === "string"
+                ? part.text.content
+                : ""
+            : "",
+        )
+        .join("")
+    : "";
+
+/** Posts the handback summary once: a comment holding its marker means it was posted. */
+const postHandback = Effect.fnUntraced(function* (
+  token: Redacted.Redacted<string>,
+  pageId: string,
+  raw: string,
+) {
+  const client = yield* NotionClient;
+  const summary = cutChars(raw, WRITE_LIMITS.notionSummaryChars);
+  const marker = notionHandbackMarker(
+    NodeCrypto.createHash("sha256").update(`${pageId}\u0000${summary}`).digest("hex"),
+  );
+  let cursor: string | null = null;
+  for (let page = 0; page < WRITE_LIMITS.notionCommentPages; page += 1) {
+    const query = new URLSearchParams({ block_id: pageId, page_size: "100" });
+    if (cursor !== null) query.set("start_cursor", cursor);
+    const answer = yield* client.request(token, "GET", `v1/comments?${query.toString()}`);
+    if (!isObject(answer) || !Array.isArray(answer.results)) {
+      return yield* Effect.fail("Notion's comment list is not a result list");
+    }
+    if (answer.results.some((comment) => commentText(comment).includes(marker))) return;
+    if (answer.has_more !== true) {
+      const chunks = commentChunks(`${summary}\n\n${marker}`);
+      if (typeof chunks === "string") return yield* Effect.fail(chunks);
+      yield* client.request(token, "POST", "v1/comments", {
+        parent: { page_id: pageId },
+        rich_text: chunks.map((content) => ({ type: "text", text: { content } })),
+      });
+      return;
+    }
+    if (typeof answer.next_cursor !== "string") {
+      return yield* Effect.fail("Notion indicated more comments without a next cursor");
+    }
+    cursor = answer.next_cursor;
+  }
+  return yield* Effect.fail(
+    `the page's comments exceed ${WRITE_LIMITS.notionCommentPages} pages; a handback comment could be a duplicate, so none is posted`,
+  );
+});
+
+/** Sets a page's mapped status, its pull request URL, or comments the handback summary. */
+export const writeNotion = Effect.fn("HoustonTaskSources.writeNotion")(function* (
+  token: Redacted.Redacted<string>,
+  settings: StoredSettings,
+  action: string,
+  payload: {
+    readonly externalId: string;
+    readonly status?: string | null;
+    readonly url?: string | null;
+    readonly summary?: string | null;
+  },
+) {
+  const client = yield* NotionClient;
+  const pageId = payload.externalId;
+  if (!isNotionId(pageId)) {
+    return yield* Effect.fail(`Notion write target ${quote(pageId)} is not a page id`);
+  }
+  const schemas = yield* fetchSchemas(token, settings);
+  const checked = checkNotionSchema("Notion write-back", settings, schemas.task, schemas.projects);
+  if (!("statusType" in checked)) return yield* Effect.fail(checked.message);
+  const page = yield* client.request(token, "GET", `v1/pages/${pageId}`);
+  const parent = isObject(page) && isObject(page.parent) ? page.parent.data_source_id : null;
+  if (
+    !isObject(page) ||
+    page.object !== "page" ||
+    typeof page.id !== "string" ||
+    !sameId(page.id, pageId)
+  ) {
+    return yield* Effect.fail(`Notion page ${pageId} is not an existing page`);
+  }
+  const source = settings.notionDataSourceId ?? "";
+  if (typeof parent !== "string" || !sameId(parent, source)) {
+    return yield* Effect.fail(
+      `Notion page ${pageId} belongs to data source ${typeof parent === "string" ? parent : "none"}, not the task data source ${source}`,
+    );
+  }
+  switch (action) {
+    case "status": {
+      const status = payload.status ?? "";
+      const mapping = settings.notionStatusMapping;
+      const option = (
+        {
+          todo: mapping.todo,
+          in_progress: mapping.inProgress,
+          in_review: mapping.inReview,
+          done: mapping.done,
+          canceled: mapping.canceled,
+        } as Readonly<Record<string, string | null>>
+      )[status];
+      if (option === undefined || option === null) {
+        return yield* Effect.fail(`task status ${quote(status)} has no Notion status mapping`);
+      }
+      const property = findProperty(
+        notionProperties(schemas.task),
+        settings.notionStatusPropertyId ?? "",
+      );
+      if (property === undefined || !property.options.includes(option)) {
+        return yield* Effect.fail(`the Notion status option ${quote(option)} no longer exists`);
+      }
+      yield* client.request(token, "PATCH", `v1/pages/${pageId}`, {
+        properties: {
+          [settings.notionStatusPropertyId ?? ""]: { [checked.statusType]: { name: option } },
+        },
+      });
+      break;
+    }
+    case "pull_request_url": {
+      const property = settings.notionPrUrlPropertyId;
+      if (property === null) {
+        return yield* Effect.fail("the Notion pull request URL property is not configured");
+      }
+      const url = payload.url ?? "";
+      if (
+        Buffer.byteLength(url, "utf8") > RECORD_LIMITS.urlBytes ||
+        URL.parse(url)?.protocol !== "https:"
+      ) {
+        return yield* Effect.fail(
+          `the pull request URL ${quote(url)} must be an https URL of at most ${RECORD_LIMITS.urlBytes} bytes`,
+        );
+      }
+      yield* client.request(token, "PATCH", `v1/pages/${pageId}`, {
+        properties: { [property]: { url } },
+      });
+      break;
+    }
+    case "handback_summary":
+      yield* postHandback(token, pageId, payload.summary ?? "");
+      break;
+    default:
+      return yield* Effect.fail(`unsupported Notion write action ${quote(action)}`);
+  }
+  return { externalId: pageId, url: typeof page.url === "string" ? page.url : null };
 });

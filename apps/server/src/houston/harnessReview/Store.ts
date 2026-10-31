@@ -151,6 +151,11 @@ export class HoustonHarnessStore extends Context.Service<
       limit: number,
     ) => Effect.Effect<ReadonlyArray<StoredReview>>;
     readonly activeReviews: Effect.Effect<ReadonlyArray<StoredReview>>;
+    /** Run directories of the project's reviews older than its newest `keep`. */
+    readonly runDirsBeyond: (
+      projectId: ProjectId,
+      keep: number,
+    ) => Effect.Effect<ReadonlyArray<string>>;
     readonly windows: (projectId: ProjectId) => Effect.Effect<
       ReadonlyArray<{
         readonly status: HoustonHarnessReviewStatus;
@@ -226,7 +231,11 @@ const make = Effect.gen(function* () {
             RETURNING id
           `;
           const id = rows[0]!.id;
-          yield* sql`UPDATE houston_harness_reviews SET run_dir = ${runDirOf(id)} WHERE id = ${id}`;
+          const [suffix] = yield* sql<{
+            suffix: string;
+          }>`SELECT lower(hex(randomblob(4))) AS suffix`;
+          yield* sql`UPDATE houston_harness_reviews SET run_dir = ${runDirOf(id, suffix!.suffix)}
+            WHERE id = ${id}`;
           return id;
         }),
       )
@@ -265,6 +274,10 @@ const make = Effect.gen(function* () {
       id,
       sql.withTransaction(
         Effect.gen(function* () {
+          // Only a running review publishes: a failed, preparing or published one keeps its state.
+          const [current] = yield* sql<{ status: string }>`
+            SELECT status FROM houston_harness_reviews WHERE id = ${id}`;
+          if (current?.status !== "running") return;
           for (const finding of input.findings) {
             yield* sql`
               INSERT INTO houston_harness_findings (review_id, key, title, category, confidence,
@@ -291,7 +304,7 @@ const make = Effect.gen(function* () {
               threads = COALESCE(${input.threads}, threads), prompts = COALESCE(${input.prompts}, prompts),
               cost_usd = ${input.costUsd}, finding_count = ${input.findings.length},
               summary = ${input.summary}, error = NULL
-            WHERE id = ${id}
+            WHERE id = ${id} AND status = 'running'
           `;
         }),
       ),
@@ -323,6 +336,13 @@ const make = Effect.gen(function* () {
     Effect.map((rows) => rows.map(toReview)),
     Effect.orDie,
   );
+
+  const runDirsBeyond: HoustonHarnessStore["Service"]["runDirsBeyond"] = (projectId, keep) =>
+    sql<{ run_dir: string }>`SELECT run_dir FROM houston_harness_reviews
+      WHERE project_id = ${projectId} ORDER BY id DESC LIMIT -1 OFFSET ${keep}`.pipe(
+      Effect.map((rows) => rows.map((row) => row.run_dir)),
+      Effect.orDie,
+    );
 
   const windows: HoustonHarnessStore["Service"]["windows"] = (projectId) =>
     sql<{ status: HoustonHarnessReviewStatus; window_until: string | null }>`
@@ -464,6 +484,7 @@ const make = Effect.gen(function* () {
     reviewByThread,
     listReviews,
     activeReviews,
+    runDirsBeyond,
     windows,
     latestPublishedReviewId,
     findingRows,

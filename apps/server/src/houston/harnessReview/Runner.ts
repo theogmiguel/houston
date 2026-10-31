@@ -31,13 +31,22 @@ import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
-import { hasReadOnlyRun } from "../sideThreads.ts";
+import { HARNESS_REVIEW_THREAD_PREFIX, hasReadOnlyRun } from "../sideThreads.ts";
 import { buildDigest, type DigestThreadInput } from "./digest.ts";
 import { buildInventory } from "./inventory.ts";
-import { findingDecision, reviewPrompt, reviewWindow, RUN_DIR_PARENT } from "./rules.ts";
+import { runDirectory, writeIgnoreFile } from "./runDirectory.ts";
+import {
+  findingDecision,
+  OWN_RUN_DIR,
+  reviewPrompt,
+  reviewWindow,
+  RUN_DIR_PARENT,
+  RUN_DIRS_KEPT,
+} from "./rules.ts";
 import { HoustonHarnessStore } from "./Store.ts";
 
-export const reviewThreadId = (reviewId: number) => ThreadId.make(`harness-review:${reviewId}`);
+export const reviewThreadId = (reviewId: number) =>
+  ThreadId.make(`${HARNESS_REVIEW_THREAD_PREFIX}${reviewId}`);
 export const reviewMessageId = (reviewId: number) =>
   MessageId.make(`message:harness-review:${reviewId}`);
 export const correctionMessageId = (reviewId: number, correction: number) =>
@@ -207,17 +216,16 @@ const make = Effect.gen(function* () {
       yield* step(
         "creating the run directory",
         runDir,
-        fs.makeDirectory(runDir, { recursive: true }),
+        runDirectory(project.workspaceRoot, review.runDir, { create: true }).pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
+          Effect.provideService(Path.Path, path),
+        ),
       );
       const ignore = path.join(harnessDir, ".gitignore");
       yield* step(
         "writing the ignore file",
         ignore,
-        fs
-          .exists(ignore)
-          .pipe(
-            Effect.flatMap((exists) => (exists ? Effect.void : fs.writeFileString(ignore, "*\n"))),
-          ),
+        writeIgnoreFile(ignore).pipe(Effect.provideService(FileSystem.FileSystem, fs)),
       );
       const window = reviewWindow(nowMs, earlier);
       const inventory = yield* step(
@@ -256,6 +264,16 @@ const make = Effect.gen(function* () {
       for (const [name, content] of files) {
         const file = path.join(runDir, name);
         yield* step(`writing ${name}`, file, fs.writeFileString(file, content));
+      }
+      // Run directories beyond the newest RUN_DIRS_KEPT go; a missing or linked one is skipped.
+      for (const old of yield* store.runDirsBeyond(input.projectId, RUN_DIRS_KEPT)) {
+        if (!OWN_RUN_DIR.test(old)) continue;
+        yield* runDirectory(project.workspaceRoot, old, { create: false }).pipe(
+          Effect.flatMap((dir) => fs.remove(dir, { recursive: true })),
+          Effect.provideService(FileSystem.FileSystem, fs),
+          Effect.provideService(Path.Path, path),
+          Effect.ignoreCause,
+        );
       }
 
       const threadId = reviewThreadId(review.id);

@@ -18,6 +18,7 @@ import {
   type OrchestrationV2ProviderCapabilities,
   type OrchestrationV2ProviderThread,
   type OrchestrationV2ProviderTurn,
+  type OrchestrationV2Run,
   type ProviderInteractionMode,
   type RuntimeMode,
 } from "@t3tools/contracts";
@@ -44,6 +45,13 @@ import * as ProviderReplayHarness from "../orchestration-v2/testkit/ProviderRepl
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { AcpProviderCapabilitiesV2 } from "@t3tools/provider-acp/server/adapter";
+
+const ACTIVE_RUN_STATUSES: ReadonlySet<OrchestrationV2Run["status"]> = new Set([
+  "preparing",
+  "starting",
+  "running",
+  "waiting",
+]);
 
 type ReadOnlyRun = NonNullable<OrchestrationV2ProviderCapabilities["runtimePolicy"]["readOnlyRun"]>;
 
@@ -512,8 +520,20 @@ export const runWith = <A, E, R>(
           creationSource: "web",
         })
         .pipe(Effect.asVoid);
+    // On a file database the runtime reads on worker threads, whose answers can land after one
+    // settle; an unheld turn settles until its run ends, as `turn` promises.
     const turn: Context["turn"] = (threadId, messageId, text) =>
-      send(threadId, messageId, text).pipe(Effect.andThen(settle));
+      Effect.gen(function* () {
+        yield* send(threadId, messageId, text);
+        yield* settle;
+        if (harness.script.hold.has(messageId)) return;
+        for (let round = 0; round < 20; round += 1) {
+          const { runs } = yield* orchestrator.getThreadProjection(threadId);
+          const run = runs.find((candidate) => candidate.userMessageId === messageId);
+          if (run === undefined || !ACTIVE_RUN_STATUSES.has(run.status)) return;
+          yield* settle;
+        }
+      });
     const result = yield* body({
       orchestrator,
       events,

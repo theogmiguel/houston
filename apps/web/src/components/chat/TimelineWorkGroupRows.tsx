@@ -11,7 +11,7 @@ import { memo, use, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { workEntryDisplayIndicatesToolFailure } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
-import { Minimize2Icon, XIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, Minimize2Icon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import {
@@ -33,7 +33,7 @@ import {
   type TimelineWorkEntry,
   type TimelineRow,
 } from "./timelineRowContext";
-import { TimelineRowTimestamp, ActivityShimmerOverlay } from "./TimelineRowParts";
+import { TimelineRowTimestamp, ActivityShimmerOverlay, StreamingGlyph } from "./TimelineRowParts";
 import {
   failedToolIconClassName,
   toolIconAcceptsTint,
@@ -119,7 +119,7 @@ function WorkingTimer({ createdAt }: { createdAt: string }) {
   );
 }
 
-const compactWorkEntryHeight = 24;
+const compactWorkEntryHeight = 28;
 
 function ExpandedWorkGroupEntries({
   anchorKey,
@@ -263,7 +263,7 @@ function ExpandedWorkGroupEntries({
           data-tool-group-scroll
           style={{ maxHeight: `calc(min(18rem, 50dvh) + ${expandedContentHeight}px)` }}
           className={cn(
-            "scrollbar-gutter-stable scroll-py-6 overflow-x-hidden rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+            "ms-3.5 scrollbar-gutter-stable scroll-py-6 overflow-x-hidden border-s border-border ps-2.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
             getVirtualizedScrollFadeClassName(fades),
           )}
         />
@@ -285,14 +285,19 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
     <CompactingLabel createdAt={row.createdAt} />
   ) : row.createdAt ? (
     <>
-      Working for <WorkingTimer createdAt={row.createdAt} />
+      <span className="text-(--accent-ink)">Running</span>
+      <span>
+        {" "}
+        · <WorkingTimer createdAt={row.createdAt} />
+      </span>
     </>
   ) : (
-    "Working..."
+    "Running"
   );
   return (
-    <div className="border-b border-border/60 pb-2 pt-1">
-      <div className="flex h-6 min-w-0 items-baseline gap-2 px-1 text-body text-secondary-foreground tabular-nums">
+    <div className="group/timeline-row">
+      <div className="flex min-h-7 min-w-0 items-center gap-2 px-2 text-body text-(--t2) tabular-nums">
+        <StreamingGlyph />
         <span
           ref={shimmer ? observeVisibleAnimation : undefined}
           className="relative shrink-0 overflow-hidden whitespace-nowrap"
@@ -302,6 +307,9 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
         </span>
         {backgroundWorktreeSetup ? (
           <BackgroundWorktreeSetupChip snapshot={backgroundWorktreeSetup} />
+        ) : null}
+        {!shimmer && !compacting && !isPreparingWorktree ? (
+          <span className="text-callout text-(--t3)">Esc to interrupt</span>
         ) : null}
       </div>
     </div>
@@ -445,7 +453,7 @@ function LiveActivityContent({
         iconName ? (
           <span
             className={cn(
-              "flex size-4 items-center justify-center",
+              "flex size-3.5 items-center justify-center",
               failed
                 ? failedToolIconClassName
                 : highlighted
@@ -458,7 +466,7 @@ function LiveActivityContent({
             <ToolActivityIconView
               icon={toolIcon}
               fallbackName={iconName}
-              className="block size-4 shrink-0 stroke-2"
+              className="block size-3.5 shrink-0 stroke-2"
               muted={!highlighted}
             />
           </span>
@@ -521,11 +529,11 @@ export function LiveWorkEntryTimelineRow({
       {thoughtLine ? (
         <WorkLogRow
           icon={
-            <span className="flex size-4 items-center justify-center text-icon-muted">
+            <span className="flex size-3.5 items-center justify-center text-(--t3)">
               <ToolActivityIconView
                 icon={undefined}
                 fallbackName="brain"
-                className="block size-4 shrink-0 stroke-2"
+                className="block size-3.5 shrink-0 stroke-2"
                 muted
               />
             </span>
@@ -587,7 +595,7 @@ export function WorkGroupToggleTimelineRow({
   const ctx = use(TimelineRowCtx);
   return (
     <WorkGroupHeader
-      label={row.summary}
+      label={row.boardSummary ?? row.summary}
       iconName={row.toolSurface ?? toolGroupSummaryIconName(row.summaryKind)}
       toolIcon={row.toolIcon}
       failed={row.hasFailure}
@@ -615,14 +623,13 @@ function WorkGroupHeader(props: {
       aria-expanded={props.expanded}
       onClick={props.onToggle}
       icon={
-        <ToolActivityIconView
-          icon={props.toolIcon}
-          fallbackName={props.iconName}
-          className="size-4 shrink-0 stroke-2 text-icon-muted"
-          muted
-        />
+        props.expanded ? (
+          <ChevronDownIcon aria-hidden className="size-3.5 shrink-0 text-(--t3)" />
+        ) : (
+          <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 text-(--t3)" />
+        )
       }
-      label={<span className="block truncate">{props.label}</span>}
+      label={<span className="block truncate text-body text-(--t2)">{props.label}</span>}
       trailing={
         <TimelineRowTimestamp createdAt={props.createdAt} timestampFormat={props.timestampFormat} />
       }

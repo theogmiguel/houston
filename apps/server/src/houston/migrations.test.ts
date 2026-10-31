@@ -19,7 +19,10 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [1, "ReviewFilesViewed"],
   [2, "TasksBacklog"],
   [3, "TaskSources"],
-  [6, "HarnessReview"],
+  [4, "TaskRunsCursor"],
+  [5, "MergeQueue"],
+  [6, "TaskSourceMarkerKey"],
+  [7, "HarnessReview"],
   [9, "NightShift"],
 ];
 const TASK_TABLES = [
@@ -33,6 +36,7 @@ const TASK_TABLES = [
   "houston_task_initiatives",
   "houston_task_planning",
   "houston_task_runs",
+  "houston_task_runs_cursor",
   "houston_task_settings",
   "houston_tasks",
 ];
@@ -250,6 +254,92 @@ describe("the task sources migration runs on the Houston track", () => {
   );
 });
 
+describe("the merge queue migration runs on the Houston track", () => {
+  const QUEUE_TABLES = [
+    "houston_merge_queue_entries",
+    "houston_merge_queue_global",
+    "houston_merge_queue_log",
+    "houston_merge_queue_settings",
+  ];
+
+  it.effect("the merge queue migration runs on the Houston track", () =>
+    withDatabaseFile((file) =>
+      Effect.gen(function* () {
+        const upstream = yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const history = yield* houstonHistory;
+          assert.deepEqual(history[4], [5, "MergeQueue"]);
+          assert.deepEqual(
+            history.map(([id]) => id),
+            HOUSTON_TRACK.map(([id]) => id),
+          );
+          const tables = (yield* sql<{ readonly name: string }>`
+            SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name LIKE 'houston_merge_queue_%' ORDER BY name
+          `).map((row) => row.name);
+          assert.deepEqual(tables, QUEUE_TABLES);
+          const entry = (number: number) => sql`
+            INSERT INTO houston_merge_queue_entries (
+              project_id, number, repository, url, head_ref, head_sha, position, enqueued_at
+            ) VALUES ('p', ${number}, 'o/r', 'u', 'houston/x', 'abc', 1, 'now')
+          `;
+          yield* entry(7);
+          assert.isTrue((yield* Effect.exit(entry(7)))._tag === "Failure");
+          yield* sql`
+            INSERT INTO houston_merge_queue_entries (
+              project_id, number, repository, url, head_ref, head_sha, position, enqueued_at
+            ) VALUES ('q', 7, 'o/r', 'u', 'houston/x', 'abc', 1, 'now')
+          `;
+          const log = (kind: string) => sql`
+            INSERT INTO houston_merge_queue_log (project_id, kind, number, repository, url, at)
+            VALUES ('p', ${kind}, 7, 'o/r', 'u', 'now')
+          `;
+          for (const kind of ["push", "merge", "park", "restack", "retarget", "hand_off"]) {
+            yield* log(kind);
+          }
+          for (const kind of ["delete", "Push", "verify"]) {
+            assert.isTrue((yield* Effect.exit(log(kind)))._tag === "Failure", kind);
+          }
+          yield* sql`INSERT INTO houston_merge_queue_global (id, paused) VALUES (1, 0)`;
+          assert.isTrue(
+            (yield* Effect.exit(
+              sql`INSERT INTO houston_merge_queue_global (id, paused) VALUES (2, 0)`,
+            ))._tag === "Failure",
+          );
+          const settings = yield* sql<Record<string, unknown>>`
+            INSERT INTO houston_merge_queue_settings (project_id) VALUES ('p') RETURNING *
+          `;
+          assert.deepEqual(settings[0], {
+            project_id: "p",
+            merge_when_verified: 0,
+            verification_command: "",
+            time_limit_minutes: 30,
+            paused: 0,
+            acknowledged_at: null,
+            hand_off_json: null,
+            revision: 0,
+          });
+          const index = yield* sql<{ readonly name: string }>`
+            SELECT name FROM pragma_index_list('houston_merge_queue_log')
+          `;
+          assert.isNotEmpty(index);
+          assert.isFalse(
+            (yield* upstreamHistory).some((row) => row.name.toLowerCase().includes("mergequeue")),
+          );
+          return yield* upstreamHistory;
+        }).pipe(Effect.provide(openThroughSqlite(file)));
+
+        // A reopen applies nothing on either track.
+        yield* Effect.gen(function* () {
+          assert.deepEqual(yield* runHoustonMigrations(), []);
+          assert.deepEqual(yield* upstreamHistory, upstream);
+          assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
+        }).pipe(Effect.provide(openThroughSqlite(file)));
+      }),
+    ),
+  );
+});
+
 describe("an upstream database gains the Houston track", () => {
   it.effect("migrated by upstream through its head, then opened through Sqlite.ts", () =>
     withDatabaseFile((file) =>
@@ -310,9 +400,9 @@ describe("the harness review migration runs on the Houston track", () => {
         const upstream = yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const history = yield* houstonHistory;
-          const harness = history.findIndex(([id]) => id === 6);
-          assert.deepEqual(history[harness], [6, "HarnessReview"]);
-          assert.isTrue(history.slice(0, harness).every(([id]) => id < 6));
+          const harness = history.findIndex(([id]) => id === 7);
+          assert.deepEqual(history[harness], [7, "HarnessReview"]);
+          assert.isTrue(history.slice(0, harness).every(([id]) => id < 7));
           assert.deepEqual(yield* harnessTables, HARNESS_TABLES);
 
           // One preparing or running review per project; one per project in two projects is fine.

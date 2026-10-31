@@ -64,7 +64,7 @@ export interface TaskRow {
   readonly archived_at: string | null;
 }
 
-interface RunRow {
+export interface RunRow {
   readonly id: number;
   readonly task_id: number;
   readonly attempt: number;
@@ -113,6 +113,25 @@ export interface NewTask {
 
 export const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 
+/** A history row a write recorded. */
+export interface TaskTransition {
+  readonly taskId: number;
+  readonly actor: string;
+  readonly action: string;
+  readonly changes: object;
+}
+
+/** Hears each write's history rows before the write commits, inside its transaction. */
+export class HoustonTaskTransitions extends Context.Service<
+  HoustonTaskTransitions,
+  {
+    readonly recorded: (transitions: ReadonlyArray<TaskTransition>) => Effect.Effect<void>;
+  }
+>()("houston/houston/tasks/TaskStore/HoustonTaskTransitions") {}
+
+/** The history action that records a head pushed to a run thread's pull request. */
+export const PUSHED_ACTION = "houston:pushed";
+
 export const toTask = (row: TaskRow): HoustonTask => ({
   id: row.id,
   number: row.number,
@@ -142,7 +161,8 @@ const decodePlan = Schema.decodeUnknownOption(Schema.fromJsonString(HoustonTaskP
 const parseFindings = (raw: string | null): ReadonlyArray<HoustonTaskReviewFinding> =>
   raw === null ? [] : Option.getOrElse(decodeFindings(raw), () => []);
 
-const toRun = (row: RunRow): HoustonTaskRun => ({
+/** `pushedHead` is the newest head pushed for the task; a verdict on another head is outdated. */
+export const toRun = (row: RunRow, pushedHead: string | null = null): HoustonTaskRun => ({
   id: row.id,
   taskId: row.task_id,
   attempt: row.attempt,
@@ -169,8 +189,7 @@ const toRun = (row: RunRow): HoustonTaskRun => ({
           focus: (row.review_focus ?? "bugs") as "bugs" | "security" | "performance" | "full",
           findings: parseFindings(row.review_findings),
           skippedReason: row.review_skipped_reason,
-          // The branch tip is read by the run machinery; a stored verdict is current until then.
-          outdated: false,
+          outdated: pushedHead !== null && pushedHead !== row.review_head_sha,
         }
       : null,
 });
@@ -308,6 +327,9 @@ const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const lock = yield* Semaphore.make(1);
   const changes = yield* PubSub.unbounded<ReadonlyArray<number>>();
+  const transitions = yield* Effect.serviceOption(HoustonTaskTransitions);
+  // The history rows of the write in progress; writes run one at a time.
+  let recorded: Array<TaskTransition> = [];
 
   const taskById = (id: number) =>
     sql<TaskRow>`SELECT * FROM houston_tasks WHERE id = ${id}`.pipe(
@@ -350,6 +372,7 @@ const make = Effect.gen(function* () {
       INSERT INTO houston_task_history (task_id, actor, action, changes, created_at)
       VALUES (${taskId}, ${actor}, ${action}, ${toJsonText(changesJson)}, ${now})
     `;
+    recorded.push({ taskId, actor, action, changes: changesJson });
   }, Effect.orDie);
 
   const createTask = Effect.fn("HoustonTaskStore.createTask")(function* (input: NewTask) {
@@ -381,15 +404,31 @@ const make = Effect.gen(function* () {
     return created;
   }, Effect.orDie);
 
+  // The transitions are heard after the body, so they see the write's final rows.
+  const heard = Effect.suspend(() => {
+    const entries = recorded;
+    recorded = [];
+    return entries.length === 0 || Option.isNone(transitions)
+      ? Effect.void
+      : transitions.value.recorded(entries);
+  });
+
   const write: HoustonTaskStore["Service"]["write"] = (body) =>
     lock.withPermits(1)(
-      sql.withTransaction(body).pipe(
-        Effect.catchIf(SqlError.isSqlError, (error) => Effect.die(error)),
-        Effect.tap(({ touched }) =>
-          touched.length === 0 ? Effect.void : PubSub.publish(changes, [...new Set(touched)]),
+      sql
+        .withTransaction(
+          Effect.suspend(() => {
+            recorded = [];
+            return body;
+          }).pipe(Effect.tap(() => heard)),
+        )
+        .pipe(
+          Effect.catchIf(SqlError.isSqlError, (error) => Effect.die(error)),
+          Effect.tap(({ touched }) =>
+            touched.length === 0 ? Effect.void : PubSub.publish(changes, [...new Set(touched)]),
+          ),
+          Effect.map(({ result }) => result),
         ),
-        Effect.map(({ result }) => result),
-      ),
     ) as never;
 
   const loadInputs = Effect.fn("HoustonTaskStore.loadInputs")(function* (
@@ -526,6 +565,21 @@ const make = Effect.gen(function* () {
     } satisfies HoustonTaskDomain;
   }, Effect.orDie);
 
+  // Task runs record each new head pushed to a run thread's pull request as a history row.
+  const latestPushedHead = (taskId: number) =>
+    sql<{ readonly changes: string }>`
+      SELECT changes FROM houston_task_history
+      WHERE task_id = ${taskId} AND action = ${PUSHED_ACTION} ORDER BY id DESC LIMIT 1
+    `.pipe(
+      Effect.map((rows) => {
+        const raw = rows[0]?.changes;
+        if (raw === undefined) return null;
+        const head = (JSON.parse(raw) as { readonly headSha?: unknown }).headSha;
+        return typeof head === "string" ? head : null;
+      }),
+      Effect.orDie,
+    );
+
   const detail = Effect.fn("HoustonTaskStore.detail")(function* (task: TaskRow) {
     const acceptance = yield* sql<{
       readonly id: number;
@@ -560,6 +614,7 @@ const make = Effect.gen(function* () {
         SELECT * FROM houston_task_runs WHERE task_id = ${task.id}
         ORDER BY id DESC LIMIT ${HOUSTON_TASK_LIMITS.runsPage}
       `;
+    const pushedHead = yield* latestPushedHead(task.id);
     const [planning] = yield* sql<{
       readonly thread_id: string;
       readonly state: "active" | "submitted" | "cancelled" | "exited";
@@ -591,7 +646,7 @@ const make = Effect.gen(function* () {
         changes: entry.changes,
         createdAt: entry.created_at,
       })),
-      runs: runs.map(toRun),
+      runs: runs.map((run) => toRun(run, pushedHead)),
       domain: yield* domain(task),
       planning:
         planning === undefined

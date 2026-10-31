@@ -147,7 +147,8 @@ describe("reports", () => {
           const large = yield* seedPublished({ projectId, findings: [], endedAt: day(2) });
           const write = (reviewId: number, text: string) =>
             Effect.gen(function* () {
-              const dir = path.join(root, ".houston", "harness", `review-${reviewId}`);
+              const runDir = (yield* (yield* store).getReview(reviewId))!.runDir;
+              const dir = path.join(root, ...runDir.split("/"));
               yield* fs.makeDirectory(dir, { recursive: true });
               yield* fs.writeFileString(path.join(dir, "report.md"), text);
               return path.join(dir, "report.md");

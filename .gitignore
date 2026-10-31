@@ -85,3 +85,4 @@ audits/
 
 # vitest reporter output written beside the package under test
 .vitest/
+handoff/design/boards/.render.html

@@ -26,6 +26,7 @@ import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/s
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as Cause from "effect/Cause";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
@@ -38,6 +39,7 @@ import * as Logger from "effect/Logger";
 import * as Redacted from "effect/Redacted";
 import * as SqlClient from "effect/sql/SqlClient";
 import { RpcMessage, RpcServer } from "effect/rpc";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as RpcAuthorization from "../../auth/RpcAuthorization.ts";
 import * as AgentSessionImporter from "../../project/AgentSessionImporter.ts";
@@ -118,11 +120,14 @@ import { layerWsRpc, WS_RPC_SERVER_OPTIONS } from "../../ws.ts";
 import * as ServerConfig from "../../config.ts";
 import { layerJsonWithoutEcho } from "../rpcSerialization.ts";
 import * as HoustonReviewState from "../reviewState.ts";
+import * as HoustonTaskRuns from "../tasks/TaskRuns.ts";
+import * as HoustonMergeQueueService from "../mergeQueue/Service.ts";
 import * as HoustonHarnessService from "../harnessReview/Service.ts";
 import * as HoustonNightShiftService from "../nightShift/Service.ts";
 import * as HoustonTaskService from "../tasks/TaskService.ts";
 import { createProject } from "../tasks/tasks.testkit.ts";
 import { makeMemory } from "../secrets/HoustonKeychain.ts";
+import { HoustonTaskSourceOutboxDrain } from "./Outbox.ts";
 import {
   githubIssue,
   issuePages,
@@ -156,6 +161,8 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(GitWorkflowService.GitWorkflowService)({}),
   Layer.mock(HostResources.HostResources)({}),
   Layer.mock(HoustonReviewState.HoustonReviewState)({}),
+  Layer.mock(HoustonTaskRuns.HoustonTaskRuns)({}),
+  Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
   Layer.mock(HoustonHarnessService.HoustonHarnessService)({}),
   Layer.mock(HoustonNightShiftService.HoustonNightShiftService)({}),
   Layer.mock(KnownWorkspaces.KnownWorkspaces)({}),
@@ -513,6 +520,110 @@ describe("the token reaches no file, log, trace or reply", () => {
       assert.notInclude(logs.join("\n"), TOKEN);
       assert.lengthOf(replies, 12);
       assert.notInclude(JSON.stringify(replies), TOKEN);
+    }).pipe(
+      Effect.provide(Logger.layer([logger])),
+      Effect.scoped,
+      Effect.provide(NodeServices.layer),
+    );
+  });
+
+  it.effect("write-back errors, retries and outbox rows carry no token", () => {
+    const logs: Array<string> = [];
+    const logger = Logger.make((options) => {
+      logs.push(`${String(options.message)} ${Cause.pretty(options.cause)}`);
+    });
+    return Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-sources-writeback-leak-" });
+      const databaseFile = NodePath.join(dir, "state.sqlite");
+      const notion = yield* makeNotionFake;
+      // The page edit fails twice with an answer that echoes the bearer, then succeeds.
+      let failures = 2;
+      notionServes(notion, () => [notionPage(1)], {
+        extra: (request) => {
+          if (request.method !== "PATCH") return null;
+          if (failures > 0) {
+            failures -= 1;
+            return {
+              status: 500,
+              body: { message: `bad gateway for ${request.authorization ?? ""}` },
+            };
+          }
+          return { body: notionPage(1) };
+        },
+      });
+      const rows = yield* Effect.gen(function* () {
+        const projectId = yield* createProject("writeback-leak");
+        const client = yield* makeWsClient(ALL_SCOPES);
+        for (const [method, payload] of [
+          [
+            WS_METHODS.houstonTaskSourcesCredentialSet,
+            { projectId, provider: "notion", token: Redacted.make(TOKEN) },
+          ],
+          [
+            WS_METHODS.houstonTaskSourcesSettingsSet,
+            { projectId, provider: "notion", settings: notionSettings() },
+          ],
+          [WS_METHODS.houstonTaskSourcesSyncNow, { projectId }],
+        ] as const) {
+          const reply = yield* client.call(method, payload);
+          assert.isNull(failureOf(reply), `${method}: ${JSON.stringify(failureOf(reply))}`);
+        }
+        // The imported page becomes a delivery the user moves on: one status write-back.
+        const tasks = yield* HoustonTaskService.HoustonTaskService;
+        const imported = (yield* tasks.get({ id: "HOU-1" })).task;
+        yield* tasks.saveDomain({
+          id: imported.key,
+          expectedRevision: imported.revision,
+          kind: "delivery",
+        });
+        const placed = (yield* tasks.get({ id: "HOU-1" })).task;
+        yield* tasks.save({
+          id: placed.key,
+          expectedRevision: placed.revision,
+          patch: { status: "in_progress" },
+        });
+        const drain = (yield* HoustonTaskSourceOutboxDrain).drain;
+        yield* drain;
+        yield* TestClock.adjust(Duration.seconds(1));
+        yield* drain;
+        yield* TestClock.adjust(Duration.seconds(2));
+        yield* drain;
+        const sql = yield* SqlClient.SqlClient;
+        const outbox = yield* sql<{
+          readonly attempts: number;
+          readonly receipt_json: string | null;
+        }>`SELECT attempts, receipt_json FROM houston_task_source_outbox`;
+        const links = yield* client.call(WS_METHODS.houstonTaskSourcesLinksGet, {
+          taskId: "HOU-1",
+        });
+        assert.notInclude(JSON.stringify(links), TOKEN);
+        return outbox;
+      }).pipe(
+        Effect.provide(
+          layerServer({
+            databaseFile,
+            baseDir: dir,
+            notionOrigin: notion.origin,
+            keychain: makeMemory(),
+          }),
+        ),
+      );
+
+      // Two failed attempts and a retry that went through.
+      assert.lengthOf(rows, 1);
+      assert.strictEqual(rows[0]?.attempts, 2);
+      assert.isNotNull(rows[0]?.receipt_json);
+      const patches = notion.requests.filter((request) => request.method === "PATCH");
+      assert.lengthOf(patches, 3);
+      assert.isTrue(patches.every((request) => request.authorization === `Bearer ${TOKEN}`));
+      const needle = Buffer.from(TOKEN, "utf8");
+      for (const file of [databaseFile, `${databaseFile}-wal`]) {
+        if (!NodeFS.existsSync(file)) continue;
+        assert.isFalse(NodeFS.readFileSync(file).includes(needle), file);
+      }
+      assert.isTrue(logs.some((line) => line.includes("HTTP 500")));
+      assert.notInclude(logs.join("\n"), TOKEN);
     }).pipe(
       Effect.provide(Logger.layer([logger])),
       Effect.scoped,

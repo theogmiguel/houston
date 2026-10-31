@@ -7,14 +7,17 @@ import * as Path from "effect/Path";
 
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import {
+  awaitReview,
   HarnessReviewReactor,
   HoustonHarnessService,
   HoustonHarnessStore,
   createProject,
+  type Kit,
   makeKit,
   model,
   runKit,
   settle,
+  until,
 } from "./harnessReview.testkit.ts";
 import { correctionMessageId, reviewMessageId } from "./Runner.ts";
 
@@ -48,6 +51,17 @@ const block = (findings: number, extra: Record<string, unknown> = {}) =>
 
 const REPORT = "# Harness review\n\nTwo things slowed the agents down.\n";
 
+// Completion signals the tests wait on, instead of a fixed number of yields.
+const settled = (review: { readonly status: string }) => review.status !== "running";
+
+const turnStarted = (kit: Kit, threadId: string) =>
+  Effect.sync(() => kit.harness.log.started.some((turn) => turn.input.threadId === threadId));
+
+const runCompleted = (threadId: string) =>
+  Effect.flatMap(Orchestrator.OrchestratorV2, (orchestrator) =>
+    orchestrator.getThreadProjection(ThreadId.make(threadId)),
+  ).pipe(Effect.map((projection) => projection.runs.at(-1)?.status === "completed"));
+
 /** A project with one user thread that ran in the window, set up for manual reviews. */
 const projectWithThread = (name: string, root?: string) =>
   Effect.gen(function* () {
@@ -80,7 +94,7 @@ const projectWithThread = (name: string, root?: string) =>
       createdBy: "user",
       creationSource: "web",
     });
-    yield* settle;
+    yield* until(`${name}'s work run completes`, runCompleted(threadId));
     yield* harness.setup({
       projectId: project.projectId,
       modelSelection: model("claudeAgent"),
@@ -95,6 +109,9 @@ const userMessagesOf = (threadId: string) =>
   ).pipe(
     Effect.map((projection) => projection.messages.filter((message) => message.role === "user")),
   );
+
+const userMessageCount = (threadId: string, count: number) =>
+  userMessagesOf(threadId).pipe(Effect.map((messages) => messages.length === count));
 
 describe("publishing a review", () => {
   it.effect("a completed run publishes its report and findings", () =>
@@ -115,7 +132,7 @@ describe("publishing a review", () => {
           );
           const started = yield* harness.runNow({ projectId: project.projectId });
           assert.equal(started.reviewId, 1);
-          yield* settle;
+          yield* awaitReview(1, settled);
           const review = (yield* reviews.getReview(1))!;
           assert.equal(review.status, "published");
           assert.equal(review.summary, "Two findings on pushes");
@@ -130,7 +147,7 @@ describe("publishing a review", () => {
             14 * 86_400_000,
           );
           assert.equal(review.corrections, 0);
-          const dir = path.join(project.root, ".houston", "harness", "review-1");
+          const dir = path.join(project.root, ...review.runDir.split("/"));
           const report = yield* fs.readFileString(path.join(dir, "report.md"));
           assert.include(report, "Two things slowed the agents down.");
           assert.notInclude(report, '"schema"');
@@ -145,7 +162,7 @@ describe("publishing a review", () => {
 
           kit.harness.script.replies.set(reviewMessageId(2), `${REPORT}\n${block(2)}`);
           yield* harness.runNow({ projectId: project.projectId });
-          yield* settle;
+          yield* awaitReview(2, settled);
           assert.equal((yield* reviews.getReview(2))!.summary, "2 findings");
 
           kit.harness.script.replies.set(
@@ -153,7 +170,7 @@ describe("publishing a review", () => {
             `${REPORT}\n${block(1, { summary: "s".repeat(300) })}`,
           );
           yield* harness.runNow({ projectId: project.projectId });
-          yield* settle;
+          yield* awaitReview(3, settled);
           assert.equal((yield* reviews.getReview(3))!.summary, "s".repeat(200));
         }),
       );
@@ -168,23 +185,34 @@ describe("publishing a review", () => {
         Effect.gen(function* () {
           const harness = yield* service;
           const reviews = yield* store;
+          const reactor = yield* HarnessReviewReactor.HarnessReviewReactor;
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
           const project = yield* projectWithThread("corrections");
 
           // Review 1: three unreadable answers.
           kit.harness.script.replies.set(reviewMessageId(1), "# Report without a block");
           kit.harness.script.hold.add(correctionMessageId(1, 1));
           const first = yield* harness.runNow({ projectId: project.projectId });
-          yield* settle;
+          yield* until("the first correction is sent", userMessageCount(first.threadId, 2));
           let messages = yield* userMessagesOf(first.threadId);
           assert.lengthOf(messages, 2);
           assert.include(messages[1]!.text, "no fenced `json` block");
           assert.include(messages[1]!.text, '"schema": 1');
           assert.equal((yield* reviews.getReview(1))!.status, "running");
 
+          // The corrected run seen again, by a repeated run.updated or a restart, is not corrected twice.
+          const answered = (yield* orchestrator.getThreadProjection(
+            ThreadId.make(first.threadId),
+          )).runs.find((run) => run.status === "completed")!;
+          yield* reactor.settleRun(answered);
+          yield* reactor.recover;
+          assert.lengthOf(yield* userMessagesOf(first.threadId), 2);
+          assert.equal((yield* reviews.getReview(1))!.corrections, 1);
+
           kit.harness.script.replies.set(correctionMessageId(1, 1), "Still no block");
           kit.harness.script.replies.set(correctionMessageId(1, 2), "{ broken json");
           yield* kit.harness.release(correctionMessageId(1, 1));
-          yield* settle;
+          yield* awaitReview(1, settled);
           messages = yield* userMessagesOf(first.threadId);
           assert.lengthOf(messages, 3);
           const failed = (yield* reviews.getReview(1))!;
@@ -201,7 +229,7 @@ describe("publishing a review", () => {
           );
           kit.harness.script.replies.set(correctionMessageId(2, 1), `${REPORT}\n${block(1)}`);
           const second = yield* harness.runNow({ projectId: project.projectId });
-          yield* settle;
+          yield* awaitReview(2, settled);
           const corrections = yield* userMessagesOf(second.threadId);
           assert.include(corrections[1]!.text, "1 MiB");
           const published = (yield* reviews.getReview(2))!;
@@ -232,13 +260,13 @@ describe("publishing a review", () => {
           // Stopped: the provider ends the turn interrupted.
           kit.harness.script.hold.add(reviewMessageId(1));
           const stopped = yield* harness.runNow({ projectId: project.projectId });
-          yield* settle;
+          yield* until("review 1's turn starts", turnStarted(kit, stopped.threadId));
           yield* orchestrator.dispatch({
             type: "thread.stop",
             commandId: CommandId.make("stop:review-1"),
             threadId: ThreadId.make(stopped.threadId),
           });
-          yield* settle;
+          yield* awaitReview(1, settled);
           const interrupted = (yield* reviews.getReview(1))!;
           assert.equal(interrupted.status, "failed");
           assert.include(interrupted.error ?? "", "the run ended without a readable answer: ");
@@ -251,7 +279,7 @@ describe("publishing a review", () => {
           ] as const) {
             kit.harness.script.hold.add(reviewMessageId(index));
             const started = yield* harness.runNow({ projectId: project.projectId });
-            yield* settle;
+            yield* until(`review ${index}'s turn starts`, turnStarted(kit, started.threadId));
             const projection = yield* orchestrator.getThreadProjection(
               ThreadId.make(started.threadId),
             );
@@ -266,20 +294,20 @@ describe("publishing a review", () => {
               `the run ended without a readable answer: the run ${status === "failed" ? "failed" : "was cancelled"}`,
             );
             yield* kit.harness.release(reviewMessageId(index));
-            yield* settle;
+            yield* until(`review ${index}'s run completes`, runCompleted(started.threadId));
             assert.equal((yield* reviews.getReview(index))!.status, "failed");
           }
 
           // A deleted review thread.
           kit.harness.script.hold.add(reviewMessageId(4));
           const deleted = yield* harness.runNow({ projectId: project.projectId });
-          yield* settle;
+          yield* until("review 4's turn starts", turnStarted(kit, deleted.threadId));
           yield* orchestrator.dispatch({
             type: "thread.delete",
             commandId: CommandId.make("delete:review-4"),
             threadId: ThreadId.make(deleted.threadId),
           });
-          yield* settle;
+          yield* awaitReview(4, settled);
           const gone = (yield* reviews.getReview(4))!;
           assert.equal(gone.status, "failed");
           assert.include(gone.error ?? "", "the run ended without a readable answer: ");
@@ -311,7 +339,7 @@ describe("publishing a review", () => {
             `${REPORT}\n${block(1)}`,
           );
           const started = yield* harness.runNow({ projectId: running.projectId });
-          yield* settle;
+          yield* until("the review's run completes", runCompleted(started.threadId));
           assert.equal((yield* reviews.getReview(started.reviewId))!.status, "running");
           return { preparing: preparingReview.id, running: started.reviewId };
         }),
@@ -321,7 +349,7 @@ describe("publishing a review", () => {
         after,
         Effect.gen(function* () {
           const reviews = yield* store;
-          yield* settle;
+          yield* awaitReview(ids.running, settled);
           const preparing = (yield* reviews.getReview(ids.preparing))!;
           assert.equal(preparing.status, "failed");
           assert.equal(preparing.error, "the server stopped while this review was being prepared");

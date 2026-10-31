@@ -7,7 +7,10 @@ import {
   type LayoutNode,
   type ThreadNode,
   appendThread,
+  arrangeThreads,
+  gridPreset,
   insertThreadAtSlot,
+  isGridPreset,
   isLayoutNode,
   preorderThreads,
   reconcileThreads,
@@ -70,6 +73,8 @@ export interface GridStoreState {
   setGridHidden: (gridId: string, hidden: boolean) => void;
   /** Swaps two panes so the dragged thread takes the target's place. */
   reorderGridThreads: (gridId: string, draggedThreadId: string, targetThreadId: string) => void;
+  /** Reflows the grid to the automatic arrangement for its thread count. */
+  autoArrangeGrid: (gridId: string) => void;
   /** Removes a held or closed thread from its grid, remembering where it sat. */
   detachThreadForShelf: (threadId: string) => void;
   /** Places a woken or reopened thread back in its origin grid, or a new one. */
@@ -95,6 +100,33 @@ export function gridsForWorkspace(
 
 export function gridById(grids: readonly GridRecord[], gridId: string): GridRecord | null {
   return grids.find((grid) => grid.id === gridId) ?? null;
+}
+
+export function gridContainingThread(
+  grids: readonly GridRecord[],
+  environmentId: string,
+  threadId: string,
+): GridRecord | null {
+  return (
+    grids.find(
+      (grid) =>
+        grid.environmentId === environmentId &&
+        grid.tree !== null &&
+        containsThreadId(grid.tree, threadId),
+    ) ?? null
+  );
+}
+
+export function gridContainingDraft(
+  grids: readonly GridRecord[],
+  draftId: string,
+): GridRecord | null {
+  return (
+    grids.find(
+      (grid) =>
+        grid.tree !== null && preorderThreads(grid.tree).some((leaf) => leaf.draftId === draftId),
+    ) ?? null
+  );
 }
 
 /**
@@ -327,14 +359,29 @@ export function createGridRecord(
   };
 }
 
+function addThreadPreservingLayout(
+  tree: LayoutNode | null,
+  threadId: string,
+  previousIds: readonly string[],
+): LayoutNode {
+  if (tree === null) return gridPreset([threadId]) ?? threadLeaf(threadId);
+  // A grid that is still on its automatic arrangement keeps following the
+  // presets as it fills; a layout the user split or dragged keeps its shape.
+  if (isGridPreset(tree, previousIds)) {
+    return gridPreset([...previousIds, threadId]) ?? appendThread(tree, threadId);
+  }
+  return appendThread(tree, threadId);
+}
+
 export function addThreadToGrid(grid: GridRecord, threadId: string, draftId?: string): GridRecord {
   const existing = grid.tree === null ? [] : preorderThreads(grid.tree);
-  const tree =
-    existing.some((leaf) => leaf.threadId === threadId) || grid.tree === null
-      ? grid.tree === null
-        ? threadLeaf(threadId, undefined, draftId)
-        : grid.tree
-      : appendThread(grid.tree, threadId);
+  if (existing.some((leaf) => leaf.threadId === threadId)) {
+    const withDraft =
+      draftId === undefined ? grid.tree : replaceThreadDraft(grid.tree, threadId, draftId);
+    return { ...withTree(grid, withDraft), focusedThreadId: threadId };
+  }
+  const previousIds = existing.map((leaf) => leaf.threadId);
+  const tree = addThreadPreservingLayout(grid.tree, threadId, previousIds);
   const withDraft = draftId === undefined ? tree : replaceThreadDraft(tree, threadId, draftId);
   return { ...withTree(grid, withDraft), focusedThreadId: threadId };
 }
@@ -419,6 +466,13 @@ export const useGridStore = create<GridStoreState>()(
               ? grid
               : withTree(grid, swapThread(grid.tree, draggedThreadId, targetThreadId)),
           ),
+        })),
+      autoArrangeGrid: (gridId) =>
+        set((state) => ({
+          grids: updateGrid(state.grids, gridId, (grid) => {
+            if (grid.tree === null) return grid;
+            return withTree(grid, arrangeThreads(grid.tree));
+          }),
         })),
       detachThreadForShelf: (threadId) =>
         set((state) => detachThreadForShelf(state.grids, state.threadOrigins, threadId)),

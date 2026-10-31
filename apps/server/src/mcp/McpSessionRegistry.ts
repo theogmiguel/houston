@@ -19,6 +19,8 @@ export interface McpCredentialRequest {
   readonly browserToolsAvailable?: boolean;
   readonly capabilities?: ReadonlySet<McpInvocationContext.McpCapability>;
   readonly subagent?: boolean;
+  /** Houston: the credential holds only `houston-task-submit`, for a task's planner or reviewer. */
+  readonly houstonTaskSubmitOnly?: boolean;
 }
 
 export interface McpIssuedCredential {
@@ -109,12 +111,16 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           subagent: request.subagent === true,
         },
         client: undefined,
-        capabilities: new Set<McpInvocationContext.McpCapability>([
-          "orchestration",
-          "worktree",
-          "pull-requests",
-          ...(request.capabilities ?? (browserToolsAvailable ? (["preview"] as const) : [])),
-        ]),
+        capabilities: new Set<McpInvocationContext.McpCapability>(
+          request.houstonTaskSubmitOnly === true
+            ? ["houston-task-submit"]
+            : [
+                "orchestration",
+                "worktree",
+                "pull-requests",
+                ...(request.capabilities ?? (browserToolsAvailable ? (["preview"] as const) : [])),
+              ],
+        ),
         issuedAt,
       };
       yield* SynchronizedRef.update(state, ({ records }) => {

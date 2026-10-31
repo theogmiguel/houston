@@ -6,6 +6,7 @@ import {
   AuthSessionId,
   AuthSettingsWriteScope,
   EnvironmentId,
+  ThreadId,
   WS_METHODS,
   WsRpcGroup,
   type AuthEnvironmentScope,
@@ -106,6 +107,8 @@ import * as HoustonTaskService from "../tasks/TaskService.ts";
 import * as HoustonTaskV1Import from "../tasks/V1Import.ts";
 import * as HoustonTaskSourceService from "../taskSources/SourceService.ts";
 import * as HoustonTaskSourceV1Import from "../taskSources/V1Import.ts";
+import * as HoustonTaskRuns from "../tasks/TaskRuns.ts";
+import * as HoustonMergeQueueService from "../mergeQueue/Service.ts";
 import {
   HoustonHarnessService,
   HoustonHarnessStore,
@@ -145,6 +148,8 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonTaskSourceService.HoustonTaskSourceService)({}),
   Layer.mock(HoustonTaskSourceV1Import.HoustonTaskSourceV1Import)({}),
   Layer.mock(HoustonNightShiftService.HoustonNightShiftService)({}),
+  Layer.mock(HoustonTaskRuns.HoustonTaskRuns)({}),
+  Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
   Layer.mock(KnownWorkspaces.KnownWorkspaces)({}),
   Layer.mock(McpAppRequests.McpAppRequests)({}),
   Layer.mock(OtlpEndpointCheck.OtlpEndpointCheck)({}),
@@ -360,6 +365,17 @@ describe("subscriptions", () => {
           const started = (yield* Queue.take(listener.responses)) as HoustonHarnessSnapshot;
           assert.equal(started.runningReviewId, review.id);
           assert.equal(started.reviews[0]?.status, "preparing");
+
+          // Running: only a running review publishes.
+          yield* store.markRunning(review.id, {
+            threadId: ThreadId.make(`harness-review:${review.id}`),
+            windowSince: "2026-10-16T09:00:00.000Z",
+            windowUntil: "2026-10-30T09:00:00.000Z",
+            threads: 1,
+            prompts: 1,
+          });
+          const running = (yield* Queue.take(listener.responses)) as HoustonHarnessSnapshot;
+          assert.equal(running.reviews[0]?.status, "running");
 
           // Published.
           yield* store.publish(review.id, {

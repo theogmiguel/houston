@@ -185,6 +185,13 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.houstonTasksSettingsSet]: AuthSettingsWriteScope,
   [WS_METHODS.houstonTasksImportV1Status]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonTasksImportV1Run]: AuthSettingsWriteScope,
+  [WS_METHODS.houstonTasksStart]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonTasksRunControl]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonTasksHandback]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonTasksPlanStart]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonTasksPlanAnswer]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonTasksPlanApprove]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonTasksReviewStart]: AuthOrchestrationOperateScope,
   [WS_METHODS.houstonTaskSourcesSettingsGet]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonTaskSourcesSettingsSet]: AuthSettingsWriteScope,
   [WS_METHODS.houstonTaskSourcesCredentialSet]: AuthSettingsWriteScope,
@@ -214,6 +221,15 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.houstonNightShiftRunNow]: AuthOrchestrationOperateScope,
   [WS_METHODS.houstonNightShiftWrapUp]: AuthOrchestrationOperateScope,
   [WS_METHODS.houstonNightShiftStop]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonMergeQueueGet]: AuthOrchestrationReadScope,
+  [WS_METHODS.houstonMergeQueueSubscribe]: AuthOrchestrationReadScope,
+  [WS_METHODS.houstonMergeQueueSubscribeSummary]: AuthOrchestrationReadScope,
+  [WS_METHODS.houstonMergeQueueEnqueue]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonMergeQueueDequeue]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonMergeQueueMergeHead]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonMergeQueueSettingsSet]: AuthSettingsWriteScope,
+  // One project's pause; pausing every queue needs AuthSettingsWriteScope (below).
+  [WS_METHODS.houstonMergeQueuePause]: AuthOrchestrationOperateScope,
   [WS_METHODS.terminalOpen]: AuthTerminalOperateScope,
   [WS_METHODS.terminalAttach]: AuthTerminalOperateScope,
   [WS_METHODS.terminalObserve]: AuthTerminalReadScope,
@@ -303,6 +319,10 @@ const requiredScopesForRpcCall = (
     ];
   }
   if (method === WS_METHODS.serverUpdateSettings) return requiredScopesForSettingsUpdate(payload);
+  if (method === WS_METHODS.houstonMergeQueuePause) {
+    const projectId = (payload as { readonly projectId?: unknown } | null)?.projectId;
+    return [projectId === undefined ? AuthSettingsWriteScope : AuthOrchestrationOperateScope];
+  }
   if (method === WS_METHODS.projectsMutate) {
     return requiredScopesForProjectMutation(decodeProjectMutation(payload));
   }

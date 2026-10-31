@@ -14,7 +14,6 @@ import {
 import * as Schema from "effect/Schema";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
-import { isMacPlatform } from "../../lib/utils";
 import { Input } from "../ui/input";
 import {
   DEFAULT_CODE_FONT_STACK,
@@ -26,11 +25,11 @@ import {
   resolveTerminalFontSizePreference,
   TYPOGRAPHY_ADVANCED_STORAGE_KEY,
 } from "../../appearanceFonts";
-import { AdvancedSettings } from "./AdvancedSettings";
 import { CodeFontPreview, PromptFontPreview, TerminalFontPreview } from "./SettingsFontPreviews";
 import { discoverInstalledFonts, FontFamilyPicker, useFontEnumeration } from "./FontFamilyPicker";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import {
   SettingResetButton,
   SettingsRow,
@@ -56,7 +55,13 @@ function useFontDefaultFamilies() {
   };
 }
 
-function InterfaceFontRow({ preview }: { preview?: ReactNode }) {
+function InterfaceFontRow({
+  preview,
+  sizeInline = true,
+}: {
+  preview?: ReactNode;
+  sizeInline?: boolean;
+}) {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const defaults = useFontDefaultFamilies();
@@ -74,6 +79,7 @@ function InterfaceFontRow({ preview }: { preview?: ReactNode }) {
           fontSizeInterface: DEFAULT_UNIFIED_SETTINGS.fontSizeInterface,
         })
       }
+      sizeInline={sizeInline}
       size={{
         label: "Interface font size",
         min: MIN_INTERFACE_FONT_SIZE,
@@ -122,10 +128,12 @@ function CodeFontRow({
   title,
   description = "Code blocks, diffs, and file previews.",
   preview,
+  sizeInline = true,
 }: {
   title?: string;
   description?: string;
   preview?: ReactNode;
+  sizeInline?: boolean;
 }) {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -146,6 +154,7 @@ function CodeFontRow({
         })
       }
       requireMonospace
+      sizeInline={sizeInline}
       size={{
         label: "Code font size",
         min: MIN_CODE_FONT_SIZE,
@@ -154,7 +163,7 @@ function CodeFontRow({
         defaultValue: DEFAULT_UNIFIED_SETTINGS.fontSizeCode,
         onChange: (fontSizeCode) => updateSettings({ fontSizeCode }),
       }}
-      preview={preview ?? <CodeFontPreview />}
+      {...(preview !== undefined ? { preview } : {})}
     />
   );
 }
@@ -203,7 +212,6 @@ function TerminalFontRow() {
 function FontSmoothingRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
-  if (!isMacPlatform(navigator.platform)) return null;
   return (
     <SettingsRow
       {...searchableSetting("font-smoothing")}
@@ -219,17 +227,26 @@ function FontSmoothingRow() {
         ) : null
       }
       control={
-        <Switch
-          checked={settings.fontSmoothing}
-          onCheckedChange={(checked) => updateSettings({ fontSmoothing: Boolean(checked) })}
+        <ToggleGroup
           aria-label="Font smoothing"
-        />
+          variant="segmented"
+          value={[settings.fontSmoothing ? "antialiased" : "system"]}
+          onValueChange={(next) => {
+            const value = next[0];
+            if (value === "system" || value === "antialiased") {
+              updateSettings({ fontSmoothing: value === "antialiased" });
+            }
+          }}
+        >
+          <Toggle value="system">System</Toggle>
+          <Toggle value="antialiased">Antialiased</Toggle>
+        </ToggleGroup>
       }
     />
   );
 }
 
-function WordWrapRow() {
+export function WordWrapRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
@@ -260,7 +277,7 @@ function FontSettingsGroup() {
     <>
       <InterfaceFontRow />
       <PromptFontRow />
-      <CodeFontRow />
+      <CodeFontRow preview={<CodeFontPreview />} />
       <TerminalFontRow />
     </>
   );
@@ -289,32 +306,108 @@ function SeparateFontsRow({
 }
 
 function SimpleFontRows() {
-  const settings = useScopedSettings();
   return (
     <>
-      <InterfaceFontRow preview={<PromptFontPreview />} />
+      <InterfaceFontRow sizeInline={false} />
       <CodeFontRow
-        title="Monospace font"
-        description="Code blocks, diffs, file previews, and the terminal."
-        preview={
-          <>
-            <CodeFontPreview />
-            <TerminalFontPreview
-              family={resolveTerminalFontPreference({
-                advanced: false,
-                code: settings.fontFamilyCode,
-                terminal: settings.fontFamilyTerminal,
-              })}
-              size={resolveTerminalFontSizePreference({
-                advanced: false,
-                code: settings.fontSizeCode,
-                terminal: settings.fontSizeTerminal,
-              })}
-            />
-          </>
-        }
+        title="Code font"
+        description="Used by code blocks, diffs and the terminal drawer."
+        sizeInline={false}
       />
     </>
+  );
+}
+
+function InterfaceFontSizeRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      title="Interface font size"
+      description="Text size outside code blocks and the terminal."
+      resetAction={
+        settings.fontSizeInterface !== DEFAULT_UNIFIED_SETTINGS.fontSizeInterface ? (
+          <SettingResetButton
+            label="interface font size"
+            onClick={() =>
+              updateSettings({ fontSizeInterface: DEFAULT_UNIFIED_SETTINGS.fontSizeInterface })
+            }
+          />
+        ) : null
+      }
+      control={
+        <FontSizeSelect
+          label="Interface font size"
+          min={MIN_INTERFACE_FONT_SIZE}
+          max={MAX_INTERFACE_FONT_SIZE}
+          value={settings.fontSizeInterface}
+          onChange={(fontSizeInterface) => updateSettings({ fontSizeInterface })}
+        />
+      }
+    />
+  );
+}
+
+function CodeFontSizeRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      title="Code font size"
+      description="Text size in code blocks, diffs, file previews, and the terminal."
+      resetAction={
+        settings.fontSizeCode !== DEFAULT_UNIFIED_SETTINGS.fontSizeCode ? (
+          <SettingResetButton
+            label="code font size"
+            onClick={() => updateSettings({ fontSizeCode: DEFAULT_UNIFIED_SETTINGS.fontSizeCode })}
+          />
+        ) : null
+      }
+      control={
+        <FontSizeSelect
+          label="Code font size"
+          min={MIN_CODE_FONT_SIZE}
+          max={MAX_CODE_FONT_SIZE}
+          value={settings.fontSizeCode}
+          onChange={(fontSizeCode) => updateSettings({ fontSizeCode })}
+        />
+      }
+    />
+  );
+}
+
+function FontSizeSelect({
+  label,
+  min,
+  max,
+  value,
+  onChange,
+}: {
+  label: string;
+  min: number;
+  max: number;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <Select
+      value={String(value)}
+      onValueChange={(next) => {
+        const parsed = Number(next);
+        if (Number.isInteger(parsed) && parsed >= min && parsed <= max) onChange(parsed);
+      }}
+    >
+      <SelectTrigger size="sm" className="w-22" aria-label={label}>
+        <SelectValue>{value} px</SelectValue>
+      </SelectTrigger>
+      <SelectPopup align="end" alignItemWithTrigger={false}>
+        {Array.from({ length: max - min + 1 }, (_, index) => min + index).map((px) => (
+          <SelectItem hideIndicator key={px} value={String(px)}>
+            {px} px
+          </SelectItem>
+        ))}
+      </SelectPopup>
+    </Select>
   );
 }
 
@@ -337,13 +430,14 @@ export function TypographySection() {
   return (
     <SettingsSection id="typography" title="Typography">
       {showAdvanced ? <FontSettingsGroup /> : <SimpleFontRows />}
-      <WordWrapRow />
-      <AdvancedSettings
-        targetIds={[searchableSetting("separate-fonts").id, searchableSetting("font-smoothing").id]}
-      >
-        <SeparateFontsRow checked={showAdvanced} onCheckedChange={setAdvanced} />
-        <FontSmoothingRow />
-      </AdvancedSettings>
+      <SeparateFontsRow checked={showAdvanced} onCheckedChange={setAdvanced} />
+      <FontSmoothingRow />
+      {!showAdvanced ? (
+        <>
+          <InterfaceFontSizeRow />
+          <CodeFontSizeRow />
+        </>
+      ) : null}
     </SettingsSection>
   );
 }
@@ -359,6 +453,7 @@ function FontFamilySettingsRow({
   onValueChange,
   onReset,
   requireMonospace = false,
+  sizeInline = true,
   size,
 }: {
   id?: string;
@@ -371,6 +466,7 @@ function FontFamilySettingsRow({
   onValueChange: (value: string) => void;
   onReset: () => void;
   requireMonospace?: boolean;
+  sizeInline?: boolean;
   size: {
     label: string;
     min: number;
@@ -492,33 +588,38 @@ function FontFamilySettingsRow({
         value={draft}
       />
     );
-  const control = (
+  const sizeControl = (
+    <Select
+      value={String(size.value)}
+      onValueChange={(next) => {
+        if (typeof next !== "string") return;
+        const parsed = Number(next);
+        if (Number.isInteger(parsed) && parsed >= size.min && parsed <= size.max) {
+          size.onChange(parsed);
+        }
+      }}
+    >
+      <SelectTrigger size="sm" className="w-22 shrink-0" aria-label={size.label}>
+        <SelectValue>{size.value} px</SelectValue>
+      </SelectTrigger>
+      <SelectPopup align="end" alignItemWithTrigger={false}>
+        {Array.from({ length: size.max - size.min + 1 }, (_, index) => size.min + index).map(
+          (px) => (
+            <SelectItem hideIndicator key={px} value={String(px)}>
+              {px} px
+            </SelectItem>
+          ),
+        )}
+      </SelectPopup>
+    </Select>
+  );
+  const control = sizeInline ? (
     <div className="flex w-full items-center gap-2 sm:w-auto">
       <div className="min-w-0 flex-1 sm:w-44 sm:flex-none">{familyControl}</div>
-      <Select
-        value={String(size.value)}
-        onValueChange={(next) => {
-          if (typeof next !== "string") return;
-          const parsed = Number(next);
-          if (Number.isInteger(parsed) && parsed >= size.min && parsed <= size.max) {
-            size.onChange(parsed);
-          }
-        }}
-      >
-        <SelectTrigger size="sm" className="w-22 shrink-0" aria-label={size.label}>
-          <SelectValue>{size.value} px</SelectValue>
-        </SelectTrigger>
-        <SelectPopup align="end" alignItemWithTrigger={false}>
-          {Array.from({ length: size.max - size.min + 1 }, (_, index) => size.min + index).map(
-            (px) => (
-              <SelectItem hideIndicator key={px} value={String(px)}>
-                {px} px
-              </SelectItem>
-            ),
-          )}
-        </SelectPopup>
-      </Select>
+      {sizeControl}
     </div>
+  ) : (
+    <div className="w-full sm:w-44">{familyControl}</div>
   );
   return (
     <SettingsRow

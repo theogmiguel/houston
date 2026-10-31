@@ -1330,26 +1330,29 @@ export function codexThreadRuntimeParams(input: {
   readonly config: Readonly<Record<string, Schema.Json>>;
 } {
   const { mcpSession } = input;
+  const t3Server =
+    mcpSession === undefined
+      ? undefined
+      : {
+          url: mcpSession.endpoint,
+          tool_timeout_sec: CODEX_T3_MCP_TOOL_TIMEOUT_SEC,
+          http_headers: {
+            Authorization: mcpSession.authorizationHeader,
+          },
+        };
   return {
     ...(input.runtimePolicy?.cwd == null ? {} : { cwd: input.runtimePolicy.cwd }),
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
     config: {
       ...CODEX_THREAD_CONFIG,
-      ...(mcpSession === undefined
-        ? {}
-        : {
-            // Override only T3's server so launch-argument MCP servers survive.
-            "mcp_servers.t3-code": {
-              url: mcpSession.endpoint,
-              tool_timeout_sec: CODEX_T3_MCP_TOOL_TIMEOUT_SEC,
-              http_headers: {
-                Authorization: mcpSession.authorizationHeader,
-              },
-            },
-          }),
       // Houston: the read-only sandbox does not cover MCP tool calls, so a read-only run
-      // replaces every configured MCP server with none.
-      ...(isReadOnlySandbox(input.runtimePolicy) ? { mcp_servers: {} } : {}),
+      // replaces every configured MCP server with Houston's own, when it holds a credential.
+      ...(isReadOnlySandbox(input.runtimePolicy)
+        ? { mcp_servers: t3Server === undefined ? {} : { "t3-code": t3Server } }
+        : t3Server === undefined
+          ? {}
+          : // Override only T3's server so launch-argument MCP servers survive.
+            { "mcp_servers.t3-code": t3Server }),
     },
   };
 }

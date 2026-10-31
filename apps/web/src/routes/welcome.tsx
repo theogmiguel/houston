@@ -27,15 +27,15 @@ function WelcomeRouteView() {
   const resumeEnvironmentId = hash.startsWith("agents:")
     ? Option.getOrUndefined(decodeEnvironmentId(hash.slice("agents:".length)))
     : undefined;
-  // The root can remount this pending outlet after navigation; do not reopen setup.
-  const isWelcomeRoute = useLocation({ select: (location) => location.pathname === "/welcome" });
+  // Setup is a hash-reached surface; the first-run screen itself is the board's empty state.
+  const setupRequested = resumeEnvironmentId !== undefined || hash === "#setup";
   const [dismissed, setDismissed] = useState(false);
   const openNewThread = useNewThreadHandler();
   const localAvailable = authGateState.status === "authenticated";
   return (
     <>
       <NoProjectsHero />
-      {isWelcomeRoute && !dismissed ? (
+      {setupRequested && !dismissed ? (
         <WelcomeWizard
           localAvailable={localAvailable}
           resumeEnvironmentId={resumeEnvironmentId}

@@ -519,12 +519,100 @@ const NightShift = Effect.gen(function* () {
   `;
 });
 
-// Ids 4, 5, 7 and 8 belong to Houston migrations on other branches; the Migrator orders by id.
+// Task runs: the last thread event they applied, so a restart replays what a crash left unapplied.
+const TaskRunsCursor = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_task_runs_cursor (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      sequence INTEGER NOT NULL
+    )
+  `;
+});
+
+// The merge queue, keyed by upstream ProjectId without a foreign key; a deleted project's rows go
+// with its deletion hook. JSON columns hold camelCase facts, verification, failure and holds.
+const MergeQueue = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_merge_queue_entries (
+      project_id TEXT NOT NULL,
+      number INTEGER NOT NULL,
+      repository TEXT NOT NULL,
+      url TEXT NOT NULL,
+      title TEXT,
+      head_ref TEXT NOT NULL,
+      head_sha TEXT NOT NULL,
+      base_ref TEXT,
+      depends_on INTEGER,
+      owner_thread_id TEXT,
+      position INTEGER NOT NULL,
+      enqueued_at TEXT NOT NULL,
+      facts_json TEXT,
+      verification_json TEXT,
+      failure_json TEXT,
+      stacked_json TEXT,
+      github_json TEXT,
+      PRIMARY KEY (project_id, number)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_merge_queue_settings (
+      project_id TEXT PRIMARY KEY,
+      merge_when_verified INTEGER NOT NULL DEFAULT 0,
+      verification_command TEXT NOT NULL DEFAULT '',
+      time_limit_minutes INTEGER NOT NULL DEFAULT 30,
+      paused INTEGER NOT NULL DEFAULT 0,
+      acknowledged_at TEXT,
+      hand_off_json TEXT,
+      revision INTEGER NOT NULL DEFAULT 0
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_merge_queue_log (
+      id INTEGER PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('push', 'merge', 'park', 'restack', 'retarget', 'hand_off')),
+      number INTEGER NOT NULL,
+      repository TEXT NOT NULL,
+      url TEXT NOT NULL,
+      title TEXT,
+      ref_name TEXT,
+      old_sha TEXT,
+      new_sha TEXT,
+      head_sha TEXT,
+      fork_sha TEXT,
+      method TEXT,
+      detail TEXT,
+      unattended INTEGER NOT NULL DEFAULT 0,
+      at TEXT NOT NULL
+    )
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_merge_queue_log_project ON houston_merge_queue_log(project_id, at)`;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_merge_queue_global (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      paused INTEGER NOT NULL
+    )
+  `;
+});
+
+// Task source write-back: the installation's random key that write-back markers are keyed with.
+// Not a credential: it only makes Houston's own markers unforgeable, so it stays in the database.
+const TaskSourceMarkerKey = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`ALTER TABLE houston_task_source_identity ADD COLUMN marker_key TEXT`;
+});
+
+// Id 8 belongs to a Houston migration on another branch; the Migrator orders by id.
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
   [3, "TaskSources", TaskSources],
-  [6, "HarnessReview", HarnessReview],
+  [4, "TaskRunsCursor", TaskRunsCursor],
+  [5, "MergeQueue", MergeQueue],
+  [6, "TaskSourceMarkerKey", TaskSourceMarkerKey],
+  [7, "HarnessReview", HarnessReview],
   [9, "NightShift", NightShift],
 ] as const;
 
