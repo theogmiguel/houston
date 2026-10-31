@@ -241,7 +241,6 @@ export function ComposerPermissionsSection(props: {
   );
 }
 
-
 /** The same permissions picker as a plain radiogroup, for popovers outside a Menu root. */
 export function ComposerPermissionsPicker(props: {
   runtimeMode: RuntimeMode;
@@ -372,6 +371,7 @@ export function ComposerModelPicker({
   multipleModelsEnabled,
   multipleModelSelections,
   onMultipleModelSelectionsChange,
+  onSendMultipleModels,
   selectedModelSelection,
   onProviderModelSelect,
   ...pickerProps
@@ -384,6 +384,7 @@ export function ComposerModelPicker({
   readonly onMultipleModelSelectionsChange: (
     selections: ReadonlyArray<ModelSelection> | null,
   ) => void;
+  readonly onSendMultipleModels: () => void;
   readonly selectedModelSelection: ModelSelection;
   readonly onProviderModelSelect: (
     instanceId: ProviderInstanceId,
@@ -429,6 +430,7 @@ export function ComposerModelPicker({
             onToggleModel: toggleModel,
           }
         : {})}
+      onSendSelectedModels={onSendMultipleModels}
       onInstanceModelChange={(instanceId, model) => {
         onMultipleModelSelectionsChange(null);
         onProviderModelSelect(instanceId, model);

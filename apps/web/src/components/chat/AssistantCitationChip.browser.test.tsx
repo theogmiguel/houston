@@ -128,50 +128,25 @@ describe("citation comment source disappearance", () => {
   });
 });
 
-describe("citation comment popup position", () => {
-  it("stays on screen when the cited text ends in a code block's hidden overflow", async () => {
-    using _source = setup();
-    const message = document.createElement("div");
-    message.className = "chat-markdown";
-    message.style.width = "240px";
-    const pre = document.createElement("pre");
-    const code = document.createElement("code");
-    // Highlighted code is split into token spans, so the range's last client rect
-    // covers only the final token, wholly inside the hidden overflow.
-    for (let index = 0; index < 40; index += 1) {
-      const token = document.createElement("span");
-      token.textContent = `token${index} `;
-      code.append(token);
-    }
-    pre.append(code);
-    message.append(pre);
-    document.body.prepend(message);
-    using _message = { [Symbol.dispose]: () => message.remove() };
-    const range = document.createRange();
-    range.selectNodeContents(code);
-    const rects = range.getClientRects();
-    expect(rects.item(rects.length - 1)!.left).toBeGreaterThan(window.innerWidth);
-    const sourceAnchor = {
-      source: message,
-      range,
-      viewport: document.body,
-    } as AssistantCitationSourceAnchor;
-
+describe("citation comment placement", () => {
+  it("renders the editor inline after the cited answer", async () => {
+    using source = setup();
     await using _screen = await mount(
-      sourceAnchor,
+      source.sourceAnchor,
       vi.fn(() => true),
     );
-    const popup = () => document.querySelector<HTMLElement>('[data-slot="popover-popup"]');
-    await vi.waitFor(() => expect(popup()?.getBoundingClientRect().width).toBeGreaterThan(0));
-    // Typing scrolls ancestors to reveal the caret, which shifts the whole app
-    // sideways when the box is off screen.
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-citation-comment-inline="true"]')).not.toBeNull(),
+    );
+    const inline = document.querySelector<HTMLElement>('[data-citation-comment-inline="true"]')!;
+    const host = inline.parentElement!;
+    expect(host.previousElementSibling).toBe(source.sourceAnchor.source);
+    expect(document.querySelector('[data-slot="popover-popup"]')).toBeNull();
+
+    await userEvent.click(textarea()!);
     await userEvent.keyboard("note");
 
     expect(textarea()?.value).toBe("note");
-    expect(document.scrollingElement?.scrollLeft).toBe(0);
-    expect(document.body.scrollLeft).toBe(0);
-    const rect = popup()!.getBoundingClientRect();
-    expect(rect.left).toBeGreaterThanOrEqual(0);
-    expect(rect.right).toBeLessThanOrEqual(window.innerWidth);
+    expect(inline.getBoundingClientRect().width).toBeGreaterThan(0);
   });
 });

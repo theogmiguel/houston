@@ -35,7 +35,7 @@ export function AssistantCitationCommentEditor({
   return (
     <div
       data-citation-comment-editor="true"
-      className="grid gap-2 p-2.5 px-3 text-headline"
+      className="grid gap-2 rounded-(--r-group) bg-(--raised) p-2.5 px-3 text-headline shadow-(--shadow-2)"
       onKeyDown={(event) => {
         event.stopPropagation();
         if (event.nativeEvent.isComposing || event.keyCode === 229) return;
