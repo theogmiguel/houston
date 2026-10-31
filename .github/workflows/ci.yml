@@ -45,6 +45,9 @@ jobs:
           # Ratchets compare origin/<base> (PR) or HEAD~1 (push), so they need history.
           # The root commit is the one exception: it records the first baseline.
           fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
       - name: Validate workflow syntax and reusable workflow contracts
         run: |
           tool_dir="$RUNNER_TEMP/actionlint"
@@ -84,6 +87,10 @@ jobs:
         run: bash scripts/check-doc-hygiene.sh
       - name: check-comment-hygiene.sh (no dates/phases/diary/app names in code comments)
         run: bash scripts/check-comment-hygiene.sh
+      - name: check-web-style.sh (apps/web design-system guards, baseline ratchet)
+        run: bash scripts/check-web-style.sh --all
+      - name: check-web-style.sh --self-test (each guard fires on its bad fixture)
+        run: bash scripts/check-web-style.sh --self-test
       - name: Report job timing
         if: always()
         continue-on-error: true
