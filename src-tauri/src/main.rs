@@ -1,15 +1,22 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app_log;
+mod app_menu;
 mod app_update;
 mod clipboard;
 mod dialog;
 mod fs;
 mod fs_allowlist;
 mod notifications;
+mod provider_auth;
 mod shell;
 mod shells;
 mod skills;
+#[cfg(target_os = "linux")]
+mod snapshot;
+#[cfg(not(target_os = "linux"))]
+#[path = "snapshot/unsupported.rs"]
+mod snapshot;
 mod sys;
 mod system;
 #[cfg(test)]
@@ -17,6 +24,7 @@ mod test_home;
 mod transfer_open;
 mod tray;
 mod v2_server;
+mod v2_ssh;
 mod window;
 mod window_state;
 mod wsl;
@@ -314,10 +322,15 @@ fn main() {
     });
     let v2_node =
         v2_server::resolve_node(std::env::var_os("HOUSTON_NODE").map(std::path::PathBuf::from));
+    let v2_ssh = Arc::new(v2_ssh::V2SshHost::new(v2_node.clone(), v2_entry.clone()));
     let v2_host = Arc::new(v2_server::V2Host::new(
         v2_base_dir.clone(),
         v2_node,
         v2_entry,
+    ));
+    let snapshot_host = Arc::new(snapshot::SnapShotHost::new(
+        v2_base_dir.clone(),
+        context.config().identifier.clone(),
     ));
     eprintln!(
         "houston-tauri: v2 server state directory {} (log {})",
@@ -331,10 +344,14 @@ fn main() {
     let dbus_id = dbus_id_for(&context.config().identifier, Some(&channel_label));
     let mut builder = tauri::Builder::default();
     builder = builder.manage(Arc::clone(&v2_host));
+    builder = builder.manage(Arc::clone(&v2_ssh));
+    builder = builder.manage(Arc::clone(&snapshot_host));
     builder = builder.manage(fs_allowlist::AllowedRoots::new());
     builder = builder.manage(shells::ShellsCache::new());
     builder = builder.manage(std::sync::Arc::new(app_update::V2UpdateHandle::new()));
     builder = builder.manage(window::ContextMenuState::default());
+    builder = builder.manage(provider_auth::ProviderAuthCallbacks::default());
+    builder = builder.manage(app_menu::ZoomState::default());
 
     let launch_transfer = std::env::current_dir()
         .ok()
@@ -384,6 +401,15 @@ fn main() {
             v2_server::v2_server_set_exposure_mode,
             v2_server::v2_server_set_tailscale_serve,
             v2_server::v2_server_advertised_endpoints,
+            v2_ssh::v2_ssh_discover_hosts,
+            v2_ssh::v2_ssh_resolve_host,
+            v2_ssh::v2_ssh_ensure_environment,
+            v2_ssh::v2_ssh_disconnect_environment,
+            v2_ssh::v2_ssh_fetch_environment_descriptor,
+            v2_ssh::v2_ssh_bootstrap_bearer_session,
+            v2_ssh::v2_ssh_fetch_session_state,
+            v2_ssh::v2_ssh_resolve_password_prompt,
+            v2_ssh::v2_probe_remote_editors,
             fs_allowlist::fs_add_allowed_root,
             fs_allowlist::fs_set_allowed_roots,
             fs::fs_read_directory,
@@ -394,6 +420,8 @@ fn main() {
             fs::fs_write_file_checked,
             notifications::native_notify,
             notifications::native_notifications_supported,
+            provider_auth::provider_auth_receive,
+            provider_auth::provider_auth_cancel,
             fs::fs_stat,
             fs::fs_exists,
             fs::fs_delete,
@@ -427,6 +455,7 @@ fn main() {
             transfer_open::transfer_launch_file,
             shell::shell_open_external,
             shell::shell_show_item_in_folder,
+            shell::shell_reveal_item_in_folder,
             shell::shell_open_media_file,
             shell::shell_list_editors,
             shell::shell_open_in_editor,
@@ -452,6 +481,7 @@ fn main() {
             window::window_is_focused,
             window::window_toggle_fullscreen,
             window::window_set_zoom,
+            app_menu::window_zoom,
             window::window_focus,
             window::window_set_background_color,
             window::window_start_dragging,
@@ -464,9 +494,26 @@ fn main() {
             wsl::v2::v2_wsl_set_enabled,
             wsl::v2::v2_wsl_set_distro,
             wsl::v2::v2_wsl_set_only,
+            snapshot::snap_shot_configure,
+            snapshot::snap_shot_state,
+            snapshot::snap_shot_capture,
+            snapshot::snap_shot_check_shortcut,
+            snapshot::snap_shot_setup,
+            snapshot::snap_shot_preview_config,
+            snapshot::snap_shot_apply_config,
+            snapshot::snap_shot_set_shortcut_suppressed,
+            snapshot::snap_shot_list_pending,
+            snapshot::snap_shot_read,
+            snapshot::snap_shot_acknowledge,
+            snapshot::snap_shot_set_animation_destination,
+            snapshot::snap_shot_dismiss_animation,
+            snapshot::snap_shot_request_permissions,
         ])
         .on_menu_event(|app, event| {
             let id = event.id().0.as_str();
+            if app_menu::handle_menu_event(app, id) {
+                return;
+            }
             if !window::handle_context_menu_event(app, id) {
                 let _ = app.emit_to("main", "v2-menu-action", id);
             }
@@ -666,6 +713,7 @@ fn main() {
             ));
 
             tray::install(app.handle(), &tray_host);
+            app_menu::install(app.handle()).expect("failed to install the application menu");
 
             #[cfg(debug_assertions)]
             if std::env::var("HOUSTON_DEVTOOLS").as_deref() == Ok("1") {

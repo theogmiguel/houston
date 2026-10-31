@@ -1,7 +1,6 @@
 // Installed before the first renderer script. Upstream's web app expects the
 // Electron preload's `window.desktopBridge`; this shim supplies the parts a
-// Tauri host can serve now. Methods that need a native feature upstream had in
-// Electron return an explicit safe value instead of pretending to work.
+// Tauri host can serve now, returning an explicit safe value for the rest.
 (function () {
   if (window.desktopBridge) return;
 
@@ -133,8 +132,21 @@
     mode: "unavailable",
     shortcut: { kind: "both-shift-keys" },
     shortcutRegistered: false,
-    shortcutMessage: "Screen capture is not available in this Houston build.",
-    message: "Screen capture is not available in this Houston build.",
+    shortcutMessage: null,
+    message: null,
+  };
+  var snapShotSettings = function (settings) {
+    var value = settings || {};
+    return {
+      enabled: !!value.snapShotEnabled,
+      includeAccessibility:
+        value.snapShotIncludeAccessibility === undefined
+          ? true
+          : !!value.snapShotIncludeAccessibility,
+      shortcut: value.snapShotShortcut || { kind: "both-shift-keys" },
+      flash: value.snapShotFlash === undefined ? true : !!value.snapShotFlash,
+      animations: value.snapShotAnimations === undefined ? true : !!value.snapShotAnimations,
+    };
   };
   var preview = {
     setForwardedShortcuts: noop,
@@ -173,7 +185,9 @@
     captureScreenshot: function () {
       return Promise.resolve(null);
     },
-    revealArtifact: noop,
+    revealArtifact: function (path) {
+      return invoke("shell_reveal_item_in_folder", { path: path }).catch(noop);
+    },
     copyArtifactToClipboard: noop,
     pictureInPicture: { open: noop, close: noop },
     recording: {
@@ -239,7 +253,7 @@
     },
     setClientSettings: function (settings) {
       storageSet("houston:v2:client-settings", JSON.stringify(settings));
-      return Promise.resolve();
+      return invoke("snap_shot_configure", { settings: snapShotSettings(settings) }).catch(noop);
     },
     getConnectionCatalog: function () {
       return Promise.resolve(storageGet("houston:v2:connection-catalog"));
@@ -248,50 +262,106 @@
       return Promise.resolve(storageSet("houston:v2:connection-catalog", catalog));
     },
     discoverSshHosts: function () {
-      return Promise.resolve([]);
+      return invoke("v2_ssh_discover_hosts");
     },
-    resolveSshHost: function () {
-      return Promise.reject(new Error("SSH environments are not available in this Houston build."));
+    resolveSshHost: function (alias) {
+      return invoke("v2_ssh_resolve_host", { alias: alias });
     },
-    requestSnapShotPermissions: noop,
+    requestSnapShotPermissions: function (includeAccessibility) {
+      return invoke("snap_shot_request_permissions", {
+        includeAccessibility: !!includeAccessibility,
+      }).catch(noop);
+    },
     getSnapShotState: function () {
-      return Promise.resolve(snapshotState);
+      return invoke("snap_shot_state")
+        .then(function (state) {
+          snapshotState = state;
+          return state;
+        })
+        .catch(function () {
+          return snapshotState;
+        });
     },
-    setupSnapShot: noop,
-    previewSnapShotConfig: function () {
-      return Promise.resolve(null);
+    setupSnapShot: function (action) {
+      return invoke("snap_shot_setup", { action: action });
     },
-    applySnapShotConfig: function () {
-      return Promise.reject(new Error("Screen capture is not available in this Houston build."));
+    previewSnapShotConfig: function (request) {
+      return invoke("snap_shot_preview_config", { request: request });
     },
-    checkSnapShotShortcut: function () {
-      return Promise.resolve({ available: false, message: "Screen capture is not available." });
+    applySnapShotConfig: function (previewId) {
+      return invoke("snap_shot_apply_config", { previewId: previewId });
     },
-    setSnapShotShortcutSuppressed: noop,
+    checkSnapShotShortcut: function (shortcut) {
+      return invoke("snap_shot_check_shortcut", { shortcut: shortcut });
+    },
+    setSnapShotShortcutSuppressed: function (suppressed) {
+      return invoke("snap_shot_set_shortcut_suppressed", {
+        suppressed: !!suppressed,
+      }).catch(noop);
+    },
     listPendingSnapShots: function () {
-      return Promise.resolve([]);
+      return invoke("snap_shot_list_pending").catch(function () {
+        return [];
+      });
     },
-    readSnapShot: function () {
-      return Promise.reject(new Error("Screen capture is not available in this Houston build."));
+    readSnapShot: function (id) {
+      return invoke("snap_shot_read", { id: id });
     },
-    setSnapShotAnimationDestination: noop,
-    dismissSnapShotAnimation: noop,
-    acknowledgeSnapShot: noop,
-    ensureSshEnvironment: function () {
-      return Promise.reject(new Error("SSH environments are not available in this Houston build."));
+    setSnapShotAnimationDestination: function (id, destination) {
+      return invoke("snap_shot_set_animation_destination", {
+        id: id,
+        destination: destination,
+      }).catch(noop);
     },
-    disconnectSshEnvironment: noop,
-    fetchSshEnvironmentDescriptor: function () {
-      return Promise.reject(new Error("SSH environments are not available in this Houston build."));
+    dismissSnapShotAnimation: function (id) {
+      return invoke("snap_shot_dismiss_animation", { id: id }).catch(noop);
     },
-    bootstrapSshBearerSession: function () {
-      return Promise.reject(new Error("SSH environments are not available in this Houston build."));
+    acknowledgeSnapShot: function (id) {
+      return invoke("snap_shot_acknowledge", { id: id }).catch(noop);
     },
-    fetchSshSessionState: function () {
-      return Promise.reject(new Error("SSH environments are not available in this Houston build."));
+    ensureSshEnvironment: function (target, options) {
+      return invoke("v2_ssh_ensure_environment", {
+        target: target,
+        options: options === undefined ? null : options,
+      }).then(function (result) {
+        if (result && result.type === "ssh-password-prompt-cancelled") {
+          throw new Error(
+            typeof result.message === "string" ? result.message : "SSH authentication cancelled.",
+          );
+        }
+        return result;
+      });
     },
-    onSshPasswordPrompt: noUnsubscribe,
-    resolveSshPasswordPrompt: noop,
+    disconnectSshEnvironment: function (target) {
+      return invoke("v2_ssh_disconnect_environment", { target: target });
+    },
+    fetchSshEnvironmentDescriptor: function (httpBaseUrl) {
+      return invoke("v2_ssh_fetch_environment_descriptor", { httpBaseUrl: httpBaseUrl });
+    },
+    bootstrapSshBearerSession: function (httpBaseUrl, credential) {
+      return invoke("v2_ssh_bootstrap_bearer_session", {
+        httpBaseUrl: httpBaseUrl,
+        credential: credential,
+      });
+    },
+    fetchSshSessionState: function (httpBaseUrl, bearerToken) {
+      return invoke("v2_ssh_fetch_session_state", {
+        httpBaseUrl: httpBaseUrl,
+        bearerToken: bearerToken,
+      });
+    },
+    onSshPasswordPrompt: function (listener) {
+      return listen("v2-ssh-password-prompt", function (request) {
+        if (!request || typeof request.requestId !== "string") return;
+        listener(request);
+      });
+    },
+    resolveSshPasswordPrompt: function (requestId, password) {
+      return invoke("v2_ssh_resolve_password_prompt", {
+        requestId: requestId,
+        password: password === null ? null : password,
+      });
+    },
     getServerExposureState: function () {
       return invoke("v2_server_exposure_state")
         .then(function (state) {
@@ -396,10 +466,12 @@
         });
       });
     },
-    receiveProviderAuthCallback: function () {
-      return Promise.reject(new Error("Provider auth callbacks are not available yet."));
+    receiveProviderAuthCallback: function (authorizationUrl) {
+      return invoke("provider_auth_receive", { authorizationUrl: authorizationUrl });
     },
-    cancelProviderAuthCallback: noop,
+    cancelProviderAuthCallback: function (authorizationUrl) {
+      return invoke("provider_auth_cancel", { authorizationUrl: authorizationUrl });
+    },
     openExternal: function (url) {
       return invoke("shell_open_external", { url: url })
         .then(function (result) {
@@ -420,13 +492,15 @@
       });
     },
     probeRemoteEditors: function () {
-      return Promise.resolve([]);
+      return invoke("v2_probe_remote_editors");
     },
     pasteAsText: noop,
     onMenuAction: function (listener) {
       return listen("v2-menu-action", listener);
     },
-    onSnapShotEvent: noUnsubscribe,
+    onSnapShotEvent: function (listener) {
+      return listen("v2-snap-shot-event", listener);
+    },
     onQuitShortcut: noUnsubscribe,
     getWindowFullscreenState: function () {
       return fullscreen;
@@ -449,6 +523,10 @@
       return unsubscribe;
     },
     getWindowZoomFactor: function () {
+      // Rust writes this global before it resizes the webview, so the synchronous
+      // read matches the viewport instead of trailing the resize event.
+      var live = window.__HOUSTON_V2_ZOOM__;
+      if (typeof live === "number" && isFinite(live) && live > 0) return live;
       return zoomFactor;
     },
     getUpdateState: function () {
@@ -519,5 +597,8 @@
     preview: preview,
   };
 
+  listen("v2-window-zoom", function (factor) {
+    if (typeof factor === "number" && isFinite(factor) && factor > 0) zoomFactor = factor;
+  });
   window.desktopBridge = bridge;
 })();

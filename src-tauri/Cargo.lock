@@ -1790,6 +1790,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "trash",
+ "url",
  "uuid",
  "webkit2gtk",
  "webview2-com",
