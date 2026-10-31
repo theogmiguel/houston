@@ -192,6 +192,8 @@ export interface KitOptions {
   readonly databaseFile?: string;
   /** Whether the runner recovers and ticks on its own, as in the server. */
   readonly serverRunner?: boolean;
+  /** Whether starts are enabled as they will be once the crew gate exists; on by default. */
+  readonly crewGate?: boolean;
 }
 
 export const makeKit = Effect.fn("NightShiftKit.make")(function* (
@@ -387,6 +389,7 @@ export const layerKit = (kit: Kit) => {
     Layer.succeed(Runner.SettleObserver, (step: string) => {
       state.settleSteps.push(step);
     }),
+    Layer.succeed(Runner.CrewGatePresent, kit.options.crewGate ?? true),
   );
   const runner = (kit.options.serverRunner === true ? Runner.layer : Runner.layerManual).pipe(
     Layer.provideMerge(ports),

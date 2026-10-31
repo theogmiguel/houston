@@ -109,6 +109,40 @@ const stopOps = (kit: Kit) =>
   kit.state.ops.filter((op) => op.startsWith("cancel:") || op.startsWith("stop:"));
 
 describe("night shift preflight and start", () => {
+  it.effect("until the crew gate ships every start is refused by name", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("no-gate", { crewGate: false });
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const night = yield* service;
+          const store = yield* Store.HoustonNightShiftStore;
+          const { projectId } = yield* setUp("no-gate", EVERY_NIGHT);
+
+          // Settings, the window, preflight and status keep working.
+          const checked = yield* night.preflight({ projectId, durationMinutes: 60 });
+          assert.isAbove(checked.items.length, 0);
+          assert.isNotNull((yield* night.get({ projectId })).settings);
+
+          const refused = (yield* Effect.flip(
+            night.runNow({ projectId, durationMinutes: 60 }),
+          )) as HoustonNightShiftError;
+          assert.equal(refused.kind, "unsupported");
+          assert.equal(refused.message, Runner.STARTS_REFUSED);
+          assert.equal(Runner.STARTS_REFUSED, "Night shift runs start once the crew gate ships");
+
+          const fired = yield* fireDue((yield* nightTask(projectId))!);
+          assert.equal(fired?.lastRunStatus, "failed");
+          assert.include(fired?.lastRunError ?? "", Runner.STARTS_REFUSED);
+
+          assert.lengthOf(yield* store.listRuns(projectId, 30), 0);
+          assert.lengthOf(kit.state.launches, 0);
+          assert.lengthOf(kit.state.spawns, 0);
+        }),
+      );
+    }),
+  );
+
   it.effect("a blocking preflight refuses the run and starts nothing", () =>
     Effect.gen(function* () {
       const kit = yield* makeKit("blocked");

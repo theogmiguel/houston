@@ -44,6 +44,14 @@ const input: BriefInput = {
 };
 
 describe("night shift brief", () => {
+  it("the brief promises no refusal or substitution houston does not make", () => {
+    const { text } = composeBrief(input);
+    expect(text).not.toMatch(/Houston refuses/);
+    expect(text).not.toMatch(/Houston moves/);
+    expect(text).toContain("At most 4 live workers at once, plus one review and one test task.");
+    expect(text).toContain("Start work only with delegate_task");
+  });
+
   it("the brief carries the settings the crew rules and no goal", () => {
     for (const orchestrator of ["claudeAgent", "codex", "opencode"]) {
       const { text, dropped } = composeBrief({

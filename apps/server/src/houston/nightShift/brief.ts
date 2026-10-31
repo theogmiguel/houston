@@ -86,9 +86,9 @@ const body = (input: BriefInput) => {
     ),
     section("Crew rules", [
       `- Every implementation, design, test or general task runs in its own worktree (isolation worktree); research and review may share yours. Never use the project checkout.`,
-      `- At most ${settings.liveWorkers} live workers at once, plus one review and one test task; Houston refuses delegations past that.`,
-      `- Workers run on ${workers}, in that order; Houston moves a task to the next one when a provider is limited.`,
-      `- Start work only with delegate_task; Houston refuses other launches and schedules from this run.`,
+      `- At most ${settings.liveWorkers} live workers at once, plus one review and one test task.`,
+      `- Workers run on ${workers}, in that order; when a provider is limited, use the next one.`,
+      `- Start work only with delegate_task; launch no other threads and schedule no tasks from this run.`,
       `- Tell every thread you start: do not push, open, merge or enqueue pull requests: record them with \`houston_night_pr\`.`,
     ]),
     section(

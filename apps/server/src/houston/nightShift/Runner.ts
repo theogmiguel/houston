@@ -66,6 +66,14 @@ export const SettleObserver = Context.Reference<(step: string, runId: number) =>
   { defaultValue: () => () => undefined },
 );
 
+export const STARTS_REFUSED = "Night shift runs start once the crew gate ships";
+
+/** Until the crew gate bounds delegations, every start is refused; tests that drive a run set it. */
+export const CrewGatePresent = Context.Reference<boolean>(
+  "houston/houston/nightShift/Runner/CrewGatePresent",
+  { defaultValue: () => false },
+);
+
 export class HoustonNightShiftRunner extends Context.Service<
   HoustonNightShiftRunner,
   {
@@ -128,6 +136,7 @@ const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const observe = yield* SettleObserver;
+  const crewGatePresent = yield* CrewGatePresent;
 
   const startLock = yield* Semaphore.make(1);
   const settling = yield* Ref.make<ReadonlySet<number>>(new Set());
@@ -445,6 +454,7 @@ const make = Effect.gen(function* () {
   const start: HoustonNightShiftRunner["Service"]["start"] = Effect.fn(
     "HoustonNightShiftRunner.start",
   )(function* (input) {
+    if (!crewGatePresent) return yield* refuse("unsupported", input.operation, STARTS_REFUSED);
     const project = yield* projectOf(input.operation, input.projectId);
     const stored = yield* settingsOf(input.operation, input.projectId);
     const nowMs = yield* Clock.currentTimeMillis;
