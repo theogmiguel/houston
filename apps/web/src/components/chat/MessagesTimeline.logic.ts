@@ -547,6 +547,7 @@ type MessagesTimelineRowContent =
       hiddenCount: number;
       expanded: boolean;
       summary: string;
+      boardSummary?: string;
       summaryKind: ToolGroupSummaryKind;
       toolSurface?: WorkLogEntry["toolSurface"];
       toolIcon?: WorkLogEntry["toolIcon"];
@@ -559,6 +560,7 @@ type MessagesTimelineRowContent =
       createdAt: string;
       runId: RunId;
       label: string;
+      summary?: string;
       expanded: boolean;
     }
   | {
@@ -713,6 +715,7 @@ interface TurnFold {
   /** Every entry in the segment, including the cards a fold never hides. */
   entryIds: ReadonlySet<string>;
   label: string;
+  summary: string | null;
 }
 
 interface SupersededAttemptFold {
@@ -996,6 +999,33 @@ function itemizedFailedRunIds(
   );
 }
 
+/** The Board's collapsed work line: "read 9 files · edited 3 · ran 2 commands". */
+export function boardWorkSummary(entries: ReadonlyArray<WorkLogEntry>): string | null {
+  const toolEntries = entries.filter((entry) => entry.itemType !== "reasoning");
+  const target = toolEntries.length > 0 ? toolEntries : entries;
+  if (target.length === 0) return null;
+  const counts = new Map<string, number>();
+  for (const entry of target) {
+    const action = toolGroupAction(entry);
+    counts.set(action, (counts.get(action) ?? 0) + 1);
+  }
+  const parts: string[] = [];
+  const read = counts.get("read");
+  if (read) parts.push(`read ${read} ${read === 1 ? "file" : "files"}`);
+  const edit = counts.get("edit");
+  if (edit) parts.push(`edited ${edit}`);
+  const command = counts.get("command");
+  if (command) parts.push(`ran ${command} ${command === 1 ? "command" : "commands"}`);
+  const codeSearch = (counts.get("code-search") ?? 0) + (counts.get("search") ?? 0);
+  if (codeSearch) parts.push(`searched ${codeSearch} ${codeSearch === 1 ? "time" : "times"}`);
+  if (parts.length === 0) {
+    return toolEntries.length === 0 && target.length === 1
+      ? "thought"
+      : summarizeToolGroup(target).summary.toLowerCase();
+  }
+  return parts.slice(0, 3).join(" · ");
+}
+
 function deriveTurnFolds(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
   terminalAssistantMessageIds: ReadonlySet<string>;
@@ -1140,6 +1170,13 @@ function deriveTurnFolds(input: {
       }
       if (entry.kind === "work" && entry.entry.itemType === "notification") continue;
       if (entry.kind === "work" && entry.entry.questionAnswer !== undefined) continue;
+      // The Board keeps plans and file diffs on the timeline; they do not fold.
+      if (
+        entry.kind === "work" &&
+        (entry.entry.itemType === "todo_list" || entry.entry.itemType === "file_change")
+      ) {
+        continue;
+      }
       hiddenEntryIds.add(entry.id);
     }
     if (hiddenEntryIds.size === 0) {
@@ -1184,6 +1221,8 @@ function deriveTurnFolds(input: {
     // so each segment opens on its own.
     const segmentHiddenIds = (entries: ReadonlyArray<TimelineEntry>) =>
       new Set(entries.flatMap((entry) => (hiddenEntryIds.has(entry.id) ? [entry.id] : [])));
+    const segmentWorkSummary = (entries: ReadonlyArray<TimelineEntry>) =>
+      boardWorkSummary(entries.flatMap((entry) => (entry.kind === "work" ? [entry.entry] : [])));
     const firstSegment = group.entries.slice(0, group.steerSegments[0]?.startIndex);
     foldsByAnchorEntryId.set(group.anchorEntryId, {
       runId,
@@ -1192,6 +1231,7 @@ function deriveTurnFolds(input: {
       hiddenEntryIds: segmentHiddenIds(firstSegment),
       entryIds: new Set(firstSegment.map((entry) => entry.id)),
       label,
+      summary: segmentWorkSummary(firstSegment),
     });
     for (const [index, { startIndex, steer }] of group.steerSegments.entries()) {
       const entries = group.entries.slice(startIndex, group.steerSegments[index + 1]?.startIndex);
@@ -1209,6 +1249,7 @@ function deriveTurnFolds(input: {
         hiddenEntryIds: segmentHiddenIds(entries),
         entryIds: new Set(entries.map((entry) => entry.id)),
         label: segmentMs !== null ? `Continued for ${formatDuration(segmentMs)}` : "Continued",
+        summary: segmentWorkSummary(entries),
       });
     }
   }
@@ -1473,6 +1514,11 @@ export function deriveMessagesTimelineRows(input: {
       }
     }
   }
+  const expandedFoldEntryIds = new Set<string>();
+  for (const fold of foldsByAnchorEntryId.values()) {
+    if (!input.expandedRunIds?.has(fold.runId)) continue;
+    for (const entryId of fold.entryIds) expandedFoldEntryIds.add(entryId);
+  }
   const collapsedSupersededEntryIds = new Set<string>();
   for (const fold of supersededFoldsByAnchorEntryId.values()) {
     if (!input.expandedAttemptIds?.has(fold.attemptId)) {
@@ -1721,6 +1767,7 @@ export function deriveMessagesTimelineRows(input: {
         createdAt: turnFold.createdAt,
         runId: turnFold.runId,
         label: turnFold.label,
+        ...(turnFold.summary ? { summary: turnFold.summary } : {}),
         expanded: input.expandedRunIds?.has(turnFold.runId) ?? false,
       });
     }
@@ -1803,6 +1850,8 @@ export function deriveMessagesTimelineRows(input: {
         timelineEntry.entry.sourceActivityKind === "runtime.error" ||
         timelineEntry.entry.itemType === "system_notice" ||
         timelineEntry.entry.itemType === "notification" ||
+        timelineEntry.entry.itemType === "todo_list" ||
+        timelineEntry.entry.itemType === "file_change" ||
         timelineEntry.entry.questionAnswer !== undefined
       ) {
         nextRows.push({
@@ -1828,6 +1877,8 @@ export function deriveMessagesTimelineRows(input: {
           nextEntry.entry.sourceActivityKind === "runtime.error" ||
           nextEntry.entry.itemType === "system_notice" ||
           nextEntry.entry.itemType === "notification" ||
+          nextEntry.entry.itemType === "todo_list" ||
+          nextEntry.entry.itemType === "file_change" ||
           nextEntry.entry.questionAnswer !== undefined ||
           isPendingApproval(nextEntry.entry) ||
           activeWorkEntryIds.has(nextEntry.id) ||
@@ -1886,7 +1937,10 @@ export function deriveMessagesTimelineRows(input: {
           });
         } else {
           const groupId = workGroupId(timelineEntry.id);
-          const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
+          // An expanded turn fold already opened its work: show the rows, not a
+          // second "Worked for" header the Board does not draw.
+          const expandedByFold = expandedFoldEntryIds.has(timelineEntry.id);
+          const expanded = (input.expandedWorkGroupIds?.has(groupId) ?? false) || expandedByFold;
           const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
           const primarySourceEntry = visibleGroupedEntries.find(
             (entry) => entry.toolSource !== undefined,
@@ -1907,25 +1961,30 @@ export function deriveMessagesTimelineRows(input: {
           const latestToolEntry = visibleGroupedEntries.findLast(workLogEntryIsToolLike);
           const singleEntry =
             visibleGroupedEntries.length === 1 ? (visibleGroupedEntries[0] ?? null) : null;
-          nextRows.push({
-            kind: "work-toggle",
-            id: `work-toggle:${timelineEntry.id}`,
-            createdAt: timelineEntry.createdAt,
-            runId: timelineEntry.entry.runId ?? null,
-            groupId,
-            hiddenCount: visibleGroupedEntries.length,
-            expanded,
-            summary:
-              singleEntry !== null && !workLogEntryIsToolLike(singleEntry)
-                ? singleEntry.label
-                : summarizeToolGroup(visibleGroupedEntries).summary,
-            summaryKind,
-            ...(groupToolSurface ? { toolSurface: groupToolSurface } : {}),
-            ...(groupToolIcon ? { toolIcon: groupToolIcon } : {}),
-            hasFailure:
-              latestToolEntry !== undefined &&
-              workEntryDisplayIndicatesToolFailure(latestToolEntry),
-          });
+          if (!expandedByFold) {
+            nextRows.push({
+              kind: "work-toggle",
+              id: `work-toggle:${timelineEntry.id}`,
+              createdAt: timelineEntry.createdAt,
+              runId: timelineEntry.entry.runId ?? null,
+              groupId,
+              hiddenCount: visibleGroupedEntries.length,
+              expanded,
+              summary:
+                singleEntry !== null && !workLogEntryIsToolLike(singleEntry)
+                  ? singleEntry.label
+                  : summarizeToolGroup(visibleGroupedEntries).summary,
+              ...(boardWorkSummary(visibleGroupedEntries)
+                ? { boardSummary: boardWorkSummary(visibleGroupedEntries)! }
+                : {}),
+              summaryKind,
+              ...(groupToolSurface ? { toolSurface: groupToolSurface } : {}),
+              ...(groupToolIcon ? { toolIcon: groupToolIcon } : {}),
+              hasFailure:
+                latestToolEntry !== undefined &&
+                workEntryDisplayIndicatesToolFailure(latestToolEntry),
+            });
+          }
           if (expanded) {
             nextRows.push(
               expandedWorkGroupRow(groupId, timelineEntry.createdAt, visibleGroupedEntries),

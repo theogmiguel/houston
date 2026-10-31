@@ -20,6 +20,7 @@ import {
   workEntryViewedImagePath,
 } from "@t3tools/client-runtime/work-log/presentation";
 import {
+  turnItemDetailRevision,
   turnItemHasDetail,
   turnItemNeedsDetailFetch,
 } from "@t3tools/client-runtime/work-log/item-detail";
@@ -32,7 +33,7 @@ import {
 } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
 import { ChatMarkdownAssetImage } from "./ChatMarkdownMedia";
-import { ChevronRightIcon, CircleAlertIcon, XIcon, RotateCcwIcon } from "lucide-react";
+import { CheckIcon, ChevronRightIcon, CircleAlertIcon, XIcon, RotateCcwIcon } from "lucide-react";
 import { Button, InlineButton } from "../ui/button";
 import { useAssetUrls } from "../../assets/assetUrls";
 import { useThreadShell } from "../../state/entities";
@@ -62,10 +63,13 @@ import {
 import {
   workToneIcon,
   workEntryRawCommand,
+  workEntryToolParts,
   buildToolCallExpandedBody,
   workEntryIconName,
   remarkThoughtPreview,
 } from "./TimelineWorkEntryRow.logic";
+import { TimelinePlanCard } from "./TimelinePlanCard";
+import { TimelineFileChangeCard } from "./TimelineFileChangeCard";
 
 export function useThreadReadTarget(entry: TimelineWorkEntry, environmentId: EnvironmentId) {
   const rawThreadId = threadReadTargetId(entry);
@@ -204,6 +208,34 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       ? ctx.pendingApprovals.get(failureItem.requestId)
       : undefined;
   if (pendingApproval) return <TimelinePendingApprovalRow approval={pendingApproval} />;
+  if (failureItem?.type === "todo_list") {
+    return (
+      <div className="px-1 py-0.5">
+        <TimelinePlanCard steps={failureItem.steps} />
+      </div>
+    );
+  }
+  if (failureItem?.type === "file_change") {
+    const target = workEntry.projectedItem;
+    const onOpenDiff =
+      ctx.onOpenToolDiff && target
+        ? () =>
+            ctx.onOpenToolDiff?.({
+              threadId: target.sourceThreadId,
+              itemId: target.sourceItemId,
+              revision: turnItemDetailRevision(failureItem),
+            })
+        : undefined;
+    return (
+      <div className="px-1 py-0.5">
+        <TimelineFileChangeCard
+          item={failureItem}
+          workspaceRoot={workspaceRoot}
+          onOpenDiff={onOpenDiff}
+        />
+      </div>
+    );
+  }
   if (failureItem?.type === "error" && failureItem.status === "failed") {
     const warning = failureItem.failure.class === "usage_limit";
     const resetAt = failureItem.failure.resetAt;
@@ -218,49 +250,50 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         ? failureItem.runId
         : null;
     return (
-      <WorkLogRow
+      <div
+        role="alert"
         data-v2-item-type="error"
         data-v2-item-visibility={workEntry.projectedItem?.visibility}
-        wrapLabel
-        icon={
-          <CircleAlertIcon
-            className={cn("size-4", warning ? "text-warning" : "text-destructive")}
-          />
-        }
-        label={
-          <span
-            className={cn("text-sm font-medium", warning ? "text-warning" : "text-destructive")}
-          >
-            {label}
-          </span>
-        }
-        trailing={
-          <TimelineRowTimestamp
-            createdAt={workEntry.createdAt}
-            timestampFormat={timestampFormat}
-            alwaysVisible
-          />
-        }
+        className="mx-1 flex items-start gap-2.5 rounded-(--r-group) border border-border bg-card px-3 py-2.5"
       >
-        {!warning ? (
-          <p className="ms-7 whitespace-pre-wrap break-words py-1 text-sm leading-relaxed text-foreground/80">
-            {failureItem.failure.message}
-          </p>
-        ) : null}
-        {retryRunId !== null && onRetryWorkspacePreparation ? (
-          <div className="ms-7 pb-1">
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              onClick={() => onRetryWorkspacePreparation(retryRunId)}
+        <CircleAlertIcon
+          aria-hidden
+          className={cn("mt-0.5 size-3.5 shrink-0", warning ? "text-warning" : "text-(--stop-ink)")}
+        />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <div className="flex min-w-0 items-baseline gap-2">
+            <span
+              className={cn(
+                "flex-1 text-headline font-semibold",
+                warning ? "text-warning" : "text-foreground",
+              )}
             >
-              <RotateCcwIcon aria-hidden />
-              Retry
-            </Button>
+              {label}
+            </span>
+            <TimelineRowTimestamp
+              createdAt={workEntry.createdAt}
+              timestampFormat={timestampFormat}
+              alwaysVisible
+            />
           </div>
+          {!warning ? (
+            <p className="whitespace-pre-wrap wrap-anywhere text-callout text-(--t2)">
+              {failureItem.failure.message}
+            </p>
+          ) : null}
+        </div>
+        {retryRunId !== null && onRetryWorkspacePreparation ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            onClick={() => onRetryWorkspacePreparation(retryRunId)}
+          >
+            <RotateCcwIcon aria-hidden />
+            Retry
+          </Button>
         ) : null}
-      </WorkLogRow>
+      </div>
     );
   }
   const iconConfig = workToneIcon(workEntry.tone);
@@ -347,8 +380,10 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               workEntry.questionAnswer ||
               turnItemHasDetail(workEntry.projectedItem.item),
             );
+  const toolParts =
+    isReasoning || workEntry.questionAnswer ? null : workEntryToolParts(workEntry, workspaceRoot);
   const iconWrapperClass = cn(
-    "flex size-4 items-center justify-center",
+    "flex size-3.5 items-center justify-center",
     showWarningIndicator
       ? "text-warning"
       : showDestructiveRowStyle
@@ -403,14 +438,14 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           <ToolActivityIconView
             icon={entryToolIcon}
             fallbackName={entryIconName}
-            className="block size-4 shrink-0 stroke-2"
+            className="block size-3.5 shrink-0 stroke-2"
             muted
           />
         </span>
       }
       label={
         <div className="min-w-0 flex-1 overflow-hidden">
-          <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
+          <p className="flex min-w-0 w-full items-baseline gap-2 text-body ">
             <span
               className={cn(answerPreview ? "min-w-0" : "min-w-0 flex-1", "truncate", headingClass)}
             >
@@ -433,6 +468,13 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                   environmentId={ctx.activeThreadEnvironmentId}
                   linked
                 />
+              ) : toolParts ? (
+                <span className="flex min-w-0 items-baseline gap-2">
+                  <span className="shrink-0 text-body text-(--t2)">{toolParts.action}</span>
+                  <span className="min-w-0 truncate font-mono text-mono text-(--t3)">
+                    {toolParts.value}
+                  </span>
+                </span>
               ) : (
                 previewText
               )}
@@ -456,6 +498,37 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       }
       trailing={
         <>
+          {toolParts?.additions !== undefined || toolParts?.deletions !== undefined ? (
+            <span className="shrink-0 text-callout text-(--t3) tabular-nums">
+              {toolParts.additions ? (
+                <span className="text-(--ok-ink)">+{toolParts.additions}</span>
+              ) : null}
+              {toolParts.additions && toolParts.deletions ? " " : null}
+              {toolParts.deletions ? (
+                <span className="text-(--stop-ink)">−{toolParts.deletions}</span>
+              ) : null}
+            </span>
+          ) : null}
+          {toolParts?.results !== undefined ? (
+            <span className="shrink-0 text-callout text-(--t3) tabular-nums">
+              {toolParts.results} {toolParts.results === 1 ? "result" : "results"}
+            </span>
+          ) : null}
+          {toolParts?.exitCode !== undefined ? (
+            <span
+              className={cn(
+                "flex shrink-0 items-center gap-1 text-callout tabular-nums",
+                toolParts.exitCode === 0 ? "text-(--t3)" : "text-(--stop-ink)",
+              )}
+            >
+              {toolParts.exitCode === 0 ? (
+                <CheckIcon aria-hidden className="size-3.5 text-(--ok-ink)" />
+              ) : (
+                <XIcon aria-hidden className="size-3.5" />
+              )}
+              exit {toolParts.exitCode}
+            </span>
+          ) : null}
           {createdThread ? (
             <button
               type="button"
@@ -484,7 +557,8 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           ) : null}
           {showFailedIndicator &&
           !showDestructiveRowStyle &&
-          !toolIconAcceptsTint(entryToolIcon) ? (
+          !toolIconAcceptsTint(entryToolIcon) &&
+          toolParts?.exitCode === undefined ? (
             <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
           ) : null}
           <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />
