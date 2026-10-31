@@ -25,7 +25,7 @@ import { createProject, deleteProject } from "../tasks/tasks.testkit.ts";
 import { writeV1Database } from "../tasks/v1Fixture.ts";
 import { HoustonTaskSourceOutbox, HoustonTaskSourceOutboxDrain } from "./Outbox.ts";
 import { HoustonTaskSourcePoller } from "./Poller.ts";
-import { commentMarker, deliveryMarker, retryDelayMillis } from "./rules.ts";
+import { commentMarker, deliveryMarker, retryDelayMillis, taskIdentity } from "./rules.ts";
 import { HoustonTaskSourceService } from "./SourceService.ts";
 import { HoustonTaskSourceStore } from "./SourceStore.ts";
 import {
@@ -73,12 +73,22 @@ interface FakeIssue {
   labels: Array<{ readonly name: string }>;
   readonly assignees: Array<unknown>;
   readonly milestone: null;
+  readonly user: { readonly login: string };
 }
+
+interface FakeComment {
+  readonly body: string;
+  readonly user: { readonly login: string };
+}
+
+/** The login the fake answers `GET /user` with: the account the credential acts as. */
+const LOGIN = "Houston-Bot";
+const AUTHOR = { login: LOGIN.toLowerCase() };
 
 /** A repository's issues and comments as GitHub keeps them; answers reads and writes. */
 const serveRepository = (fake: GithubFake, options: { readonly failWrites?: number } = {}) => {
   const issues: Array<FakeIssue> = [];
-  const comments = new Map<number, Array<{ readonly body: string }>>();
+  const comments = new Map<number, Array<FakeComment>>();
   const json = (status: number, body: unknown) =>
     new Response(JSON.stringify(body), {
       status,
@@ -86,6 +96,7 @@ const serveRepository = (fake: GithubFake, options: { readonly failWrites?: numb
     });
   fake.respond = (url, request) => {
     const path = url.pathname;
+    if (path === "/user") return json(200, { login: LOGIN });
     if (path === `/repos/${REPO}/issues`) {
       if (request.method === "POST") {
         if (options.failWrites !== undefined) return json(options.failWrites, { message: "down" });
@@ -101,6 +112,7 @@ const serveRepository = (fake: GithubFake, options: { readonly failWrites?: numb
           labels: [],
           assignees: [],
           milestone: null,
+          user: AUTHOR,
         };
         issues.push(issue);
         return json(201, issue);
@@ -114,7 +126,7 @@ const serveRepository = (fake: GithubFake, options: { readonly failWrites?: numb
       comments.set(Number(commentPath[1]), list);
       if (request.method === "POST") {
         if (options.failWrites !== undefined) return json(options.failWrites, { message: "down" });
-        list.push({ body: (request.body as { readonly body: string }).body });
+        list.push({ body: (request.body as { readonly body: string }).body, user: AUTHOR });
         return json(201, { id: list.length });
       }
       const page = Number(url.searchParams.get("page") ?? "1");
@@ -290,6 +302,39 @@ const namespace = Effect.gen(function* () {
   return yield* outbox.namespace;
 });
 
+const markerKey = Effect.gen(function* () {
+  const outbox = yield* HoustonTaskSourceOutbox;
+  return yield* outbox.markerKey;
+});
+
+/** The comment marker of the outbox row of `taskId` with `action`. */
+const rowMarker = (taskId: number, action: string, identityTask = taskId) =>
+  Effect.gen(function* () {
+    const row = (yield* outboxRows).find(
+      (entry) => entry.task_id === taskId && entry.action === action,
+    );
+    return commentMarker(
+      yield* markerKey,
+      taskIdentity(yield* namespace, identityTask),
+      row?.id ?? -1,
+      action,
+    );
+  });
+
+/** An issue as someone wrote it on GitHub, outside Houston. */
+const plantedIssue = (number: number, body: string, login: string): FakeIssue => ({
+  number,
+  html_url: `https://github.com/${REPO}/issues/${number}`,
+  title: `Planted ${number}`,
+  body,
+  state: "open",
+  updated_at: "2026-10-01T00:00:00Z",
+  labels: [],
+  assignees: [],
+  milestone: null,
+  user: { login },
+});
+
 const sourceLinks = (taskId: number) =>
   Effect.gen(function* () {
     const store = yield* HoustonTaskSourceStore;
@@ -354,6 +399,7 @@ describe("a delivery opens one marked issue and a retry reuses it", () => {
       Effect.gen(function* () {
         const repository = serveRepository(github);
         const ns = yield* namespace;
+        const key = yield* markerKey;
         const where = yield* project("opens");
         const description = `This closes #3. ${"d".repeat(8_000)}`;
         const shipped = yield* delivery(where, "Ship the importer", description);
@@ -363,7 +409,7 @@ describe("a delivery opens one marked issue and a retry reuses it", () => {
         assert.isTrue(create?.url.endsWith(`/repos/${REPO}/issues`));
         const body = create?.body as { readonly title: string; readonly body: string };
         assert.strictEqual(body.title, "Ship the importer");
-        const marker = deliveryMarker(ns, shipped.id);
+        const marker = deliveryMarker(ns, key, shipped.id);
         assert.isTrue(body.body.endsWith(`\n\n${marker}`));
         const text = body.body.slice(0, -`\n\n${marker}`.length);
         assert.notMatch(text, /closes/i);
@@ -382,17 +428,9 @@ describe("a delivery opens one marked issue and a retry reuses it", () => {
         // marker, nothing is created, and the found issue becomes its link.
         github.requests.length = 0;
         const second = yield* delivery(where, "Ship the exporter");
-        repository.issues.push({
-          number: 2,
-          html_url: `https://github.com/${REPO}/issues/2`,
-          title: "Ship the exporter",
-          body: `About it\n\n${deliveryMarker(ns, second.id)}`,
-          state: "open",
-          updated_at: "2026-10-01T00:00:00Z",
-          labels: [],
-          assignees: [],
-          milestone: null,
-        });
+        repository.issues.push(
+          plantedIssue(2, `About it\n\n${deliveryMarker(ns, key, second.id)}`, AUTHOR.login),
+        );
         yield* drain;
         assert.lengthOf(writesTo(github), 0);
         assert.isTrue(github.requests.every((request) => request.method === "GET"));
@@ -457,9 +495,9 @@ describe("github comments are marked, deduplicated and target the delivery", () 
         const issueComments = () => repository.comments.get(1) ?? [];
 
         // A status change comments once with its marker.
-        const moved = yield* setStatus(shipped.id, "in_progress");
+        yield* setStatus(shipped.id, "in_progress");
         yield* drain;
-        const statusMarker = commentMarker(ns, shipped.id, moved.revision, "status");
+        const statusMarker = yield* rowMarker(shipped.id, "status");
         assert.deepEqual(
           issueComments().map((comment) => comment.body),
           [`Task status: in_progress\n\n${statusMarker}`],
@@ -483,7 +521,10 @@ describe("github comments are marked, deduplicated and target the delivery", () 
         const bodies = issueComments().map((comment) => comment.body);
         for (const body of bodies) {
           assert.notMatch(body, /\b(closes|fixes)\b/i);
-          assert.match(body, /<!-- houston-task:houston-task-[0-9a-f]{32}-\d+:\d+:[a-z_]+ -->$/);
+          assert.match(
+            body,
+            /<!-- houston-task:houston-task-[0-9a-f]{32}-\d+:\d+:[a-z_]+:[0-9a-f]{32} -->$/,
+          );
         }
         assert.lengthOf(
           bodies.filter((body) => body.startsWith(`Pull request: ${PR_A}\n`)),
@@ -493,8 +534,8 @@ describe("github comments are marked, deduplicated and target the delivery", () 
           bodies.filter((body) => body.startsWith(`Pull request: ${PR_B}\n`)),
           1,
         );
-        const summaries = bodies.filter((body) => body.includes(":summary_comment -->"));
-        assert.isTrue(summaries.some((body) => body.startsWith("Slice A: This  #7 and  #8")));
+        const summaries = bodies.filter((body) => /:summary_comment:[0-9a-f]{32} -->$/.test(body));
+        assert.isTrue(summaries.some((body) => body.startsWith("Slice A: This  `#7` and  `#8`")));
         assert.isTrue(summaries.some((body) => body.startsWith("Slice B: Did B")));
         assert.isTrue(
           summaries.some((body) => body.includes(`houston-task-${ns}-${sliceA.id}:`)) &&
@@ -527,6 +568,177 @@ describe("github comments are marked, deduplicated and target the delivery", () 
         );
         assert.include(refused?.last_error ?? "", "https://github.com/octo-org/project/pull/");
         assert.strictEqual(refused?.attempts, 1);
+      }),
+    ),
+  );
+});
+
+describe("only a trailing marker Houston's account wrote is adopted", () => {
+  it.effect("a description holding the next delivery's marker cannot take its issue", () =>
+    withSources(({ github }) =>
+      Effect.gen(function* () {
+        const repository = serveRepository(github);
+        const ns = yield* namespace;
+        const key = yield* markerKey;
+        const where = yield* project("hijack");
+        const first = yield* delivery(where, "First");
+        const second = yield* delivery(where, "Second");
+        // The first delivery's description quotes the second's marker and mentions a team.
+        const tasks = yield* HoustonTaskService.HoustonTaskService;
+        yield* tasks.save({
+          id: first.key,
+          expectedRevision: first.revision,
+          patch: {
+            description: `cc @octo-org/everyone ${deliveryMarker(ns, key, second.id)} see #12`,
+          },
+        });
+        yield* drain;
+        assert.lengthOf(repository.issues, 2);
+        assert.strictEqual((yield* sourceLinks(first.id))[0]?.externalId, `${REPO}#1`);
+        assert.strictEqual((yield* sourceLinks(second.id))[0]?.externalId, `${REPO}#2`);
+        assert.isTrue((yield* outboxRows).every((row) => row.last_error === null));
+        // The copied mention and reference reach GitHub inert.
+        const body = repository.issues[0]?.body ?? "";
+        assert.include(body, "cc `@octo-org/everyone` ");
+        assert.include(body, " see `#12`");
+        assert.notMatch(body, /(^|[^`])@octo-org/);
+      }),
+    ),
+  );
+
+  it.effect("an issue or comment with the marker by another account is not adopted", () =>
+    withSources(({ github }) =>
+      Effect.gen(function* () {
+        const repository = serveRepository(github);
+        const ns = yield* namespace;
+        const key = yield* markerKey;
+        const where = yield* project("planted");
+        const shipped = yield* delivery(where, "Shipped");
+        repository.issues.push(
+          plantedIssue(1, `Planted\n\n${deliveryMarker(ns, key, shipped.id)}`, "mallory"),
+        );
+        yield* drain;
+        assert.lengthOf(repository.issues, 2);
+        assert.strictEqual(repository.issues[1]?.user.login, AUTHOR.login);
+        assert.strictEqual((yield* sourceLinks(shipped.id))[0]?.externalId, `${REPO}#2`);
+
+        // A status comment whose marker another account posted first is still posted.
+        yield* setStatus(shipped.id, "in_progress");
+        const marker = yield* rowMarker(shipped.id, "status");
+        repository.comments.set(2, [
+          { body: `Task status: done\n\n${marker}`, user: { login: "mallory" } },
+        ]);
+        yield* drain;
+        assert.deepEqual(
+          (repository.comments.get(2) ?? []).map((comment) => [comment.user.login, comment.body]),
+          [
+            ["mallory", `Task status: done\n\n${marker}`],
+            [AUTHOR.login, `Task status: in_progress\n\n${marker}`],
+          ],
+        );
+      }),
+    ),
+  );
+});
+
+describe("a status retry after a lost receipt and an edit posts nothing new", () => {
+  it.effect("a status retry after a lost receipt and an edit posts nothing new", () =>
+    withSources(({ github }) =>
+      Effect.gen(function* () {
+        const repository = serveRepository(github);
+        const where = yield* project("lost-receipt");
+        const shipped = yield* delivery(where, "Ship");
+        yield* drain;
+        const moved = yield* setStatus(shipped.id, "in_progress");
+        yield* drain;
+        assert.lengthOf(repository.comments.get(1) ?? [], 1);
+        // The receipt is lost, then the title is edited before the retry.
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`UPDATE houston_task_source_outbox SET receipt_json = NULL WHERE action = 'status'`;
+        const tasks = yield* HoustonTaskService.HoustonTaskService;
+        yield* tasks.save({
+          id: moved.key,
+          expectedRevision: moved.revision,
+          patch: { title: "Ship it now" },
+        });
+        github.requests.length = 0;
+        yield* drain;
+        assert.lengthOf(writesTo(github), 0);
+        assert.deepEqual(
+          (repository.comments.get(1) ?? []).map((comment) => comment.body.split("\n")[0]),
+          ["Task status: in_progress"],
+        );
+      }),
+    ),
+  );
+});
+
+describe("a link of another repository is never written through the configured one", () => {
+  it.effect("a link of another repository is never written through the configured one", () =>
+    withSources(({ github }) =>
+      Effect.gen(function* () {
+        const repository = serveRepository(github);
+        const where = yield* project("moved-repository");
+        const shipped = yield* delivery(where, "Ship");
+        yield* drain;
+        assert.strictEqual((yield* sourceLinks(shipped.id))[0]?.externalId, `${REPO}#1`);
+        // The repository setting moves; the delivery keeps its link to the old repository.
+        const sources = yield* HoustonTaskSourceService;
+        const [settings] = yield* sources.getSettings({ projectId: where.projectId });
+        yield* sources.setSettings({
+          projectId: where.projectId,
+          provider: "github_issues",
+          expectedRevision: settings?.revision ?? 0,
+          settings: { enabled: true, githubRepository: "octo-org/moved", githubLabel: "import" },
+        });
+        github.requests.length = 0;
+        yield* setStatus(shipped.id, "in_progress");
+        yield* drain;
+        assert.lengthOf(writesTo(github), 0);
+        assert.lengthOf(github.requests, 0);
+        assert.lengthOf(repository.comments.get(1) ?? [], 0);
+        const status = (yield* outboxRows).find((row) => row.action === "status");
+        assert.isNull(status?.receipt_json);
+        assert.strictEqual(status?.attempts, 1);
+        assert.include(status?.last_error ?? "", `"${REPO}#1"`);
+        assert.include(status?.last_error ?? "", '"octo-org/moved"');
+      }),
+    ),
+  );
+});
+
+describe("a rolled-back task write enqueues nothing", () => {
+  it.effect("a rolled-back task write enqueues nothing", () =>
+    withSources(({ github }) =>
+      Effect.gen(function* () {
+        serveRepository(github);
+        const where = yield* project("rolled-back");
+        const shipped = yield* delivery(where, "Ship");
+        yield* drain;
+        const before = yield* outboxRows;
+        // A status change whose write fails after its history row.
+        const store = yield* HoustonTaskStore;
+        const sql = yield* SqlClient.SqlClient;
+        const failed = yield* Effect.exit(
+          store.write(
+            Effect.gen(function* () {
+              const now = yield* nowIso;
+              yield* sql`
+                UPDATE houston_tasks SET status = 'in_progress', revision = revision + 1,
+                  updated_at = ${now} WHERE id = ${shipped.id}
+              `.pipe(Effect.orDie);
+              yield* store.recordHistory(shipped.id, "user", "update", {
+                status: { old: "backlog", new: "in_progress" },
+              });
+              return yield* Effect.fail("injected failure" as const);
+            }),
+          ),
+        );
+        assert.isTrue(failed._tag === "Failure");
+        assert.strictEqual((yield* current(shipped.id)).status, "backlog");
+        // The next write records nothing of its own and enqueues nothing for the failed one.
+        yield* store.write(Effect.succeed({ result: undefined, touched: [] }));
+        assert.deepEqual(yield* outboxRows, before);
       }),
     ),
   );

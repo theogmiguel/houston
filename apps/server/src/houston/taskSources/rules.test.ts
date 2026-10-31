@@ -22,6 +22,8 @@ import {
   commentMarker,
   deliveryMarker,
   githubPullRequestUrl,
+  issueNumberOf,
+  neutralise,
   withoutCloseKeywords,
   writebackActions,
   type NotionCursor,
@@ -423,6 +425,7 @@ describe("the three-way merge never overwrites a local field", () => {
 // Write-back.
 
 const NS = "0123456789abcdef0123456789abcdef";
+const KEY = "fedcba9876543210fedcba9876543210";
 
 const writebackTask = (patch: Partial<WritebackTask> = {}): WritebackTask => ({
   id: 10,
@@ -466,6 +469,7 @@ const writeback = (patch: Partial<WritebackInput>): WritebackInput => ({
   summary: null,
   prUrl: null,
   namespace: NS,
+  markerKey: KEY,
   ...patch,
 });
 
@@ -563,7 +567,7 @@ describe("write-back eligibility follows the transition and the source", () => {
       writeback({ transition: "created", task: writebackTask() }),
     ) as ReadonlyArray<{ readonly payload: Record<string, unknown> }>;
     expect(entry?.payload).toMatchObject({
-      marker: `<!-- houston-delivery:houston-task-${NS}-10:delivery-${NS}-10 -->`,
+      marker: deliveryMarker(NS, KEY, 10),
       title: "Ship it",
       description: "Why it ships",
     });
@@ -638,13 +642,36 @@ describe("close keywords are removed and pull request urls are pinned to the rep
     expect(withoutCloseKeywords("disclosed prefix")).toBe("disclosed prefix");
   });
 
-  it("markers name the namespace, the task, the revision and the action", () => {
-    expect(deliveryMarker(NS, 10)).toBe(
-      `<!-- houston-delivery:houston-task-${NS}-10:delivery-${NS}-10 -->`,
+  it("markers name the namespace, the task, the transition and the action, keyed", () => {
+    const delivery = deliveryMarker(NS, KEY, 10);
+    expect(delivery).toMatch(
+      new RegExp(
+        `^<!-- houston-delivery:houston-task-${NS}-10:delivery-${NS}-10:[0-9a-f]{32} -->$`,
+      ),
     );
-    expect(commentMarker(NS, 11, 5, "pr_reference")).toBe(
-      `<!-- houston-task:houston-task-${NS}-11:5:pr_reference -->`,
+    const comment = commentMarker(KEY, `houston-task-${NS}-11`, 42, "pr_reference");
+    expect(comment).toMatch(
+      new RegExp(`^<!-- houston-task:houston-task-${NS}-11:42:pr_reference:[0-9a-f]{32} -->$`),
     );
+    // The tag depends on the installation's key and on everything the marker names, so another
+    // installation, task or transition cannot produce it from what a marker shows.
+    const other = "00112233445566778899aabbccddeeff";
+    expect(deliveryMarker(NS, other, 10)).not.toBe(delivery);
+    expect(deliveryMarker(NS, KEY, 11).slice(-36)).not.toBe(delivery.slice(-36));
+    expect(commentMarker(other, `houston-task-${NS}-11`, 42, "pr_reference")).not.toBe(comment);
+    expect(commentMarker(KEY, `houston-task-${NS}-11`, 43, "pr_reference").slice(-36)).not.toBe(
+      comment.slice(-36),
+    );
+    expect(commentMarker(KEY, `houston-task-${NS}-11`, 42, "status").slice(-36)).not.toBe(
+      comment.slice(-36),
+    );
+  });
+
+  it("a link of another repository has no issue number in the configured one", () => {
+    expect(issueNumberOf("octo-org/project#12", "octo-org/project")).toBe(12);
+    expect(issueNumberOf("octo-org/old#12", "octo-org/new")).toBeNull();
+    expect(issueNumberOf("octo-org/project#0", "octo-org/project")).toBeNull();
+    expect(issueNumberOf("octo-org/project", "octo-org/project")).toBeNull();
   });
 
   const repository = "octo-org/project";
@@ -664,5 +691,23 @@ describe("close keywords are removed and pull request urls are pinned to the rep
     "https://github.com/octo-org/project/issues/4",
   ])("%s is refused", (url) => {
     expect(githubPullRequestUrl(url, repository)).toBeNull();
+  });
+});
+
+describe("mentions and references in copied text are inert on GitHub", () => {
+  it("mentions, team mentions and issue references are wrapped in inline code", () => {
+    expect(
+      neutralise("cc @octo-org/everyone and @alice, see #12 and octo-org/other#3. This fixes #9"),
+    ).toBe("cc `@octo-org/everyone` and `@alice`, see `#12` and `octo-org/other#3`. This  `#9`");
+  });
+
+  it.each([
+    ["mail me at dev@example.com", "mail me at dev@example.com"],
+    ["already `@alice` quoted", "already `@alice` quoted"],
+    ["issue#4 is not a reference", "issue#4 is not a reference"],
+    ["a # heading and C# code", "a # heading and C# code"],
+    ["(@bob) [#7]", "(`@bob`) [`#7`]"],
+  ])("%s", (text, expected) => {
+    expect(neutralise(text)).toBe(expected);
   });
 });

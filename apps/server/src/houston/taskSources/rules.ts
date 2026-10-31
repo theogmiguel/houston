@@ -1,5 +1,8 @@
 // The rules that decide a task source outcome, as pure functions over plain values: settings
 // validation, the GitHub and Notion mappings, the Notion checkpoint and the three-way merge.
+// @effect-diagnostics nodeBuiltinImport:off - keys write-back markers with HMAC-SHA256.
+import * as NodeCrypto from "node:crypto";
+
 import type { ProjectId } from "@t3tools/contracts";
 import { HoustonTaskStatus } from "@t3tools/contracts/houston/tasks";
 import {
@@ -1024,20 +1027,45 @@ export const retryDelayMillis = (attempts: number) =>
 export const taskIdentity = (namespace: string, taskId: number) =>
   `houston-task-${namespace}-${taskId}`;
 
-export const deliveryMarker = (namespace: string, taskId: number) =>
-  `<!-- houston-delivery:${taskIdentity(namespace, taskId)}:delivery-${namespace}-${taskId} -->`;
+/** A marker ends with an HMAC of what it names under the installation's marker key, which never
+ * leaves the database: what a public marker shows does not let anyone write the next one. */
+const keyedMarker = (kind: string, name: string, key: string) =>
+  `<!-- ${kind}:${name}:${NodeCrypto.createHmac("sha256", key)
+    .update(`${kind}:${name}`)
+    .digest("hex")
+    .slice(0, 32)} -->`;
 
+export const deliveryMarker = (namespace: string, key: string, taskId: number) =>
+  keyedMarker(
+    "houston-delivery",
+    `${taskIdentity(namespace, taskId)}:delivery-${namespace}-${taskId}`,
+    key,
+  );
+
+/** A comment's marker; `transitionId` is the outbox row's id, the same on every retry. */
 export const commentMarker = (
-  namespace: string,
-  taskId: number,
-  revision: number,
+  key: string,
+  identity: string,
+  transitionId: number,
   action: string,
-) => `<!-- houston-task:${taskIdentity(namespace, taskId)}:${revision}:${action} -->`;
+) => keyedMarker("houston-task", `${identity}:${transitionId}:${action}`, key);
+
+/** Whether `body` ends with `marker`, where Houston writes it, rather than merely quoting it. */
+export const endsWithMarker = (body: string, marker: string) => body.trimEnd().endsWith(marker);
 
 const CLOSE_KEYWORDS = /\b(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\b/gi;
 
 /** GitHub closes an issue a comment or body names with these words; they are dropped. */
 export const withoutCloseKeywords = (text: string) => text.replaceAll(CLOSE_KEYWORDS, "");
+
+// `@user`, `@org/team`, `#12` and `owner/repo#12`, not inside a word, an address or inline code.
+const MENTIONS_AND_REFERENCES =
+  /(?<![\w`/.@-])(?:@[A-Za-z0-9][A-Za-z0-9-]*(?:\/[A-Za-z0-9][\w.-]*)?|(?:[A-Za-z0-9][\w.-]*\/[\w.-]+)?#[0-9]+)(?![\w`])/g;
+
+/** Text copied from a task to GitHub: close keywords dropped, and mentions and references wrapped
+ * in inline code, so the copy neither notifies, links nor closes anything. */
+export const neutralise = (text: string) =>
+  withoutCloseKeywords(text).replaceAll(MENTIONS_AND_REFERENCES, (match) => `\`${match}\``);
 
 /** `https://github.com/<repository>/pull/<n>` of the same repository, or null. */
 export const githubPullRequestUrl = (url: string, repository: string): string | null => {
@@ -1092,6 +1120,8 @@ export interface WritebackInput {
   readonly summary: string | null;
   readonly prUrl: string | null;
   readonly namespace: string;
+  /** The installation's marker key. */
+  readonly markerKey: string;
 }
 
 export interface OutboxEntry {
@@ -1133,7 +1163,7 @@ export const writebackActions = (input: WritebackInput): ReadonlyArray<OutboxEnt
       provider === "github_issues"
     ) {
       entry("create", task.revision, {
-        marker: deliveryMarker(namespace, task.id),
+        marker: deliveryMarker(namespace, input.markerKey, task.id),
         title: task.title,
         description: task.description,
       });
@@ -1218,7 +1248,7 @@ export const writebackActions = (input: WritebackInput): ReadonlyArray<OutboxEnt
 
 /** A GitHub status comment: the status, an optional summary and the marker. */
 export const statusComment = (status: string, summary: string, marker: string) =>
-  `Task status: ${status}\n${withoutCloseKeywords(cutChars(summary, WRITE_LIMITS.statusSummaryChars))}\n${marker}`;
+  `Task status: ${status}\n${neutralise(cutChars(summary, WRITE_LIMITS.statusSummaryChars))}\n${marker}`;
 
 /** The marker of a Notion handback comment: a hash of the page and the summary. */
 export const notionHandbackMarker = (hash: string) => `houston-handback:${hash.slice(0, 24)}`;

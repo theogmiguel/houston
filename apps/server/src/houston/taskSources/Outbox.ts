@@ -29,17 +29,19 @@ import {
   TOKEN_MISSING,
   TOKEN_UNAVAILABLE,
   WRITE_LIMITS,
+  commentMarker,
   cutChars,
+  endsWithMarker,
   errorText,
   githubPullRequestUrl,
   githubRecord,
   issueNumberOf,
+  neutralise,
   parseRepository,
   quote,
   retryDelayMillis,
   statusComment,
   syncStateOf,
-  withoutCloseKeywords,
   writebackActions,
   type OutboxEntry,
   type StoredSettings,
@@ -183,11 +185,44 @@ const makeReads = (sql: SqlClient.SqlClient) => {
   return { task, slices, latestRun, enabled };
 };
 
+/** The marker namespace and key, each 32 random hex digits written once; the namespace is
+ * Houston 1's after an import. */
+const makeIdentity = (sql: SqlClient.SqlClient) => {
+  const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.orDie(effect);
+  const read = run(sql<{ readonly namespace: string; readonly marker_key: string | null }>`
+    SELECT namespace, marker_key FROM houston_task_source_identity WHERE id = 1
+  `).pipe(Effect.map(([row]) => row));
+  const namespace = Effect.gen(function* () {
+    const row = yield* read;
+    if (row !== undefined) return row.namespace;
+    const fresh = NodeCrypto.randomBytes(16).toString("hex");
+    yield* run(sql`
+      INSERT INTO houston_task_source_identity (id, namespace) VALUES (1, ${fresh})
+      ON CONFLICT (id) DO NOTHING
+    `);
+    return (yield* read)?.namespace ?? fresh;
+  });
+  const markerKey = Effect.gen(function* () {
+    yield* namespace;
+    const row = yield* read;
+    if (typeof row?.marker_key === "string") return row.marker_key;
+    const fresh = NodeCrypto.randomBytes(16).toString("hex");
+    yield* run(sql`
+      UPDATE houston_task_source_identity SET marker_key = ${fresh}
+      WHERE id = 1 AND marker_key IS NULL
+    `);
+    return (yield* read)?.marker_key ?? fresh;
+  });
+  return { namespace, markerKey };
+};
+
 export class HoustonTaskSourceOutbox extends Context.Service<
   HoustonTaskSourceOutbox,
   {
     /** The marker namespace: Houston 1's after an import, else 32 random hex digits written once. */
     readonly namespace: Effect.Effect<string>;
+    /** The key write-back markers are keyed with: 32 random hex digits written once. */
+    readonly markerKey: Effect.Effect<string>;
     /** Enqueues the write-back rows of a write's transitions. */
     readonly recorded: (transitions: ReadonlyArray<TaskTransition>) => Effect.Effect<void>;
     /** Enqueues the status write-back of a task's live status, again if it was already sent. */
@@ -204,22 +239,7 @@ const makeOutbox = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const reads = makeReads(sql);
   const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.orDie(effect);
-
-  const namespace = Effect.gen(function* () {
-    const [row] = yield* run(sql<{ readonly namespace: string }>`
-      SELECT namespace FROM houston_task_source_identity WHERE id = 1
-    `);
-    if (row !== undefined) return row.namespace;
-    const fresh = NodeCrypto.randomBytes(16).toString("hex");
-    yield* run(sql`
-      INSERT INTO houston_task_source_identity (id, namespace) VALUES (1, ${fresh})
-      ON CONFLICT (id) DO NOTHING
-    `);
-    const [kept] = yield* run(sql<{ readonly namespace: string }>`
-      SELECT namespace FROM houston_task_source_identity WHERE id = 1
-    `);
-    return kept?.namespace ?? fresh;
-  });
+  const { namespace, markerKey } = makeIdentity(sql);
 
   /** One row per task, provider, action and revision; `revive` sends a sent row again. */
   const enqueue = Effect.fnUntraced(function* (
@@ -292,6 +312,7 @@ const makeOutbox = Effect.gen(function* () {
       summary: latest.summary,
       prUrl: latest.prUrl,
       namespace: yield* namespace,
+      markerKey: yield* markerKey,
     });
     return { projectId, entries };
   });
@@ -333,7 +354,7 @@ const makeOutbox = Effect.gen(function* () {
     }
   });
 
-  return HoustonTaskSourceOutbox.of({ namespace, recorded, statusResolved });
+  return HoustonTaskSourceOutbox.of({ namespace, markerKey, recorded, statusResolved });
 });
 
 /** The outbox, and the port the Tasks store hands its transitions to. */
@@ -373,6 +394,7 @@ const makeDrain = Effect.gen(function* () {
   const github = yield* GitHubRest.GitHubRest;
   const notion = yield* NotionClient;
   const reads = makeReads(sql);
+  const identity = makeIdentity(sql);
   const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.orDie(effect);
   const lock = yield* Semaphore.make(1);
 
@@ -638,22 +660,40 @@ const makeDrain = Effect.gen(function* () {
     return parsed as ReadonlyArray<unknown>;
   });
 
-  /** The first listed item whose body holds `marker`, read page by page up to the bound. */
+  /** The login the credential acts as, read once a marked item needs it. */
+  const viewerLogin = Effect.fnUntraced(function* () {
+    const response = yield* githubRest("GitHub authenticated user lookup", { path: "user" });
+    const user = Option.getOrNull(decodeJson(response.body));
+    const login = isObject(user) ? text(user.login) : null;
+    if (login === null)
+      return yield* Effect.fail("GitHub answered the user lookup without a login");
+    return login.toLowerCase();
+  });
+
+  /** The first listed item that ends with `marker` and that the credential's account wrote, read
+   * page by page up to the bound. A marker quoted in copied text, or written by someone else, is
+   * not Houston's. */
   const findMarked = Effect.fnUntraced(function* (
     operation: string,
     path: string,
     marker: string,
     issuesOnly: boolean,
   ) {
+    let login: string | null = null;
     for (let page = 1; page <= GITHUB_MAX_PAGES; page += 1) {
       const items = yield* githubList(operation, path, page);
-      const found = items.find(
-        (item) =>
-          isObject(item) &&
-          (!issuesOnly || item.pull_request === undefined || item.pull_request === null) &&
-          (text(item.body) ?? "").includes(marker),
-      );
-      if (found !== undefined) return found as Json;
+      for (const item of items) {
+        if (
+          !isObject(item) ||
+          (issuesOnly && item.pull_request !== undefined && item.pull_request !== null) ||
+          !endsWithMarker(text(item.body) ?? "", marker)
+        ) {
+          continue;
+        }
+        login ??= yield* viewerLogin();
+        const author = isObject(item.user) ? text(item.user.login) : null;
+        if (author?.toLowerCase() === login) return item;
+      }
       if (items.length < GITHUB_PAGE_SIZE) return null;
     }
     return yield* Effect.fail(`${operation} exceeded the ${GITHUB_MAX_PAGES}-page bound`);
@@ -671,9 +711,10 @@ const makeDrain = Effect.gen(function* () {
 
   const writeGitHub = Effect.fnUntraced(function* (
     settings: StoredSettings,
-    action: string,
+    row: OutboxRow,
     payload: Json,
   ): Effect.fn.Return<Receipt, string> {
+    const action = row.action;
     const repository = parseRepository(settings.githubRepository ?? "");
     if (repository === null) {
       return yield* Effect.fail(
@@ -697,7 +738,7 @@ const makeDrain = Effect.gen(function* () {
               path: `repos/${repository}/issues`,
               body: {
                 title: cutChars(text(payload.title) ?? "", WRITE_LIMITS.issueTitleChars),
-                body: `${withoutCloseKeywords(
+                body: `${neutralise(
                   cutChars(text(payload.description) ?? "", WRITE_LIMITS.issueBodyChars),
                 )}\n\n${marker}`,
               },
@@ -723,14 +764,20 @@ const makeDrain = Effect.gen(function* () {
       });
       return issue;
     }
-    const marker = `<!-- houston-task:${text(payload.taskIdentity) ?? ""}:${String(payload.revision ?? 0)}:${action} -->`;
+    // The row's id names the transition, so a retry finds its first post whatever changed since.
+    const marker = commentMarker(
+      yield* identity.markerKey,
+      text(payload.taskIdentity) ?? "",
+      row.id,
+      action,
+    );
     let body: string;
     switch (action) {
       case "status":
         body = statusComment(text(payload.status) ?? "", text(payload.summary) ?? "", marker);
         break;
       case "summary_comment":
-        body = `${withoutCloseKeywords(cutChars(text(payload.summary) ?? "", WRITE_LIMITS.summaryChars))}\n${marker}`;
+        body = `${neutralise(cutChars(text(payload.summary) ?? "", WRITE_LIMITS.summaryChars))}\n${marker}`;
         break;
       case "pr_reference": {
         const url = githubPullRequestUrl(text(payload.url) ?? "", repository);
@@ -780,7 +827,7 @@ const makeDrain = Effect.gen(function* () {
     if (typeof live === "string") return yield* failed(row, target, live);
     let receipt: Receipt;
     if (row.provider === "github_issues") {
-      const written = yield* Effect.result(writeGitHub(settings, row.action, live));
+      const written = yield* Effect.result(writeGitHub(settings, row, live));
       if (written._tag === "Failure") return yield* failed(row, target, written.failure);
       receipt = written.success;
     } else {

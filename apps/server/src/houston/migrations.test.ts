@@ -20,6 +20,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [3, "TaskSources"],
   [4, "TaskRunsCursor"],
   [5, "MergeQueue"],
+  [6, "TaskSourceMarkerKey"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -264,7 +265,7 @@ describe("the merge queue migration runs on the Houston track", () => {
         const upstream = yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const history = yield* houstonHistory;
-          assert.deepEqual(history.at(-1), [5, "MergeQueue"]);
+          assert.deepEqual(history[4], [5, "MergeQueue"]);
           assert.deepEqual(
             history.map(([id]) => id),
             HOUSTON_TRACK.map(([id]) => id),
