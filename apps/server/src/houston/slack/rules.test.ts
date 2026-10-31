@@ -187,6 +187,7 @@ describe("only a top-level mention in a mapped channel by a member of the team i
       ["edit", mention({ type: "message", subtype: "message_changed" })],
       ["team", mention({ team: "T2" })],
       ["user_team", mention({ user_team: "T2" })],
+      ["source_team", mention({ source_team: "T2" })],
       ["unmapped", mention({ channel: "C9" })],
       ["plain", mention({ type: "message", text: "just chatting" })],
     ];
@@ -195,6 +196,37 @@ describe("only a top-level mention in a mapped channel by a member of the team i
       assert.strictEqual(result.kind, "ignored", label);
       if (result.kind === "ignored") assert.isNotEmpty(result.why, label);
     }
+    // A subtype other than a file share is ignored as such, live or replayed, mention or not.
+    for (const subtype of ["message_changed", "channel_topic", "channel_purpose"]) {
+      for (const type of ["app_mention", "message"]) {
+        for (const source of ["live", "history"] as const) {
+          const result = classifyEvent(mention({ type, subtype }), CONTEXT, source);
+          assert.strictEqual(result.kind, "ignored", `${subtype} ${type} ${source}`);
+          if (result.kind === "ignored") assert.include(result.why, subtype);
+        }
+      }
+    }
+    for (const source of ["live", "history"] as const) {
+      const result = classifyEvent(mention({ source_team: "T2" }), CONTEXT, source);
+      assert.strictEqual(result.kind, "ignored", `source_team ${source}`);
+      if (result.kind === "ignored") assert.include(result.why, "source_team T2");
+    }
+    // A member whose id starts with the bot's id is not the bot.
+    for (const text of ["<@UBOTX> please fix it", "<@UBOT2|someone> please fix it"]) {
+      assert.strictEqual(
+        classifyEvent(mention({ type: "message", text }), CONTEXT, "history").kind,
+        "ignored",
+        text,
+      );
+    }
+    assert.strictEqual(
+      classifyEvent(
+        mention({ type: "message", text: "<@UBOT|houston> fix it" }),
+        CONTEXT,
+        "history",
+      ).kind,
+      "request",
+    );
     const reply = classifyEvent(
       mention({
         type: "message",

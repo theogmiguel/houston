@@ -314,7 +314,8 @@ export const classifyEvent = (
       files: filesOf(event),
     };
   }
-  const mentioned = raw.includes(`<@${context.botUserId}`);
+  const mentioned =
+    raw.includes(`<@${context.botUserId}>`) || raw.includes(`<@${context.botUserId}|`);
   const isRequest = source === "live" ? type === "app_mention" : mentioned;
   if (!isRequest) return { kind: "ignored", why: "a top-level message without a mention" };
   return {
