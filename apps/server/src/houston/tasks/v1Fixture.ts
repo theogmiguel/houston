@@ -1,5 +1,5 @@
-// A Houston 1 database for import tests, with the final `backlog_*` schema of
-// core/houston-core/src/db/tasks.rs (after its column additions) and the `settings` table.
+// A Houston 1 database for import tests, with the final schema of v1's `backlog_*`
+// tables (after their column additions) and its `settings` table.
 import * as NodeSqlite from "node:sqlite";
 
 const V1_SCHEMA = `

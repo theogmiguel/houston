@@ -49,7 +49,7 @@ echo "check-linux-abi: $deb (arch $arch, glibc cap $MAX_GLIBC)"
 
 status=0
 
-for name in houston houston-core houston-supervisor tr-helper; do
+for name in houston; do
   bin="$workdir/usr/bin/$name"
   if [ ! -f "$bin" ]; then
     echo "FAIL: $deb does not carry /usr/bin/$name (nothing extracted at $bin)" >&2

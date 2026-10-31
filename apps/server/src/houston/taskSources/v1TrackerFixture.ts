@@ -1,5 +1,5 @@
-// Houston 1's tracker tables for import tests, with the final DDL of
-// core/houston-core/src/db/task_trackers.rs, added to a database from the Tasks v1Fixture.
+// Houston 1's tracker tables for import tests, with the final DDL of v1's
+// `task_trackers` tables, added to a database from the Tasks v1Fixture.
 import * as NodeSqlite from "node:sqlite";
 
 const V1_TRACKER_SCHEMA = `

@@ -1,8 +1,8 @@
 name: CI
 
-# Public and fork-gated: PRs run safety scripts, core suites and every Linux
-# houston-core integration test. Load-sensitive gates stay local (docs/operations/development.md).
-# Windows runs core unit tests and portable ConPTY regressions.
+# Public and fork-gated: PRs run the safety scripts, the desktop host's formatting,
+# Clippy and tests on Linux and Windows, and the licence inventory. Load-sensitive
+# gates stay local (docs/operations/development.md).
 on:
   pull_request: {}
   push:
@@ -104,125 +104,6 @@ jobs:
             echo "| ${{ github.job }} | $elapsed |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # Core formatting, Clippy, unit tests and doctests; the integration suites run in
-  # core-integration.
-  core-checks:
-    runs-on: ubuntu-latest
-    env:
-      HOUSTON_CHANNEL: dev
-      CARGO_BUILD_JOBS: 3
-    steps:
-      - name: Record job start time
-        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v5
-      # The runner ships none of the -dev headers these -sys crates need, so the
-      # job would die in clippy rather than a test without them (alsa/dbus/udev/
-      # clang/cmake/nasm). gnome-keyring and dbus-x11 are for the test step below.
-      - name: Install native build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libasound2-dev libdbus-1-dev libudev-dev \
-            clang libclang-dev cmake nasm \
-            gnome-keyring dbus-x11 zsh
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: core
-      # Same pinned tarball + Zig build.rs step the release-linux bundle job
-      # caches, scoped to core/ only — src-tauri isn't built here. build.rs keeps
-      # Zig's fetched packages in this directory too, so its hash is in the key.
-      - name: Cache the pinned libghostty-vt source and Zig
-        uses: actions/cache@v5
-        with:
-          path: core/target/ghostty-vt
-          key: ghostty-vt-core-ubuntu-latest-${{ hashFiles('core/houston-core/ghostty-vt.lock', 'core/houston-core/build.rs') }}
-      - name: cargo fmt
-        run: cargo fmt --all --check --manifest-path core/Cargo.toml
-      - name: cargo clippy
-        run: cargo clippy --all-targets --manifest-path core/Cargo.toml -- -D warnings
-      # Pinned to the version core/.config/nextest.toml requires.
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: nextest@0.9.148
-      # voice::cloud's tests talk to a Secret Service the runner has none of; a
-      # private session bus with gnome-keyring unlocked is the same fix the local
-      # Linux gate uses. No oom-shield here — that's a local-machine concern.
-      - name: cargo nextest --lib
-        run: |
-          # shellcheck disable=SC2016
-          dbus-run-session -- bash -c '
-            eval "$(echo -n "" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)"
-            cargo nextest run --profile ci --lib --manifest-path core/Cargo.toml'
-      # nextest does not run documentation tests.
-      - name: cargo test --doc
-        run: cargo test --doc --locked --manifest-path core/Cargo.toml
-      - name: Report job timing
-        if: always()
-        continue-on-error: true
-        run: |
-          elapsed=$(( $(date +%s) - JOB_START ))
-          {
-            echo "### ${{ github.job }} timing"
-            echo "| job | elapsed (s) |"
-            echo "|---|---|"
-            echo "| ${{ github.job }} | $elapsed |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # Every houston-core integration test, the `it` binary included, on Linux. The suites
-  # boot real daemons and PTYs and take a while, so this runs beside core-checks rather
-  # than inside it. The Windows job below keeps its own selection.
-  core-integration:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      HOUSTON_CHANNEL: dev
-      CARGO_BUILD_JOBS: 3
-    steps:
-      - name: Record job start time
-        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v5
-      - name: Install native build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libasound2-dev libdbus-1-dev libudev-dev \
-            clang libclang-dev cmake nasm \
-            gnome-keyring dbus-x11 zsh
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: core
-          key: core-integration
-      - name: Cache the pinned libghostty-vt source and Zig
-        uses: actions/cache@v5
-        with:
-          path: core/target/ghostty-vt
-          key: ghostty-vt-core-ubuntu-latest-${{ hashFiles('core/houston-core/ghostty-vt.lock', 'core/houston-core/build.rs') }}
-      # Pinned to the version core/.config/nextest.toml requires.
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: nextest@0.9.148
-      # --no-fail-fast reports every failing test in one run. The restored-CLI
-      # regressions in resume_wire run real bash and zsh integration rc files.
-      - name: cargo nextest (all houston-core tests)
-        run: >
-          bash scripts/with-test-keyring.sh cargo nextest run --profile ci --locked
-          --no-fail-fast --manifest-path core/Cargo.toml -p houston-core
-      - name: Report job timing
-        if: always()
-        continue-on-error: true
-        run: |
-          elapsed=$(( $(date +%s) - JOB_START ))
-          {
-            echo "### ${{ github.job }} timing"
-            echo "| job | elapsed (s) |"
-            echo "|---|---|"
-            echo "| ${{ github.job }} | $elapsed |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
   linux-native-checks:
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -236,24 +117,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev \
-            libasound2-dev libdbus-1-dev libudev-dev \
-            clang libclang-dev cmake nasm gnome-keyring dbus-x11 zsh
+            libdbus-1-dev gnome-keyring dbus-x11
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            core
-            src-tauri
+          workspaces: src-tauri
           key: linux-native-checks
-      # houston-core's build.rs resolves its cache next to the cargo target dir of
-      # the crate being built, which here is src-tauri/target.
-      - name: Cache the pinned libghostty-vt source and Zig
-        uses: actions/cache@v5
-        with:
-          path: src-tauri/target/ghostty-vt
-          key: ghostty-vt-src-tauri-ubuntu-latest-${{ hashFiles('core/houston-core/ghostty-vt.lock', 'core/houston-core/build.rs') }}
       - uses: pnpm/action-setup@v4
         with:
           version: 12.14.0
@@ -293,9 +164,7 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            core
-            src-tauri
+          workspaces: src-tauri
           key: windows-checks
       - uses: pnpm/action-setup@v4
         with:
@@ -311,27 +180,6 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm --filter @t3tools/web build
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Check core formatting and Clippy
-        working-directory: core
-        run: |
-          cargo fmt --all --check
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo clippy --locked --all-targets -- -D warnings
-          exit $LASTEXITCODE
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: nextest@0.9.148
-      - name: Test core
-        working-directory: core
-        run: |
-          cargo nextest run --profile ci --locked -p houston-core --lib
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo nextest run --profile ci --locked --no-fail-fast -p houston-core -E 'test(/^protocol_version_wire::/) | test(/^env_hygiene_wire::/) | test(/^nonascii_longpath_wire::/) | test(/^checkpoints_wire::/) | test(/^git_discard_wire::/) | test(/^git_tools_wire::/) | test(/^git_wire::/) | test(/^manage_wire::/) | test(/^shutdown_drain_wire::/) | test(/^subprocess_deadlines_windows::/) | test(/^tasks_wire::/) | test(/^windows_claude_hooks_wire::/) | test(/^windows_codex_hooks_wire::/) | test(/^windows_codex_launch_wire::/) | test(/^windows_instruction_submit::/) | test(/^launch_prompt_isolation::/) | test(/^claude_turns_wire::/) | test(/^session_activity::/) | test(/^generated_titles::/) | test(/^recovery_ownership::/) | test(/^voice_model_reuse::/) | test(/^windows_orchestration_wire::/) | test(/^wsl_wire::/)'
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo nextest run --profile ci --locked -p houston-core --features test-barriers -E 'test(/^ssh_stalled_window::/) | test(/^windows_pty_lifecycle::/)'
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo test --locked -p houston-core --doc
-          exit $LASTEXITCODE
       - name: Check native application
         working-directory: src-tauri
         run: |
@@ -348,9 +196,8 @@ jobs:
           $elapsed = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [long]$env:JOB_START
           "| Job | Elapsed (s) |`n|---|---|`n| windows-checks | $elapsed |" >> $env:GITHUB_STEP_SUMMARY
 
-  # The committed third-party inventory is generated from every dependency graph
-  # at once: the Rust toolchain (cargo metadata, no build), the renderer's
-  # node_modules and the pnpm workspace's node_modules — no other job has all three.
+  # The committed third-party inventory is generated from the desktop host's Cargo
+  # graph (cargo metadata, no build) and the pnpm workspace's node_modules at once.
   licence-inventory:
     runs-on: ubuntu-latest
     steps:

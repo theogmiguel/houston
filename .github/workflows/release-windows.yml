@@ -90,9 +90,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            core
-            src-tauri
+          workspaces: src-tauri
           key: release-windows
           cache-on-failure: true
 

@@ -80,7 +80,6 @@ type Sink<'a> = &'a mut dyn FnMut(Stream, &[u8]) -> std::io::Result<()>;
 
 /// Capture with caller-owned stdin and an 8 MiB combined output limit.
 /// Linux owns a process group; Windows owns a job. Other platforms refuse.
-/// See docs/internals/daemon.md for cancellation boundaries.
 pub fn output_within_with_stdin(
     mut cmd: std::process::Command,
     timeout: std::time::Duration,

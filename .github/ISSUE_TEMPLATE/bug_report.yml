@@ -27,10 +27,10 @@ body:
       label: Area
       description: Which part of Houston does this affect?
       options:
-        - daemon
+        - server
         - renderer
         - app shell
-        - hooks and providers
+        - providers
         - orchestration
         - build or CI
         - docs

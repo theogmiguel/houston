@@ -15,10 +15,6 @@
       "types": "./src/settings.ts",
       "import": "./src/settings.ts"
     },
-    "./houston/terminalFrames": {
-      "types": "./src/houston/terminalFrames.ts",
-      "import": "./src/houston/terminalFrames.ts"
-    },
     "./houston/providerReadiness": {
       "types": "./src/houston/providerReadiness.ts",
       "import": "./src/houston/providerReadiness.ts"

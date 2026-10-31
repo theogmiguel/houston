@@ -1,862 +1,252 @@
 # Development
 
-Everything a contributor needs from a fresh checkout to a green gate:
-building, running, the dev/release channel split, the check cadence, and
-what each OS's build produces. Production launch is `scripts/start.sh`
-(`docs/operations/release.md`); the WSL2 testbed is
-`docs/operations/linux-testbed.md`.
+Everything a contributor needs from a fresh checkout to a green gate: building, running,
+the dev/release channel split, the check cadence, and what each OS's build produces.
+Production launch is `scripts/start.sh` ([release](release.md)); the WSL2 testbed is
+[linux-testbed](linux-testbed.md).
 
 ## First checkout
 
 ### Linux prerequisites
 
-Prerequisites, installed once on a bare Debian/Ubuntu machine (another
-distribution's package names will differ):
+Installed once on a bare Debian/Ubuntu machine (another distribution's package names will
+differ):
 
-1. Rust toolchain — install via rustup, `https://rustup.rs` (CI uses the
-   `stable` toolchain).
-2. [Bun](https://bun.sh), used for renderer dependencies and scripts.
-3. A current Node.js release. Several repository gates execute `.mjs` files
-   with `node` directly.
-4. Google Chrome installed for the host operating system. The CSS scoping gate
-   uses Playwright's `chrome` channel to find the installed browser.
-5. The pinned Tauri CLI:
-   `cargo install tauri-cli --version 2.11.4 --locked`.
-6. Linux system packages:
+1. Rust toolchain via rustup, `https://rustup.rs` (CI uses the `stable` toolchain).
+2. Node.js at the version in the root `package.json`, and pnpm 12.14.0 (or
+   `npx -y pnpm@12.14.0`).
+3. The pinned Tauri CLI: `cargo install tauri-cli --version 2.11.4 --locked`.
+4. Linux system packages:
 
    ```sh
    sudo apt-get install -y \
-     build-essential pkg-config clang libclang-dev cmake nasm \
-     libdbus-1-dev libudev-dev libwebkit2gtk-4.1-dev libasound2-dev \
+     build-essential pkg-config libdbus-1-dev libwebkit2gtk-4.1-dev \
      librsvg2-dev patchelf libfuse2 libayatana-appindicator3-dev \
-     gnome-keyring dbus-x11 minisign zsh
+     gnome-keyring dbus-x11 minisign
    ```
 
-   (`patchelf` and `libfuse2` are only needed to bundle an AppImage, not
-   to run `dev.sh`). Ubuntu 22.04 is the release baseline, and it names the
-   FUSE 2 runtime `libfuse2`; the `libfuse2t64` rename is 24.04's.
-   `gnome-keyring` and `dbus-x11` provide the unlocked Secret Service session
-   required by the full core test suite.
-   `zsh` is required by the shell integration tests, which exercise both Bash and Zsh.
-   `minisign` is required by `python3 scripts/test-update-manifest.py` and the
-   release manifest generator to verify updater signatures.
-7. Renderer dependencies, once per clone and whenever `ui/bun.lock` changes:
-   `(cd ui && bun install --frozen-lockfile)`.
+   `patchelf` and `libfuse2` are only needed to bundle an AppImage. Ubuntu 22.04 is the
+   release baseline, and it names the FUSE 2 runtime `libfuse2`. `gnome-keyring` and
+   `dbus-x11` provide the private Secret Service that `scripts/with-test-keyring.sh` starts
+   for host tests. `minisign` is required by `python3 scripts/test-update-manifest.py` and
+   the release manifest generator.
+5. Workspace dependencies, once per clone and whenever `pnpm-lock.yaml` changes:
+   `pnpm install --frozen-lockfile`.
 
 Then:
 
 ```
 ./scripts/dev.sh                 # dev channel, build + run
-./scripts/dev.sh --fresh         # stop+restart the daemon fresh
 ```
 
-The development script builds the renderer (`cd ui && bun run build`),
-the debug daemon, supervisor and hook helper (`cargo build --bin houston-core --bin
-houston-supervisor --bin tr-helper` in `core`), stages `tr-helper`,
-`houston-core` and the Linux supervisor in `src-tauri/binaries` with the host
-target suffix required by Tauri, builds the debug app (`cargo build` in
-`src-tauri`), then `exec`s `src-tauri/target/debug/houston-tauri --channel
-<target>`. The app connects to a running daemon for the target channel or
-spawns one detached, through `houston-supervisor` on Linux — it no longer
-hosts the daemon in-process. On Linux with user systemd, the supervisor starts in its
-own transient `houston-daemon-<channel>-<id>.service`. List those units with
-`systemctl --user list-units 'houston-daemon-*'` and inspect a selected unit with
-`systemctl --user status <unit>` or `journalctl --user -u <unit>`. The usual daemon log
-files remain available. If user systemd is unavailable, launch prints a named notice and
-uses `setsid`, which does not isolate the cgroup. `HOUSTON_DAEMON_BIN_DIR` is exported to
-`core/target/debug` first, so the app's connect-or-spawn finds the debug
-sidecars there instead of assuming a packaged layout beside its own binary. With
-`--fresh`, all builds finish before the daemon is replaced, so the replacement
-uses the newly compiled code and a failed build leaves the running daemon intact.
-Close the existing window for that channel before relaunching: a second launch
-focuses the running instance instead of loading the rebuilt renderer.
-
-Development state lives in `~/.houston-dev`; see the next section for why
-that matters before you run anything else.
+The development script builds the renderer (`pnpm --filter @t3tools/web build`), the
+server bundle (`pnpm --filter houston build:bundle`) and the debug host (`cargo build` in
+`src-tauri`), then `exec`s `src-tauri/target/debug/houston-tauri --channel <target>`. The
+host attaches to the channel's running server or spawns one detached. Close the existing
+window for that channel before relaunching: a second launch focuses the running instance
+instead of loading the rebuilt renderer.
 
 ### Windows prerequisites
 
-Use Windows 10 or 11 on x86_64 with the Rust MSVC toolchain, Visual Studio C++
-build tools and a Windows SDK. Install Git for Windows, Bun, a current Node.js
-release, Google Chrome for the renderer gates, and the same pinned Tauri CLI
-listed above. The app uses WebView2; install its runtime if it is missing.
-
-From PowerShell, run `bun install --frozen-lockfile` in `ui`, then return to the
-repository root:
+Use Windows 10 or 11 on x86_64 with the Rust MSVC toolchain, Visual Studio C++ build tools
+and a Windows SDK. Install Git for Windows, Node.js, pnpm and the same pinned Tauri CLI. The
+app uses WebView2; install its runtime if it is missing. From PowerShell at the repository
+root:
 
 ```powershell
+pnpm install --frozen-lockfile
 $env:CARGO_BUILD_JOBS = '3'
 ./scripts/dev.ps1
-./scripts/dev.ps1 --fresh
 ```
 
-The script builds the renderer, debug daemon and hook helper, stages the native
-sidecars and starts the debug app on the `dev` channel. `--fresh` builds first,
-then requests a daemon restart, and refuses to restart the channel hosting its
-own pane. State lives in `%USERPROFILE%\.houston-dev`. WSL resources are required
-for a packaged Windows installer; see [Windows artifacts](#windows).
+`dev.ps1` is a port of `dev.sh`. State lives in `%USERPROFILE%\.houston-dev`.
 
 ## Dev channel vs release channel
 
-**Important safety boundary.** A channel is an isolated state universe: its
-own SQLite DB, `daemon.json`, and hooks.
+**Important safety boundary.** A channel is an isolated state universe: its own server, its
+own SQLite database and its own runtime file.
 
-| Channel | State dir | How you get it |
+| Channel | Channel directory | How you get it |
 |---|---|---|
 | `release` | `~/.houston` | The installed app's live state. Only via explicit `--channel release`. |
-| `dev` | `~/.houston-dev` | `dev.sh`'s unconditional default — a bare `./scripts/dev.sh` always lands here. |
-| named | `~/.houston-<name>` | `--channel <name>`, validated against `^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$` (mirrors `paths.rs::validate_channel`; checked in bash too, since `dev.sh` writes at the state dir before the daemon ever runs). Example: `m9bench`. |
+| `dev` | `~/.houston-dev` | `dev.sh`'s unconditional default. |
+| named | `~/.houston-<name>` | `--channel <name>`, validated against `^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$` (mirrors `paths.rs::validate_channel`). |
 
-`~/.houston` is the installed app's live state — two daemons pointed at the
-same directory don't share it, they corrupt it (two SQLite writers on one
-file, and whichever daemon's `daemon.json` was written last captures every
-hook). Never point a dev daemon at it, and never pass `--channel release`
-unless you mean to drive the installed app's own daemon; the app resolves its
-target channel from `--channel` alone, and `dev.sh` prints a loud warning
-naming the live state dir before proceeding when you do.
+The server keeps its state in `<channel dir>/v2/`; its log is
+`<channel dir>/v2/logs/v2-server.log`, and clients find it through
+`<channel dir>/v2/userdata/server-runtime.json`. Upstream's server ownership lock refuses a
+second server for the same directory. Never point a development server at `~/.houston`,
+and never pass `--channel release` unless you mean to drive the installed app's own server;
+`dev.sh` prints a warning naming the live directory when you do.
 
-`scripts/dev.sh --fresh` is the sanctioned restart — it requests an orderly
-`daemon_shutdown` over `/manage` (or a live handoff, on Linux, that swaps the
-running binary out without dropping any session) and waits, identity-checked,
-for the old pid to actually exit. Never a bare kill. It refuses when the
-invoking shell is itself a pane on the **same** target channel — restarting
-would kill the shell running the script, and every other session on that
-channel, mid-script. Cross-channel `--fresh` (an installed-app pane
-restarting `dev`) is allowed and is the normal way to work.
+A v1 install's state (`houston.db`, scrollback and its other files directly under the
+channel directory) is never written by v2. The host's start-up cleanup reads that directory
+only to stand down while a v1 daemon of the same channel still runs, then removes that
+channel's v1 hook and MCP entries from the agent CLI configs.
 
-`daemon.json` (owning PID and friends) and `daemon.lock`
-(`houston_core::lock::acquire_exclusive`, `LOCK_FILE_NAME = "daemon.lock"`, a
-`flock`-based advisory lock) both live in the channel's state dir. The daemon
-refuses to boot when another process holds the target channel's lock, naming it.
-
-A Windows app with a WSL distro enabled starts that distro's daemon on the app's channel,
-in the distro user's own `~/.houston-<channel>`. A Linux Houston inside that distro on the
-same channel shares it, so test WSL environments on a channel nothing else in the distro
-uses, such as `wslt`.
-
-`HOUSTON_SESSION` is set inside a Houston pane; it's what the `--fresh`
-refusal above uses to detect "this shell is itself running inside a pane on
-the channel I'm about to restart."
+`HOUSTON_SESSION` is set inside a pane of the installed v1 release; `dev.sh` uses it to
+refuse `--fresh` from a pane on its own target channel.
 
 ## Running it
 
 ```
 ./scripts/dev.sh                 # dev channel, build + run
-./scripts/dev.sh --fresh         # stop+restart the daemon fresh
 ./scripts/dev.sh --channel NAME  # target a named channel instead of dev
 ./scripts/dev.sh --print-target  # print resolved channel/state dir, no side effects
 ```
 
-Windows: `scripts/dev.ps1` is a line-for-line port. Differences forced by the
-platform: ASCII-only output, no `exec` (runs as a foreground child and exits
-with the app's code), case-sensitive flag matching, `Set-StrictMode` standing
-in for `-u`.
-
-**No hot reload.** The renderer is a built artifact. Re-run the development
-script after a renderer edit so the app embeds the current output.
+**No hot reload.** The renderer is a built artifact embedded by the host. Re-run the
+development script after a renderer edit.
 
 ### `scripts/oom-shield.sh`
 
-Runs a command inside a transient `systemd-run --user --scope` with capped
-memory and lowered priority, so `systemd-oomd` has a smaller victim than your
-whole terminal scope.
+Runs a command inside a transient `systemd-run --user --scope` with capped memory and
+lowered priority, so `systemd-oomd` has a smaller victim than your whole terminal scope.
 
 ```
 ./scripts/oom-shield.sh <command> [args...]
 ```
 
-- **Caps**: `MemoryHigh=16G`, `MemoryMax=18G` (override via
-  `OOM_SHIELD_MEMORY_HIGH`/`OOM_SHIELD_MEMORY_MAX`). Receipted against the
-  measured peak of a clean core `cargo test -j 3` build on a 31 GiB/12-core machine:
-  9.1 GiB including page cache, 4.5 GiB anonymous (the largest process is the
-  `houston-core` lib's rustc at 3.1 GiB; the single `it` test binary peaks at 2.4 GiB).
-  The former 158-binary link fan-out reached 10.2 GiB, which a 12G cap OOM-killed. The
-  test run itself stays under 0.4 GiB anonymous. Swap is
-  uncapped by default (`OOM_SHIELD_MEMORY_SWAP_MAX` opts in).
+- **Caps**: `MemoryHigh=16G`, `MemoryMax=18G` (override via `OOM_SHIELD_MEMORY_HIGH` and
+  `OOM_SHIELD_MEMORY_MAX`). Swap is uncapped by default (`OOM_SHIELD_MEMORY_SWAP_MAX` opts
+  in).
 - Applies `nice -n 19` to the wrapped command unconditionally.
-- A second invocation *waits* on a global per-user `flock`, announcing
-  itself, rather than running concurrently — the shield bounds one scope,
-  not the sum of two.
+- A second invocation waits on a global per-user `flock`, announcing itself, rather than
+  running concurrently: the shield bounds one scope, not the sum of two.
 
-**Never run two cargo workloads concurrently**, shielded or not — the shield
-bounds each scope, not their sum; two shielded builds together can still push
-the user slice past oomd's pressure threshold.
+**Never run two Cargo workloads concurrently**, shielded or not.
 
-### Cargo dev profiles
+### Cargo dev profile
 
-`core/Cargo.toml` and `src-tauri/Cargo.toml` both set
-`[profile.dev] debug = "line-tables-only"` and
-`[profile.dev.package."*"] debug = false`: dependencies get no debug info
-(never stepped into), workspace code keeps line tables for exact backtraces
-and test failure locations. Full DWARF for a real debugging session:
-
-```
-CARGO_PROFILE_DEV_DEBUG=2 cargo build
-```
-
-Rationale: full DWARF for the whole dependency tree previously ballooned
-`target/` into the tens of GB (measured 27 GB in `core/`, 25 GB of it debug
-artifacts; 22 GB in `src-tauri/`, doubled there because gates build both the
-default and `--features bench` configurations).
+`src-tauri/Cargo.toml` sets `[profile.dev] debug = "line-tables-only"` and
+`[profile.dev.package."*"] debug = false`: dependencies get no debug info, Houston's code
+keeps line tables for exact backtraces. Full DWARF for a debugging session:
+`CARGO_PROFILE_DEV_DEBUG=2 cargo build`.
 
 ### Disk usage
 
-Every checkout and worktree has its own `target/`, which only grows: each
-branch, profile, feature set and toolchain adds artifacts and none are
-removed. Agent worktrees under `.houston/worktrees/` multiply this.
+Every checkout and worktree has its own `target/`, which only grows. Agent worktrees under
+`.houston/worktrees/` multiply this.
 
-- `scripts/sweep-targets.sh` deletes artifacts untouched for
-  `HOUSTON_SWEEP_DAYS` (default 3) and artifacts built by toolchains rustup no
-  longer has, in the main checkout and every worktree below it. It also trims
-  each target directory to `HOUSTON_SWEEP_MAXSIZE` (default 15 GB; a full core
-  test build with incremental caches measured 8.6 GB). `--dry-run` lists what
-  it would delete. It needs `cargo install cargo-sweep`.
-- Each sweep waits for the `oom-shield` lock, so it cannot overlap a shielded
-  build.
-- `scripts/sweep-targets.sh --install` runs that sweep hourly through a
-  systemd user timer (`houston-sweep-targets.timer`).
-- Keep incremental compilation on in agent worktrees. It costs about 3.5 GB of
-  `target/` per worktree and about 0.2–0.7 GB more written per build, and it
-  makes the edit-and-rebuild loop two to three times faster (measured 13 s
-  instead of 45 s after touching one test file, 55 s instead of 121 s after
-  touching `src/`).
-- Agent worktrees build and test the dev profile only; `--release` belongs to
-  the main checkout when packaging.
-- Remove an agent worktree with `git worktree remove` once its branch is
-  integrated; its `target/` goes with it.
-
-A shared `CARGO_TARGET_DIR` is not an option: `dev.sh`, `stage-helper.sh` and
-`install-desktop.sh` read binaries from each checkout's own `target/`, and
-worktrees sharing one directory overwrite each other's binaries.
-
-A shared `build.build-dir` (Cargo 1.91+) avoids that conflict. It moves only the
-intermediates (`deps/`, `incremental/`, `build/`, nearly all of the disk use);
-final binaries stay in each checkout's `target/`, where the scripts read them.
-Set it in your user config, never in the repository:
-
-```toml
-# ~/.cargo/config.toml
-[build]
-build-dir = "{cargo-cache-home}/build-dir/{workspace-path-hash}"
-```
-
-- `{workspace-path-hash}` hashes the manifest path, so `core/`, `src-tauri/`
-  and every agent worktree get separate intermediates.
-- `scripts/sweep-targets.sh` sweeps `target/` directories only and no longer
-  reaches the intermediates. Clean the build-dir root instead: delete whole
-  workspace directories that have gone idle, which costs only a rebuild. Cargo
-  treats the layout inside them as internal and changes it between releases.
-- Removing a worktree leaves its intermediates behind until that cleanup runs.
-- Keep the build-dir on the same filesystem as the checkouts. Cargo hard-links
-  final binaries from the build-dir into `target/`; across filesystems it
-  copies them on every invocation, including a no-op build (measured 0.57 GB
-  written per `cargo test --no-run` with nothing to rebuild).
-- For a hard ceiling, mount a fixed-size filesystem (for example a sparse,
-  loop-mounted ext4 image with `discard`) at the build-dir root; a full volume
-  fails the build instead of filling the disk.
+- `scripts/sweep-targets.sh` deletes artifacts untouched for `HOUSTON_SWEEP_DAYS` (default
+  3) and artifacts built by toolchains rustup no longer has, in the main checkout and every
+  worktree below it, and trims each target directory to `HOUSTON_SWEEP_MAXSIZE` (default
+  15 GB). `--dry-run` lists what it would delete; `--install` runs it hourly through a
+  systemd user timer. It needs `cargo install cargo-sweep`.
+- Agent worktrees build and test the dev profile only; `--release` belongs to the main
+  checkout when packaging. Remove an agent worktree once its branch is integrated.
+- A shared `build.build-dir` (Cargo 1.91+) in your user config moves the intermediates out
+  of each `target/`; set it outside the repository and keep it on the same filesystem as
+  the checkouts.
 
 ### Env knobs (developer-facing)
 
 | Var | Effect |
 |---|---|
-| `HOUSTON_SAFE_MODE=1` | Turns on every individual safe-mode flag below at once. |
-| `HOUSTON_DISABLE_AUTO_RESTORE=1` | Skips the normal boot-restore policy; every session comes back as a deferred husk instead of respawning its PTY. |
-| `HOUSTON_RESTORE_BUDGET=<n>` | How many sessions boot at once at startup; the rest come back deferred. `0` is valid (defers every husk). Capped at `RESTORE_BUDGET_MAX` (500) — a value above the cap is rejected, naming the cap and what was asked for. |
-| `HOUSTON_SHELL_INTEGRATION=0` | Kill-switch for the daemon's shell-integration injection. |
-| `HOUSTON_WATCHDOG=1` | Enables native renderer health probes in debug builds; release builds always install them. |
-| `HOUSTON_WATCHDOG_RECOVER=1` | Opts into automatic renderer recovery. The default only detects failures; native quit remains available. Recovery is experimental and subject to visibility, inspector, wake grace, cooldown and attempt limits. |
-| `HOUSTON_WATCHDOG_SELFTEST_TERMINATE_MS=<ms>` | Debug-only Linux fault injection: terminates the main renderer once through WebKit after the delay. Use only on an isolated test channel. |
-| `HOUSTON_WATCHDOG_SELFTEST_WEDGE_MS=<ms>` | Debug-only fault injection: blocks the renderer's JavaScript thread after the delay. Use only on an isolated test channel. |
-| `HOUSTON_EXIT_SELFTEST=<mode>` | Debug-only Linux native lifecycle fixture. Modes: `close-crashed`, `close-wedged`, `close-healthy`, `quit-crashed`, `stop-crashed`. Requires `HOUSTON_EXIT_SELFTEST_DIR` under the temporary directory, `HOME` at its `home` child and an explicit `exit-selftest-*` channel. An external harness must create a fixture PTY, write the `go` marker after `ready`, and verify process exit and daemon/session survival independently of cleanup. |
-| `HOUSTON_DEVTOOLS=1` | Opens the webview devtools on launch (`src-tauri/src/main.rs`). |
-| `RUST_LOG` | Standard `tracing`/`env_logger`-style filter, read by the daemon's logging setup. |
-| `TR_DEBUG_PTY_DUMP=<dir>` | Resolved once; when set, dumps raw PTY bytes to that directory for debugging. |
-| `HOUSTON_WSL_BIN_DIR=<dir>` | Where WSL environments read the Linux `houston-core`, `tr-helper` and `houston-supervisor` they install into a distro, instead of the bundled `wsl/` resources. A development build has no bundle; point it at a Linux build of `core/target/<profile>`. |
-| `HOUSTON_DAEMON_BIN_DIR=<dir>` | Where connect-or-spawn looks for `houston-core` (and, on Linux, `houston-supervisor`) instead of beside the app's own binary. Set by `dev.sh` to `core/target/debug`; unset in a packaged install, where the sidecars are frozen copies beside `houston`. |
-| `HOUSTON_UPDATE_MANIFEST_URL=<url>` | Replaces the update-manifest URL (`latest.json`) the daemon checks. |
-| `HOUSTON_MODEL_CATALOG_URL=<url>` | Replaces the model-catalog download URL. |
-| `HOUSTON_NIGHT_SHIFT_DEV_CMD=<cmd>` | Dev channel only: a Night shift run starts this instead of the orchestrator's CLI, so a run spends no provider quota. On Windows it is the path of a PowerShell script; elsewhere a `sh -c` command. Ignored on every other channel. |
-
-The watchdog accepts `TR_WATCHDOG`, `TR_WATCHDOG_RECOVER` and
-`TR_WATCHDOG_SELFTEST_WEDGE_MS` for compatibility.
-When both names are set, the `HOUSTON_*` value wins, including `0` to disable.
-
-On an isolated X11 test display, run `scripts/test-native-exit.sh DEBUG_APP
-FRESH_CORE_BIN_DIR MODE REPO_ROOT` with `DISPLAY` and `HOUSTON_EXIT_TEST_DISPLAY`
-set to that display. Run each native exit mode separately. The wrapper provides a
-private test Secret Service and temporary home/channel, creates a real shell PTY, and
-checks client exit, daemon/session continuity and shutdown of the shell and supervisor
-from outside the client. It retains
-its evidence directory and stops only the daemon it created. Supply freshly built
-debug binaries, including `houston-core` and `houston-supervisor` in the core directory.
-The `close-wedged` case can produce an Ubuntu crash-report dialog after the client
-exits: WebKitGTK 2.50.4 deliberately crashes a blocked WebProcess ten seconds after
-its UI connection closes. Match the report's working directory to the retained
-fixture directory and the log message about the closed UI connection before
-attributing that report to the injected hang.
-
-`.cargo/config.toml` sets both URLs to a refused loopback port for every `cargo test` and
-`cargo run`, so a test daemon never reaches the real endpoints: an anonymous GitHub client is
-throttled per public IP and every daemon boots one check. A test that needs a response sets
-the variables to a local server; Cargo does not override a variable already in the
-environment. `common::hermetic_command` forwards them across `env_clear`, so a spawn that
-clears its environment must do the same. A daemon launched by `dev.sh` from a built binary
-is unaffected and checks the real endpoints.
-
-To watch a Night shift run end to end, set the variable to the fake orchestrator before the
-development script starts the daemon, then restart it with `--fresh`:
-
-```
-# Windows (PowerShell)
-$env:HOUSTON_NIGHT_SHIFT_DEV_CMD = "$PWD\scripts\night-shift-fake-orchestrator.ps1"
-.\scripts\dev.ps1 --fresh
-# Linux
-HOUSTON_NIGHT_SHIFT_DEV_CMD="bash $PWD/scripts/night-shift-fake-orchestrator.sh" ./scripts/dev.sh --fresh
-```
-
-In the app, add a scratch Git repository as a workspace, open Routines ▸ Night shift, set it
-up, add a check (for example `true`), save, choose **Run now** with 20 minutes and **Start**.
-The fake records plan, PR, lesson, flaky test and decision entries through `hs-night`,
-writes `report.md` and publishes it, then waits. The live view shows the entries; **Wrap up
-now** pastes the wrap-up instruction into its pane; **Stop** closes it and opens the morning
-report. Preflight still checks the real providers' CLIs and hooks. The fake fires no hooks, so Houston
-pastes its first prompt without waiting for a hook to confirm it.
-
-`HOUSTON_DISABLE_SWARM_AUTOLAUNCH`, `TR_BENCH_RESULTS_PATH`, and
-`TR_BENCH_WRITE_BURST_MS` are bench-harness-only knobs
-(`scripts/m9-baseline.sh`) — not something you set for ordinary dev work.
-
-### When the wire changes
-
-Daemon and UI ship wire changes in the same commit, with one
-`PROTOCOL_VERSION` bump and `protocol/protocol.md` updated alongside. The
-TypeScript bindings under `ui/src/renderer/src/houston/generated/` are no longer
-generated: they are committed, frozen and never hand-edited.
-
-`./scripts/check-protocol-sync.sh` (one of the safety scripts below) then
-verifies daemon, UI, and `protocol/protocol.md` all agree on
-`PROTOCOL_VERSION`.
+| `HOUSTON_DEVTOOLS=1` | Opens the webview devtools on launch. |
+| `HOUSTON_NODE=<path>` | The Node.js the host runs the server with in a development build. |
+| `HOUSTON_V2_SERVER_ENTRY=<path>` | The server entry the host starts instead of the bundled one. |
+| `RUST_LOG` | `tracing` filter for the host log (default `houston_tauri=info`). |
 
 ## Checks
 
 ### Cadence
 
-**Per item** (in the crate/area actually touched) — cheap, run constantly:
+**Per item** (in the package or crate touched), run constantly:
 
-- `core`/`src-tauri`: `cargo fmt` + `cargo clippy --all-targets -- -D
-  warnings` + the item's own and touched test binaries (`cargo test --lib
-  <module>`, `cargo test --test <name>`).
-- `ui`: `bun run typecheck` + the item's own and touched test files
-  (`bun run test -- <name>…`).
+- `src-tauri`: `cargo fmt`, `cargo clippy --all-targets -- -D warnings` and the touched
+  tests (`cargo test <module>::`).
+- `apps/` and `packages/`: the package's `typecheck` and the touched tests; for the server,
+  `pnpm --filter houston exec vp test run <files>`.
 
-**Before every push and delivery** — the full suite, always
-inside `scripts/oom-shield.sh`:
-
-- `core`: full `cargo nextest run`, then `cargo test --doc` (nextest does not run
-  documentation tests).
-- `ui`: full `bun run typecheck` + `bun run test` + `bun run check:complexity` +
-  `bun run build` + `bun run check:css` + `bun run check:bundle`, in that order
-  (the last two read what `build` emitted).
-
-New daemon behaviour gets an integration test in
-`core/houston-core/tests/`. Bug fixes get a regression test that fails
-before the fix.
+**Before every push** — the full suites, Cargo inside `scripts/oom-shield.sh` on Linux and
+with three jobs on Windows.
 
 ### Full gate commands
 
-**`core/`**:
+**The workspace** (the web build first: `src-tauri` embeds it at compile time, and
+`tauri::generate_context!()` panics without `apps/web/dist`):
+
+```
+pnpm -r typecheck
+pnpm --filter @t3tools/web build
+pnpm --filter @t3tools/contracts --filter @t3tools/shared test
+pnpm --filter houston exec vp test run src/houston
+node scripts/check-upstream.mjs <upstream clone> --skip apps/web
+```
+
+The upstream clone is checked out at `upstream.json`'s `commit`.
+
+**`src-tauri/`**:
 
 ```
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
-cargo nextest run
-cargo test --doc
+cargo test -- --test-threads=3
 ```
 
-`cargo-nextest` runs every test in its own process and is the primary runner for `core/`;
-`core/.config/nextest.toml` holds the thread budget (`test-threads = 3`, matching the
-`-j 3` that `oom-shield.sh` was measured against), timeouts and the `ci` profile. Install the
-pinned version once (CI installs the same one):
-
-```
-scripts/oom-shield.sh cargo install cargo-nextest --version 0.9.148 --locked -j 3
-```
-
-The core integration tests are the modules of one binary, `core/houston-core/tests/it/main.rs`
-(`it`); a new test file is a new `mod` line there. Select a file's tests with a filterset,
-for example `cargo nextest run -E 'test(/^git_wire::/)'`. Plain `cargo test` would run
-those modules as threads of one process, so `nextest_guard` fails it and names the command
-to use; `HOUSTON_ALLOW_PLAIN_CARGO_TEST=1` overrides that for a single module.
-
-Run hook-installation tests and full core gates with a throwaway `HOME`, and unset
-`CLAUDE_CONFIG_DIR` and `CODEX_HOME`. Workspace creation can refresh user-scope Claude
-hooks. Preserve the original `CARGO_HOME` and `RUSTUP_HOME` when changing `HOME` so the
-build still finds its toolchain and caches. Individual hook fixtures also isolate their
-configuration in subprocesses.
-
-Locally, run `cargo test` through `scripts/with-test-keyring.sh` when
-`voice::cloud`'s Secret Service tests need a keyring:
-`scripts/oom-shield.sh scripts/with-test-keyring.sh cargo nextest run`. Never run
-`gnome-keyring-daemon --unlock` directly on a desktop host, even inside
-`dbus-run-session`: the daemon opens the host's real
-`~/.local/share/keyrings/login.keyring`, and once anything prompts it
-re-encrypts that keyring with the password read from stdin (empty or `\n`).
-The user's login password then no longer unlocks it. The wrapper avoids this
-by pointing `XDG_DATA_HOME` and `XDG_RUNTIME_DIR` at a temporary directory.
-The bare `--unlock` recipe is only safe in CI and the testbed VM, which have
-no user keyring to damage.
-
-**`ui/`** (order matters):
-
-```
-bun run typecheck         # tsc --noEmit
-bun run test              # vitest run
-bun run check:complexity  # the .tsx cyclomatic-complexity ratchet
-bun run build             # vite build
-bun run check:css         # reads the emitted stylesheet — must run after build
-bun run check:bundle      # reads bundle-stats.json — must run after build
-```
-
-Captures for UI pull requests come from the story harness in
-`ui/src/renderer/harness/`. `node ui/harness/shot.mjs <story> <out.png>` serves it
-on `127.0.0.1`, renders one story and writes a PNG (`--width`, `--height`,
-`--theme`, `--scale`); `node ui/harness/measure.mjs <story> '<selectors>'` prints
-the measured boxes of the given elements. Write captures outside the tracked
-tree (`ui/harness-shots/` is ignored). `node scripts/capture-stories.mjs <outDir>
-[filterRegex]` boots one Vite server, captures every story in both chrome themes
-at 1280x800 into `<outDir>/<theme>/<story>.png`, and exits non-zero listing the
-stories that failed to render.
-
-`shot.mjs` renders in WebKit on Linux, the closest match to WebKitGTK, and in
-Chromium on Windows, the closest match to WebView2. `--browser webkit|chromium`
-selects the engine and `--executable PATH` uses a specific binary. On Windows the
-script launches Playwright's Chromium and falls back to the installed Microsoft
-Edge when it is missing. A missing browser is reported with its install command:
-`bunx playwright install chromium` (or `webkit`). The Vite server's whole process
-tree is ended when the script exits, including on failure and on Ctrl-C.
-
-`bun run test`, never bare `bun test` — `bun test` invokes Bun's own test
-runner, which fails the jsdom-based suite.
-
-`check:complexity` is a `ui` gate rather than one of the safety scripts below
-because a decision-path count needs a real parse, not a text search: it shells
-out to `oxlint` (pinned exactly in `package.json`, one rule armed via `-A all
--D complexity`, no config file in the tree) and ratchets the result against
-`ui/complexity-baseline.json` — one pin per file, holding its over-ceiling
-function count and its worst function's score, both only ever falling. A file
-absent from the baseline must have zero. **Scope is `.tsx` only**: the same
-scan over `.ts` flags `tree.ts`'s `isNode` (a discriminated-union validator),
-which scores high by being correct — the metric
-cannot tell irreducible states from accidental ones, and component bodies are
-where the accidental branches land. `--baseline` prints a fresh block.
-~0.1 s over 109 files, so it belongs in the per-item loop too.
-
-**`src-tauri/`** — test + clippy in *both* the default and `--features bench`
-configurations, plus `cargo fmt --check`:
-
-```
-cargo fmt --all --check
-cargo clippy --all-targets -- -D warnings
-cargo clippy --all-targets --features bench -- -D warnings
-cargo test
-cargo test --features bench
-```
-
-The renderer must be built first (`cd ui && bun run build`), before **any**
-cargo step here including clippy: `tauri::generate_context!()` resolves
-`build.frontendDist` at **compile time**, and without `ui/out/renderer`
-present the proc macro panics.
+On Linux, run `cargo test` through `scripts/with-test-keyring.sh` when keychain tests need
+a Secret Service. Never run `gnome-keyring-daemon --unlock` directly on a desktop host, even
+inside `dbus-run-session`: it opens the host's real login keyring and re-encrypts it with
+the password read from stdin. The wrapper points `XDG_DATA_HOME` and `XDG_RUNTIME_DIR` at a
+temporary directory. The bare `--unlock` recipe is only safe in CI and the testbed VM.
 
 ### The safety scripts
 
-Hermetic, sub-second, text-search invariants. Twenty-six of these run on every
-push and every PR, in `ci.yml`'s `safety-checks` job;
-see "What CI runs" below for the other jobs, and the Cadence section
-above for what still runs only locally. The last row,
-`check-third-party-licenses.sh`, is not a text search: it regenerates the
-committed inventory and runs in its own `licence-inventory` job.
+Hermetic, sub-second text-search invariants, run in `ci.yml`'s `safety-checks` job.
 
-| Script | Enforces | Mechanism |
-|---|---|---|
-| `check-watchdog.sh` | tauri's `tracing` feature stays off; no `SystemTime` outside `watchdog/clocks.rs`; no blocking window getter off the main thread | `cargo tree` feature grep + `grep -rln SystemTime` + a pattern scan for blocking getters |
-| `check-dev-channel.sh` | `dev.sh`'s channel-resolution invariants (inherited env never wins, `--channel` validation, `--print-target` has zero side effects) | Runs `dev.sh --print-target` repeatedly inside a throwaway sandbox `$HOME` under a timeout, asserting printed channel/state-dir and rejection messages |
-| `check-kill-guard.sh` | `kill(2)` never receives an unchecked pid — only `core/houston-core/src/pid.rs` may call it | `grep -rn 'libc::kill('` excluding `pid.rs`; also bans `nix::sys::signal`/`syscall(`; Windows twin bans `OpenProcess(`/`TerminateProcess(`/`taskkill` outside `pid.rs` |
-| `check-protocol-sync.sh` | daemon, UI, and doc all agree on `PROTOCOL_VERSION` | Extracts the version from `houston-protocol/src/lib.rs`, `PROTOCOL_VERSION.ts`, and `protocol/protocol.md`'s header; fails if any differ |
-| `check-loop-spawn-sync.sh` | both daemon hosts (`houston-core/src/main.rs`, `src-tauri/src/daemon_host.rs`) call the single `spawn_background_loops` helper | Text search for the helper's definition and each call site — deliberately not a real parser |
-| `check-title-tooltip-guard.sh` | native `title=` DOM tooltips vs. component `title` props (visible headings) are not confused, and the remaining native `title=` only ever shrink toward `Tooltip` | Scan over `.tsx` for capitalised JSX tags carrying `title=`, checked against an explicit component-props allowlist; a third check counts native lowercase-element `title=` per file against a ratchet |
-| `check-spawn-window.sh` | every production spawn goes through `houston_core::spawn` (`CREATE_NO_WINDOW` on Windows) | Checks `clippy.toml` disallows raw `Command::new`; checks `spawn.rs` sets the flag; asserts it's **not** applied to the PTY's `portable_pty::CommandBuilder` |
-| `check-env-ratchet.sh` | daemon code reads the environment through `HostEnv`, never `std::env`; direct accesses per file only go down | `grep -c` of `std::env::{var,var_os,vars,vars_os,set_var,remove_var}`, `dirs::home_dir` and `home_dir::home_dir` in `core/houston-core/{src,tests}` against `scripts/env-ratchet.baseline` (`--update` after a migration); clippy `disallowed-methods` covers new code in modules without a blanket allow |
-| `check-wsl-bundle.sh` | the Windows installer bundles the Linux daemon for WSL distros | Checks `tauri.windows.conf.json`'s `bundle.resources`, then that `src-tauri/wsl/` holds only `houston-core`, `tr-helper` and `houston-supervisor`, each an x86-64 ELF; with nothing staged it passes unless `HOUSTON_WSL_BUNDLE_REQUIRED=1` |
-| `check-icon-imports.sh` | raw `lucide-react` imports live only in `components/icons.tsx` | `grep` over `ui/src` excluding tests and `icons.tsx`, checked against an allowlist |
-| `check-native-select.sh` | no native `<select>` in the renderer (its popup is an unstyled GTK window on Linux/WebKitGTK) | `grep` over `ui/src` excluding tests and `Select.tsx`, comments stripped first |
-| `check-native-input.sh` | no native `<input type="checkbox">`/`<input type="radio">` in the renderer (its box is drawn by the OS theme, never ours) | `grep` over `ui/src` excluding tests, comments stripped first; no exemptions — `Toggle`/`Segmented` cover both shapes |
-| `check-menu-descriptions.sh` | a menu item's description line wraps or truncates on purpose, never an unbounded `whitespace-nowrap`/`truncate` or no wrapping class at all | scans each `role="menuitem"` block for a `<strong>` label followed by a `<span>`/`<small>`/`<p>` description, checked against its own `className` |
-| `check-doc-hygiene.sh` | the docs tree keeps its shape: Markdown only in the allowed set, with no dates, phase numbers, other product names or dead pointers | `git ls-files` against an allowlist regex, then `grep` per rule |
-| `check-comment-hygiene.sh` | a comment block is at most three lines, and names no date, plan number, other app or person | perl scan of comment text only (string literals excluded); also runs per edited file from `.claude/settings.json`'s `PostToolUse` hook, so the agent sees the failure while the edit is in front of it |
-| `check-type-scale.sh` | text sizes come from the eight-step ladder, including in CSS and arbitrary-property classes | scans `components/ui/` and the four stylesheet foundations for legacy `text-[N<unit>]`, raw scale rules, CSS `font-size` literals and `[font-size:N<unit>]`; every hit fails |
-| `check-label-tracking.sh` | the `label` step's 0.1em tracking (`--tr-text-label-tracking`) always pairs with its own uppercase transform in the same class string — a tracked run with no transform nearby is sentence/title-case text wearing the wrong step | `git ls-files` + `grep` over `ui/src/renderer/src/**/*.{ts,tsx}` for `tr-text-label-tracking`, checking a small line window around each hit for `tr-text-label-transform`/`uppercase`; no ratchet — the fix is always to move the run to the `small` step |
-| `check-control-metrics.sh` | a control's height comes from a `--h-*` token, not a hand-typed pixel | scans `components/ui/` and the four foundations for dimension literals in interactive tags and chrome constants; control-ladder values (22/26/28) remain absolute under that same scope. Width and 44 are excluded; `components/hitTarget.ts` keeps its documented rule A exemption |
-| `check-radius-tokens.sh` | a corner radius comes from a `--tr-radius-*` rung, not a hand-typed pixel and not the framework's own `rounded-sm`/`md`/`lg`/`xl` | scans `components/ui/` and the four foundations for `rounded-[Nunit]`, CSS `border-radius: Nunit`, framework utilities conditional on `tailwind.css` mappings, and `[border-radius:Nunit]`; every hit fails. `rounded-full`/`-[50%]`/`-none` are exempt |
-| `check-spacing-tokens.sh` | a stack's rhythm comes from the container's `gap-*`, not a directional margin on the children | scans `components/ui/` and the four foundations for directional margins, raw CSS padding/margin/gap lengths and arbitrary-property forms; alignment, resets and `[&_…]:` prose rhythm keep their documented exemptions. Every hit fails |
-| `check-icon-metrics.sh` | a glyph's size and stroke come from its type rung, not a hand-typed number: no `size=`/`strokeWidth=` prop on any glyph | perl scan of `ui/src` for glyph-named JSX tags carrying either prop, plus props objects that spell one; no ratchet and no allowlist — `components/icons.tsx` (the defaults that DEFINE the set) and `IconTile` (a container with a named tile scale) are the only exemptions |
-| `check-shadow-recipes.sh` | a shadow recipe comes from a token or a named constant in `components/shadowChrome.ts`, never a hand-typed px length or colour | scans `components/ui/` and the four foundations for every `shadow-[...]` and inline `boxShadow`; strips token references, accepts the `*_CLS` literals in `shadowChrome.ts`, and fails if recipe content or an interpolation remains |
-| `check-ellipsis.sh` | user-facing text uses the real ellipsis character (`…`), never ASCII `...` | perl scan of `ui/src` `.ts`/`.tsx` (comments and test files stripped) plus `index.html`, for a `...` not immediately followed by an identifier char / `(` / `[` / `{` / `)` (the spread/rest shapes); no ratchet and no allowlist |
-| `check-focus-visible.sh` | a class string that kills the default `outline` (`outline-none`, any variant) repaints its own `focus-visible:` state — never left with no visible focus indicator | scans the renderer for class-string literals containing `outline-none`; each must carry its own painted `focus-visible:` state. Also fails any utility whose arbitrary value is interpolated (`shadow-[${X}]`, `focus-visible:shadow-[${X}]`), which Tailwind cannot generate. No exemptions |
-| `check-ratchets-only-tighten.sh` | the complexity baseline cannot rise | compares the `worst` and `over` values in `ui/complexity-baseline.json` with the selected ref; the other UI guards have no pins |
-| `check-mutations.sh` | every covered check proves it fires: a guard whose regex stopped matching reports "ok" forever, and the failure mode is silence | runs `scripts/mutations/<check>.sh` for each covered gate; each points the real check at a broken fixture under `scripts/mutations/fixtures/` (through its `SCAN_ROOT` override) and asserts the check failed **and named the planted violation** — a bare non-zero exit would also come from a stale baseline and prove nothing. Coverage is an inverse ratchet (`MIN_COVERED`) that must be raised when a mutation is added; the uncovered checks are printed on every run |
-| `check-empty-state-action.sh` | an empty state offers the action its copy names — copy that says "Start a chat" while the control lives in some other chrome fails | scans `ui/src` for elements with an empty-ish `data-testid` (`*empty*`/`*no-matches*`/`*unselected*`), requires `<button`, `<a `, or an `<EmptyState` render in the subtree whenever the copy opens with an imperative; `EmptyState`'s own `action` is required BY TYPE so tsc guards that half; three reasoned testid exemptions |
-| `check-third-party-licenses.sh` | the committed inventory of every third-party package in the binaries (`src-tauri/resources/third-party-licenses.json`) matches the dependency graphs the tree resolves to | runs `scripts/gen-third-party-licenses.mjs --out <tmp>` and diffs the deterministic output against the committed file; a difference names the differing line count and only the first diff lines, never the whole 1.4 MB file |
+| Script | Enforces |
+|---|---|
+| `check-dev-channel.sh` | `dev.sh`'s channel resolution: inherited env never wins, `--channel` validation, `--print-target` has no side effects |
+| `check-kill-guard.sh` | `kill(2)` and the Win32 process calls only in `src-tauri/src/sys/pid.rs` |
+| `check-case-collisions.sh` | tracked paths stay unique on case-insensitive filesystems |
+| `check-spawn-window.sh` | `src-tauri/clippy.toml` still disallows bare `Command::new`, and `src-tauri/src/sys/spawn.rs` applies `CREATE_NO_WINDOW` |
+| `check-env-ratchet.sh` | direct process-environment reads under `src-tauri/src/sys` only go down (`scripts/env-ratchet.baseline`, `--update` after removing one) |
+| `check-doc-hygiene.sh` | Markdown only in the allowed tree, with no dates, phase numbers, other product names or dead pointers; `v2-checks` runs it without `handoff/` |
+| `check-comment-hygiene.sh` | a comment block is at most three lines and names no date, plan number, other app or person |
+| `check-web-style.sh` | the `apps/web` design-system guards; `--self-test` proves each fires on its bad fixture |
+| `check-third-party-licenses.sh` | the committed inventory matches `src-tauri`'s Cargo graph and the pnpm workspace; it runs in the `licence-inventory` job |
 
-| `check-page-width.sh` | every page root uses the one `--page-w` column (960px in `theme.css`), never a per-page `max-w-[Npx]` | scans `components/nav/`, `components/prs/`, `UsageSection.tsx` and `ui/PrPage.tsx` for arbitrary max widths; only `max-w-[var(--page-w)]` passes |
+The `apps/web` style rules keep a per-file count in `scripts/web-style-baseline/<rule>.baseline`.
+CI fails on a new file, a raised count or a stale entry; after removing a violation, lower
+the pin with `--update` (never raise it).
 
-### v2 renderer style guards
-
-The design-system rules that used to scan `ui/` now scan `apps/web` through one
-runner, `scripts/check-web-style.mjs`. `bash scripts/check-web-style.sh --all`
-runs every rule; `--self-test` proves each guard still fires on the fixture in
-`scripts/web-style-fixtures/<rule>/bad` and passes its `good` twin.
-
-Each rule keeps a per-file count in `scripts/web-style-baseline/<rule>.baseline`.
-CI fails on a new file, a raised count, or a stale entry; after removing a
-violation, lower the pin with `--update` (never raise it). `--list` prints every
-rule and whether it was ported or adapted, and `--print <rule>` lists the
-current hits.
+`check-binary-fresh.sh` runs at install time, from `install-desktop.sh`: it refuses a
+release binary older than `src-tauri`'s sources.
 
 ### What CI runs
 
-| Job | Runs on | What it does |
-|---|---|---|
-| `safety-checks` | every PR, and every push to `main` except a docs-only change (`**/*.md`, `docs/**`, `.gitignore`, `LICENSE`) | Safety scripts, workflow syntax/contracts, plus offline release-note, CI-preflight, draft-publication and updater-signature regression tests |
-| `renderer-checks` | every PR, and every push to `main` except a docs-only change | `ui`'s `bun run typecheck` and `bun run test` |
-| `core-checks` | every PR, and every push to `main` except a docs-only change | core formatting, Clippy, unit tests and doctests |
-| `core-integration` | every PR, and every push to `main` except a docs-only change | the full `cargo nextest run -p houston-core` on Linux, the `it` integration binary included, with an isolated keyring |
-| `linux-native-checks` | every PR, and every push to `main` except a docs-only change | fresh renderer assets and debug sidecars, native formatting, Clippy and tests with default and `bench` features; tests use an isolated keyring |
-| `windows-renderer-checks` | every PR, and every push to `main` except a docs-only change | renderer tests, typecheck, complexity, CSS and bundle gates on Windows 2022 |
-| `windows-checks` | every PR, and every push to `main` except a docs-only change | core and native suites and Clippy, plus protocol compatibility, Windows Claude and Codex hooks, subprocess deadlines, stalled SSH, Git, management, shutdown, environment, Tasks wire, non-ASCII/long-path ConPTY and orchestration worktree regressions on Windows 2022 |
-| `licence-inventory` | every PR, and every push to `main` except a docs-only change | regenerates `src-tauri/resources/third-party-licenses.json` and diffs it against the committed copy (`scripts/check-third-party-licenses.sh`) |
-
-Graphical tests requiring a desktop session and load-sensitive gates (`perf_smoke`,
-`idle_loops_wire`, latency benchmarks) stay local; Windows runs a named set of
-`houston-core` suites rather than all of them.
-Windows renderer and Rust checks run in parallel; the native
-job builds its own fresh frontend assets and covers portable ConPTY regressions,
-including Tasks start/stop/resume for all six providers and queue execution with
-structured results and independent review. Provider CLIs are simulated; PTYs and
-Git worktrees are real. The Unix-only Tasks suites still require local Linux gates.
-These gates do not establish interactive browser or installer parity.
-
-Two more freshness gates exist outside this set — they need build output CI's
-hermetic job doesn't have, and run only at build/install time:
-
-- `check-renderer-fresh.sh` — build-time, called by `build-app.sh`. Compares
-  `PROTOCOL_VERSION.ts`/`lib.rs` against `ui/out/renderer/index.html`'s mtime.
-- `check-binary-fresh.sh` — install-time, called by `install-desktop.sh`.
-  Mtime-compares the release binary against `core/houston-core/src`,
-  `core/houston-protocol/src`, `src-tauri/src`, both `Cargo.toml`/`Cargo.lock`,
-  and `tauri.conf.json`.
-
-Two scripts remain standalone, on-demand checks — hermetic and sub-second, but
-not wired into the CI job: `check-ghostty-vt-pin.sh` (the vendored
-terminal-engine WASM matches its build pin) and `check-icon-tight-cuts.sh`
-(prints, never fails, the icon set's tight-cut coverage). `check-button-recipes.sh`
-runs in `safety-checks` with the other UI guards.
-
-## Maintainer-only: load-sensitive gates
-
-These need a release build and an idle machine; they are not part of
-`ci.yml` and are not something a contributor runs on every change.
-
-### `perf_smoke`
-
-`core/houston-core/tests/it/perf_smoke.rs`, `#[ignore]` by default:
-
-```
-cargo nextest run --release -j 1 --run-ignored only --no-capture -E 'test(/^perf_smoke::/)'
-```
-
-- **Throughput floor**: `MIN_MIB_PER_SEC = 5.0` — an ANSI-flood test spraying
-  64 MiB of heavy TUI output through the full daemon→WebSocket path,
-  asserting sustained throughput at or above this floor.
-- **RSS regression ceiling**: `RSS_REGRESSION_CEILING_MIB = 150.0` — not a
-  hard budget (the daemon measured 99.9–111.1 MiB at baseline against a
-  50 MiB target it never met), but ~1.5× the measured baseline peak: wide
-  enough not to flap, tight enough to catch a new unbounded buffer. Ten
-  concurrent 8 MiB floods drive it.
-
-Run at **normal priority** (`nice` would starve its drain loop) and on an
-**idle machine only** — it is load-sensitive by roughly 90×, so a failing
-number from a busy box is no evidence either way. Linux-only, and run locally
-(not part of `ci.yml`'s `safety-checks` job).
-
-Sibling test `memory_perf_smoke` gates the memory write-path floor the same
-way, also `--ignored`, also run locally.
-
-### `wsl_live`
-
-`src-tauri/tests/wsl_live.rs`, Windows only and `#[ignore]` by default, runs against a
-real WSL 2 distro. Build the Linux binaries inside the distro first
-(`cargo build --release --bin houston-core --bin tr-helper --bin houston-supervisor` in
-`core/`), then from Git Bash on Windows:
-
-```
-cd src-tauri
-MSYS_NO_PATHCONV=1 HOUSTON_TEST_WSL_DISTRO=Ubuntu HOUSTON_TEST_WSL_CHANNEL=wslt \
-  HOUSTON_TEST_WSL_LINUX_BIN=<in-distro path of core/target/release> \
-  cargo test --test wsl_live -- --ignored --test-threads=1 --nocapture
-```
-
-Without `HOUSTON_TEST_WSL_DISTRO` every test prints `SKIPPED` and passes.
-`MSYS_NO_PATHCONV=1` stops Git Bash from rewriting the POSIX path into a Windows one.
-Each test copies the binaries into a throwaway `/tmp/houston-live-*` HOME inside the
-distro, runs every in-distro command under that HOME, and stops its daemon through
-`wsl-proxy` and `/manage daemon_shutdown` before removing the HOME, also on failure.
-`live_relay_throughput_and_echo_latency` prints PTY throughput and keystroke echo latency
-through the relay; like `perf_smoke`, read it only from an idle machine.
-
-### `idle_loops_wire`
-
-`core/houston-core/tests/it/idle_loops_wire.rs`, the detached daemon's idle
-budget, `#[ignore]` by default. Each test reads a whole-process figure, and a
-daemon booted by an earlier test stays resident, so each must run in its own process,
-one at a time, which nextest with a single job does:
-
-```
-cargo nextest run --release -j 1 --run-ignored only --no-capture -E 'test(/^idle_loops_wire::/)'
-```
-
-- **P3, idle scheduling**: ≤ 15 thread-summed context switches per minute with no
-  client, no session and one routine armed far in the future (so the reap rule
-  does not end the run). Measured 0 over 20 s on the complete daemon, against a
-  211/min baseline before the idle profile.
-- **P4, idle RSS**: ≤ 30 MiB at zero sessions and ≤ 64 MiB with twelve idle
-  shells whose emulators are saturated at their full history budget. Both include
-  the boot-time update check and model-catalog refresh, which need network access:
-  measured 25.1 MiB at zero sessions (11.9 MiB before those requests) and 62 MiB
-  with twelve shells, 34 threads. Closing the twelve returns the daemon to within
-  3 MiB of baseline once the PTY reader threads wind down.
-
-Same rules as `perf_smoke`: release build, idle machine, run locally.
-
-### `scripts/m9-baseline.sh`
-
-The rendering-path frame-latency baseline:
-
-```
-./scripts/m9-baseline.sh          # RUNS=5 by default
-```
-
-- Requires `src-tauri/target/release/houston-tauri` built with
-  `--features bench`.
-- M9's flood start/teardown go through `bench_stdin`/`bench_session_kill`
-  (`src-tauri/src/bench.rs`), which dial the app's own `/ws` endpoint the same
-  way `WsTerminalTransport` does — `/ws` is the one PTY transport,
-  `terminal_write`/`terminal_destroy` no longer exist. The results JSON's
-  `m9.wsGap` (`gaps`, `reattaches`) reads `ws.ts`'s own `__trWsGapStats__`
-  counter, replacing the deleted Tauri sink's drop counters as the gap/
-  recovery reading.
-- **450 ms p95 regression floor**, compared against a recorded baseline
-  (243 ms p95 median, 68 ms p50 median). Re-measured on an idle box after the
-  transport moved to `/ws`: pooled-p95 median 71 ms, worst frame 84–122 ms,
-  dropped frames per 1 000 median 326, flood drain 4.10 s (down from
-  11.0–19.0 s pre-transport), app RSS 180 MiB, zero gaps and zero reattaches
-  across five valid runs — the ceiling holds; the heavier per-frame profile is
-  the transport delivering bytes faster than the renderer paints them, not a
-  regression.
-- **5 runs + median**, never one: a single run samples only ~40–80 frames, so
-  one hitch can move its p95 by hundreds of ms.
-- Refuses `--channel release`; defaults to a **throwaway channel `m9bench`**
-  (`~/.houston-m9bench`), wiped before every run — and only ever wipes
-  that literal channel name, never `dev`/`release`/an explicit other. The
-  wipe itself refuses if a live daemon holds `daemon.lock` on that state dir.
-- Aborts (exit 2) rather than reporting a number if the grid wasn't clean
-  (`preExistingPanes != 0`) — comparing a dirty-grid run to the 12-pane
-  baseline would be meaningless.
-
-### `scripts/boot-baseline.sh`
-
-The boot budget's evidence — how long until the window is there, and how
-long until you can type into it:
-
-```
-./scripts/boot-baseline.sh        # RUNS=5 by default
-```
-
-- Same requirements and same throwaway-channel rules as `m9-baseline.sh`
-  above: a release binary built with `--features bench`, `m9bench` by default,
-  `release` refused, and only ever wipes that one literal channel name.
-- Runs `--bench=M10` against **two channel states**, because they answer
-  different questions. **COLD** is a wiped channel: no session to restore, so
-  it measures process start → daemon → window → page load → `<App/>` mounted.
-  **WARM** is the same channel after one `--bench=M11` has seeded 12 shell
-  sessions into it, which is the boot a returning user actually gets and the
-  only one that can report a typeable time.
-- The two headline stamps exist only on a warm boot: **`grid-painted`** (the
-  first pane element is in the DOM) and **`focused-pane-typeable`** (that
-  pane's engine is live and its stdin is open — the first instant a keystroke
-  would reach the PTY). `TerminalPane` publishes the latter as `data-typeable`;
-  it is deliberately *not* "the skeleton is gone", which waits on the
-  scrollback replay long after keys already work.
-- Reports **per-phase deltas**, not one total: boot cost is only actionable
-  per phase, and a total hides which phase moved.
-- **5 runs + median** per condition. Voids any run that hit a phase deadline —
-  the stamp such a run reports is the deadline, not the event. Aborts (exit 2)
-  if a cold run found sessions, a warm run found none, or the restored-session
-  count moved between warm runs; in each case the runs are not comparable.
-- **Budgets**: cold start to `<App/>` mounted, 0 sessions, **< 3 s** (measured
-  median 2.14 s); warm restore to `focused-pane-typeable`, 12 panes, **< 3.5 s**
-  (measured median 2.30 s). Both are 3-run medians on an idle machine;
-  ceilings are ~1.5× the measured median.
-- Unlike M9 it does not sample rAF timings, but its own `waitForDom` deadline
-  enforcement used to re-check only from a `MutationObserver` callback and an
-  rAF tick loop — on an unfocused WebKitGTK window rAF throttles to near
-  zero, so once the grid finished mounting with no further DOM mutation to
-  wake the observer, the wait never re-checked its own deadline and hung
-  past the harness's process-level watchdog instead of timing out at
-  `BOOT_PHASE_DEADLINE_MS`. `waitForDom` now also polls on a `setInterval`,
-  which fires regardless of focus. It is still wall-clock: an idle machine
-  still matters.
-
-### `scripts/m12-hidden-reveal.sh`
-
-Cost and fidelity of panes hidden behind an expanded pane:
-
-```
-./scripts/m12-hidden-reveal.sh    # RUNS=3, VARIANTS="attached hibernate hibernate-snapshot"
-```
-
-- Same build and throwaway-channel rules as `m9-baseline.sh`. Each variant sets
-  `TR_BENCH_HIDDEN_POLICY`; runs are interleaved so machine load hits every
-  variant alike.
-- Floods 11 hidden panes with 1, 3 and 8 MiB of numbered lines, then collapses
-  the expanded pane. Reports client parse while hidden, reveal time per pane,
-  blank and intermediate paints, skeleton fallbacks, and content checks
-  (retained lines, gaps, corrupt lines).
-- A run whose window was hidden or unfocused is reported VOID: rAF throttling
-  stalls the reveal it measures.
-
-### `scripts/m13-steady-load.sh`
-
-CPU and input latency under steady output in a 12-pane grid:
-
-```
-./scripts/m13-steady-load.sh      # RUNS=3, VARIANTS="attached@0 attached@default hibernate-snapshot@default"
-```
-
-- A variant is `policy@paintMs`: the hidden-pane policy and
-  `TR_BENCH_BACKGROUND_PAINT_MS` (`0` repaints unfocused panes every frame,
-  `default` keeps the built-in tick).
-- Eleven panes print 20 lines/s each; the twelfth runs `cat` and receives a
-  typed token every 200 ms. Echo is measured from send to the token painted.
-- Phases (idle, streaming visible, streaming behind an expanded pane, visible
-  again) each sample `/proc` CPU of the app, WebKit and daemon processes. A
-  phase with fewer than 500 frames is VOID.
-
-### Terminal surface diagnostics
-
-Run the bounded standalone fixture after installing renderer dependencies and the
-Playwright WebKit browser used by the story harness. On Linux:
-
-```sh
-flock /tmp/houston-perf-round.lock node ui/harness/terminal-profile.mjs \
-  --out /tmp/houston-terminal-profile.json --phase-ms 5000 --cycles 3
-```
-
-On Windows, run one fixture at a time from PowerShell:
-
-```powershell
-node ui/harness/terminal-profile.mjs --out "$env:TEMP\houston-terminal-profile.json" --phase-ms 5000 --cycles 3
-```
-
-The fixture loads production terminal surfaces and vendored WASM through Vite development
-modules. It creates 1, 6 and 12 surfaces in one browser, samples idle and 20 Hz streaming
-output, then pauses and hides background surfaces while continuing output and verifies
-their repaint and latest content on reveal. With one surface, input and streaming share
-the terminal and there is no hidden-background phase.
-Three colour and create/dispose cycles exercise 8192 distinct truecolours per surface per
-cycle, using fresh colours across surfaces and rounds. Writes use UTF-8 byte arrays.
-`--phase-ms` accepts 1000..20000 and `--cycles` accepts 1..5; each round has a deadline
-and failures preserve partial JSON. Output and caches must stay outside the checkout.
-
-JSON records parse and paint counters, synthetic rAF cadence, synthetic textarea input
-through a timer loopback to a submitted canvas paint, WASM capacity and competing machine
-load. Cadence samples cover streaming only; the separately reported input-drain interval
-cannot satisfy the streaming sample threshold. Linux additionally records the launched
-browser process tree's CPU, RSS and PSS at
-phase boundaries; other platforms omit these process metrics. CPU is percent of one core
-and excludes Vite and the driver. Changing process sets invalidate CPU comparisons; summed
-RSS double-counts shared pages, so prefer PSS. Idle has no continuous rAF or input probe,
-but the focused cursor still blinks. Disposal does not force garbage collection, and WASM
-capacity can stay at its allocator high-water mark. A page hidden or unfocused at any point
-in a phase, missing or changing Linux process samples and streaming phases with fewer than 25 rAF samples per second mark diagnostic
-timings invalid; they do not discard the structural observations.
-Missing or timed-out synthetic input echoes fail the run and preserve the measured counts
-in the JSON instead of reporting a valid latency distribution from only successful echoes.
-
-Run at normal priority with no concurrent build or benchmark, and repeat on an idle machine
-before interpreting timing differences. These are development diagnostics, with no release
-baseline or regression floor. Playwright WebKit does not establish the installed
-WebKitGTK/Tauri runtime's behaviour; native memory-corruption investigations remain
-separate. The fixture omits PTYs, transport, React layout and snapshot hibernation.
-Native M12 covers the component's hidden policy and daemon reattachment; M13 covers
-actual PTY echo and app/daemon CPU. Worktrees can inspect those native scenarios using a
-debug binary built with `--features bench` and `TR_BENCH_ALLOW_DEBUG=1` on an unused named
-channel, but must not run the release-baseline scripts or compare debug numbers to their
-release floors.
+| Workflow and job | What it does |
+|---|---|
+| `ci.yml` `safety-checks` | the safety scripts, workflow syntax, and the offline release-note and updater-signature regression tests |
+| `ci.yml` `linux-native-checks` | the web build, then `src-tauri` formatting, Clippy and tests with an isolated keyring |
+| `ci.yml` `windows-checks` | the same on Windows 2022 |
+| `ci.yml` `licence-inventory` | regenerates the third-party inventory and diffs it against the committed copy |
+| `v2-checks.yml` | the workspace typecheck and suites, the web build, the upstream drift check and the doc hygiene check without `handoff/` |
 
 ## Maintaining model data
 
 Houston reads LiteLLM's
 [`model_prices_and_context_window.json`](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)
-through the shared model catalog. Installed applications automatically consume new model
-entries and metadata updates after LiteLLM publishes them; routine additions require no
-Houston change or release. A typical entry contains per-token USD rates and the native input
-context limit:
-
-```json
-{
-  "provider/model-id": {
-    "max_input_tokens": 200000,
-    "input_cost_per_token": 0.000003,
-    "output_cost_per_token": 0.000015,
-    "cache_read_input_token_cost": 0.0000003,
-    "cache_creation_input_token_cost": 0.00000375
-  }
-}
-```
-
-The cache fields are optional. Use `max_input_tokens` for the context window. Do not add
-`max_input_tokens` and `max_output_tokens`, and do not substitute `max_tokens`: upstream
-entries often use those fields for output limits.
-
-Houston revalidates at startup and every six hours through the release-check loop. Installed-agent
-checks and Usage requests reuse the shared six-hour cache; **Refresh rates** revalidates immediately.
-The catalog cache retains its ETag across daemon restarts. A `304` updates its freshness without
-downloading the document; a changed, valid response replaces both metadata and ETag atomically.
-If metadata is missing or incorrect,
-contribute the correction upstream to LiteLLM. The initial shared loader does require a
-Houston release, as do new catalog schemas, provider-specific interpretation or support for
-spawning another provider. Catalog data does not install a model, make a provider spawnable or
-change a CLI's selected model.
+through the shared model catalog. Use `max_input_tokens` for the context window; do not
+substitute `max_tokens`, which upstream entries often use for output limits. Contribute
+missing or incorrect metadata upstream to LiteLLM.
 
 ## Desktop artifacts per OS
 
 ### Linux
 
 ```
-./scripts/build-app.sh          # renderer + gate + appimage,deb
-./scripts/build-app.sh --bundles deb    # same, different bundle targets
+./scripts/build-app.sh                  # appimage,deb
+./scripts/build-app.sh --bundles deb    # other bundle targets
 ```
 
-It re-execs itself under `scripts/oom-shield.sh` (`-j 3`) unless already
-shielded, builds the renderer (unless `--skip-renderer`), runs
-`check-renderer-fresh.sh` unconditionally, then builds and stages `tr-helper`,
-`houston-core` and `houston-supervisor` under `src-tauri/binaries` with the
-host target triple. It then runs `CARGO_BUILD_JOBS=3 cargo tauri build --bundles
-<targets>`. Output lands at
-`src-tauri/target/release/bundle/{appimage,deb}/*.{AppImage,deb}`.
-
-Use `build-app.sh` rather than invoking `cargo tauri build` directly; it
-prepares the renderer and all Linux sidecars that the bundle requires.
+Build the renderer and stage the server first (`pnpm --filter @t3tools/web build`,
+`pnpm --filter houston build:exe`, `node scripts/stage-v2-server.mjs`). `build-app.sh`
+re-execs itself under `scripts/oom-shield.sh` (`-j 3`) unless already shielded, then runs
+`CARGO_BUILD_JOBS=3 cargo tauri build --bundles <targets>`. Output lands at
+`src-tauri/target/release/bundle/{appimage,deb}/*.{AppImage,deb}`. Use `build-app.sh`
+rather than invoking `cargo tauri build` directly.
 
 Local install, separate from packaging:
 
@@ -864,57 +254,24 @@ Local install, separate from packaging:
 ./scripts/install-desktop.sh
 ```
 
-Refuses on a missing promo-art PNG, a missing app
-binary, renderer or binary staleness (re-running `check-renderer-fresh.sh`
-and `check-binary-fresh.sh`), and — after writing `launch.sh`, `start.sh`, and
-the `.desktop` file — a repo-path leak: it greps all three for the repo's own
-absolute path and refuses to finish if found, so the installed app can never
-execute a path inside the repo. Installs:
-`~/.local/lib/houston/{houston, tr-helper, houston-core, houston-supervisor, start.sh, launch.sh}`,
-`~/.local/share/applications/houston.desktop`, and icon PNGs under
+It refuses a missing or stale app binary and, after writing `launch.sh`, `start.sh` and the
+`.desktop` file, any of them that names the repository's own path, so the installed app
+never executes a path inside the repository. Installs
+`~/.local/lib/houston/{houston, start.sh, launch.sh}`,
+`~/.local/share/applications/houston.desktop` and icon PNGs under
 `~/.local/share/icons/hicolor/**/apps/houston.png`.
-
-Regenerate desktop, bundle, tray and rail-brand PNGs with `cd ui && bun run icons`.
-The generator requires Python 3 with Pillow and Playwright Chromium; set
-`HOUSTON_ICON_BROWSER=chrome` to use an installed Chrome instead. It resizes the
-1254 px promo art to the mock's 512 px crop with Lanczos, then renders the rounded
-night tile at each requested size. At 32 px and below it renders `icon-small.svg`,
-with the same tile gradient, rim and vector head. The rail uses 32/64/96 px Lanczos
-head exports selected by `srcSet` for 1x/2x/3x displays.
 
 ### Windows
 
 ```
-$env:HOUSTON_WSL_LINUX_BIN_DIR = '<Linux core/target/release>'
 ./scripts/build-app.ps1
 cd src-tauri
 cargo tauri bundle --bundles nsis --ci --no-sign
 ```
 
-The installer carries `houston-core`, `tr-helper` and `houston-supervisor` built
-for `x86_64-unknown-linux-gnu` at the same commit, as the `wsl/` resources that WSL
-environments install into a distro. Build them inside WSL with
-`cargo build --release --bin houston-core --bin tr-helper --bin houston-supervisor`
-in `core/`; `build-app.ps1` refuses to run without `HOUSTON_WSL_LINUX_BIN_DIR`,
-stages them in `src-tauri/wsl/` and runs `check-wsl-bundle.sh` with
-`HOUSTON_WSL_BUNDLE_REQUIRED=1`. Other Windows builds compile with that directory
-empty.
-
-`build-app.ps1` runs the full renderer gate (`typecheck`, `test`, `build`,
-`check:css`), the same `check-renderer-fresh.sh` via Git Bash, stages
-`tr-helper.exe` and `houston-core.exe` from one locked Cargo build before
-building the application with `cargo tauri build --no-bundle --ci -- --locked`.
-The separate `bundle` command packages that production build without compiling
-it again. The example omits updater signing for a local build; release workflows
-provide the signing keys and sign the final installer bytes. Output lands at
+`build-app.ps1` builds the application with `cargo tauri build --no-bundle --ci -- --locked`;
+the separate `bundle` command packages that build without compiling it again. Release
+workflows provide the updater signing keys. Output lands at
 `src-tauri/target/release/bundle/nsis/*.exe`.
 
-The Windows bundle workflow downloads the pinned upstream Tauri CLI executable,
-checks its archive against the release asset's SHA-256 digest and verifies the CLI
-version. A separate cache keeps it across dependency changes; cold runners do not
-compile the CLI from source. Job summaries report elapsed time, and build and bundle
-steps are separate so their costs can be compared.
-
-**The Windows installer is unsigned.** No code-signing certificate exists
-for this project, so SmartScreen will warn on first run — this is expected,
-not a build failure.
+**The Windows installer is not Authenticode-signed**, so SmartScreen warns on first run.

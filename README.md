@@ -2,9 +2,9 @@
 
 **Local-first mission control for CLI coding agents on Linux and Windows.**
 
-Houston runs agent CLIs in a persistent grid of real terminals. Sessions continue in a
-detached daemon when the window closes, and agents can open and coordinate additional panes
-through Houston's local orchestration tools.
+Houston runs coding agents in persistent threads served by a detached local server. Agent
+runs continue when the window closes, and agents can delegate work to other threads through
+the server's orchestration tools.
 
 [Download Houston](https://github.com/theogmiguel/houston/releases) ·
 [Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md)
@@ -15,8 +15,8 @@ through Houston's local orchestration tools.
 
 ## Why Houston
 
-- **Persistent sessions.** Closing the desktop app detaches from the daemon without stopping
-  running agents or shells. Supported agents can resume saved conversations after a restart.
+- **Persistent sessions.** Closing the desktop app detaches from the server without stopping
+  running agents. Supported agents can resume saved conversations after a restart.
 - **Real terminals.** Every pane is a PTY rendered by Houston's terminal engine. Input goes
   directly to the hosted CLI; terminal output is not treated as a chat transcript.
 - **Agent orchestration.** An agent can create, message and wait for other panes through a
@@ -77,10 +77,10 @@ For source builds, prerequisites and platform-specific commands, follow
 
 ## How it works
 
-The desktop app opens one authenticated WebSocket to `houston-core`, a detached Rust daemon.
-The daemon owns PTYs, session state, provider hooks and the local orchestration endpoint.
-Control messages and binary terminal frames share the same connection. Closing the window
-removes the client; it does not terminate the daemon or its sessions.
+The desktop app starts, or attaches to, a detached TypeScript server for its channel and
+talks to it over one authenticated WebSocket. The server owns threads, provider adapters,
+local state and the orchestration tools; agent status comes from each provider's structured
+stream. Closing the window removes the client; it does not stop the server or its agent runs.
 
 The architecture is documented in [`docs/internals/overview.md`](docs/internals/overview.md).
 
@@ -98,17 +98,11 @@ release or the current source.
 
 - [Install Houston and configure providers](docs/user/install.md)
 - [Work with panes, grids and workspaces](docs/user/panes-and-grids.md)
-- [Coordinate agents from other panes](docs/user/orchestration.md)
 - [Manage tasks and review agent work](docs/user/tasks.md)
-- [Turn Slack requests into tasks](docs/user/slack.md)
-- [Create scheduled and on-demand routines](docs/user/routines.md)
-- [Review session findings and create fix tasks](docs/user/harness-review.md)
 - [Inspect Git changes and pull requests](docs/user/changes.md)
 - [Configure notifications](docs/user/notifications.md)
 - [Inspect token usage and estimated costs](docs/user/usage.md)
 - [Manage MCP and Slack connections](docs/user/connections.md)
-- [Run agents inside WSL environments](docs/user/wsl.md)
-- [Follow and answer panes from a paired device](docs/user/remote-access.md)
 - [Update an installed release](docs/user/updating.md)
 - [Browse the complete documentation index](docs/README.md)
 

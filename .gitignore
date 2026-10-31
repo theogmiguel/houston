@@ -27,8 +27,7 @@ ui/harness-shots/
 # local CSS-conversion measuring harness, path-coupled to ui/ — never committed
 ui/p5-harness/
 
-# staged Tauri sidecars (scripts/build-app.sh copies tr-helper here as
-# tr-helper-<target triple>) — build output, never source
+# staged Tauri sidecars (<name>-<target triple>) — build output, never source
 src-tauri/binaries/
 
 # The Linux daemon staged for the Windows installer's WSL support

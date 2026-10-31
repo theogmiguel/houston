@@ -2,7 +2,7 @@
 
 # clippy.toml is referenced by no Cargo.toml, so deleting it or dropping an
 # entry silently disables the spawn-window lint with a green build. This script
-# exists only to check those files still name both Command::new paths.
+# exists only to check it still names both Command::new paths.
 
 set -euo pipefail
 
@@ -11,13 +11,12 @@ cd "$repo_root"
 
 fail=0
 
-for ws in core src-tauri; do
+for ws in src-tauri; do
   conf="$ws/clippy.toml"
   if [ ! -f "$conf" ]; then
     echo "FAIL: $conf is missing." >&2
     echo "      Without it clippy enforces nothing and the build still passes" >&2
-    echo "      green -- see this script's header. Restore it from the other" >&2
-    echo "      workspace's copy (they are identical by design)." >&2
+    echo "      green -- see this script's header. Restore it from git history." >&2
     fail=1
     continue
   fi
@@ -28,7 +27,7 @@ for ws in core src-tauri; do
   if [ -n "$missing" ]; then
     echo "FAIL: $conf no longer disallows:$missing" >&2
     echo "      Every production spawn must route through" >&2
-    echo "      houston_core::spawn so the child gets CREATE_NO_WINDOW on" >&2
+    echo "      crate::sys::spawn so the child gets CREATE_NO_WINDOW on" >&2
     echo "      Windows. Re-add the entry rather than deleting it; test code" >&2
     echo "      opts out with #![allow(clippy::disallowed_methods)] instead." >&2
     fail=1
@@ -37,7 +36,7 @@ for ws in core src-tauri; do
   fi
 done
 
-spawn_files="core/houston-core/src/spawn.rs src-tauri/src/sys/spawn.rs"
+spawn_files="src-tauri/src/sys/spawn.rs"
 for spawn_rs in $spawn_files; do
   if [ ! -f "$spawn_rs" ]; then
     echo "FAIL: $spawn_rs is missing -- clippy.toml's reason strings name it as" >&2
@@ -53,8 +52,7 @@ for spawn_rs in $spawn_files; do
   fi
 done
 
-if grep -rn 'CREATE_NO_WINDOW' core/ src-tauri/ --include='*.rs' \
-  | grep -v "^core/houston-core/src/spawn.rs:" \
+if grep -rn 'CREATE_NO_WINDOW' src-tauri/ --include='*.rs' \
   | grep -v "^src-tauri/src/sys/spawn.rs:" \
   | grep -qi 'commandbuilder'; then
   echo "FAIL: CREATE_NO_WINDOW was applied to a portable_pty::CommandBuilder." >&2

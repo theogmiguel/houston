@@ -17,9 +17,7 @@ fail() {
 [ -f "$BIN" ] || fail "the app binary does not exist at $BIN. Build it: ./scripts/build-app.sh"
 
 mapfile -t ROOTS < <(printf '%s\n' \
-  core/houston-core/src core/houston-protocol/src src-tauri/src \
-  core/Cargo.toml src-tauri/Cargo.toml src-tauri/tauri.conf.json \
-  core/Cargo.lock src-tauri/Cargo.lock)
+  src-tauri/src src-tauri/Cargo.toml src-tauri/tauri.conf.json src-tauri/Cargo.lock)
 
 present=()
 for r in "${ROOTS[@]}"; do

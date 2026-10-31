@@ -7,45 +7,40 @@ carries the reasons.
 
 ## Signals and processes
 
-### Only `pid.rs` may call `kill(2)`
+### Only `sys/pid.rs` may call `kill(2)`
 
 **Enforced by** `scripts/check-kill-guard.sh` (CI): `libc::kill(`, `nix::sys::signal`,
-raw `syscall(`, `OpenProcess`/`TerminateProcess`/`taskkill` are forbidden outside
-`core/houston-core/src/pid.rs`.
+raw `syscall(`, `OpenProcess`/`TerminateProcess`/`taskkill` are forbidden under `src-tauri/`
+outside `src-tauri/src/sys/pid.rs`.
 
 **Why.** A test once called `terminate_and_wait(u32::MAX, …)`. Cast to `pid_t`,
 `u32::MAX` is `-1`, and `kill(-1, SIGTERM)` is a broadcast to every process the user owns.
-It destroyed the desktop session. `checked_pid` now refuses `0` (the process group) and
-anything above `i32::MAX`, and identity-checked delivery compares the process creation
-token before sending, so a recycled pid is never the daemon.
+It destroyed the desktop session. `checked_pid` refuses `0` (the process group) and
+anything above `i32::MAX`.
 
 ### Never kill by pattern
 
-No `pkill -f`, no `pgrep | kill`, no pid found by matching a name or path. `houston-core`
-matches the daemons of both channels; a worktree path matches your own agent's argv. Kill
-only the pid recorded in the target channel's `daemon.json`, after confirming the channel.
-Scripts that must stop something they started stop it by the pid they captured
-(`linux-vm.sh app-stop`, `dev.sh --fresh` via the binary's identity-checked terminate).
+No `pkill -f`, no `pgrep | kill`, no PID found by matching a name, path or parent PID. One
+server name matches every channel's server, and a worktree path matches your own agent's
+argv. Stop a server only by the PID its channel's `server-runtime.json` names, after
+confirming the channel. Scripts that must stop something they started stop it by the PID
+they captured.
 
-### Every spawn goes through `houston_core::spawn`
+### Every host spawn goes through `crate::sys::spawn`
 
 **Enforced by** `scripts/check-spawn-window.sh` and a clippy `disallowed-methods` entry in
-both `clippy.toml` files banning `std::process::Command::new` and
+`src-tauri/clippy.toml` banning `std::process::Command::new` and
 `tokio::process::Command::new`.
 
 **Why.** On Windows a console-subsystem child flashes a window unless spawned with
-`CREATE_NO_WINDOW`. The flag must *not* reach `portable_pty::CommandBuilder` — the PTY path
-needs its console — and the script asserts that too.
-The foreground Windows `codex-shell` helper resets this flag for its Codex child
-to inherit the existing ConPTY console; its bounded capability probe stays hidden.
+`CREATE_NO_WINDOW`; `sys/spawn.rs` sets it at construction so a stored builder cannot lose it.
 
 ### Opening a file or URL never goes through a shell string
 
 `src-tauri/src/shell.rs`'s `open_target` execs `xdg-open` on Unix and calls `ShellExecuteW`
 on Windows — never `cmd /C start` or a shell interpreter over renderer-supplied text. An
-interpreter over a URL or path an agent's browser tools or the Files pane handed it would be
-an injection surface; `xdg-open`/`ShellExecuteW` take the target as a value, the same
-primitive a double-click uses.
+interpreter over a URL or path the renderer handed it would be an injection surface;
+`xdg-open`/`ShellExecuteW` take the target as a value, the same primitive a double-click uses.
 
 ### In-distro commands use `wsl.exe --exec`, never `--`
 
@@ -55,468 +50,107 @@ built in `src-tauri/src/wsl/command.rs`. **Enforced by** that module's
 
 **Why.** After `--`, `wsl.exe` hands the argv to the distro's login shell, which parses it
 a second time: on WSL 2.6.1 that expanded `$HOME` inside single quotes. `--exec` passes each
-argument through unchanged, so scripts are written once and their arguments stay values.
+argument through unchanged.
 
 ### Filesystem commands are allowlist-gated
 
 Every disk-touching Tauri command (`fs_read_file`, `fs_write_file`, `fs_delete`, …) passes
-through `fs_allowlist::assert_within_allowed_roots` before touching a path outside the state
-dir's own reserved slots. **Enforced by** the gate itself, called at every command's own entry
-point in `src-tauri/src/fs.rs` — there is no shared middleware layer to bypass by adding a new
-command that forgets the call.
+through `fs_allowlist::assert_within_allowed_roots` before touching a path. **Enforced by**
+the gate itself, called at every command's own entry point in `src-tauri/src/fs.rs` — there
+is no shared middleware layer to bypass by adding a command that forgets the call.
 
 ## Channels and state
 
 ### Protect the installed release channel
 
-`~/.houston` is the installed app's live state, in use while you work. Never start a
-daemon against it, never open its DB read-write, never clean it up. `--channel release`
-prints a loud warning and is used only under explicit instruction.
+`~/.houston` is the installed app's live channel. A development build resolves its channel
+from `--channel` and defaults to `dev`; `--channel release` prints a warning naming the live
+directory. Tests use temporary homes and never the real one.
 
-**Why.** The installed app's desktop entry once launched `core/target/release/houston-core`
-straight out of the repo. A release-profile build relinked that binary; hours later an
-oomd kill restarted the app, and a protocol-34 daemon came up under a packaged
-protocol-29 UI, locking the user out and corrupting the release DB. `install-desktop.sh`
-now installs *copies* under `~/.local/lib/houston/` and refuses to finish if any
-installed file references the repo path. If the installer ever points at build outputs
-again, the release-build moratorium returns with it.
+### One server per channel directory
 
-### One daemon per state dir
+Upstream's server ownership lock refuses a second server for the same base directory, which
+would otherwise share a SQLite database and overwrite the runtime file clients discover the
+server through. The host attaches to a live server named by
+`<channel dir>/v2/userdata/server-runtime.json` and spawns one only when none answers.
 
-A channel has one state dir, and so one daemon and one SQLite database, in each
-environment: the app's own machine, and each enabled WSL distro, whose daemon uses the
-distro user's `~/.houston[-<channel>]`. The app never opens a distro's database; it
-reaches that daemon only through `wsl-ensure` and the relay.
+### The server outlives the window
 
-**Enforced by** `daemon.lock` (`flock`, `LOCK_EX|LOCK_NB`), taken by the daemon only,
-released by the kernel on any death. A contended lock refuses the second daemon; the app
-holds no lock at all and never has one to leak. Inside a distro, `wsl-ensure` attaches to,
-hands off or refuses a live daemon before it would start a second one.
+The host starts the server detached (its own session on Linux, a job breakaway on Windows),
+so closing or crashing the window stops neither the server nor its agent runs.
 
-**Why.** Whichever daemon writes `daemon.json` last captures every hook and helper, and both
-write the same SQLite file. `--daemon-fresh`/`--fresh` are the sanctioned restart: an orderly
-stop over `/manage`'s `daemon_shutdown`, confirmed before a fresh daemon starts. Both refuse
-when the invoking shell is a pane on the channel being restarted, because restarting would
-kill the shell running the script.
+### v1 state is read, never written
 
-### The daemon outlives the window; the window never holds the lock
+v2 keeps its state in `<channel dir>/v2/`. Everything a v1 install left directly under the
+channel directory stays as it was: the Tasks and task-source imports open `houston.db`
+read-only, and the host's start-up cleanup only reads its discovery file, to stand down while that
+channel's v1 daemon still runs.
 
-**Enforced by** `daemon_host.rs`'s connect-or-spawn boot and `shutdown` (no lock acquisition,
-no `daemon.json` removal, no persistence call — see "One daemon per state dir" above and
-`overview.md`'s "Detach and shutdown").
-
-**Why.** Quitting Houston is not the same event as the daemon exiting: a window closing (or
-crashing) must never end a session underneath it. The app's only lifecycle action
-on quit is closing its `/ws` connection; the daemon decides its own exit, on an orderly stop
-or its reap timer, never on the app's behalf.
-
-### Explicit channel ownership cannot silently change targets
-
-**Enforced by** `scripts/check-dev-channel.sh` for the development launcher and
-`channel_ownership_wire.rs` for the daemon. Both use throwaway homes.
-
-**Why.** Every installed-app pane inherits `HOUSTON_CHANNEL=release`. The development
-launcher selects its target from `--channel`, defaulting to dev regardless of that inherited
-value. The daemon accepts the flag or an explicit environment value, refuses disagreement,
-and refuses when neither is present. The inherited pane channel cannot silently override
-an explicit daemon target.
-
-### One host spawns the background loops
-
-**Enforced by** `scripts/check-loop-spawn-sync.sh`: `core/houston-core/src/main.rs` must call
-`boot::spawn_background_loops`, and `src-tauri/src/daemon_host.rs` must not — a call there
-would mean the app is hosting a daemon in-process again.
-
-**Why.** Duplicate loop lists can omit background work without a compile error, including
-hook delivery through `swarm_mail_loop`. A single daemon host owns the complete list; the
-app connects as a client.
+**Why.** The installed v1 release may still be in use on the same machine, and its state is
+the user's history; nothing in v2 can restore it once overwritten.
 
 ## Other tools' files
 
-### No transcript parsing, no undocumented protocols
+### Agent status never comes from terminal output or transcripts
 
-Houston does not parse `~/.claude/projects/*.jsonl` and does not speak Claude Code's
-`control_request` stdio protocol. Integration goes through hooks, `--permission-prompt-tool`,
-documented flags (`--print --output-format stream-json`), ACP, and official SDKs.
-
-Eight recorded carve-outs stand. Further exceptions need the same recorded treatment.
-
-| # | File | Bound |
-|---|---|---|
-| 1 | `~/.claude.json` | keys `oauthAccount`, `emailAddress`, `userID` only; read once at connect; fail-soft; Houston snapshots what it needs and never depends on the file afterwards |
-| 2 | `~/.claude.json`, `~/.codex/config.toml` | Claude's key `mcpServers` and Codex's table `[mcp_servers]` only; read on MCP-surface open, explicit refresh, and once at boot; **writes go through `claude mcp add`/`remove` and `codex mcp add`, never the file**; an existing `houston` entry is never overwritten (unless stale release-port refresh for Codex) |
-| 3 | `~/.claude/projects/**/*.jsonl`, `~/.codex/sessions/**/*.jsonl` | Settings → Usage streams them for token counts. Read-only and only while a client asked (no timer, watcher or boot scan); counts only — a line becomes a tally and is dropped; fail-soft; **no semantics** — drives no status or behaviour. Terms: `core/houston-core/src/usage/mod.rs` |
-| 4 | `<the CLI's own transcriptPath>, Antigravity only` | The path comes from the provider's own hook payload and is never constructed by Houston; the last assistant entry only; read once, at a turn end, in the helper process; fail-soft (any error is no last message, never an error to the CLI); capped at the submit cap. Terms: `core/houston-core/src/antigravity_transcript.rs` |
-| 5 | `<the CLI's own transcript_path>, Claude and Codex only` | Read only on turn completion, from the hook-reported path; at most the last 8 MiB. Claude's latest main-agent usage and Codex's latest `token_count` provide context occupancy. Retain only token counts, model id and compaction state; never drive agent status, retain content, scan directories or watch transcripts. Missing data hides the indicator. Terms: `core/houston-core/src/context_window.rs` |
-| 6 | `~/.claude/projects/<workspace slug>*/*.jsonl` (and `$CLAUDE_CONFIG_DIR/projects`), `~/.codex/sessions/**/*.jsonl` (or `$CODEX_HOME/sessions`), Claude and Codex only | Read by `hs-harness digest`, never by the daemon or the app: the agent of a harness review run calls it inside its own visible pane, and it refuses unless `HOUSTON_ROUTINE_RUN` is set, which only a routine run's pane has. Only transcripts whose cwd is the workspace or below it; OpenCode, Cursor, Grok and Antigravity are refused by name (Cursor and Grok are recognised only). Output only under `<workspace>/.houston/harness/<run>/`, capped at 64 KiB per session line and 2 MiB per digest; the digest never enters the database and nothing drives status. What enters it is what the run's agent publishes through `harness_publish`: the bounded fields of `findings.json`, including its short quotes. No timer, watcher or boot scan: a run happens because the user created the review routine and pressed Run review or enabled its cadence. Terms: `core/houston-core/src/harness/` |
-| 7 | `<the CLI's own transcript_path>`, Claude and Codex only | Metadata only: before a respawn passes its exact-ID resume arguments, `fs::metadata` on the path the hook reported with that id says whether the transcript exists and is non-empty. The file is never opened, the path is never constructed, and nothing drives status. Terms: `daemon.rs::resume_check` |
-| 8 | `~/.claude/projects/**/*.jsonl`, `~/.codex/sessions/**/*.jsonl` | Daemon-initiated once per Night shift run end; counts only; fail-soft; drives no status or behaviour; restricted to the run's window and the working directories of its panes, with at most one scan per run, plus one retry only if the daemon stopped before it finished. Terms: `daemon/night_shift.rs` |
+Agent status comes from each provider adapter's structured stream (SDK, app-server, server or
+ACP events). Terminal output and on-disk transcripts never drive a status.
 
 ### App-initiated config writes use reversible managed markers
 
-Hook entries in `~/.claude/settings.json`, `~/.codex/hooks.json`,
-ZCode's settings file and the OpenCode plugin carry
-`--houston-managed[=<channel>]` matched **per whitespace token** — `release`'s sentinel is a prefix of `dev`'s, and substring
-matching would let one channel evict the other. Claude preserves unrelated settings and hook
-commands, including user commands within a managed group. Its former `workspace_hooks`
-ownership records identify workspace files to migrate to global installation.
-Codex's `notify` is a single key, so a second channel parks the displaced line as a
-sentinel-carrying comment rather than clobbering it. ZCode builds read different files
-(`setting.json` in the community package, `config.json` upstream); Houston keeps each one
-present in step. Its `hooks.enabled` is a single switch shared by every hook in the file:
-the value Houston replaced is parked in a top-level `houstonParkedHooksEnabled` key and
-restored once no channel's sentinel remains. Its `plugins.dirs` entry is a path inside the
-channel's own state dir. Every channel edits the same file, so an edit holds
-`config.json.houston-lock` beside it and replaces the file only if its bytes are still
-the ones read; removal drops Houston's command entries, never a user command sharing
-their group.
-User-initiated writes into a CLI's
-skill directories (`writeSkill`, skill push with backup) are fine. The `houston` launcher
-that `wsl-ensure` writes at `~/.local/bin/houston` in a distro carries `# houston-wsl-managed`
-on its second line; a file without it is never rewritten or removed.
+v1 wrote hook entries into `~/.claude/settings.json`, `~/.codex/hooks.json` and
+`config.toml`, the OpenCode plugin, Antigravity's hooks file and ZCode's settings files, each
+carrying `--houston-managed[=<channel>]`. The host's start-up cleanup removes its own
+channel's entries, matching the sentinel **per token**: release's sentinel is a prefix of
+every other channel's, and substring matching would let one channel evict the other. A user
+command sharing a group with a Houston entry stays. Codex's `notify` line that v1 parked as a
+sentinel-carrying comment is restored, unless the user has set a new one since; ZCode's
+parked `hooks.enabled` value is restored once no channel's entry remains, and an edit of its
+file holds `config.json.houston-lock` beside it. JSON configs are written back as v1 wrote
+them (whole file, pretty-printed, keys sorted), so a file v1 last wrote keeps every byte
+outside Houston's entries. An unparsable config is left as is and logged.
+
+`~/.claude.json` is Claude's own state. Houston changes it only through `claude mcp add` and
+`claude mcp remove`, never by writing the file.
 
 ### Measured values yes, class strings never
 
 Another app's shipped UI may be read for its measured values and structure; its class strings
 may not be copied. Since both sides speak Tailwind, a pasted class *renders* — just not what
-it rendered there — and bypasses the chrome constants every Houston call site composes
-through. A silent near-miss is worse than a visible one. Where a licence does permit copying,
-the copy carries its notice in `NOTICE` — added in the same commit that lands the copy, never
-after.
+it rendered there. Where a licence does permit copying, the copy carries its notice in
+`NOTICE`, added in the same commit that lands the copy.
 
-## Status
-
-### Agent status is provider-reported; PTY content is not a status machine
-
-Status mutations use guarded live-session paths in `daemon.rs`. Lifecycle hooks
-(mapped through `agent_events.rs`) and ACP streams take precedence. Codex's pane-owned
-app-server also supplies startup readiness through a SessionStart drop; it never reads
-terminal content or changes the thread. See [agent lifecycle](agent-lifecycle.md).
-The Limited detail follows the same rule: only a provider's typed limit report sets it,
-never terminal text or the free-text details of a hook. Claude's `StopFailure` and
-OpenCode's `session.error` carry the typed error class, Codex reports a usage-limit
-notification on its app-server connection, and the process exit of a one-word headless
-probe is the declared substitute where a provider has no typed signal (ZCode everywhere,
-Codex on Windows). A stalled pane is Limited only when that probe's process exits with an
-error or does not answer within its timeout; a probe Houston cannot start leaves the pane
-alone. The check never reads the pane's screen, and the opt-in setting only decides when the
-probe runs.
-
-The documented [Program Status Protocol](https://www.superlogical.com/rex/docs/build/program-status)
-(revision 0.3, OSC 7501) is a fallback for programs that explicitly report state. Native
-libghostty-vt callbacks validate complete sequences and Houston retains only declared
-states and ids, never message text. This is protocol consumption, not screen inference.
-The parser limits each sequence to 4 KiB and validates field bounds; Houston keeps at
-most 64 records per session, evicting the least recently updated. Hierarchical clear,
-RIS and shell prompt boundaries remove stale records. Blocked takes precedence over
-working; other remaining states map to Idle. No remaining records means Unavailable.
-ACP sessions ignore this fallback. Once a lifecycle hook arrives, hooks own status until
-respawn; the precedence check and mutation share the session lock. OSC reports do not
-produce provider turn-end events or delegation results.
-
-The daemon answers OSC 7501 support probes only where its native callback consumes
-reports, including detached panes. The renderer does not answer these probes. Windows
-has no native daemon emulator and does not advertise this protocol. Ordinary terminal
-queries retain their existing renderer/daemon ownership. No configuration is written
-and no external service receives report content. Support replies use the session's
-existing terminal connection, including SSH for remote sessions.
-
-Four inference exceptions are named below; further exceptions must be recorded here.
-Session activity previews are separate display metadata delivered from provider hooks;
-they are never inferred from terminal text.
-
-1. **OS process liveness** (`has_child_procs` / `has_running_procs` in `daemon.rs`) is a
-   kernel fact read from procfs on demand — never on a timer, never from terminal content.
-   It gates the idle reaper and the pane-close confirmation. It does not set `AgentStatus`.
-   Codex's lifetime guardian separately polls its helper and PTY owner's process
-   identities for scope cleanup only; their disappearance is never evidence of Idle.
-2. **Content→text somebody reads.** Three paths under one rule: what they produce is text for
-   a reader, never an `AgentStatus`.
-   - **The activity mirror.** `Daemon::extract_activity` runs per chunk (throttled
-     1/s) to produce display text. Its single status effect is roster-level
-     `Spawning→Running` on first output, which fires once by construction. Re-armed, polled
-     or per-frame would be a status machine again.
-   - **The handoff excerpt.** `Daemon::inbox_excerpt` and
-     `Daemon::deliver_unsubmitted_turn_end` read a bounded render of a child's screen
-     (the session's emulator, `HANDOFF_CORROBORATING_ROWS` rows) and attach it to the wake its parent
-     is already getting. Read once per delivery, on a lifecycle event — or, for a hookless
-     child, on the one settle that #3 decided is its turn end — never sampled; capped at
-     `HANDOFF_EXCERPT_MAX_CHARS` with a visible marker. Both excerpts go through
-     `orchestrate::sanitize_handoff_text`, and the indent it puts on a forged framing line
-     reaches the parent: `orchestrate::compose_inbox` drops blank rows and trailing whitespace
-     and nothing else, where a plain `trim()` used to take the indent back off the FIRST
-     row. What that buys is one layer of three, and only the outer one is a parser: the
-     excerpt is emitted behind `  > ` and the inbox is written into the parent inside
-     bracketed paste, while the indent is a quoting cue for the agent reading it and would
-     not survive a reader that trims before it compares. Nothing in the daemon or the
-     renderer is such a reader — nothing there parses these strings at all; the readers are
-     `Daemon::extract_activity`, which only skips framing lines when it picks
-     display text, and two substring waits outside the product (`scripts/probe-orchestration.sh`,
-     `tests/common/mod.rs`). On an unstaged turn
-     end the tail IS the payload, so it is labelled `no_handback` in the subject line and
-     again in the body: a parent must never read a child's screen as something the child
-     handed over. That same read also answers one yes/no about the pane — has it ever ended
-     a line (`Scrollback::wrote_a_line`) — which is one of the three facts
-     `orchestrate::unsubmitted_turn_end_reaches_parent` needs before it suppresses a
-     delivery. Read at the same moment as the tail, never sampled, and what it produces is
-     whether one wake is sent, never an `AgentStatus`.
-   - **The exit tail.** When a delegated pane's process ends without a stored result,
-     `Daemon::exit_output_tail` reads the ended pane's scrollback ring once — a bounded
-     join on the output reader (`EXIT_TAIL_READER_WAIT`) so the CLI's final lines are in —
-     and `orchestrate::exit_tail_text` quotes the newest non-empty lines in the `exited`
-     inbox row and the round's stop reason beside the exit status, for the parent to read
-     (`EXIT_TAIL_LINES`/`EXIT_TAIL_MAX_CHARS`, ANSI-stripped, redacted, framing-indented).
-     Read once per exit, on a process exit that already happened; it explains an exit, it
-     is never an `AgentStatus`, and no code branches on its content.
-3. **The delegation quiet-settle detector.** What stands in for a turn end on a CLI that
-   reports none at all: `Daemon::delegation_watch_tick` samples the rendered screen and,
-   when it has not changed for `DELEGATION_SETTLE_QUIET_MS`, makes the child's stored
-   result eligible for its parent and closes the record — or, with nothing stored, sends
-   the `no_handback` notice of #2 instead and leaves the record open. It serves both halves
-   because on those providers nothing else ever will: `no_handback` otherwise hangs off
-   `AgentEvent::TurnEnded`, which `Custom` never fires. Bounded four ways: it runs **only**
-   for a child whose
-   `TurnEndSource` is `QuietSettle` — which is also what keeps it from delivering a second
-   time for providers whose hooks report. Hook capability alone is not evidence: until
-   a lifecycle hook has arrived since spawn, even a hook-capable child uses quiet settle.
-   ACP streams keep their reported turn ends; never while
-   `has_running_procs` says a descendant is alive; the no-handback notice **once per
-   silence**, never once per poll, latched on the same sample that measures the quiet so
-   the child's next byte clears both together; and what it produces is a delegation flush
-   or one inbox entry, never an `AgentStatus`. `orchestrate::delegation_settle_action`
-   holds that decision, and every delivery it makes names `quiet-settle` to the parent, so
-   a turn end Houston inferred is never mistaken for one the CLI reported. It carries the
-   read of #2 it shares with the reported path —
-   the tail IS the payload of a no-handback notice, and it is labelled as the child's
-   screen in the subject line and again in the body.
-4. **First-prompt paste timing.** A CLI that takes no prompt in argv (ZCode) gets its
-   first prompt pasted once its composer reports focus through the terminal modes it
-   sets: bracketed paste enabled, then the cursor shown (`composer_ready.rs`,
-   `Daemon::first_prompt_deliver`, deadline `FIRST_PROMPT_DEADLINE`, after which a
-   submitted prompt is pasted regardless). A prefilled prompt (a task brief, a transfer's
-   moved note) waits only for that signal, until `FIRST_PROMPT_PREFILL_DEADLINE`: a
-   first-run question such as Claude's folder trust prompt stays up until the operator
-   answers it, and a paste there would answer it. Output alone is no
-   signal: ConPTY draws before the CLI has started, and ZCode starts its TUI seconds
-   before it focuses the input box, dropping keys that arrive in between. The scanner
-   reads DEC private mode sequences, never text, and the VT binding exposes no modes. It
-   exists only for a pane with a pasted first prompt pending and stops reading output
-   once that delivery ends. It decides only when input is written — never an `AgentStatus`, and never whether the
-   prompt arrived: that is the CLI's own `UserPromptSubmit` hook, because ZCode fires
-   SessionStart only inside its first turn. Unconfirmed, the paste is followed by one more
-   Enter and never repeated, because a composer that kept the first paste would submit it
-   twice.
-
-**One turn end per provider.** A provider's `agent_events.rs` table carries at most one
-`AgentEvent::TurnEnded` row, and that row is the CLI's loop-termination event — never a
-per-step event that happens to land near the end of a turn. `TurnEnded` is not a status
-nudge: it settles the pane at `Idle`, closes a delegation and opens a `no_handback` round,
-so a second row ends one turn twice and tells a parent a handback went missing that was
-never due yet. The same rule refuses a sub-agent's completion event (Claude's
-`SubagentStop`, OpenCode's child-session `session.idle`): a sub-agent finishes *inside*
-the parent's turn. `every_provider_ends_a_turn_at_most_once` holds it.
-
-Providers without hook mappings (Droid, Copilot, Aider) get identity only, from
-banner sniffing that `agents.rs` explicitly documents as not the status machine. They can
-be delegated to, via #3 — identity is still not status.
-
-### Generated titles never supply status or identity
-
-Generated pane titles consume only redacted first-prompt and first-reply hook text after
-explicit opt-in or a manual request. Generated display text never drives agent status or
-serves as an orchestration address. Native CLI titles and user overrides retain precedence.
-
-### The remote feed comes from hook payloads and lives in memory
-
-The conversation a paired remote-access device reads (`remote/feed.rs`) is built only from
-hook payload fields: the prompt, the turn's last message, a structured question's options and
-answers (Claude's `AskUserQuestion`, Codex's `request_user_input`, Antigravity's `ask_question`,
-OpenCode's `question.asked`), and a permission request's or finished tool call's name and one
-target (a command, path, URL or pattern; for `apply_patch`, the files named by the patch
-headers, never the patch text). `feed.rs` reads no transcript and no screen. The one
-transcript-derived value, Antigravity's final message, is read by the hook helper under
-carve-out 4 and arrives as `last_message`; Antigravity's prompt is not in any hook payload,
-so its feed shows no prompt. Houston's OpenCode plugin forwards the prompt text, completed and
-errored tool parts, and the structured payloads of `permission.asked` and `question.asked`.
-Its decision card follows status transitions; it never sets one. Codex's approval hook fires
-only for commands, and Antigravity has no permission hook, so Antigravity's permission dialogs
-stay generic input cards rather than being inferred from the screen. Claude's `PostToolUseFailure`, the OpenCode plugin's equivalent for an errored tool part
-and an Antigravity `PostToolUse` carrying an `error` mark a failed tool
-step using the same masked target and bounds as a successful call; failed
-`AskUserQuestion` calls produce neither steps nor answers. Turn counts include failed
-steps, and edited paths record attempts rather than confirmed filesystem changes.
-No hook reports that a permission was granted, so the
-pane keeps needing input until the approved tool finishes: a card a device answered stays
-consumed until the status changes or a new card replaces it, and an operator keystroke into
-the pane marks an open card as answered in the terminal.
-
-This is the one exception to the rule that hook drops carry only a digest of `tool_input`:
-the hook client masks that single target and Claude Edit, MultiEdit and Write permission
-previews, like every feed text, with the review-packet
-credential patterns followed by the high-entropy pass (`remote::feed::mask`), removes
-invisible formatting characters, cuts it to at most 300 characters, and writes it into the
-drop under `feed`. A target that was cut or had such characters removed is marked
-`truncated`, and a device may not approve it. Edit previews contain only the path and
-removed/added lines from `old_string`, `new_string` or `content`, never a filesystem read.
-Each preview is capped at 200 lines, 500 characters per line and 32 KiB of serialized JSON;
-a cut preview also cannot be approved remotely. The daemon keeps it in a per-session ring
-(200 entries, 512 KiB, 32 MiB across sessions) only while remote access is on, clears every
-ring when it is turned off, serves it only to paired devices, and never writes it to SQLite
-or the log; it is gone when the daemon exits. A decision a device makes is typed into the PTY as the provider's own
-keys, through the same stdin path as typed input, never through a hook reply.
-
-A device's diff and commit reach only paths the `/changes` listing shows, masked and
-bounded, and never a file whose name looks like a credential. A device cannot start a shell
-or `auto_approve` pane at any tier.
-
-### The daemon owns a terminal emulator; screen cells never determine status
-
-Each session has one libghostty-vt terminal (`vt.rs`), built from the same pinned
-revision as the renderer. It receives every redacted PTY chunk for attach snapshots,
-handoff, screen reads and terminal queries. Its parsed OSC 7501 callback consumes
-explicit reports under the precedence and bounds described above. No lifecycle
-transition is derived from a cell or from sampled screen contents.
-
-Paired remote-access devices can request a screen read (`GET /api/sessions/{id}/screen`)
-for display; the daemon never polls it. Remote input also checks whether bracketed paste
-is enabled to encode a multi-line answer, as the renderer does for a desktop paste. That
-mode bit decides an encoding, never a status.
-
-**Query ownership.** Ordinary replies reach the PTY from the daemon only while
-`Session::watched()` is false. A watched pane is answered by the renderer's engine.
-OSC 7501 probes are the exception: the daemon always answers them where it consumes
-reports, and the renderer never answers them. Replaying a snapshot cannot advertise
-support or replay a status transition to the daemon.
-
-**What changed, and why it is safer than what it replaced.** The predecessor was a fixed table
-of three questions (`terminal_query.rs`) that left every question needing a rendered screen —
-cursor position, kitty keyboard flags, DECRQM for any other mode — unanswered by name, because
-a wrong answer is worse than silence. A real emulator answers them correctly instead of
-guessing, which removes the reason the table had to stay small. What it must NOT gain is a
-reader that turns a cell into a status.
-
-### A window title is a name the CLI sent us, not the screen
-
-`osc_title.rs` reads the OSC 0/2 window title (`ESC ] 0 ; <text> BEL`) out of every agent
-pane's PTY stream and uses a sanitized contextual title to name the pane. Product-only
-titles are rejected. Claude Code 2.1.296 has been observed emitting both product-only
-and contextual OSC titles; Houston does not assume they equal its resume-picker summary.
-
-**Why this is not "status comes from the CLI, not from pixels".** A window title is a
-protocol message the program addresses to its terminal, exactly like the OSC 52 clipboard
-write and the terminal queries above. Houston is that terminal; receiving it is reading mail
-addressed to us, not inferring anything from rendered content. And what it produces is a
-*name*: it never reaches `AgentStatus`, and no code branches on it.
-
-**The bounds.** Titles are capped (512 bytes raw, `MAX_TITLE_LEN` after sanitizing) and
-dropped past that; the scanner keeps one small carry and no screen. A pane takes at most one
-name per second from its CLI (`CLI_TITLE_MIN_GAP_MS`), because each one is a DB write and a
-broadcast on the reader's own thread. Shell panes are excluded, because a shell's precmd title
-is the cwd rather than a session summary. Antigravity is excluded by provider because its
-window title carries model and status text. Supported ACP `session_info_update.title` is
-session metadata and follows the same title ladder and bounds. Display titles never drive
-status or serve as orchestration addresses. A name the user typed always wins until the
-user explicitly resets it to automatic.
-
-### A pane resumes only its own conversation, by exact id
-
-Boot restore and Restart relaunch Claude and ZCode with `--resume <id>` and Codex with
-`resume <id>`.
-The handle is the root conversation ID and transcript path reported by native hooks,
-retained once the conversation has a turn. Codex versions without those hook fields do
-not acquire a handle. No command chooses the latest conversation in a directory.
-
-Clean shutdown and crash use the same restore policy, budget and safe-mode switch.
-Restoration supplies no prompt: the CLI waits for input rather than repeating work.
-Changing cwd, losing the agent profile or changing its configuration directory invalidates
-the carried handle, including when
-automatic conversation resume is disabled. Kill, Close and Start fresh clear it; Sleep
-retains it with the pane and persisted scrollback, and boot leaves that pane asleep. Late
-hooks from a killed or removed session cannot recreate it. Kill and Close persist their
-terminal state before returning, so an immediate daemon crash cannot revive the pane. A
-failed top-level resume starts fresh once with a visible reason, while transient failures
-retain the handle for manual retry. A failed child resume remains ended and reports to its
-parent without substituting a new conversation. Daemon stop preserves recovery intent and
-handles; it does not perform per-pane Kill.
-Wake is stricter: it must resume the exact stored conversation and never falls back to a
-fresh CLI. A failed Wake remains resumable with the stored handle.
-
-Routine and harness-review runs always start fresh, and orchestrated children cannot be
-respawned without their mission. Unsupported providers are refused by name in
-`launch::resume_args`. There is no transcript scan or history ledger; the handle lives
-on the session row and metadata validation never drives status.
-
-## Wire
-
-- Daemon and UI ship wire changes in the same commit; one `PROTOCOL_VERSION` bump per
-  wire-touching batch; `protocol/protocol.md` updated in the same commit; the generated TS
-  is committed and frozen, since its generator was removed. **Enforced by** `check-protocol-sync.sh` (Rust ↔ TS ↔ doc header) and, at
-  build/install time, `check-renderer-fresh.sh` (the built bundle's inlined version).
-- **Why.** A bump once left the generated constant at 34 while Rust went to 35, and every
-  existing gate passed because nothing compared the two.
-
-## Renderer
-
-- **Tauri's `tracing` feature stays off** and no file under `src-tauri/src/watchdog/` except
-  `clocks.rs` reads `SystemTime`. **Enforced by** `check-watchdog.sh`. With `tracing` on,
-  `eval_script_with_callback` takes a blocking path and the watchdog supervisor can block
-  on the event loop it is watching; the suspend classifier is defined on `boot − mono`, so
-  wall-clock reads anywhere else corrupt it.
-- **No native `<select>`** outside `components/ui/Select.tsx` — its open popup is an unstyled
-  GTK window under WebKitGTK. **Enforced by** `check-native-select.sh`.
-- **No raw `lucide-react` imports** outside `components/icons.tsx`. **Enforced by**
-  `check-icon-imports.sh`.
-- **`title=` is not a tooltip.** A native `title` on an icon-only button is its accessible
-  name; a `Tooltip` gives only `aria-describedby`, so the string must also go to
-  `aria-label`. And `<Row title=…>` is a visible heading, not a tooltip. **Enforced by**
-  `check-title-tooltip-guard.sh` with an explicit allowlist of heading-prop components.
+<!-- Renderer invariants (Theo). -->
 
 ## Doc and comment hygiene
 
 ### Doc shape and comment shape are gated, not asked for
 
-**Enforced by** `scripts/check-doc-hygiene.sh` (allowed tree, a cap on live plans, no diary
-content — no dates, no `phase N`/`step N` numbering, no pointer into a private clone
-directory) and `scripts/check-comment-hygiene.sh` (the same no-dates/no-phase-numbers/
-no-session-narrative/no-app-names/no-dead-pointers rule, plus a length cap, applied to code
+**Enforced by** `scripts/check-doc-hygiene.sh` (allowed tree, no diary content — no dates,
+no `phase N`/`step N` numbering, no pointer into a private clone directory) and
+`scripts/check-comment-hygiene.sh` (the same rules plus a length cap, applied to code
 comments) — both run in CI and again on every edit through the project hook.
 
 **Why.** The same rules living only in prose let the tree drift for months before anyone
-noticed comments and docs had accumulated diary content nobody would write as a review
-comment on its own.
+noticed comments and docs had accumulated diary content.
 
-## Ratchets only tighten
+## Ratchets only tighten, and a gate proves it can fail
 
-**Enforced by** `scripts/check-ratchets-only-tighten.sh`, which diffs every shrink-only
-per-file baseline (complexity, spacing tokens, radius tokens, control metrics, focus-visible
-exemptions) against a reference commit and fails if any file's pinned count rose; an
-unresolvable reference fails rather than silently skipping the check.
+The `apps/web` style guards pin a per-file count in `scripts/web-style-baseline/`; CI fails
+on a raised count or a stale entry, and `--update` only lowers pins.
+`check-web-style.sh --self-test` points each guard at its `bad` fixture and requires it to
+fail. `check-env-ratchet.sh` holds direct environment reads under `src-tauri/src/sys`.
 
-**Why.** A gate that enforces its own pinned numbers faithfully but nothing about what those
-numbers should be invites the cheapest fix: editing the pin down is a smaller diff than fixing
-the violation, and it is the fix an agent finds first.
-
-## A gate proves it can fail
-
-**Enforced by** `scripts/check-mutations.sh`, which points each covered gate at a fixture
-built to violate the rule it protects and requires the gate to fail **by name** — coverage
-across the checked gates is itself a ratchet that only rises.
-
-**Why.** The same reasoning that makes a green test on an impossible fixture worthless applies
-to a gate: a check that never fires on a broken fixture is silence wearing the shape of a
-passing check.
+**Why.** Editing a pin is a smaller diff than fixing the violation, and it is the fix an
+agent finds first; a check that never fires on a broken fixture is silence wearing the shape
+of a passing check.
 
 ## Builds
 
-- **Never two cargo workloads at once.** `cargo` saturates every core; several concurrent
-  builds push the user slice past `systemd-oomd`'s 50 % pressure threshold, and oomd kills
-  the *whole* terminal scope — shell, editor, agents — silently. `oom-shield.sh` caps one
-  scope (`MemoryHigh=16G`, `MemoryMax=18G`, `nice -n 19`) and serializes invocations with a
-  per-user flock; it refuses to run unshielded. The caps are receipted against the measured
-  10.2 GiB peak of the core test suite.
-- **`perf_smoke` runs at normal priority on an idle machine.** Niceing starves its drain
-  loop. The same tree measured 127.6 MiB/s idle and 1.4 MiB/s with a concurrent compile —
-  a ~90× swing that looks exactly like a PTY regression.
-- **Full suites run at integration boundaries and before pushes.** Running the full Rust
-  suite for every small edit creates avoidable memory pressure; use focused tests while
-  iterating and the full suite at the documented delivery cadence.
+- **Never two Cargo workloads at once.** `cargo` saturates every core; concurrent builds push
+  the user slice past `systemd-oomd`'s pressure threshold, and oomd kills the whole terminal
+  scope — shell, editor, agents — silently. `oom-shield.sh` caps one scope
+  (`MemoryHigh=16G`, `MemoryMax=18G`, `nice -n 19`) and serializes invocations with a
+  per-user flock.
+- **Full suites run at integration boundaries and before pushes.** Use focused tests while
+  iterating and the full suites at the documented delivery cadence.

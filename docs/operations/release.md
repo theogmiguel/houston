@@ -143,18 +143,15 @@ See the [development runbook](development.md) for the remaining local gates.
 
 **Build installers** accepts any source ref and resolves it once to an immutable
 commit shared by all jobs. Both platforms are selected by default. Selecting
-`windows` still builds Linux packages because Windows embeds their x86_64 daemon
-for WSL. It uploads artifacts only and is the packaging check to run before
+`windows` still builds the Linux packages. It uploads artifacts only and is the packaging check to run before
 merging changes to the bundle pipeline.
 
 Linux builds x86_64 and aarch64 packages. Windows native compilation starts in
-parallel with Linux; NSIS packaging waits for the Linux WSL artifact and validates
-its real daemon and helper before bundling. The intermediate Windows native
-artifact is internal to Actions and is not a release asset. This removes Linux
-build time from the start of Windows compilation without omitting WSL resources.
+parallel with Linux, and NSIS packaging waits for the Linux job. The intermediate
+Windows native artifact is internal to Actions and is not a release asset.
 
 Before filing the draft, Linux packages run headlessly on Ubuntu 22.04, Ubuntu
-24.04, Debian 12 and current Fedora. The packaged x86_64 app and daemon also run
+24.04, Debian 12 and current Fedora. The packaged x86_64 app also runs
 under QEMU's baseline CPU. These checks catch missing runtime dependencies, ABI
 floor changes and unsupported CPU instructions. They do not replace graphical
 smoke tests on real Linux and Windows desktops.
@@ -165,11 +162,9 @@ Only a release changes versions. Feature PRs do not edit the version manifests:
 
 - `src-tauri/tauri.conf.json`
 - `src-tauri/Cargo.toml`
-- `ui/package.json`
 - `apps/server/package.json` (the server archives and `houston` runtime read it)
-- `core/Cargo.toml` (`workspace.package.version`)
 
-`scripts/set-version.sh X.Y.Z` updates all five and both Cargo lockfiles using
+`scripts/set-version.sh X.Y.Z` updates all three and `src-tauri/Cargo.lock` using
 `cargo update --workspace`, without updating dependencies. It accepts `X.Y.Z` or
 `X.Y.Z-rc.N`. `scripts/check-manifest-versions.sh` verifies agreement and checks a
 resumed tag's expected version. Cut release runs these scripts; contributors do
@@ -230,7 +225,7 @@ is wired for both and running the unsigned one.
 
 ### Houston checks for a release; you click to install it
 
-The daemon fetches `releases/latest/download/latest.json`, the same manifest the
+The host fetches `releases/latest/download/latest.json`, the same manifest the
 app's updater reads, once at start, every six hours, and whenever the About
 panel's **Check now** is pressed, and broadcasts what it found. The panel names
 the release, shows a teaser of its notes and links to the release page, whose URL
@@ -238,8 +233,8 @@ is built from the manifest's version. The notes are the manifest's `notes`
 field, synchronized from the reviewed draft by **Promote draft to public**. Edits
 made after publication do not change what the panel shows.
 Scheduled checks also revalidate the shared model catalog independently of the release result.
-Release checks send the last valid ETag within a daemon lifetime; a `304` reuses the cached
-release payload. Restarting the daemon performs a full release check.
+Release checks send the last valid ETag within a host lifetime; a `304` reuses the cached
+release payload. Restarting the app performs a full release check.
 
 **Install update** is the other half: the app fetches the fixed manifest
 `releases/latest/download/latest.json`, picks the entry for this exact bundle
@@ -247,14 +242,10 @@ release payload. Restarting the daemon performs a full release check.
 downloads it, verifies the artifact's signature against the public key in
 `src-tauri/tauri.conf.json`, and installs. It refuses by name when the manifest
 publishes nothing for this bundle, when the signature does not verify, when the
-manifest's version is no longer the one the panel showed, and — on Windows —
-when the channel's daemon has live sessions, because the installer replaces the
-`houston-core.exe` they run on.
+and when the manifest's version is no longer the one the panel showed.
 
 On Linux a deb install runs the system package manager's usual privileged
-install, and the app then asks the running daemon to hand its sessions to the
-newly installed `houston-core`; a handoff the daemon refuses leaves every
-session on the current daemon and says why. An AppImage install replaces the
+install. An AppImage install replaces the
 running file and relaunches into the new mount. On Windows the NSIS installer
 runs; the progress and the outcome appear in the panel. Nothing installs
 without a click, and nothing unsigned or unverifiable installs at all.
@@ -367,9 +358,8 @@ not replace the complete local gate in
 [`docs/operations/development.md`](development.md); a release must run the
 remaining checks as well.
 
-Windows: natively, the same `cargo nextest run && cargo test --doc && cargo clippy --all-targets -- -D
-warnings && cargo fmt` / `bun run typecheck && bun run test && bun run build
-&& bun run check:css` commands — typed by hand, not wrapped in a script.
+Windows: natively, the same commands as the development runbook's full gate, typed by
+hand, not wrapped in a script.
 
 ### 2. Build artifacts
 
@@ -398,41 +388,22 @@ repo root inside the VM:
 It refuses a too-new bundle and prints the symbol versions that caused it. A
 `LINUX_VM_DISTRO=Ubuntu-22.04` testbed is the other way to keep the floor.
 
-`build-app.sh`, unpacked:
-
-1. Re-execs itself under `scripts/oom-shield.sh` (`-j 3`) unless already
-   shielded, so the **whole pipeline** — renderer build included — is one
-   serialized unit. Concurrent runs can race while `vite build` applies
-   `emptyOutDir: true`.
-2. `cd ui && bun run build` (unless `--skip-renderer`).
-3. `./scripts/check-renderer-fresh.sh` — unconditional, not skippable by any
-   flag.
-4. Builds and stages `tr-helper`, `houston-core` and `houston-supervisor` at
-   `src-tauri/binaries/<name>-<host target triple>`, where Tauri's
-   `bundle.externalBin` expects them. This runs **before** the bundle: a
-   missing external binary fails the `src-tauri` build outright.
-5. `CARGO_BUILD_JOBS=3 cargo tauri build --bundles <targets>`, then copies the
-   un-suffixed helper beside the app binary in `target/release` for the
-   un-bundled dev layout and for `install-desktop.sh`.
+`build-app.sh` re-execs itself under `scripts/oom-shield.sh` (`-j 3`) unless already
+shielded, then runs `CARGO_BUILD_JOBS=3 cargo tauri build --bundles <targets>`. The
+renderer and the bundled server are built beforehand (`pnpm --filter @t3tools/web build`,
+`pnpm --filter houston build:exe` and `node scripts/stage-v2-server.mjs`).
 
 Bundle output: `src-tauri/target/release/bundle/{appimage,deb}/*.{AppImage,deb}`.
 
 Windows:
 
 ```powershell
-$env:HOUSTON_WSL_LINUX_BIN_DIR = '<Linux core/target/release>'
 ./scripts/build-app.ps1
 cd src-tauri
 cargo tauri bundle --bundles nsis --ci
 ```
 
-Build the Linux `houston-core`, `tr-helper` and `houston-supervisor` at the same
-commit inside WSL first, and point `HOUSTON_WSL_LINUX_BIN_DIR` to that output.
-The script requires these resources and validates them before building the app.
-See [Windows artifacts](development.md#windows) for the prerequisite build.
-
-`build-app.ps1` runs the renderer gates, stages the native sidecars from one
-locked Cargo build, and builds the production app through
+`build-app.ps1` builds the production app through
 `cargo tauri build --no-bundle --ci -- --locked`, with three Cargo jobs.
 The separate bundle step packages that build without recompiling it. A release
 requires updater signing keys; a local unsigned build can use `--no-sign`.
@@ -450,24 +421,8 @@ install the artifact and run it (`./scripts/linux-vm.sh app` on the Linux testbe
 first. Smoke-test every platform included in the draft before promotion.
 
 For Windows, install the NSIS artifact on Windows 10 or 11 and launch it on an
-isolated test channel. Verify terminal input and coloured output, browser navigation,
-task startup in a worktree and child-pane orchestration. Close and reopen the app
-to confirm that its detached daemon and sessions remain available. Verify the
-update flow separately: Windows updates stop sessions before replacing the daemon.
-
-A Windows installer also gets a WSL pass, because no CI job reaches a real distro.
-Install it, then on a test channel (for example `houston.exe --channel wslt`, so
-neither the release state nor the distro's `~/.houston` is touched):
-
-1. Settings → WSL → **Enable** an x86_64 WSL 2 distro; its row reaches the running state.
-2. **Workspaces → + → Local folder…** → a folder under `\\wsl.localhost\<distro>\home\…`;
-   the rail shows it with `WSL: <distro>`.
-3. Open a shell pane there; `uname -s` prints `Linux` and `pwd` the POSIX path.
-4. In that pane, `houston .` from another folder selects it in the Windows app.
-5. Quit from the tray; the distro's `~/.houston-wslt/daemon.json` is gone afterwards.
-
-The `wsl_live` tests in [`development.md`](development.md#wsl_live) cover the daemon,
-relay and session path of that pass against the same distro without the installer.
+isolated test channel. Start a thread with each installed agent CLI, close and reopen
+the app, and confirm that the detached server and its agent runs remain available.
 
 ### 4. Publish
 
@@ -532,29 +487,8 @@ Refuses, in order, on:
   `cargo build --release` in this tree must never be able to relink what the
   installed app runs.
 
-Installs: `~/.local/lib/houston/{houston, tr-helper, houston-core,
-houston-supervisor, start.sh, launch.sh}`,
+Installs: `~/.local/lib/houston/{houston, start.sh, launch.sh}`,
 `~/.local/share/applications/houston.desktop`
 (`StartupWMClass=houston`), and night-tile PNGs at 48/64/128/256/512px under
 `~/.local/share/icons/hicolor/**/apps/houston.png`.
 
-## `tr-helper`
-
-A slim agent-facing helper binary serving only `hook` — `hs-mail` (the
-file-based inter-pane IPC it used to serve) is retired; messages between
-panes are inbox rows delivered through `pane_submit`/`hs-pane` instead. Built
-separately from `core/Cargo.toml` and copied beside the app binary. It links
-~6 shared objects against the full app binary's ~130 (GTK/WebKit/GStreamer),
-avoiding a 20–40 ms / ~38 MB dynamic-link cost per hook event. Its copy is
-best-effort in `install-desktop.sh` (warns, not fatal, if missing — the
-resolver falls back to the full app binary).
-
-It **is** bundled. `tauri.conf.json` declares
-`"bundle": { "externalBin": ["binaries/tr-helper", "binaries/houston-core"] }`, so Tauri picks up
-`src-tauri/binaries/tr-helper-<target triple>[.exe]` (the suffix is the
-convention — Tauri appends the triple when it looks, and strips it again when
-it installs) and drops it beside the app binary in every bundle:
-`/usr/bin/tr-helper` next to `/usr/bin/houston` in the deb, `usr/bin/` inside
-the AppImage mount, the install dir under NSIS. Each of those is the directory
-`agent_helper_exe` stats, so the resolver needs to know nothing about
-packaging. Nothing is uploaded loose any more.
