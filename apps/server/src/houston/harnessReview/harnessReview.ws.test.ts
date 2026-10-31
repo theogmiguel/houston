@@ -6,6 +6,7 @@ import {
   AuthSessionId,
   AuthSettingsWriteScope,
   EnvironmentId,
+  ThreadId,
   WS_METHODS,
   WsRpcGroup,
   type AuthEnvironmentScope,
@@ -362,6 +363,17 @@ describe("subscriptions", () => {
           const started = (yield* Queue.take(listener.responses)) as HoustonHarnessSnapshot;
           assert.equal(started.runningReviewId, review.id);
           assert.equal(started.reviews[0]?.status, "preparing");
+
+          // Running: only a running review publishes.
+          yield* store.markRunning(review.id, {
+            threadId: ThreadId.make(`harness-review:${review.id}`),
+            windowSince: "2026-10-16T09:00:00.000Z",
+            windowUntil: "2026-10-30T09:00:00.000Z",
+            threads: 1,
+            prompts: 1,
+          });
+          const running = (yield* Queue.take(listener.responses)) as HoustonHarnessSnapshot;
+          assert.equal(running.reviews[0]?.status, "running");
 
           // Published.
           yield* store.publish(review.id, {
