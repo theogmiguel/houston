@@ -1201,6 +1201,119 @@ describe("fix tasks", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("verdicts of a review published just before a stop are applied once at start", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const base = yield* fs.makeTempDirectoryScoped({ prefix: "harness-replay-" });
+      const databaseFile = path.join(base, "state.sqlite");
+      const read = (projectId: ProjectId) =>
+        Effect.gen(function* () {
+          const tasks = yield* tasksService;
+          const sql = yield* SqlClient.SqlClient;
+          const comments = yield* Effect.forEach(["HOU-1", "HOU-2"], (id) =>
+            tasks
+              .get({ id })
+              .pipe(
+                Effect.map((detail) =>
+                  detail.comments.map((comment) => `${comment.author}: ${comment.body}`),
+                ),
+              ),
+          );
+          const decisions = yield* sql<{
+            key: string;
+            state: string;
+            decided_at: string;
+            decided_by: string;
+          }>`SELECT key, state, decided_at, decided_by FROM houston_harness_decisions
+            ORDER BY key`;
+          const still = (yield* findingOf(projectId, "denied-push"))!;
+          const gone = (yield* findingOf(projectId, "slow-tests"))!;
+          return { comments, decisions, phases: [still.phase, gone.phase] };
+        });
+
+      // The server stops once review 2 is published, before anything applied its verdicts.
+      const first = yield* makeKit("replay-first", { databaseFile });
+      const projectId = yield* runKit(
+        first,
+        Effect.gen(function* () {
+          const harness = yield* service;
+          const { projectId } = yield* createProject("replay");
+          yield* seedPublished({
+            projectId,
+            findings: [{ key: "denied-push" }, { key: "slow-tests" }],
+            endedAt: day(1),
+          });
+          const still = yield* harness.createTask({ projectId, key: "denied-push" });
+          const gone = yield* harness.createTask({ projectId, key: "slow-tests" });
+          yield* harness.decide({ projectId, key: "denied-push", state: "dismissed" });
+          yield* setStatus("HOU-1", "done");
+          yield* setStatus("HOU-2", "done");
+          yield* seedPublished({
+            projectId,
+            findings: [],
+            endedAt: day(2),
+            verifications: [
+              {
+                key: "denied-push",
+                taskId: still.task.id,
+                verdict: "still_present",
+                sessionsAfter: 3,
+                evidence: ["still denied"],
+              },
+              {
+                key: "slow-tests",
+                taskId: gone.task.id,
+                verdict: "gone",
+                sessionsAfter: 3,
+                evidence: [],
+              },
+            ],
+          });
+          // The verdicts' decisions commit with the publication: still present reopens a
+          // finding the user had dismissed, and gone resolves the other.
+          const stopped = yield* read(projectId);
+          assert.deepEqual(stopped.phases, ["open", "resolved"]);
+          assert.deepEqual(
+            stopped.decisions.map((row) => [row.key, row.state, row.decided_by]),
+            [
+              ["denied-push", "open", "houston:verification"],
+              ["slow-tests", "resolved", "houston:verification"],
+            ],
+          );
+          assert.deepEqual(stopped.comments, [[], []]);
+          return projectId;
+        }),
+      );
+
+      const expected = [
+        [
+          "houston:harness: Harness review 2 found finding denied-push still present; evidence is available in Review.",
+        ],
+        ["houston:harness: Harness review 2 verified finding slow-tests as gone."],
+      ];
+      const second = yield* makeKit("replay-second", { databaseFile });
+      const applied = yield* runKit(
+        second,
+        Effect.gen(function* () {
+          const state = yield* read(projectId);
+          assert.deepEqual(state.comments, expected);
+          assert.deepEqual(state.phases, ["open", "resolved"]);
+          return state;
+        }),
+      );
+
+      // A second start changes nothing.
+      const third = yield* makeKit("replay-third", { databaseFile });
+      yield* runKit(
+        third,
+        Effect.gen(function* () {
+          assert.deepEqual(yield* read(projectId), applied);
+        }),
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("verify now runs a review and suggested work drops decided findings", () =>
     Effect.gen(function* () {
       const kit = yield* makeKit("verify-now");

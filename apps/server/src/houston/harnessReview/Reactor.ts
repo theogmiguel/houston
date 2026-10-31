@@ -44,8 +44,6 @@ const ENDED: ReadonlySet<OrchestrationV2Run["status"]> = new Set([
 ]);
 
 const UNREADABLE = "the run ended without a readable answer";
-/** The `decided_by` of a decision a verdict made. */
-const VERIFICATION_ACTOR = "houston:verification";
 const STOPPED_WHILE_PREPARING = "the server stopped while this review was being prepared";
 
 const endedBecause = (status: OrchestrationV2Run["status"]) =>
@@ -185,37 +183,36 @@ const make = Effect.gen(function* () {
       verifications: parsed.value.verifications,
     });
     if ((yield* store.getReview(review.id))?.status !== "published") return;
-    yield* applyVerdicts(review, parsed.value.verifications, links);
+    yield* commentVerdicts(review.id, parsed.value.verifications, links);
   });
 
-  /** Gone resolves the finding and still present reopens it; both comment on the fix task. */
-  const applyVerdicts = Effect.fn("HarnessReviewReactor.applyVerdicts")(function* (
-    review: StoredReview,
-    verifications: ReadonlyArray<VerificationWrite>,
+  /** Comments each decided verdict on its fix task once; a replay posts only missing comments. */
+  const commentVerdicts = Effect.fn("HarnessReviewReactor.commentVerdicts")(function* (
+    reviewId: number,
+    verifications: ReadonlyArray<Pick<VerificationWrite, "key" | "taskId" | "verdict">>,
     links: ReadonlyArray<FixTaskLink>,
   ) {
     for (const verification of verifications) {
-      const body = verdictComment(review.id, verification.key, verification.verdict);
+      const body = verdictComment(reviewId, verification.key, verification.verdict);
       if (body === null) continue;
-      yield* store.decide({
-        projectId: review.projectId,
-        key: verification.key,
-        state: verification.verdict === "gone" ? "resolved" : "open",
-        by: VERIFICATION_ACTOR,
-      });
       const taskKey =
         links.find((link) => link.taskId === verification.taskId)?.taskKey ??
         String(verification.taskId);
-      yield* tasks
-        .comment({ id: taskKey, body }, HARNESS_ACTOR)
-        .pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning(
-              `Harness review ${review.id} could not comment its verdict on ${taskKey}; the review is published`,
-              { cause },
-            ),
+      yield* tasks.get({ id: taskKey }).pipe(
+        Effect.flatMap((detail) =>
+          detail.comments.some(
+            (comment) => comment.body === body && comment.author === HARNESS_ACTOR,
+          )
+            ? Effect.void
+            : Effect.asVoid(tasks.comment({ id: taskKey, body }, HARNESS_ACTOR)),
+        ),
+        Effect.catchCause((cause) =>
+          Effect.logWarning(
+            `Harness review ${reviewId} could not comment its verdict on ${taskKey}; the review is published`,
+            { cause },
           ),
-        );
+        ),
+      );
     }
   });
 
@@ -268,6 +265,20 @@ const make = Effect.gen(function* () {
       }
       const latest = records.value.runs.toSorted((left, right) => right.ordinal - left.ordinal)[0];
       if (latest !== undefined) yield* settleRun(latest);
+    }
+    // Only a project's newest published review can lack comments: every start replays it.
+    for (const projectId of yield* store.projects) {
+      const reviewId = yield* store.latestPublishedReviewId(projectId);
+      if (reviewId === 0) continue;
+      const rows = (yield* store.verificationRows(projectId)).filter(
+        (row) => row.review_id === reviewId,
+      );
+      if (rows.length === 0) continue;
+      yield* commentVerdicts(
+        reviewId,
+        rows.map((row) => ({ key: row.key, taskId: row.task_id, verdict: row.verdict })),
+        yield* fixTasks.linkStates(projectId),
+      );
     }
   });
 

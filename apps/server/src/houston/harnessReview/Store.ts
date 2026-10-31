@@ -101,6 +101,16 @@ export interface PublishInput {
   readonly verifications: ReadonlyArray<VerificationWrite>;
 }
 
+/** The `decided_by` of a decision a verdict made. */
+export const VERIFICATION_ACTOR = "houston:verification";
+
+/** Gone resolves the finding and still present reopens it; inconclusive decides nothing. */
+const VERDICT_DECISIONS: Record<StoredVerdict, HoustonHarnessDecisionState | null> = {
+  gone: "resolved",
+  still_present: "open",
+  inconclusive: null,
+};
+
 const toReview = (row: ReviewRow): StoredReview => ({
   id: row.id,
   projectId: ProjectId.make(row.project_id),
@@ -320,6 +330,16 @@ const make = Effect.gen(function* () {
                 (review_id, key, task_id, verdict, sessions_after, evidence_json)
               VALUES (${id}, ${verification.key}, ${verification.taskId}, ${verification.verdict},
                 ${verification.sessionsAfter}, ${toJson(verification.evidence)})
+            `;
+            // A verdict's decision commits with the publication, so a stop cannot lose it.
+            const state = VERDICT_DECISIONS[verification.verdict];
+            if (state === null) continue;
+            yield* sql`
+              INSERT INTO houston_harness_decisions (project_id, key, state, decided_at, decided_by)
+              SELECT project_id, ${verification.key}, ${state}, ${input.endedAt}, ${VERIFICATION_ACTOR}
+              FROM houston_harness_reviews WHERE id = ${id}
+              ON CONFLICT (project_id, key) DO UPDATE SET
+                state = excluded.state, decided_at = excluded.decided_at, decided_by = excluded.decided_by
             `;
           }
           yield* sql`
