@@ -63,15 +63,12 @@ it("removes a context chip from the draft", async () => {
   expect(await promptAfterRemoval("Remove context: Release notes")).toBe("Summarize now");
 });
 
-it("removes a citation chip from the draft", async () => {
+it("keeps a citation out of the prompt text while retaining its record", async () => {
   await using screen = await render(
     <Composer value={`See ${serializeAssistantCitation(citation)} `} />,
   );
-  const remove = screen.getByRole("button", { name: "Remove citation" });
-  await expect.element(remove).toBeVisible();
-  await userEvent.click(remove.element());
-  await vi.waitFor(() =>
-    expect(screen.container.querySelector("output")?.dataset.prompt ?? "").not.toContain("hello"),
-  );
-  expect(screen.container.querySelector("[data-assistant-citation-chip]")).toBeNull();
+  const chip = screen.container.querySelector<HTMLElement>('[data-composer-citation-chip="true"]');
+  expect(chip).not.toBeNull();
+  expect(getComputedStyle(chip!).display).toBe("none");
+  expect(screen.container.querySelector("output")?.dataset.prompt).toContain("hello");
 });

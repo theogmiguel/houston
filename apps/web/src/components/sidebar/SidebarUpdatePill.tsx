@@ -139,7 +139,11 @@ function resolveSidebarUpdatePillCopy(
   }
   if (action === "download") {
     const version = getDesktopUpdateDownloadedVersion(state) ?? state.availableVersion;
-    return { label: version ? `Update ${version}` : "Update available", meta: null, tone: "update" };
+    return {
+      label: version ? `Update ${version}` : "Update available",
+      meta: null,
+      tone: "update",
+    };
   }
   return { label: null, meta: null, tone: "update" };
 }
@@ -490,7 +494,7 @@ function SidebarUpdateControl() {
         "flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-headline leading-4.5 font-medium outline-hidden ring-ring transition-colors focus-visible:ring-2 focus-visible:ring-inset",
         pillCopy.tone === "error"
           ? "bg-destructive/12 text-destructive"
-          : "bg-(--accent-muted) text-(--update-foreground)",
+          : "bg-sidebar-control-surface text-sidebar-foreground hover:bg-sidebar-row-hover",
         isInteractionDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
       )}
       onClick={handleAction}

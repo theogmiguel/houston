@@ -315,6 +315,7 @@ const withRuntimeReads = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       Effect.provideService(ThreadManagement.ThreadManagementService, {
         ensureLegacyTranscript: () => Effect.void,
         getThreadShell: orchestrator.getThreadShell,
+        listActiveShellIndex: orchestrator.listActiveShellIndex,
         getShellSnapshot: orchestrator.getShellSnapshot,
         readShellSnapshot: orchestrator.readShellSnapshot,
         listActiveSubagentThreadIds: orchestrator.listActiveSubagentThreadIds,

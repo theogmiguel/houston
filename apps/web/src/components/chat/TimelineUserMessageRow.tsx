@@ -304,7 +304,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
       </div>
       <UserMessageProjectedStatus row={row} />
       {expanded ? (
-        <div className="flex w-full max-w-[82%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
+        <div className="flex w-full max-w-[82%] items-center justify-end pe-1 text-callout text-(--t3) tabular-nums">
           <div className="flex shrink-0 items-center gap-2">
             {scheduledTaskId ? (
               <Link
@@ -320,7 +320,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
               timestampFormat={ctx.timestampFormat}
               alwaysVisible
             />
-            <div className="flex items-center gap-0.5">
+            <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
               {typeof revertTurnCount === "number" && (
                 <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
               )}
@@ -468,10 +468,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     unknownAttachments.length === 0 &&
     regularImages.length + userVideos.length > 0;
   // Media sent with words sits above the bubble as its own shape, like a chat app.
-  const mediaAboveText =
-    !folded &&
-    !mediaOnly &&
-    regularImages.length + userVideos.length > 0;
+  const mediaAboveText = !folded && !mediaOnly && regularImages.length + userVideos.length > 0;
   const standaloneMedia = mediaOnly || mediaAboveText;
   // A lone image keeps its own shape; a 4:3 crop hides most of a wide screenshot.
   const loneImage = standaloneMedia && userVideos.length === 0 && regularImages.length === 1;
@@ -757,21 +754,16 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       ) : null}
       <div
         className={cn(
-          "relative min-w-0 max-w-[82%] rounded-xl text-prose leading-5 text-message-foreground",
-          mediaAboveText && "rounded-tr-md",
+          "relative min-w-0 max-w-[82%] rounded-(--r-group) border border-border bg-card text-prose leading-5 text-foreground",
+          mediaAboveText && "rounded-tr-(--r-badge)",
           BUBBLE_CHIP_CLASS_NAME,
-          !mediaOnly && !fileCardsOnly && !audioOnly && "bg-muted",
-          !folded && !mediaOnly && !fileCardsOnly && !audioOnly && "px-3.25 py-2.25",
+          !folded && !mediaOnly && !fileCardsOnly && !audioOnly && "px-3.5 py-2.5",
           folded && expanded && "w-full",
         )}
       >
         {/* Outside the fold so a collapsed message still has a heading to navigate to. */}
         {mediaAboveText ? null : (
-          <MessageAuthorHeading>
-            {folded
-              ? senderLabel
-              : "You"}
-          </MessageAuthorHeading>
+          <MessageAuthorHeading>{folded ? senderLabel : "You"}</MessageAuthorHeading>
         )}
         {folded ? (
           <FoldedMessageHeader
@@ -914,7 +906,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       </div>
       <UserMessageProjectedStatus row={row} />
       {!folded || expanded ? (
-        <div className="flex w-full max-w-[82%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
+        <div className="flex w-full max-w-[82%] items-center justify-end pe-1 text-callout text-(--t3) tabular-nums">
           <div className="flex shrink-0 items-center gap-2">
             {folded && senderThreadId ? (
               <InlineButton onClick={() => ctx.onOpenThread(senderThreadId)} tone="muted">
@@ -922,14 +914,14 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               </InlineButton>
             ) : null}
             <Tooltip>
-              <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
+              <TooltipTrigger render={<p className="text-(--t3) text-callout tabular-nums" />}>
                 {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
               </TooltipTrigger>
               <TooltipPopup>
                 {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
               </TooltipPopup>
             </Tooltip>
-            <div className="flex items-center gap-0.5">
+            <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
               {typeof revertTurnCount === "number" && (
                 <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
               )}

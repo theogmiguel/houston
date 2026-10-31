@@ -84,14 +84,8 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "../ui/empty";
-import {
-  NumberField,
-  NumberFieldDecrement,
-  NumberFieldGroup,
-  NumberFieldIncrement,
-  NumberFieldInput,
-} from "../ui/number-field";
 import { ScrollArea } from "../ui/scroll-area";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -112,7 +106,6 @@ import {
   buildProviderInstanceUpdatePatch,
   durationToSeconds,
   normalizeIntervalSeconds,
-  PROVIDER_HEALTH_INTERVAL_STEP_SECONDS,
 } from "./SettingsPanels.logic";
 import {
   PolicyTooltip,
@@ -1130,33 +1123,48 @@ export function EnvironmentProviderSettings({
                     !canWriteSettings && "opacity-50 select-none",
                   )}
                 >
-                  <NumberField
-                    value={providerHealthRefreshIntervalSeconds}
-                    min={0}
-                    step={PROVIDER_HEALTH_INTERVAL_STEP_SECONDS}
-                    size="sm"
-                    className="w-32"
-                    onValueChange={(value) =>
+                  <Select
+                    value={String(providerHealthRefreshIntervalSeconds)}
+                    onValueChange={(value) => {
+                      const seconds = Number(value);
+                      if (!Number.isInteger(seconds) || seconds < 0) return;
                       updateSettings(
                         backgroundActivityOverrideSettings(
                           settings.backgroundActivity,
                           resolvedBackgroundActivity,
                           {
                             providerHealthRefreshInterval: Duration.seconds(
-                              normalizeIntervalSeconds(value),
+                              normalizeIntervalSeconds(seconds),
                             ),
                           },
                         ),
-                      )
-                    }
+                      );
+                    }}
                   >
-                    <NumberFieldGroup>
-                      <NumberFieldDecrement aria-label="Decrease provider health check interval" />
-                      <NumberFieldInput aria-label="Provider health check interval in seconds" />
-                      <NumberFieldIncrement aria-label="Increase provider health check interval" />
-                    </NumberFieldGroup>
-                  </NumberField>
-                  <span className="text-xs text-muted-foreground">seconds</span>
+                    <SelectTrigger
+                      size="sm"
+                      className="w-full sm:w-40"
+                      aria-label="Provider health check interval"
+                    >
+                      <SelectValue>
+                        {providerHealthRefreshIntervalSeconds === 0
+                          ? "Off"
+                          : `Every ${providerHealthRefreshIntervalSeconds / 60} ${
+                              providerHealthRefreshIntervalSeconds / 60 === 1 ? "minute" : "minutes"
+                            }`}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup align="end" alignItemWithTrigger={false}>
+                      <SelectItem hideIndicator value="0">
+                        Off
+                      </SelectItem>
+                      {[5, 15, 30, 60].map((minutes) => (
+                        <SelectItem hideIndicator key={minutes} value={String(minutes * 60)}>
+                          Every {minutes} {minutes === 1 ? "minute" : "minutes"}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
                 </div>
               }
             />

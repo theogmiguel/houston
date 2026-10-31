@@ -59,7 +59,7 @@ import { announce } from "~/lib/announce";
 import { cn } from "~/lib/utils";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { TooltipProvider } from "../ui/tooltip";
-import { InlineButton } from "../ui/button";
+import { Button, InlineButton } from "../ui/button";
 import {
   isProviderInstancePickerReady,
   isProviderInstancePickerVisible,
@@ -165,10 +165,10 @@ function adjacentModelPickerProvider(input: {
 }
 
 const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
-const MODEL_LIST_ESTIMATED_ITEM_SIZE = 52;
+const MODEL_LIST_ESTIMATED_ITEM_SIZE = 34;
 // Rendered heights in `--spacing` units. Chrome is the search box and list padding, plus a 1px border.
-const ONE_LINE_ROW_UNITS = 8;
-const TWO_LINE_ROW_UNITS = 12;
+const ONE_LINE_ROW_UNITS = 7.5;
+const TWO_LINE_ROW_UNITS = 11;
 const ROW_SEPARATOR_UNITS = 0.5;
 const LIST_CHROME_UNITS = 15.5;
 
@@ -317,7 +317,7 @@ function ModelPickerList({
           estimatedItemSize={MODEL_LIST_ESTIMATED_ITEM_SIZE}
           drawDistance={480}
           recycleItems
-          contentContainerClassName="pl-2 pr-px"
+          contentContainerClassName="px-1.5"
           ItemSeparatorComponent={ModelListSeparator}
           onLayout={updateScrollFades}
           onScroll={updateScrollFades}
@@ -354,6 +354,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   model: string;
   selectedModels?: ReadonlyArray<{ instanceId: ProviderInstanceId; model: string }>;
   onToggleModel?: (instanceId: ProviderInstanceId, model: string) => void;
+  onSendSelectedModels?: (() => void) | undefined;
   lockedProvider: ProviderDriverKind | null;
   lockedContinuationGroupKey?: string | null;
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
@@ -374,6 +375,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     instanceEntries,
     getModelDisabledReason,
     onInstanceModelChange,
+    onSendSelectedModels,
     onToggleModel,
     onRequestClose,
     onOpenProviderSetup,
@@ -831,7 +833,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       <WindowKeyDownListener onKeyDown={onWindowKeyDown} />
       <div
         ref={pickerContentRef}
-        className="relative flex max-h-86.5 w-screen max-w-lg flex-row overflow-hidden"
+        className="relative flex max-h-86.5 w-screen max-w-lg flex-row dialog-glass overflow-hidden rounded-lg"
         style={
           isSearching
             ? { height: searchHeight }
@@ -903,13 +905,14 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         >
           <div
             className={cn(
-              "flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/40",
-              showSidebar && "border-l border-border/70",
+              "flex min-h-0 flex-1 flex-col overflow-hidden bg-(--raised)",
+              showSidebar && "border-l border-border",
             )}
           >
             <ComboboxSearchInput
               ref={searchInputRef}
-              placeholder="Search models..."
+              appearance="field"
+              placeholder="Search models"
               value={searchQuery}
               onChange={(e) => {
                 if (!isSearching) setSearchHeight(pickerContentRef.current?.offsetHeight ?? 0);
@@ -1023,6 +1026,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         : modelKey === activeModelKey
                     }
                     showProvider={rowsMixProviders || Boolean(model.subProvider)}
+                    multiple={onToggleModel !== undefined}
                     showNewBadge={model.badge === "new"}
                     unavailable={model.isUnavailable === true}
                     jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
@@ -1043,6 +1047,24 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               onRequestClose={onRequestClose}
               onOpenProviderSetup={onOpenProviderSetup}
             />
+            {onToggleModel && selectedModelKeySet.size > 1 ? (
+              <div
+                data-model-picker-selection-footer="true"
+                className="mt-1.5 flex items-center gap-2 border-t border-border px-1 pt-2 pb-0.5 text-(--t2) text-xs"
+              >
+                <span className="flex-1">{selectedModelKeySet.size} models selected</span>
+                <Button
+                  size="xs"
+                  variant="primary"
+                  onClick={() => {
+                    onRequestClose?.();
+                    onSendSelectedModels?.();
+                  }}
+                >
+                  Send to {selectedModelKeySet.size}
+                </Button>
+              </div>
+            ) : null}
           </div>
         </Combobox>
       </div>

@@ -89,3 +89,5 @@ rm handoff/design/boards/.render.html
   right-click opens "Show in thread details". Only the look changes: board tokens, 28px rows with
   no icons, a title on every section (Workspace, Version control, Servers, Automations, Lineage,
   Usage), `--raised` surface and `--shadow-1`.
+- **Composer focus is neutral**: the focused composer's 1px border goes from `--line-strong` to
+  `--line-focus` (a lighter neutral, 30% alpha), not the board's `--accent-ink`. No ring or halo.
