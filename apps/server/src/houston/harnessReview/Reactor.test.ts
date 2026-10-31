@@ -185,6 +185,8 @@ describe("publishing a review", () => {
         Effect.gen(function* () {
           const harness = yield* service;
           const reviews = yield* store;
+          const reactor = yield* HarnessReviewReactor.HarnessReviewReactor;
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
           const project = yield* projectWithThread("corrections");
 
           // Review 1: three unreadable answers.
@@ -197,6 +199,15 @@ describe("publishing a review", () => {
           assert.include(messages[1]!.text, "no fenced `json` block");
           assert.include(messages[1]!.text, '"schema": 1');
           assert.equal((yield* reviews.getReview(1))!.status, "running");
+
+          // The corrected run seen again, by a repeated run.updated or a restart, is not corrected twice.
+          const answered = (yield* orchestrator.getThreadProjection(
+            ThreadId.make(first.threadId),
+          )).runs.find((run) => run.status === "completed")!;
+          yield* reactor.settleRun(answered);
+          yield* reactor.recover;
+          assert.lengthOf(yield* userMessagesOf(first.threadId), 2);
+          assert.equal((yield* reviews.getReview(1))!.corrections, 1);
 
           kit.harness.script.replies.set(correctionMessageId(1, 1), "Still no block");
           kit.harness.script.replies.set(correctionMessageId(1, 2), "{ broken json");
