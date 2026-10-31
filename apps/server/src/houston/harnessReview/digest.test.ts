@@ -495,6 +495,48 @@ describe("the digest", () => {
     assert.notMatch(digest.jsonl, /-secret|approval\.secret/);
   });
 
+  it("digest masking covers header, password and json credentials", () => {
+    const cases: ReadonlyArray<readonly [string, string, string]> = [
+      ["Authorization: Basic dXNlcjpwYXNz", "Authorization: Basic <redacted>", "dXNlcjpwYXNz"],
+      ["curl -H 'X-Api-Key: abc123'", "curl -H 'X-Api-Key: <redacted>'", "abc123"],
+      ["password: hunter2", "password: <redacted>", "hunter2"],
+      ["password=hunter2", "password=<redacted>", "hunter2"],
+      ['{"token": "abc123"}', '{"token": "<redacted>"}', "abc123"],
+      ['{"password": "pw-123"}', '{"password": "<redacted>"}', "pw-123"],
+      ['{"access_token": "at-456"}', '{"access_token": "<redacted>"}', "at-456"],
+      [
+        "Worker 12 asked once; request 12345678 took 3 attempts.",
+        "Worker 12 asked once; request 12345678 took 3 attempts.",
+        "<redacted>",
+      ],
+    ];
+    const credentialRun = run("t-credentials", 1, "2026-10-28T10:00:00.000Z");
+    const digest = buildDigest({
+      projectId: P,
+      window: WINDOW,
+      previousEnd: null,
+      threads: [
+        input(
+          thread("t-credentials"),
+          [credentialRun],
+          cases.map(([text], index) =>
+            userMessage(
+              "t-credentials",
+              credentialRun.id,
+              `2026-10-28T10:${String(10 + index)}:00.000Z`,
+              text,
+            ),
+          ),
+        ),
+      ],
+    });
+    const [line] = parseLines(digest.jsonl);
+    cases.forEach(([text, expected, gone], index) => {
+      assert.equal(line!.prompts[index], expected, text);
+      assert.notInclude(line!.prompts[index], gone, text);
+    });
+  });
+
   it("a digest line and the digest stay within their caps", () => {
     const bigRun = run("t-big", 1, "2026-10-28T10:00:00.000Z");
     const minute = (index: number) =>

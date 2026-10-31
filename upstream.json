@@ -241,6 +241,7 @@
     "apps/server/src/houston/harnessReview/inventory.ts",
     "apps/server/src/houston/harnessReview/digest.ts",
     "apps/server/src/houston/harnessReview/defects/redact.ts",
+    "apps/server/src/houston/redact.ts",
     "apps/server/src/houston/harnessReview/Store.ts",
     "apps/server/src/houston/harnessReview/Runner.ts",
     "apps/server/src/houston/harnessReview/Reactor.ts",
