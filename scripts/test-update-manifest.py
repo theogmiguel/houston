@@ -492,13 +492,8 @@ class AssembleTests(unittest.TestCase):
         self.assertIn("tag", message)
 
     def test_the_tarball_appimage_wins_for_both_appimage_keys(self):
-        base = "1.2.3"
-        self.release.add_bundle(f"Houston_{base}_amd64.AppImage")
-        self.release.add_bundle(f"Houston_{base}_amd64.AppImage.tar.gz")
-        self.release.add_bundle(f"Houston_{base}_amd64.deb")
-        self.release.add_bundle(f"Houston_{base}_aarch64.AppImage")
-        self.release.add_bundle(f"Houston_{base}_arm64.deb")
-        self.release.add_bundle(f"Houston_{base}_x64-setup.exe")
+        self.release.add_all_bundles()
+        self.release.add_bundle("Houston_1.2.3_amd64.AppImage.tar.gz")
 
         built = self.release.generate()
         self.assertIn(
