@@ -265,6 +265,24 @@ describe("thread undo shortcut", () => {
   });
 });
 
+describe("new thread shortcut", () => {
+  it("uses plain T outside a text field and stays out of text fields", () => {
+    assert.equal(
+      resolveShortcutCommand(event({ key: "t" }), DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Win32",
+        context: { terminalFocus: false, editableFocus: false },
+      }),
+      "chat.new",
+    );
+    assert.isNull(
+      resolveShortcutCommand(event({ key: "t" }), DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Win32",
+        context: { terminalFocus: false, editableFocus: true },
+      }),
+    );
+  });
+});
+
 describe("split/new/close terminal shortcuts", () => {
   it("supports when expressions", () => {
     const keybindings = compile([

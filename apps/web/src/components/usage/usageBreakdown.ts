@@ -73,3 +73,22 @@ export function speedCostSegments(cost: SpeedCost): readonly ShareSegment[] {
     { label: "Ultrafast", value: cost.ultrafast, color: ink(100) },
   ];
 }
+
+const BOARD_INK = {
+  cacheRead: `color-mix(in srgb, var(--accent-ink) 75%, transparent)`,
+  cacheWrite: `color-mix(in srgb, var(--accent-ink) 40%, transparent)`,
+  output: "var(--t1)",
+  input: `color-mix(in srgb, var(--t1) 35%, transparent)`,
+  other: ink(44),
+};
+
+/** Board order: cache reads, cache writes, output, input. */
+export function costTypeBoardSegments(cost: CategoryCost): readonly ShareSegment[] {
+  return [
+    { label: "Cache reads", value: cost.cacheRead, color: BOARD_INK.cacheRead },
+    { label: "Cache writes", value: cost.cacheWrite, color: BOARD_INK.cacheWrite },
+    { label: "Output", value: cost.output, color: BOARD_INK.output },
+    { label: "Input", value: cost.input, color: BOARD_INK.input },
+    { label: "Other", value: cost.unsplit >= 0.005 ? cost.unsplit : 0, color: BOARD_INK.other },
+  ];
+}

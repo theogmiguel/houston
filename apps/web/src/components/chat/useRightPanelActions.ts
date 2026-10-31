@@ -3,7 +3,10 @@ import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { ThreadPreviewState } from "../../previewStateStore";
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
-import { resolveExplicitDiffOpenOnActivate } from "../ChatView.logic";
+import {
+  resolveExplicitDiffOpenOnActivate,
+  shouldOpenDefaultRightPanelDiff,
+} from "../ChatView.logic";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { type ScopedThreadRef, type RunId } from "@t3tools/contracts";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -17,6 +20,7 @@ import { type ThreadPanelPresentation } from "../../rightPanelLayout";
 import {
   selectActiveRightPanel,
   selectThreadPanelOpen,
+  selectThreadRightPanelState,
   type RightPanelSurface,
   useRightPanelStore,
 } from "../../rightPanelStore";
@@ -221,7 +225,20 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
       closePreviewPanel();
       return;
     }
-    useRightPanelStore.getState().toggleVisibility(activeThreadRef);
+    const state = useRightPanelStore.getState();
+    // The board's first tab is Changes, so a thread with a diff opens on it rather than
+    // the empty-surface launcher. A thread without one keeps the launcher.
+    if (
+      shouldOpenDefaultRightPanelDiff({
+        surfaceCount: selectThreadRightPanelState(state.byThreadKey, activeThreadRef).surfaces
+          .length,
+        diffAvailable: isServerThread && isGitRepo,
+      })
+    ) {
+      addDiffSurface();
+    } else {
+      state.toggleVisibility(activeThreadRef);
+    }
     focusActivePanelTerminal(activeThreadRef);
   };
   const toggleRightPanelStable = useStableCallback(toggleRightPanel);

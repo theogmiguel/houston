@@ -42,6 +42,16 @@ import { serverEnvironment } from "../../state/server";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "../ui/dialog";
 import { Input } from "../ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { Kbd, KbdGroup } from "../ui/kbd";
@@ -119,7 +129,7 @@ function KeybindingsSearchInput({
   inputRef: RefObject<HTMLInputElement | null>;
 }) {
   return (
-    <InputGroup className="min-w-0 basis-full **:[input]:h-9 sm:w-[260px] sm:basis-auto sm:flex-none sm:**:[input]:h-7">
+    <InputGroup className="min-w-0 flex-1 **:[input]:h-8 sm:**:[input]:h-7">
       <InputGroupAddon>
         <SearchIcon aria-hidden className="size-3.5" />
       </InputGroupAddon>
@@ -881,18 +891,21 @@ function WhenClauseControl({
 
 function KeybindingRowMenu({
   row,
+  editor,
   isSaving,
+  onEditCondition,
   onReset,
   onRemove,
 }: {
   row: KeybindingRow;
+  editor: KeybindingRowEditor;
   isSaving: boolean;
+  onEditCondition: () => void;
   onReset: (row: KeybindingRow) => void;
   onRemove: (row: KeybindingRow) => void;
 }) {
   const canReset = row.source === "Custom" && row.defaultKey !== null;
   const canRemove = row.source !== "Default";
-  if (!canReset && !canRemove) return null;
 
   return (
     <Menu>
@@ -910,6 +923,9 @@ function KeybindingRowMenu({
         <EllipsisIcon className="size-3.5" />
       </MenuTrigger>
       <MenuPopup align="end">
+        <MenuItem disabled={isSaving} onClick={onEditCondition}>
+          <span className="truncate">When: {editor.whenDraftExpression.trim() || "Always"}</span>
+        </MenuItem>
         {canReset ? (
           <MenuItem disabled={isSaving} onClick={() => onReset(row)}>
             Reset to default
@@ -922,6 +938,44 @@ function KeybindingRowMenu({
         ) : null}
       </MenuPopup>
     </Menu>
+  );
+}
+
+function KeybindingConditionDialog({
+  open,
+  onOpenChange,
+  row,
+  editor,
+  variables,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  row: KeybindingRow;
+  editor: KeybindingRowEditor;
+  variables: ReadonlyArray<WhenVariableOption>;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPopup className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>When condition</DialogTitle>
+          <DialogDescription>
+            Only apply the shortcut for {commandLabel(row.command)} while this condition matches.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogPanel>
+          <WhenExpressionBuilder
+            value={editor.whenDraft}
+            variables={variables}
+            onChange={(whenDraft) => editor.setDraft({ whenDraft })}
+            onValidityChange={(isWhenDraftValid) => editor.setDraft({ isWhenDraftValid })}
+          />
+        </DialogPanel>
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline" />}>Done</DialogClose>
+        </DialogFooter>
+      </DialogPopup>
+    </Dialog>
   );
 }
 
@@ -943,43 +997,6 @@ function KeybindingRowTitle({ row }: { row: KeybindingRow }) {
       </TooltipTrigger>
       <TooltipPopup side="top">{row.command}</TooltipPopup>
     </Tooltip>
-  );
-}
-
-function KeybindingRowWhen({
-  row,
-  editor,
-  variables,
-}: {
-  row: KeybindingRow;
-  editor: KeybindingRowEditor;
-  variables: ReadonlyArray<WhenVariableOption>;
-}) {
-  return (
-    <span className="flex h-6 items-center gap-1.5">
-      <span className="text-xs leading-none text-muted-foreground/70">When</span>
-      <WhenClauseControl
-        label={commandLabel(row.command)}
-        expression={editor.whenDraftExpression}
-        value={editor.whenDraft}
-        variables={variables}
-        onChange={(whenDraft) => editor.setDraft({ whenDraft })}
-        onValidityChange={(isWhenDraftValid) => editor.setDraft({ isWhenDraftValid })}
-      />
-    </span>
-  );
-}
-
-function KeybindingHoverRowMenu(props: {
-  row: KeybindingRow;
-  isSaving: boolean;
-  onReset: (row: KeybindingRow) => void;
-  onRemove: (row: KeybindingRow) => void;
-}) {
-  return (
-    <span className="flex items-center opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100 has-data-popup-open:opacity-100 pointer-coarse:opacity-100">
-      <KeybindingRowMenu {...props} />
-    </span>
   );
 }
 
@@ -1201,18 +1218,16 @@ interface KeybindingsGroupsProps extends KeybindingRowActions {
 function KeybindingTableRow(props: KeybindingRowProps) {
   const { row, isSaving, anchorId, allRows, variables, onSave, onReset, onRemove } = props;
   const editor = useKeybindingRowEditor({ row, allRows, onSave });
+  const [conditionOpen, setConditionOpen] = useState(false);
   return (
     <tr
       id={anchorId}
-      className="group/row border-t border-border/70 outline-none first:border-t-0 hover:bg-accent focus-visible:bg-accent"
+      className="border-t border-border/70 outline-none first:border-t-0 hover:bg-accent focus-visible:bg-accent"
     >
-      <td className="px-3.5 py-2.5 align-middle">
+      <td className="px-3.5 py-2 align-middle">
         <KeybindingRowTitle row={row} />
-        <div className="mt-0.5">
-          <KeybindingRowWhen row={row} editor={editor} variables={variables} />
-        </div>
       </td>
-      <td className="px-3.5 py-2.5 text-right align-middle">
+      <td className="px-3.5 py-2 text-right align-middle">
         <div className="flex flex-wrap items-center justify-end gap-1.5">
           <KeybindingConflictWarning labels={editor.conflictLabels} />
           <KeybindingKeyControl
@@ -1223,12 +1238,21 @@ function KeybindingTableRow(props: KeybindingRowProps) {
           />
         </div>
       </td>
-      <td className="w-10 py-2.5 pe-2 text-right align-middle">
-        <KeybindingHoverRowMenu
+      <td className="w-10 py-2 pe-2 text-right align-middle">
+        <KeybindingRowMenu
           row={row}
+          editor={editor}
           isSaving={isSaving}
+          onEditCondition={() => setConditionOpen(true)}
           onReset={onReset}
           onRemove={onRemove}
+        />
+        <KeybindingConditionDialog
+          open={conditionOpen}
+          onOpenChange={setConditionOpen}
+          row={row}
+          editor={editor}
+          variables={variables}
         />
       </td>
     </tr>
@@ -1264,22 +1288,46 @@ function KeybindingsGroups(props: KeybindingsGroupsProps) {
   );
 }
 
-function BrowserKeybindingNotice() {
-  const message = "The browser may claim some shortcuts first. The desktop app receives them all.";
+const BROWSER_KEYBINDING_NOTICE =
+  "The browser may claim some shortcuts first. The desktop app receives them all.";
+
+function KeybindingsToolbarMenu({
+  canAdd,
+  canOpenFile,
+  onAdd,
+  onOpenFile,
+}: {
+  canAdd: boolean;
+  canOpenFile: boolean;
+  onAdd: () => void;
+  onOpenFile: () => void;
+}) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        delay={200}
+    <Menu>
+      <MenuTrigger
         render={
-          <Button size="icon-micro" variant="ghost-muted" aria-label={message}>
-            <TriangleAlertIcon className="size-3.5 text-warning" />
-          </Button>
+          <Button type="button" variant="outline" size="icon" aria-label="Keybinding actions" />
         }
-      />
-      <TooltipPopup side="top" className="max-w-72">
-        {message}
-      </TooltipPopup>
-    </Tooltip>
+      >
+        <EllipsisIcon className="size-4" />
+      </MenuTrigger>
+      <MenuPopup align="end" className="min-w-56">
+        <MenuItem disabled={!canAdd} onClick={onAdd}>
+          <PlusIcon className="size-3.5" />
+          Add keybinding
+        </MenuItem>
+        <MenuItem disabled={!canOpenFile} onClick={onOpenFile}>
+          <FileJsonIcon className="size-3.5" />
+          Open keybindings.json
+        </MenuItem>
+        {!isElectron ? (
+          <div className="flex items-start gap-2 px-2 py-1.5 text-xs leading-4 text-muted-foreground">
+            <TriangleAlertIcon className="mt-px size-3.5 shrink-0 text-warning" />
+            {BROWSER_KEYBINDING_NOTICE}
+          </div>
+        ) : null}
+      </MenuPopup>
+    </Menu>
   );
 }
 
@@ -1461,35 +1509,14 @@ export function KeybindingsSettingsPanel() {
   return (
     <SettingsPageContainer>
       <SettingsSection {...searchableSetting("keybindings")} variant="plain" hideTitle>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2">
           <KeybindingsSearchInput query={query} onChange={setQuery} inputRef={searchInputRef} />
-          <Button
-            type="button"
-            variant="outline"
-            disabled={isAddingBinding || !canWriteSettings}
-            onClick={() => setIsAddingBinding(true)}
-          >
-            <PlusIcon aria-hidden className="size-4" />
-            Add keybinding
-          </Button>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  disabled={!keybindingsConfigPath || !canOpenKeybindingsFile}
-                  onClick={openKeybindingsFile}
-                  aria-label="Open keybindings.json"
-                >
-                  <FileJsonIcon aria-hidden className="size-4" />
-                </Button>
-              }
-            />
-            <TooltipPopup side="top">Open keybindings.json</TooltipPopup>
-          </Tooltip>
-          {!isElectron ? <BrowserKeybindingNotice /> : null}
+          <KeybindingsToolbarMenu
+            canAdd={!isAddingBinding && canWriteSettings}
+            canOpenFile={Boolean(keybindingsConfigPath) && canOpenKeybindingsFile}
+            onAdd={() => setIsAddingBinding(true)}
+            onOpenFile={openKeybindingsFile}
+          />
         </div>
       </SettingsSection>
 

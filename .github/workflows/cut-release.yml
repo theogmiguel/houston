@@ -296,7 +296,7 @@ jobs:
           # Named, not `git add -A`: a release commit carries the version bump
           # and nothing a runner happened to leave behind.
           git add src-tauri/tauri.conf.json src-tauri/Cargo.toml \
-            src-tauri/Cargo.lock ui/package.json apps/server/package.json \
+            src-tauri/Cargo.lock apps/server/package.json \
             core/Cargo.toml core/Cargo.lock
           git commit -m "release: v$VERSION"
           git tag -m "release: v$VERSION" "v$VERSION"

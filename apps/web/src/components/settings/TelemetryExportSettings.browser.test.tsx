@@ -78,9 +78,10 @@ describe("TelemetryExportSettings", () => {
 
     const { container } = screen;
     const field = (id: string) => container.querySelector<HTMLInputElement>(`#${id}`)!;
+    // Fill, not per-key typing: the form reacts to the final value, and typing a URL one
+    // round trip at a time is what pushed this test past the 15 s limit on loaded runners.
     async function replace(id: string, value: string) {
-      await userEvent.clear(field(id));
-      await userEvent.type(field(id), value);
+      await userEvent.fill(field(id), value);
     }
     await replace("otlpTracesUrl", "http://draft/v1/traces");
     await replace("otlpTracesUrl", "http://old/v1/traces");

@@ -57,7 +57,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
 
   return (
     <Toolbar.Root
-      className="w-[150px] shrink-0 overflow-hidden border-r border-border bg-(--pane-head)"
+      className="w-[128px] shrink-0 overflow-hidden border-r border-border bg-(--pane-head)"
       data-model-picker-sidebar="true"
       aria-label="Providers"
       orientation="vertical"
@@ -79,16 +79,14 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   <TooltipTrigger
                     render={
                       <Toolbar.Button
-                        className="relative isolate flex h-[30px] w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left transition-colors hover:bg-(--hover) focus-visible:bg-(--hover) focus-visible:outline-none aria-pressed:bg-(--sel)"
+                        className="relative isolate flex h-7 w-full cursor-pointer items-center gap-1.75 rounded-md px-2 text-left text-xs text-(--t2) transition-colors hover:bg-(--hover) hover:text-(--t1) focus-visible:bg-(--hover) focus-visible:text-(--t1) focus-visible:outline-none aria-pressed:bg-(--sel) aria-pressed:text-(--t1)"
                         onClick={() => handleSelect("favorites")}
                         type="button"
                         aria-label="Favorites"
                         aria-pressed={props.selectedInstanceId === "favorites"}
                       >
-                        <StarIcon className="size-4 shrink-0 fill-current text-(--t2)" aria-hidden />
-                        <span className="min-w-0 flex-1 truncate font-medium text-headline leading-tight">
-                          Favorites
-                        </span>
+                        <StarIcon className="size-3.5 shrink-0" aria-hidden />
+                        <span className="min-w-0 flex-1 truncate leading-tight">Favorites</span>
                       </Toolbar.Button>
                     }
                   />
@@ -101,7 +99,6 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   </TooltipPopup>
                 </Tooltip>
               </div>
-              <div className="my-0.5 border-b border-border" aria-hidden="true" />
             </>
           ) : null}
 
@@ -128,8 +125,9 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const button = (
               <Toolbar.Button
                 className={cn(
-                  "relative isolate flex h-[30px] w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left transition-colors hover:bg-(--hover) focus-visible:bg-(--hover) focus-visible:outline-none aria-pressed:bg-(--sel)",
-                  isDisabled && "opacity-50 cursor-not-allowed hover:bg-transparent",
+                  "relative isolate flex w-full cursor-pointer items-center gap-1.75 rounded-md px-2 text-left text-xs text-(--t2) transition-colors hover:bg-(--hover) hover:text-(--t1) focus-visible:bg-(--hover) focus-visible:text-(--t1) focus-visible:outline-none aria-pressed:bg-(--sel) aria-pressed:text-(--t1)",
+                  reason === null ? "h-7" : "items-start py-1",
+                  isDisabled && "cursor-not-allowed text-(--t3) hover:bg-transparent",
                 )}
                 data-provider-accent-color={entry.accentColor}
                 onClick={() => !isDisabled && handleSelect(entry.instanceId)}
@@ -154,7 +152,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   acpRegistryAgentId={entry.acpRegistryAgentId}
                   acpRegistryIconUrl={entry.acpRegistryIconUrl}
                   showBadge={showInstanceBadge}
-                  className="size-4 z-30 shrink-0"
+                  className={cn("z-30 shrink-0", reason === null ? "size-3.5" : "size-3.5 mt-0.5")}
                   iconClassName="size-3.5"
                   indicatorBackground={
                     isHovered && !isDisabled
@@ -165,17 +163,17 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   }
                   {...(entry.accentColor ? { badgeClassName: "h-3 min-w-3 px-0.5 text-5xs" } : {})}
                 />
-                <span className="min-w-0 flex-1 truncate font-medium text-headline leading-tight">
-                  {entry.displayName}
+                <span className="flex min-w-0 flex-1 flex-col leading-tight">
+                  <span className="truncate">{entry.displayName}</span>
+                  {reason !== null ? (
+                    <small
+                      className="truncate text-(--t3) text-2xs"
+                      data-model-picker-provider-reason="true"
+                    >
+                      {reason}
+                    </small>
+                  ) : null}
                 </span>
-                {reason !== null ? (
-                  <span
-                    className="max-w-20 shrink-0 truncate whitespace-nowrap text-xs text-(--t3)"
-                    data-model-picker-provider-reason="true"
-                  >
-                    {reason}
-                  </span>
-                ) : null}
               </Toolbar.Button>
             );
 

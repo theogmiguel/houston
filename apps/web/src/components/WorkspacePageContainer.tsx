@@ -6,7 +6,8 @@ export type WorkspacePageWidth = "readable" | "wide" | "expanded";
 
 const WIDTH_CLASS: Record<WorkspacePageWidth, string> = {
   readable: "max-w-4xl",
-  wide: "max-w-5xl",
+  // The Usage board draws a 1040px content column; `wide` is only used there.
+  wide: "max-w-[1040px]",
   expanded: "max-w-6xl",
 };
 

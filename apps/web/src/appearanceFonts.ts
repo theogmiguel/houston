@@ -11,11 +11,11 @@ import {
 } from "@t3tools/contracts";
 
 export const DEFAULT_SANS_FONT_STACK =
-  '-apple-system, BlinkMacSystemFont, "Inter Variable", "Segoe UI", system-ui, sans-serif';
+  '"Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
 
 // Some engines map `ui-monospace` to a proportional font, so prefer concrete names.
 export const DEFAULT_CODE_FONT_STACK =
-  '"SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace';
+  '"JetBrains Mono", "SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace';
 
 export const TYPOGRAPHY_ADVANCED_STORAGE_KEY = "t3code:typography-advanced";
 
@@ -259,10 +259,19 @@ function resolveGenericFamilyLabel(generic: string): string | null {
   return null;
 }
 
+// The product declares these faces first; label them as the boards do instead of
+// reporting whichever system face the browser falls back to before they load.
+const PRODUCT_FONT_LABELS: Readonly<Record<string, string>> = {
+  "Inter Variable": "Inter",
+  "JetBrains Mono": "JetBrains Mono",
+};
+
 export function resolveDefaultFamilyLabel(stack: string): string | null {
   for (const raw of stack.split(",")) {
     const family = raw.trim().replace(/^(['"])(.*)\1$/, "$2");
     if (family.length === 0) continue;
+    const productLabel = PRODUCT_FONT_LABELS[family];
+    if (productLabel !== undefined) return productLabel;
     if (
       /^(system-ui|sans-serif|serif|monospace|ui-monospace|-apple-system|BlinkMacSystemFont)$/i.test(
         family,

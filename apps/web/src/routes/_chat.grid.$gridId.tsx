@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -5,7 +6,12 @@ import { useEffect } from "react";
 
 import { GridEmptyDraft } from "../components/grid/GridEmptyDraft";
 import { GridHost } from "../components/grid/GridHost";
+import { GridThreadBranch } from "../components/grid/GridThreadBranch";
 import { GridThreadCell } from "../components/grid/GridThreadCell";
+import {
+  EMPTY_PROVIDER_ENTRIES,
+  sidebarProviderEntriesAtom,
+} from "../components/sidebar/sidebarProviderEntries";
 import { GridTopBarControls } from "../components/grid/GridTopBarControls";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
@@ -31,6 +37,7 @@ function GridRoute() {
   const addThread = useGridStore((store) => store.addThread);
   const focusThread = useGridStore((store) => store.focusThread);
   const openDraft = useOpenGridDraft();
+  const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
 
   const focusEmptyComposer = () => {
     window.requestAnimationFrame(() => {
@@ -91,6 +98,8 @@ function GridRoute() {
   const visibleThreadIds = new Set(
     (grid.tree === null ? [] : preorderThreads(grid.tree)).map((leaf) => leaf.threadId),
   );
+  const providerEntries =
+    providerEntriesByEnvironment.get(grid.environmentId) ?? EMPTY_PROVIDER_ENTRIES;
   const availableThreads = workspaceThreads
     .filter((thread) => !visibleThreadIds.has(thread.id))
     .map((thread) => ({ threadId: thread.id, title: thread.title }));
@@ -136,7 +145,7 @@ function GridRoute() {
       <WorkspacePageHeader
         electron={isElectron}
         reserveNativeControls={isElectron || isTauriHost()}
-        className="border-b border-border"
+        className="border-b border-(--divider)"
       >
         <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
           <span className="shrink-0">Houston</span>
@@ -147,9 +156,10 @@ function GridRoute() {
               <span aria-hidden>/</span>
               <span className="truncate font-medium text-foreground">{soloThread.title}</span>
               {soloThread.branch ? (
-                <span className="hidden truncate font-mono text-muted-foreground sm:inline">
-                  {soloThread.branch}
-                </span>
+                <GridThreadBranch
+                  branch={soloThread.branch}
+                  worktreePath={soloThread.worktreePath}
+                />
               ) : null}
             </>
           )}
@@ -168,6 +178,7 @@ function GridRoute() {
             grid={grid}
             focused={focused}
             availableThreads={availableThreads}
+            providerEntries={providerEntries}
             onFocus={() => focusThread(grid.id, node.threadId)}
             onClose={onClose}
             onSplit={onSplit}

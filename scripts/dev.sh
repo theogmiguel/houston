@@ -98,22 +98,10 @@ echo "[dev] building the v2 web renderer."
 echo "[dev] building the v2 server."
 (cd "$ROOT" && npx -y pnpm@12.14.0 --filter houston build:bundle)
 
-echo "[dev] building the daemon, supervisor and hook helper (debug)."
-(cd "$ROOT/core" && cargo build --bin houston-core --bin houston-supervisor --bin tr-helper)
-
-HOST_TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
-[ -n "$HOST_TRIPLE" ] || { echo "[dev] could not read the host target triple from rustc -vV" >&2; exit 1; }
-mkdir -p "$ROOT/src-tauri/binaries"
-for sidecar in tr-helper houston-core houston-supervisor; do
-  cp "$ROOT/core/target/debug/$sidecar" "$ROOT/src-tauri/binaries/$sidecar-$HOST_TRIPLE"
-done
-
 echo "[dev] building the app (debug)…"
 (cd "$ROOT/src-tauri" && cargo build)
 
 [ -x "$APP" ] || { echo "[dev] app binary missing at $APP after a successful build — did the bin name change in src-tauri/Cargo.toml?" >&2; exit 1; }
-
-export HOUSTON_DAEMON_BIN_DIR="$ROOT/core/target/debug"
 
 if [ "$FRESH" = "1" ]; then
   proc_creation_token() {

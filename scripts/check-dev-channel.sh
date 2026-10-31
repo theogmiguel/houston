@@ -148,7 +148,7 @@ import sys
 
 source, sandbox = map(Path, sys.argv[1:])
 repo = sandbox / "checkout"
-for directory in ("scripts", "ui", "core", "src-tauri/target/debug", "mock-bin"):
+for directory in ("scripts", "src-tauri/target/debug", "mock-bin"):
     (repo / directory).mkdir(parents=True, exist_ok=True)
 shutil.copyfile(source, repo / "scripts/dev.sh")
 state = sandbox / ".houston-dev"
@@ -164,15 +164,6 @@ name = Path(sys.argv[0]).name
 if name == "rustc":
     print("host: x86_64-unknown-linux-gnu")
     sys.exit(0)
-if name == "cargo":
-    if Path.cwd().name == "core":
-        Path("target/debug").mkdir(parents=True, exist_ok=True)
-        for binary in ("tr-helper", "houston-core", "houston-supervisor"):
-            Path("target/debug", binary).write_text("fresh " + binary)
-    else:
-        for binary in ("tr-helper", "houston-core", "houston-supervisor"):
-            staged = Path("binaries", binary + "-x86_64-unknown-linux-gnu")
-            assert staged.read_text() == "fresh " + binary, "app needs current sidecars"
 state = Path(os.environ["HOME"]) / ".houston-dev/daemon.json"
 if name == "houston-tauri":
     assert not state.exists(), "fresh cleanup must finish before app launch"
@@ -206,11 +197,10 @@ for fails in (False, True):
         assert calls == [
             "npx -y pnpm@12.14.0 --filter @t3tools/web build",
             "npx -y pnpm@12.14.0 --filter houston build:bundle",
-            "cargo build --bin houston-core --bin houston-supervisor --bin tr-helper",
             "cargo build",
             "houston-tauri --channel dev",
         ], calls
-print("ok: fresh builds all sidecars before replacement; failed builds preserve daemon state")
+print("ok: fresh builds the app before replacement; failed builds preserve daemon state")
 PY
 then
   fail=1
