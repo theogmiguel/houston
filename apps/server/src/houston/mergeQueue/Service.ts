@@ -239,6 +239,15 @@ const make = Effect.gen(function* () {
     if (facts.headRef.trim().length === 0 || facts.headSha.length === 0) {
       return yield* refuse("invalid", operation, `PR #${number} has no head branch`);
     }
+    if (facts.handOff !== undefined && facts.handOff !== null && facts.baseRef !== null) {
+      // Unpublished: the entry's write below is the enqueue's one change for subscribers.
+      yield* store.recordHandOff(
+        target.projectId,
+        facts.baseRef,
+        handOffMode(facts, facts.baseRef, {}),
+        false,
+      );
+    }
     yield* store.upsertEntry({
       projectId: target.projectId,
       number,
@@ -252,13 +261,6 @@ const make = Effect.gen(function* () {
       ownerThreadId: ownerThreadId ?? null,
       facts,
     });
-    if (facts.handOff !== undefined && facts.handOff !== null && facts.baseRef !== null) {
-      yield* store.recordHandOff(
-        target.projectId,
-        facts.baseRef,
-        handOffMode(facts, facts.baseRef, {}),
-      );
-    }
     yield* store.wake;
     const view = yield* projects.view(target);
     return view.entries.find((entry) => entry.number === number)!;

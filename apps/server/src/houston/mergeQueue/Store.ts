@@ -187,11 +187,12 @@ export class HoustonMergeQueueStore extends Context.Service<
     readonly handOff: (projectId: string) => Effect.Effect<HoustonMergeQueueHandOff | null>;
     /** The hand-off GitHub's last visible answer chose, per base branch. */
     readonly handOffs: (projectId: string) => Effect.Effect<HandOffCache>;
-    /** Remembers the hand-off for a base; publishes only when it changed. */
+    /** Remembers the hand-off for a base; publishes only when it changed and `publish` holds. */
     readonly recordHandOff: (
       projectId: string,
       baseRef: string,
       mode: HoustonMergeQueueHandOff,
+      publish?: boolean,
     ) => Effect.Effect<void>;
     readonly setGitHub: (
       projectId: string,
@@ -472,7 +473,12 @@ const make = Effect.gen(function* () {
   const handOffs = (projectId: string) =>
     handOffJson(projectId).pipe(Effect.map((stored): HandOffCache => stored?.bases ?? {}));
 
-  const recordHandOff = (projectId: string, baseRef: string, mode: HoustonMergeQueueHandOff) =>
+  const recordHandOff = (
+    projectId: string,
+    baseRef: string,
+    mode: HoustonMergeQueueHandOff,
+    publish = true,
+  ) =>
     lock
       .withPermits(1)(
         Effect.gen(function* () {
@@ -491,7 +497,9 @@ const make = Effect.gen(function* () {
       )
       .pipe(
         Effect.flatMap((changed) =>
-          changed ? PubSub.publish(events, { projectId }).pipe(Effect.asVoid) : Effect.void,
+          changed && publish
+            ? PubSub.publish(events, { projectId }).pipe(Effect.asVoid)
+            : Effect.void,
         ),
       );
 
