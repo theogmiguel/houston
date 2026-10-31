@@ -406,7 +406,7 @@
     "apps/web/src/versionSkew.test.ts": "Houston branding and naming",
     "apps/web/src/versionSkew.ts": "Houston branding and naming",
     "apps/web/vite.config.ts": "non-ASCII Windows path handling",
-    "packages/contracts/package.json": "adds the ./houston/terminalFrames and ./houston/providerReadiness subpath exports; send intents: exports the houston/messageDelivery subpath; review state: exports the houston/reviewState subpath; aside and second opinion: exports the houston/sideThreads subpath; tasks backlog: exports the houston/tasks subpath; task sources: exports the houston/taskSources subpath; merge queue: exports the houston/mergeQueue subpath",
+    "packages/contracts/package.json": "adds the ./houston/providerReadiness subpath export; send intents: exports the houston/messageDelivery subpath; review state: exports the houston/reviewState subpath; aside and second opinion: exports the houston/sideThreads subpath; tasks backlog: exports the houston/tasks subpath; task sources: exports the houston/taskSources subpath; merge queue: exports the houston/mergeQueue subpath",
     "packages/contracts/src/rpc.ts": "adds the four houston.review.* methods to the WS group; tasks backlog: adds the houston.tasks.* methods; task sources: adds the houston.taskSources.* methods; merge queue: adds the houston.mergeQueue.* methods",
     "packages/contracts/src/clientRpcPermissions.ts": "houston.review.setFilesViewed and houston.review.anchorLines need the source control write scope",
     "packages/contracts/src/composerContext.ts": "a review-comment record may carry a ReviewLineAnchor",

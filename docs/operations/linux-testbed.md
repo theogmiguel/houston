@@ -85,21 +85,17 @@ the first `FAIL`.
 - **Node/toolchain**: needs a current Node — an old Node 18 breaks
   `check:css`/vitest. Confirm via `linux-vm.sh status`, which prints
   `cargo`/`bun`/`node` resolution.
-- **Secret Service / gnome-keyring**: `voice::cloud`'s tests talk to a Secret
-  Service; `gate`'s core test step runs under `dbus-run-session` with
-  `gnome-keyring-daemon --unlock` for this reason — same fix CI's `core` job
-  uses. That recipe is safe only inside the VM or CI; on a desktop host use
-  `scripts/with-test-keyring.sh` (see the development runbook's full gate
-  commands). Order matters: the shield (`oom-shield.sh`, needs the **real**
-  session bus via `systemd-run --user`) wraps `dbus-run-session` (which
-  replaces the bus with a private one), never the reverse — the reverse
-  cannot reach the user manager.
+- **Secret Service / gnome-keyring**: host keychain tests need a Secret Service. Inside
+  the VM or CI, `dbus-run-session` with `gnome-keyring-daemon --unlock` is safe; on a desktop
+  host use `scripts/with-test-keyring.sh` (see the development runbook's full gate
+  commands). Order matters: the shield (`oom-shield.sh`, needs the **real** session bus via
+  `systemd-run --user`) wraps `dbus-run-session` (which replaces the bus with a private one),
+  never the reverse — the reverse cannot reach the user manager.
 
 ## `app` / `app-stop`
 
-`app` installs the built `.deb` and proves it boots — `check-renderer-fresh.sh`
-cannot ("once a bundle exists, it will boot and write"; only actually running
-it proves anything). Reads `~/.linux-vm-task.sh`-style state, launches with
+`app` installs the built `.deb` and proves it boots: only actually running it proves
+that. Reads `~/.linux-vm-task.sh`-style state, launches with
 `WEBKIT_DISABLE_DMABUF_RENDERER=1`, records the pid to `~/app.pid`, and
 reports whether the process is alive after a short wait. The window surfaces
 on the Windows desktop through WSLg (not visible to `wmctrl`/`xwininfo` — GTK
