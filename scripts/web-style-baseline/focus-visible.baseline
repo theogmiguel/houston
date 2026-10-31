@@ -14,7 +14,6 @@
 1 apps/web/src/components/files/FileBrowserPanel.tsx
 1 apps/web/src/components/files/ProjectFileTree.tsx
 3 apps/web/src/components/GitActionsControl.tsx
-1 apps/web/src/components/grid/GridHost.tsx
 5 apps/web/src/components/grid/GridSidebar.tsx
 1 apps/web/src/components/preview/PreviewChromeRow.tsx
 2 apps/web/src/components/RightPanelTabs.tsx

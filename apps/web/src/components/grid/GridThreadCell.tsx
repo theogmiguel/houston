@@ -124,7 +124,7 @@ export function GridThreadCell({
       {threadCount > 1 || draftId !== undefined ? (
         <div
           data-pane-label=""
-          className="group/label absolute top-2 left-2 z-20 flex h-[26px] max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-[7px] border border-(--divider) bg-(--pane-head) ps-2 pe-1 shadow-[var(--shadow-1)]"
+          className="group/label absolute top-2 left-2 z-20 flex h-[26px] max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-(--r-ctl) border border-(--divider) bg-(--pane-head) ps-2 pe-1 shadow-[var(--shadow-1)]"
         >
           <span className="grid size-3.5 shrink-0 place-items-center">
             {shell !== null ? (
