@@ -162,7 +162,8 @@ const call = (
         Effect.orDie,
       )) as McpSchema.CallToolResult;
     const text = textOf(result);
-    return { isError: result.isError === true, text, value: parse(text) } satisfies ToolResult;
+    const answer: ToolResult = { isError: result.isError === true, text, value: parse(text) };
+    return answer;
   });
 
 const succeeded = (result: ToolResult, label: string) =>
@@ -265,7 +266,11 @@ describe("agents enqueue into their own project's queue", () => {
             ["houston_merge_queue_dequeue", { pullRequest: 5 }],
             ["houston_merge_queue_status", {}],
           ] as const) {
-            refused(yield* call(narrow, name, args), `${name} without pull-requests`, "pull-requests");
+            refused(
+              yield* call(narrow, name, args),
+              `${name} without pull-requests`,
+              "pull-requests",
+            );
           }
           assert.deepEqual((yield* queue.get({ projectId: projectP })).entries, []);
 
@@ -323,7 +328,10 @@ describe("agents enqueue into their own project's queue", () => {
             }).pipe(Layer.build);
             const http = yield* HttpClient.HttpClient;
             const body = (id: number, method: string, params: unknown) =>
-              HttpBody.text(JSON.stringify({ jsonrpc: "2.0", id, method, params }), "application/json");
+              HttpBody.text(
+                JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+                "application/json",
+              );
             const enqueueCall = body(2, "tools/call", {
               name: "houston_merge_queue_enqueue",
               arguments: { pullRequest: 7 },
@@ -451,7 +459,11 @@ describe("the toolkit offers no merge, push or settings tool", () => {
             for (const verb of FORBIDDEN_VERBS) {
               assert.notMatch(source, new RegExp(`\\.${verb}\\s*\\(`), `${file} calls ${verb}`);
             }
-            assert.notMatch(source, /\bpush\s*\(|--force|GitHubQueueClient|HoustonMergeLanding/, file);
+            assert.notMatch(
+              source,
+              /\bpush\s*\(|--force|GitHubQueueClient|HoustonMergeLanding/,
+              file,
+            );
           }
         }).pipe(Effect.provide(toolkitLayer(harness)));
       }).pipe(Effect.provide(Layer.fresh(layerMergeQueueTest({ github, loops: false }))));
