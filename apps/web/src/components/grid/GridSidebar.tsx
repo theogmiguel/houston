@@ -86,7 +86,7 @@ import { useNowSecond } from "../../hooks/useNowSecond";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { isAppModalPage } from "../sidebar/mainAppLocation";
 import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
-import { SidebarRailNav } from "../sidebar/SidebarRailNav";
+import { SidebarRailKbd, SidebarRailNav } from "../sidebar/SidebarRailNav";
 import { SidebarProviderStack, type SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
 import {
   EMPTY_PROVIDER_ENTRIES,
@@ -176,6 +176,8 @@ export function GridSidebar() {
   const createGrid = useGridStore((store) => store.createGrid);
   const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const searchShortcutLabel = shortcutLabelForCommand(keybindings, "commandPalette.toggle");
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
   const sidebarVisible = useSidebarVisibility();
@@ -557,6 +559,8 @@ export function GridSidebar() {
                 >
                   <XIcon aria-hidden className="size-3" />
                 </button>
+              ) : searchShortcutLabel ? (
+                <SidebarRailKbd>{searchShortcutLabel}</SidebarRailKbd>
               ) : null}
             </label>
           }

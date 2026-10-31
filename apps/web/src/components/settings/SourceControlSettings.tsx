@@ -1,5 +1,5 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import * as Option from "effect/Option";
 import { useState, type ReactNode } from "react";
 import type {
@@ -285,6 +285,62 @@ function DiscoveryItemRow({
   );
 }
 
+function ConnectedAccountRow({
+  item,
+  cliName,
+  children,
+}: {
+  readonly item: SourceControlProviderDiscoveryItem;
+  readonly cliName: string | null;
+  readonly children?: ReactNode;
+}) {
+  const account = optionLabel(item.auth.account);
+  const searchTargetId = useSettingsSearchTargetId();
+  const [isExpanded, setIsExpanded] = useState(
+    searchTargetId === sourceControlHostSettingsSearchId(item.kind),
+  );
+  const [seenSearchTargetId, setSeenSearchTargetId] = useState<string | null>(null);
+  if (searchTargetId !== seenSearchTargetId) {
+    setSeenSearchTargetId(searchTargetId);
+    if (searchTargetId === sourceControlHostSettingsSearchId(item.kind)) setIsExpanded(true);
+  }
+  const hasDetails = children !== undefined;
+  return (
+    <div>
+      <div className="flex items-center gap-3 px-3.5 py-3">
+        <span className="grid size-7 shrink-0 place-items-center rounded-md bg-muted/60">
+          <SourceControlItemMark item={item} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-foreground">{item.label}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {account ? <RedactedAccount account={account} /> : null}
+            {account ? " · " : null}
+            {cliName ? `through the ${cliName} CLI` : "through the CLI"}
+          </p>
+        </div>
+        <Badge variant="success" size="sm">
+          Connected
+        </Badge>
+        {hasDetails ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setIsExpanded((open) => !open)}
+            aria-expanded={isExpanded}
+            aria-label={`Manage ${item.label} account`}
+          >
+            Manage
+          </Button>
+        ) : null}
+      </div>
+      {hasDetails && isExpanded ? (
+        <div className="border-t border-border/60 px-3 pb-4 pt-3 sm:px-4">{children}</div>
+      ) : null}
+    </div>
+  );
+}
+
 function SourceControlSectionSkeleton({
   title,
   headerAction,
@@ -377,6 +433,20 @@ export function SourceControlSettingsPanel() {
         }),
   );
   const result = discovery.data ?? EMPTY_DISCOVERY_RESULT;
+  const [showProviderList, setShowProviderList] = useState(false);
+  const searchTargetId = useSettingsSearchTargetId();
+  const authenticatedProviders = result.sourceControlProviders.filter(
+    (item) => item.status === "available" && item.auth.status === "authenticated",
+  );
+  const searchWantsProvider = result.sourceControlProviders.some(
+    (item) => sourceControlHostSettingsSearchId(item.kind) === searchTargetId,
+  );
+  const showAllProviders =
+    showProviderList || authenticatedProviders.length === 0 || searchWantsProvider;
+  const providerList =
+    authenticatedProviders.length === 0
+      ? result.sourceControlProviders
+      : result.sourceControlProviders.filter((item) => !authenticatedProviders.includes(item));
   const hasVersionControlSystems = result.versionControlSystems.length > 0;
   const hasDiscoveryItems = hasVersionControlSystems || result.sourceControlProviders.length > 0;
   const isInitialScanPending = discovery.isPending && discovery.data === null;
@@ -478,17 +548,45 @@ export function SourceControlSettingsPanel() {
       ) : hasDiscoveryItems ? (
         <>
           {result.sourceControlProviders.length > 0 ? (
-            <SettingsSection
-              id={searchableSetting("source-control").id}
-              title={hasVersionControlSystems ? "Accounts" : `Accounts${environmentSuffix}`}
-              headerAction={hasVersionControlSystems ? null : scanButton}
-            >
-              {result.sourceControlProviders.map((item) => (
-                <DiscoveryItemRow key={`provider:${item.kind}`} item={item}>
-                  {hostSettingsPanel(item)}
-                </DiscoveryItemRow>
-              ))}
-            </SettingsSection>
+            <>
+              <SettingsSection
+                id={searchableSetting("source-control").id}
+                title={hasVersionControlSystems ? "Accounts" : `Accounts${environmentSuffix}`}
+                headerAction={hasVersionControlSystems ? null : scanButton}
+              >
+                {authenticatedProviders.map((item) => {
+                  const definition = sourceControlClients.find(item.kind);
+                  return (
+                    <ConnectedAccountRow
+                      key={`account:${item.kind}`}
+                      item={item}
+                      cliName={definition?.credentials?.cliName ?? null}
+                    >
+                      {hostSettingsPanel(item)}
+                    </ConnectedAccountRow>
+                  );
+                })}
+                {showAllProviders || authenticatedProviders.length === 0
+                  ? providerList.map((item) => (
+                      <DiscoveryItemRow key={`provider:${item.kind}`} item={item}>
+                        {hostSettingsPanel(item)}
+                      </DiscoveryItemRow>
+                    ))
+                  : null}
+              </SettingsSection>
+              {authenticatedProviders.length > 0 ? (
+                <div className="flex justify-start px-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShowProviderList((shown) => !shown)}
+                  >
+                    <PlusIcon className="size-3.5" />
+                    {showProviderList ? "Hide hosts" : "Add host"}
+                  </Button>
+                </div>
+              ) : null}
+            </>
           ) : null}
         </>
       ) : (

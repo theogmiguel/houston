@@ -75,11 +75,9 @@ export function shouldTypeToFocusComposer(event: KeyboardEvent): boolean {
   if (event.key.length !== 1) return false;
   if (!shouldRedirectInputToComposer(event)) return false;
   if (isSurfaceLauncherKey(event)) return false;
-  // A grid uses plain T for a new draft pane, so it must not type into the composer.
-  if (
-    event.key.toLowerCase() === "t" &&
-    document.querySelector("[data-grid-new-thread-shortcut]") !== null
-  ) {
+  // Plain T opens a new thread draft outside a text field on every chat route,
+  // so it must not type into the composer or focus it.
+  if (event.key.toLowerCase() === "t") {
     return false;
   }
 

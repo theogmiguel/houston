@@ -954,6 +954,7 @@
     "apps/web/src/components/BranchToolbarBranchSelector.tsx": "new-thread context row branch label shrinks at narrow widths",
     "apps/web/src/components/ComposerContextPermissions.tsx": "new-thread strip permissions label collapses to an icon at narrow widths",
     "apps/web/src/components/chat/ComposerSurface.tsx": "composer context row sits inside the composer border",
-    "apps/web/src/components/composerFooterLayout.test.ts": "context strip label width thresholds"
+    "apps/web/src/components/composerFooterLayout.test.ts": "context strip label width thresholds",
+    "packages/shared/src/keybindings.ts": "Houston's T shortcut opens a new thread draft"
   }
 }

@@ -120,33 +120,34 @@ export function useSnapShotShortcutRecorder({
     recording,
     stopRecording,
     input: (
-      <Button
-        type="button"
-        size="xs"
-        variant={recording ? "secondary" : "outline"}
-        disabled={disabled}
-        aria-label={
-          displayShortcut
-            ? `Record snapshot shortcut, currently ${formatSnapShotShortcutLabel(displayShortcut)}`
-            : "Change snapshot shortcut"
-        }
-        aria-pressed={recording}
-        data-keybinding-capture=""
-        onClick={() => void startRecording()}
-        onKeyDown={recordShortcut}
-        onKeyUp={(event) => heldModifierCodes.current.delete(event.code)}
-        onBlur={stopRecording}
-      >
-        {recording ? (
-          "Press shortcut…"
-        ) : !displayShortcut ? (
-          "Change shortcut"
-        ) : !allowModifierPairs && isModifierPairShortcut(displayShortcut) ? (
-          "Choose shortcut"
-        ) : (
-          <SnapShotShortcutKeys shortcut={displayShortcut} />
-        )}
-      </Button>
+      <div className="flex items-center gap-2">
+        {!recording && displayShortcut ? <SnapShotShortcutKeys shortcut={displayShortcut} /> : null}
+        <Button
+          type="button"
+          size="xs"
+          variant={recording ? "secondary" : "ghost"}
+          disabled={disabled}
+          aria-label={
+            displayShortcut
+              ? `Record snapshot shortcut, currently ${formatSnapShotShortcutLabel(displayShortcut)}`
+              : "Change snapshot shortcut"
+          }
+          aria-pressed={recording}
+          data-keybinding-capture=""
+          onClick={() => void startRecording()}
+          onKeyDown={recordShortcut}
+          onKeyUp={(event) => heldModifierCodes.current.delete(event.code)}
+          onBlur={stopRecording}
+        >
+          {recording
+            ? "Press shortcut…"
+            : !displayShortcut
+              ? "Change shortcut"
+              : !allowModifierPairs && isModifierPairShortcut(displayShortcut)
+                ? "Choose shortcut"
+                : "Change"}
+        </Button>
+      </div>
     ),
   };
 }

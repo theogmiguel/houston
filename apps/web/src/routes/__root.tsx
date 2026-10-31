@@ -11,6 +11,7 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 import { Check, Copy } from "lucide";
+import * as Schema from "effect/Schema";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { APP_DISPLAY_NAME, APP_VERSION } from "../branding";
@@ -46,6 +47,7 @@ import {
 import { useUiStateStore } from "../uiStateStore";
 import { configureClientTracing } from "../observability/clientTracing";
 import { resolveInitialServerAuthGateState } from "../environments/primary";
+import { PrimaryEnvironmentRequestError } from "../environments/primary/auth";
 import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
 import { useHostedPromptLinkLanding } from "../components/promptLinks/HostedPromptLinkLanding";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
@@ -55,6 +57,8 @@ import { readProject } from "../state/entities";
 
 import { getDesktopSnapShotBridge } from "../lib/desktopSnapShot";
 import { shouldResumeSnapShotSetupOnStartup } from "../lib/snapShotSetupResume";
+
+const isPrimaryEnvironmentRequestError = Schema.is(PrimaryEnvironmentRequestError);
 
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
@@ -205,6 +209,46 @@ function RootRouteBranch() {
 }
 
 function RootRouteErrorView({ error }: ErrorComponentProps) {
+  if (isPrimaryEnvironmentRequestError(error)) {
+    return <ServerUnavailableView error={error} />;
+  }
+  return <GenericRouteErrorView error={error} />;
+}
+
+function ServerUnavailableView({ error }: { error: PrimaryEnvironmentRequestError }) {
+  const router = useRouter();
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const report = errorReport(error, pathname);
+  return (
+    <StandalonePage>
+      <StandalonePageHeader
+        title="Houston's server isn't running"
+        description="Your threads are saved. Start the server to see them."
+      />
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        <Button size="sm" onClick={() => void router.invalidate()}>
+          Try again
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
+          Reload app
+        </Button>
+        <CopyErrorButton report={report} />
+      </div>
+
+      <details className="mt-5 overflow-hidden rounded-lg border border-border/70 bg-background/55">
+        <summary className="cursor-pointer px-3 py-1.5 text-xs font-medium text-muted-foreground">
+          Show log
+        </summary>
+        <pre className="max-h-64 overflow-auto border-t border-border/70 bg-background/80 px-3 py-2 text-xs whitespace-pre-wrap text-foreground/85">
+          {report}
+        </pre>
+      </details>
+    </StandalonePage>
+  );
+}
+
+function GenericRouteErrorView({ error }: Pick<ErrorComponentProps, "error">) {
   const router = useRouter();
   const message = errorMessage(error);
   // Router pathname rather than window.location: desktop uses hash history, where the window path is always "/".
