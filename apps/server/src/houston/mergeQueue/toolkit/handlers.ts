@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../../mcp/McpToolAccess.ts";
 import { loadCaller } from "../../../mcp/threadAccess.ts";
+import { SIDE_THREAD_READ_ONLY } from "../../sideThreads.ts";
 import { HoustonMergeQueueProject } from "../Project.ts";
 import { refuse } from "../rules.ts";
 import { HoustonMergeQueueService } from "../Service.ts";
@@ -21,7 +22,10 @@ const PULL_URL = /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/pull\/(\d+)\/?(?:[?#].*)?$/
 const untrusted: typeof HOUSTON_MERGE_QUEUE_UNTRUSTED_LABEL = HOUSTON_MERGE_QUEUE_UNTRUSTED_LABEL;
 
 /** The calling thread and its project, once its credential grants pull requests. */
-const callerOf = Effect.fn("HoustonMergeQueueToolkit.callerOf")(function* (tool: string) {
+const callerOf = Effect.fn("HoustonMergeQueueToolkit.callerOf")(function* (
+  tool: string,
+  access: "reads" | "writes",
+) {
   const scope = yield* McpInvocationContext.McpInvocationContext;
   const threadScope = yield* McpInvocationContext.requireThreadScope(scope, tool);
   yield* McpInvocationContext.requireMcpCapability("pull-requests");
@@ -30,6 +34,13 @@ const callerOf = Effect.fn("HoustonMergeQueueToolkit.callerOf")(function* (tool:
     return yield* new OrchestratorMcpFailure({
       code: "thread_not_found",
       message: "The calling thread was not found.",
+    });
+  }
+  // Side threads hold no credential; this backstops a credential that outlived that rule.
+  if (access === "writes" && caller.side !== undefined) {
+    return yield* new OrchestratorMcpFailure({
+      code: "capability_denied",
+      message: `${tool} refused: ${caller.id} is a side thread (${caller.side.kind} of ${caller.side.sourceThreadId}). ${SIDE_THREAD_READ_ONLY}`,
     });
   }
   return { threadId: threadScope.thread.threadId, projectId: caller.projectId };
@@ -79,7 +90,7 @@ export const layer = McpToolAccess.toLayer(HoustonMergeQueueToolkit, {
   houston_merge_queue_enqueue: McpToolAccess.writesWithCapability((input) =>
     Effect.gen(function* () {
       const tool = "houston_merge_queue_enqueue";
-      const agent = yield* callerOf(tool);
+      const agent = yield* callerOf(tool, "writes");
       const number = yield* ownNumber(tool, agent.projectId, input.pullRequest);
       const entry = yield* (yield* HoustonMergeQueueService).enqueue(
         {
@@ -95,7 +106,7 @@ export const layer = McpToolAccess.toLayer(HoustonMergeQueueToolkit, {
   houston_merge_queue_dequeue: McpToolAccess.writesWithCapability((input) =>
     Effect.gen(function* () {
       const tool = "houston_merge_queue_dequeue";
-      const agent = yield* callerOf(tool);
+      const agent = yield* callerOf(tool, "writes");
       const number = yield* ownNumber(tool, agent.projectId, input.pullRequest);
       return yield* (yield* HoustonMergeQueueService).dequeue({
         projectId: agent.projectId,
@@ -105,7 +116,7 @@ export const layer = McpToolAccess.toLayer(HoustonMergeQueueToolkit, {
   ),
   houston_merge_queue_status: McpToolAccess.readsAsCaller(() =>
     Effect.gen(function* () {
-      const agent = yield* callerOf("houston_merge_queue_status");
+      const agent = yield* callerOf("houston_merge_queue_status", "reads");
       const snapshot = yield* (yield* HoustonMergeQueueService).get({ projectId: agent.projectId });
       return { untrusted, message: snapshot.message, entries: snapshot.entries.map(agentEntry) };
     }),
