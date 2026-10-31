@@ -55,7 +55,8 @@ export const failedFacts = (error: string, readAt: string, row: QueueRow): Facts
   mergeMethods: { merge: false, squash: false, rebase: false },
   defaultBranch: null,
   handOff: null,
-  nodeId: null,
+  // The pull request's node id does not change; a hold is taken back with it after a failed read.
+  nodeId: row.facts?.nodeId ?? null,
 });
 
 export const makeReader = Effect.fn("HoustonMergeQueueReader.make")(function* (options: {
@@ -99,8 +100,9 @@ export const makeReader = Effect.fn("HoustonMergeQueueReader.make")(function* (o
       yield* store.recordHandOff(target.projectId, base, handOffMode(facts, base, {}));
     }
     const hold = row.github;
-    if (facts.state === "merged" && hold !== null) {
+    if (facts.state === "merged" && hold !== null && facts.headSha === hold.headSha) {
       // GitHub landed what Houston handed it: the landing finishes as for Houston's own merge.
+      // A merge of another head is not the queue's and leaves as any outside merge does.
       const verification = verificationHolds(row);
       yield* outcomes.finishMerge(target, row, {
         commit: facts.headSha,

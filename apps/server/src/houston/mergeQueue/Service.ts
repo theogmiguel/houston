@@ -302,9 +302,12 @@ const make = Effect.gen(function* () {
     const hold = row.github;
     if (hold === null || hold.mode === "houston") return;
     const nodeId = row.facts?.nodeId ?? null;
-    if (nodeId !== null) {
-      yield* github.takeBack({ target, number: row.number, nodeId, mode: hold.mode });
+    if (nodeId === null) {
+      return yield* Effect.fail(
+        `GitHub gave no node id for PR #${row.number}, so Houston cannot take it back and GitHub still holds it`,
+      );
     }
+    yield* github.takeBack({ target, number: row.number, nodeId, mode: hold.mode });
     yield* store.setGitHub(target.projectId, row.number, null);
   });
 

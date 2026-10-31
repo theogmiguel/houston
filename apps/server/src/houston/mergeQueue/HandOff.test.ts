@@ -626,6 +626,125 @@ describe("dequeue and pause take the entry back from github first", () => {
   });
 });
 
+describe("a hold outlives a failed read and is never forgotten without a take-back", () => {
+  it.live(
+    "a hold outlives a failed read and is never forgotten without a take-back: dequeue",
+    () => {
+      const github = makeGitHub(makeRepos());
+      github.mergeQueueBases.add("main");
+      return withQueue(
+        github,
+        Effect.gen(function* () {
+          const queue = yield* HoustonMergeQueueService;
+          const reader = yield* HoustonMergeQueueReader;
+          const projectId = yield* queueScenario(github, [7], { command: "git --version" });
+          const { pull } = yield* handedOff(github, projectId);
+          github.readFailure = "Bad Gateway";
+          yield* reader.readProject(projectId);
+          github.readFailure = null;
+          yield* queue.dequeue({ projectId, number: 7 });
+          assert.deepEqual(
+            mutationsOf(github).map((mutation) => [mutation.name, mutation.variables.id]),
+            [
+              ["enqueuePullRequest", pullNodeId(7)],
+              ["dequeuePullRequest", pullNodeId(7)],
+            ],
+          );
+          assert.isNull(pull.queued);
+          assert.deepEqual((yield* queue.get({ projectId })).entries, []);
+        }),
+      );
+    },
+  );
+
+  it.live("a hold outlives a failed read and is never forgotten without a take-back: pause", () => {
+    const github = makeGitHub(makeRepos());
+    github.autoMergeAllowed = true;
+    return withQueue(
+      github,
+      Effect.gen(function* () {
+        const queue = yield* HoustonMergeQueueService;
+        const reader = yield* HoustonMergeQueueReader;
+        const projectId = yield* queueScenario(github, [7], { command: "git --version" });
+        const { pull } = yield* handedOff(github, projectId);
+        github.readFailure = "Bad Gateway";
+        yield* reader.readProject(projectId);
+        github.readFailure = null;
+        yield* queue.pause({ projectId, paused: true });
+        assert.deepEqual(
+          mutationsOf(github).map((mutation) => mutation.name),
+          ["enablePullRequestAutoMerge", "disablePullRequestAutoMerge"],
+        );
+        assert.isNull(pull.autoMerge);
+        assert.isNull(entryOf(yield* queue.get({ projectId }), 7).github);
+      }),
+    );
+  });
+
+  it.live(
+    "a hold outlives a failed read and is never forgotten without a take-back: a new head GitHub will not release",
+    () => {
+      const github = makeGitHub(makeRepos());
+      github.autoMergeAllowed = true;
+      return withQueue(
+        github,
+        Effect.gen(function* () {
+          const reader = yield* HoustonMergeQueueReader;
+          const runner = yield* HoustonMergeQueueRunner;
+          const store = yield* HoustonMergeQueueStore;
+          const projectId = yield* queueScenario(github, [7], { command: "git --version" });
+          const { held, pull } = yield* handedOff(github, projectId);
+          pushBranch(github.repos!, "houston/7", { "new.txt": "new\n" });
+          yield* reader.readProject(projectId);
+          github.takeBackFailure = "Resource not accessible by integration";
+          yield* runner.step(projectId);
+          // GitHub still holds the old commit, so the hold stays until the take-back lands.
+          const holdOf = Effect.map(
+            store.rows(projectId),
+            (rows) => rows.find((row) => row.number === 7)!.github,
+          );
+          const kept = yield* holdOf;
+          assert.deepEqual([kept?.mode, kept?.headSha], ["autoMerge", held.github!.headSha]);
+          assert.isNotNull(pull.autoMerge);
+
+          github.takeBackFailure = null;
+          yield* runner.step(projectId);
+          assert.isNull(pull.autoMerge);
+          assert.isNull(yield* holdOf);
+        }),
+      );
+    },
+  );
+
+  it.live(
+    "a hold outlives a failed read and is never forgotten without a take-back: github merges another head",
+    () => {
+      const github = makeGitHub(makeRepos());
+      github.autoMergeAllowed = true;
+      return withQueue(
+        github,
+        Effect.gen(function* () {
+          const queue = yield* HoustonMergeQueueService;
+          const reader = yield* HoustonMergeQueueReader;
+          const projectId = yield* queueScenario(github, [7], { command: "git --version" });
+          yield* handedOff(github, projectId);
+          // The owner pushes and GitHub's auto-merge lands the new head, which Houston never verified.
+          pushBranch(github.repos!, "houston/7", { "new.txt": "new\n" });
+          githubMerges(github, 7);
+          yield* reader.readProject(projectId);
+          const snapshot = yield* queue.get({ projectId });
+          assert.deepEqual(snapshot.entries, []);
+          assert.deepEqual(
+            snapshot.log.filter((row) => row.kind === "merge"),
+            [],
+          );
+          assert.deepEqual(github.reported, []);
+        }),
+      );
+    },
+  );
+});
+
 describe("required checks come from the head and no branch rules are read", () => {
   it.live("required checks come from the head and no branch rules are read", () => {
     const github = makeGitHub(makeRepos());

@@ -163,18 +163,12 @@ export const makeRunner = Effect.fn("HoustonMergeQueueRunner.make")(function* (o
     const hold = row.github;
     if (hold === null || hold.mode === "houston") return false;
     const nodeId = row.facts?.nodeId ?? null;
-    const takeBack =
+    const release =
       nodeId === null
-        ? Effect.void
-        : github
-            .takeBack({ target, number: row.number, nodeId, mode: hold.mode })
-            .pipe(
-              Effect.catch((error: string) =>
-                Effect.logWarning(`Merge queue: taking PR #${row.number} back failed: ${error}`),
-              ),
-            );
+        ? Effect.fail(`GitHub gave no node id for PR #${row.number}`)
+        : github.takeBack({ target, number: row.number, nodeId, mode: hold.mode });
     if (hold.headSha !== row.headSha) {
-      yield* takeBack;
+      yield* release;
       yield* store.setGitHub(target.projectId, row.number, null);
       return true;
     }
@@ -191,6 +185,11 @@ export const makeRunner = Effect.fn("HoustonMergeQueueRunner.make")(function* (o
             ? `GitHub turned auto-merge off for PR #${row.number}: ${shown.letGo ?? "GitHub gave no reason"}`
             : null;
     if (failing.length === 0 && letGo === null) return false;
+    const takeBack = release.pipe(
+      Effect.catch((error: string) =>
+        Effect.logWarning(`Merge queue: taking PR #${row.number} back failed: ${error}`),
+      ),
+    );
     yield* takeBack;
     yield* outcomes.recordFailure(
       target,
@@ -222,7 +221,15 @@ export const makeRunner = Effect.fn("HoustonMergeQueueRunner.make")(function* (o
       if (view.context.refusal !== null && view.context.commandSet) return false;
       const settings = yield* store.settings(projectId);
       for (const row of view.rows) {
-        if (yield* settleHeld(target, row)) return true;
+        // A take-back GitHub refuses keeps the hold; the next pass sends it again.
+        const settled = yield* settleHeld(target, row).pipe(
+          Effect.catch((error: string) =>
+            Effect.logWarning(`Merge queue: taking PR #${row.number} back failed: ${error}`).pipe(
+              Effect.as(false),
+            ),
+          ),
+        );
+        if (settled) return true;
       }
       // A pushed head GitHub's checks failed on leaves the line before anything else moves.
       for (const [index, row] of view.rows.entries()) {
