@@ -214,6 +214,8 @@ import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
 import * as HoustonTaskSourceService from "./houston/taskSources/SourceService.ts";
 import * as HoustonTaskSourceV1Import from "./houston/taskSources/V1Import.ts";
 import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
+import * as HoustonHarnessService from "./houston/harnessReview/Service.ts";
+import * as HoustonNightShiftService from "./houston/nightShift/Service.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import { threadWorkspaceRoot } from "./project/threadWorkspaceRoot.ts";
@@ -1310,6 +1312,8 @@ export const layerWsRpc = (
       const houstonTaskSources = yield* HoustonTaskSourceService.HoustonTaskSourceService;
       const houstonTaskSourceImport = yield* HoustonTaskSourceV1Import.HoustonTaskSourceV1Import;
       const houstonMergeQueue = yield* HoustonMergeQueueService.HoustonMergeQueueService;
+      const houstonHarness = yield* HoustonHarnessService.HoustonHarnessService;
+      const houstonNightShift = yield* HoustonNightShiftService.HoustonNightShiftService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
@@ -3017,6 +3021,27 @@ export const layerWsRpc = (
         [WS_METHODS.houstonTaskSourcesSubscribe]: (input) => houstonTaskSources.subscribe(input),
         [WS_METHODS.houstonTaskSourcesImportV1Status]: () => houstonTaskSourceImport.status,
         [WS_METHODS.houstonTaskSourcesImportV1Run]: () => houstonTaskSourceImport.run,
+        [WS_METHODS.houstonHarnessGet]: (input) => houstonHarness.get(input),
+        [WS_METHODS.houstonHarnessSubscribe]: (input) => houstonHarness.subscribe(input),
+        [WS_METHODS.houstonHarnessOverview]: (input) => houstonHarness.overview(input),
+        [WS_METHODS.houstonHarnessSubscribeOverview]: (input) =>
+          houstonHarness.subscribeOverview(input),
+        [WS_METHODS.houstonHarnessSetup]: (input) => houstonHarness.setup(input),
+        [WS_METHODS.houstonHarnessRunNow]: (input) => houstonHarness.runNow(input),
+        [WS_METHODS.houstonHarnessReport]: (input) => houstonHarness.report(input),
+        [WS_METHODS.houstonHarnessDecide]: (input) => houstonHarness.decide(input),
+        [WS_METHODS.houstonHarnessMarkSeen]: (input) => houstonHarness.markSeen(input),
+        [WS_METHODS.houstonNightShiftGet]: (input) => houstonNightShift.get(input),
+        [WS_METHODS.houstonNightShiftSubscribe]: (input) => houstonNightShift.subscribe(input),
+        [WS_METHODS.houstonNightShiftSubscribeOverview]: (input) =>
+          houstonNightShift.subscribeOverview(input),
+        [WS_METHODS.houstonNightShiftCreate]: (input) => houstonNightShift.create(input),
+        [WS_METHODS.houstonNightShiftUpdate]: (input) => houstonNightShift.update(input),
+        [WS_METHODS.houstonNightShiftDelete]: (input) => houstonNightShift.delete(input),
+        [WS_METHODS.houstonNightShiftPreflight]: (input) => houstonNightShift.preflight(input),
+        [WS_METHODS.houstonNightShiftRunNow]: (input) => houstonNightShift.runNow(input),
+        [WS_METHODS.houstonNightShiftWrapUp]: (input) => houstonNightShift.wrapUp(input),
+        [WS_METHODS.houstonNightShiftStop]: (input) => houstonNightShift.stop(input),
         [WS_METHODS.houstonMergeQueueGet]: (input) => houstonMergeQueue.get(input),
         [WS_METHODS.houstonMergeQueueSubscribe]: (input) => houstonMergeQueue.subscribe(input),
         [WS_METHODS.houstonMergeQueueSubscribeSummary]: (input) =>

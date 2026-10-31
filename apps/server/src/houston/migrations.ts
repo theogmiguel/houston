@@ -284,6 +284,241 @@ const TaskSources = Effect.gen(function* () {
   `;
 });
 
+// Harness reviews, their findings and decisions, and suspected defects, keyed by upstream
+// ProjectId without a foreign key; a deleted project's rows go with its deletion hook.
+const HarnessReview = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_harness_settings (
+      project_id TEXT PRIMARY KEY,
+      scheduled_task_id TEXT,
+      seen_review_id INTEGER NOT NULL DEFAULT 0,
+      defect_notice_day TEXT,
+      updated_at TEXT NOT NULL
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_harness_reviews (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id TEXT NOT NULL,
+      trigger TEXT NOT NULL CHECK (trigger IN ('scheduled', 'manual', 'imported')),
+      scheduled_task_id TEXT,
+      thread_id TEXT,
+      run_id TEXT,
+      provider_instance_id TEXT,
+      status TEXT NOT NULL CHECK (status IN ('preparing', 'running', 'published', 'failed')),
+      run_dir TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      window_since TEXT,
+      window_until TEXT,
+      threads INTEGER,
+      prompts INTEGER,
+      cost_usd REAL,
+      finding_count INTEGER,
+      corrections INTEGER NOT NULL DEFAULT 0,
+      summary TEXT,
+      error TEXT
+    )
+  `;
+  // A restart or a second server process must not start a second run over the same directory.
+  yield* sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_houston_harness_reviews_active
+    ON houston_harness_reviews(project_id) WHERE status IN ('preparing', 'running')
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_harness_reviews_project ON houston_harness_reviews(project_id, id DESC)`;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_harness_reviews_thread ON houston_harness_reviews(thread_id)`;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_harness_findings (
+      review_id INTEGER NOT NULL,
+      key TEXT NOT NULL,
+      title TEXT NOT NULL,
+      category TEXT NOT NULL,
+      confidence TEXT NOT NULL,
+      sessions_json TEXT NOT NULL,
+      count INTEGER NOT NULL,
+      quotes_json TEXT NOT NULL,
+      recommendation_kind TEXT NOT NULL,
+      target TEXT NOT NULL,
+      recommendation TEXT NOT NULL,
+      apply_prompt TEXT NOT NULL,
+      PRIMARY KEY (review_id, key)
+    )
+  `;
+  // decided_by is user, not_a_bug, filed or houston:verification; findings and defects share it.
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_harness_decisions (
+      project_id TEXT NOT NULL,
+      key TEXT NOT NULL,
+      state TEXT NOT NULL CHECK (state IN ('open', 'dismissed', 'resolved')),
+      decided_at TEXT NOT NULL,
+      decided_by TEXT NOT NULL,
+      PRIMARY KEY (project_id, key)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_harness_finding_tasks (
+      project_id TEXT NOT NULL,
+      key TEXT NOT NULL,
+      task_id INTEGER NOT NULL,
+      review_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (project_id, key, task_id)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_harness_verifications (
+      review_id INTEGER NOT NULL,
+      key TEXT NOT NULL,
+      task_id INTEGER NOT NULL,
+      verdict TEXT NOT NULL CHECK (verdict IN ('gone', 'still_present', 'inconclusive')),
+      sessions_after INTEGER NOT NULL,
+      evidence_json TEXT NOT NULL,
+      PRIMARY KEY (review_id, key, task_id)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_defects (
+      project_id TEXT NOT NULL,
+      key TEXT NOT NULL,
+      source TEXT NOT NULL CHECK (source IN ('agent', 'detector')),
+      detector TEXT,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      evidence_json TEXT NOT NULL,
+      destination TEXT NOT NULL CHECK (destination IN ('houston', 'project')),
+      reporter_thread_id TEXT,
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      count INTEGER NOT NULL,
+      issue_url TEXT,
+      PRIMARY KEY (project_id, key)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_harness_import (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      imported_at TEXT NOT NULL,
+      counts_json TEXT NOT NULL
+    )
+  `;
+});
+
+// Night shift: settings, runs, crew, ledger, pushes and the v1 import, keyed by upstream ProjectId
+// without a foreign key; a deleted project's rows go with its deletion hook.
+const NightShift = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_shift_settings (
+      project_id TEXT PRIMARY KEY,
+      scheduled_task_id TEXT,
+      settings_json TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id TEXT NOT NULL,
+      trigger TEXT NOT NULL CHECK (trigger IN ('scheduled', 'catchUp', 'manual', 'imported')),
+      scheduled_task_id TEXT,
+      phase TEXT NOT NULL
+        CHECK (phase IN ('preflight', 'refused', 'running', 'wrappingUp', 'settled')),
+      stop_reason TEXT CHECK (stop_reason IS NULL OR stop_reason IN ('report', 'hardStop',
+        'stopped', 'idle', 'orchestratorEnded', 'orchestratorLimited', 'serverRestart',
+        'launchFailed', 'imported')),
+      stop_detail TEXT,
+      orchestrator_thread_id TEXT,
+      worktree_path TEXT,
+      branch TEXT,
+      settings_json TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      wrap_up_at TEXT,
+      hard_stop_at TEXT,
+      wrap_up_sent INTEGER NOT NULL DEFAULT 0,
+      nudged_at TEXT,
+      ended_at TEXT,
+      preflight_json TEXT NOT NULL DEFAULT '[]',
+      limited_json TEXT NOT NULL DEFAULT '[]',
+      remote_heads_json TEXT,
+      remote_changes_json TEXT,
+      interruptions_json TEXT NOT NULL DEFAULT '[]',
+      cost_json TEXT,
+      summary TEXT,
+      report_path TEXT,
+      keep_awake TEXT,
+      notice_sent INTEGER NOT NULL DEFAULT 0
+    )
+  `;
+  // A restart or a second server process must not start a second crew in the same project.
+  yield* sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_houston_night_runs_live
+    ON houston_night_runs(project_id) WHERE phase IN ('preflight', 'running', 'wrappingUp')
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_night_runs_project ON houston_night_runs(project_id, id DESC)`;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_crew (
+      run_id INTEGER NOT NULL,
+      thread_id TEXT NOT NULL,
+      task_id TEXT,
+      parent_thread_id TEXT,
+      role TEXT NOT NULL CHECK (role IN ('orchestrator', 'implementation', 'research', 'review',
+        'design', 'test', 'general')),
+      provider_instance_id TEXT NOT NULL,
+      requested_instance_id TEXT,
+      worktree_path TEXT,
+      branch TEXT,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      PRIMARY KEY (run_id, thread_id)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id INTEGER NOT NULL,
+      project_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('plan', 'pr', 'lesson', 'flaky', 'decision', 'deferred',
+        'studied', 'pick', 'verdict')),
+      title TEXT NOT NULL,
+      theme TEXT,
+      status TEXT,
+      pr_number INTEGER,
+      task_number INTEGER,
+      head_sha TEXT,
+      branch TEXT,
+      visible INTEGER NOT NULL DEFAULT 0,
+      qa_passed INTEGER NOT NULL DEFAULT 0,
+      body TEXT NOT NULL DEFAULT '',
+      detail_json TEXT NOT NULL DEFAULT '{}',
+      author_thread_id TEXT,
+      created_at TEXT NOT NULL,
+      decided_at TEXT,
+      choice TEXT
+    )
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_night_entries_project ON houston_night_entries(project_id, kind, id DESC)`;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_pushes (
+      run_id INTEGER NOT NULL,
+      branch TEXT NOT NULL,
+      old_sha TEXT,
+      new_sha TEXT NOT NULL,
+      pr_number INTEGER,
+      at TEXT NOT NULL,
+      PRIMARY KEY (run_id, branch, new_sha)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_import (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      imported_at TEXT NOT NULL,
+      counts_json TEXT NOT NULL
+    )
+  `;
+});
+
 // Task runs: the last thread event they applied, so a restart replays what a crash left unapplied.
 const TaskRunsCursor = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -369,6 +604,7 @@ const TaskSourceMarkerKey = Effect.gen(function* () {
   yield* sql`ALTER TABLE houston_task_source_identity ADD COLUMN marker_key TEXT`;
 });
 
+// Id 8 belongs to a Houston migration on another branch; the Migrator orders by id.
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -376,6 +612,8 @@ const houstonMigrationEntries = [
   [4, "TaskRunsCursor", TaskRunsCursor],
   [5, "MergeQueue", MergeQueue],
   [6, "TaskSourceMarkerKey", TaskSourceMarkerKey],
+  [7, "HarnessReview", HarnessReview],
+  [9, "NightShift", NightShift],
 ] as const;
 
 const run = Migrator.make({});
