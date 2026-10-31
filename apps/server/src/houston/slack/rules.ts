@@ -413,11 +413,17 @@ export const sniffImage = (data: Uint8Array): SniffedImage | null => {
 export const SLACK_REQUEST_OPEN = "<<<HOUSTON-SLACK-REQUEST";
 export const SLACK_REQUEST_CLOSE = "HOUSTON-SLACK-REQUEST>>>";
 
-/** Shortens every Houston fence marker in Slack text, width variants and invisible characters folded. */
+/** Shortens every Houston fence marker in Slack text, after folding width variants, invisible
+ * characters, and dash and angle-quote lookalikes (a model reads `HOUSTON‐X›››` as a marker). */
 export const defangFences = (value: string): string =>
   value
     .normalize("NFKC")
     .replace(/\p{Cf}/gu, "")
+    .replace(/[\p{Pd}−]/gu, "-")
+    .replace(/[›〉⟩❯]/gu, ">")
+    .replace(/[≫»]/gu, ">>")
+    .replace(/[‹〈⟨❮]/gu, "<")
+    .replace(/[≪«]/gu, "<<")
     .replace(/<{3,}\s*(HOUSTON-)/gi, "<<$1")
     .replace(/(HOUSTON-[A-Z0-9_-]*)\s*>{3,}/gi, "$1>>");
 
