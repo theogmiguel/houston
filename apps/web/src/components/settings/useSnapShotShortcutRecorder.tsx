@@ -121,7 +121,11 @@ export function useSnapShotShortcutRecorder({
     stopRecording,
     input: (
       <div className="flex items-center gap-2">
-        {!recording && displayShortcut ? <SnapShotShortcutKeys shortcut={displayShortcut} /> : null}
+        {!recording && displayShortcut ? (
+          <SnapShotShortcutKeys shortcut={displayShortcut} />
+        ) : !recording ? (
+          <span className="text-xs text-muted-foreground">Not set</span>
+        ) : null}
         <Button
           type="button"
           size="xs"

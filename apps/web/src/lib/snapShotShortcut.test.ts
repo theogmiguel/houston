@@ -4,8 +4,8 @@ import { parseDesktopSnapShotShortcut, snapShotShortcutKeyLabels } from "./snapS
 
 describe("desktop-approved window capture shortcut labels", () => {
   it.each([
-    ["Press <Shift><Control>2", ["Ctrl", "⇧", "2"]],
-    ["Ctrl+Shift+8", ["Ctrl", "⇧", "8"]],
+    ["Press <Shift><Control>2", ["Ctrl", "Shift", "2"]],
+    ["Ctrl+Shift+8", ["Ctrl", "Shift", "8"]],
     ["Meta+F12", ["Super", "F12"]],
     ["<Primary><Alt>Return", ["Ctrl", "Alt", "Enter"]],
     ["<Super>Left", ["Super", "Left"]],
@@ -16,6 +16,13 @@ describe("desktop-approved window capture shortcut labels", () => {
     const shortcut = parseDesktopSnapShotShortcut(label);
     expect(shortcut).not.toBeNull();
     expect(snapShotShortcutKeyLabels(shortcut!, "Linux")).toEqual(expected);
+  });
+
+  it("renders a modifier-pair shortcut as readable keycaps", () => {
+    expect(snapShotShortcutKeyLabels({ kind: "both-shift-keys" }, "Linux")).toEqual([
+      "Shift",
+      "Shift",
+    ]);
   });
 
   it.each([
