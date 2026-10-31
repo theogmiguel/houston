@@ -14,7 +14,7 @@ on:
       platform:
         description: 'Installer platforms to validate; windows also builds the Linux bundles, whose daemon it carries for WSL'
         type: choice
-        options: [all, linux, windows]
+        options: [all, linux, windows, macos]
         default: all
         required: true
 
@@ -79,9 +79,22 @@ jobs:
       require_signing: false
     secrets: inherit
 
+  macos-bundle:
+    needs: version-guard
+    if: inputs.platform == 'all' || inputs.platform == 'macos'
+    uses: ./.github/workflows/release-macos.yml
+    with:
+      ref: ${{ needs.version-guard.outputs.source_sha }}
+      version: ${{ needs.version-guard.outputs.version }}
+      tauri_cli_version: ${{ needs.version-guard.outputs.tauri_cli_version }}
+      # This workflow files nothing, so signing is never required; the bundle
+      # still signs when the updater/Apple secrets happen to be present.
+      require_signing: false
+    secrets: inherit
+
   windows-compile:
     needs: version-guard
-    if: inputs.platform != 'linux'
+    if: inputs.platform == 'all' || inputs.platform == 'windows'
     uses: ./.github/workflows/release-windows.yml
     with:
       stage: compile
@@ -92,7 +105,7 @@ jobs:
 
   windows-bundle:
     needs: [version-guard, linux-bundle, windows-compile]
-    if: inputs.platform != 'linux'
+    if: inputs.platform == 'all' || inputs.platform == 'windows'
     uses: ./.github/workflows/release-windows.yml
     with:
       stage: bundle

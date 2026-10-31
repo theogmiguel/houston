@@ -79,7 +79,7 @@ enum Stream {
 type Sink<'a> = &'a mut dyn FnMut(Stream, &[u8]) -> std::io::Result<()>;
 
 /// Capture with caller-owned stdin and an 8 MiB combined output limit.
-/// Linux owns a process group; Windows owns a job. Other platforms refuse.
+/// Unix owns a process group; Windows owns a job. Other platforms refuse.
 /// See docs/internals/daemon.md for cancellation boundaries.
 pub fn output_within_with_stdin(
     mut cmd: std::process::Command,
@@ -115,26 +115,26 @@ fn capture(
     timeout: std::time::Duration,
     sink: Sink<'_>,
 ) -> std::io::Result<Option<std::process::ExitStatus>> {
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     {
-        bounded_linux::capture(cmd, timeout, sink)
+        bounded_unix::capture(cmd, timeout, sink)
     }
     #[cfg(windows)]
     {
         bounded_windows::capture(cmd, timeout, sink)
     }
-    #[cfg(not(any(target_os = "linux", windows)))]
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = (cmd, timeout, sink);
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
-            format!("bounded subprocess capture is unsupported on {}; expected Linux or Windows process ownership", std::env::consts::OS),
+            format!("bounded subprocess capture is unsupported on {}; expected Unix or Windows process ownership", std::env::consts::OS),
         ))
     }
 }
 
-#[cfg(target_os = "linux")]
-mod bounded_linux {
+#[cfg(unix)]
+mod bounded_unix {
     use super::{Sink, Stream};
     use std::io::{self, Read};
     use std::os::fd::{AsRawFd, RawFd};
@@ -422,7 +422,7 @@ mod bounded_windows {
 mod tests {
     use super::*;
 
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     #[test]
     fn output_within_kills_a_child_past_its_deadline() {
         let start = std::time::Instant::now();
@@ -441,7 +441,7 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&out.stderr), "err\n");
     }
 
-    #[cfg(not(any(target_os = "linux", windows)))]
+    #[cfg(not(any(unix, windows)))]
     #[test]
     fn unsupported_capture_refuses_before_spawning() {
         let error = output_within(

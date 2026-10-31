@@ -157,7 +157,11 @@ async fn open_target(target: &std::ffi::OsStr) -> Result<(), String> {
             .await
             .map_err(|e| format!("the shell-open task failed to run: {e}"))?
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        run_open_command("open", Path::new(target)).await
+    }
+    #[cfg(all(not(windows), not(target_os = "macos")))]
     {
         run_open_command("xdg-open", Path::new(target)).await
     }

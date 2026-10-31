@@ -981,8 +981,10 @@ fn form_encode(value: &str) -> String {
 }
 
 /// A detached child stays unreaped until Houston exits, so `kill(pid, 0)`
-/// still succeeds for a zombie. On Linux the process state distinguishes the
-/// two; elsewhere (Windows has no zombies) `kill(pid, 0)` is already final.
+/// still succeeds for a zombie. Linux reads the process state from /proc.
+/// Darwin has no /proc, so waitpid(WNOHANG) reaps only the server this app
+/// spawned; ECHILD means it is not ours (an attached server), whose own parent
+/// reaps it. Windows has no zombies, so `kill(pid, 0)` is already final.
 fn process_exited(pid: i32) -> bool {
     if pid <= 0 || !process_alive(pid) {
         return true;
@@ -993,6 +995,21 @@ fn process_exited(pid: i32) -> bool {
         if let Ok(stat) = fs::read_to_string(path) {
             if let Some((_, rest)) = stat.rsplit_once(')') {
                 return rest.trim_start().starts_with('Z');
+            }
+        }
+    }
+    #[cfg(all(unix, not(target_os = "linux")))]
+    {
+        let mut status = 0;
+        // SAFETY: status is a valid writable int and WNOHANG never blocks.
+        let waited = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+        if waited == pid {
+            return true;
+        }
+        if waited == -1 {
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() != Some(libc::ECHILD) {
+                eprintln!("houston-tauri: observing v2 server (pid {pid}): {error}");
             }
         }
     }

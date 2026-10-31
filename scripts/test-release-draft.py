@@ -49,7 +49,8 @@ class DraftTests(unittest.TestCase):
         self.assertIn(str(self.output), self.commands[-2])
         self.assertEqual(self.commands[-1][1:3], ["release", "edit"])
         self.assertIn("--draft=false", self.commands[-1])
-        self.assertIn("--linux-only", self.commands[0])
+        self.assertIn("--no-windows", self.commands[0])
+        self.assertIn("--no-macos", self.commands[0])
 
     def test_public_release_is_never_mutated(self):
         with patch.object(m, "release", return_value=dict(self.draft, draft=False)), patch.object(m, "run", side_effect=self.command):

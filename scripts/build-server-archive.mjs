@@ -15,7 +15,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const SUPPORTED = { linux: ["x64", "arm64"] };
+const SUPPORTED = { linux: ["x64", "arm64"], darwin: ["x64", "arm64"] };
 // The deploy installs the server's production closure without the workspace-only
 // patches pnpm would otherwise refuse as unused. These two patches change runtime
 // behaviour and their patch keys track the versions pnpm-lock.yaml pins.
@@ -35,7 +35,7 @@ const version = option("version");
 const outputDir = resolve(option("output-dir") ?? join(ROOT, "release-server"));
 if (!SUPPORTED[platform]?.includes(arch)) {
   throw new Error(
-    `Unsupported server archive target ${platform}-${arch}; expected linux-x64 or linux-arm64.`,
+    `Unsupported server archive target ${platform}-${arch}; expected linux-x64, linux-arm64, darwin-x64 or darwin-arm64.`,
   );
 }
 if (!version) throw new Error("Pass --version <X.Y.Z> so the archive name matches the release.");
@@ -95,7 +95,10 @@ try {
   mkdirSync(outputDir, { recursive: true });
   const archive = join(outputDir, `${stem}.tar.gz`);
   rmSync(archive, { force: true });
-  const tar = spawnSync("tar", ["--hard-dereference", "-czf", archive, "-C", stageRoot, stem], {
+  // GNU tar's --hard-dereference is not understood by Darwin's bsdtar; the
+  // pnpm deploy tree survives either way because hard links only share inodes.
+  const tarFlags = process.platform === "linux" ? ["--hard-dereference", "-czf"] : ["-czf"];
+  const tar = spawnSync("tar", [...tarFlags, archive, "-C", stageRoot, stem], {
     stdio: "inherit",
   });
   if (tar.status !== 0) throw new Error(`tar exited with ${tar.status}.`);

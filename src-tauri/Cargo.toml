@@ -94,10 +94,14 @@ windows-sys = { version = "0.61", features = [
   "Win32_Graphics_Dwm",
 ] }
 
+# Unix process ownership (process groups, waitid, poll) and the clipboard/shell
+# helpers behind it are shared by Linux and macOS.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = { version = "0.18", features = ["v3_24"] }
 glib = "0.18"
-libc = "0.2"
 zbus = "5"
 # Used to dlopen libappindicator ahead of tray init: libappindicator-sys panics
 # (not errors) from inside TrayIcon::new on the main thread if the library is

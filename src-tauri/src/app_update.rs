@@ -547,7 +547,9 @@ pub async fn v2_update_install(
     });
     v2_emit_state(&app, &complete);
 
-    #[cfg(target_os = "linux")]
+    // Windows' NSIS installer relaunches the app itself; the Unix updater
+    // replaces the .app/AppImage in place and the host relaunches it.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         eprintln!(
             "v2 update: Houston {} installed; relaunching the updated app",
@@ -556,7 +558,7 @@ pub async fn v2_update_install(
         app.restart();
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     Ok(json!({ "accepted": true, "completed": true, "state": complete }))
 }
 
