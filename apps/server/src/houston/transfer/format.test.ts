@@ -446,6 +446,28 @@ describe("crafted entries are refused before anything is written", () => {
     expect(sized.limit).toBe(1024);
     expect(NodeFS.readdirSync(parent)).toEqual([]);
   });
+
+  it("an untracked path through the NTFS short name of .git is refused", async () => {
+    const dir = tempDir();
+    const parent = NodePath.join(dir, "scratch-parent");
+    NodeFS.mkdirSync(parent);
+    const name = "checkouts/0/untracked/GIT~1/hooks/pre-commit";
+    const entries = entriesOf({ [name]: "#!/bin/sh\n" });
+    const file = writeFile(
+      dir,
+      "short-name.houston-transfer",
+      await craft([
+        encodeFrame("manifest.json", text(JSON.stringify(baseManifest(entries)))),
+        ...entries.map((entry) => encodeFrame(entry.name, entry.bytes)),
+      ]),
+    );
+    const refusal = await refusalOf(
+      unpackTransfer(file, PASSPHRASE, NodePath.join(parent, "scratch")),
+    );
+    expect(refusal.kind).toBe("not_transfer_file");
+    expect(refusal.items.join(" ")).toContain("GIT~1");
+    expect(NodeFS.readdirSync(parent)).toEqual([]);
+  });
 });
 
 describe("frames decode as they were written", () => {

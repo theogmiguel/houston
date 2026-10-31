@@ -159,6 +159,8 @@ const RESERVED = new Set([
 ]);
 
 const FORBIDDEN = /[\u0000-\u001f\u007f\\:<>"|?*]/;
+/** NTFS 8.3 short names `.git` can take: `GIT~N`, or `GI` and four hex digits after collisions. */
+const DOTGIT_SHORT_NAME = /^gi(?:t|[0-9a-f]{4})~[0-9]+$/i;
 
 /** Why `part` is not a component every supported file system can hold, or null. */
 const componentProblem = (part: string): string | null => {
@@ -167,6 +169,7 @@ const componentProblem = (part: string): string | null => {
   if (part.endsWith(".") || part.endsWith(" ")) return "a name ending with a dot or space";
   if (RESERVED.has(part.split(".")[0]!.toLowerCase())) return "a reserved device name";
   if (part.toLowerCase() === ".git") return "a .git component";
+  if (DOTGIT_SHORT_NAME.test(part)) return "a short name of .git on Windows";
   return null;
 };
 

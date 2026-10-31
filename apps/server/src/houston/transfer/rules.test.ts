@@ -164,6 +164,22 @@ describe("untracked names another computer cannot carry are listed", () => {
     }
   });
 
+  it("an NTFS short name of .git is refused as an entry and an untracked name", () => {
+    for (const name of [
+      "GIT~1/config",
+      "a/git~1/hooks/pre-commit",
+      "Git~2",
+      "GI7EBA~1/config",
+      "checkouts/0/untracked/git~1/hooks/pre-commit",
+    ]) {
+      expect(entryNameProblem(name), name).not.toBeNull();
+      expect(unportableNames([name, "src/lib.rs"]), name).toHaveLength(1);
+    }
+    for (const name of ["git~x", "notes~1.txt", "gitx~1", "src/git~", "legit~1"]) {
+      expect(entryNameProblem(name), name).toBeNull();
+    }
+  });
+
   it("a refusal lists twenty items and counts the rest", () => {
     const items = Array.from({ length: 23 }, (_, index) => `item-${index}`);
     expect(itemsWithCount(items)).toEqual([...items.slice(0, 20), "and 3 more"]);
