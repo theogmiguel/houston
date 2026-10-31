@@ -367,6 +367,54 @@ export function ProjectDefaultsSettings({
         <>
           <SettingsRow
             serverScoped
+            settingKeys={["pullRequestMergeMethod"]}
+            mixed={mixedMergeMethod}
+            {...searchableSetting("pull-request-merge-method")}
+            description={
+              isProjectScope
+                ? "Pull requests in this project start with this method."
+                : "Pull requests start with this method. Last selected reuses whatever you chose most recently on this device."
+            }
+            resetAction={
+              settings.pullRequestMergeMethod !== null ? (
+                <SettingResetButton
+                  label="default merge method"
+                  tooltip="Reset to last selected"
+                  onClick={() => updateSettings({ pullRequestMergeMethod: null })}
+                />
+              ) : null
+            }
+            control={
+              <Select
+                value={mixedMergeMethod ? null : (settings.pullRequestMergeMethod ?? "last")}
+                onValueChange={(value) => {
+                  if (value === "last") updateSettings({ pullRequestMergeMethod: null });
+                  else if (value === "merge" || value === "squash" || value === "rebase")
+                    updateSettings({ pullRequestMergeMethod: value });
+                }}
+              >
+                <SelectTrigger size="sm" aria-label="Default pull request merge method">
+                  <SelectValue>
+                    {(value: string | null) =>
+                      value === "merge" || value === "squash" || value === "rebase"
+                        ? PULL_REQUEST_MERGE_METHOD_LABELS[value]
+                        : value === "last"
+                          ? "Last selected"
+                          : "Mixed"
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem value="last">Last selected</SelectItem>
+                  <SelectItem value="merge">{PULL_REQUEST_MERGE_METHOD_LABELS.merge}</SelectItem>
+                  <SelectItem value="squash">{PULL_REQUEST_MERGE_METHOD_LABELS.squash}</SelectItem>
+                  <SelectItem value="rebase">{PULL_REQUEST_MERGE_METHOD_LABELS.rebase}</SelectItem>
+                </SelectPopup>
+              </Select>
+            }
+          />
+          <SettingsRow
+            serverScoped
             settingKeys={["defaultAutoPull"]}
             mixed={mixedAutoPull}
             id="automatic-pull"
@@ -418,54 +466,6 @@ export function ProjectDefaultsSettings({
                   updateSettings({ removeAgentCreditsOnMerge: enabled })
                 }
               />
-            }
-          />
-          <SettingsRow
-            serverScoped
-            settingKeys={["pullRequestMergeMethod"]}
-            mixed={mixedMergeMethod}
-            {...searchableSetting("pull-request-merge-method")}
-            description={
-              isProjectScope
-                ? "Pull requests in this project start with this method."
-                : "Pull requests start with this method. Last selected reuses whatever you chose most recently on this device."
-            }
-            resetAction={
-              settings.pullRequestMergeMethod !== null ? (
-                <SettingResetButton
-                  label="default merge method"
-                  tooltip="Reset to last selected"
-                  onClick={() => updateSettings({ pullRequestMergeMethod: null })}
-                />
-              ) : null
-            }
-            control={
-              <Select
-                value={mixedMergeMethod ? null : (settings.pullRequestMergeMethod ?? "last")}
-                onValueChange={(value) => {
-                  if (value === "last") updateSettings({ pullRequestMergeMethod: null });
-                  else if (value === "merge" || value === "squash" || value === "rebase")
-                    updateSettings({ pullRequestMergeMethod: value });
-                }}
-              >
-                <SelectTrigger size="sm" aria-label="Default pull request merge method">
-                  <SelectValue>
-                    {(value: string | null) =>
-                      value === "merge" || value === "squash" || value === "rebase"
-                        ? PULL_REQUEST_MERGE_METHOD_LABELS[value]
-                        : value === "last"
-                          ? "Last selected"
-                          : "Mixed"
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem value="last">Last selected</SelectItem>
-                  <SelectItem value="merge">{PULL_REQUEST_MERGE_METHOD_LABELS.merge}</SelectItem>
-                  <SelectItem value="squash">{PULL_REQUEST_MERGE_METHOD_LABELS.squash}</SelectItem>
-                  <SelectItem value="rebase">{PULL_REQUEST_MERGE_METHOD_LABELS.rebase}</SelectItem>
-                </SelectPopup>
-              </Select>
             }
           />
         </>

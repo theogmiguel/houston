@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { NotificationSettings } from "./NotificationSettings";
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import {
@@ -70,7 +70,13 @@ import { useEnvironmentProviders, useEnvironments } from "../../state/environmen
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
-import { Input } from "../ui/input";
+import {
+  NumberField,
+  NumberFieldDecrement,
+  NumberFieldGroup,
+  NumberFieldIncrement,
+  NumberFieldInput,
+} from "../ui/number-field";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
@@ -690,42 +696,60 @@ export function useSettingsRestore(onRestored?: () => void) {
 
 const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays ?? 3;
 
-function AutoSettleDaysInput({
+function AutoSettleDaysStepper({
   value,
+  disabled = false,
   onCommit,
 }: {
   value: number;
+  disabled?: boolean;
   onCommit: (days: number) => void;
 }) {
-  const [draft, setDraft] = useState(String(value));
-  const [draftSource, setDraftSource] = useState(value);
-  if (draftSource !== value) {
-    setDraftSource(value);
-    setDraft(String(value));
+  const [draft, setDraft] = useState(value);
+  const [savedValue, setSavedValue] = useState(value);
+  if (savedValue !== value) {
+    setSavedValue(value);
+    setDraft(value);
   }
 
   return (
-    <Input
-      size="sm"
-      type="number"
+    <NumberField
+      value={draft}
       min={MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS}
       max={MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS}
-      className="w-full sm:w-24"
-      value={draft}
-      onChange={(event) => {
-        setDraft(event.target.value);
-        const parsed = Number(event.target.value);
-        if (
-          Number.isInteger(parsed) &&
-          parsed >= MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS &&
-          parsed <= MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS
-        ) {
-          onCommit(parsed);
-        }
+      step={1}
+      size="sm"
+      className="w-auto"
+      disabled={disabled}
+      onValueChange={(next) => {
+        if (next !== null) setDraft(next);
       }}
-      onBlur={() => setDraft(String(value))}
-      aria-label="Days of inactivity before auto-close"
-    />
+      onValueCommitted={(next) => {
+        if (next === null) {
+          setDraft(value);
+          return;
+        }
+        const days = Math.min(
+          MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+          Math.max(MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS, Math.round(next)),
+        );
+        setDraft(days);
+        onCommit(days);
+      }}
+    >
+      <NumberFieldGroup>
+        <NumberFieldDecrement aria-label="Fewer days" />
+        <NumberFieldInput
+          aria-label="Days of inactivity before auto-close"
+          size={new Intl.NumberFormat().format(draft).length}
+          className="field-sizing-content w-auto min-w-[1ch] grow-0 text-center"
+        />
+        <span aria-hidden="true" className="self-center pr-2 text-xs">
+          days
+        </span>
+        <NumberFieldIncrement aria-label="More days" />
+      </NumberFieldGroup>
+    </NumberField>
   );
 }
 
@@ -1652,7 +1676,7 @@ export function ThreadsSettingsPanel() {
             serverScoped
             settingKeys={["sidebarAutoSettleAfterDays"]}
             {...searchableSetting("auto-settle-inactive-threads")}
-            description="Sidebar threads with no activity for this long close automatically."
+            description="Sidebar threads with no activity for this long close automatically. Any new activity brings a thread back."
             resetAction={
               settings.sidebarAutoSettleAfterDays !==
               DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays ? (
@@ -1668,32 +1692,25 @@ export function ThreadsSettingsPanel() {
               ) : null
             }
             control={
-              <ScopedSwitch
-                settingKeys={["sidebarAutoSettleAfterDays"]}
-                checked={settings.sidebarAutoSettleAfterDays !== null}
-                onCheckedChange={(checked) =>
-                  updateSettings({
-                    sidebarAutoSettleAfterDays: checked ? AUTO_SETTLE_DEFAULT_DAYS : null,
-                  })
-                }
-                aria-label="Auto-close inactive threads"
-              />
-            }
-          />
-          {settings.sidebarAutoSettleAfterDays !== null ? (
-            <SettingsRow
-              serverScoped
-              settingKeys={["sidebarAutoSettleAfterDays"]}
-              title={searchableSetting("days-before-auto-settle").title}
-              description="Any new activity reopens a thread automatically."
-              control={
-                <AutoSettleDaysInput
-                  value={settings.sidebarAutoSettleAfterDays}
+              <div className="flex items-center gap-2">
+                <AutoSettleDaysStepper
+                  value={settings.sidebarAutoSettleAfterDays ?? AUTO_SETTLE_DEFAULT_DAYS}
+                  disabled={settings.sidebarAutoSettleAfterDays === null}
                   onCommit={(days) => updateSettings({ sidebarAutoSettleAfterDays: days })}
                 />
-              }
-            />
-          ) : null}
+                <ScopedSwitch
+                  settingKeys={["sidebarAutoSettleAfterDays"]}
+                  checked={settings.sidebarAutoSettleAfterDays !== null}
+                  onCheckedChange={(checked) =>
+                    updateSettings({
+                      sidebarAutoSettleAfterDays: checked ? AUTO_SETTLE_DEFAULT_DAYS : null,
+                    })
+                  }
+                  aria-label="Auto-close inactive threads"
+                />
+              </div>
+            }
+          />
           {settings.sidebarAutoSettleAfterDays !== null && supportsAutoSettlementScope ? (
             <SettingsRow
               serverScoped
@@ -1990,9 +2007,23 @@ export function AboutSettingsPanel() {
           {...searchableSetting("open-source-licenses")}
           description="Notices for dependencies, assets, and optional tools used by Houston."
           control={
-            <Button render={<Link to="/settings/open-source-licenses" />} size="sm" variant="ghost">
-              View
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                render={<Link to="/settings/open-source-licenses" />}
+                size="sm"
+                variant="ghost"
+              >
+                View
+              </Button>
+              <Button
+                render={<Link to="/settings/open-source-licenses" />}
+                size="icon-xs"
+                variant="ghost-muted"
+                aria-label="Open source licenses"
+              >
+                <ChevronRightIcon aria-hidden className="size-3.5" />
+              </Button>
+            </div>
           }
         />
       </SettingsSection>
