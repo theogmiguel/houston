@@ -96,3 +96,30 @@ rm handoff/design/boards/.render.html
   not change on focus; keyboard focus rings on its controls stay. Every composer behaviour in the
   ported code survives; one the board does not place goes under the `...` overflow menu.
 - **Grid pane focus** keeps its current treatment; the `Composer` board's pane frames do not change it.
+
+- **Shell: square threads, dividers, floating labels** (approved; overrides the pane card,
+  gutter and pane head drawn on `ScreenThread`, `Panels`, `GridFlow`, `Grid*` and every screen
+  board; reference mocks in `mocks/shell-square/`):
+  1. Threads are square: no border radius, no 6px gutter and no card border. A thread pane
+     touches the left sidebar, the top bar and its neighbours.
+  2. One 1px `--divider` line separates every surface, in both directions: between grid cells,
+     between the sidebar and the grid, between the top bar and the grid, and between the grid
+     and the right panel. `--divider` is 14% ink in both themes, one step above `--border` and
+     below the interactive `--line-strong`.
+  3. The right panel is straight too: no radius, flush to the right and bottom edges, and
+     separated from the thread by the same divider.
+  4. A grid of two or more threads has no pane header. Each thread carries a floating label
+     over its top-left corner: provider mark, truncated title, status glyph and a 7px-radius,
+     26px-high pill on `--pane-head` with a 1px divider border. The focused title is `--t1`,
+     the others `--t3`. At rest the label shows only mark, title and glyph and takes only that
+     width; hovering the thread, or focusing anything in the label, grows it with a short
+     width transition (no transition under `prefers-reduced-motion`) to reveal every pane
+     action the old header carried: split right, split down, archive and close cell. The
+     timeline inset keeps the first message below the label. Grid top bars carry no run
+     summary.
+  5. A single thread, in a grid of one and in the plain thread route, has no label and no pane
+     header; the top bar breadcrumb carries its title and branch and the thread fills the area
+     flush. A draft cell keeps its label so its close action remains reachable.
+  6. Everything inside a thread is unchanged: composer, diffs and approval cards stay rounded.
+  Panel controls flow inside the top bar or the right panel header; they never sit in an
+  absolute overlay above the default top-bar controls.
