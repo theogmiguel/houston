@@ -195,6 +195,22 @@ describe("capture skips links and nested repositories and names them", () => {
   );
 });
 
+describe("capture checks the names it carries", () => {
+  it.effect("a secret-named file that appears after the check is refused by capture", () =>
+    Effect.gen(function* () {
+      const { root, checkout } = makeRepos();
+      write(checkout, "fine.txt", "fine\n");
+      yield* checkCheckoutNames(checkout);
+      // Created between the export's check and its packing.
+      write(checkout, "config/.env", "TOKEN=late\n");
+      const scratch = NodePath.join(root, "scratch");
+      const refused = yield* failureOf(captureCheckout(checkout, scratch, "the worktree"));
+      assert.strictEqual(refused.kind, "secret_files");
+      assert.deepEqual(refused.items, ["config/.env (in the worktree)"]);
+    }).pipe(Effect.provide(layer)),
+  );
+});
+
 describe("partially staged files are named and unportable names refuse before reading", () => {
   it.effect("partially staged files are named and unportable names refuse before reading", () =>
     Effect.gen(function* () {

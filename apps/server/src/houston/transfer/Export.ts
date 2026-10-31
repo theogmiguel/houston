@@ -266,6 +266,7 @@ export const runExport = Effect.fn("HoustonTransfer.export")(function* (
       const captured = yield* captureCheckout(
         checkout.path,
         NodePath.join(scratch, "checkouts", String(index)),
+        checkout.key === "root" ? null : checkout.path,
       );
       if (captured.bundle !== null) yield* addFile(`${archiveDir}/head.bundle`, captured.bundle);
       if (captured.diff !== null) yield* addFile(`${archiveDir}/tracked.diff`, captured.diff);

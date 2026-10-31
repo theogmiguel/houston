@@ -163,6 +163,7 @@ export interface Captured {
 export const captureCheckout = Effect.fn("HoustonTransfer.captureCheckout")(function* (
   dir: string,
   scratch: string,
+  label: string | null = null,
 ) {
   NodeFS.mkdirSync(scratch, { recursive: true, mode: 0o700 });
   const head = yield* text(dir, ["rev-parse", "--verify", "HEAD^{commit}"]);
@@ -187,6 +188,7 @@ export const captureCheckout = Effect.fn("HoustonTransfer.captureCheckout")(func
     "HEAD",
   ]);
   const diff = NodeFS.statSync(diffPath).size > 0 ? diffPath : null;
-  const { files, skipped } = yield* untrackedEntries(dir);
+  // The listing carried is the one checked: a file may appear after the export's first check.
+  const { files, skipped } = yield* checkCheckoutNames(dir, label);
   return { branch, head, bundle, diff, untracked: files, skippedPaths: skipped } satisfies Captured;
 });
