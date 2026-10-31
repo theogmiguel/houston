@@ -2,8 +2,7 @@
 
 # Direct process-environment access only goes down; daemon code reads it through HostEnv.
 # Counts: scripts/env-ratchet.baseline. Sanctioned readers: host_env.rs, tests/common/mod.rs.
-# Covers the core modules and the src-tauri/src/sys copies that replaced them.
-# Grep, not only clippy: a blanket `allow(clippy::disallowed_methods)` hides new calls.
+# Covers core and src-tauri/src/sys; grep, not only clippy, since a blanket allow hides new calls.
 
 set -euo pipefail
 
