@@ -14,7 +14,7 @@ and approval. Merging a PR or pushing a tag does not publish a release.
    Linux and Windows release. Leave `resume_tag` empty and `preview_only` unchecked.
 3. Run the workflow. Its summary shows the source commit, next version, previous
    public release, selected platforms and release notes. It checks source CI,
-   updates the five manifests and both lockfiles, pushes the release commit and
+   updates the three manifests and `src-tauri/Cargo.lock`, pushes the release commit and
    tag, builds the installers and creates a **draft**. Nothing is public yet.
 4. Follow the draft link in the summary, or open **Releases** in the repository.
    Review the grouped notes, expand any legacy title-only entries, and save edits

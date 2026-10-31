@@ -281,7 +281,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         if: inputs.resume_tag == '' && inputs.preview_only != true
 
-      - name: Write the version into the manifests and both lockfiles
+      - name: Write the version into the three manifests and src-tauri/Cargo.lock
         if: inputs.resume_tag == '' && inputs.preview_only != true
         run: ./scripts/set-version.sh "${{ steps.version.outputs.version }}"
 
