@@ -5,9 +5,10 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId, RuntimeMode } from "@t3tools/contracts";
 import { houstonTaskKey, type HoustonTaskRunState } from "@t3tools/contracts/houston/tasks";
 import { parseGitRemoteRepository } from "@t3tools/shared/git";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -146,8 +147,15 @@ export class HoustonMergeQueueProject extends Context.Service<
     readonly managedDirectories: Effect.Effect<ReadonlyArray<string>>;
     /** Branches checked out in a worktree under a managed worktrees directory of the project. */
     readonly managedBranches: (project: ProjectInfo) => Effect.Effect<ReadonlySet<string>>;
+    /** The managed worktree with `branch` checked out, or null. */
+    readonly managedWorktreeOf: (
+      project: ProjectInfo,
+      branch: string,
+    ) => Effect.Effect<string | null>;
     /** Branches recorded on a Houston task run of the project. */
     readonly taskBranches: (projectId: ProjectId) => Effect.Effect<ReadonlySet<string>>;
+    /** The project's resolved `defaultRuntimeMode`, as the startup thread uses it. */
+    readonly defaultRuntimeMode: (projectId: ProjectId) => Effect.Effect<RuntimeMode, string>;
   }
 >()("houston/houston/mergeQueue/Project/HoustonMergeQueueProject") {}
 
@@ -296,14 +304,15 @@ const make = Effect.gen(function* () {
     Effect.orElseSucceed(() => [config.worktreesDir]),
   );
 
-  const managedBranches = Effect.fn("HoustonMergeQueueProject.managedBranches")(function* (
+  /** Each managed worktree of the project's repository, by its checked-out branch. */
+  const managedWorktrees = Effect.fn("HoustonMergeQueueProject.managedWorktrees")(function* (
     project: ProjectInfo,
   ) {
     const directories = yield* managedDirectories;
     const listed = yield* withVcs(
       gitOk(project.workspaceRoot, ["worktree", "list", "--porcelain"]),
     ).pipe(Effect.orElseSucceed(() => ""));
-    const branches = new Set<string>();
+    const worktrees = new Map<string, string>();
     let current: string | null = null;
     for (const entry of listed.split(/\r?\n/)) {
       if (entry.startsWith("worktree ")) current = entry.slice("worktree ".length);
@@ -313,11 +322,19 @@ const make = Effect.gen(function* () {
         current !== null &&
         directories.some((directory) => resolvesInside(current!, directory))
       ) {
-        branches.add(branch);
+        worktrees.set(branch, NodePath.resolve(current));
       }
     }
-    return branches as ReadonlySet<string>;
+    return worktrees as ReadonlyMap<string, string>;
   });
+
+  const managedBranches = (project: ProjectInfo) =>
+    managedWorktrees(project).pipe(
+      Effect.map((worktrees) => new Set(worktrees.keys()) as ReadonlySet<string>),
+    );
+
+  const managedWorktreeOf = (project: ProjectInfo, branch: string) =>
+    managedWorktrees(project).pipe(Effect.map((worktrees) => worktrees.get(branch) ?? null));
 
   const taskBranches = (projectId: ProjectId) =>
     sql<{ readonly branch: string }>`
@@ -328,6 +345,17 @@ const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => new Set<string>() as ReadonlySet<string>),
     );
 
+  const defaultRuntimeMode = Effect.fn("HoustonMergeQueueProject.defaultRuntimeMode")(function* (
+    projectId: ProjectId,
+  ) {
+    const settings = yield* serverSettings.getSettings.pipe(
+      Effect.mapError((error) => `reading the server settings failed: ${error.message}`),
+    );
+    const project = yield* projects.get(projectId).pipe(Effect.orDie);
+    return resolveProjectSettings(settings, projectId, Option.getOrNull(project)).settings
+      .defaultRuntimeMode;
+  });
+
   return HoustonMergeQueueProject.of({
     resolve,
     target,
@@ -335,7 +363,9 @@ const make = Effect.gen(function* () {
     view,
     managedDirectories,
     managedBranches,
+    managedWorktreeOf,
     taskBranches,
+    defaultRuntimeMode,
   });
 });
 
