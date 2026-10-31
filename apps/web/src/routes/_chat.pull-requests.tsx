@@ -30,7 +30,7 @@ function pullRequestSearchLabels(raw: unknown): Partial<Pick<PullRequestsSearch,
 export const Route = createFileRoute("/_chat/pull-requests")({
   validateSearch: (raw: Record<string, unknown>): PullRequestsSearch => ({
     involvement:
-      raw.involvement === "reviewing" || raw.involvement === "authored" ? raw.involvement : "all",
+      raw.involvement === "reviewing" || raw.involvement === "all" ? raw.involvement : "authored",
     state:
       raw.state === "closed" || raw.state === "merged" || raw.state === "all" ? raw.state : "open",
     ...(SORT_OPTIONS.some((option) => option.value === raw.sort)

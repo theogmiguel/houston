@@ -134,8 +134,8 @@ function KeybindingsSearchInput({
           if (query.length > 0) onChange("");
           else event.currentTarget.blur();
         }}
-        placeholder="Search keybindings"
-        aria-label="Search keybindings"
+        placeholder="Search commands or keys"
+        aria-label="Search commands or keys"
         size="sm"
       />
     </InputGroup>

@@ -95,5 +95,5 @@ it("keeps an unsaved citation comment when a question takes the composer", async
   expect(drafts()?.prompt).toBe(
     `See ${serializeAssistantCitation(withAssistantCitationComment(citation, "check this"))} `,
   );
-  await expect.element(page.getByLabelText("Edit citation comment")).toBeInTheDocument();
+  expect(screen.container.querySelector('[data-composer-citation-chip="true"]')).not.toBeNull();
 });

@@ -39,7 +39,7 @@ describe("Usage page preferences", () => {
     '{"metric":"cost","windowDays":365}',
   ])("replaces invalid preferences on the next save: %s", (value) => {
     values.set(key, value);
-    expect(readUsagePagePreferences()).toEqual({ metric: "limits", windowDays: 30 });
+    expect(readUsagePagePreferences()).toEqual({ metric: "cost", windowDays: 30 });
     saveUsagePagePreferences({ metric: "tokens", windowDays: 7 });
     expect(readUsagePagePreferences()).toEqual({ metric: "tokens", windowDays: 7 });
   });

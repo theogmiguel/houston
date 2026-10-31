@@ -412,6 +412,12 @@ export function ScheduledTasksSettings(target: {
       <SettingsSection
         title="Scheduled tasks"
         variant="plain"
+        footer={
+          <p className="px-1 text-xs leading-4 text-muted-foreground">
+            Scheduled tasks run on the server, so they keep their schedule while the window is
+            closed. A task that needs you waits like any other thread.
+          </p>
+        }
         headerAction={
           <Button
             size="xs"

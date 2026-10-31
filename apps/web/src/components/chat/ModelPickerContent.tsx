@@ -59,7 +59,7 @@ import { announce } from "~/lib/announce";
 import { cn } from "~/lib/utils";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { TooltipProvider } from "../ui/tooltip";
-import { InlineButton } from "../ui/button";
+import { Button, InlineButton } from "../ui/button";
 import {
   isProviderInstancePickerReady,
   isProviderInstancePickerVisible,
@@ -354,6 +354,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   model: string;
   selectedModels?: ReadonlyArray<{ instanceId: ProviderInstanceId; model: string }>;
   onToggleModel?: (instanceId: ProviderInstanceId, model: string) => void;
+  onSendSelectedModels?: (() => void) | undefined;
   lockedProvider: ProviderDriverKind | null;
   lockedContinuationGroupKey?: string | null;
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
@@ -374,6 +375,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     instanceEntries,
     getModelDisabledReason,
     onInstanceModelChange,
+    onSendSelectedModels,
     onToggleModel,
     onRequestClose,
     onOpenProviderSetup,
@@ -1045,6 +1047,24 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               onRequestClose={onRequestClose}
               onOpenProviderSetup={onOpenProviderSetup}
             />
+            {onToggleModel && selectedModelKeySet.size > 1 ? (
+              <div
+                data-model-picker-selection-footer="true"
+                className="mt-1.5 flex items-center gap-2 border-t border-border px-1 pt-2 pb-0.5 text-(--t2) text-xs"
+              >
+                <span className="flex-1">{selectedModelKeySet.size} models selected</span>
+                <Button
+                  size="xs"
+                  variant="primary"
+                  onClick={() => {
+                    onRequestClose?.();
+                    onSendSelectedModels?.();
+                  }}
+                >
+                  Send to {selectedModelKeySet.size}
+                </Button>
+              </div>
+            ) : null}
           </div>
         </Combobox>
       </div>

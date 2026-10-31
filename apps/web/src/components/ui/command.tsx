@@ -67,7 +67,7 @@ function CommandDialogPopup({
           ref={popupRef}
           className={cn(
             DIALOG_POPUP_CLASS,
-            "pointer-events-auto max-h-105 max-w-xl text-foreground",
+            "pointer-events-auto max-h-105 max-w-[640px] text-foreground",
             className,
           )}
           data-slot="command-dialog-popup"
@@ -99,14 +99,16 @@ function Command({
 function CommandInput({
   className,
   placeholder,
+  endAddon,
   ...props
-}: React.ComponentProps<typeof AutocompleteInput>) {
+}: React.ComponentProps<typeof AutocompleteInput> & { endAddon?: React.ReactNode }) {
   return (
-    <div className="px-[var(--command-shell-inset)] py-1.5 [&_[data-slot=autocomplete-start-addon]]:ps-[calc(var(--command-shell-inset)+0.0625rem)]">
+    <div className="relative px-[var(--command-shell-inset)] py-1.5 [&_[data-slot=autocomplete-start-addon]]:ps-[calc(var(--command-shell-inset)+0.0625rem)]">
       <AutocompleteInput
         autoFocus
         className={cn(
-          "border-transparent! bg-transparent! shadow-none before:hidden has-focus-visible:ring-0 placeholder:text-placeholder *:data-[slot=autocomplete-input]:ps-9! sm:*:data-[slot=autocomplete-input]:ps-[calc(var(--command-shell-inset)+1.5rem)]!",
+          "border-transparent! bg-transparent! shadow-none before:hidden has-focus-visible:ring-0 has-focus-visible:outline-0! placeholder:text-placeholder *:data-[slot=autocomplete-input]:ps-9! sm:*:data-[slot=autocomplete-input]:ps-[calc(var(--command-shell-inset)+1.5rem)]!",
+          endAddon && "*:data-[slot=autocomplete-input]:pe-16!",
           className,
         )}
         placeholder={placeholder}
@@ -114,6 +116,11 @@ function CommandInput({
         startAddon={<SearchIcon className="translate-x-0.5 text-icon-muted" />}
         {...props}
       />
+      {endAddon ? (
+        <span className="pointer-events-none absolute inset-y-0 end-[var(--command-shell-inset)] flex items-center">
+          {endAddon}
+        </span>
+      ) : null}
     </div>
   );
 }
