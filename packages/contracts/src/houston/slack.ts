@@ -48,6 +48,12 @@ export const HoustonSlackChannelMap = Schema.Struct({
 });
 export type HoustonSlackChannelMap = typeof HoustonSlackChannelMap.Type;
 
+// Input carries no count or id bound, so the service's refusal names the limit and the value.
+const HoustonSlackChannelMapInput = Schema.Struct({
+  channelId: Schema.String,
+  projectId: ProjectId,
+});
+
 /** The intake's settings and connection. Never a token. */
 export const HoustonSlackInfo = Schema.Struct({
   enabled: Schema.Boolean,
@@ -57,7 +63,9 @@ export const HoustonSlackInfo = Schema.Struct({
   team: Schema.NullOr(Schema.String),
   botUserId: Schema.NullOr(Schema.String),
   ownerUserId: Schema.NullOr(Schema.String),
-  channels: Schema.Array(HoustonSlackChannelMap),
+  channels: Schema.Array(HoustonSlackChannelMap).check(
+    Schema.isMaxLength(HOUSTON_SLACK_LIMITS.channels),
+  ),
   language: HoustonSlackLanguage,
   lastEventAt: Schema.NullOr(IsoDateTime),
   lastCatchupAt: Schema.NullOr(IsoDateTime),
@@ -146,9 +154,7 @@ export const HoustonSlackConfigureInput = Schema.Struct({
   expectedRevision: Schema.optionalKey(NonNegativeInt),
   /** Absent keeps the owner; null clears it. */
   ownerUserId: Schema.optionalKey(Schema.NullOr(MemberId)),
-  channels: Schema.Array(HoustonSlackChannelMap).check(
-    Schema.isMaxLength(HOUSTON_SLACK_LIMITS.channels),
-  ),
+  channels: Schema.Array(HoustonSlackChannelMapInput),
   language: Schema.optionalKey(HoustonSlackLanguage),
 });
 export type HoustonSlackConfigureInput = typeof HoustonSlackConfigureInput.Type;

@@ -6,6 +6,7 @@ import {
   HOUSTON_SLACK_LIMITS,
   HoustonSlackConfigureInput,
   HoustonSlackConnectInput,
+  HoustonSlackInfo,
   HoustonSlackLanguage,
   HoustonSlackRequest,
   HoustonSlackRequestState,
@@ -15,6 +16,7 @@ const decodeLanguage = Schema.decodeUnknownExit(HoustonSlackLanguage);
 const decodeState = Schema.decodeUnknownExit(HoustonSlackRequestState);
 const decodeConfigure = Schema.decodeUnknownExit(HoustonSlackConfigureInput);
 const decodeRequest = Schema.decodeUnknownExit(HoustonSlackRequest);
+const decodeInfo = Schema.decodeUnknownExit(HoustonSlackInfo);
 // As the RPC decodes a request: from its JSON form.
 const decodeConnect = Schema.decodeUnknownSync(Schema.toCodecJson(HoustonSlackConnectInput));
 
@@ -35,17 +37,37 @@ describe("slack schemas bound their fields and redact the tokens", () => {
     expect(decodeState("accepted")._tag).toBe("Failure");
   });
 
-  it("decodes channel and member ids, refusing 17 channels and a lowercase channel id", () => {
+  it("decodes channel and member ids; the info refuses 17 channels and a lowercase channel id", () => {
     expect(HOUSTON_SLACK_LIMITS.channels).toBe(16);
+    const info = {
+      enabled: true,
+      hasTokens: true,
+      connection: "connected",
+      team: "Acme",
+      botUserId: "UBOT",
+      ownerUserId: "U123",
+      channels: channels(16),
+      language: "en",
+      lastEventAt: null,
+      lastCatchupAt: null,
+      error: null,
+      revision: 1,
+    };
+    expect(decodeInfo(info)._tag).toBe("Success");
+    expect(decodeInfo({ ...info, channels: channels(17) })._tag).toBe("Failure");
+    expect(decodeInfo({ ...info, channels: [{ channelId: "c123", projectId: "p" }] })._tag).toBe(
+      "Failure",
+    );
     const ok = { ownerUserId: "U123", channels: [{ channelId: "C1", projectId: "p" }] };
     expect(decodeConfigure(ok)._tag).toBe("Success");
     expect(decodeConfigure({ ...ok, channels: [{ channelId: "G2", projectId: "p" }] })._tag).toBe(
       "Success",
     );
     expect(decodeConfigure({ channels: channels(16) })._tag).toBe("Success");
-    expect(decodeConfigure({ channels: channels(17) })._tag).toBe("Failure");
+    // The input carries no count or channel id bound: the service refuses those by name (AD-101).
+    expect(decodeConfigure({ channels: channels(17) })._tag).toBe("Success");
     expect(decodeConfigure({ channels: [{ channelId: "c123", projectId: "p" }] })._tag).toBe(
-      "Failure",
+      "Success",
     );
     expect(decodeConfigure({ channels: [], language: "pt_br" })._tag).toBe("Failure");
     expect(
