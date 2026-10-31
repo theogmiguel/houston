@@ -20,6 +20,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [3, "TaskSources"],
   [4, "TaskRunsCursor"],
   [5, "MergeQueue"],
+  [6, "TaskSourceMarkerKey"],
   [8, "SlackIntake"],
 ];
 const TASK_TABLES = [

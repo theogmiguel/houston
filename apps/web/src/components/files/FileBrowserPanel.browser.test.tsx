@@ -35,11 +35,7 @@ vi.mock("~/fileContextMenu", () => ({
 vi.mock("~/hooks/useWorkspaceMutationRefresh", () => ({ useWorkspaceMutationRefresh: () => {} }));
 
 function findTreeRow(path: string): HTMLElement | null {
-  for (const host of document.querySelectorAll("*")) {
-    const row = host.shadowRoot?.querySelector<HTMLElement>(`[data-item-path="${path}"]`);
-    if (row) return row;
-  }
-  return null;
+  return document.querySelector<HTMLElement>(`[data-item-path="${path}"]`);
 }
 
 describe("FileBrowserPanel", () => {
@@ -63,15 +59,13 @@ describe("FileBrowserPanel", () => {
     row.dispatchEvent(
       new DragEvent("dragstart", { bubbles: true, cancelable: true, composed: true, dataTransfer }),
     );
-    // The tree selects the row the drag picked up; mid-drag that must not open it.
+    // A drag carries the mention; a click mid-drag must not open the file.
     row.click();
-    await vi.waitFor(() => expect(row.getAttribute("aria-selected")).toBe("true"));
 
     expect(dataTransfer.getData(COMPOSER_MENTION_DRAG_TYPE)).toContain("README.md");
     expect(onOpenFile).not.toHaveBeenCalled();
 
     row.dispatchEvent(new DragEvent("dragend", { bubbles: true, composed: true, dataTransfer }));
-    await vi.waitFor(() => expect(row.getAttribute("aria-selected")).not.toBe("true"));
 
     row.click();
     await vi.waitFor(() => expect(onOpenFile).toHaveBeenCalledTimes(1));

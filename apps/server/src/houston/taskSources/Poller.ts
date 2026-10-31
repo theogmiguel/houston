@@ -23,6 +23,8 @@ import {
   NOTION_REFRESH_PER_POLL,
   POLL_INTERVAL_SECONDS,
   TOKEN_ACCOUNT,
+  TOKEN_MISSING,
+  TOKEN_UNAVAILABLE,
   errorText,
   type GithubCursor,
   type NotionCursor,
@@ -31,8 +33,7 @@ import {
 import { HoustonTaskSourceStore, settingsFromRow, type SourceEvent } from "./SourceStore.ts";
 import { HoustonTaskSourceSync } from "./Sync.ts";
 
-export const TOKEN_UNAVAILABLE = "Notion integration token is not available from the OS keychain";
-export const TOKEN_MISSING = "Notion integration token is missing";
+export { TOKEN_MISSING, TOKEN_UNAVAILABLE } from "./rules.ts";
 
 const Cursor = Schema.fromJsonString(Schema.Unknown);
 const decodeCursor = Schema.decodeUnknownSync(Cursor);

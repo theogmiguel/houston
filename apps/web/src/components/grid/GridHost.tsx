@@ -9,7 +9,6 @@ import {
   type ThreadNode,
   clampSplitRatio,
   insertBeside,
-  MIN_PANE_PX,
   preorderThreads,
   removeThread,
   setRatio,
@@ -24,7 +23,7 @@ export interface GridCellRenderProps {
   onSplit: (side: SplitSide, threadId: string) => void;
 }
 
-const GUTTER_PX = 6;
+const GUTTER_PX = 0;
 
 export interface GridHostProps {
   grid: GridRecord;
@@ -167,8 +166,8 @@ function SplitView({
               {
                 flexGrow: node.weights[index] ?? 1,
                 flexBasis: 0,
-                minWidth: node.dir === "row" ? MIN_PANE_PX : undefined,
-                minHeight: node.dir === "row" ? undefined : MIN_PANE_PX,
+                minWidth: 0,
+                minHeight: 0,
               } satisfies CSSProperties
             }
           >
@@ -187,8 +186,10 @@ function SplitView({
               aria-label="Resize grid cells"
               tabIndex={0}
               className={cn(
-                "group relative z-10 shrink-0 bg-transparent outline-none",
-                node.dir === "row" ? "w-1.5 cursor-col-resize" : "h-1.5 cursor-row-resize",
+                "group relative z-10 shrink-0 bg-(--divider) outline-none transition-colors hover:bg-(--accent-ink) focus-visible:bg-(--accent-ink)",
+                node.dir === "row"
+                  ? "w-px cursor-col-resize before:absolute before:inset-y-0 before:-inset-x-1.5 before:content-['']"
+                  : "h-px cursor-row-resize before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-['']",
               )}
               onDoubleClick={() => onTreeChange(setRatio(node, path, index, 0.5))}
               onPointerDown={(event) => {
@@ -236,17 +237,7 @@ function SplitView({
                   setRatio(node, path, index, clampSplitRatio(current + delta, Math.max(span, 1))),
                 );
               }}
-            >
-              <span
-                aria-hidden
-                className={cn(
-                  "pointer-events-none absolute bg-transparent transition-colors group-hover:bg-(--line-strong) group-focus-visible:bg-(--accent-ink)",
-                  node.dir === "row"
-                    ? "inset-y-0 left-1/2 w-px -translate-x-1/2"
-                    : "inset-x-0 top-1/2 h-px -translate-y-1/2",
-                )}
-              />
-            </div>
+            ></div>
           ) : null}
         </div>
       ))}

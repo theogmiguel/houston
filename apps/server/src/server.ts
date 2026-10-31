@@ -118,6 +118,7 @@ import * as HoustonTaskStore from "./houston/tasks/TaskStore.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
 import * as HoustonKeychain from "./houston/secrets/HoustonKeychain.ts";
 import * as HoustonTaskSourceNotion from "./houston/taskSources/NotionClient.ts";
+import * as HoustonTaskSourceOutbox from "./houston/taskSources/Outbox.ts";
 import * as HoustonTaskSourceStore from "./houston/taskSources/SourceStore.ts";
 import { layerTaskSources } from "./houston/taskSources/layer.ts";
 import * as SlackConnection from "./houston/slack/Connection.ts";
@@ -528,6 +529,8 @@ const layerProviderInstallationRefresh = Layer.effectDiscard(
 export const layerHoustonTaskPersistence = Layer.empty.pipe(
   Layer.provideMerge(HoustonTaskRuns.layerReadOnlyThreads),
   Layer.provideMerge(HoustonTaskStore.layer),
+  // The task source outbox hears each task write's transitions inside its transaction.
+  Layer.provideMerge(HoustonTaskSourceOutbox.layer),
 );
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(

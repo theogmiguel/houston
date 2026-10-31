@@ -499,6 +499,15 @@
       "w": 1440,
       "x": 6080,
       "y": 3400
+    },
+    "Composer.dc.html": {
+      "expand": "fill",
+      "h": 6200,
+      "page": "screens",
+      "title": "Composer",
+      "w": 1520,
+      "x": 0,
+      "y": 3020
     }
   },
   "createdOnFiles": {
@@ -577,6 +586,7 @@
   },
   "order": [
     "ScreenThread.dc.html",
+    "Composer.dc.html",
     "ScreenWelcome.dc.html",
     "ScreenPalette.dc.html",
     "ScreenPreview.dc.html",

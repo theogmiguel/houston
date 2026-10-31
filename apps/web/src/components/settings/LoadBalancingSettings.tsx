@@ -9,7 +9,7 @@ import type { EnvironmentPresentation } from "~/state/environments";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { EnvironmentRow, environmentTransportLabel } from "./EnvironmentRow";
-import { FoldedSettingsSection } from "./FoldedSettingsSection";
+import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
 const preferences = [
@@ -55,71 +55,72 @@ export function LoadBalancingSettings({
   }));
   const settingsHydrated = useClientSettingsHydrated();
 
-  if (environments.length < 2) return null;
-
-  const { id, title } = searchableSetting("load-balancing");
+  const { id } = searchableSetting("load-balancing");
+  const summary = settings.loadBalancingEnabled
+    ? summarizeLoadPreferences(environments, settings.loadBalancingWeights)
+    : null;
   return (
-    <FoldedSettingsSection
-      id={id}
-      title={title}
-      summary={
-        settings.loadBalancingEnabled
-          ? summarizeLoadPreferences(environments, settings.loadBalancingWeights)
-          : "Off"
-      }
-      control={
-        <Switch
-          aria-label="Automatically balance load"
-          checked={settings.loadBalancingEnabled}
-          disabled={!settingsHydrated}
-          onCheckedChange={(loadBalancingEnabled) => updateClientSettings({ loadBalancingEnabled })}
-        />
-      }
-    >
-      <p className="px-3 py-2.5 text-xs text-muted-foreground sm:px-4">
-        New threads in shared projects start on the machine with the most free CPU and memory,
-        weighted by each machine's preference.
-      </p>
-      {environments.map((environment) => (
-        <EnvironmentRow
-          key={environment.environmentId}
-          kind={resolveEnvironmentMachineKind(environment.serverConfig)}
-          label={environment.label}
-          subtitle={environmentTransportLabel(environment)}
-        >
-          <Select
-            items={preferences}
-            value={loadPreferenceForWeight(
-              settings.loadBalancingWeights[environment.environmentId],
-            )}
-            disabled={!settingsHydrated || !settings.loadBalancingEnabled}
-            onValueChange={(value) => {
-              if (value === null) return;
-              updateClientSettings({
-                loadBalancingWeights: {
-                  ...settings.loadBalancingWeights,
-                  [environment.environmentId]: value,
-                },
-              });
-            }}
-          >
-            <SelectTrigger
-              size="xs"
-              className="w-32"
-              aria-label={`${environment.label} load preference`}
+    <SettingsSection id={id} title="Routing">
+      <SettingsRow
+        title="Load balancing"
+        description={
+          summary
+            ? `Spread new threads across environments that have the project. ${summary}.`
+            : "Spread new threads across environments that have the project."
+        }
+        control={
+          <Switch
+            aria-label="Load balancing"
+            checked={settings.loadBalancingEnabled}
+            disabled={!settingsHydrated}
+            onCheckedChange={(loadBalancingEnabled) =>
+              updateClientSettings({ loadBalancingEnabled })
+            }
+          />
+        }
+      />
+      {environments.length > 1
+        ? environments.map((environment) => (
+            <EnvironmentRow
+              key={environment.environmentId}
+              kind={resolveEnvironmentMachineKind(environment.serverConfig)}
+              label={environment.label}
+              subtitle={environmentTransportLabel(environment)}
             >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectPopup align="end" alignItemWithTrigger={false}>
-              {preferences.map(({ value, label }) => (
-                <SelectItem key={value} value={value}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        </EnvironmentRow>
-      ))}
-    </FoldedSettingsSection>
+              <Select
+                items={preferences}
+                value={loadPreferenceForWeight(
+                  settings.loadBalancingWeights[environment.environmentId],
+                )}
+                disabled={!settingsHydrated || !settings.loadBalancingEnabled}
+                onValueChange={(value) => {
+                  if (value === null) return;
+                  updateClientSettings({
+                    loadBalancingWeights: {
+                      ...settings.loadBalancingWeights,
+                      [environment.environmentId]: value,
+                    },
+                  });
+                }}
+              >
+                <SelectTrigger
+                  size="xs"
+                  className="w-32"
+                  aria-label={`${environment.label} load preference`}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  {preferences.map(({ value, label }) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </EnvironmentRow>
+          ))
+        : null}
+    </SettingsSection>
   );
 }

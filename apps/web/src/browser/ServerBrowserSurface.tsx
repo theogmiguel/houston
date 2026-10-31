@@ -706,23 +706,24 @@ export function ServerBrowserSurface(props: {
     >
       <div
         className={cn(
-          "visible relative z-20 flex shrink-0 items-center justify-between gap-2 border-border bg-background px-2 py-1",
+          "visible relative z-20 flex h-8 shrink-0 items-center justify-between gap-2 border-border bg-[var(--rail)] px-3 text-[var(--t1)]",
           controlPosition === "bottom" ? "order-last border-t" : "border-b",
         )}
       >
-        <span role="status" className="text-xs text-muted-foreground">
+        <span role="status" className="flex-1 truncate text-xs text-[var(--t1)]">
           {previewStreamControlLabel(control)}
         </span>
         {control?.canOperate ? (
           <Button
-            variant="outline"
-            size="xs"
+            className="text-[var(--t1)]"
+            variant="ghost"
+            size="sm"
             disabled={control.controller === "another-viewer"}
             onClick={() =>
               send({ type: control.controller === "you" ? "releaseControl" : "takeControl" })
             }
           >
-            {control.controller === "you" ? "Release control" : "Take control"}
+            {control.controller === "you" ? "Release control" : "Take over"}
           </Button>
         ) : null}
       </div>
