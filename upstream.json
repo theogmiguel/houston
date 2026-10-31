@@ -144,6 +144,7 @@
     "apps/server/src/telemetry/ProviderDimensions.ts"
   ],
   "added": [
+    "apps/server/src/desktopSshBridge.ts",
     "apps/server/src/vcs/GitVcsDriverCore.gitfile.test.ts",
     "apps/server/src/provider/GrokProviderTeardown.test.ts",
     "apps/server/src/houston/analytics.test.ts",

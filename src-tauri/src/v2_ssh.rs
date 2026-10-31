@@ -1,9 +1,6 @@
-//! The Tauri host's side of upstream's desktop SSH environment bridge.
-//!
-//! The protocol work lives in `@t3tools/ssh`, so the host runs the same server
-//! entry it already knows how to launch with a hidden `__ssh-bridge` argument
-//! and forwards JSON lines over stdio. This module owns the child process,
-//! request correlation, password-prompt events and remote-editor probing.
+//! Host side of upstream's desktop SSH bridge: runs the server entry with a hidden
+//! `__ssh-bridge` argument (protocol work stays in `@t3tools/ssh`) and owns the child,
+//! request correlation, password prompts and remote-editor probing.
 
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Write};
