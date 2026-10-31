@@ -672,6 +672,10 @@ describe("fix tasks", () => {
             "Review: #1\nPrevious fix task: HOU-7\nRecommendation: ",
           );
           assert.deepEqual(yield* countRows, { tasks: 8, links: 2 });
+          // HOU-8 is newer than the still present verdict, so the finding is being fixed again.
+          const fixing = (yield* findingOf(projectId, "denied-push"))!;
+          assert.equal(fixing.phase, "fixing");
+          assert.equal(fixing.task?.key, "HOU-8");
 
           // A full backlog: 5,000 tasks.
           yield* sql`
@@ -702,7 +706,9 @@ describe("fix tasks", () => {
         Effect.gen(function* () {
           const harness = yield* service;
           const sql = yield* SqlClient.SqlClient;
-          const { projectId } = yield* createProject("fix-phases");
+          const fixTasks = yield* HoustonHarnessFixTasks;
+          const project = yield* createProject("fix-phases");
+          const { projectId } = project;
           yield* seedPublished({ projectId, findings: [{ key: "denied-push" }], endedAt: day(1) });
           const { task } = yield* harness.createTask({ projectId, key: "denied-push" });
           let finding = (yield* findingOf(projectId, "denied-push"))!;
@@ -733,6 +739,23 @@ describe("fix tasks", () => {
           finding = (yield* findingOf(projectId, "denied-push"))!;
           assert.equal(finding.phase, "awaitingVerification");
           assert.equal(finding.task?.landedAt, at(-60));
+
+          // Moved back out of done, the task has not landed: no landing time, no sessions after.
+          yield* createThreadAt({ ...project, id: "thread:after-landing", minutes: 6 });
+          yield* setStatus("HOU-1", "in_progress");
+          finding = (yield* findingOf(projectId, "denied-push"))!;
+          assert.equal(finding.phase, "fixing");
+          assert.deepEqual(finding.task, {
+            taskId: task.id,
+            key: "HOU-1",
+            status: "in_progress",
+            landedAt: null,
+          });
+          const link = (yield* fixTasks.links(projectId)).find(
+            (candidate) => candidate.key === "denied-push",
+          )!;
+          assert.equal(link.landedAt, null);
+          assert.equal(link.sessionsAfter, 0);
         }),
       );
     }),
