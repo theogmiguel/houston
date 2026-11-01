@@ -5,6 +5,7 @@ import { useCustomThemes } from "../hooks/useCustomThemes";
 import { useEnvironmentThemeDefinitions } from "../hooks/useEnvironmentTheme";
 import { useTheme } from "../hooks/useTheme";
 import { getThemeDefinition } from "../themePalette";
+import { themeRevealViewportOrigin } from "../themeReveal";
 import {
   ADDON_ICON_CLASS,
   ITEM_ICON_CLASS,
@@ -102,10 +103,11 @@ export function useCommandPaletteThemeItems() {
             </span>
           ),
           run: async () => {
+            const origin = themeRevealViewportOrigin();
             const saved =
               previews.length === 1 && id !== null
-                ? setThemeHalf(previews[0]!.mode, id)
-                : setTheme(id ?? appearanceMode);
+                ? setThemeHalf(previews[0]!.mode, id, origin)
+                : setTheme(id ?? appearanceMode, origin);
             if (!saved) notifyThemeSaveFailure();
           },
         })),
@@ -136,7 +138,7 @@ export function useCommandPaletteThemeItems() {
               <span className="text-xs text-muted-foreground/70">Current</span>
             ) : undefined,
           run: async () => {
-            if (!setAppearanceMode(mode)) notifyThemeSaveFailure();
+            if (!setAppearanceMode(mode, themeRevealViewportOrigin())) notifyThemeSaveFailure();
           },
         })),
       },
