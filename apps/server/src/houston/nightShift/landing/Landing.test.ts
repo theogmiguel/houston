@@ -231,6 +231,50 @@ describe("night shift landing", () => {
     }),
   );
 
+  it.effect("an origin that is not github.com is refused by name before any push", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("land-host");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const seeded = yield* seedRun(kit, "land-host");
+          const landing = yield* Landing.HoustonNightLanding;
+          const store = yield* Store.HoustonNightShiftStore;
+          const url = "https://github.example.org/o/r.git";
+          git(seeded.fixture.root, "remote", "set-url", "origin", url);
+          git(seeded.fixture.root, "config", `url.${seeded.fixture.bare!}.insteadOf`, url);
+          yield* store.addEntry({
+            runId: seeded.runId,
+            projectId: seeded.projectId as never,
+            kind: "pr",
+            title: "#7",
+            prNumber: 7,
+            status: "open",
+            createdAt: NOW,
+          });
+          kit.state.pullRequestStates.set(7, "open");
+
+          const refused = yield* failureOf(landing.record(recordInput(seeded)));
+          assert.equal(kindOf(refused), "refused");
+          assert.include(messageOf(refused), "github.example.org");
+          assert.include(messageOf(refused), "github.com");
+          const closed = yield* failureOf(landing.closePullRequests(seeded.runId, [7]));
+          assert.include(messageOf(closed), "github.example.org");
+          assert.isFalse(
+            kit.state.gitRuns.some((run) => run.args.includes("push")),
+            "nothing was pushed",
+          );
+          assert.lengthOf(kit.state.github.requests, 0);
+          assert.isFalse(
+            (yield* store.runEntries(seeded.runId)).some(
+              (row) => row.pr_number !== 7 && row.kind === "pr",
+            ),
+          );
+        }),
+      );
+    }),
+  );
+
   it.effect("only the run's own branches pass the push guard", () =>
     Effect.gen(function* () {
       const kit = yield* makeKit("land-guard");

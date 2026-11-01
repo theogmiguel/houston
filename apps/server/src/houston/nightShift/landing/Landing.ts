@@ -263,8 +263,14 @@ const make = Effect.gen(function* () {
     withVcs(gitOk(root, ["config", "--get", "remote.origin.url"])).pipe(
       Effect.flatMap((url) => {
         const parsed = parseGitRemoteRepository(url);
-        return parsed === null || !parsed.host.includes("github")
-          ? Effect.fail(`the origin of ${root} is ${url}, not a GitHub repository`)
+        // CI is read from github.com only, so every landing call refuses another host alike.
+        if (parsed === null) {
+          return Effect.fail(`the origin of ${root} is ${url}, not a GitHub repository`);
+        }
+        return parsed.host.toLowerCase() !== "github.com"
+          ? Effect.fail(
+              `the origin of ${root} is on ${parsed.host}; Night shift lands pull requests on github.com only`,
+            )
           : Effect.succeed({ host: parsed.host, repository: parsed.path });
       }),
     );
