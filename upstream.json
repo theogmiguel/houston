@@ -402,7 +402,10 @@
     "apps/web/src/components/ui/copy-button.browser.test.tsx",
     "apps/web/src/hooks/useReducedMotion.ts",
     "apps/web/src/hooks/useReducedMotion.browser.test.tsx",
-    "apps/web/src/components/settings/RedactedSensitiveText.browser.test.tsx"
+    "apps/web/src/components/settings/RedactedSensitiveText.browser.test.tsx",
+    "apps/web/src/themeReveal.ts",
+    "apps/web/src/themeReveal.test.ts",
+    "apps/web/src/components/sidebar/SidebarThemeReveal.browser.test.tsx"
   ],
   "removed": [
     "apps/web/src/legalLinks.ts",
@@ -1253,6 +1256,9 @@
     "apps/web/src/components/files/office/OfficePages.tsx": "page proximity uses observeIntersection",
     "apps/web/src/components/pullRequest/PullRequestsColumn.tsx": "scroll marker visibility uses observeIntersection",
     "apps/web/src/components/settings/RedactedSensitiveText.tsx": "the reveal control is InlineButton",
-    "apps/web/src/components/grid/GridSidebar.redesign.browser.test.tsx": "the New grid menu is a Menu, so its rows are menuitems"
+    "apps/web/src/components/grid/GridSidebar.redesign.browser.test.tsx": "the New grid menu is a Menu, so its rows are menuitems",
+    "apps/web/src/hooks/useTheme.ts": "theme switches reveal the new palette as a circle from the clicked control",
+    "apps/web/src/components/CommandPaletteThemeItems.tsx": "theme commands reveal from the window centre",
+    "apps/web/src/shortcuts/commandPaletteCommands.ts": "the appearance shortcut reveals from the window centre"
   }
 }
