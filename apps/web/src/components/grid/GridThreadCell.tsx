@@ -11,8 +11,9 @@ import { useStableCallback } from "../../hooks/useStableCallback";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { type DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import { useQuietThreadShell } from "../../state/entities";
+import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { paneDensityLayout } from "../../grid/density";
-import { type GridRecord, useGridStore } from "../../grid/gridStore";
+import { MAX_GRID_THREADS, type GridRecord, useGridStore } from "../../grid/gridStore";
 import { type SplitSide, type ThreadNode, preorderThreads } from "../../grid/tree";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
@@ -77,11 +78,52 @@ export function GridThreadCell({
   const threadCount = grid.tree === null ? 0 : preorderThreads(grid.tree).length;
   const { ref, density, width } = usePaneDensity(threadCount);
   const layout = paneDensityLayout(density, width);
+  // A grid holds six threads; the sixth cell still offers "New thread", whose
+  // handler asks before moving the new thread to its own grid.
+  const availableForSplit = threadCount >= MAX_GRID_THREADS ? [] : availableThreads;
+  const archived = useArchivedThreadSnapshots([environmentId]);
+  const closeCellStable = useStableCallback(onClose);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drops a cell whose thread was archived elsewhere (the sidebar or another window)
+  useEffect(() => {
+    if (draftId !== undefined) return;
+    const archivedIds = new Set<string>(
+      archived.snapshots.flatMap((entry) =>
+        entry.snapshot.threads.map((thread) => String(thread.id)),
+      ),
+    );
+    if (archivedIds.has(node.threadId)) closeCellStable();
+  }, [archived.snapshots, draftId, node.threadId, closeCellStable]);
   const discardDraft = () => {
     if (draftId !== undefined) clearDraftThread(draftId);
     onClose();
   };
   const discardDraftStable = useStableCallback(discardDraft);
+  // A new draft pane opens with its composer focused; ChatView skips that
+  // autofocus while embedded, so the cell asks the mounted editor itself.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses the draft editor once the embedded composer has mounted
+  useEffect(() => {
+    if (draftId === undefined || !focused) return;
+    let frame = 0;
+    let attempts = 0;
+    const focusEditor = () => {
+      const cell = ref.current;
+      if (cell === null) return;
+      const editor = [
+        ...cell.querySelectorAll<HTMLElement>('[contenteditable="true"], textarea'),
+      ].find((candidate) => candidate.getClientRects().length > 0);
+      if (editor !== undefined) {
+        editor.focus({ preventScroll: true });
+        return;
+      }
+      if (attempts < 12) {
+        attempts += 1;
+        frame = window.requestAnimationFrame(focusEditor);
+      }
+    };
+    frame = window.requestAnimationFrame(focusEditor);
+    return () => window.cancelAnimationFrame(frame);
+  }, [draftId, focused, ref]);
+
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window Escape listener discards this draft pane before the composer consumes the key
   useEffect(() => {
     if (draftId === undefined) return;
@@ -148,13 +190,15 @@ export function GridThreadCell({
               <>
                 <SplitMenu
                   side="right"
-                  availableThreads={availableThreads}
+                  availableThreads={availableForSplit}
+                  atCap={threadCount >= MAX_GRID_THREADS}
                   onPick={(pickedThreadId) => onSplit("right", pickedThreadId)}
                   onNewThread={onNewThread === undefined ? undefined : () => onNewThread("right")}
                 />
                 <SplitMenu
                   side="bottom"
-                  availableThreads={availableThreads}
+                  availableThreads={availableForSplit}
+                  atCap={threadCount >= MAX_GRID_THREADS}
                   onPick={(pickedThreadId) => onSplit("bottom", pickedThreadId)}
                   onNewThread={onNewThread === undefined ? undefined : () => onNewThread("bottom")}
                 />
@@ -165,7 +209,7 @@ export function GridThreadCell({
                 variant="ghost-muted"
                 size="icon-sm"
                 aria-label="Archive thread"
-                onClick={() => void archiveThread(threadRef, {})}
+                onClick={() => void archiveThread(threadRef, { onArchived: onClose })}
               >
                 <ArchiveIcon />
               </Button>
@@ -212,11 +256,13 @@ export function GridThreadCell({
 function SplitMenu({
   side,
   availableThreads,
+  atCap,
   onPick,
   onNewThread,
 }: {
   side: SplitSide;
   availableThreads: ReadonlyArray<{ threadId: string; title: string }>;
+  atCap: boolean;
   onPick: (threadId: string) => void;
   onNewThread?: (() => void) | undefined;
 }) {
@@ -248,7 +294,9 @@ function SplitMenu({
           </MenuItem>
         ))}
         {availableThreads.length === 0 ? (
-          <MenuItem disabled>No other thread in this workspace</MenuItem>
+          <MenuItem disabled>
+            {atCap ? "This grid holds six threads" : "No other thread in this workspace"}
+          </MenuItem>
         ) : null}
         {onNewThread === undefined ? null : (
           <>
