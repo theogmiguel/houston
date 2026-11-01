@@ -22,6 +22,7 @@ import {
 } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -2549,9 +2550,10 @@ describe("UsageService", () => {
       // The saved-usage cache keeps 92 days counted from the real clock, so the
       // transcript date must move with it instead of being a fixed calendar day.
       const dayMs = 24 * 60 * 60 * 1000;
-      const writtenAtMs = Date.now() - 10 * dayMs;
+      const writtenAtMs = (yield* Clock.currentTimeMillis) - 10 * dayMs;
+      const isoAt = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms));
       const usageDay = (offsetDays: number) =>
-        UsageDay.make(new Date(writtenAtMs + offsetDays * dayMs).toISOString().slice(0, 10));
+        UsageDay.make(isoAt(writtenAtMs + offsetDays * dayMs).slice(0, 10));
       const window: UsageSummaryInput = {
         timeZone: "UTC",
         sinceDay: usageDay(-1),
@@ -2560,7 +2562,7 @@ describe("UsageService", () => {
       yield* Effect.promise(async () => {
         await NodeFSP.writeFile(
           transcript,
-          claudeLine(1, 5, undefined, new Date(writtenAtMs).toISOString()),
+          claudeLine(1, 5, undefined, isoAt(writtenAtMs)),
         );
         const lastWrite = writtenAtMs / 1000;
         await NodeFSP.utimes(transcript, lastWrite, lastWrite);
