@@ -52,7 +52,7 @@ function PreviewPanelShellFrame(
   const maximized = props.maximized ?? false;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const returnedFocus = useRef(false);
-  const { width, handlers, observeRow } = props.inlineSize;
+  const { width, minWidth, maxWidth, setWidth, handlers, observeRow } = props.inlineSize;
   // Width animates only for an open or close. Any other width change disables
   // the transition in the same commit that changes the width, so the browser
   // never starts one; the next open or close re-enables it in its own commit,
@@ -149,7 +149,39 @@ function PreviewPanelShellFrame(
       data-preview-panel-mode={props.mode}
       data-preview-panel-maximized={maximized ? "true" : "false"}
     >
-      {isInline && !maximized ? <RightPanelResizeHandle handlers={handlers} /> : null}
+      {isInline && !maximized ? (
+        <RightPanelResizeHandle
+          handlers={handlers}
+          label="Resize panel"
+          tabIndex={0}
+          aria-valuenow={Math.round(width)}
+          aria-valuemin={minWidth}
+          aria-valuemax={maxWidth}
+          onKeyDown={(event) => {
+            if (event.altKey || event.ctrlKey || event.metaKey) return;
+            let nextWidth: number;
+            switch (event.key) {
+              case "ArrowLeft":
+                nextWidth = width + 16;
+                break;
+              case "ArrowRight":
+                nextWidth = width - 16;
+                break;
+              case "Home":
+                nextWidth = minWidth;
+                break;
+              case "End":
+                nextWidth = maxWidth;
+                break;
+              default:
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            setWidth(nextWidth);
+          }}
+        />
+      ) : null}
       <div className={cn("h-full min-h-0 w-full", collapsible && "overflow-clip")}>
         <div
           className="flex h-full min-h-0 min-w-0 flex-col"

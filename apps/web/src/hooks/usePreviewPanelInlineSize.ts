@@ -5,6 +5,9 @@ import { observeResize } from "../lib/observeResize";
 
 export interface PreviewPanelInlineSize {
   readonly width: number;
+  readonly minWidth: number;
+  readonly maxWidth: number;
+  readonly setWidth: (width: number) => void;
   readonly handlers: ResizableWidthHandlers;
   /** Ref-callback body for the panel host: measures the row the panel shares. */
   readonly observeRow: (host: HTMLElement) => () => void;
@@ -30,7 +33,7 @@ export function usePreviewPanelInlineSize(
   const [maxWidth, setMaxWidth] = useState(() =>
     getPreviewPanelMaxWidth(typeof window === "undefined" ? 1280 : window.innerWidth),
   );
-  const { width, handlers } = useResizableWidth({
+  const { width, setWidth, handlers } = useResizableWidth({
     storageKey: options.widthStorageKey ?? PREVIEW_PANEL_WIDTH_STORAGE_KEY,
     defaultWidth: options.defaultWidth ?? PREVIEW_PANEL_DEFAULT_WIDTH,
     minWidth: PREVIEW_PANEL_MIN_WIDTH,
@@ -62,7 +65,14 @@ export function usePreviewPanelInlineSize(
       stopObserving?.();
     };
   };
-  return { width, handlers, observeRow };
+  return {
+    width,
+    minWidth: PREVIEW_PANEL_MIN_WIDTH,
+    maxWidth,
+    setWidth,
+    handlers,
+    observeRow,
+  };
 }
 
 function getPreviewPanelMaxWidth(viewportWidth: number, containerWidth?: number): number {
