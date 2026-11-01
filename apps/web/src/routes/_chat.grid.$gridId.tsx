@@ -3,12 +3,13 @@ import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environ
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { LayoutGridIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { GridEmptyDraft } from "../components/grid/GridEmptyDraft";
 import { GridHost } from "../components/grid/GridHost";
 import { GridThreadBranch } from "../components/grid/GridThreadBranch";
 import { GridThreadCell } from "../components/grid/GridThreadCell";
+import { clearInlineDetailsHandoff } from "../components/chat/inlineDetailsFollow";
 import {
   EMPTY_PROVIDER_ENTRIES,
   sidebarProviderEntriesAtom,
@@ -26,6 +27,7 @@ import { containsThread, preorderThreads } from "../grid/tree";
 import { isEditableFocused } from "../lib/editableFocus";
 import { cn } from "../lib/utils";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useStableCallback } from "../hooks/useStableCallback";
 import { resolveShortcutCommand } from "../keybindings";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { useRightPanelStore } from "../rightPanelStore";
@@ -45,6 +47,7 @@ function GridRoute() {
   const setTree = useGridStore((store) => store.setTree);
   const addThread = useGridStore((store) => store.addThread);
   const focusThread = useGridStore((store) => store.focusThread);
+  const setGridDetailsOpen = useGridStore((store) => store.setGridDetailsOpen);
   const closeGridCell = useGridStore((store) => store.closeGridCell);
   const reorderGridThreads = useGridStore((store) => store.reorderGridThreads);
   const moveThreadToCell = useGridStore((store) => store.moveThreadToCell);
@@ -71,6 +74,36 @@ function GridRoute() {
   const focusedRightPanelMaximized = focusedRightPanelOpen && focusedRightPanel?.maximized === true;
   const panelBesideGrid =
     focusedRightPanelOpen && (!prefersSheetPanel || focusedRightPanelMaximized);
+  const gridDetailsOpen = grid?.detailsOpen === true;
+
+  const toggleThreadDetails = useStableCallback(() => {
+    const current = useGridStore.getState().grids.find((entry) => entry.id === gridId);
+    if (current === undefined) return;
+    if (current.tree === null) {
+      // An empty grid's draft has no tree leaf, so it keeps the per-thread flag.
+      const threadId = emptyDraftThreadId ?? current.focusedThreadId;
+      if (threadId === null) return;
+      const ref = scopeThreadRef(current.environmentId as EnvironmentId, threadId as ThreadId);
+      const store = useRightPanelStore.getState();
+      const presentation =
+        store.threadPanelPresentationByThreadKey[scopedThreadKey(ref)] ?? "inline";
+      store.toggleThreadPanel(ref, presentation);
+      return;
+    }
+    const open = current.detailsOpen !== true;
+    if (!open) clearInlineDetailsHandoff();
+    setGridDetailsOpen(gridId, open);
+  });
+
+  const closeGridDetails = (open: boolean) => {
+    if (open) return;
+    clearInlineDetailsHandoff();
+    setGridDetailsOpen(gridId, false);
+  };
+
+  // A grid that leaves the screen must not hand a stale rect to the next one.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the details follow handoff when the route unmounts
+  useEffect(() => () => clearInlineDetailsHandoff(), []);
 
   const focusEmptyComposer = () => {
     window.requestAnimationFrame(() => {
@@ -112,9 +145,22 @@ function GridRoute() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       const command = resolveShortcutCommand(event, keybindings, { context: {} });
-      if (command !== "rightPanel.toggle" && command !== "rightPanel.toggleMaximized") return;
+      if (
+        command !== "rightPanel.toggle" &&
+        command !== "rightPanel.toggleMaximized" &&
+        command !== "threadPanel.toggle"
+      )
+        return;
       const current = useGridStore.getState().grids.find((entry) => entry.id === gridId);
-      if (current === undefined || current.focusedThreadId === null) return;
+      if (current === undefined) return;
+      if (command === "threadPanel.toggle") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.repeat) return;
+        toggleThreadDetails();
+        return;
+      }
+      if (current.focusedThreadId === null) return;
       const ref = scopeThreadRef(
         current.environmentId as EnvironmentId,
         current.focusedThreadId as ThreadId,
@@ -138,29 +184,27 @@ function GridRoute() {
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [gridId, keybindings]);
+  }, [gridId, keybindings, toggleThreadDetails]);
 
-  // A details card open in a solo or comfortable cell follows focus; a popover in a
-  // compact or glance cell closes instead of reopening over the next thread.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- moves the open details card when the focused cell changes
-  useEffect(() => {
+  // A popover card belongs to one cell. Following focus would reopen it over the next
+  // thread, so a focus move out of a popover cell turns the grid's details off.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the compact popover when the focused cell changes
+  useLayoutEffect(() => {
     const previousThreadId = previousFocusedThreadIdRef.current;
     previousFocusedThreadIdRef.current = focusedThreadId;
     if (grid === null || previousThreadId === null || previousThreadId === focusedThreadId) return;
     const store = useRightPanelStore.getState();
-    const environmentId = grid.environmentId as EnvironmentId;
-    const previousRef = scopeThreadRef(environmentId, previousThreadId as ThreadId);
-    const previousKey = scopedThreadKey(previousRef);
-    const visibility = store.threadPanelVisibilityByThreadKey[previousKey];
-    if (visibility === undefined || (!visibility.inlineOpen && !visibility.popoverOpen)) return;
-    const wasInline = store.threadPanelPresentationByThreadKey[previousKey] === "inline";
-    store.setThreadPanelOpen(previousRef, "inline", false);
-    store.setThreadPanelOpen(previousRef, "popover", false);
-    if (!wasInline || focusedThreadId === null) return;
-    const nextRef = scopeThreadRef(environmentId, focusedThreadId as ThreadId);
-    store.setThreadPanelOpen(nextRef, "inline", true);
-    store.setThreadPanelOpen(nextRef, "popover", true);
-  }, [focusedThreadId, grid]);
+    const previousRef = scopeThreadRef(
+      grid.environmentId as EnvironmentId,
+      previousThreadId as ThreadId,
+    );
+    if (store.threadPanelPresentationByThreadKey[scopedThreadKey(previousRef)] !== "popover")
+      return;
+    if (useGridStore.getState().grids.find((entry) => entry.id === grid.id)?.detailsOpen !== true)
+      return;
+    clearInlineDetailsHandoff();
+    setGridDetailsOpen(grid.id, false);
+  }, [focusedThreadId, grid, setGridDetailsOpen]);
 
   const workspaceThreads =
     grid === null
@@ -317,6 +361,9 @@ function GridRoute() {
               grid={grid}
               emptyDraftThreadId={emptyDraftThreadId}
               threadPanelAnchorRef={threadDetailsAnchorRef}
+              {...(grid.tree === null
+                ? {}
+                : { detailsOpen: gridDetailsOpen, onToggleDetails: toggleThreadDetails })}
             />
           </WorkspacePageHeader>
           <GridHost
@@ -359,6 +406,8 @@ function GridRoute() {
                     : null
                 }
                 threadDetailsAnchor={focused ? threadDetailsAnchorRef : null}
+                detailsOpen={gridDetailsOpen && focused}
+                onDetailsOpenChange={focused ? closeGridDetails : undefined}
                 onFocus={() => focusThread(grid.id, node.threadId)}
                 onClose={onClose}
                 onArchiveClose={onArchiveClose}

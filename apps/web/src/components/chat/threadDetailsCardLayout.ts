@@ -20,17 +20,22 @@ export function resolveThreadDetailsCardLayout({
   frame,
   overlapsDetailsCard = false,
   topInset = 0,
+  allowOverlap = false,
 }: {
   container: { width: number; height: number };
   lane: { padding: number; minChatWidth: number };
   frame: PreviewMiniPlayerFrame | null;
   overlapsDetailsCard?: boolean;
   topInset?: number;
+  /** A grid pane keeps the card inline even when it leaves no room beside the chat. */
+  allowOverlap?: boolean;
 }) {
   const gap = THREAD_DETAILS_CARD_GAP;
   const width = THREAD_DETAILS_CARD_WIDTH;
   const x = container.width - width - gap;
-  if (x - DETAILS_CARD_CLEARANCE - lane.padding < lane.minChatWidth) return null;
+  const fitsBesideChat =
+    allowOverlap || x - DETAILS_CARD_CLEARANCE - lane.padding >= lane.minChatWidth;
+  if (!fitsBesideChat || x < gap) return null;
   const y = gap + topInset;
   const height =
     overlapsDetailsCard && frame && frame.x + frame.width > x - gap && frame.x < x + width + gap

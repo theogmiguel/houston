@@ -51,4 +51,21 @@ describe("grid persistence", () => {
       ],
     });
   });
+
+  it("keeps the grid's details flag through a reload", () => {
+    const readFlag = () =>
+      parseGrids(
+        (
+          JSON.parse(data.get(GRID_STORAGE_KEY) ?? "null") as {
+            state: { grids: unknown };
+          }
+        ).state.grids,
+      )[0]!.detailsOpen;
+
+    useGridStore.getState().setGridDetailsOpen("g-1", true);
+    expect(readFlag()).toBe(true);
+
+    useGridStore.getState().setGridDetailsOpen("g-1", false);
+    expect(readFlag()).toBeUndefined();
+  });
 });

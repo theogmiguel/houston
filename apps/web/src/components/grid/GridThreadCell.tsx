@@ -47,6 +47,8 @@ export function GridThreadCell({
   onOpenThread,
   rightPanelPortal,
   threadDetailsAnchor,
+  detailsOpen,
+  onDetailsOpenChange,
   dragging = false,
   dropIndicator = null,
   dragHandleProps,
@@ -73,6 +75,9 @@ export function GridThreadCell({
   rightPanelPortal?: RightPanelPortalTarget | null;
   /** The focused cell anchors its popover details card under the top bar control. */
   threadDetailsAnchor?: RefObject<Element | null> | null;
+  /** The grid's one details flag; only the focused cell shows its card. */
+  detailsOpen?: boolean;
+  onDetailsOpenChange?: ((open: boolean) => void) | undefined;
   /** The cell's label is being dragged to another cell. */
   dragging?: boolean;
   /** Where a thread dropped on this cell would land. */
@@ -293,6 +298,8 @@ export function GridThreadCell({
               paneDensity={density}
               rightPanelPortal={rightPanelPortal}
               {...(threadDetailsAnchor ? { detailsCardAnchor: threadDetailsAnchor } : {})}
+              {...(detailsOpen === undefined ? {} : { detailsOpen })}
+              {...(onDetailsOpenChange === undefined ? {} : { onDetailsOpenChange })}
               routeKind="draft"
             />
           ) : (
@@ -303,6 +310,8 @@ export function GridThreadCell({
               paneDensity={density}
               rightPanelPortal={rightPanelPortal}
               {...(threadDetailsAnchor ? { detailsCardAnchor: threadDetailsAnchor } : {})}
+              {...(detailsOpen === undefined ? {} : { detailsOpen })}
+              {...(onDetailsOpenChange === undefined ? {} : { onDetailsOpenChange })}
               routeKind="server"
             />
           )}
