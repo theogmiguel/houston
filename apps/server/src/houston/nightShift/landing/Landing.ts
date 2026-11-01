@@ -29,7 +29,10 @@ import { HoustonBuildSlot } from "../../mergeQueue/BuildSlot.ts";
 import { errorText } from "../../mergeQueue/GitHubQueueClient.ts";
 import { pushWithLease } from "../../mergeQueue/Landing.ts";
 import { GIT_NETWORK_TIMEOUT_MS, git, gitOk } from "../../mergeQueue/Project.ts";
+import { redactSecrets } from "../../mergeQueue/redact.ts";
 import { pushGuard } from "../../mergeQueue/rules.ts";
+import { cutAbsolutePaths, relativeToRoot } from "../../redact.ts";
+import { neutralise } from "../../taskSources/rules.ts";
 import { HoustonMergeVerifier } from "../../mergeQueue/Verifier.ts";
 import { NightShiftGit } from "../Git.ts";
 import { NightShiftBacklog, NightShiftMachine, NightShiftPullRequests } from "../Host.ts";
@@ -217,6 +220,10 @@ const tailBytes = (text: string) => {
     ? text
     : bytes.subarray(bytes.length - OUTPUT_TAIL_BYTES).toString("utf8");
 };
+
+/** Crew text as GitHub gets it: secrets and paths redacted, then nothing mentioned, linked or closed. */
+export const outboundText = (text: string, root: string) =>
+  neutralise(cutAbsolutePaths(relativeToRoot(redactSecrets(text), root)));
 
 const isOpen = (row: LedgerEntry) =>
   row.kind === "pr" && row.pr_number !== null && row.status !== "closed" && row.status !== "merged";
@@ -588,6 +595,8 @@ const make = Effect.gen(function* () {
       });
 
       // The draft pull request: opened once per branch, then updated.
+      const title = outboundText(input.title, root);
+      const body = outboundText(input.body, root);
       const answer = yield* (
         existing === undefined
           ? rest(
@@ -595,20 +604,14 @@ const make = Effect.gen(function* () {
               "houston.nightShift.openPullRequest",
               "POST",
               `repos/${origin.repository}/pulls`,
-              {
-                title: input.title,
-                head: input.branch,
-                base: defaultBranch,
-                body: input.body,
-                draft: true,
-              },
+              { title, head: input.branch, base: defaultBranch, body, draft: true },
             )
           : rest(
               origin.host,
               "houston.nightShift.updatePullRequest",
               "PATCH",
               `repos/${origin.repository}/pulls/${existing.pr_number}`,
-              { title: input.title, body: input.body },
+              { title, body },
             )
       ).pipe(
         Effect.catch((message: string) =>

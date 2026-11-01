@@ -1,6 +1,8 @@
-// @effect-diagnostics globalTimers:off - real pauses while a check process holds the slot.
+// @effect-diagnostics globalTimers:off nodeBuiltinImport:off - real pauses while checks hold the slot.
 // Landing over temporary repositories with a bare origin named github.com, GitHubRest answered
 // in process, the merge queue's real slot and verifier, and recording queue and CI doubles.
+import * as NodePath from "node:path";
+
 import { assert, describe, it } from "@effect/vitest";
 import { ThreadId } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
@@ -118,6 +120,54 @@ describe("night shift landing", () => {
           assert.equal(kindOf(limited), "limit");
           assert.include(messageOf(limited), "30");
           assert.equal(posts(kit).length, 1);
+        }),
+      );
+    }),
+  );
+
+  it.effect("titles and bodies reach github escaped and redacted", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("land-escape");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const seeded = yield* seedRun(kit, "land-escape");
+          const landing = yield* Landing.HoustonNightLanding;
+          const store = yield* Store.HoustonNightShiftStore;
+          const token = `ghp_${"a1".repeat(18)}`;
+          const crewText = {
+            title: "@o/team Fixes #4 like o/r#3",
+            body: [
+              "Thanks @someone. Closes o/r#3 and resolves #4.",
+              `Built in ${seeded.fixture.root}${NodePath.sep}apps${NodePath.sep}ws.ts`,
+              "Copied from C:\\Users\\someone\\notes\\todo.txt and /home/someone/.ssh/id_rsa",
+              `GITHUB_TOKEN=${token}`,
+            ].join("\n"),
+          };
+          const sent = (method: string) =>
+            kit.state.github.requests.find(
+              (request) => request.method === method && /\/pulls(\/\d+)?$/.test(request.path),
+            )!.body as { readonly title: string; readonly body: string };
+          const assertOutbound = (request: { readonly title: string; readonly body: string }) => {
+            const text = `${request.title}\n${request.body}`;
+            for (const quoted of ["`@o/team`", "`#4`", "`o/r#3`", "`@someone`"]) {
+              assert.include(text, quoted);
+            }
+            assert.notMatch(text, /\b(?:fixes|closes|resolves)\b/i);
+            assert.notInclude(text, token);
+            assert.notInclude(text, "someone\\notes");
+            assert.notInclude(text, "/home/someone");
+            assert.notInclude(text, seeded.fixture.root);
+            assert.include(text, `apps${NodePath.sep}ws.ts`);
+          };
+
+          const first = yield* landing.record(recordInput(seeded, crewText));
+          assertOutbound(sent("POST"));
+          const next = commitIn(seeded.worktree.path, "escaped update");
+          yield* landing.record(recordInput(seeded, { ...crewText, head: next }));
+          assertOutbound(sent("PATCH"));
+          // The ledger keeps what the crew wrote; only GitHub's copy is escaped.
+          assert.equal((yield* store.getEntry(first.entry.id))?.title, crewText.title);
         }),
       );
     }),
