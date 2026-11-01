@@ -86,8 +86,8 @@
 9 apps/web/src/components/chat/ProviderSubagentBar.tsx
 32 apps/web/src/components/chat/QueuedRunsControl.tsx
 15 apps/web/src/components/chat/SecretRequestCard.tsx
-6 apps/web/src/components/chat/SideChatPane.tsx
 1 apps/web/src/components/chat/ShellCommandBlock.tsx
+6 apps/web/src/components/chat/SideChatPane.tsx
 2 apps/web/src/components/chat/SkillInlineText.tsx
 42 apps/web/src/components/chat/SnapShotAttachmentDetails.tsx
 4 apps/web/src/components/chat/SubagentParentHeader.tsx
@@ -433,7 +433,8 @@
 30 apps/web/src/components/usage/UsageLimits.tsx
 117 apps/web/src/components/usage/UsageLimitsPooled.tsx
 11 apps/web/src/components/usage/UsageModelDialog.tsx
-222 apps/web/src/components/usage/UsagePage.tsx
+24 apps/web/src/components/usage/UsageModelRow.tsx
+198 apps/web/src/components/usage/UsagePage.tsx
 46 apps/web/src/components/usage/UsagePlanLimits.tsx
 33 apps/web/src/components/usage/UsagePriceOverrides.tsx
 26 apps/web/src/components/usage/UsageProviderChart.tsx
