@@ -89,6 +89,19 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
+/* A theme switch grows the new palette as a circle from the control that
+   triggered it. The attribute scopes these rules to the theme reveal so they
+   never touch the mobile composer transition above. */
+html[data-theme-reveal]::view-transition-group(root) {
+  animation-duration: 0s;
+}
+
+html[data-theme-reveal]::view-transition-old(root),
+html[data-theme-reveal]::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
 :root {
   --app-scrollbar-width: 6px;
   --appearance-contrast-base: 100%;

@@ -156,7 +156,7 @@ export function ThemePreviewCircles({
 }: {
   label: string;
   activeModes: ReadonlyArray<ThemeMode>;
-  onSelectMode: (mode: ThemeMode) => void;
+  onSelectMode: (mode: ThemeMode, source?: Element) => void;
   previews: ThemeCardDefinition["previews"];
 }) {
   return (
@@ -177,7 +177,7 @@ export function ThemePreviewCircles({
                   )}
                   onClick={(event) => {
                     event.stopPropagation();
-                    onSelectMode(mode);
+                    onSelectMode(mode, event.currentTarget);
                   }}
                   type="button"
                 >

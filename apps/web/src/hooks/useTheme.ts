@@ -3,6 +3,7 @@ import type { DesktopBridge } from "@t3tools/contracts";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import * as Schema from "effect/Schema";
 import { useSyncExternalStore } from "react";
+import { revealThemeFromClick, type ThemeRevealSource } from "../themeReveal";
 import {
   applyThemePalette,
   CUSTOM_THEMES_STORAGE_KEY,
@@ -303,7 +304,18 @@ export function syncBrowserChromeTheme() {
   }
 }
 
-function applyTheme(theme: Theme, { suppressTransitions = false, preservePreview = true } = {}) {
+function applyTheme(
+  theme: Theme,
+  {
+    suppressTransitions = false,
+    preservePreview = true,
+    revealOrigin = null,
+  }: {
+    suppressTransitions?: boolean;
+    preservePreview?: boolean;
+    revealOrigin?: ThemeRevealSource | null;
+  } = {},
+) {
   if (typeof document === "undefined" || typeof window === "undefined") return;
   if (preservePreview && document.documentElement.dataset?.themeId === THEME_PREVIEW_ID) {
     return;
@@ -323,27 +335,36 @@ function applyTheme(theme: Theme, { suppressTransitions = false, preservePreview
     return;
   }
 
-  if (suppressTransitions) {
-    document.documentElement.classList.add("no-transitions");
-  }
-  const resolvedAppearance = resolveThemeAppearance(
-    theme,
-    systemDark,
-    followSystem,
-    appearanceMode,
-    themeHalves,
-  );
-  applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
-  document.documentElement.classList.toggle("dark", resolvedAppearance === "dark");
-  lastAppliedTheme = { theme, systemDark, followSystem, appearanceMode, themeHalves };
-  syncBrowserChromeTheme();
-  syncDesktopTheme(theme, followSystem, appearanceMode);
-  if (suppressTransitions) {
-    // Force a reflow so the no-transitions class takes effect before removal
-    void document.documentElement.offsetHeight;
-    requestAnimationFrame(() => {
-      document.documentElement.classList.remove("no-transitions");
-    });
+  // The reveal snapshots the new palette, so colour transitions under it stay unseen.
+  const applyNow = () => {
+    if (suppressTransitions && !revealOrigin) {
+      document.documentElement.classList.add("no-transitions");
+    }
+    const resolvedAppearance = resolveThemeAppearance(
+      theme,
+      systemDark,
+      followSystem,
+      appearanceMode,
+      themeHalves,
+    );
+    applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
+    document.documentElement.classList.toggle("dark", resolvedAppearance === "dark");
+    lastAppliedTheme = { theme, systemDark, followSystem, appearanceMode, themeHalves };
+    syncBrowserChromeTheme();
+    syncDesktopTheme(theme, followSystem, appearanceMode);
+    if (suppressTransitions && !revealOrigin) {
+      // Force a reflow so the no-transitions class takes effect before removal
+      void document.documentElement.offsetHeight;
+      requestAnimationFrame(() => {
+        document.documentElement.classList.remove("no-transitions");
+      });
+    }
+  };
+
+  if (revealOrigin) {
+    revealThemeFromClick(revealOrigin, applyNow);
+  } else {
+    applyNow();
   }
 }
 
@@ -515,7 +536,7 @@ export function useRenderedAppearance() {
   return previewAppearance ?? resolvedTheme;
 }
 
-export function setTheme(next: Theme): boolean {
+export function setTheme(next: Theme, revealOrigin: ThemeRevealSource | null = null): boolean {
   if (typeof window === "undefined") return false;
   try {
     // Save the current mode first; inferring it from the new theme can switch dark to light.
@@ -550,12 +571,15 @@ export function setTheme(next: Theme): boolean {
     });
     return false;
   }
-  applyTheme(next, { suppressTransitions: true });
+  applyTheme(next, { suppressTransitions: true, revealOrigin });
   emitChange();
   return true;
 }
 
-export function setAppearanceMode(nextAppearanceMode: ThemePreferenceMode): boolean {
+export function setAppearanceMode(
+  nextAppearanceMode: ThemePreferenceMode,
+  revealOrigin: ThemeRevealSource | null = null,
+): boolean {
   if (typeof window === "undefined") return false;
   try {
     writeAppearanceModePreference(nextAppearanceMode);
@@ -575,12 +599,16 @@ export function setAppearanceMode(nextAppearanceMode: ThemePreferenceMode): bool
     return false;
   }
   themeStorageReadFailure = null;
-  applyTheme(getStored(), { suppressTransitions: true });
+  applyTheme(getStored(), { suppressTransitions: true, revealOrigin });
   emitChange();
   return true;
 }
 
-function setThemeHalf(appearance: ThemeAppearance, themeId: string | null): boolean {
+function setThemeHalf(
+  appearance: ThemeAppearance,
+  themeId: string | null,
+  revealOrigin: ThemeRevealSource | null = null,
+): boolean {
   if (typeof window === "undefined") return false;
   try {
     const current = readStoredThemeHalvesRaw();
@@ -605,12 +633,12 @@ function setThemeHalf(appearance: ThemeAppearance, themeId: string | null): bool
     });
     return false;
   }
-  applyTheme(getStored(), { suppressTransitions: true });
+  applyTheme(getStored(), { suppressTransitions: true, revealOrigin });
   emitChange();
   return true;
 }
 
-function clearThemeHalves(): boolean {
+function clearThemeHalves(revealOrigin: ThemeRevealSource | null = null): boolean {
   if (typeof window === "undefined") return false;
   try {
     window.localStorage.removeItem(THEME_HALVES_STORAGE_KEY);
@@ -627,7 +655,7 @@ function clearThemeHalves(): boolean {
     });
     return false;
   }
-  applyTheme(getStored(), { suppressTransitions: true });
+  applyTheme(getStored(), { suppressTransitions: true, revealOrigin });
   emitChange();
   return true;
 }
@@ -643,14 +671,17 @@ export function useTheme() {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const { theme, resolvedTheme } = snapshot;
 
-  const setFollowSystem = (nextFollowSystem: boolean): boolean => {
+  const setFollowSystem = (
+    nextFollowSystem: boolean,
+    revealOrigin: ThemeRevealSource | null = null,
+  ): boolean => {
     const currentMode = readAppearanceModePreference(theme);
     const nextMode = nextFollowSystem
       ? "system"
       : currentMode === "system"
         ? (getThemePreferenceMode(theme) ?? "light")
         : currentMode;
-    return setAppearanceMode(nextMode);
+    return setAppearanceMode(nextMode, revealOrigin);
   };
 
   return {
