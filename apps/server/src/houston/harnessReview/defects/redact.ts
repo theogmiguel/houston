@@ -1,5 +1,5 @@
 // Masks secrets in text an agent or a thread wrote before it leaves the server. Ordinary sentences
-// and numbers stay as they are; the path replacements of a defect report come with defects.
+// and numbers stay as they are; a defect's text also loses the project root and the home path.
 import { applyCredentialRules, credentialRules } from "../../redact.ts";
 
 const REDACTED = "<redacted>";
@@ -37,4 +37,29 @@ export function maskSecrets(text: string): string {
     masked = masked.replace(pattern, replace as (substring: string, ...args: unknown[]) => string);
   }
   return applyCredentialRules(masked, CREDENTIALS);
+}
+
+// v1's shorter token prefixes: a defect title quoting a truncated token still loses it.
+const SHORT_TOKENS = /\b(?:ghp_|gho_|ghs_|github_pat_|sk-)[A-Za-z0-9_-]{8,}/g;
+
+/** Both separator spellings of `path`. */
+const spellings = (path: string) =>
+  [...new Set([path, path.replaceAll("\\", "/"), path.replaceAll("/", "\\")])].toSorted(
+    (left, right) => right.length - left.length,
+  );
+
+/** A defect's text: the project root as `<project>`, the home directory as `~`, secrets masked. */
+export function redact(text: string, projectRoot: string | null, home: string | null): string {
+  let out = text;
+  // The project usually sits under home, so it is replaced first.
+  for (const [path, placeholder] of [
+    [projectRoot, "<project>"],
+    [home, "~"],
+  ] as const) {
+    if (path === null || path.trim() === "") continue;
+    for (const spelling of spellings(path.replace(/[\\/]+$/, ""))) {
+      out = out.replaceAll(spelling, placeholder);
+    }
+  }
+  return maskSecrets(out).replace(SHORT_TOKENS, REDACTED);
 }

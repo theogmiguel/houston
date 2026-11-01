@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off - each project gets a real git origin to read.
+// @effect-diagnostics nodeBuiltinImport:off globalDate:off globalDateInEffect:off - real git origins; GitHub's reset time.
 // Issue drafts and filing against an in-process fake of api.github.com that records every request.
 import * as NodeChildProcess from "node:child_process";
 
@@ -108,7 +108,10 @@ describe("drafts", () => {
           assert.include(draft.body, "asked twice with GITHUB_TOKEN=<redacted>");
           assert.notInclude(draft.body, TOKEN);
           assert.include(draft.body, "- message 5425 asked again");
-          assert.include(draft.body, "Reported by an agent thread through `houston_defect_report`.");
+          assert.include(
+            draft.body,
+            "Reported by an agent thread through `houston_defect_report`.",
+          );
           const minute = `${NOW.slice(0, 10)} ${NOW.slice(11, 16)} UTC`;
           assert.include(draft.body, `first seen ${minute}`);
           assert.include(draft.body, `last seen ${minute}`);
@@ -288,10 +291,7 @@ describe("filing", () => {
           // A new issue: one POST, redacted again.
           kit.github.requests.length = 0;
           kit.github.respond = () =>
-            json(
-              { number: 41, html_url: "https://github.com/theogmiguel/houston/issues/41" },
-              201,
-            );
+            json({ number: 41, html_url: "https://github.com/theogmiguel/houston/issues/41" }, 201);
           const filed = yield* service.file({ ...base, repository: "TheogMiguel/Houston" });
           assert.strictEqual(filed.number, 41);
           assert.strictEqual(filed.url, "https://github.com/theogmiguel/houston/issues/41");
@@ -315,7 +315,10 @@ describe("filing", () => {
           const second = yield* report(projectId, "the same question again later");
           kit.github.requests.length = 0;
           kit.github.respond = () =>
-            json({ html_url: "https://github.com/theogmiguel/houston/issues/12#issuecomment-7" }, 201);
+            json(
+              { html_url: "https://github.com/theogmiguel/houston/issues/12#issuecomment-7" },
+              201,
+            );
           const commented = yield* service.file({
             ...base,
             key: second.key,

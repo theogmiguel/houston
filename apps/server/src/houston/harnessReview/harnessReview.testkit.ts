@@ -147,7 +147,9 @@ const layerGitHubFake = (fake: GithubFake) => {
             : undefined,
       };
       fake.requests.push(entry);
-      return Effect.succeed(HttpClientResponse.fromWeb(request, fake.respond(new URL(request.url), entry)));
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(request, fake.respond(new URL(request.url), entry)),
+      );
     }),
   );
   const appSignedOut = Layer.mock(GitHubAppSignIn.GitHubAppSignIn)({
@@ -155,8 +157,10 @@ const layerGitHubFake = (fake: GithubFake) => {
     token: () => Effect.succeedNone,
     invalidate: () => Effect.void,
   });
+  // Only the client and its credential leave the layer; nothing else reaches the fake.
   return GitHubRest.layer.pipe(
-    Layer.provideMerge(Layer.mergeAll(credentials, http, appSignedOut)),
+    Layer.provide(Layer.mergeAll(http, appSignedOut)),
+    Layer.provideMerge(credentials),
     Layer.provideMerge(GitHubQuota.layer),
     Layer.provideMerge(SourceControlRateLimit.layer),
   );

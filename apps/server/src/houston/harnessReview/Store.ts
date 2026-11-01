@@ -2,6 +2,7 @@
 // subscribers see changes in commit order.
 import { ProjectId, ScheduledTaskId, ThreadId } from "@t3tools/contracts";
 import {
+  HOUSTON_DEFECT_LIMITS,
   HoustonHarnessError,
   type HoustonHarnessDecisionState,
   type HoustonHarnessReview,
@@ -82,6 +83,39 @@ export interface VerificationRow {
   readonly verdict: StoredVerdict;
   readonly sessions_after: number;
   readonly evidence_json: string;
+}
+
+export interface DefectRow {
+  readonly project_id: string;
+  readonly key: string;
+  readonly source: "agent" | "detector";
+  readonly detector: string | null;
+  readonly title: string;
+  readonly description: string;
+  readonly evidence_json: string;
+  readonly destination: "houston" | "project";
+  readonly reporter_thread_id: string | null;
+  readonly first_seen_at: string;
+  readonly last_seen_at: string;
+  readonly count: number;
+  readonly issue_url: string | null;
+}
+
+export interface DefectWrite {
+  readonly projectId: ProjectId;
+  readonly key: string;
+  readonly title: string;
+  readonly description: string;
+  readonly evidence: ReadonlyArray<string>;
+  readonly destination: "houston" | "project";
+  readonly threadId: string | null;
+  readonly at: string;
+}
+
+export interface DefectNotice {
+  readonly projectId: ProjectId;
+  readonly count: number;
+  readonly title: string;
 }
 
 export interface SettingsRow {
@@ -218,12 +252,25 @@ export class HoustonHarnessStore extends Context.Service<
     /** Projects with a review, settings or a defect. */
     readonly projects: Effect.Effect<ReadonlyArray<ProjectId>>;
     readonly projectRemoved: (projectId: ProjectId) => Effect.Effect<void>;
+    /** One more occurrence, or a new row; a full project drops its oldest decided defect first. */
+    readonly recordDefect: (
+      input: DefectWrite,
+      merge: (stored: ReadonlyArray<string>) => ReadonlyArray<string>,
+    ) => Effect.Effect<{ readonly count: number }, HoustonHarnessError>;
+    /** Newest report first. */
+    readonly defectRows: (projectId: ProjectId) => Effect.Effect<ReadonlyArray<DefectRow>>;
+    /** Stores the issue a defect was filed as and resolves it, by `filed`. */
+    readonly defectFiled: (projectId: ProjectId, key: string, url: string) => Effect.Effect<void>;
+    /** Records `day` as the project's notice day; false when it was already that day. */
+    readonly claimNoticeDay: (projectId: ProjectId, day: string) => Effect.Effect<boolean>;
     readonly changes: PubSub.PubSub<ProjectId>;
+    readonly notices: PubSub.PubSub<DefectNotice>;
   }
 >()("houston/houston/harnessReview/Store/HoustonHarnessStore") {}
 
 const nowIso = DateTime.now.pipe(Effect.map((now) => DateTime.formatIso(now)));
 const toJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+const textList = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(Schema.String)));
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -540,7 +587,107 @@ const make = Effect.gen(function* () {
     yield* touched(projectId);
   });
 
+  const notices = yield* PubSub.unbounded<DefectNotice>();
+
+  const recordDefect: HoustonHarnessStore["Service"]["recordDefect"] = Effect.fn(
+    "HoustonHarnessStore.recordDefect",
+  )(function* (input, merge) {
+    const limit = HOUSTON_DEFECT_LIMITS.perProject;
+    const count = yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const [existing] = yield* sql<{ evidence_json: string; count: number }>`
+            SELECT evidence_json, count FROM houston_defects
+            WHERE project_id = ${input.projectId} AND key = ${input.key}`;
+          if (existing !== undefined) {
+            const evidence = merge(textList(existing.evidence_json));
+            yield* sql`
+              UPDATE houston_defects SET count = count + 1, last_seen_at = ${input.at},
+                evidence_json = ${toJson(evidence)},
+                description = CASE WHEN ${input.description} = '' THEN description
+                  ELSE ${input.description} END,
+                reporter_thread_id = COALESCE(${input.threadId}, reporter_thread_id)
+              WHERE project_id = ${input.projectId} AND key = ${input.key}`;
+            return existing.count + 1;
+          }
+          const [held] = yield* sql<{ n: number }>`
+            SELECT COUNT(*) AS n FROM houston_defects WHERE project_id = ${input.projectId}`;
+          if ((held?.n ?? 0) >= limit) {
+            const [oldest] = yield* sql<{ key: string }>`
+              SELECT d.key FROM houston_defects d
+              JOIN houston_harness_decisions h ON h.project_id = d.project_id AND h.key = d.key
+              WHERE d.project_id = ${input.projectId} AND h.state != 'open'
+              ORDER BY h.decided_at ASC, d.key ASC LIMIT 1`;
+            if (oldest === undefined) {
+              return yield* new HoustonHarnessError({
+                kind: "limit",
+                operation: "houston_defect_report",
+                message: `the project holds ${held?.n ?? 0} defects and its limit is ${limit}; decide one before reporting more`,
+                limit,
+                actual: held?.n ?? 0,
+              });
+            }
+            yield* sql`DELETE FROM houston_defects
+              WHERE project_id = ${input.projectId} AND key = ${oldest.key}`;
+          }
+          yield* sql`
+            INSERT INTO houston_defects (project_id, key, source, detector, title, description,
+              evidence_json, destination, reporter_thread_id, first_seen_at, last_seen_at, count)
+            VALUES (${input.projectId}, ${input.key}, 'agent', NULL, ${input.title},
+              ${input.description}, ${toJson(merge([]))}, ${input.destination}, ${input.threadId},
+              ${input.at}, ${input.at}, 1)`;
+          return 1;
+        }),
+      )
+      .pipe(Effect.catchTags({ SqlError: (error) => Effect.die(error) }));
+    yield* touched(input.projectId);
+    return { count };
+  });
+
+  const defectRows: HoustonHarnessStore["Service"]["defectRows"] = (projectId) =>
+    sql<DefectRow>`SELECT * FROM houston_defects WHERE project_id = ${projectId}
+      ORDER BY last_seen_at DESC, key`.pipe(Effect.orDie);
+
+  const defectFiled: HoustonHarnessStore["Service"]["defectFiled"] = Effect.fn(
+    "HoustonHarnessStore.defectFiled",
+  )(function* (projectId, key, url) {
+    const at = yield* nowIso;
+    yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* sql`UPDATE houston_defects SET issue_url = ${url}
+            WHERE project_id = ${projectId} AND key = ${key}`;
+          yield* sql`
+            INSERT INTO houston_harness_decisions (project_id, key, state, decided_at, decided_by)
+            VALUES (${projectId}, ${key}, 'resolved', ${at}, 'filed')
+            ON CONFLICT (project_id, key) DO UPDATE SET
+              state = excluded.state, decided_at = excluded.decided_at, decided_by = excluded.decided_by`;
+        }),
+      )
+      .pipe(Effect.orDie);
+    yield* touched(projectId);
+  });
+
+  const claimNoticeDay: HoustonHarnessStore["Service"]["claimNoticeDay"] = Effect.fn(
+    "HoustonHarnessStore.claimNoticeDay",
+  )(function* (projectId, day) {
+    const at = yield* nowIso;
+    const rows = yield* sql<{ project_id: string }>`
+      INSERT INTO houston_harness_settings (project_id, defect_notice_day, updated_at)
+      VALUES (${projectId}, ${day}, ${at})
+      ON CONFLICT (project_id) DO UPDATE SET
+        defect_notice_day = excluded.defect_notice_day, updated_at = excluded.updated_at
+        WHERE houston_harness_settings.defect_notice_day IS NOT excluded.defect_notice_day
+      RETURNING project_id`.pipe(Effect.orDie);
+    return rows.length > 0;
+  });
+
   return HoustonHarnessStore.of({
+    recordDefect,
+    defectRows,
+    defectFiled,
+    claimNoticeDay,
+    notices,
     openReview,
     markRunning,
     recordCorrection,

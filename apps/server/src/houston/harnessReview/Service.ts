@@ -4,11 +4,18 @@ import type { ProjectId, ScheduledTask, ScheduledTaskId } from "@t3tools/contrac
 import {
   HOUSTON_HARNESS_LIMITS,
   HoustonHarnessError,
+  type HoustonDefectDecideInput,
+  type HoustonDefectDraftInput,
+  type HoustonDefectFileInput,
+  type HoustonDefectFileResult,
+  type HoustonDefectIssueDraft,
   type HoustonHarnessCreateTaskInput,
   type HoustonHarnessCreateTaskResult,
   type HoustonHarnessDecideInput,
   type HoustonHarnessEmptyResult,
   type HoustonHarnessFinding,
+  type HoustonHarnessImportResult,
+  type HoustonHarnessImportStatus,
   type HoustonHarnessMarkSeenInput,
   type HoustonHarnessMarkSeenResult,
   type HoustonHarnessOverview,
@@ -48,6 +55,8 @@ import {
   isLiveFix,
   layer as HoustonHarnessFixTasksLayer,
 } from "./FixTasks.ts";
+import * as HoustonDefects from "./defects/Defects.ts";
+import * as HoustonDefectIssues from "./defects/Issues.ts";
 import { HoustonHarnessRunner } from "./Runner.ts";
 import { HoustonScheduledTaskRunner } from "./ScheduledTaskRunner.ts";
 import {
@@ -64,6 +73,7 @@ import {
   type StoredReview,
   type VerificationRow,
 } from "./Store.ts";
+import * as HoustonHarnessV1Import from "./V1Import.ts";
 
 export const SET_UP_FIRST = "set up the harness review first";
 const TASK_PROMPT =
@@ -138,6 +148,17 @@ export class HoustonHarnessService extends Context.Service<
     readonly createTask: (
       input: HoustonHarnessCreateTaskInput,
     ) => Effect.Effect<HoustonHarnessCreateTaskResult, HoustonHarnessError>;
+    readonly defectsDecide: (
+      input: HoustonDefectDecideInput,
+    ) => Effect.Effect<HoustonHarnessEmptyResult, HoustonHarnessError>;
+    readonly defectsDraft: (
+      input: HoustonDefectDraftInput,
+    ) => Effect.Effect<HoustonDefectIssueDraft, HoustonHarnessError>;
+    readonly defectsFile: (
+      input: HoustonDefectFileInput,
+    ) => Effect.Effect<HoustonDefectFileResult, HoustonHarnessError>;
+    readonly importV1Status: Effect.Effect<HoustonHarnessImportStatus>;
+    readonly importV1Run: Effect.Effect<HoustonHarnessImportResult, HoustonHarnessError>;
   }
 >()("houston/houston/harnessReview/Service/HoustonHarnessService") {}
 
@@ -153,6 +174,9 @@ const make = Effect.gen(function* () {
   const tasks = yield* HoustonTaskService.HoustonTaskService;
   const taskStore = yield* HoustonTaskStore.HoustonTaskStore;
   const sql = yield* SqlClient.SqlClient;
+  const defects = yield* HoustonDefects.HoustonDefects;
+  const issues = yield* HoustonDefectIssues.HoustonDefectIssues;
+  const v1Import = yield* HoustonHarnessV1Import.HoustonHarnessV1Import;
 
   const projectOf = (operation: string, projectId: ProjectId) =>
     projects.get(projectId).pipe(
@@ -292,7 +316,7 @@ const make = Effect.gen(function* () {
       reviews: reviews.map(publicReview),
       runningReviewId: running?.id ?? null,
       findings: yield* findingsOf(projectId),
-      defects: [],
+      defects: yield* defects.list(projectId),
       seenReviewId: settings?.seenReviewId ?? 0,
     } satisfies HoustonHarnessSnapshot;
   });
@@ -328,18 +352,21 @@ const make = Effect.gen(function* () {
     for (const projectId of yield* store.projects) {
       const findings = yield* findingsOf(projectId);
       const latest = yield* store.latestPublishedReviewId(projectId);
+      const projectDefects = yield* defects.list(projectId);
+      const undecided = projectDefects.filter((defect) => defect.state === "open").length;
       const settings = yield* store.settings(projectId);
       const seenReviewId = settings?.seenReviewId ?? 0;
       const count = (phase: HoustonHarnessFinding["phase"]) =>
         findings.filter((finding) => finding.phase === phase).length;
-      const attention = findings.filter(
-        (finding) =>
-          (finding.phase === "open" ||
-            finding.phase === "notSeen" ||
-            finding.phase === "awaitingVerification") &&
-          finding.lastSeenReviewId > seenReviewId,
-      ).length;
-      if (findings.length === 0 && latest === 0) continue;
+      const attention =
+        findings.filter(
+          (finding) =>
+            (finding.phase === "open" ||
+              finding.phase === "notSeen" ||
+              finding.phase === "awaitingVerification") &&
+            finding.lastSeenReviewId > seenReviewId,
+        ).length + undecided;
+      if (findings.length === 0 && latest === 0 && projectDefects.length === 0) continue;
       rows.push({
         projectId,
         open: count("open"),
@@ -348,7 +375,7 @@ const make = Effect.gen(function* () {
         notSeen: count("notSeen"),
         resolved: count("resolved"),
         dismissed: count("dismissed"),
-        suspectedDefects: 0,
+        suspectedDefects: undecided,
         latestPublishedReviewId: latest === 0 ? null : latest,
         seenReviewId,
         attention,
@@ -376,13 +403,26 @@ const make = Effect.gen(function* () {
     Stream.unwrap(
       Effect.gen(function* () {
         const subscription = yield* PubSub.subscribe(store.changes);
-        return Stream.concat(
+        const notices = yield* PubSub.subscribe(store.notices);
+        const overviews = Stream.concat(
           Stream.fromEffect(overview(input)),
           Stream.fromSubscription(subscription).pipe(Stream.mapEffect(() => overview(input))),
+        ).pipe(
+          Stream.map((value): HoustonHarnessOverviewEvent => ({
+            type: "overview",
+            overview: value,
+          })),
+        );
+        return Stream.merge(
+          overviews,
+          Stream.fromSubscription(notices).pipe(
+            Stream.map((notice): HoustonHarnessOverviewEvent => ({
+              type: "defectNotice",
+              ...notice,
+            })),
+          ),
         );
       }),
-    ).pipe(
-      Stream.map((value): HoustonHarnessOverviewEvent => ({ type: "overview", overview: value })),
     );
 
   const setup: HoustonHarnessService["Service"]["setup"] = Effect.fn("HoustonHarnessService.setup")(
@@ -654,7 +694,15 @@ const make = Effect.gen(function* () {
     );
   });
 
+  const defectsDecide: HoustonHarnessService["Service"]["defectsDecide"] = (input) =>
+    defects.decide(input).pipe(Effect.as({}));
+
   return HoustonHarnessService.of({
+    defectsDecide,
+    defectsDraft: issues.draft,
+    defectsFile: issues.file,
+    importV1Status: v1Import.status,
+    importV1Run: v1Import.run,
     get,
     subscribe,
     overview,
@@ -670,4 +718,6 @@ const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(HoustonHarnessService, make).pipe(
   Layer.provideMerge(HoustonHarnessFixTasksLayer),
+  Layer.provideMerge(Layer.merge(HoustonDefectIssues.layer, HoustonHarnessV1Import.layer)),
+  Layer.provideMerge(HoustonDefects.layer),
 );

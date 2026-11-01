@@ -66,6 +66,8 @@ import {
 } from "./toolkits/device/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
+import * as HoustonDefectHandlers from "../houston/harnessReview/toolkit/handlers.ts";
+import { HoustonDefectToolkit } from "../houston/harnessReview/toolkit/tools.ts";
 import * as HoustonTaskHandlers from "../houston/tasks/toolkit/handlers.ts";
 import { HoustonTaskToolkit } from "../houston/tasks/toolkit/tools.ts";
 
@@ -1025,6 +1027,12 @@ export const layerHoustonTaskToolkit = toolkitRegistration(
   HoustonTaskHandlers.layer,
 );
 
+// Houston: suspected defects agents report; stored in the caller's project, never sent.
+export const layerHoustonDefectToolkit = toolkitRegistration(
+  HoustonDefectToolkit,
+  HoustonDefectHandlers.layer,
+);
+
 export const layerMcpTransport = McpServer.layerHttp({
   name: "Houston",
   version: packageJson.version,
@@ -1047,6 +1055,7 @@ export const layerTools = Layer.mergeAll(
   layerDeviceToolkit,
   layerHtmlToolkit,
   layerHoustonTaskToolkit,
+  layerHoustonDefectToolkit,
 );
 
 export const layer = layerTools.pipe(Layer.provideMerge(layerMcpTransport));

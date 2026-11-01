@@ -5,13 +5,16 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import { ThreadId, type ProjectId } from "@t3tools/contracts";
+import { ProjectId, ThreadId } from "@t3tools/contracts";
 import type { HoustonHarnessOverviewEvent } from "@t3tools/contracts/houston/harnessReview";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
+import * as PubSub from "effect/PubSub";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
@@ -19,6 +22,7 @@ import { TestClock } from "effect/testing";
 import {
   HoustonDefects,
   HoustonHarnessService,
+  HoustonHarnessStore,
   createProject,
   makeKit,
   runKit,
@@ -92,7 +96,8 @@ describe("agent reports", () => {
             yield* TestClock.adjust("1 minute");
             const again = yield* report(projectId, "a broken thing", {
               description: "second description",
-              evidence: ["e2", "e3", ...Array.from({ length: 12 }, (_, index) => `x${index}`)],
+              // Ten items, one a repeat: the union of eleven is capped at ten.
+              evidence: ["e2", "e3", ...Array.from({ length: 8 }, (_, index) => `x${index}`)],
             });
             assert.strictEqual(again.key, first.key);
             assert.strictEqual(again.count, 2);
@@ -163,9 +168,7 @@ describe("agent reports", () => {
               keys.push((yield* report(projectId, `defect number ${index}`)).key);
             }
             const store = yield* defects;
-            const refused = failureOf(
-              yield* Effect.exit(report(projectId, "one defect too many")),
-            );
+            const refused = failureOf(yield* Effect.exit(report(projectId, "one defect too many")));
             assert.strictEqual(refused.kind, "limit");
             assert.strictEqual(
               refused.message,
@@ -253,38 +256,49 @@ describe("the daily notice", () => {
         const fs = yield* FileSystem.FileSystem;
         const dir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-defect-notice-" });
         const databaseFile = NodePath.join(dir, "state.sqlite");
+        const SENTINEL = "notice-barrier";
         const notices = (events: ReadonlyArray<HoustonHarnessOverviewEvent>) =>
           events.filter((event) => event.type === "defectNotice");
+        /** Collects the subscription's events; resolves once its first overview arrives. */
         const listen = Effect.gen(function* () {
+          const queue = yield* Queue.unbounded<HoustonHarnessOverviewEvent>();
           const events = yield* Ref.make<ReadonlyArray<HoustonHarnessOverviewEvent>>([]);
-          const harness = yield* service;
-          yield* harness
-            .subscribeOverview({})
-            .pipe(
-              Stream.runForEach((event) => Ref.update(events, (all) => [...all, event])),
-              Effect.forkScoped,
-            );
-          // The first event is the overview itself.
-          for (let round = 0; round < 50; round += 1) {
-            if ((yield* Ref.get(events)).length > 0) break;
-            yield* Effect.yieldNow;
-          }
-          return events;
+          yield* (yield* service).subscribeOverview({}).pipe(
+            Stream.runForEach((event) => Queue.offer(queue, event)),
+            Effect.forkScoped,
+          );
+          const first = yield* Queue.take(queue);
+          assert.strictEqual(first.type, "overview");
+          return { queue, events };
         });
-        const drain = Effect.gen(function* () {
-          for (let round = 0; round < 50; round += 1) yield* Effect.yieldNow;
-        });
+        // Notices are FIFO: once a barrier published after a report arrives, every notice that
+        // report sent has arrived before it.
+        const drain = (listener: Effect.Success<typeof listen>) =>
+          Effect.gen(function* () {
+            const store = yield* HoustonHarnessStore.HoustonHarnessStore;
+            yield* PubSub.publish(store.notices, {
+              projectId: ProjectId.make(SENTINEL),
+              count: 1,
+              title: SENTINEL,
+            });
+            while (true) {
+              const event = yield* Queue.take(listener.queue);
+              if (event.type === "defectNotice" && event.projectId === SENTINEL) break;
+              yield* Ref.update(listener.events, (all) => [...all, event]);
+            }
+          });
 
         const first = yield* makeKit("defect-notice", { reactor: false, databaseFile });
         const projectId = yield* runKit(
           first,
           Effect.gen(function* () {
             const { projectId } = yield* createProject("defect-notice");
-            const events = yield* listen;
+            const listener = yield* listen;
+            const events = listener.events;
             yield* report(projectId, "first defect today");
-            yield* drain;
+            yield* drain(listener);
             yield* report(projectId, "second defect today");
-            yield* drain;
+            yield* drain(listener);
             const sent = notices(yield* Ref.get(events));
             assert.deepEqual(sent, [
               { type: "defectNotice", projectId, count: 1, title: "first defect today" },
@@ -296,7 +310,7 @@ describe("the daily notice", () => {
 
             yield* TestClock.adjust("1 day");
             yield* report(projectId, "a defect the next day");
-            yield* drain;
+            yield* drain(listener);
             const nextDay = notices(yield* Ref.get(events));
             assert.lengthOf(nextDay, 2);
             assert.deepInclude(nextDay[1], {
@@ -316,13 +330,13 @@ describe("the daily notice", () => {
           restarted,
           Effect.gen(function* () {
             // The same UTC day as the last notice: the stored day holds it back.
-            const events = yield* listen;
+            const listener = yield* listen;
             yield* report(projectId, "after the restart");
-            yield* drain;
-            assert.lengthOf(notices(yield* Ref.get(events)), 0);
+            yield* drain(listener);
+            assert.lengthOf(notices(yield* Ref.get(listener.events)), 0);
           }),
         );
-      }).pipe(Effect.scoped),
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
     TIMEOUT,
   );
 });

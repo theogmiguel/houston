@@ -577,8 +577,10 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
   Layer.effectDiscard(HoustonTaskProjectSweep.sweep),
   Layer.effectDiscard(HoustonTaskSourceStore.sweep),
-  // The harness review service and its one reactor, over the orchestration runtime below.
+  // The harness review service and its one reactor, over the orchestration runtime below; defect
+  // issues use the GitHub client the merge queue and task sources share.
   layerHarnessReview.pipe(
+    Layer.provide(GitHubRest.layerWithDependencies),
     Layer.provide(HoustonHarnessRunner.layer),
     Layer.provide(ProjectionStoreV2.layer),
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
