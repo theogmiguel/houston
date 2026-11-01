@@ -348,7 +348,7 @@ workspace:
   on any remote, and the panes working inside the worktree. A check that could not look
   says why; a worktree with uncommitted changes needs **Force remove**. A new worktree
   receives the ignored files listed in `.worktreeinclude` and has its declared submodules
-  initialised (see [orchestration](orchestration.md)). "Add as workspace" turns a
+  initialised. "Add as workspace" turns a
   worktree into a workspace you can open panes in.
 - **Checkpoints** captures the working tree and staging area as a snapshot you can come
   back to. Inspect shows what a checkpoint would change; Restore replaces the current
@@ -358,8 +358,7 @@ workspace:
 
 ### Cleaning up worktrees
 
-Worktrees Houston created — from this dialog, or for an agent through `pane_spawn`'s
-`worktree` — are listed under **Created by Houston** with their size and what, if
+Worktrees Houston created — from this dialog, or for an agent's delegated work — are listed under **Created by Houston** with their size and what, if
 anything, keeps each one. A worktree you made yourself is never removed by Houston.
 
 One can go when it is still on the branch Houston created it with, its work is done, it

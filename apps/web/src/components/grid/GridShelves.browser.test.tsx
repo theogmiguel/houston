@@ -37,7 +37,44 @@ describe("GridShelves", () => {
     expect(screen.container.querySelectorAll('[data-testid="shelf-card"]')).toHaveLength(0);
   });
 
-  it("expands each shelf in place to its thread cards", async () => {
+  it("marks each shelf with its archive icon and opens its list above the row", async () => {
+    localStorage.clear();
+    await using screen = await render(
+      <GridShelves
+        held={held}
+        closed={closed}
+        renderCard={(thread) => <span data-testid="shelf-card">{thread.title}</span>}
+      />,
+      { router: false },
+    );
+
+    const onHold = screen.container.querySelector('[data-testid="grid-snoozed-shelf-toggle"]');
+    const closedRow = screen.container.querySelector('[data-testid="grid-settled-shelf-toggle"]');
+    expect(onHold?.querySelector('[data-shelf-icon="snoozed"]')).not.toBeNull();
+    expect(closedRow?.querySelector('[data-shelf-icon="settled"]')).not.toBeNull();
+
+    await userEvent.click(onHold as HTMLElement);
+    const onHoldList = screen.container.querySelector('[data-testid="grid-snoozed-shelf-list"]');
+    const onHoldRow = screen.container.querySelector('[data-testid="grid-snoozed-shelf-toggle"]');
+    expect(onHoldList).not.toBeNull();
+    expect(
+      Boolean(onHoldList!.compareDocumentPosition(onHoldRow!) & Node.DOCUMENT_POSITION_FOLLOWING),
+    ).toBe(true);
+
+    await userEvent.click(closedRow as HTMLElement);
+    const closedList = screen.container.querySelector('[data-testid="grid-settled-shelf-list"]');
+    const closedRowAfter = screen.container.querySelector(
+      '[data-testid="grid-settled-shelf-toggle"]',
+    );
+    expect(closedList).not.toBeNull();
+    expect(
+      Boolean(
+        closedList!.compareDocumentPosition(closedRowAfter!) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ).toBe(true);
+  });
+
+  it("expands each shelf to its thread cards", async () => {
     localStorage.clear();
     await using screen = await render(
       <GridShelves

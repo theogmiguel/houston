@@ -6,6 +6,7 @@ import {
   type HoustonHarnessFindingPhase,
   type HoustonHarnessReviewStatus,
 } from "@t3tools/contracts/houston/harnessReview";
+import { HOUSTON_TASK_LIMITS } from "@t3tools/contracts/houston/tasks";
 
 export const DAY_MS = 86_400_000;
 /** A fortnight the first time, then from the previous review's end: never under a week (too few
@@ -480,6 +481,75 @@ export function findingPhase(input: PhaseInput): {
       : "open";
   })();
   return { phase, quotes };
+}
+
+/** Whether `key` has a finding key's shape: lowercase kebab-case of at most 80 characters. */
+export const isFindingKey = (value: string) => KEY.test(value);
+
+export interface FixTaskText {
+  readonly title: string;
+  readonly description: string;
+  readonly acceptance: string;
+}
+
+export interface FixTaskRefusal {
+  readonly message: string;
+  readonly limit: number;
+  readonly actual: number;
+}
+
+const grouped = (value: number) => value.toLocaleString("en-US");
+
+/** The fix task a finding becomes; refused when a field would exceed a Tasks limit. */
+export function fixTaskText(input: {
+  readonly key: string;
+  readonly reviewId: number;
+  readonly title: string;
+  readonly recommendation: string;
+  readonly target: string;
+  readonly applyPrompt: string;
+  /** The key of the finding's newest earlier fix task, such as HOU-7. */
+  readonly previousTask: string | null;
+}): { readonly ok: true; readonly value: FixTaskText } | ({ readonly ok: false } & FixTaskRefusal) {
+  const title = `Harness: ${input.title}`.trim();
+  const description = [
+    `Finding: ${input.key}`,
+    `Review: #${input.reviewId}`,
+    ...(input.previousTask === null ? [] : [`Previous fix task: ${input.previousTask}`]),
+    `Recommendation: ${input.recommendation}`,
+    `Target: ${input.target}`,
+    `Apply prompt: ${input.applyPrompt}`,
+  ].join("\n");
+  const acceptance =
+    `${input.target} contains the recommended change for finding ${input.key}.`.trim();
+  const over = (what: string, actual: number, limit: number, unit: string) => ({
+    ok: false as const,
+    message: `the fix task's ${what} would be ${grouped(actual)} ${unit}, over the Tasks limit of ${grouped(limit)} ${unit}`,
+    limit,
+    actual,
+  });
+  const titleChars = Array.from(title).length;
+  if (titleChars > HOUSTON_TASK_LIMITS.titleChars) {
+    return over("title", titleChars, HOUSTON_TASK_LIMITS.titleChars, "characters");
+  }
+  const descriptionBytes = Buffer.byteLength(description, "utf8");
+  if (descriptionBytes > HOUSTON_TASK_LIMITS.descriptionBytes) {
+    return over("description", descriptionBytes, HOUSTON_TASK_LIMITS.descriptionBytes, "bytes");
+  }
+  const acceptanceChars = Array.from(acceptance).length;
+  if (acceptanceChars > HOUSTON_TASK_LIMITS.titleChars) {
+    return over("acceptance item", acceptanceChars, HOUSTON_TASK_LIMITS.titleChars, "characters");
+  }
+  return { ok: true, value: { title, description, acceptance } };
+}
+
+/** The comment a verdict leaves on its fix task; an inconclusive verdict leaves none. */
+export function verdictComment(reviewId: number, key: string, verdict: StoredVerdict) {
+  if (verdict === "gone") return `Harness review ${reviewId} verified finding ${key} as gone.`;
+  if (verdict === "still_present") {
+    return `Harness review ${reviewId} found finding ${key} still present; evidence is available in Review.`;
+  }
+  return null;
 }
 
 /** The seen cursor after marking `requested`: never past the latest published review, never back. */

@@ -6,6 +6,8 @@ import { execFile } from "node:child_process";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import { gitSpawnEnv } from "../../vcs/VcsProcess.ts";
+
 export class HoustonTaskGitError extends Schema.TaggedError<HoustonTaskGitError>()(
   "HoustonTaskGitError",
   { cwd: Schema.String, args: Schema.Array(Schema.String), detail: Schema.String },
@@ -21,7 +23,13 @@ export const git = (cwd: string, args: ReadonlyArray<string>) =>
     execFile(
       "git",
       ["-c", "core.autocrlf=false", ...args],
-      { cwd, maxBuffer: 16 * 1024 * 1024, windowsHide: true },
+      {
+        cwd,
+        maxBuffer: 16 * 1024 * 1024,
+        windowsHide: true,
+        // oxlint-disable-next-line t3code/no-global-process-runtime -- TaskGit runs outside the Effect runtime.
+        env: gitSpawnEnv(process.env, process.platform),
+      },
       (error, stdout, stderr) => {
         resume(
           error === null

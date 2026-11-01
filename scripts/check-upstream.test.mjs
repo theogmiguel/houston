@@ -60,8 +60,8 @@ test("check-upstream accepts an untouched copy", async () => {
 test("check-upstream accepts houston/ folders as Houston-owned and skips node_modules", async () => {
   const repoFiles = {
     ...fixtureRepo(),
-    "packages/contracts/src/houston/terminalFrames.ts": "export {};\n",
-    "packages/contracts/src/houston/terminalFrames.test.ts": "import './terminalFrames.ts';\n",
+    "packages/contracts/src/houston/providerReadiness.ts": "export {};\n",
+    "packages/contracts/src/houston/providerReadiness.test.ts": "import './providerReadiness.ts';\n",
     "packages/contracts/node_modules/.package-lock.json": "{}\n",
   };
   const { dir, repo, upstream } = await makeFixture(repoFiles, fixtureRepo());

@@ -10,7 +10,7 @@ import * as Layer from "effect/Layer";
 
 import * as ProcessRunner from "../processRunner.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
-import { explicitBareRepositoryEnv } from "../vcs/VcsProcess.ts";
+import { gitSpawnEnv } from "../vcs/VcsProcess.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 const DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY = 512;
@@ -138,7 +138,7 @@ class RepositoryIdentityCacheKey extends Data.Class<{
 const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.resolveCacheKey")(
   function* (cwd: string) {
     const processRunner = yield* ProcessRunner.ProcessRunner;
-    const env = explicitBareRepositoryEnv(process.env, yield* HostProcess.Platform);
+    const env = gitSpawnEnv(process.env, yield* HostProcess.Platform);
 
     // git is always a real executable; cmd shell mode would split spaced paths on re-tokenization.
     const topLevelResult = yield* processRunner
@@ -201,7 +201,7 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
     .run({
       command: "git",
       args: ["-C", cacheKey.rootPath, ...(cacheKey.isBare ? ["--git-dir=."] : []), "remote", "-v"],
-      env: explicitBareRepositoryEnv(process.env, yield* HostProcess.Platform),
+      env: gitSpawnEnv(process.env, yield* HostProcess.Platform),
       timeoutBehavior: "timedOutResult",
     })
     .pipe(Effect.option);

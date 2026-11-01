@@ -23,6 +23,7 @@ mod system;
 mod test_home;
 mod transfer_open;
 mod tray;
+mod v1_cleanup;
 mod v2_server;
 mod v2_ssh;
 mod window;
@@ -297,6 +298,15 @@ fn main() {
         channel_label, target_channel_label,
         "a read site (paths::channel()) disagreed with the resolved owning channel -- the \
          env sync above is supposed to make this impossible"
+    );
+
+    v1_cleanup::start(
+        &v1_cleanup::HOST_START,
+        v1_cleanup::Target::from_env(
+            &crate::sys::host_env::HostEnv::capture(),
+            &home,
+            owning_channel.as_deref(),
+        ),
     );
 
     let tokio_runtime: &'static tokio::runtime::Runtime =

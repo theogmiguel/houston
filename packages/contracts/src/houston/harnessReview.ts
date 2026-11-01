@@ -10,6 +10,7 @@ import {
 } from "../baseSchemas.ts";
 import { ModelSelection } from "../modelSelection.ts";
 import { ScheduledTaskRunStatus, ScheduledTaskSchedule } from "../scheduledTask.ts";
+import { HoustonTaskSummary } from "./tasks.ts";
 
 /** The bounds a review and its answer are checked against; a refusal names the bound. */
 export const HOUSTON_HARNESS_LIMITS = {
@@ -266,6 +267,17 @@ export type HoustonHarnessMarkSeenInput = typeof HoustonHarnessMarkSeenInput.Typ
 
 export const HoustonHarnessMarkSeenResult = Schema.Struct({ seenReviewId: NonNegativeInt });
 export type HoustonHarnessMarkSeenResult = typeof HoustonHarnessMarkSeenResult.Type;
+
+export const HoustonHarnessCreateTaskInput = Schema.Struct({
+  projectId: ProjectId,
+  key: Schema.String.check(Schema.isMaxLength(200)),
+  /** Replaces the finding's apply prompt in the task description. */
+  applyPrompt: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(65_536))),
+});
+export type HoustonHarnessCreateTaskInput = typeof HoustonHarnessCreateTaskInput.Type;
+
+export const HoustonHarnessCreateTaskResult = Schema.Struct({ task: HoustonTaskSummary });
+export type HoustonHarnessCreateTaskResult = typeof HoustonHarnessCreateTaskResult.Type;
 
 export const HoustonHarnessEmptyResult = Schema.Struct({});
 export type HoustonHarnessEmptyResult = typeof HoustonHarnessEmptyResult.Type;

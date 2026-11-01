@@ -106,6 +106,7 @@ import {
   MenuSubTrigger,
   MenuTrigger,
 } from "../ui/menu";
+import { Separator } from "../ui/separator";
 import { SidebarContent, SidebarHeader, useSidebarVisibility } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -665,73 +666,73 @@ export function GridSidebar() {
               );
             })}
           </div>
-          <div className="mt-auto flex flex-col gap-px pt-2">
-            <GridShelves
-              held={shelves.held}
-              closed={shelves.closed}
-              closedDropTarget={dropTarget === "shelf:closed"}
-              onClosedDragOver={(event) => {
-                if (readDragged(event) === null) return;
-                event.preventDefault();
-                setDropTarget("shelf:closed");
-              }}
-              onClosedDragLeave={() => {
-                if (dropTarget === "shelf:closed") setDropTarget(null);
-              }}
-              onClosedDrop={(event) => {
-                const source = readDragged(event);
-                event.preventDefault();
-                setDropTarget(null);
-                if (source === null) return;
-                const thread = threadById.get(source.threadId);
-                if (thread !== undefined) closeThreads([thread]);
-              }}
-              renderCard={(thread, shelf) => (
-                <ThreadCard
-                  key={thread.id}
-                  gridId={null}
-                  thread={thread}
-                  query=""
-                  providerEntries={
-                    providerEntriesByEnvironment.get(thread.environmentId) ?? EMPTY_PROVIDER_ENTRIES
-                  }
-                  nowIso={nowIso}
-                  focused={false}
-                  selected={false}
-                  dragging={false}
-                  runningSubagents={runningSubagentsByThread.get(subagentParentKey(thread)) ?? 0}
-                  workspaceTitle={
-                    workspaceTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ??
-                    ""
-                  }
-                  timeLabel={
-                    shelf === "snoozed" && thread.snoozedUntil !== null
-                      ? wakeTimeLabel(thread.snoozedUntil)
-                      : null
-                  }
-                  shelf={shelf}
-                  onOpen={() => {
-                    if (shelf === "snoozed") wakeShelfThread(thread);
-                    else reopenShelfThread(thread);
-                  }}
-                  onSelect={() => {}}
-                  onClose={() => {}}
-                  onHold={() => {}}
-                  onPickHoldTime={pickHoldTime}
-                  onRename={() => {}}
-                  onSetAutoClose={() => {}}
-                  onWake={() => wakeShelfThread(thread)}
-                  onReopen={() => reopenShelfThread(thread)}
-                  onDragStart={() => {}}
-                  onDragEnd={() => {}}
-                  onDropOnThread={() => {}}
-                  readDragged={readDragged}
-                />
-              )}
-            />
-          </div>
         </div>
       </SidebarContent>
+      <div className="shrink-0 px-2 pt-1 pb-1" data-testid="grid-shelves-pin">
+        <Separator className="mb-1" />
+        <GridShelves
+          held={shelves.held}
+          closed={shelves.closed}
+          closedDropTarget={dropTarget === "shelf:closed"}
+          onClosedDragOver={(event) => {
+            if (readDragged(event) === null) return;
+            event.preventDefault();
+            setDropTarget("shelf:closed");
+          }}
+          onClosedDragLeave={() => {
+            if (dropTarget === "shelf:closed") setDropTarget(null);
+          }}
+          onClosedDrop={(event) => {
+            const source = readDragged(event);
+            event.preventDefault();
+            setDropTarget(null);
+            if (source === null) return;
+            const thread = threadById.get(source.threadId);
+            if (thread !== undefined) closeThreads([thread]);
+          }}
+          renderCard={(thread, shelf) => (
+            <ThreadCard
+              key={thread.id}
+              gridId={null}
+              thread={thread}
+              query=""
+              providerEntries={
+                providerEntriesByEnvironment.get(thread.environmentId) ?? EMPTY_PROVIDER_ENTRIES
+              }
+              nowIso={nowIso}
+              focused={false}
+              selected={false}
+              dragging={false}
+              runningSubagents={runningSubagentsByThread.get(subagentParentKey(thread)) ?? 0}
+              workspaceTitle={
+                workspaceTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ?? ""
+              }
+              timeLabel={
+                shelf === "snoozed" && thread.snoozedUntil !== null
+                  ? wakeTimeLabel(thread.snoozedUntil)
+                  : null
+              }
+              shelf={shelf}
+              onOpen={() => {
+                if (shelf === "snoozed") wakeShelfThread(thread);
+                else reopenShelfThread(thread);
+              }}
+              onSelect={() => {}}
+              onClose={() => {}}
+              onHold={() => {}}
+              onPickHoldTime={pickHoldTime}
+              onRename={() => {}}
+              onSetAutoClose={() => {}}
+              onWake={() => wakeShelfThread(thread)}
+              onReopen={() => reopenShelfThread(thread)}
+              onDragStart={() => {}}
+              onDragEnd={() => {}}
+              onDropOnThread={() => {}}
+              readDragged={readDragged}
+            />
+          )}
+        />
+      </div>
       {selection.selectedThreadKeys.size > 0 ? (
         <div className="flex items-center gap-1 px-2 pb-2">
           <div className="flex h-8 min-w-0 flex-1 items-center gap-1 rounded-(--r-ctl) border border-sidebar-border bg-(--surface-raised) px-2.5 text-xs text-secondary-foreground">

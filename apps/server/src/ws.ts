@@ -212,6 +212,7 @@ import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
 import * as HoustonTaskSourceService from "./houston/taskSources/SourceService.ts";
+import * as HoustonSlackService from "./houston/slack/Service.ts";
 import * as HoustonTaskSourceV1Import from "./houston/taskSources/V1Import.ts";
 import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
 import * as HoustonHarnessService from "./houston/harnessReview/Service.ts";
@@ -1311,6 +1312,7 @@ export const layerWsRpc = (
       const houstonTaskRuns = yield* HoustonTaskRuns.HoustonTaskRuns;
       const houstonTaskSources = yield* HoustonTaskSourceService.HoustonTaskSourceService;
       const houstonTaskSourceImport = yield* HoustonTaskSourceV1Import.HoustonTaskSourceV1Import;
+      const houstonSlack = yield* HoustonSlackService.HoustonSlackService;
       const houstonMergeQueue = yield* HoustonMergeQueueService.HoustonMergeQueueService;
       const houstonHarness = yield* HoustonHarnessService.HoustonHarnessService;
       const houstonNightShift = yield* HoustonNightShiftService.HoustonNightShiftService;
@@ -3021,6 +3023,12 @@ export const layerWsRpc = (
         [WS_METHODS.houstonTaskSourcesSubscribe]: (input) => houstonTaskSources.subscribe(input),
         [WS_METHODS.houstonTaskSourcesImportV1Status]: () => houstonTaskSourceImport.status,
         [WS_METHODS.houstonTaskSourcesImportV1Run]: () => houstonTaskSourceImport.run,
+        [WS_METHODS.houstonSlackGet]: () => houstonSlack.get,
+        [WS_METHODS.houstonSlackConnect]: (input) => houstonSlack.connect(input),
+        [WS_METHODS.houstonSlackDisconnect]: () => houstonSlack.disconnect,
+        [WS_METHODS.houstonSlackConfigure]: (input) => houstonSlack.configure(input),
+        [WS_METHODS.houstonSlackRequestsList]: (input) => houstonSlack.requests(input),
+        [WS_METHODS.houstonSlackSubscribe]: () => houstonSlack.subscribe,
         [WS_METHODS.houstonHarnessGet]: (input) => houstonHarness.get(input),
         [WS_METHODS.houstonHarnessSubscribe]: (input) => houstonHarness.subscribe(input),
         [WS_METHODS.houstonHarnessOverview]: (input) => houstonHarness.overview(input),
@@ -3031,6 +3039,7 @@ export const layerWsRpc = (
         [WS_METHODS.houstonHarnessReport]: (input) => houstonHarness.report(input),
         [WS_METHODS.houstonHarnessDecide]: (input) => houstonHarness.decide(input),
         [WS_METHODS.houstonHarnessMarkSeen]: (input) => houstonHarness.markSeen(input),
+        [WS_METHODS.houstonHarnessCreateTask]: (input) => houstonHarness.createTask(input),
         [WS_METHODS.houstonNightShiftGet]: (input) => houstonNightShift.get(input),
         [WS_METHODS.houstonNightShiftSubscribe]: (input) => houstonNightShift.subscribe(input),
         [WS_METHODS.houstonNightShiftSubscribeOverview]: (input) =>

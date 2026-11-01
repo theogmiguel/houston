@@ -15,6 +15,13 @@ import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import { finalAssistantText } from "../sideThreads.ts";
+import * as HoustonTaskService from "../tasks/TaskService.ts";
+import {
+  type FixTaskLink,
+  HARNESS_ACTOR,
+  HoustonHarnessFixTasks,
+  layer as HoustonHarnessFixTasksLayer,
+} from "./FixTasks.ts";
 import { runDirectory } from "./runDirectory.ts";
 import { correctionMessageId } from "./Runner.ts";
 import {
@@ -23,6 +30,8 @@ import {
   parseFindings,
   readAnswer,
   reviewSummary,
+  verdictComment,
+  type VerificationWrite,
 } from "./rules.ts";
 import { HoustonHarnessStore, type StoredReview } from "./Store.ts";
 
@@ -65,6 +74,8 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectStore.ProjectStoreV2;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const fixTasks = yield* HoustonHarnessFixTasks;
+  const tasks = yield* HoustonTaskService.HoustonTaskService;
 
   const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const fail = (review: StoredReview, error: string) =>
@@ -127,7 +138,14 @@ const make = Effect.gen(function* () {
         return yield* correct(review, run, `${name} is ${bytes} bytes, over the 1 MiB cap`);
       }
     }
-    const parsed = parseFindings(read.findingsJson, new Map<string, ReadonlyArray<LinkedTask>>());
+    const links = yield* fixTasks.links(review.projectId, review.startedAt);
+    const linked = new Map<string, Array<LinkedTask>>();
+    for (const link of links) {
+      const list = linked.get(link.key) ?? [];
+      list.push({ task: link.taskKey, taskId: link.taskId, sessionsAfter: link.sessionsAfter });
+      linked.set(link.key, list);
+    }
+    const parsed = parseFindings(read.findingsJson, linked);
     if (!parsed.ok) return yield* correct(review, run, parsed.error);
 
     const project = yield* projects.get(review.projectId).pipe(Effect.orElseSucceed(Option.none));
@@ -164,6 +182,38 @@ const make = Effect.gen(function* () {
       findings: parsed.value.findings,
       verifications: parsed.value.verifications,
     });
+    if ((yield* store.getReview(review.id))?.status !== "published") return;
+    yield* commentVerdicts(review.id, parsed.value.verifications, links);
+  });
+
+  /** Comments each decided verdict on its fix task once; a replay posts only missing comments. */
+  const commentVerdicts = Effect.fn("HarnessReviewReactor.commentVerdicts")(function* (
+    reviewId: number,
+    verifications: ReadonlyArray<Pick<VerificationWrite, "key" | "taskId" | "verdict">>,
+    links: ReadonlyArray<FixTaskLink>,
+  ) {
+    for (const verification of verifications) {
+      const body = verdictComment(reviewId, verification.key, verification.verdict);
+      if (body === null) continue;
+      const taskKey =
+        links.find((link) => link.taskId === verification.taskId)?.taskKey ??
+        String(verification.taskId);
+      yield* tasks.get({ id: taskKey }).pipe(
+        Effect.flatMap((detail) =>
+          detail.comments.some(
+            (comment) => comment.body === body && comment.author === HARNESS_ACTOR,
+          )
+            ? Effect.void
+            : Effect.asVoid(tasks.comment({ id: taskKey, body }, HARNESS_ACTOR)),
+        ),
+        Effect.catchCause((cause) =>
+          Effect.logWarning(
+            `Harness review ${reviewId} could not comment its verdict on ${taskKey}; the review is published`,
+            { cause },
+          ),
+        ),
+      );
+    }
   });
 
   const settleRun: HarnessReviewReactor["Service"]["settleRun"] = Effect.fn(
@@ -216,6 +266,20 @@ const make = Effect.gen(function* () {
       const latest = records.value.runs.toSorted((left, right) => right.ordinal - left.ordinal)[0];
       if (latest !== undefined) yield* settleRun(latest);
     }
+    // Only a project's newest published review can lack comments: every start replays it.
+    for (const projectId of yield* store.projects) {
+      const reviewId = yield* store.latestPublishedReviewId(projectId);
+      if (reviewId === 0) continue;
+      const rows = (yield* store.verificationRows(projectId)).filter(
+        (row) => row.review_id === reviewId,
+      );
+      if (rows.length === 0) continue;
+      yield* commentVerdicts(
+        reviewId,
+        rows.map((row) => ({ key: row.key, taskId: row.task_id, verdict: row.verdict })),
+        yield* fixTasks.linkStates(projectId),
+      );
+    }
   });
 
   yield* recover;
@@ -237,4 +301,6 @@ const make = Effect.gen(function* () {
 });
 
 /** Settles open reviews and follows run ends for as long as the layer lives. */
-export const layer = Layer.effect(HarnessReviewReactor, make);
+export const layer = Layer.effect(HarnessReviewReactor, make).pipe(
+  Layer.provide(HoustonHarnessFixTasksLayer),
+);

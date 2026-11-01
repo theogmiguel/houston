@@ -33,6 +33,7 @@ import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
 import { HARNESS_REVIEW_THREAD_PREFIX, hasReadOnlyRun } from "../sideThreads.ts";
 import { buildDigest, type DigestThreadInput } from "./digest.ts";
+import { HoustonHarnessFixTasks, layer as HoustonHarnessFixTasksLayer } from "./FixTasks.ts";
 import { buildInventory } from "./inventory.ts";
 import { runDirectory, writeIgnoreFile } from "./runDirectory.ts";
 import {
@@ -88,6 +89,7 @@ const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const sql = yield* SqlClient.SqlClient;
+  const fixTasks = yield* HoustonHarnessFixTasks;
 
   const ensureReadOnly: HoustonHarnessRunner["Service"]["ensureReadOnly"] = Effect.fn(
     "HoustonHarnessRunner.ensureReadOnly",
@@ -144,9 +146,11 @@ const make = Effect.gen(function* () {
   /** decisions.json schema 2: each finding of the project with its decision and linked tasks. */
   const decisionsFile = Effect.fn("HoustonHarnessRunner.decisionsFile")(function* (
     projectId: ProjectId,
+    startedAt: string,
   ) {
     const rows = yield* store.findingRows(projectId);
     const decisions = new Map((yield* store.decisions(projectId)).map((row) => [row.key, row]));
+    const links = yield* fixTasks.links(projectId, startedAt);
     const newest = new Map<string, (typeof rows)[number]>();
     for (const row of rows) if (!newest.has(row.key)) newest.set(row.key, row);
     return {
@@ -164,7 +168,14 @@ const make = Effect.gen(function* () {
           state: read.state,
           decided_at: read.decidedAt,
           review_id: row.review_id,
-          tasks: [] as ReadonlyArray<never>,
+          tasks: links
+            .filter((link) => link.key === row.key)
+            .map((link) => ({
+              key: link.taskKey,
+              status: link.status,
+              landed_at: link.landedAt,
+              sessions_after: link.sessionsAfter,
+            })),
         };
       }),
     };
@@ -254,7 +265,11 @@ const make = Effect.gen(function* () {
           ),
         ),
       );
-      const decisions = yield* step("decisions.json", runDir, decisionsFile(input.projectId));
+      const decisions = yield* step(
+        "decisions.json",
+        runDir,
+        decisionsFile(input.projectId, review.startedAt),
+      );
       const files: ReadonlyArray<readonly [string, string]> = [
         ["inventory.json", `${toJson(inventory)}\n`],
         ["digest.jsonl", digest.jsonl],
@@ -305,4 +320,6 @@ const make = Effect.gen(function* () {
   return HoustonHarnessRunner.of({ ensureReadOnly, start });
 });
 
-export const layer = Layer.effect(HoustonHarnessRunner, make);
+export const layer = Layer.effect(HoustonHarnessRunner, make).pipe(
+  Layer.provide(HoustonHarnessFixTasksLayer),
+);

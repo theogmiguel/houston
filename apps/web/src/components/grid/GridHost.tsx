@@ -9,7 +9,6 @@ import {
   type ThreadNode,
   clampSplitRatio,
   insertBeside,
-  MIN_PANE_PX,
   preorderThreads,
   removeThread,
   setRatio,
@@ -167,8 +166,8 @@ function SplitView({
               {
                 flexGrow: node.weights[index] ?? 1,
                 flexBasis: 0,
-                minWidth: node.dir === "row" ? MIN_PANE_PX : undefined,
-                minHeight: node.dir === "row" ? undefined : MIN_PANE_PX,
+                minWidth: 0,
+                minHeight: 0,
               } satisfies CSSProperties
             }
           >

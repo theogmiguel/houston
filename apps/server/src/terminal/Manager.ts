@@ -65,7 +65,10 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 import * as ServerConfig from "../config.ts";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
-import { makeClaudeEnvironment } from "../provider/Drivers/ClaudeHome.ts";
+import {
+  makeClaudeEnvironment,
+  CLAUDE_HOST_SESSION_VARIABLES,
+} from "../provider/Drivers/ClaudeHome.ts";
 import { deriveProviderInstanceConfigMap } from "../provider/ProviderInstanceRegistryHydration.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { increment, terminalSessionsTotal } from "../observability/Metrics.ts";
@@ -122,6 +125,7 @@ const TERMINAL_ENV_BLOCKLIST = new Set([
   "ZELLIJ",
   "ZELLIJ_SESSION_NAME",
   "ZELLIJ_PANE_ID",
+  ...CLAUDE_HOST_SESSION_VARIABLES,
 ]);
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const MAX_TERMINAL_LABEL_LENGTH = 128;
