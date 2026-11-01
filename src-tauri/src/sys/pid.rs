@@ -151,20 +151,16 @@ pub(crate) fn unreaped_child_exited(child: &std::process::Child) -> std::io::Res
 }
 
 /// Caller must retain this direct child without wait/try_wait until after delivery.
+/// Darwin's posix_spawn path can leave the child in the caller's group, in which
+/// case only the direct child is signalled: never the caller's own group.
 #[cfg(unix)]
 pub(crate) fn signal_unreaped_child_group(
     child: &std::process::Child,
     sig: Signal,
 ) -> Result<(), SignalError> {
     let raw = checked_pid(child.id()).map_err(SignalError::InvalidPid)?;
-    // The unreaped direct child anchors identity; verify our session and group.
-    if unsafe { libc::getpgid(raw) } != raw
-        || unsafe { libc::getsid(raw) } != unsafe { libc::getsid(0) }
-    {
-        return Err(SignalError::Os(std::io::Error::other(format!(
-            "child pid {} is not an owned process group in the caller session",
-            child.id()
-        ))));
+    if unsafe { libc::getpgid(raw) } != raw {
+        return signal_process_checked(child.id(), sig).map(|_| ());
     }
     signal_process_group_checked(child.id(), sig)
 }

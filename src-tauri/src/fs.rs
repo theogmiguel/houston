@@ -2327,8 +2327,12 @@ mod tests {
         assert!(read.is_err(), "a read was reported as a change: {read:?}");
         std::fs::write(&file, "after").unwrap();
         let written = receiver.recv_timeout(std::time::Duration::from_secs(5));
+        // FSEvents reports /private/var where tempdir handed out /var.
+        let canonical = std::fs::canonicalize(&file).ok();
         assert!(
-            written.as_ref().is_ok_and(|paths| paths.contains(&file)),
+            written.as_ref().is_ok_and(|paths| {
+                paths.contains(&file) || canonical.as_ref().is_some_and(|p| paths.contains(p))
+            }),
             "a write to {} was not reported: {written:?}",
             file.display()
         );
