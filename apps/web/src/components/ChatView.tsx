@@ -113,7 +113,16 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { useAtomValue } from "@effect/atom-react";
-import { type SetStateAction, use, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type SetStateAction,
+  use,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
@@ -406,6 +415,8 @@ type ChatViewProps =
       /** An empty grid centres the draft composer without a pane head. */
       centerDraftComposer?: boolean;
       hideDraftHeroHeadline?: boolean;
+      /** A grid route renders the focused cell's panel beside the grid, not in the cell. */
+      rightPanelPortal?: RightPanelPortalTarget | null | undefined;
       routeKind: "server";
       draftId?: never;
     }
@@ -422,9 +433,19 @@ type ChatViewProps =
       /** An empty grid centres the draft composer without a pane head. */
       centerDraftComposer?: boolean;
       hideDraftHeroHeadline?: boolean;
+      /** A grid route renders the focused cell's panel beside the grid, not in the cell. */
+      rightPanelPortal?: RightPanelPortalTarget | null | undefined;
       routeKind: "draft";
       draftId: DraftId;
     };
+
+/** Where a grid cell mounts the focused thread's right panel. */
+export interface RightPanelPortalTarget {
+  /** The grid row's panel slot; the panel becomes a flex sibling of the grid. */
+  readonly host: HTMLElement;
+  /** The row the panel shares for width clamping, when the cell's own row is not it. */
+  readonly container: HTMLElement | null;
+}
 
 const DismissedFallbackWindowSchema = Schema.NullOr(Schema.String);
 
@@ -441,6 +462,7 @@ export default function ChatView(props: ChatViewProps) {
   } = props;
   const centerDraftComposer = props.centerDraftComposer === true;
   const hideDraftHeroHeadline = props.hideDraftHeroHeadline === true;
+  const rightPanelPortal = props.rightPanelPortal ?? null;
   const parentPanel = typeof embeddedOption === "object" ? embeddedOption : undefined;
   const embedded = embeddedOption !== false;
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
@@ -1117,9 +1139,11 @@ export default function ChatView(props: ChatViewProps) {
     renderedRightPanelSurface,
   );
   const canMaximizeRightPanel = rightPanelOpen;
+  // A grid cell owns its panel only while the grid route supplies a slot; a side chat never does.
+  const ownsRightPanel = !embedded || rightPanelPortal !== null;
   // An embedded side chat has no panel; a stale maximized flag would hide its own column.
   const rightPanelMaximized =
-    !embedded && canMaximizeRightPanel && rightPanelState.maximized === true;
+    ownsRightPanel && canMaximizeRightPanel && rightPanelState.maximized === true;
   const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
   const [threadPanelPopoverHandle] = useState(PopoverCreateHandle);
   const [chatCanvasStore] = useState(createChatCanvasStore);
@@ -3249,6 +3273,9 @@ export default function ChatView(props: ChatViewProps) {
     return embedded ? null : <NoActiveThreadState />;
   }
 
+  const mountRightPanel = (panel: ReactNode) =>
+    rightPanelPortal === null ? panel : createPortal(panel, rightPanelPortal.host);
+
   const rightPanelContent = activeThreadRef ? (
     <RightPanelSurfaceContent
       surface={renderedRightPanelSurface}
@@ -3987,69 +4014,71 @@ export default function ChatView(props: ChatViewProps) {
         )}
       </div>
 
-      {rightPanelPresent && activeThreadRef && !embedded ? (
-        <ChatRightPanel
-          sheet={shouldUsePlanSidebarSheet}
-          workspaceLayoutElement={workspaceLayoutElement}
-          widthStorageKey={`t3code:preview-panel-width:${activeThreadKey}`}
-          sheetAnimationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
-          onCloseSheet={closePreviewPanelStable}
-          open={rightPanelOpen}
-          keybindings={keybindings}
-          getShortcutContext={getShortcutContextStable}
-          maximized={rightPanelMaximized}
-          layoutControls={
-            rightPanelOpen ? (
-              <div className="flex shrink-0 items-center gap-1">
-                <RightPanelMaximizeControl
-                  maximized={rightPanelMaximized}
-                  onToggle={toggleRightPanelMaximizedStable}
-                />
-                {panelOpenControls}
-              </div>
-            ) : null
-          }
-          surfaces={renderedRightPanelSurfaces}
-          environmentId={activeThreadRef.environmentId}
-          activeSurfaceId={renderedRightPanelSurface?.id ?? null}
-          pendingSurfaceIds={pendingFileSurfaceIds}
-          previewSessions={activePreviewState.sessions}
-          desktopByTabId={activePreviewState.desktopByTabId}
-          previewRuntimeTabId={resolvePreviewRuntimeTabId}
-          terminalLabelsById={activeTerminalLabelsById}
-          onActivate={activateRightPanelSurfaceStable}
-          onCloseSurface={closeRightPanelSurfaceStable}
-          onRenameDevice={(surfaceId, title) => {
-            if (activeThreadRef)
-              useRightPanelStore.getState().renameDevice(activeThreadRef, surfaceId, title);
-          }}
-          onCloseOtherSurfaces={closeOtherRightPanelSurfacesStable}
-          onCloseSurfacesToRight={closeRightPanelSurfacesToRightStable}
-          onCloseAllSurfaces={closeAllRightPanelSurfacesStable}
-          onMoveSurface={moveRightPanelSurfaceStable}
-          onCopyFilePath={copyRightPanelFilePathStable}
-          onAddBrowser={() => createBrowserSurface()}
-          onAddBrowserInProfile={createBrowserSurfaceStable}
-          onAddTerminal={addTerminalSurfaceStable}
-          onAddDiff={addDiffSurfaceStable}
-          onAddFiles={addFilesSurfaceStable}
-          onAddPullRequest={addPullRequestSurfaceStable}
-          onAddPullRequests={addPullRequestsSurfaceStable}
-          onAddDevice={addDeviceSurfaceStable}
-          onAddSideChat={sideChatsOffered ? openSideChatStable : undefined}
-          browserAvailable={canOperatePreview && browserAvailable}
-          terminalAvailable={activeProject !== null && canOperateTerminal}
-          diffAvailable={isServerThread && isGitRepo}
-          filesAvailable={activeProject !== null}
-          pullRequestAvailable={pullRequestSurfaceAvailable}
-          pullRequestsAvailable={pullRequestsSurfaceAvailable}
-          deviceAvailable={activeThreadRef !== null}
-          sideChatAvailable={sideChat.available}
-          sideChatDisabledReason={sideChatDisabledReason}
-        >
-          {rightPanelContent}
-        </ChatRightPanel>
-      ) : null}
+      {rightPanelPresent && activeThreadRef && ownsRightPanel
+        ? mountRightPanel(
+            <ChatRightPanel
+              sheet={shouldUsePlanSidebarSheet}
+              workspaceLayoutElement={rightPanelPortal?.container ?? workspaceLayoutElement}
+              widthStorageKey={`t3code:preview-panel-width:${activeThreadKey}`}
+              sheetAnimationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
+              onCloseSheet={closePreviewPanelStable}
+              open={rightPanelOpen}
+              keybindings={keybindings}
+              getShortcutContext={getShortcutContextStable}
+              maximized={rightPanelMaximized}
+              layoutControls={
+                rightPanelOpen ? (
+                  <div className="flex shrink-0 items-center gap-1">
+                    <RightPanelMaximizeControl
+                      maximized={rightPanelMaximized}
+                      onToggle={toggleRightPanelMaximizedStable}
+                    />
+                    {panelOpenControls}
+                  </div>
+                ) : null
+              }
+              surfaces={renderedRightPanelSurfaces}
+              environmentId={activeThreadRef.environmentId}
+              activeSurfaceId={renderedRightPanelSurface?.id ?? null}
+              pendingSurfaceIds={pendingFileSurfaceIds}
+              previewSessions={activePreviewState.sessions}
+              desktopByTabId={activePreviewState.desktopByTabId}
+              previewRuntimeTabId={resolvePreviewRuntimeTabId}
+              terminalLabelsById={activeTerminalLabelsById}
+              onActivate={activateRightPanelSurfaceStable}
+              onCloseSurface={closeRightPanelSurfaceStable}
+              onRenameDevice={(surfaceId, title) => {
+                if (activeThreadRef)
+                  useRightPanelStore.getState().renameDevice(activeThreadRef, surfaceId, title);
+              }}
+              onCloseOtherSurfaces={closeOtherRightPanelSurfacesStable}
+              onCloseSurfacesToRight={closeRightPanelSurfacesToRightStable}
+              onCloseAllSurfaces={closeAllRightPanelSurfacesStable}
+              onMoveSurface={moveRightPanelSurfaceStable}
+              onCopyFilePath={copyRightPanelFilePathStable}
+              onAddBrowser={() => createBrowserSurface()}
+              onAddBrowserInProfile={createBrowserSurfaceStable}
+              onAddTerminal={addTerminalSurfaceStable}
+              onAddDiff={addDiffSurfaceStable}
+              onAddFiles={addFilesSurfaceStable}
+              onAddPullRequest={addPullRequestSurfaceStable}
+              onAddPullRequests={addPullRequestsSurfaceStable}
+              onAddDevice={addDeviceSurfaceStable}
+              onAddSideChat={sideChatsOffered ? openSideChatStable : undefined}
+              browserAvailable={canOperatePreview && browserAvailable}
+              terminalAvailable={activeProject !== null && canOperateTerminal}
+              diffAvailable={isServerThread && isGitRepo}
+              filesAvailable={activeProject !== null}
+              pullRequestAvailable={pullRequestSurfaceAvailable}
+              pullRequestsAvailable={pullRequestsSurfaceAvailable}
+              deviceAvailable={activeThreadRef !== null}
+              sideChatAvailable={sideChat.available}
+              sideChatDisabledReason={sideChatDisabledReason}
+            >
+              {rightPanelContent}
+            </ChatRightPanel>,
+          )
+        : null}
 
       <RevertConfirmHost threadKey={routeThreadKey} onConfirm={onConfirmRevertStable} />
       {embedded ? null : <LinkPullRequestDialogHost />}

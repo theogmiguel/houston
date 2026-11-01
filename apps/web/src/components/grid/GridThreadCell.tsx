@@ -3,7 +3,7 @@ import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contract
 import { ArchiveIcon, ArrowDownIcon, ArrowRightIcon, XIcon } from "lucide-react";
 import { useEffect, useState, type CSSProperties } from "react";
 
-import ChatView from "../ChatView";
+import ChatView, { type RightPanelPortalTarget } from "../ChatView";
 import { resolveThreadStatusPill } from "../Sidebar.logic";
 import { SidebarThreadStatusGlyph } from "../sidebar/SidebarStatusGlyph";
 import { SidebarProviderStack, type SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
@@ -32,6 +32,7 @@ export function GridThreadCell({
   onSplit,
   onNewThread,
   onOpenThread,
+  rightPanelPortal,
 }: {
   node: ThreadNode;
   grid: GridRecord;
@@ -43,6 +44,8 @@ export function GridThreadCell({
   onSplit: (side: SplitSide, threadId: string) => void;
   onNewThread?: ((side: SplitSide) => void) | undefined;
   onOpenThread: (ref: ScopedThreadRef) => void;
+  /** The focused cell mounts its thread's right panel beside the grid. */
+  rightPanelPortal?: RightPanelPortalTarget | null;
 }) {
   const environmentId = grid.environmentId as EnvironmentId;
   const threadId = node.threadId as ThreadId;
@@ -187,6 +190,7 @@ export function GridThreadCell({
               environmentId={environmentId}
               threadId={threadId}
               paneDensity={density}
+              rightPanelPortal={rightPanelPortal}
               routeKind="draft"
             />
           ) : (
@@ -195,6 +199,7 @@ export function GridThreadCell({
               environmentId={environmentId}
               threadId={threadId}
               paneDensity={density}
+              rightPanelPortal={rightPanelPortal}
               routeKind="server"
             />
           )}

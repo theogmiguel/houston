@@ -3,8 +3,6 @@ import { Maximize2, Minimize2 } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
 import { memo, type ReactNode } from "react";
 
-import { cn } from "~/lib/utils";
-
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
 import { PopoverCreateHandle, PopoverTrigger } from "../ui/popover";
 import { Toggle } from "../ui/toggle";
@@ -84,8 +82,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
       className="flex h-full shrink-0 items-center [-webkit-app-region:no-drag]"
       data-panel-layout-controls
     >
-      {gridLayoutControl ? <div className="flex items-center">{gridLayoutControl}</div> : null}
-      <div className={cn("flex items-center gap-1", gridLayoutControl && "ml-1.5")}>
+      <div className="flex items-center gap-1">
         {showThreadPanelControl ? threadPanelControl : null}
         {showTerminalControl ? (
           <Tooltip>
@@ -133,6 +130,9 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
           </Tooltip>
         ) : null}
       </div>
+      {gridLayoutControl ? (
+        <div className="ml-1.5 flex items-center">{gridLayoutControl}</div>
+      ) : null}
     </div>
   );
 });

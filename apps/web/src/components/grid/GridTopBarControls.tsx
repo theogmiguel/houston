@@ -37,6 +37,9 @@ export function GridTopBarControls({ grid }: { grid: GridRecord }) {
 
   return (
     <PanelLayoutControls
+      // While the panel is open its own header carries the terminal and panel toggles.
+      showTerminalControl={!rightPanelOpen}
+      showRightPanelControl={!rightPanelOpen}
       terminalAvailable={focusedRef !== null}
       terminalOpen={terminalOpen}
       terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
@@ -61,12 +64,8 @@ export function GridTopBarControls({ grid }: { grid: GridRecord }) {
       }}
       onToggleRightPanel={() => {
         if (focusedRef === null) return;
-        const store = useRightPanelStore.getState();
-        if (rightPanelOpen) {
-          store.toggleVisibility(focusedRef);
-        } else {
-          store.toggle(focusedRef, "diff");
-        }
+        // Opening shows the launcher until a surface or the + menu creates a tab.
+        useRightPanelStore.getState().toggleVisibility(focusedRef);
       }}
     />
   );

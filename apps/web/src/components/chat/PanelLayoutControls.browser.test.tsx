@@ -32,16 +32,16 @@ function labels(container: HTMLElement): Array<string> {
 it("keeps the thread details toggle beside the grid control while the right panel is open", async () => {
   await using screen = await render(<ChatHeaderPanelControls {...controls(true)} />);
 
-  expect(labels(screen.container)).toEqual(["Grid layout", "Toggle thread details panel"]);
+  expect(labels(screen.container)).toEqual(["Toggle thread details panel", "Grid layout"]);
 });
 
 it("shows every panel toggle in the header while the right panel is closed", async () => {
   await using screen = await render(<ChatHeaderPanelControls {...controls(false)} />);
 
   expect(labels(screen.container)).toEqual([
-    "Grid layout",
     "Toggle thread details panel",
     "Toggle terminal drawer",
     "Toggle right panel",
+    "Grid layout",
   ]);
 });
