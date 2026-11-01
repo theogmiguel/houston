@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
@@ -5,7 +6,7 @@ import "~/index.css";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { GridRecord } from "../../grid/gridStore";
 import { clearThreadSelection } from "../../grid/sidebar";
-import { render } from "../../../test/render";
+import { render, type Screen } from "../../../test/render";
 import { SidebarNewGridMenu } from "../ui/sidebar-grids";
 import { TooltipProvider } from "../ui/tooltip";
 import { GridGroup } from "./GridSidebar";
@@ -62,7 +63,8 @@ function group(
   overrides: {
     workspaceTitle?: string;
     open?: boolean;
-    solo?: boolean;
+    collapsed?: boolean;
+    onToggleCollapsed?: () => void;
     onOpenThread?: (gridId: string, threadId: string) => void;
   } = {},
 ) {
@@ -72,11 +74,10 @@ function group(
         grid={value}
         workspaceTitle={overrides.workspaceTitle ?? "Houston"}
         threads={threads}
-        solo={overrides.solo ?? threads.length === 1}
         query=""
         open={overrides.open ?? false}
-        collapsed={false}
-        onToggleCollapsed={() => {}}
+        collapsed={overrides.collapsed ?? false}
+        onToggleCollapsed={overrides.onToggleCollapsed ?? (() => {})}
         providerEntries={new Map()}
         nowIso="2026-01-01T00:00:00.000Z"
         selection={clearThreadSelection()}
@@ -106,6 +107,53 @@ function group(
   );
 }
 
+function headingFor(screen: Screen, gridId: string): HTMLButtonElement {
+  const heading = screen.container.querySelector(
+    `[data-grid-key="${gridId}"] button[aria-expanded]`,
+  );
+  if (!(heading instanceof HTMLButtonElement)) {
+    throw new Error(`The grid ${gridId} has no heading button.`);
+  }
+  return heading;
+}
+
+function headingGeometry(heading: HTMLButtonElement) {
+  const chevron = heading.querySelector("svg");
+  const chevronBox = heading.querySelector("[data-grid-chevron-box]");
+  const name = heading.children[1];
+  if (chevron === null || chevronBox === null || name === undefined) {
+    throw new Error("The grid heading is missing its chevron box or grid name.");
+  }
+  const chevronRect = chevronBox.getBoundingClientRect();
+  return {
+    chevron,
+    chevronLeft: chevronRect.left,
+    chevronWidth: chevronRect.width,
+    textLeft: name.getBoundingClientRect().left,
+  };
+}
+
+function expectSameX(actual: number, expected: number): void {
+  expect(Math.abs(actual - expected)).toBeLessThanOrEqual(0.5);
+}
+
+function CollapsibleGroup({
+  value,
+  threads,
+  workspaceTitle,
+}: {
+  value: GridRecord;
+  threads: ReadonlyArray<EnvironmentThreadShell>;
+  workspaceTitle?: string;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  return group(value, threads, {
+    collapsed,
+    ...(workspaceTitle === undefined ? {} : { workspaceTitle }),
+    onToggleCollapsed: () => setCollapsed((current) => !current),
+  });
+}
+
 describe("grid sidebar", () => {
   it("lists grids flat with their workspace instead of a workspace row", async () => {
     const first = grid({ id: "grid-a", name: "v2 port" });
@@ -129,7 +177,7 @@ describe("grid sidebar", () => {
     expect(screen.container.textContent).not.toContain("Workspaces");
   });
 
-  it("renders a one-thread grid at grid level without a heading", async () => {
+  it("renders a one-thread grid with its heading and an indented thread row", async () => {
     const onOpenThread = vi.fn();
     await using screen = await render(
       group(grid({ id: "grid-c", name: "Landing copy" }), [thread({ id: "thread-c" })], {
@@ -138,13 +186,27 @@ describe("grid sidebar", () => {
       }),
     );
 
-    expect(screen.container.textContent).not.toContain("Landing copy");
-    expect(screen.getByText("houston-site ·").element()).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /^Landing copy houston-site$/ }).element(),
+    ).toBeVisible();
+    expect(screen.container.textContent).not.toContain("houston-site ·");
     const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
-    expect(row.className).toContain("pl-2.5");
+    expect(row.className).toContain("pl-7.5");
 
     await userEvent.click(screen.getByText("Split drawer state from the thread store").element());
     expect(onOpenThread).toHaveBeenCalledWith("grid-c", "thread-c");
+  });
+
+  it("keeps a one-thread grid's actions on the heading", async () => {
+    await using _screen = await render(
+      group(grid({ id: "grid-c", name: "Landing copy" }), [thread({ id: "thread-c" })]),
+    );
+
+    await userEvent.click(
+      page.getByRole("button", { name: "Grid actions for Landing copy" }).element(),
+    );
+    await expect.element(page.getByRole("menuitem", { name: "New thread" })).toBeVisible();
+    await expect.element(page.getByRole("menuitem", { name: /Rename grid/ })).toBeVisible();
   });
 
   it("tints only the open grid's heading", async () => {
@@ -160,6 +222,100 @@ describe("grid sidebar", () => {
     const closed = screen.getByRole("button", { name: /^Review Houston$/ }).element();
     expect(open.className).toContain("bg-sidebar-row-selected");
     expect(closed.className).not.toContain("bg-sidebar-row-selected");
+  });
+
+  it("keeps the chevron and text still across collapse and thread counts", async () => {
+    const counts = [0, 1, 2, 6] as const;
+    const makeThreads = (count: number) =>
+      Array.from({ length: count }, (_, index) =>
+        thread({ id: `thread-${count}-${index}`, title: `Thread ${index}` }),
+      );
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        {counts.map((count) => (
+          <CollapsibleGroup
+            key={count}
+            value={grid({ id: `grid-${count}`, name: "v2 port" })}
+            threads={makeThreads(count)}
+          />
+        ))}
+      </TooltipProvider>,
+    );
+
+    const reference = headingGeometry(headingFor(screen, "grid-0"));
+    expect(reference.chevron.getAttribute("class")).toContain("rotate-90");
+
+    for (const count of counts) {
+      const heading = headingFor(screen, `grid-${count}`);
+      const expanded = headingGeometry(heading);
+      expectSameX(expanded.chevronLeft, reference.chevronLeft);
+      expectSameX(expanded.textLeft, reference.textLeft);
+      expectSameX(expanded.chevronWidth, reference.chevronWidth);
+
+      await userEvent.click(heading);
+      expect(heading.getAttribute("aria-expanded")).toBe("false");
+      const collapsed = headingGeometry(heading);
+      expect(collapsed.chevron).toBe(expanded.chevron);
+      expect(collapsed.chevron.getAttribute("class")).not.toContain("rotate-90");
+      expectSameX(collapsed.chevronLeft, reference.chevronLeft);
+      expectSameX(collapsed.textLeft, reference.textLeft);
+      expectSameX(collapsed.chevronWidth, expanded.chevronWidth);
+
+      const root = screen.container.querySelector(`[data-grid-key="grid-${count}"]`);
+      expect(root?.querySelectorAll("[data-thread-key]")).toHaveLength(0);
+
+      await userEvent.click(heading);
+      expect(heading.getAttribute("aria-expanded")).toBe("true");
+      expect(root?.querySelectorAll("[data-thread-key]")).toHaveLength(count);
+      expectSameX(headingGeometry(heading).textLeft, reference.textLeft);
+    }
+  });
+
+  it("toggles collapse from Enter and Space on the focused heading", async () => {
+    await using screen = await render(
+      <CollapsibleGroup value={grid({ id: "grid-toggle", name: "Toggle" })} threads={[thread()]} />,
+    );
+    const heading = headingFor(screen, "grid-toggle");
+
+    heading.focus();
+    expect(document.activeElement).toBe(heading);
+
+    await userEvent.keyboard("{Enter}");
+    expect(heading.getAttribute("aria-expanded")).toBe("false");
+
+    await userEvent.keyboard(" ");
+    expect(heading.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("truncates long names without moving the chevron or the overflow button", async () => {
+    const container = document.createElement("div");
+    container.style.width = "220px";
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        {group(grid({ id: "grid-short", name: "Short" }), [], { workspaceTitle: "ws" })}
+        {group(grid({ id: "grid-long", name: "A very long grid name that never fits" }), [], {
+          workspaceTitle: "A very long workspace name that never fits",
+        })}
+      </TooltipProvider>,
+      { container },
+    );
+
+    const short = headingFor(screen, "grid-short");
+    const long = headingFor(screen, "grid-long");
+    const shortGeometry = headingGeometry(short);
+    const longGeometry = headingGeometry(long);
+    expectSameX(longGeometry.chevronLeft, shortGeometry.chevronLeft);
+    expectSameX(longGeometry.textLeft, shortGeometry.textLeft);
+
+    const shortActions = screen.getByRole("button", { name: "Grid actions for Short" }).element();
+    const longActions = screen
+      .getByRole("button", { name: "Grid actions for A very long grid name that never fits" })
+      .element();
+    expectSameX(
+      longActions.getBoundingClientRect().left,
+      shortActions.getBoundingClientRect().left,
+    );
+    expect(long.scrollWidth).toBeLessThanOrEqual(long.clientWidth + 1);
   });
 });
 
