@@ -24,6 +24,26 @@ describe("SidebarRailNav", () => {
     expect(text).toContain("Workspaces");
   });
 
+  it("shows the open pull request count, and hides it when empty or unknown", async () => {
+    {
+      await using screen = await render(
+        <SidebarRailNav search={<span>Search</span>} pullRequestCount={3} />,
+      );
+      expect(screen.getByRole("button", { name: /Pull requests/ }).element().textContent).toContain(
+        "3",
+      );
+    }
+
+    for (const count of [null, 0]) {
+      await using screen = await render(
+        <SidebarRailNav search={<span>Search</span>} pullRequestCount={count} />,
+      );
+      expect(
+        screen.getByRole("button", { name: /Pull requests/ }).element().textContent,
+      ).not.toMatch(/\d/);
+    }
+  });
+
   it("takes the section title and actions from its caller", async () => {
     await using screen = await render(
       <SidebarRailNav

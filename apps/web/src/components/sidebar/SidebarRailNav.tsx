@@ -155,7 +155,7 @@ export function SidebarRailNav({
           label="Pull requests"
           active={pathname === "/pull-requests"}
           trailing={
-            pullRequestCount !== null ? (
+            pullRequestCount !== null && pullRequestCount > 0 ? (
               <span className="shrink-0 text-xs text-secondary-label tabular-nums">
                 {pullRequestCount}
               </span>
