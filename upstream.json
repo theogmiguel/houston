@@ -820,7 +820,7 @@
     "packages/client-runtime/src/rpc/client.test.ts": "the relay route, DPoP and managed relay are removed (Houston has no hosted relay)",
     "packages/client-runtime/src/rpc/client.ts": "the relay route, DPoP and managed relay are removed (Houston has no hosted relay)",
     "packages/client-runtime/src/rpc/session.ts": "the relay route, DPoP and managed relay are removed (Houston has no hosted relay)",
-    "packages/client-runtime/src/state/boundedThreadSnapshotHttp.ts": "the relay route, DPoP and managed relay are removed (Houston has no hosted relay)",
+    "packages/client-runtime/src/state/boundedThreadSnapshotHttp.ts": "the relay route, DPoP and managed relay are removed (Houston has no hosted relay); a bounded snapshot that 404s before the thread exists keeps the socket instead of tombstoning the thread",
     "packages/client-runtime/src/state/connections.ts": "the relay route, DPoP and managed relay are removed (Houston has no hosted relay)",
     "packages/client-runtime/src/state/deviceHubAccess.ts": "the relay route, DPoP and managed relay are removed (Houston has no hosted relay)",
     "packages/client-runtime/src/state/environmentHttpAuth.test.ts": "the relay route, DPoP and managed relay are removed (Houston has no hosted relay)",
@@ -833,7 +833,7 @@
     "packages/client-runtime/src/state/threadHistoryHttp.ts": "the relay route, DPoP and managed relay are removed (Houston has no hosted relay)",
     "packages/client-runtime/src/state/threadTranscriptHttp.ts": "the relay route, DPoP and managed relay are removed (Houston has no hosted relay)",
     "packages/client-runtime/src/state/threads-atoms.test.ts": "the relay route, DPoP and managed relay are removed (Houston has no hosted relay)",
-    "packages/client-runtime/src/state/threads.ts": "the relay route, DPoP and managed relay are removed (Houston has no hosted relay)",
+    "packages/client-runtime/src/state/threads.ts": "the relay route, DPoP and managed relay are removed (Houston has no hosted relay); a bounded snapshot that 404s before the thread exists keeps the socket instead of tombstoning the thread",
     "packages/client-runtime/src/webhookAddress.ts": "the relay route, DPoP and managed relay are removed (Houston has no hosted relay)",
     "apps/server/package.json": "CLI binary renamed from t3 to houston",
     "apps/server/src/assets/NativeAppIconResolver.ts": "CLI binary renamed from t3 to houston",
@@ -1171,6 +1171,7 @@
     "apps/server/src/textGeneration/ClaudeTextGeneration.ts": "Claude spawn env drops host-session markers and blocks on MCP connect (t3code#25976)",
     "apps/server/src/mcp/toolkits/project/handlers.ts": "night shift: t3_thread_launch asks the Houston crew gate first, which refuses it for a thread of a live run (AD-086)",
     "apps/server/src/mcp/toolkits/orchestrator/handlers.ts": "night shift: t3_environment_link asks the Houston crew gate first, which refuses it for a thread of a live run (AD-086)",
-    "apps/server/src/mcp/toolkits/thread/handlers.ts": "night shift: run_scheduled_task_now asks the Houston crew gate first, which refuses it for a thread of a live run (AD-112)"
+    "apps/server/src/mcp/toolkits/thread/handlers.ts": "night shift: run_scheduled_task_now asks the Houston crew gate first, which refuses it for a thread of a live run (AD-112)",
+    "packages/client-runtime/src/state/threads-sync.test.ts": "a first bounded snapshot that 404s before creation keeps the thread live"
   }
 }

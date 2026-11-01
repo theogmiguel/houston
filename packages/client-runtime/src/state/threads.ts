@@ -989,8 +989,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
               break;
             }
             case "missing": {
-              yield* setDeleted();
-              return yield* Effect.never;
+              // A 404 only proves no projection row exists yet: a draft's launch may
+              // still create the thread, and deletions arrive as `deletedAt` or an event.
+              // The socket subscription stays the only deletion authority.
+              break;
             }
             case "unavailable": {
               break;
