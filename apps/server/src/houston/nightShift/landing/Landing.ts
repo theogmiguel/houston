@@ -541,6 +541,13 @@ const make = Effect.gen(function* () {
       }
       const entries = yield* store.runEntries(run.id);
       const existing = entries.find((row) => isOpen(row) && row.branch === input.branch);
+      if (existing === undefined && entries.length >= LEDGER.entriesPerRun) {
+        return yield* toolFail(
+          "limit",
+          `run ${run.id} holds ${entries.length} entries; the limit is ${LEDGER.entriesPerRun} per run`,
+          { limit: LEDGER.entriesPerRun, actual: entries.length },
+        );
+      }
       const opened = entries.filter((row) => row.kind === "pr").length;
       if (existing === undefined && opened >= LEDGER.pullRequestsPerRun) {
         return yield* toolFail(
