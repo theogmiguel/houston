@@ -87,14 +87,11 @@ function PopoverPopup({
       >
         <PopoverPrimitive.Popup
           className={cn(
-            "relative flex h-(--popup-height,auto) w-(--popup-width,auto) origin-(--transform-origin) rounded-[var(--r-group)] text-popover-foreground outline-none transition-[width,height,scale,opacity] has-data-[slot=calendar]:rounded-[var(--r-dialog)] data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0",
+            "relative flex h-(--popup-height,auto) w-(--popup-width,auto) origin-(--transform-origin) rounded-[var(--r-group)] text-popover-foreground outline-none transition-[width,height,scale,opacity] motion-reduce:transition-none has-data-[slot=calendar]:rounded-[var(--r-dialog)] data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0",
             variant === "default" && "dropdown-glass",
             variant === "dialog" && "dialog-glass",
-            tooltipStyle &&
-              "w-fit text-balance rounded-[var(--r-ctl)] text-xs",
-            !tooltipStyle &&
-              variant === "default" &&
-              "shadow-[var(--shadow-1)]",
+            tooltipStyle && "w-fit text-balance rounded-[var(--r-ctl)] text-xs",
+            !tooltipStyle && variant === "default" && "shadow-[var(--shadow-1)]",
             width !== "auto" && ["max-w-[calc(100vw-2rem)]", popoverPopupWidthClassName[width]],
             variant === "panel" &&
               "w-full overflow-visible rounded-none border-0 bg-transparent shadow-none before:hidden [backdrop-filter:none] [-webkit-backdrop-filter:none]",
