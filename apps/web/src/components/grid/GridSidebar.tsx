@@ -86,6 +86,7 @@ import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { isAppModalPage } from "../sidebar/mainAppLocation";
 import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { SidebarRailKbd, SidebarRailNav } from "../sidebar/SidebarRailNav";
+import { useOpenPullRequestCount } from "../pullRequest/useOpenPullRequestCount";
 import { SidebarProviderStack, type SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
 import { StreamingGlyph } from "../chat/TimelineRowParts";
 import {
@@ -203,6 +204,7 @@ export function GridSidebar() {
   const searchShortcutLabel = shortcutLabelForCommand(keybindings, "commandPalette.toggle");
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
+  const pullRequestCount = useOpenPullRequestCount();
   const sidebarVisible = useSidebarVisibility();
   const nowMinute = useNowMinute();
   const wakeClock = useSnoozeWakeClock(threads);
@@ -581,6 +583,7 @@ export function GridSidebar() {
       <SidebarChromeHeader isElectron={isElectron} />
       <SidebarHeader>
         <SidebarRailNav
+          pullRequestCount={pullRequestCount}
           sectionTitle="Grids"
           sectionAddProject={false}
           sectionActions={

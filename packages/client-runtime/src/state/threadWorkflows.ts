@@ -92,6 +92,16 @@ function resolveThreadProviderSession(projection: Projection): ProviderSession |
   );
 }
 
+/**
+ * Whether the thread's provider can redirect an active run in place. An explicit steer is
+ * refused where the provider only supports interrupt-and-restart, so only native steering counts.
+ */
+export function threadSupportsActiveSteering(projection: Projection | null | undefined): boolean {
+  if (projection == null) return false;
+  const session = resolveThreadProviderSession(projection);
+  return session?.capabilities.turns.supportsActiveSteering === true;
+}
+
 export function threadSupportsProviderHandoff(projection: Projection | null | undefined): boolean {
   if (projection == null) return false;
   const session = resolveThreadProviderSession(projection);
