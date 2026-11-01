@@ -302,6 +302,14 @@ export class HoustonNightShiftStore extends Context.Service<
     ) => Effect.Effect<{ readonly run: StoredRun; readonly member: NightCrewMember } | undefined>;
     readonly setLimited: (id: number, limited: ReadonlyArray<NightLimit>) => Effect.Effect<void>;
     readonly addEntry: (entry: NewEntry) => Effect.Effect<LedgerEntry>;
+    /** Adds the entry only while its run is under both bounds, checked in the insert itself;
+     * otherwise answers the run's entry and decision counts. */
+    readonly addEntryWithin: (
+      entry: NewEntry,
+      bounds: { readonly entries: number; readonly decisions: number },
+    ) => Effect.Effect<
+      { readonly entry: LedgerEntry } | { readonly entries: number; readonly decisions: number }
+    >;
     readonly getEntry: (id: number) => Effect.Effect<LedgerEntry | undefined>;
     readonly runEntries: (runId: number) => Effect.Effect<ReadonlyArray<LedgerEntry>>;
     /** Every entry of the project's runs other than `exceptRunId`, newest first. */
@@ -604,6 +612,30 @@ const make = Effect.gen(function* () {
         RETURNING *`.pipe(Effect.orDie);
       yield* touched(entry.projectId);
       return inserted[0]!;
+    }),
+    addEntryWithin: Effect.fn("HoustonNightShiftStore.addEntryWithin")(function* (entry, bounds) {
+      const decisionBound = entry.kind === "decision" ? bounds.decisions : Number.MAX_SAFE_INTEGER;
+      const inserted = yield* sql<LedgerEntry>`INSERT INTO houston_night_entries
+          (run_id, project_id, kind, title, theme, status, pr_number, task_number, body,
+            detail_json, author_thread_id, created_at)
+        SELECT ${entry.runId}, ${entry.projectId}, ${entry.kind}, ${entry.title},
+          ${entry.theme ?? null}, ${entry.status ?? null}, ${entry.prNumber ?? null},
+          ${entry.taskNumber ?? null}, ${entry.body ?? ""}, ${toJson(entry.detail ?? {})},
+          ${entry.authorThreadId ?? null}, ${entry.createdAt}
+        WHERE (SELECT COUNT(*) FROM houston_night_entries WHERE run_id = ${entry.runId})
+            < ${bounds.entries}
+          AND (SELECT COUNT(*) FROM houston_night_entries
+            WHERE run_id = ${entry.runId} AND kind = 'decision') < ${decisionBound}
+        RETURNING *`.pipe(Effect.orDie);
+      if (inserted[0] !== undefined) {
+        yield* touched(entry.projectId);
+        return { entry: inserted[0] };
+      }
+      const [counts] = yield* sql<{ entries: number; decisions: number }>`SELECT
+          COUNT(*) AS entries,
+          COALESCE(SUM(CASE WHEN kind = 'decision' THEN 1 ELSE 0 END), 0) AS decisions
+        FROM houston_night_entries WHERE run_id = ${entry.runId}`.pipe(Effect.orDie);
+      return { entries: counts?.entries ?? 0, decisions: counts?.decisions ?? 0 };
     }),
     getEntry: Effect.fn("HoustonNightShiftStore.getEntry")((id) =>
       sql<LedgerEntry>`SELECT * FROM houston_night_entries WHERE id = ${id}`.pipe(
