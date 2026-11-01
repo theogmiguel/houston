@@ -406,7 +406,8 @@
     "packages/shared/src/relaySigning.test.ts",
     "apps/web/src/state/npmRelease.test.ts",
     "apps/web/src/state/npmRelease.ts",
-    "packages/client-runtime/src/pullRequestProjectFilter.ts"
+    "packages/client-runtime/src/pullRequestProjectFilter.ts",
+    "apps/web/src/components/Sidebar.tsx"
   ],
   "adapted": {
     "apps/web/index.html": "Houston branding",

@@ -49,7 +49,6 @@
 7 apps/web/src/components/settings/ResourceTelemetryDiagnostics.tsx
 1 apps/web/src/components/settings/ThemeImportDialog.tsx
 4 apps/web/src/components/settings/ThemeSearchSection.tsx
-1 apps/web/src/components/Sidebar.tsx
 2 apps/web/src/components/WorktreeBaseBranchPicker.tsx
 1 apps/web/src/proposedPlan.ts
 1 apps/web/src/state/sourceControlActions.ts

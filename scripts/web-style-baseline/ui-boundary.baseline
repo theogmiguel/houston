@@ -345,7 +345,6 @@
 4 apps/web/src/components/settings/MobileAppSettingsRow.tsx
 2 apps/web/src/components/settings/MultipleAccountsNote.tsx
 34 apps/web/src/components/settings/OpenSourceLicenses.tsx
-26 apps/web/src/components/settings/PanelAnimationsPreview.tsx
 26 apps/web/src/components/settings/ProjectActionsList.tsx
 7 apps/web/src/components/settings/ProjectActionsSettings.tsx
 10 apps/web/src/components/settings/ProjectDefaultsSettings.tsx
@@ -399,7 +398,6 @@
 16 apps/web/src/components/settings/ThemeWireframe.tsx
 1 apps/web/src/components/settings/UsageProviderSettings.tsx
 2 apps/web/src/components/settings/useSnapShotShortcutRecorder.tsx
-29 apps/web/src/components/Sidebar.tsx
 6 apps/web/src/components/sidebar/DesktopUpdateStatusIcon.tsx
 11 apps/web/src/components/sidebar/SidebarChrome.tsx
 24 apps/web/src/components/sidebar/SidebarDraftBlock.tsx
