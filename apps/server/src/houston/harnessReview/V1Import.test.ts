@@ -9,6 +9,8 @@ import * as NodeSqlite from "node:sqlite";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as GitHubCredentials from "@t3tools/source-control-github/server/GitHubCredentials";
+import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -16,10 +18,15 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
+import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
+import * as NightShiftGit from "../nightShift/Git.ts";
 import * as HoustonTaskV1Import from "../tasks/V1Import.ts";
 import { createProject, layerTasks } from "../tasks/tasks.testkit.ts";
 import { type V1Fixture, writeV1Database } from "../tasks/v1Fixture.ts";
 import { reviewWindow } from "./rules.ts";
+import { HoustonHarnessRunner } from "./Runner.ts";
+import * as HoustonHarnessService from "./Service.ts";
 import { HoustonHarnessStore, layer as HoustonHarnessStoreLayer } from "./Store.ts";
 import * as HoustonHarnessV1Import from "./V1Import.ts";
 import { type V1HarnessFixture, writeV1Harness } from "./v1Fixture.ts";
@@ -62,6 +69,22 @@ const withChannel = <A, E, R>(body: (dirs: Dirs) => Effect.Effect<A, E, R>) =>
     const dirs = { baseDir, source: NodePath.join(channel, "houston.db") };
     return yield* body(dirs).pipe(Effect.provide(layerFor(baseDir)));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+
+/** The harness service over the import's layer; only what `report` never reaches is mocked. */
+const layerServiceFor = (baseDir: string) =>
+  HoustonHarnessService.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.mock(HoustonHarnessRunner)({}),
+        Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+        Layer.mock(GitHubRest.GitHubRest)({}),
+        Layer.mock(GitHubCredentials.GitHubCredentials)({}),
+        Layer.mock(NightShiftGit.NightShiftGit)({}),
+      ),
+    ),
+    Layer.provideMerge(ProjectionStore.layer),
+    Layer.provideMerge(layerFor(baseDir)),
+  );
 
 const failureOf = <A, E>(exit: Exit.Exit<A, E>) => {
   assert.isTrue(Exit.isFailure(exit), "expected a refusal");
@@ -537,6 +560,66 @@ describe("the import", () => {
           }),
         );
       }),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "an imported review's report is read only from its run directory under the project",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const channel = yield* fs.makeTempDirectoryScoped({ prefix: "houston-harness-v1-" });
+        const baseDir = NodePath.join(channel, "v2");
+        NodeFS.mkdirSync(baseDir);
+        const source = NodePath.join(channel, "houston.db");
+        const root = NodePath.join(channel, "shop");
+        const inside = NodePath.join(root, ".houston", "harness", "r5");
+        const beside = NodePath.join(channel, "shop-review", ".houston", "harness", "r9");
+        // Every report.md a wrong join could reach holds text the right one never does.
+        for (const [dir, text] of [
+          [inside, "# r5\n"],
+          [root, "the project's own report.md\n"],
+          [beside, "a folder beside the project\n"],
+        ] as const) {
+          NodeFS.mkdirSync(dir, { recursive: true });
+          NodeFS.writeFileSync(NodePath.join(dir, "report.md"), text);
+        }
+        writeV1Database(source, {
+          nextNumber: 2,
+          tasks: [
+            { id: 1, workspace: root, number: 1, title: "t", status: "done", createdAtMs: T0 },
+          ],
+        });
+        writeV1Harness(source, {
+          reviews: [
+            { id: 5, workspace: root, status: "published", runDir: inside, startedAtMs: T0 },
+            { id: 8, workspace: root, status: "failed", runDir: "", startedAtMs: T0 + DAY },
+            {
+              id: 9,
+              workspace: root,
+              status: "published",
+              runDir: beside,
+              startedAtMs: T0 + 2 * DAY,
+            },
+          ],
+        });
+
+        yield* Effect.gen(function* () {
+          yield* createProject("shop", root);
+          yield* importTasks;
+          yield* (yield* importer).run;
+          const harness = yield* HoustonHarnessService.HoustonHarnessService;
+          assert.deepEqual(yield* harness.report({ reviewId: 1 }), {
+            markdown: "# r5\n",
+            truncated: false,
+          });
+          for (const reviewId of [2, 3]) {
+            const refused = failureOf(yield* Effect.exit(harness.report({ reviewId })));
+            assert.strictEqual(refused.kind, "not_found");
+            assert.include(refused.message ?? "", `review ${reviewId}`);
+          }
+        }).pipe(Effect.provide(layerServiceFor(baseDir)));
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
     TIMEOUT,
   );
 });
