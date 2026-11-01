@@ -113,8 +113,9 @@ Before completing a change, identify which of these checks apply:
 
 - **Upstream drift:** `node scripts/check-upstream.mjs <upstream clone> --skip apps/web` exits 0.
   The clone is checked out at `upstream.json`'s `commit`; CI reads the same commit.
-- **Migrations:** a Houston migration takes the next free id on the Houston track, and PRs that
-  carry Houston migrations merge in id order (the migrator skips ids below the highest recorded).
+- **Migrations:** a Houston migration takes the next free id on the Houston track. The Houston
+  runner applies every id a database has not recorded, in ascending order, so PRs that carry
+  Houston migrations may merge in any order; an id never changes once it has merged.
 - **Providers:** support each provider for a feature or refuse it by name; a refusal names the
   provider and the missing capability.
 - **State transitions:** provide reversal and visibility, and settings with a visible current
