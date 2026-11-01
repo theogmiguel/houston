@@ -76,7 +76,7 @@
 19 apps/web/src/components/chat/ModelListRow.tsx
 29 apps/web/src/components/chat/ModelPickerContent.tsx
 19 apps/web/src/components/chat/ModelPickerSidebar.tsx
-3 apps/web/src/components/chat/OpenInPicker.tsx
+2 apps/web/src/components/chat/OpenInPicker.tsx
 5 apps/web/src/components/chat/PanelLayoutControls.tsx
 2 apps/web/src/components/chat/PierreEntryIcon.tsx
 15 apps/web/src/components/chat/ProposedPlanCard.tsx
@@ -95,10 +95,10 @@
 20 apps/web/src/components/chat/TerminalContextInlineChip.tsx
 1 apps/web/src/components/chat/ThreadActivityAnnouncer.tsx
 12 apps/web/src/components/chat/ThreadActivityBanners.tsx
-13 apps/web/src/components/chat/ThreadAutomationsPanel.tsx
+12 apps/web/src/components/chat/ThreadAutomationsPanel.tsx
 12 apps/web/src/components/chat/ThreadContextDragGhost.tsx
-12 apps/web/src/components/chat/ThreadDetailsCard.tsx
-28 apps/web/src/components/chat/ThreadDetailsPrRow.tsx
+10 apps/web/src/components/chat/ThreadDetailsCard.tsx
+27 apps/web/src/components/chat/ThreadDetailsPrRow.tsx
 5 apps/web/src/components/chat/ThreadDetailsSection.tsx
 27 apps/web/src/components/chat/ThreadDetailsUsage.tsx
 6 apps/web/src/components/chat/ThreadErrorBanner.tsx
@@ -106,8 +106,8 @@
 23 apps/web/src/components/chat/ThreadLineageWorkflowRow.tsx
 1 apps/web/src/components/chat/ThreadNow.tsx
 13 apps/web/src/components/chat/ThreadRelationshipIcon.tsx
-54 apps/web/src/components/chat/ThreadRelationshipsControl.tsx
-16 apps/web/src/components/chat/ThreadServersPanel.tsx
+39 apps/web/src/components/chat/ThreadRelationshipsControl.tsx
+9 apps/web/src/components/chat/ThreadServersPanel.tsx
 2 apps/web/src/components/chat/ThreadStatusLine.tsx
 16 apps/web/src/components/chat/TimelineAssistantRows.tsx
 27 apps/web/src/components/chat/TimelineFileChangeCard.tsx
@@ -203,7 +203,7 @@
 12 apps/web/src/components/files/ProjectFileTree.tsx
 1 apps/web/src/components/files/ReadOnlySourcePreview.tsx
 44 apps/web/src/components/files/VirtualTablePreview.tsx
-205 apps/web/src/components/GitActionsControl.tsx
+196 apps/web/src/components/GitActionsControl.tsx
 13 apps/web/src/components/grid/GridHost.tsx
 2 apps/web/src/components/grid/GridLayoutMenu.tsx
 5 apps/web/src/components/grid/GridShelves.tsx

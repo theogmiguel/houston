@@ -27,20 +27,14 @@ import { ThreadDetailsUsage, type ThreadDetailsUsageInput } from "./ThreadDetail
 import { ThreadDetailsItemsMenuItems } from "./ThreadDetailsItemsMenu";
 import { resolveThreadDetailsVisibility, THREAD_DETAILS_ITEMS } from "./threadDetailsItems";
 import { useClientSettings } from "../../hooks/useSettings";
-import { cn } from "../../lib/utils";
-import { SlidersHorizontalIcon } from "lucide-react";
-import { ThreadDetailsControl } from "./ThreadDetailsControl";
-import {
-  THREAD_DETAILS_PANEL_ICON_CLASS,
-  THREAD_DETAILS_PANEL_LABEL_CLASS,
-} from "./threadDetailsPanelStyles";
+import { ThreadDetailsRowButton } from "../ui/thread-details-row";
 import { Menu, MenuPopup } from "../ui/menu";
 
 const GitActionsControl = memo(BaseGitActionsControl);
 
 interface ThreadDetailsPanelProps extends Pick<
   ComponentProps<typeof ThreadDetailsCard>,
-  "anchor" | "handle"
+  "anchor" | "handle" | "defaultOpen"
 > {
   forceNewWorktree?: boolean;
   environmentId: EnvironmentId;
@@ -121,6 +115,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
       threadRef={{ environmentId: props.environmentId, threadId: props.threadId }}
       anchor={props.anchor}
       handle={props.handle}
+      defaultOpen={props.defaultOpen ?? true}
       contentKey={THREAD_DETAILS_ITEMS.filter((item) => visible[item.id])
         .map((item) => item.id)
         .join(",")}
@@ -146,7 +141,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
       {(density) => {
         // Section flags follow the rows that will render, so no empty section steals the divider rule.
         const show = {
-          environment: density === "full" && visible.environment,
+          environment: density !== "essential" && visible.environment,
           openIn: density !== "essential" && visible.openIn && props.showOpenInPicker,
           scripts: visible.scripts && props.activeProjectScripts !== undefined,
           branch: props.gitCwd !== null && props.isGitRepo && visible.branch,
@@ -255,22 +250,15 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
               {visible.usage ? <ThreadDetailsUsage {...props.usage} /> : null}
 
               {/* Shown only when no section above has content, so an emptied card can be refilled. */}
-              <div className="p-2 group-has-[>section>:last-child:not(:empty)]/details-items:hidden">
-                <ThreadDetailsControl
-                  size="xs"
-                  variant="ghost"
-                  part="row"
-                  panel
+              <div className="px-1.5 pb-1 group-has-[>section>:last-child:not(:empty)]/details-items:hidden">
+                <ThreadDetailsRowButton
                   onClick={(event) => {
                     const rect = event.currentTarget.getBoundingClientRect();
                     setMenuPosition({ x: rect.left, y: rect.bottom });
                   }}
                 >
-                  <SlidersHorizontalIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} aria-hidden />
-                  <span className={cn("ml-0.5", THREAD_DETAILS_PANEL_LABEL_CLASS)}>
-                    Choose what to show
-                  </span>
-                </ThreadDetailsControl>
+                  <span className="min-w-0 truncate">Choose what to show</span>
+                </ThreadDetailsRowButton>
               </div>
             </div>
 

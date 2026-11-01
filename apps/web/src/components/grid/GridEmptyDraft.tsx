@@ -14,9 +14,16 @@ interface EmptyDraftState {
 }
 
 /** An empty grid's composer: the draft has no pane head and no timeline. */
-export function GridEmptyDraft({ grid }: { grid: GridRecord }) {
+export function GridEmptyDraft({
+  grid,
+  onDraftChange,
+}: {
+  grid: GridRecord;
+  onDraftChange?: (draft: { threadId: ThreadId } | null) => void;
+}) {
   const handleNewThread = useNewThreadHandler();
   const createDraft = useStableCallback(handleNewThread);
+  const notifyDraftChange = useStableCallback(onDraftChange ?? (() => {}));
   const [draft, setDraft] = useState<EmptyDraftState | null>(null);
   const requestedRef = useRef(false);
   const promotedRef = useRef(false);
@@ -37,9 +44,11 @@ export function GridEmptyDraft({ grid }: { grid: GridRecord }) {
     ).then((opened) => {
       if (opened !== null) {
         setDraft({ draftId: opened.draftId, threadId: opened.threadId });
+        notifyDraftChange({ threadId: opened.threadId });
       }
     });
-  }, [grid.id, grid.focusedThreadId, createDraft]);
+    return () => notifyDraftChange(null);
+  }, [grid.id, grid.focusedThreadId, createDraft, notifyDraftChange]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- moves a promoted empty-grid draft into the grid store
   useEffect(() => {

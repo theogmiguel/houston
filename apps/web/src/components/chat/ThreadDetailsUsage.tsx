@@ -61,11 +61,8 @@ export function ThreadDetailsUsage({
   if (!limits && !contextWindow) return null;
 
   return (
-    <ThreadDetailsSection
-      headingId="thread-details-usage-heading"
-      title="Usage"
-    >
-      <div className="grid grid-cols-[auto_minmax(3rem,1fr)_auto] gap-x-3 text-xs">
+    <ThreadDetailsSection headingId="thread-details-usage-heading" title="Usage">
+      <div className="grid grid-cols-[minmax(0,auto)_minmax(3rem,1fr)_auto] gap-x-3 text-xs">
         {notice ? (
           <UsageRow
             label="Limits"
@@ -133,7 +130,7 @@ function ContextRow({
     <UsageRow
       label="Context"
       left={left}
-      className={cn(spaced && "mt-2")}
+      className={cn(spaced && "mt-1")}
       tooltip={
         <>
           {left !== null ? <span className="text-foreground">Context: {left}% left</span> : null}
@@ -173,7 +170,7 @@ function UsageRow({
             tabIndex={0}
             aria-label={`${label}: ${value ?? `${left}% left`}`}
             className={cn(
-              "col-span-3 grid h-6 cursor-default grid-cols-subgrid items-center rounded-lg px-2.5 outline-none hover:bg-black/[0.035] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:bg-black/[0.035] dark:hover:bg-white/[0.08] dark:data-popup-open:bg-white/[0.08]",
+              "col-span-3 grid min-h-7 cursor-default grid-cols-subgrid items-center rounded-md px-2 py-0.5 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:bg-accent",
               className,
             )}
           />
@@ -181,7 +178,7 @@ function UsageRow({
       >
         <span className="max-w-28 truncate text-muted-foreground">{label}</span>
         {left !== null ? (
-          <span className="relative h-[3px] rounded-full bg-muted-foreground/30 dark:bg-muted-foreground/20">
+          <span className="relative h-1 rounded-full bg-muted-foreground/25">
             {left > 0 ? (
               <span
                 className={cn(

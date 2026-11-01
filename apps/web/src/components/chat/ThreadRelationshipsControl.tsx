@@ -44,12 +44,7 @@ import { groupBy } from "effect/Array";
 import * as DateTime from "effect/DateTime";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  ArrowRightIcon,
-  BotIcon,
   ChevronDownIcon,
-  CornerLeftUpIcon,
-  GitForkIcon,
-  MessagesSquareIcon,
   MoreHorizontalIcon,
   PlusIcon,
   SquareIcon,
@@ -70,7 +65,7 @@ import { threadEnvironment } from "../../state/threads";
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { AgentElapsed } from "./AgentElapsed";
-import { ThreadRelationshipIcon, threadRelationshipStatusLabel } from "./ThreadRelationshipIcon";
+import { threadRelationshipStatusLabel } from "./ThreadRelationshipIcon";
 import { ThreadLineageWorkflowRow } from "./ThreadLineageWorkflowRow";
 import { openSideChatTab } from "../../lib/sideChatPane";
 
@@ -81,7 +76,6 @@ import { Spinner } from "../ui/spinner";
 import { cn } from "~/lib/utils";
 import {
   THREAD_DETAILS_PANEL_CHEVRON_CLASS,
-  THREAD_DETAILS_PANEL_ICON_CLASS,
   THREAD_DETAILS_PANEL_LABEL_CLASS,
   THREAD_DETAILS_PANEL_SPLIT_GROUP_CLASS,
   THREAD_DETAILS_PANEL_ROW_CONTENT_CLASS,
@@ -144,7 +138,6 @@ function ThreadLineageGroup(props: {
     <div>
       {props.label ? (
         <ThreadDetailsControl aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
-          <BotIcon aria-hidden className={THREAD_DETAILS_PANEL_ICON_CLASS} />
           <span className={cn(THREAD_DETAILS_PANEL_LABEL_CLASS, "min-w-0 flex-1 truncate")}>
             {props.label}
           </span>
@@ -264,17 +257,9 @@ function RemoteSubagentRow(props: {
             />
           }
         >
-          <ThreadRelationshipIcon
-            // The task's own driver here is only a "remote" label.
-            driver={props.provider?.driver}
-            provider={props.provider}
-            fallbackIcon={BotIcon}
-            status={status}
-          />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-left text-sm font-medium leading-4 text-foreground/85">
-              {title}
-            </span>
+          <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+            <span className="shrink-0 truncate">Subagent</span>
+            <span className="min-w-0 truncate text-muted-foreground">{title}</span>
           </span>
           <span
             className={`shrink-0 text-2xs ${failed ? "text-destructive" : "text-muted-foreground"}`}
@@ -328,11 +313,9 @@ function DelegatedFromRow(props: {
             />
           }
         >
-          <ThreadRelationshipIcon fallbackIcon={CornerLeftUpIcon} status={null} />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-left text-sm font-medium leading-4 text-foreground/85">
-              {title}
-            </span>
+          <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+            <span className="shrink-0 truncate">Delegated from</span>
+            <span className="min-w-0 truncate text-muted-foreground">{title}</span>
           </span>
           {label ? (
             <span className="shrink-0 text-2xs text-muted-foreground">on {label}</span>
@@ -574,13 +557,6 @@ export function ThreadRelationshipsPanel(props: {
       (isParent && threadId === parentRef?.threadId
         ? (node?.thread?.activityRunStatus ?? parentNativeStatus)
         : undefined) ?? threadRelationshipRowStatus(graph, { threadId, edge });
-    const RelationshipIcon = isParent
-      ? CornerLeftUpIcon
-      : isSubagent
-        ? BotIcon
-        : node?.thread?.lineage.sideChat === true
-          ? MessagesSquareIcon
-          : GitForkIcon;
     const relationship =
       node?.thread?.lineage.sideChat === true && !isParent
         ? "Side chat"
@@ -648,20 +624,10 @@ export function ThreadRelationshipsPanel(props: {
     );
     const relationshipContent = (
       <>
-        <ThreadRelationshipIcon
-          driver={isSubagent && !isParent ? providerDriver : undefined}
-          provider={provider}
-          fallbackIcon={RelationshipIcon}
-          status={rowStatus}
-        />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-left text-sm font-medium leading-4 text-foreground/85">
-            {threadTitle}
-          </span>
+        <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+          <span className="shrink-0 truncate">{relationship}</span>
+          <span className="min-w-0 truncate text-muted-foreground">{threadTitle}</span>
         </span>
-        {agent ? null : (
-          <ArrowRightIcon className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-        )}
         {agent && !failed && (deriveSubagentElapsedMs(agent, 0) !== null || canStopWorkflow) ? (
           <span
             className={`shrink-0 text-2xs font-normal tabular-nums text-muted-foreground ${canStopWorkflow ? "min-w-6 text-end" : ""} ${trailingVisibilityClass}`}

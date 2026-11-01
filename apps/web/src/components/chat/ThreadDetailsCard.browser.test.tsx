@@ -18,7 +18,7 @@ const threadB: ScopedThreadRef = {
   threadId: ThreadId.make("thread-b"),
 };
 const container = { width: 1200, height: 800 };
-const placement = { x: 908, y: 0, right: 12, width: 280, height: 400 } as const;
+const placement = { x: 848, y: 0, right: 12, width: 340, height: 400 } as const;
 
 function setup() {
   useRightPanelStore.setState({ threadPanelVisibilityByThreadKey: {} });
@@ -43,12 +43,14 @@ function Card({
   inline,
   fixture,
   rows = 1,
+  defaultOpen = true,
 }: {
   threadRef: ScopedThreadRef;
   inline: boolean;
   fixture: ReturnType<typeof setup>;
   /** Rows of 100px shown at full density. Compact always takes 50px. */
   rows?: number;
+  defaultOpen?: boolean;
 }) {
   return (
     // The web root renders in StrictMode, which re-runs ref callbacks on every mount.
@@ -71,6 +73,7 @@ function Card({
           anchor={fixture.anchor}
           handle={fixture.handle}
           contentKey={String(rows)}
+          defaultOpen={defaultOpen}
         >
           {(density) => (
             <p style={{ height: density === "full" ? rows * 100 : 50 }}>
@@ -157,4 +160,29 @@ it("returns to full density when hidden items make the content fit", async () =>
 
   await screen.rerender(<Card threadRef={threadB} inline fixture={fixture} rows={2} />);
   await expect.element(card).toHaveAttribute("data-density", "full");
+});
+
+it("stays closed in a grid cell until the top bar toggle opens it", async () => {
+  using fixture = setup();
+  await using _screen = await render(
+    <Card threadRef={threadB} inline fixture={fixture} defaultOpen={false} />,
+  );
+  await expect.element(page.getByText("Details for thread-b")).not.toBeInTheDocument();
+
+  await act(() => {
+    useRightPanelStore.getState().setThreadPanelOpen(threadB, "inline", true);
+    useRightPanelStore.getState().setThreadPanelOpen(threadB, "popover", true);
+  });
+  await expect.element(page.getByText("Details for thread-b")).toBeVisible();
+
+  // The card closes its popover flag when it draws inline; the explicit
+  // grid choice must survive that, or the card would vanish on the next render.
+  await act(() => useRightPanelStore.getState().setThreadPanelOpen(threadB, "popover", false));
+  await expect.element(page.getByText("Details for thread-b")).toBeVisible();
+
+  await act(() => {
+    useRightPanelStore.getState().setThreadPanelOpen(threadB, "inline", false);
+    useRightPanelStore.getState().setThreadPanelOpen(threadB, "popover", false);
+  });
+  await expect.element(page.getByText("Details for thread-b")).not.toBeInTheDocument();
 });

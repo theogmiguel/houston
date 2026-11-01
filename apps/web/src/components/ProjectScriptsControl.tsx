@@ -1,4 +1,5 @@
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
+import { ThreadDetailsRow, ThreadDetailsRowLabelButton } from "./ui/thread-details-row";
 import {
   AuthSettingsWriteScope,
   type EnvironmentId,
@@ -234,6 +235,64 @@ export default function ProjectScriptsControl({
     </>
   );
 
+  const editorDialog = (
+    <ProjectScriptEditorDialog
+      environmentId={environmentId}
+      request={editorRequest}
+      scripts={scripts}
+      onSubmit={submitScript}
+      onDelete={(scriptId) => void onDeleteScript(scriptId)}
+      onClose={() => setEditorRequest(null)}
+    />
+  );
+
+  if (isPanel && presentation !== "menu") {
+    return (
+      <>
+        <ThreadDetailsRow>
+          <Menu
+            open={actionsMenuOpen.imports}
+            onOpenChange={(open) =>
+              setActionsMenuOpen({ presentation, scripts: false, imports: open })
+            }
+          >
+            <MenuTrigger
+              render={<ThreadDetailsRowLabelButton className="col-start-1" />}
+              aria-label="Project scripts"
+            >
+              Scripts
+            </MenuTrigger>
+            <MenuPopup align="start">{scriptItems}</MenuPopup>
+          </Menu>
+          <span className="col-start-2 flex min-w-0 flex-wrap items-center justify-end gap-1">
+            {scripts.map((script) => (
+              <Button
+                key={script.id}
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={!onRunScript}
+                onClick={() => onRunScript?.(script)}
+              >
+                <span className="max-w-32 truncate">{script.name}</span>
+              </Button>
+            ))}
+            <Button
+              type="button"
+              variant="secondary"
+              size="icon-sm"
+              aria-label="Add project script"
+              onClick={openAddDialog}
+            >
+              <PlusIcon className="size-3" />
+            </Button>
+          </span>
+        </ThreadDetailsRow>
+        {editorDialog}
+      </>
+    );
+  }
+
   return (
     <>
       {presentation === "menu" ? (
@@ -448,14 +507,7 @@ export default function ProjectScriptsControl({
         </Tooltip>
       )}
 
-      <ProjectScriptEditorDialog
-        environmentId={environmentId}
-        request={editorRequest}
-        scripts={scripts}
-        onSubmit={submitScript}
-        onDelete={(scriptId) => void onDeleteScript(scriptId)}
-        onClose={() => setEditorRequest(null)}
-      />
+      {editorDialog}
     </>
   );
 }

@@ -74,6 +74,7 @@ import {
 import { Separator } from "./ui/separator";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { MiddleTruncate } from "./ui/middle-truncate";
+import { ThreadDetailsRowContent } from "./ui/thread-details-row";
 import { ComposerSurface } from "./chat/ComposerSurface";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import { cn } from "~/lib/utils";
@@ -275,20 +276,42 @@ const RunContextSelector = memo(function RunContextSelector({
     </>
   );
 
+  const panelMachineLabel = autoEnvironmentLabel ?? activeEnvironment?.label ?? "This computer";
+  const panelWorkspaceLabel = activeWorktreePath ? "Worktree" : "Local checkout";
+  const panelWorkspaceValue = activeWorktreePath
+    ? (activeWorktreePath.split(/[\\/]/).filter(Boolean).at(-1) ?? null)
+    : null;
   if (isLocked) {
+    if (isPanel) {
+      return (
+        <div
+          className="flex w-full flex-col"
+          onContextMenu={handleContextMenu}
+          aria-label={`Run context: ${[panelMachineLabel, panelWorkspaceLabel, panelWorkspaceValue]
+            .filter(Boolean)
+            .join(", ")}`}
+          data-composer-context-control
+        >
+          <span className={THREAD_DETAILS_PANEL_LOCKED_ROW_CLASS}>
+            <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate">
+              {panelMachineLabel}
+            </span>
+          </span>
+          <span className={THREAD_DETAILS_PANEL_LOCKED_ROW_CLASS}>
+            <ThreadDetailsRowContent
+              label={panelWorkspaceLabel}
+              {...(panelWorkspaceValue ? { value: panelWorkspaceValue, mono: true } : {})}
+            />
+          </span>
+        </div>
+      );
+    }
     return (
       <span
         className={cn(
           "inline-flex h-7 min-w-0 max-w-[48%] flex-initial items-center justify-start gap-1 rounded-md border border-transparent px-1.75 font-normal text-foreground/70 text-xs sm:h-6 dark:text-muted-foreground",
-          isPanel && "max-w-full",
-          isPanel && THREAD_DETAILS_PANEL_LOCKED_ROW_CLASS,
         )}
         onContextMenu={handleContextMenu}
-        aria-label={
-          isPanel
-            ? `Run context: ${[autoEnvironmentLabel ?? activeEnvironment?.label, workspaceLabel].filter(Boolean).join(", ")}`
-            : undefined
-        }
         data-composer-context-control
       >
         {triggerContent}
@@ -298,30 +321,48 @@ const RunContextSelector = memo(function RunContextSelector({
 
   return (
     <Menu>
-      <MenuTrigger
-        render={isPanel ? <ThreadDetailsControl part="select" /> : <ComposerControl size="xs" />}
-        className={isPanel ? undefined : "min-w-0 max-w-[48%] justify-start"}
-        onContextMenu={handleContextMenu}
-        onMouseDownCapture={
-          isPanel
-            ? (event) => {
-                if (event.button !== 0 || event.ctrlKey) event.stopPropagation();
-              }
-            : undefined
-        }
-        aria-label={
-          isPanel
-            ? `Run context: ${[autoEnvironmentLabel ?? activeEnvironment?.label, workspaceLabel].filter(Boolean).join(", ")}`
-            : undefined
-        }
-        data-composer-context-control
-        data-composer-shortcut={[
-          showEnvironmentPicker && !envLocked ? "composer.host" : "",
-          !envModeLocked ? "composer.workspace" : "",
-        ].join(" ")}
-      >
-        {triggerContent}
-      </MenuTrigger>
+      {isPanel ? (
+        <div className="flex w-full flex-col" data-composer-context-control>
+          <MenuTrigger
+            render={<ThreadDetailsControl part="select" />}
+            onContextMenu={handleContextMenu}
+            onMouseDownCapture={(event) => {
+              if (event.button !== 0 || event.ctrlKey) event.stopPropagation();
+            }}
+            aria-label={`Run context: ${panelMachineLabel}`}
+            data-composer-shortcut={showEnvironmentPicker && !envLocked ? "composer.host" : ""}
+          >
+            <ThreadDetailsRowContent label={panelMachineLabel} />
+          </MenuTrigger>
+          <MenuTrigger
+            render={<ThreadDetailsControl part="select" />}
+            onContextMenu={handleContextMenu}
+            onMouseDownCapture={(event) => {
+              if (event.button !== 0 || event.ctrlKey) event.stopPropagation();
+            }}
+            aria-label={`Run context: ${[panelWorkspaceLabel, panelWorkspaceValue].filter(Boolean).join(", ")}`}
+            data-composer-shortcut={!envModeLocked ? "composer.workspace" : ""}
+          >
+            <ThreadDetailsRowContent
+              label={panelWorkspaceLabel}
+              {...(panelWorkspaceValue ? { value: panelWorkspaceValue, mono: true } : {})}
+            />
+          </MenuTrigger>
+        </div>
+      ) : (
+        <MenuTrigger
+          render={<ComposerControl size="xs" />}
+          className="min-w-0 max-w-[48%] justify-start"
+          onContextMenu={handleContextMenu}
+          data-composer-context-control
+          data-composer-shortcut={[
+            showEnvironmentPicker && !envLocked ? "composer.host" : "",
+            !envModeLocked ? "composer.workspace" : "",
+          ].join(" ")}
+        >
+          {triggerContent}
+        </MenuTrigger>
+      )}
       <MenuPopup
         align="start"
         side={isPanel ? "bottom" : "top"}

@@ -47,7 +47,7 @@ describe("chat canvas model", () => {
     const resolve = (fullContentHeight: number) =>
       resolveChatCanvasModel({
         measurements: measurements(1100, 300),
-        detailsCardMeasurement: { threadRef, width: 280, fullContentHeight },
+        detailsCardMeasurement: { threadRef, width: 340, fullContentHeight },
         threadRef,
         preview: { ...preview, position: { x: 760, y: 150 }, lastInteraction: "drag" },
         detailsCardInlineOpen: true,

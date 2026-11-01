@@ -10,12 +10,12 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { GlobeIcon, LoaderCircleIcon, SquareIcon } from "lucide-react";
+import { LoaderCircleIcon, SquareIcon } from "lucide-react";
 import { type MouseEvent, useState } from "react";
 
 import { resolveDiscoveredServerUrl } from "../../browser/browserTargetResolver";
 import { readLocalApi } from "../../localApi";
-import { cn, isMacPlatform } from "../../lib/utils";
+import { isMacPlatform } from "../../lib/utils";
 import { useThreadDiscoveredPorts } from "../../portDiscoveryState";
 import { useEnvironment } from "../../state/environments";
 import { previewEnvironment } from "../../state/preview";
@@ -25,8 +25,12 @@ import { openDiscoveredPort } from "../preview/openDiscoveredPort";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
+import {
+  ThreadDetailsRow,
+  ThreadDetailsRowContent,
+  ThreadDetailsRowLabelButton,
+} from "../ui/thread-details-row";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
-import { THREAD_DETAILS_PANEL_ICON_CLASS } from "./threadDetailsPanelStyles";
 
 const serverKey = (server: DiscoveredLocalServer) => `${server.pid}:${server.port}`;
 
@@ -100,65 +104,62 @@ export function ThreadServersPanel(props: {
           const key = serverKey(server);
           const stoppable = canStop && supportsStop && server.pid !== null;
           return (
-            <li key={key} className="group relative flex items-center rounded-lg">
-              <Tooltip>
-                <TooltipTrigger
-                  delay={200}
-                  render={
-                    <ThreadDetailsControl
-                      size="sm"
-                      variant="ghost"
-                      part="row"
-                      multiline
-                      disabled={!canOpen}
-                      onClick={(event) => void open(server, event)}
-                      onAuxClick={(event) => void open(server, event)}
-                    />
-                  }
-                >
-                  <GlobeIcon aria-hidden className={THREAD_DETAILS_PANEL_ICON_CLASS} />
-                  {/* The end padding keeps text clear of the stop button. */}
-                  <span className={cn("flex min-w-0 flex-1 flex-col gap-0.5", stoppable && "pe-6")}>
-                    <span className="truncate text-sm font-medium leading-4 text-foreground/85">
-                      localhost:{server.port}
-                    </span>
-                    <span className="truncate text-2xs font-normal leading-4 text-muted-foreground">
-                      {[server.terminal === null ? "Agent" : "Terminal", server.processName]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
-                  </span>
-                </TooltipTrigger>
-                <TooltipPopup side="left">
-                  Open in the browser panel. {externalClickLabel} for your browser.
-                </TooltipPopup>
-              </Tooltip>
-              {stoppable ? (
-                <div className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <ThreadDetailsControl
-                          size="icon-xs"
-                          variant="ghost"
-                          part="icon"
-                          tone="destructive"
-                          aria-label={`Stop localhost:${server.port}`}
-                          disabled={stoppingKey !== null}
-                          onClick={() => void stop(server)}
-                        />
+            <li key={key} className="group">
+              <ThreadDetailsRow>
+                <Tooltip>
+                  <TooltipTrigger
+                    delay={200}
+                    render={
+                      <ThreadDetailsRowLabelButton
+                        className="col-start-1"
+                        disabled={!canOpen}
+                        onClick={(event) => void open(server, event)}
+                        onAuxClick={(event) => void open(server, event)}
+                      />
+                    }
+                  >
+                    <ThreadDetailsRowContent
+                      label={`localhost:${server.port}`}
+                      value={
+                        server.processName ?? (server.terminal === null ? "Agent" : "Terminal")
                       }
-                    >
-                      {stoppingKey === key ? (
-                        <LoaderCircleIcon aria-hidden className="size-3 animate-spin" />
-                      ) : (
-                        <SquareIcon aria-hidden className="size-3 fill-current" />
-                      )}
-                    </TooltipTrigger>
-                    <TooltipPopup side="left">Stop server</TooltipPopup>
-                  </Tooltip>
-                </div>
-              ) : null}
+                    />
+                  </TooltipTrigger>
+                  <TooltipPopup side="left">
+                    Open in the browser panel. {externalClickLabel} for your browser.
+                  </TooltipPopup>
+                </Tooltip>
+                <span className="col-start-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="size-1.5 rounded-full bg-success" aria-hidden />
+                  Running
+                  {stoppable ? (
+                    <span className="hidden transition-opacity group-hover:flex group-focus-within:flex pointer-coarse:flex">
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <ThreadDetailsControl
+                              size="icon-xs"
+                              variant="ghost"
+                              part="icon"
+                              tone="destructive"
+                              aria-label={`Stop localhost:${server.port}`}
+                              disabled={stoppingKey !== null}
+                              onClick={() => void stop(server)}
+                            />
+                          }
+                        >
+                          {stoppingKey === key ? (
+                            <LoaderCircleIcon aria-hidden className="size-3 animate-spin" />
+                          ) : (
+                            <SquareIcon aria-hidden className="size-3 fill-current" />
+                          )}
+                        </TooltipTrigger>
+                        <TooltipPopup side="left">Stop server</TooltipPopup>
+                      </Tooltip>
+                    </span>
+                  ) : null}
+                </span>
+              </ThreadDetailsRow>
             </li>
           );
         })}

@@ -24,6 +24,7 @@ export function ThreadDetailsCard({
   anchor,
   handle,
   contentKey,
+  defaultOpen = true,
   onContextMenu,
   children,
 }: {
@@ -32,6 +33,8 @@ export function ThreadDetailsCard({
   handle: ReturnType<typeof PopoverCreateHandle>;
   /** Changes when the set of rendered items changes, so cached heights are measured again. */
   contentKey: string;
+  /** Route threads open by default; a grid cell stays closed until its top bar toggles it. */
+  defaultOpen?: boolean;
   onContextMenu?: MouseEventHandler<HTMLDivElement>;
   children: (density: "full" | "compact" | "essential") => ReactNode;
 }) {
@@ -42,10 +45,15 @@ export function ThreadDetailsCard({
   const mode = placement ? "inline" : "popover";
   const topInset = canvas?.detailsCardTopInset ?? 0;
   const inlineOpen = useRightPanelStore((state) =>
-    selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, threadRef, "inline"),
+    selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, threadRef, "inline", defaultOpen),
   );
   const popoverOpen = useRightPanelStore((state) =>
-    selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, threadRef, "popover"),
+    selectThreadPanelOpen(
+      state.threadPanelVisibilityByThreadKey,
+      threadRef,
+      "popover",
+      defaultOpen,
+    ),
   );
   const measurementKey = `${threadRef.environmentId}:${threadRef.threadId}:${preferredPlacement?.width ?? "popup"}:${contentKey}`;
   const [measurements, setMeasurements] = useState({
@@ -122,7 +130,9 @@ export function ThreadDetailsCard({
     (fallbackAnchorElement
       ? {
           getBoundingClientRect: () => {
-            const cell = fallbackAnchorElement.closest<HTMLElement>("[data-grid-cell]");
+            const cell = fallbackAnchorElement.closest<HTMLElement>(
+              "[data-grid-cell], [data-grid-empty-draft]",
+            );
             const rect = (cell ?? fallbackAnchorElement).getBoundingClientRect();
             return new DOMRect(rect.left, rect.top + 34, rect.width, 0);
           },
@@ -131,7 +141,7 @@ export function ThreadDetailsCard({
   const card = (
     <div
       className={cn(
-        "isolate contain-paint grid max-h-full grid-rows-[minmax(0,1fr)] overflow-hidden rounded-xl border border-border bg-[var(--surface-raised)] shadow-[var(--shadow-1)]",
+        "isolate contain-paint grid max-h-full grid-rows-[minmax(0,1fr)] overflow-hidden rounded-xl bg-[var(--surface-raised)] shadow-[var(--shadow-1)]",
         mode === "popover" &&
           "max-h-[min(calc(100dvh-6.5rem),calc(var(--available-height,100dvh)-1rem))]",
       )}
@@ -140,7 +150,9 @@ export function ThreadDetailsCard({
       data-thread-details-card
     >
       <ScrollArea scrollFade className="min-h-0">
-        <div ref={setContentElement}>{children(density)}</div>
+        <div ref={setContentElement} className="py-1">
+          {children(density)}
+        </div>
       </ScrollArea>
     </div>
   );

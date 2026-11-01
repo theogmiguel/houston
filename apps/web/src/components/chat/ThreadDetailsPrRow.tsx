@@ -5,7 +5,7 @@ import {
 } from "@t3tools/client-runtime/source-control-clients";
 import { PullRequestChangeBreakdownRows } from "../pullRequest/PullRequestChangeBreakdownStat";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
-import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
+import { ThreadDetailsRow } from "../ui/thread-details-row";
 import { selectEnvironmentQueryData } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId, ProjectId, PullRequestRef } from "@t3tools/contracts";
@@ -54,11 +54,7 @@ import {
   usePullRequestDefaultMergeMethodResolver,
   usePullRequestHandoffs,
 } from "../pullRequest/usePullRequestActions";
-import {
-  ChangeRequestStatusIcon,
-  type PrStatusIndicator,
-  type ThreadPr,
-} from "../ThreadStatusIndicators";
+import type { PrStatusIndicator, ThreadPr } from "../ThreadStatusIndicators";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -70,12 +66,6 @@ import {
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import {
-  THREAD_DETAILS_PANEL_ICON_CLASS,
-  THREAD_DETAILS_PANEL_LABEL_CLASS,
-  THREAD_DETAILS_PANEL_SPLIT_GROUP_CLASS,
-  THREAD_DETAILS_PANEL_SPLIT_SEPARATOR_CLASS,
-} from "./threadDetailsPanelStyles";
 
 // A null checks response is settled; polling cannot find checks.
 const isSettledWithoutChecks = (result: AsyncResult.AsyncResult<unknown, unknown>) =>
@@ -227,20 +217,6 @@ export function ThreadDetailsPrRow({
           state: detail.state,
           isDraft: detail.isDraft,
         });
-  const icon = statePresentation ? (
-    <statePresentation.Icon
-      aria-hidden
-      className={cn("size-4 shrink-0", statePresentation.toneClassName)}
-    />
-  ) : pr && status ? (
-    <ChangeRequestStatusIcon
-      state={pr.state}
-      className={cn(THREAD_DETAILS_PANEL_ICON_CLASS, status.colorClass)}
-    />
-  ) : (
-    <PullRequestGlyph.pullRequest className={THREAD_DETAILS_PANEL_ICON_CLASS} />
-  );
-
   const rowTooltip =
     detail === null || statePresentation === null ? (
       <TooltipPopup side="top">
@@ -397,91 +373,61 @@ export function ThreadDetailsPrRow({
       </Tooltip>
     ) : null;
 
-  // The title row wraps to two lines; a conventional-commit prefix eats most of one line.
-  const openRow = (text: string, part: "row" | "primary", wrap = false) => (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <ThreadDetailsControl
-            type="button"
-            variant="ghost"
-            size="sm"
-            part={part}
-            multiline={wrap}
-            className={wrap ? "items-start [&>svg]:mt-0.5" : undefined}
-            aria-label={openAriaLabel}
-            onClick={onOpen}
-            onAuxClick={onOpen}
-          />
-        }
-      >
-        {icon}
-        <span
-          className={cn(
-            "min-w-0 flex-1 text-left",
-            wrap
-              ? "line-clamp-2 whitespace-normal leading-4.5"
-              : cn("truncate", THREAD_DETAILS_PANEL_LABEL_CLASS),
-          )}
-        >
-          {text}
-        </span>
-      </TooltipTrigger>
-      {rowTooltip}
-    </Tooltip>
-  );
-
   const showChecks = detail !== null && checksRollup !== null && !conflicting && !detail.isDraft;
 
+  const rowLabel = detail === null ? label : `#${number} ${detail.title}`;
   return (
     <>
-      {detail !== null && (showChecks || trailingAction !== null || watching) ? (
-        <div className="pb-1.5">
-          {openRow(detail.title, "row", true)}
-          <div className="flex h-5 min-w-0 items-center gap-0.5 ps-9 pe-2.5 text-xs text-muted-foreground">
-            <span className="me-1 shrink-0 tabular-nums">#{number}</span>
-            {showChecks && checksRollup !== null ? (
-              <PullRequestChecksPopover
-                checksState={checksRollup}
-                checks={detail.checks}
-                variant="count"
-                render={<ThreadDetailsControl part="meta" />}
+      <ThreadDetailsRow>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                className="min-w-0 cursor-pointer truncate text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                aria-label={openAriaLabel}
+                onClick={onOpen}
+                onAuxClick={onOpen}
               />
-            ) : null}
-            {watchControl("icon")}
-            <span className="flex-1" />
-            {trailingAction ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <ThreadDetailsControl
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      part="meta"
-                      tone={trailingAction.destructive ? "destructive" : "primary"}
-                      disabled={actionPending || handoff !== null}
-                      onClick={trailingAction.onClick}
-                    />
-                  }
-                >
-                  {trailingAction.pending ? trailingAction.pendingLabel : trailingAction.label}
-                  {trailingAction.suffix}
-                </TooltipTrigger>
-                <TooltipPopup side="top">{trailingAction.tooltip}</TooltipPopup>
-              </Tooltip>
-            ) : null}
-          </div>
-        </div>
-      ) : watching ? (
-        <div className={THREAD_DETAILS_PANEL_SPLIT_GROUP_CLASS}>
-          {openRow(label, "primary")}
-          <span aria-hidden="true" className={THREAD_DETAILS_PANEL_SPLIT_SEPARATOR_CLASS} />
-          {watchControl("secondary")}
-        </div>
-      ) : (
-        openRow(label, "row")
-      )}
+            }
+          >
+            <span className="block truncate">{rowLabel}</span>
+          </TooltipTrigger>
+          {rowTooltip}
+        </Tooltip>
+        <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+          {showChecks && checksRollup !== null ? (
+            <PullRequestChecksPopover
+              checksState={checksRollup}
+              checks={detail.checks}
+              variant="count"
+              render={<ThreadDetailsControl part="meta" />}
+            />
+          ) : null}
+          {watchControl("icon")}
+          {trailingAction ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <ThreadDetailsControl
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    part="meta"
+                    tone={trailingAction.destructive ? "destructive" : "primary"}
+                    disabled={actionPending || handoff !== null}
+                    onClick={trailingAction.onClick}
+                  />
+                }
+              >
+                {trailingAction.pending ? trailingAction.pendingLabel : trailingAction.label}
+                {trailingAction.suffix}
+              </TooltipTrigger>
+              <TooltipPopup side="top">{trailingAction.tooltip}</TooltipPopup>
+            </Tooltip>
+          ) : null}
+        </span>
+      </ThreadDetailsRow>
       {rowAction === "merge" ? (
         <AlertDialog open={confirmingMerge} onOpenChange={(open) => setConfirmingMerge(open)}>
           <AlertDialogPopup>

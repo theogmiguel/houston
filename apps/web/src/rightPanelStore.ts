@@ -333,11 +333,6 @@ const updateThreadPanelVisibilityMap = (
 ): Record<string, ThreadPanelVisibility> => {
   const current = byThreadKey[threadKey] ?? DEFAULT_THREAD_PANEL_VISIBILITY;
   const next = updater(current);
-  if (next.inlineOpen && !next.popoverOpen) {
-    if (!(threadKey in byThreadKey)) return byThreadKey;
-    const { [threadKey]: _removed, ...rest } = byThreadKey;
-    return rest;
-  }
   if (next === current) return byThreadKey;
   return { ...byThreadKey, [threadKey]: next };
 };
@@ -1219,8 +1214,13 @@ export function selectThreadPanelOpen(
   byThreadKey: Record<string, ThreadPanelVisibility>,
   ref: ScopedThreadRef | null | undefined,
   presentation: ThreadPanelPresentation,
+  defaultOpen = true,
 ): boolean {
-  const visibility = selectThreadPanelVisibility(byThreadKey, ref);
+  const visibility =
+    defaultOpen || ref == null
+      ? selectThreadPanelVisibility(byThreadKey, ref)
+      : byThreadKey[scopedThreadKey(ref)];
+  if (visibility === undefined) return false;
   return presentation === "inline" ? visibility.inlineOpen : visibility.popoverOpen;
 }
 
