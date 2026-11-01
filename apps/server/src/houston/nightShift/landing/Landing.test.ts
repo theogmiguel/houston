@@ -487,6 +487,57 @@ describe("night shift landing", () => {
     }),
   );
 
+  it.effect("waiting checks stop when their run settles, and alike after a restart", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("land-stop");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const seeded = yield* seedRun(kit, "land-stop", {
+            output: "mergeQueue",
+            checks: [{ command: "git --version", source: "ci.yml · checks" }],
+          });
+          const landing = yield* Landing.HoustonNightLanding;
+          const store = yield* Store.HoustonNightShiftStore;
+          const stopped = "the run ended before the checks ran";
+
+          // Below the memory floor the checks wait; the run settles meanwhile.
+          kit.state.readings = { ...kit.state.readings, freeMemoryBytes: 3 * GIB };
+          const recorded = yield* landing.record(recordInput(seeded));
+          yield* TestClock.adjust("5 seconds");
+          yield* store.settle(seeded.runId, {
+            stopReason: "stopped",
+            detail: null,
+            endedAt: "2026-10-30T23:00:00.000Z",
+          });
+          kit.state.readings = { ...kit.state.readings, freeMemoryBytes: 16 * GIB };
+          for (let tick = 0; tick < 3; tick += 1) yield* TestClock.adjust("5 seconds");
+          yield* landing.checksSettled;
+          let detail = Landing.prDetail((yield* store.getEntry(recorded.entry.id))!);
+          assert.equal(detail.checks.error, stopped);
+          assert.equal(detail.checks.status, "pending");
+          assert.lengthOf(detail.checks.results, 0, "no check ran after the settle");
+          assert.equal(detail.gates.checks, "pending");
+          assert.deepEqual(kit.state.queue.ops, []);
+
+          // Checks a server stop left unfinished on a run that has since ended: the same note.
+          yield* store.updatePullRequest(recorded.entry.id, {
+            detail: {
+              ...detail,
+              checks: { head: seeded.worktree.head, status: "running", results: [] },
+            },
+          });
+          yield* landing.resumePendingChecks;
+          yield* landing.checksSettled;
+          detail = Landing.prDetail((yield* store.getEntry(recorded.entry.id))!);
+          assert.equal(detail.checks.error, stopped);
+          assert.equal(detail.checks.status, "pending");
+          assert.lengthOf(detail.checks.results, 0);
+        }),
+      );
+    }),
+  );
+
   it.effect("ci reads drive re-runs and notes while the run is live", () =>
     Effect.gen(function* () {
       const kit = yield* makeKit("land-ci");

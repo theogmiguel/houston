@@ -64,6 +64,7 @@ const TOOL = "houston_night_pr";
 const AUTHOR = "houston:night-shift";
 const CLOSE_COMMENT = "Closed from Houston's Night shift report.";
 const LEFT_FOR_MORNING = "CI failing; left for the morning";
+export const CHECKS_STOPPED = "the run ended before the checks ran";
 
 export interface CheckResult {
   readonly command: string;
@@ -305,6 +306,14 @@ const make = Effect.gen(function* () {
 
   // The checks of one head.
 
+  /** Checks still waiting when their run ends never run; the gate stays pending, saying why. */
+  const stopChecks = (row: LedgerEntry) =>
+    patchDetail(row, (current) => ({
+      ...current,
+      checks: { ...current.checks, status: "pending", results: [], error: CHECKS_STOPPED },
+      gates: { ...current.gates, checks: "pending" },
+    }));
+
   const runChecks = Effect.fn("HoustonNightLanding.runChecks")(function* (entryId: number) {
     for (;;) {
       const row = yield* store.getEntry(entryId);
@@ -314,6 +323,7 @@ const make = Effect.gen(function* () {
       const run = yield* store.getRun(row.run_id);
       const root = run === undefined ? null : yield* rootOf(run.projectId);
       if (head === null || run === undefined || root === null || row.branch === null) return;
+      if (run.phase !== "running" && run.phase !== "wrappingUp") return yield* stopChecks(row);
       const commands = run.settings.checks.map((check) => check.command);
       if (commands.length === 0) {
         yield* patchDetail(row, (current) => ({
@@ -412,6 +422,8 @@ const make = Effect.gen(function* () {
   });
 
   const resumePendingChecks = Effect.gen(function* () {
+    // A run that ended while the server was stopped gets what a settle while waiting gives.
+    for (const row of yield* store.unfinishedChecksOfEndedRuns) yield* stopChecks(row);
     for (const run of yield* store.liveRuns) {
       for (const row of yield* store.runEntries(run.id)) {
         if (!isOpen(row)) continue;

@@ -385,6 +385,8 @@ export class HoustonNightShiftStore extends Context.Service<
       | { readonly entry: LedgerEntry }
       | { readonly entries: number; readonly decisions: number; readonly pullRequests: number }
     >;
+    /** Pull request entries of runs no longer live whose checks never finished or were noted. */
+    readonly unfinishedChecksOfEndedRuns: Effect.Effect<ReadonlyArray<LedgerEntry>>;
     /** Removes an entry a failed operation reserved. */
     readonly deleteEntry: (id: number) => Effect.Effect<void>;
     readonly getEntry: (id: number) => Effect.Effect<LedgerEntry | undefined>;
@@ -754,6 +756,13 @@ const make = Effect.gen(function* () {
         pullRequests: counts?.prs ?? 0,
       };
     }),
+    unfinishedChecksOfEndedRuns: sql<LedgerEntry>`SELECT e.* FROM houston_night_entries e
+      JOIN houston_night_runs r ON r.id = e.run_id
+      WHERE e.kind = 'pr' AND r.phase NOT IN ('preflight', 'running', 'wrappingUp')
+        AND json_extract(e.detail_json, '$.checks.head') IS NOT NULL
+        AND json_extract(e.detail_json, '$.checks.status') IN ('pending', 'running')
+        AND json_extract(e.detail_json, '$.checks.error') IS NULL
+      ORDER BY e.id`.pipe(Effect.orDie),
     deleteEntry: Effect.fn("HoustonNightShiftStore.deleteEntry")(function* (id) {
       const rows = yield* sql<{ project_id: string }>`DELETE FROM houston_night_entries
         WHERE id = ${id} RETURNING project_id`.pipe(Effect.orDie);
