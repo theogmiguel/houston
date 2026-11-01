@@ -209,6 +209,12 @@ const make = Effect.gen(function* () {
         : (listed.find((provider) => provider.driver === target.driverKind)?.instanceId ??
           caller.providerInstanceId));
     const chain = run.settings.workers.map((worker) => worker.instanceId as string);
+    // Crew work stays on the providers the user listed, so it leaves the machine only to them.
+    if (!chain.includes(requested)) {
+      return yield* Effect.fail(
+        `${requested} is not in the workers chain (${chain.join(", ")}); target one of those instances`,
+      );
+    }
     const chosen = substituteInstance({ requested, chain, states });
     if ("refusal" in chosen) return yield* Effect.fail(chosen.refusal);
 

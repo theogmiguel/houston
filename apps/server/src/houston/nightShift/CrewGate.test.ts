@@ -838,6 +838,68 @@ describe("the crew gate", () => {
     }).pipe(Effect.provide(layerService(world)));
   });
 
+  it.effect("a delegation to an instance outside the workers chain is refused by name", () => {
+    const world = freshWorld();
+    return Effect.gen(function* () {
+      const runId = yield* seedRun(
+        settingsWith({ workers: [selection("codex"), selection("claudeAgent")] }),
+      );
+      // opencode is ready and unlimited, but the user did not list it as a worker.
+      yield* refusedWith(
+        delegate(
+          world,
+          ORCHESTRATOR,
+          worker({ target: { providerInstanceId: ProviderInstanceId.make("opencode") } }),
+        ),
+        "opencode",
+        "workers chain",
+        "codex, claudeAgent",
+      );
+      yield* refusedWith(
+        delegate(
+          world,
+          ORCHESTRATOR,
+          worker({ target: { driverKind: ProviderDriverKind.make("opencode") } }),
+        ),
+        "opencode",
+        "workers chain",
+      );
+      // A thread on an instance outside the chain cannot inherit it for its delegation either.
+      world.callers.set("opencode-worker", "opencode");
+      yield* (yield* Store.HoustonNightShiftStore).addCrew({
+        runId,
+        threadId: ThreadId.make("opencode-worker"),
+        taskId: "task-opencode",
+        parentThreadId: ORCHESTRATOR,
+        role: "research",
+        providerInstanceId: "opencode",
+        requestedInstanceId: "opencode",
+        worktreePath: null,
+        branch: null,
+        startedAt: NOW,
+        endedAt: null,
+      });
+      yield* refusedWith(
+        delegate(world, ThreadId.make("opencode-worker"), worker()),
+        "opencode",
+        "workers chain",
+      );
+      assert.lengthOf(world.dispatched, 0, "no child started");
+      assert.lengthOf(
+        (yield* crewOf(runId)).filter((member) => member.role !== "orchestrator"),
+        1,
+        "only the seeded member",
+      );
+      // A chain instance is still admitted.
+      const codex = yield* delegate(
+        world,
+        ORCHESTRATOR,
+        worker({ target: { providerInstanceId: ProviderInstanceId.make("codex") } }),
+      );
+      assert.equal(codex.providerInstanceId, "codex");
+    }).pipe(Effect.provide(layerService(world)));
+  });
+
   it.effect("a settled run no longer gates its threads", () => {
     const world = freshWorld();
     return Effect.gen(function* () {
