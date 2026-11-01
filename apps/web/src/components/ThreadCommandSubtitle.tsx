@@ -5,10 +5,7 @@ import { cn } from "~/lib/utils";
 
 import { MiddleTruncate } from "./ui/middle-truncate";
 
-export type ThreadCommandSubtitleVariant =
-  | "workspace-harness"
-  | "workspace"
-  | "branch-harness";
+export type ThreadCommandSubtitleVariant = "workspace-harness" | "workspace" | "branch-harness";
 
 const THREAD_COMMAND_SUBTITLE_VARIANT: ThreadCommandSubtitleVariant = "workspace-harness";
 
