@@ -15,6 +15,7 @@ import {
   preorderThreads,
   reconcileThreads,
   removeThread,
+  sameLayout,
   swapThread,
   threadLeaf,
 } from "./tree";
@@ -26,6 +27,20 @@ export interface ThreadOrigin {
 }
 
 export type ThreadOrigins = Readonly<Record<string, ThreadOrigin>>;
+
+/** A cell the user closed from the grid, kept so Ctrl+Shift+T can put it back. */
+export interface ClosedCell {
+  threadId: string;
+  slot: number;
+  /** The exact tree before the close, so reopening restores its pane and sizes. */
+  tree?: LayoutNode;
+}
+
+/** Per-grid stacks of closed cells, most recent last. */
+export type ClosedCellsByGrid = Readonly<Record<string, readonly ClosedCell[]>>;
+
+/** A small stack per grid: enough to undo a run of closes without unbounded state. */
+export const MAX_CLOSED_CELLS_PER_GRID = 10;
 
 /** The most threads a grid can show before a returning thread needs a new one. */
 export const MAX_GRID_THREADS = 6;
@@ -52,6 +67,7 @@ export interface GridRecord {
 export interface GridStoreState {
   grids: GridRecord[];
   threadOrigins: ThreadOrigins;
+  closedCells: ClosedCellsByGrid;
   createGrid: (input: {
     environmentId: string;
     projectId: string;
@@ -83,6 +99,12 @@ export interface GridStoreState {
     environmentId: string;
     projectId: string;
   }) => string | null;
+  /** Removes a cell and remembers its pane slot for a reopen. */
+  closeGridCell: (gridId: string, threadId: string) => void;
+  /** Puts the most recently closed cell back at its slot, or returns null. */
+  reopenClosedCell: (gridId: string) => ClosedCell | null;
+  /** Drops one closed cell that can no longer come back. */
+  forgetClosedCell: (gridId: string, threadId: string) => void;
 }
 
 export const GRID_STORAGE_KEY = "houston:grids:v1";
@@ -251,6 +273,77 @@ export function parseThreadOrigins(value: unknown): Record<string, ThreadOrigin>
   return origins;
 }
 
+export function parseClosedCells(value: unknown): Record<string, ClosedCell[]> {
+  if (!value || typeof value !== "object") return {};
+  const stacks: Record<string, ClosedCell[]> = {};
+  for (const [gridId, entries] of Object.entries(value as Record<string, unknown>)) {
+    if (!Array.isArray(entries)) continue;
+    const cells: ClosedCell[] = [];
+    for (const entry of entries) {
+      if (!entry || typeof entry !== "object") continue;
+      const raw = entry as Partial<ClosedCell>;
+      if (typeof raw.threadId !== "string" || raw.threadId.length === 0) continue;
+      if (typeof raw.slot !== "number" || !Number.isFinite(raw.slot) || raw.slot < 0) continue;
+      if (cells.some((cell) => cell.threadId === raw.threadId)) continue;
+      const tree =
+        raw.tree !== undefined && raw.tree !== null && isLayoutNode(raw.tree)
+          ? raw.tree
+          : undefined;
+      cells.push({
+        threadId: raw.threadId,
+        slot: Math.trunc(raw.slot),
+        ...(tree === undefined ? {} : { tree }),
+      });
+    }
+    if (cells.length > 0) stacks[gridId] = cells.slice(-MAX_CLOSED_CELLS_PER_GRID);
+  }
+  return stacks;
+}
+
+function forgetClosedCellIn(
+  closedCells: ClosedCellsByGrid,
+  gridId: string,
+  threadId: string,
+): ClosedCellsByGrid {
+  const stack = closedCells[gridId];
+  if (stack === undefined || !stack.some((cell) => cell.threadId === threadId)) return closedCells;
+  const next = stack.filter((cell) => cell.threadId !== threadId);
+  if (next.length > 0) return { ...closedCells, [gridId]: next };
+  const { [gridId]: _removed, ...rest } = closedCells;
+  return rest;
+}
+
+function forgetClosedCellEverywhere(
+  closedCells: ClosedCellsByGrid,
+  threadId: string,
+): ClosedCellsByGrid {
+  const next: Record<string, ClosedCell[]> = {};
+  let changed = false;
+  for (const [gridId, stack] of Object.entries(closedCells)) {
+    const kept = stack.filter((cell) => cell.threadId !== threadId);
+    if (kept.length === stack.length) {
+      next[gridId] = [...stack];
+      continue;
+    }
+    changed = true;
+    if (kept.length > 0) next[gridId] = kept;
+  }
+  return changed ? next : closedCells;
+}
+
+/** Records a close once, most recent last, and caps the stack per grid. */
+export function recordClosedCell(
+  closedCells: ClosedCellsByGrid,
+  gridId: string,
+  cell: ClosedCell,
+): ClosedCellsByGrid {
+  const current = (closedCells[gridId] ?? []).filter((entry) => entry.threadId !== cell.threadId);
+  return {
+    ...closedCells,
+    [gridId]: [...current, cell].slice(-MAX_CLOSED_CELLS_PER_GRID),
+  };
+}
+
 /**
  * Takes a thread out of the grid it is shown in and remembers that pane. An
  * action from outside any grid leaves the store untouched.
@@ -391,6 +484,7 @@ export const useGridStore = create<GridStoreState>()(
     (set, get) => ({
       grids: [],
       threadOrigins: {},
+      closedCells: {},
       createGrid: (input) => {
         const grid = createGridRecord(get().grids, input);
         set((state) => ({ grids: [...state.grids, grid] }));
@@ -404,12 +498,19 @@ export const useGridStore = create<GridStoreState>()(
           })),
         })),
       deleteGrid: (gridId) =>
-        set((state) => ({ grids: state.grids.filter((grid) => grid.id !== gridId) })),
+        set((state) => {
+          const { [gridId]: _stack, ...closedCells } = state.closedCells;
+          return {
+            grids: state.grids.filter((grid) => grid.id !== gridId),
+            closedCells,
+          };
+        }),
       addThread: (gridId, threadId, draftId) =>
         set((state) => ({
           grids: updateGrid(state.grids, gridId, (grid) =>
             addThreadToGrid(grid, threadId, draftId),
           ),
+          closedCells: forgetClosedCellEverywhere(state.closedCells, threadId),
         })),
       removeThreadFromGrid: (gridId, threadId) =>
         set((state) => ({
@@ -481,21 +582,88 @@ export const useGridStore = create<GridStoreState>()(
         set({ grids: returned.grids, threadOrigins: returned.threadOrigins });
         return returned.gridId;
       },
+      closeGridCell: (gridId, threadId) =>
+        set((state) => {
+          const grid = gridById(state.grids, gridId);
+          if (grid === null || grid.tree === null) return state;
+          const leaves = preorderThreads(grid.tree);
+          const slot = leaves.findIndex((leaf) => leaf.threadId === threadId);
+          if (slot < 0) return state;
+          const leaf = leaves[slot]!;
+          const previousTree = grid.tree;
+          const tree = removeThread(previousTree, threadId);
+          return {
+            grids: updateGrid(state.grids, gridId, (current) => withTree(current, tree)),
+            closedCells:
+              leaf.draftId === undefined
+                ? recordClosedCell(state.closedCells, gridId, {
+                    threadId,
+                    slot,
+                    tree: previousTree,
+                  })
+                : state.closedCells,
+          };
+        }),
+      reopenClosedCell: (gridId) => {
+        const state = get();
+        const stack = state.closedCells[gridId] ?? [];
+        const cell = stack.at(-1);
+        if (cell === undefined || gridById(state.grids, gridId) === null) return null;
+        set((state) => {
+          const grid = gridById(state.grids, gridId);
+          if (grid === null) return state;
+          const closedCells = forgetClosedCellIn(state.closedCells, gridId, cell.threadId);
+          if (grid.tree !== null && containsThreadId(grid.tree, cell.threadId)) {
+            return {
+              ...state,
+              closedCells,
+              grids: updateGrid(state.grids, gridId, (current) => ({
+                ...current,
+                focusedThreadId: cell.threadId,
+              })),
+            };
+          }
+          const previousTree = cell.tree;
+          const tree =
+            previousTree !== undefined &&
+            sameLayout(grid.tree, removeThread(previousTree, cell.threadId))
+              ? previousTree
+              : insertThreadAtSlot(grid.tree, threadLeaf(cell.threadId), cell.slot);
+          return {
+            ...state,
+            closedCells,
+            grids: updateGrid(state.grids, gridId, (current) => ({
+              ...withTree(current, tree),
+              focusedThreadId: cell.threadId,
+            })),
+          };
+        });
+        return cell;
+      },
+      forgetClosedCell: (gridId, threadId) =>
+        set((state) => ({
+          closedCells: forgetClosedCellIn(state.closedCells, gridId, threadId),
+        })),
     }),
     {
       name: GRID_STORAGE_KEY,
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
-      version: 2,
+      version: 3,
       migrate: (persisted) => {
         const state = persisted as Partial<GridStoreState> | null;
         return {
           grids: parseGrids(state?.grids),
           threadOrigins: parseThreadOrigins(state?.threadOrigins),
+          closedCells: parseClosedCells(state?.closedCells),
         };
       },
-      partialize: ({ grids, threadOrigins }) => ({ grids, threadOrigins }),
+      partialize: ({ grids, threadOrigins, closedCells }) => ({
+        grids,
+        threadOrigins,
+        closedCells,
+      }),
     },
   ),
 );

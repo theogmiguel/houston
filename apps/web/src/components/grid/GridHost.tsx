@@ -8,6 +8,7 @@ import {
   type SplitSide,
   type ThreadNode,
   clampSplitRatio,
+  findThread,
   insertBeside,
   preorderThreads,
   removeThread,
@@ -19,7 +20,11 @@ import { cn } from "../../lib/utils";
 export interface GridCellRenderProps {
   node: ThreadNode;
   focused: boolean;
+  /** The grid is showing this cell alone; the others keep running in the tree. */
+  maximized: boolean;
   onClose: () => void;
+  /** Removes the cell without offering a reopen, for a thread archived elsewhere. */
+  onArchiveClose: () => void;
   onSplit: (side: SplitSide, threadId: string) => void;
 }
 
@@ -27,14 +32,26 @@ const GUTTER_PX = 0;
 
 export interface GridHostProps {
   grid: GridRecord;
-  onTreeChange: (tree: LayoutNode) => void;
+  onTreeChange: (tree: LayoutNode | null) => void;
   onFocusThread: (threadId: string) => void;
+  /** Closes a cell through the grid store, which remembers its slot. */
+  onCloseThread?: (threadId: string) => void;
+  /** Shows one cell alone without changing the tree or its sizes. */
+  maximizedThreadId?: string | null;
   renderThread: (cell: GridCellRenderProps) => ReactNode;
   renderEmpty?: () => ReactNode;
 }
 
 export function GridHost(props: GridHostProps) {
-  const { grid, onTreeChange, onFocusThread, renderThread, renderEmpty } = props;
+  const {
+    grid,
+    onTreeChange,
+    onFocusThread,
+    onCloseThread,
+    maximizedThreadId,
+    renderThread,
+    renderEmpty,
+  } = props;
   const tree = grid.tree;
 
   if (tree === null) {
@@ -59,17 +76,34 @@ export function GridHost(props: GridHostProps) {
   };
 
   const closeThread = (threadId: string) => {
-    const next = removeThread(tree, threadId);
-    onTreeChange(next ?? tree);
+    if (onCloseThread !== undefined) {
+      onCloseThread(threadId);
+      return;
+    }
+    onTreeChange(removeThread(tree, threadId));
   };
 
-  const renderLeaf = (node: ThreadNode, focused: boolean): ReactNode =>
+  const renderLeaf = (node: ThreadNode, focused: boolean, maximized = false): ReactNode =>
     renderThread({
       node,
       focused,
+      maximized,
       onClose: () => closeThread(node.threadId),
+      onArchiveClose: () => onTreeChange(removeThread(tree, node.threadId)),
       onSplit: (side, threadId) => splitThread(node.threadId, side, threadId),
     });
+
+  const maximizedLeaf =
+    maximizedThreadId === undefined || maximizedThreadId === null
+      ? null
+      : findThread(tree, maximizedThreadId);
+  if (maximizedLeaf !== null) {
+    return (
+      <div className="flex h-full min-h-0 w-full min-w-0 flex-1 overflow-hidden">
+        {renderLeaf(maximizedLeaf, true, true)}
+      </div>
+    );
+  }
 
   return (
     <GridBranch
