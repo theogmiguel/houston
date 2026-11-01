@@ -25,7 +25,7 @@ named.
 | **side thread** | A read-only thread beside another one (an aside, a second opinion, a task planner or reviewer). It never writes to its source. | `apps/server/src/houston/sideThreads.ts` |
 | **provider adapter** | The server's driver for one agent runtime; its structured stream is the only source of agent status. | `apps/server/src/orchestration-v2/Adapters` |
 | **orchestration** | Agent-to-agent work through orchestration-v2 (`delegate_task`, subagents) and the server's MCP toolkits. | `apps/server/src/orchestration-v2`, `apps/server/src/mcp` |
-| **Houston migration track** | Houston's own migration table (`houston_sql_migrations`) and ids, applied after upstream's. Ids are taken in merge order. | `apps/server/src/houston/migrations.ts` |
+| **Houston migration track** | Houston's own migration table (`houston_sql_migrations`) and ids, applied after upstream's. Every unrecorded id runs, in ascending order. | `apps/server/src/houston/migrations.ts` |
 | **v1 state** | What a v1 install left directly under a channel directory (`houston.db`, scrollback, `bin/claude-hook` and the daemon's discovery files). Read-only to v2; only the Tasks and task-source imports read `houston.db`. | `apps/server/src/houston/*/V1Import.ts` |
 | **v1 cleanup** | The host's start-up removal of its own channel's v1 hook entries, and of the MCP entries every channel shares while no other channel's v1 daemon runs, from the agent CLI configs. It stands down while that channel's v1 daemon runs. | `src-tauri/src/v1_cleanup/` |
 | **managed marker** | The `--houston-managed[=<channel>]` token on every entry Houston wrote into an agent CLI's config, matched per token, never as a substring. | `v1_cleanup/files.rs` |

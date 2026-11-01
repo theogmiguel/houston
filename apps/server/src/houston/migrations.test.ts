@@ -132,6 +132,46 @@ describe("the Houston track runs beside upstream's", () => {
   );
 });
 
+describe("the Houston track applies every id it has not recorded", () => {
+  const slackTables = Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    return (yield* sql<{ readonly name: string }>`
+      SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'houston_slack_%'
+    `).map((row) => row.name);
+  });
+
+  it.effect("a fresh database applies 1..9 in id order", () =>
+    withDatabaseFile((file) =>
+      Effect.gen(function* () {
+        assert.deepEqual(yield* runHoustonMigrations(), HOUSTON_TRACK);
+        assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file }))),
+    ),
+  );
+
+  it.effect("a database that recorded 1..7 and 9 gets 8 applied, then nothing", () =>
+    withDatabaseFile((file) =>
+      Effect.gen(function* () {
+        // Composed fixture: a migrated database without id 8's tables and row is the state of one
+        // that ran a build with 9 but not 8.
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          for (const table of yield* slackTables) yield* sql`DROP TABLE ${sql(table)}`;
+          yield* sql`DELETE FROM houston_sql_migrations WHERE migration_id = 8`;
+        }).pipe(Effect.provide(openThroughSqlite(file)));
+
+        yield* Effect.gen(function* () {
+          assert.deepEqual(yield* slackTables, []);
+          assert.deepEqual(yield* runHoustonMigrations(), [[8, "SlackIntake"]]);
+          assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
+          assert.isAbove((yield* slackTables).length, 0);
+          assert.deepEqual(yield* runHoustonMigrations(), []);
+        }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file })));
+      }),
+    ),
+  );
+});
+
 describe("the tasks migration runs on the Houston track", () => {
   const taskTables = Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
