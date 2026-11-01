@@ -512,8 +512,8 @@
     "apps/server/src/mcp/toolkits/orchestrator/tools.ts": "user-visible product name: Houston instead of T3 Code",
     "apps/server/src/mcp/toolkits/pullRequests/tools.ts": "user-visible product name: Houston instead of T3 Code",
     "apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts": "user-visible product name: Houston instead of T3 Code",
-    "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts": "user-visible product name: Houston instead of T3 Code; asserts the authentication_failed code on the sign-out failure",
-    "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts": "user-visible product name: Houston instead of T3 Code; its sign-out failure carries code authentication_failed for provider readiness; send intents: steers carry a uuid; command_lifecycle started or a prompt echo for it reports the steer read; aside and second opinion: declares readOnlyRun permissionMode; CLI binary renamed from t3 to houston; tasks backlog: a read-only task planner or reviewer pre-approves its own submit tool",
+    "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts": "user-visible product name: Houston instead of T3 Code; asserts the authentication_failed code on the sign-out failure; Claude spawn env drops host-session markers and blocks on MCP connect (t3code#25976)",
+    "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts": "user-visible product name: Houston instead of T3 Code; its sign-out failure carries code authentication_failed for provider readiness; send intents: steers carry a uuid; command_lifecycle started or a prompt echo for it reports the steer read; aside and second opinion: declares readOnlyRun permissionMode; CLI binary renamed from t3 to houston; tasks backlog: a read-only task planner or reviewer pre-approves its own submit tool; Claude spawn env drops host-session markers and blocks on MCP connect (t3code#25976)",
     "apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts": "user-visible product name: Houston instead of T3 Code",
     "apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.test.ts": "user-visible product name: Houston instead of T3 Code",
     "apps/server/src/orchestration-v2/ContextHandoffService.ts": "user-visible product name: Houston instead of T3 Code; CLI binary renamed from t3 to houston; side chats (#26901)",
@@ -537,7 +537,7 @@
     "apps/server/src/preview/ServerBrowser.ts": "user-visible product name: Houston instead of T3 Code; CLI binary renamed from t3 to houston",
     "apps/server/src/project/ManagedProjectFolders.ts": "user-visible product name: Houston instead of T3 Code; CLI binary renamed from t3 to houston",
     "apps/server/src/provider/AntigravityProvider.ts": "user-visible product name: Houston instead of T3 Code",
-    "apps/server/src/provider/ClaudeProvider.ts": "user-visible product name: Houston instead of T3 Code",
+    "apps/server/src/provider/ClaudeProvider.ts": "user-visible product name: Houston instead of T3 Code; Claude spawn env drops host-session markers and blocks on MCP connect (t3code#25976)",
     "apps/server/src/provider/CodexChatGptAuth.test.ts": "user-visible product name: Houston instead of T3 Code",
     "apps/server/src/provider/CodexChatGptAuth.ts": "user-visible product name: Houston instead of T3 Code",
     "apps/server/src/provider/CodexDeveloperInstructions.test.ts": "user-visible product name: Houston instead of T3 Code",
@@ -853,7 +853,7 @@
     "apps/server/src/sourceControl/SourceControlRepositoryService.ts": "CLI binary renamed from t3 to houston",
     "apps/server/src/sourceControl/SourceControlSignIn.ts": "CLI binary renamed from t3 to houston",
     "apps/server/src/sourceControl/builtInDrivers.ts": "CLI binary renamed from t3 to houston",
-    "apps/server/src/terminal/Manager.ts": "CLI binary renamed from t3 to houston",
+    "apps/server/src/terminal/Manager.ts": "CLI binary renamed from t3 to houston; Claude spawn env drops host-session markers and blocks on MCP connect (t3code#25976)",
     "apps/server/src/textGeneration/TextGeneration.ts": "CLI binary renamed from t3 to houston",
     "apps/server/src/triage/TriageService.ts": "CLI binary renamed from t3 to houston",
     "apps/server/src/triage/triageSession.ts": "CLI binary renamed from t3 to houston",
@@ -1040,6 +1040,9 @@
     "apps/web/src/components/chat/TraitsPicker.tsx": "read-only context window row for fixed catalogs",
     "apps/web/src/components/settings/ConnectionsSettings.logic.ts": "pair-device QR visibility for shareable URLs",
     "apps/web/src/components/settings/ConnectionsSettings.logic.test.ts": "pair-device QR visibility coverage",
-    "apps/web/src/components/settings/AuthorizedClientsSettings.tsx": "pair-device card only for shareable URLs"
+    "apps/web/src/components/settings/AuthorizedClientsSettings.tsx": "pair-device card only for shareable URLs",
+    "apps/server/src/provider/Drivers/ClaudeDriver.ts": "Claude spawn env drops host-session markers and blocks on MCP connect (t3code#25976)",
+    "apps/server/src/provider/Drivers/ClaudeHome.ts": "Claude spawn env drops host-session markers and blocks on MCP connect (t3code#25976)",
+    "apps/server/src/textGeneration/ClaudeTextGeneration.ts": "Claude spawn env drops host-session markers and blocks on MCP connect (t3code#25976)"
   }
 }

@@ -1192,7 +1192,7 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
   environment: ResolvedProviderInstanceEnvironment = [],
 ) {
   const executablePaths: Array<string | undefined> = [];
-  const taskToolEnvironment: Array<string | undefined> = [];
+  const queryEnvironments: Array<NodeJS.ProcessEnv | undefined> = [];
   const adapter = yield* ClaudeAdapterV2.createClaudeAdapterV2(
     {
       instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
@@ -1213,7 +1213,7 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
       open: (input) =>
         Effect.sync(() => {
           executablePaths.push(input.options.pathToClaudeCodeExecutable);
-          taskToolEnvironment.push(input.options.env?.CLAUDE_CODE_ENABLE_TODO_TOOLS);
+          queryEnvironments.push(input.options.env);
           return {
             messages: Stream.never,
             offer: () => Effect.void,
@@ -1253,7 +1253,7 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
       attachments: [],
     }),
   );
-  return { executablePaths, taskToolEnvironment };
+  return { executablePaths, queryEnvironments };
 });
 
 describe("ClaudeAdapterV2 executable path", () => {
@@ -1275,6 +1275,89 @@ describe("ClaudeAdapterV2 executable path", () => {
         Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
       ),
     ),
+  );
+});
+
+describe("ClaudeAdapterV2 turn environment", () => {
+  const hostEnvironment: NodeJS.ProcessEnv = {
+    PATH: "/usr/bin",
+    ANTHROPIC_API_KEY: "sk-ant-host",
+    ANTHROPIC_BASE_URL: "https://proxy.example",
+    CLAUDE_CONFIG_DIR: "/home/dev/.claude",
+    CLAUDECODE: "1",
+    CLAUDE_CODE_ENTRYPOINT: "claude-desktop",
+    CLAUDE_CODE_SESSION_ID: "host-session",
+    CLAUDE_CODE_BRIDGE_SESSION_ID: "session_host",
+    CLAUDE_CODE_REMOTE_SESSION_ID: "host-remote-session",
+    CLAUDE_CODE_MESSAGING_SOCKET: "/run/host-claude.sock",
+    CLAUDE_JOB_DIR: "/home/dev/.claude/jobs/host-job",
+    CLAUDE_EFFORT: "high",
+  };
+  const captureTurnEnvironment = (environment: ResolvedProviderInstanceEnvironment) =>
+    captureSdkExecutablePaths("/usr/local/bin/claude", environment).pipe(
+      Effect.provideService(HostProcess.Platform, "linux"),
+      Effect.provideService(HostProcess.Environment, hostEnvironment),
+      Effect.map(({ queryEnvironments }) => queryEnvironments[0] ?? {}),
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    );
+
+  it.effect("does not leak a parent Claude Code session into the spawned claude", () =>
+    Effect.gen(function* () {
+      const env = yield* captureTurnEnvironment([]);
+      const userEnv = yield* captureTurnEnvironment([
+        { name: "CLAUDE_CODE_ENTRYPOINT", value: "user-entrypoint", sensitive: false },
+      ]);
+
+      assert.deepEqual(
+        {
+          PATH: env.PATH,
+          ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
+          ANTHROPIC_BASE_URL: env.ANTHROPIC_BASE_URL,
+          CLAUDE_CONFIG_DIR: env.CLAUDE_CONFIG_DIR,
+          CLAUDECODE: env.CLAUDECODE,
+          CLAUDE_CODE_ENTRYPOINT: env.CLAUDE_CODE_ENTRYPOINT,
+          CLAUDE_CODE_SESSION_ID: env.CLAUDE_CODE_SESSION_ID,
+          CLAUDE_CODE_BRIDGE_SESSION_ID: env.CLAUDE_CODE_BRIDGE_SESSION_ID,
+          CLAUDE_CODE_REMOTE_SESSION_ID: env.CLAUDE_CODE_REMOTE_SESSION_ID,
+          CLAUDE_CODE_MESSAGING_SOCKET: env.CLAUDE_CODE_MESSAGING_SOCKET,
+          CLAUDE_JOB_DIR: env.CLAUDE_JOB_DIR,
+          CLAUDE_EFFORT: env.CLAUDE_EFFORT,
+          userEntrypoint: userEnv.CLAUDE_CODE_ENTRYPOINT,
+        },
+        {
+          PATH: "/usr/bin",
+          ANTHROPIC_API_KEY: "sk-ant-host",
+          ANTHROPIC_BASE_URL: "https://proxy.example",
+          CLAUDE_CONFIG_DIR: "/home/dev/.claude",
+          CLAUDECODE: undefined,
+          CLAUDE_CODE_ENTRYPOINT: undefined,
+          CLAUDE_CODE_SESSION_ID: undefined,
+          CLAUDE_CODE_BRIDGE_SESSION_ID: undefined,
+          CLAUDE_CODE_REMOTE_SESSION_ID: undefined,
+          CLAUDE_CODE_MESSAGING_SOCKET: undefined,
+          CLAUDE_JOB_DIR: undefined,
+          CLAUDE_EFFORT: undefined,
+          userEntrypoint: "user-entrypoint",
+        },
+      );
+    }),
+  );
+
+  it.effect("connects MCP servers before the first request unless the instance opts out", () =>
+    Effect.gen(function* () {
+      const defaultEnv = yield* captureTurnEnvironment([]);
+      const userEnv = yield* captureTurnEnvironment([
+        { name: "MCP_CONNECTION_NONBLOCKING", value: "true", sensitive: false },
+      ]);
+
+      assert.deepEqual(
+        [defaultEnv.MCP_CONNECTION_NONBLOCKING, userEnv.MCP_CONNECTION_NONBLOCKING],
+        ["false", "true"],
+      );
+    }),
   );
 });
 
