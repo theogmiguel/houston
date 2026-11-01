@@ -515,6 +515,15 @@ const make = Effect.gen(function* () {
       return yield* refuse("not_found", "report", `review ${input.reviewId} does not exist`);
     }
     const project = yield* projectOf("report", review.projectId);
+    // An imported review can keep v1's "" or an absolute path outside the project.
+    const runDir = review.runDir;
+    if (runDir === "" || path.isAbsolute(runDir) || runDir.split(/[\\/]/).includes("..")) {
+      return yield* refuse(
+        "not_found",
+        "report",
+        `review ${review.id} has no run directory under its project (run_dir "${runDir}"; expected a relative path inside it)`,
+      );
+    }
     const file = path.join(project.workspaceRoot, ...review.runDir.split("/"), "report.md");
     const bytes = yield* fs
       .readFile(file)
