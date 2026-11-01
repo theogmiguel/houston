@@ -17,6 +17,7 @@ import {
   type Kit,
   LANDING_ORCHESTRATOR as ORCHESTRATOR,
   LANDING_REVIEWER as REVIEWER,
+  LANDING_WORKER,
   NOW,
   Landing,
   Runner,
@@ -28,6 +29,7 @@ import {
   landingInput as recordInput,
   makeKit,
   messageOf,
+  model,
   pushToOrigin,
   runKit,
   seedLandingRun as seedRun,
@@ -753,6 +755,72 @@ describe("night shift landing", () => {
     }),
   );
 
+  it.effect(
+    "merge queue output enqueues passed pull requests unless held, and waits for a set reviewer",
+    () =>
+      Effect.gen(function* () {
+        const kit = yield* makeKit("land-review");
+        yield* runKit(
+          kit,
+          Effect.gen(function* () {
+            const seeded = yield* seedRun(kit, "land-review", {
+              output: "mergeQueue",
+              reviewer: model("claudeAgent"),
+            });
+            const landing = yield* Landing.HoustonNightLanding;
+            const store = yield* Store.HoustonNightShiftStore;
+            const plan = yield* store.addEntry({
+              runId: seeded.runId,
+              projectId: seeded.projectId as never,
+              kind: "plan",
+              title: "Retry the socket",
+              status: "planned",
+              detail: { claims: [{ claim: "It retries", proof: "ws.test.ts" }] },
+              createdAt: NOW,
+            });
+            const recorded = yield* landing.record(recordInput(seeded, { plans: [plan.id] }));
+            const number = recorded.pullRequest.number;
+            const verdict = (author: ThreadId) =>
+              store.addEntry({
+                runId: seeded.runId,
+                projectId: seeded.projectId as never,
+                kind: "verdict",
+                title: `#${number} plan ${plan.id} claim 0`,
+                status: "passed",
+                detail: {
+                  pullRequest: number,
+                  plan: plan.id,
+                  claim: 0,
+                  passed: true,
+                  evidence: "a:1",
+                },
+                authorThreadId: author,
+                createdAt: NOW,
+              });
+            kit.state.ciChecks.set(number, [{ name: "lint", status: "passed", url: null }]);
+            // Checks, CI and Verify pass, but no review thread has given a verdict yet.
+            yield* verdict(LANDING_WORKER);
+            yield* landing.checksSettled;
+            yield* landing.readCi(seeded.runId);
+            let detail = Landing.prDetail((yield* store.getEntry(recorded.entry.id))!);
+            assert.equal(detail.gates.verify, "passed");
+            assert.equal(detail.gates.review, "pending");
+            assert.deepEqual(kit.state.queue.ops, [], "no enqueue while Review is pending");
+
+            // The review thread's passing verdict: enqueued once.
+            yield* verdict(REVIEWER);
+            yield* landing.evaluate(recorded.entry.id);
+            yield* landing.evaluate(recorded.entry.id);
+            detail = Landing.prDetail((yield* store.getEntry(recorded.entry.id))!);
+            assert.equal(detail.gates.review, "passed");
+            assert.deepEqual(kit.state.queue.ops, [
+              `enqueue:${number}:after:none:owner:${ORCHESTRATOR}`,
+            ]);
+          }),
+        );
+      }),
+  );
+
   it.effect("a new head is no longer held, so mark qa passed refuses it until its gates pass", () =>
     Effect.gen(function* () {
       const kit = yield* makeKit("land-rehead");
@@ -865,6 +933,44 @@ describe("night shift landing", () => {
         }),
       );
     }),
+  );
+
+  it.effect(
+    "mark qa passed enqueues in merge order before marking, after the closest queued predecessor",
+    () =>
+      Effect.gen(function* () {
+        const kit = yield* makeKit("land-chain");
+        yield* runKit(
+          kit,
+          Effect.gen(function* () {
+            const seeded = yield* seedRun(kit, "land-chain", {
+              output: "mergeQueue",
+              holdForQa: true,
+            });
+            const landing = yield* Landing.HoustonNightLanding;
+            const store = yield* Store.HoustonNightShiftStore;
+            const entry = (number: number, patch: Record<string, unknown>) =>
+              store.addEntry({
+                runId: seeded.runId,
+                projectId: seeded.projectId as never,
+                kind: "pr",
+                title: `#${number}`,
+                prNumber: number,
+                status: "open",
+                detail: { plans: [], builtBy: [], visible: false, ...patch },
+                createdAt: NOW,
+              });
+            // The chain 10 → 11 → 12, with 10 and 11 queued.
+            yield* entry(10, {});
+            yield* entry(11, {});
+            kit.state.queue.queued.add(10);
+            kit.state.queue.queued.add(11);
+            const held = yield* entry(12, { visible: true, held: true });
+            yield* landing.markQaPassed(held.id);
+            assert.deepEqual(kit.state.queue.ops, [`enqueue:12:after:11:owner:${ORCHESTRATOR}`]);
+          }),
+        );
+      }),
   );
 
   it.effect("settle audits the remote heads", () =>
