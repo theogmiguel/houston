@@ -2,7 +2,14 @@ import { ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
 import type { HoustonNightShiftSettings } from "@t3tools/contracts/houston/nightShift";
 import { describe, expect, it } from "vite-plus/test";
 
-import { defaultSettings, idleDecision, validateSettings, validateWindow } from "./rules.ts";
+import {
+  defaultSettings,
+  idleDecision,
+  pickTasks,
+  runCost,
+  validateSettings,
+  validateWindow,
+} from "./rules.ts";
 
 const model = (instance: string, name = "m"): ModelSelection => ({
   instanceId: ProviderInstanceId.make(instance),
@@ -274,5 +281,69 @@ describe("night shift rules", () => {
     expect(idleDecision({ idleSinceMs: 0, nudgedAtMs: 10 * minute, nowMs: 20 * minute })).toBe(
       "settle",
     );
+  });
+});
+
+describe("night shift backlog picks", () => {
+  const task = (number: number, projectId = "p", queue = "up_next") => ({
+    number,
+    projectId,
+    queue,
+  });
+  const upNext = [task(7), task(9), task(12), task(13)];
+
+  it("backlog picks follow up next and skip unfinished picks", () => {
+    const pick = (earlierPicks: ReadonlyMap<number, boolean>, backlog = upNext) =>
+      pickTasks({ projectId: "p", max: 3, backlog, earlierPicks });
+    expect(pick(new Map())).toEqual([7, 9, 12]);
+    // HOU-9 picked by the previous run and still in review: skipped.
+    expect(pick(new Map([[9, false]]))).toEqual([7, 12, 13]);
+    // HOU-9 done since that pick: picked again.
+    expect(pick(new Map([[9, true]]))).toEqual([7, 9, 12]);
+    // Another project's task and an unready one are never picked.
+    expect(pick(new Map(), [task(3, "q"), task(4, "p", "none"), ...upNext])).toEqual([7, 9, 12]);
+    expect(pickTasks({ projectId: "p", max: 1, backlog: upNext, earlierPicks: new Map() })).toEqual(
+      [7],
+    );
+  });
+});
+
+describe("night shift cost", () => {
+  const hour = 3_600_000;
+  it("cost counts thread-hours and tokens and never stops a run", () => {
+    const cost = runCost({
+      crew: [
+        { threadId: "o", providerInstanceId: "claudeAgent", startedAtMs: 0, endedAtMs: 8 * hour },
+        { threadId: "w1", providerInstanceId: "codex", startedAtMs: hour, endedAtMs: 3 * hour },
+        // Still live: counted to now.
+        { threadId: "w2", providerInstanceId: "codex", startedAtMs: 6 * hour, endedAtMs: null },
+      ],
+      // The server was stopped from 4 h to 6 h: no member is charged for it.
+      downtime: [{ fromMs: 4 * hour, toMs: 6 * hour }],
+      usage: [
+        { providerInstanceId: "claudeAgent", tokens: 1_200 },
+        { providerInstanceId: "claudeAgent", tokens: 800 },
+        { providerInstanceId: "codex", tokens: null },
+      ],
+      nowMs: 7 * hour,
+    });
+    expect(cost.members).toEqual([
+      { threadId: "o", providerInstanceId: "claudeAgent", hours: 6 },
+      { threadId: "w1", providerInstanceId: "codex", hours: 2 },
+      { threadId: "w2", providerInstanceId: "codex", hours: 1 },
+    ]);
+    expect(cost.instances).toEqual({ claudeAgent: 6, codex: 3 });
+    // Tokens where the provider reported them; "not tracked" for a provider without any.
+    expect(cost.tokens).toEqual({ claudeAgent: 2_000, codex: "not tracked" });
+
+    // A run whose cost exceeds any amount is never stopped by it: cost has no verdict to give.
+    const huge = runCost({
+      crew: [{ threadId: "o", providerInstanceId: "x", startedAtMs: 0, endedAtMs: null }],
+      downtime: [],
+      usage: [{ providerInstanceId: "x", tokens: Number.MAX_SAFE_INTEGER }],
+      nowMs: 10_000 * hour,
+    });
+    expect(Object.keys(huge).toSorted()).toEqual(["instances", "members", "tokens"]);
+    expect(huge.instances.x).toBe(10_000);
   });
 });

@@ -6,6 +6,7 @@ import {
   type HoustonNightShiftErrorKind,
   type HoustonNightShiftSettings,
   type NightCheck,
+  type NightCrewRole,
   type NightStopReason,
 } from "@t3tools/contracts/houston/nightShift";
 
@@ -325,26 +326,173 @@ export const fallbackReport = (input: {
   return `${lines.join("\n")}\n`;
 };
 
-/** Thread-hours per crew member and per provider instance, from start to end or now. */
-export const threadHours = (
-  crew: ReadonlyArray<{
+/** Milliseconds of `[from, to)` that no downtime interval covers. */
+const chargedMs = (
+  from: number,
+  to: number,
+  downtime: ReadonlyArray<{ readonly fromMs: number; readonly toMs: number }>,
+) => {
+  let charged = Math.max(0, to - from);
+  for (const gap of downtime) {
+    charged -= Math.max(0, Math.min(to, gap.toMs) - Math.max(from, gap.fromMs));
+  }
+  return Math.max(0, charged);
+};
+
+/** Thread-hours per crew member and instance while the server ran, and tokens per instance where
+ * the provider reported them; figures only, so cost never ends a run. */
+export const runCost = (input: {
+  readonly crew: ReadonlyArray<{
     readonly threadId: string;
     readonly providerInstanceId: string;
     readonly startedAtMs: number;
     readonly endedAtMs: number | null;
-  }>,
-  nowMs: number,
-) => {
-  const hours = (member: (typeof crew)[number]) =>
-    Math.max(0, (member.endedAtMs ?? nowMs) - member.startedAtMs) / 3_600_000;
-  const perInstance: Record<string, number> = {};
-  for (const member of crew) {
-    perInstance[member.providerInstanceId] =
-      (perInstance[member.providerInstanceId] ?? 0) + hours(member);
+  }>;
+  /** When the server was not running, so nothing ran. */
+  readonly downtime: ReadonlyArray<{ readonly fromMs: number; readonly toMs: number }>;
+  /** One row per recorded run usage; null where the provider reported none. */
+  readonly usage: ReadonlyArray<{
+    readonly providerInstanceId: string;
+    readonly tokens: number | null;
+  }>;
+  readonly nowMs: number;
+  /** Nothing runs past the hard stop, so a settle after a long server stop charges up to it only. */
+  readonly hardStopMs?: number | null;
+}) => {
+  const members = input.crew.map((member) => ({
+    threadId: member.threadId,
+    providerInstanceId: member.providerInstanceId,
+    hours:
+      chargedMs(
+        member.startedAtMs,
+        Math.min(member.endedAtMs ?? input.nowMs, input.hardStopMs ?? Number.POSITIVE_INFINITY),
+        input.downtime,
+      ) / 3_600_000,
+  }));
+  const instances: Record<string, number> = {};
+  for (const member of members) {
+    instances[member.providerInstanceId] =
+      (instances[member.providerInstanceId] ?? 0) + member.hours;
   }
-  return {
-    members: crew.map((member) => ({ threadId: member.threadId, hours: hours(member) })),
-    instances: perInstance,
-    tokens: "not tracked" as const,
-  };
+  const tokens: Record<string, number | "not tracked"> = {};
+  for (const instance of [
+    ...new Set([...Object.keys(instances), ...input.usage.map((row) => row.providerInstanceId)]),
+  ]) {
+    const reported = input.usage.filter(
+      (row) => row.providerInstanceId === instance && row.tokens !== null,
+    );
+    tokens[instance] =
+      reported.length === 0 ? "not tracked" : reported.reduce((sum, row) => sum + row.tokens!, 0);
+  }
+  return { members, instances, tokens };
 };
+
+/** Roles that count against live workers; review and test each have one slot of their own. */
+const WORKER_ROLES: ReadonlySet<NightCrewRole> = new Set([
+  "implementation",
+  "design",
+  "general",
+  "research",
+]);
+/** Roles that build, so each needs a worktree of its own. */
+const BUILDING_ROLES: ReadonlySet<NightCrewRole> = new Set([
+  "implementation",
+  "design",
+  "test",
+  "general",
+]);
+/** The live members a review or test slot holds. */
+const GATE_ROLE_SLOTS = 1;
+
+/** Why a delegation of `role` would exceed the run's caps, or null when it fits. */
+export const crewCapRefusal = (input: {
+  /** Roles of the live members other than the orchestrator, reservations included. */
+  readonly live: ReadonlyArray<NightCrewRole>;
+  readonly role: NightCrewRole;
+  readonly liveWorkers: number;
+}): string | null => {
+  if (WORKER_ROLES.has(input.role)) {
+    const count = input.live.filter((role) => WORKER_ROLES.has(role)).length;
+    return count < input.liveWorkers
+      ? null
+      : `${count} of ${input.liveWorkers} live workers are running; a ${input.role} task waits until one ends`;
+  }
+  const count = input.live.filter((role) => role === input.role).length;
+  return count < GATE_ROLE_SLOTS
+    ? null
+    : `${count} of ${GATE_ROLE_SLOTS} live ${input.role} task is running; a second waits until it ends`;
+};
+
+/** Why a delegation's isolation breaks the run's rules, or null when it keeps them. */
+export const isolationRefusal = (input: {
+  readonly role: NightCrewRole;
+  readonly isolation: "shared" | "worktree" | undefined;
+  readonly environmentId: string | undefined;
+}): string | null => {
+  if (input.environmentId !== undefined) {
+    return `a Night shift run stays on this machine; target.environmentId ${input.environmentId} is refused`;
+  }
+  if (BUILDING_ROLES.has(input.role) && input.isolation !== "worktree") {
+    return `a ${input.role} task needs its own worktree: pass isolation "worktree" (it was ${input.isolation ?? "shared, the default"})`;
+  }
+  return null;
+};
+
+export interface InstanceState {
+  readonly instanceId: string;
+  /** Readiness as last published; `missing` when no provider instance has the id. */
+  readonly state: string;
+  /** Limited for the run until its reset passes and it is ready again. */
+  readonly limited: boolean;
+}
+
+/** The requested instance when usable, else the chain's next usable one, else a refusal. */
+export const substituteInstance = (input: {
+  readonly requested: string;
+  readonly chain: ReadonlyArray<string>;
+  readonly states: ReadonlyMap<string, InstanceState>;
+}): { readonly instanceId: string } | { readonly refusal: string } => {
+  const usable = (id: string) => {
+    const state = input.states.get(id);
+    return state !== undefined && state.state === "ready" && !state.limited;
+  };
+  if (usable(input.requested)) return { instanceId: input.requested };
+  const next = input.chain.find(usable);
+  if (next !== undefined) return { instanceId: next };
+  const named = [...new Set([input.requested, ...input.chain])].map((id) => {
+    const state = input.states.get(id);
+    const text =
+      state === undefined
+        ? "missing"
+        : state.limited
+          ? `${state.state}, limited for this run`
+          : state.state;
+    return `${id} is ${text}`;
+  });
+  return { refusal: `no worker instance is ready and unlimited: ${named.join("; ")}` };
+};
+
+export interface BacklogTask {
+  readonly number: number;
+  readonly projectId: string | null;
+  readonly queue: string;
+}
+
+/** Up to `max` Up next tasks in ready order, skipping earlier picks not done since. */
+export const pickTasks = (input: {
+  readonly projectId: string;
+  readonly max: number;
+  /** In Tasks' ready order. */
+  readonly backlog: ReadonlyArray<BacklogTask>;
+  /** Task numbers earlier runs of the project picked, each with whether it was done since. */
+  readonly earlierPicks: ReadonlyMap<number, boolean>;
+}): ReadonlyArray<number> =>
+  input.backlog
+    .filter(
+      (task) =>
+        task.projectId === input.projectId &&
+        task.queue === "up_next" &&
+        input.earlierPicks.get(task.number) !== false,
+    )
+    .slice(0, input.max)
+    .map((task) => task.number);

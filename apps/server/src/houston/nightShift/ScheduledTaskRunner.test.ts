@@ -4,12 +4,14 @@ import * as NodeFS from "node:fs";
 import { assert, describe, it } from "@effect/vitest";
 import type { ScheduledTask } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import { TestClock } from "effect/testing";
 
 import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
 import {
   awaitTask,
   createProject,
+  CrewGate,
   fireDue,
   kindOf,
   localClock,
@@ -329,6 +331,36 @@ describe("startup", () => {
       // Upstream's scheduled-task tests build the service without the hook and claim nothing.
       const upstreamTest = source("../../scheduledTasks/ScheduledTaskService.test.ts");
       assert.notInclude(upstreamTest, "HoustonScheduledTaskRunner");
+      // One crew gate, in the runner's layer the runtime builds once; the kit builds the same.
+      const nightLayer = source("./layer.ts");
+      assert.equal(count(nightLayer, "CrewGate.layer"), 1, "the server's layer provides the gate");
+      assert.include(kitSource, "CrewGate.layer");
+      // The runtime that builds the runner gets the services its fate reads and picks ask for.
+      const runtimeLayer = server.slice(
+        server.indexOf("const layerOrchestrationV2Runtime"),
+        server.indexOf("const layerOrchestrationApplication"),
+      );
+      // At the pipe's top level: the one nested in RunFinalizationService reaches only that layer.
+      assert.include(runtimeLayer, "\n  Layer.provide(layerPullRequestService),\n");
+      assert.isBelow(
+        server.indexOf("Layer.provideMerge(layerOrchestrationApplication)"),
+        server.indexOf("Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer"),
+        "the Tasks service is provided below the runtime",
+      );
+      // Task runs are built over the runtime that exports the gate, so a crew handback's
+      // automatic review asks the server's gate, not the default.
+      assert.isBelow(
+        server.indexOf("HoustonTaskRuns.layer.pipe("),
+        server.indexOf("Layer.provideMerge(layerOrchestrationApplication)"),
+        "task runs are built over the runtime",
+      );
+      assert.include(source("../tasks/TaskRuns.ts"), "const crewGate = yield* HoustonCrewGate;");
+      // Upstream's orchestrator MCP tests run with the default gate, which admits everything.
+      assert.notInclude(source("../../mcp/OrchestratorMcpService.test.ts"), "HoustonCrewGate");
+      assert.strictEqual(
+        yield* CrewGate.HoustonCrewGate.pipe(Effect.provide(Layer.empty)),
+        CrewGate.allowAll,
+      );
 
       const kit = yield* makeKit("startup-claim");
       yield* runKit(
@@ -336,6 +368,11 @@ describe("startup", () => {
         Effect.gen(function* () {
           const night = yield* service;
           const store = yield* Store.HoustonNightShiftStore;
+          assert.notStrictEqual(
+            yield* CrewGate.HoustonCrewGate,
+            CrewGate.allowAll,
+            "the kit's gate",
+          );
           const fixture = makeRepository("startup", { kind: "bare" });
           const projectId = yield* createProject("startup", fixture.root);
           yield* seedNightShift(projectId);

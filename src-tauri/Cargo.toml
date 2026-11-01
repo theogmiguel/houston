@@ -10,6 +10,11 @@ authors = ["Théo Miguel"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+# Off by default: a release menu has no developer tools. Let a deliberate
+# `--features devtools` build include them without enabling them always.
+devtools = ["tauri/devtools"]
+
 # tracing must stay off this feature list: with it, eval_script_with_callback takes
 # wry's blocking getter path instead of send_user_message, letting the renderer
 # watchdog's supervisor thread block on the very event loop it watches (check-watchdog.sh).
@@ -96,10 +101,14 @@ windows-sys = { version = "0.61", features = [
   "Win32_Graphics_Dwm",
 ] }
 
+# Unix process ownership (process groups, waitid, poll) and the clipboard/shell
+# helpers behind it are shared by Linux and macOS.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = { version = "0.18", features = ["v3_24"] }
 glib = "0.18"
-libc = "0.2"
 zbus = "5"
 # Used to dlopen libappindicator ahead of tray init: libappindicator-sys panics
 # (not errors) from inside TrayIcon::new on the main thread if the library is

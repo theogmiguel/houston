@@ -67,8 +67,9 @@ class ReleaseFixture:
 
     def add_server_archives(self):
         base = self.version.split("+", 1)[0]
-        for arch in ("x64", "arm64"):
-            self.add_file(f"houston-{base}-linux-{arch}.tar.gz", "archive")
+        for platform in ("linux", "darwin"):
+            for arch in ("x64", "arm64"):
+                self.add_file(f"houston-{base}-{platform}-{arch}.tar.gz", "archive")
         self.add_file("SHA256SUMS", "checksums\n")
         return self
 
@@ -80,6 +81,10 @@ class ReleaseFixture:
             f"Houston_{base}_aarch64.AppImage",
             f"Houston_{base}_arm64.deb",
             f"Houston_{base}_x64-setup.exe",
+            f"Houston_{base}_x64.app.tar.gz",
+            f"Houston_{base}_x64.dmg",
+            f"Houston_{base}_aarch64.app.tar.gz",
+            f"Houston_{base}_aarch64.dmg",
         ):
             self.add_bundle(name)
         return self
@@ -182,6 +187,10 @@ class AssembleTests(unittest.TestCase):
                 "linux-x86_64-deb",
                 "windows-x86_64",
                 "windows-x86_64-nsis",
+                "darwin-aarch64",
+                "darwin-aarch64-app",
+                "darwin-x86_64",
+                "darwin-x86_64-app",
             ],
         )
         appimage = built["platforms"]["linux-x86_64-appimage"]
@@ -217,6 +226,19 @@ class AssembleTests(unittest.TestCase):
         self.assertEqual(
             built["platforms"]["windows-x86_64"],
             built["platforms"]["windows-x86_64-nsis"],
+        )
+        app = built["platforms"]["darwin-aarch64-app"]
+        self.assertEqual(
+            app["url"],
+            "https://github.com/theogmiguel/houston/releases/download/v1.2.3/"
+            "Houston_1.2.3_aarch64.app.tar.gz",
+        )
+        self.assertEqual(app["signature"], SIGNATURE)
+        self.assertEqual(built["platforms"]["darwin-aarch64"], app)
+        self.assertEqual(
+            built["platforms"]["darwin-x86_64-app"]["url"],
+            "https://github.com/theogmiguel/houston/releases/download/v1.2.3/"
+            "Houston_1.2.3_x64.app.tar.gz",
         )
 
     def test_the_raw_appimage_serves_both_appimage_keys_in_v2_mode(self):
@@ -340,7 +362,7 @@ class AssembleTests(unittest.TestCase):
     def test_linux_only_release_accepts_both_official_architectures(self):
         self.release.add_linux_bundles()
 
-        built = self.release.generate(include_windows=False)
+        built = self.release.generate(include_windows=False, include_macos=False)
 
         self.assertEqual(
             list(built["platforms"]),
@@ -357,9 +379,33 @@ class AssembleTests(unittest.TestCase):
     def test_linux_only_release_refuses_a_windows_artifact(self):
         self.release.add_all_bundles()
 
-        message = self.refuse(include_windows=False)
+        message = self.refuse(include_windows=False, include_macos=False)
 
         self.assertIn("Windows artifacts", message)
+
+    def test_a_missing_macos_architecture_is_refused(self):
+        self.release.add_all_bundles()
+        for suffix in (".app.tar.gz", ".dmg"):
+            (self.release.artifacts / f"Houston_1.2.3_x64{suffix}").unlink()
+            (self.release.artifacts / f"Houston_1.2.3_x64{suffix}.sig").unlink()
+
+        message = self.refuse()
+        self.assertIn("macOS bundles for x86_64", message)
+
+    def test_a_macos_release_without_the_updater_archive_is_refused(self):
+        self.release.add_all_bundles()
+        (self.release.artifacts / "Houston_1.2.3_aarch64.app.tar.gz").unlink()
+        (self.release.artifacts / "Houston_1.2.3_aarch64.app.tar.gz.sig").unlink()
+
+        message = self.refuse()
+        self.assertIn("macOS updater .app.tar.gz for aarch64", message)
+
+    def test_macos_artifacts_are_refused_when_macos_is_excluded(self):
+        self.release.add_all_bundles()
+
+        message = self.refuse(include_windows=True, include_macos=False)
+
+        self.assertIn("macOS artifacts", message)
 
     def test_orphan_signature_is_refused(self):
         self.release.add_all_bundles()
@@ -376,6 +422,8 @@ class AssembleTests(unittest.TestCase):
 
         self.assertNotIn("linux-x64", built["platforms"])
         self.assertNotIn("linux-arm64", built["platforms"])
+        self.assertNotIn("darwin-arm64", built["platforms"])
+        self.assertNotIn("darwin-x64", built["platforms"])
 
     def test_a_server_archive_from_another_version_is_refused(self):
         self.release.add_all_bundles()
@@ -444,13 +492,8 @@ class AssembleTests(unittest.TestCase):
         self.assertIn("tag", message)
 
     def test_the_tarball_appimage_wins_for_both_appimage_keys(self):
-        base = "1.2.3"
-        self.release.add_bundle(f"Houston_{base}_amd64.AppImage")
-        self.release.add_bundle(f"Houston_{base}_amd64.AppImage.tar.gz")
-        self.release.add_bundle(f"Houston_{base}_amd64.deb")
-        self.release.add_bundle(f"Houston_{base}_aarch64.AppImage")
-        self.release.add_bundle(f"Houston_{base}_arm64.deb")
-        self.release.add_bundle(f"Houston_{base}_x64-setup.exe")
+        self.release.add_all_bundles()
+        self.release.add_bundle("Houston_1.2.3_amd64.AppImage.tar.gz")
 
         built = self.release.generate()
         self.assertIn(

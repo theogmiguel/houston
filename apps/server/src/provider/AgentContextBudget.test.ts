@@ -13,6 +13,9 @@ import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import { HoustonMergeQueueProject } from "../houston/mergeQueue/Project.ts";
 import { HoustonMergeQueueService } from "../houston/mergeQueue/Service.ts";
+import { HoustonNightLanding } from "../houston/nightShift/landing/Landing.ts";
+import { HoustonNightShiftRunner } from "../houston/nightShift/Runner.ts";
+import { HoustonNightShiftStore } from "../houston/nightShift/Store.ts";
 import { HoustonSlackConversation } from "../houston/slack/Conversation.ts";
 import { HoustonTaskRuns } from "../houston/tasks/TaskRuns.ts";
 import { HoustonTaskService } from "../houston/tasks/TaskService.ts";
@@ -83,6 +86,9 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(HoustonSlackConversation)({}),
   Layer.mock(HoustonMergeQueueProject)({}),
   Layer.mock(HoustonMergeQueueService)({}),
+  Layer.mock(HoustonNightLanding)({}),
+  Layer.mock(HoustonNightShiftStore)({ changes: undefined as never, notices: undefined as never }),
+  Layer.mock(HoustonNightShiftRunner)({}),
   Layer.mock(HoustonTaskRuns)({}),
   Layer.mock(HoustonTaskService)({}),
 ).pipe(Layer.provideMerge(NodeServices.layer));

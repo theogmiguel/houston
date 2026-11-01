@@ -3055,6 +3055,15 @@ export const layerWsRpc = (
         [WS_METHODS.houstonNightShiftRunNow]: (input) => houstonNightShift.runNow(input),
         [WS_METHODS.houstonNightShiftWrapUp]: (input) => houstonNightShift.wrapUp(input),
         [WS_METHODS.houstonNightShiftStop]: (input) => houstonNightShift.stop(input),
+        [WS_METHODS.houstonNightShiftReport]: (input) => houstonNightShift.report(input),
+        [WS_METHODS.houstonNightShiftDecide]: (input) => houstonNightShift.decide(input),
+        [WS_METHODS.houstonNightShiftMarkQaPassed]: (input) =>
+          houstonNightShift.markQaPassed(input),
+        [WS_METHODS.houstonNightShiftClosePullRequests]: (input) =>
+          houstonNightShift.closePullRequests(input),
+        [WS_METHODS.houstonNightShiftImportV1Status]: (input) =>
+          houstonNightShift.importV1Status(input),
+        [WS_METHODS.houstonNightShiftImportV1Run]: (input) => houstonNightShift.importV1Run(input),
         [WS_METHODS.houstonMergeQueueGet]: (input) => houstonMergeQueue.get(input),
         [WS_METHODS.houstonMergeQueueSubscribe]: (input) => houstonMergeQueue.subscribe(input),
         [WS_METHODS.houstonMergeQueueSubscribeSummary]: (input) =>

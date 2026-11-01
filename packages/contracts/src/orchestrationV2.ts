@@ -3346,7 +3346,6 @@ export const OrchestrationV2Command = Schema.Union([
     modelSelection: ModelSelection,
   }),
   ...makeHoustonSideThreadCommands(OrchestrationV2CreationFields),
-  HoustonMergeQueueNotifyCommand,
 ]);
 export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 
@@ -3356,6 +3355,8 @@ const OrchestrationV2InternalCommand = Schema.Union([
   HoustonSlackAnswerCommand,
   HoustonHarnessReviewStartCommand,
   HoustonNightShiftNotifyCommand,
+  /** A merge queue notice; a client could otherwise post one into any thread. */
+  HoustonMergeQueueNotifyCommand,
   /** Moves a thread to a project rooted at the folder it already works in, so its cwd never changes. */
   Schema.Struct({
     type: Schema.Literal("thread.project.adopt-folder"),

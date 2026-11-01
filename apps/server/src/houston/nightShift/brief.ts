@@ -70,7 +70,10 @@ const sizeText = (settings: HoustonNightShiftSettings) =>
     ? "one change per pull request"
     : `up to ${settings.prSize.maxChanges} related changes per pull request`;
 
-const body = (input: BriefInput) => {
+const cutNote = (number: number) =>
+  `(Cut to fit the brief: read the full text of HOU-${number} with houston_task_get.)`;
+
+const body = (input: BriefInput, cut: ReadonlySet<number> = new Set()) => {
   const { settings } = input;
   const focus = (Object.keys(FOCUS) as Array<keyof NightFocus>)
     .filter((area) => settings.focus[area] !== "off")
@@ -139,7 +142,9 @@ const body = (input: BriefInput) => {
             "Give each to one worker. The worker calls houston_task_claim with the task first and houston_task_handback when done.",
             ...input.picks.map(
               (pick) =>
-                `- HOU-${pick.number}: ${oneLine(pick.title)}\n${fenced(`HOU-${pick.number}`, pick.text)}`,
+                `- HOU-${pick.number}: ${oneLine(pick.title)}\n${fenced(`HOU-${pick.number}`, pick.text)}${
+                  cut.has(pick.number) ? `\n${cutNote(pick.number)}` : ""
+                }`,
             ),
           ],
     ),
@@ -155,18 +160,45 @@ const body = (input: BriefInput) => {
   return { head: parts.join("\n\n"), rules };
 };
 
+/** The length `fenced` gives `text`: escaped markers, and "> " before each line. */
+const quotedCost = (text: string) =>
+  text.replaceAll("<<<", "< < <").replaceAll(">>>", "> > >").length + 3 * text.split("\n").length;
+
+/** The picks with each text cut to an equal share of `room`, and the numbers that were cut. */
+const fitPicks = (picks: ReadonlyArray<BriefPick>, room: number) => {
+  const cut = new Set<number>();
+  const share = Math.max(0, Math.floor(room / Math.max(1, picks.length)));
+  const fitted = picks.map((pick) => {
+    if (quotedCost(pick.text) <= share) return pick;
+    cut.add(pick.number);
+    const target = Math.max(0, share - cutNote(pick.number).length);
+    let length = target;
+    while (length > 0 && quotedCost(pick.text.slice(0, length)) > target) {
+      length = Math.floor((length * target) / quotedCost(pick.text.slice(0, length)));
+    }
+    return { ...pick, text: pick.text.slice(0, length) };
+  });
+  return { picks: fitted, cut };
+};
+
 /** The brief and how many of the digest's oldest items it left out to fit the budget. */
 export const composeBrief = (input: BriefInput): { text: string; dropped: number } => {
-  const { head, rules } = body(input);
   const budget = HOUSTON_NIGHT_SHIFT_LIMITS.briefChars;
   const heading = "\n\n## Ledger of earlier runs, newest first\n\n";
-  const kept: string[] = [];
-  let used = head.length + rules.length + heading.length;
   // Reserve room for the fence lines and the line that counts what was left out.
   const reserve = 160;
+  // Picks take at most half the budget, so the ledger of earlier runs keeps room too.
+  const empty = body({ ...input, picks: input.picks.map((pick) => ({ ...pick, text: "" })) });
+  const room = Math.min(
+    Math.floor(budget / 2),
+    budget - empty.head.length - empty.rules.length - heading.length - reserve,
+  );
+  const fitted = fitPicks(input.picks, room);
+  const { head, rules } = body({ ...input, picks: fitted.picks }, fitted.cut);
+  const kept: string[] = [];
+  let used = head.length + rules.length + heading.length;
   for (const item of input.digest) {
-    // Each line is quoted as "> " inside the fence.
-    const cost = item.length + 3 * item.split("\n").length;
+    const cost = quotedCost(item);
     if (used + cost + reserve > budget) break;
     kept.push(item);
     used += cost;
@@ -177,4 +209,64 @@ export const composeBrief = (input: BriefInput): { text: string; dropped: number
       ? ""
       : `${heading}${fenced("ledger", kept.join("\n"))}${dropped === 0 ? "" : `\n\n${dropped} older ledger items were left out to fit the brief.`}`;
   return { text: `${head}${ledger}\n\n${rules}\n`, dropped };
+};
+
+export interface DigestEntry {
+  readonly id: number;
+  readonly runId: number;
+  readonly kind: string;
+  readonly title: string;
+  readonly status: string | null;
+  readonly prNumber: number | null;
+  readonly body: string;
+  readonly choice: string | null;
+  /** `studied`: the competitor whose newest version alone is kept. */
+  readonly competitor?: string | undefined;
+}
+
+const PR_FATES: ReadonlySet<string> = new Set(["merged", "closed", "open"]);
+
+/** The project's earlier ledger for the next brief, newest first; one version per competitor. */
+export const ledgerDigest = (entries: ReadonlyArray<DigestEntry>): ReadonlyArray<string> => {
+  const newestFirst = entries.toSorted((left, right) => right.id - left.id);
+  const studied = new Set<string>();
+  const lines: string[] = [];
+  for (const entry of newestFirst) {
+    const title = oneLine(entry.title);
+    const body = oneLine(entry.body);
+    const tail = body === "" ? "" : `: ${body}`;
+    switch (entry.kind) {
+      case "deferred":
+        lines.push(`- run ${entry.runId}, ${entry.status ?? "deferred"}: ${title}${tail}`);
+        break;
+      case "lesson":
+        lines.push(`- run ${entry.runId}, lesson: ${title}${tail}`);
+        break;
+      case "flaky":
+        lines.push(`- run ${entry.runId}, flaky test: ${title}${tail}`);
+        break;
+      case "studied": {
+        const competitor = entry.competitor ?? title;
+        if (studied.has(competitor)) break;
+        studied.add(competitor);
+        lines.push(`- run ${entry.runId}, studied ${oneLine(competitor)}${tail}`);
+        break;
+      }
+      case "pr": {
+        const fate =
+          entry.status !== null && PR_FATES.has(entry.status) ? entry.status : "fate unknown";
+        const number = entry.prNumber === null ? "" : ` #${entry.prNumber}`;
+        lines.push(`- run ${entry.runId}, pull request${number} (${fate}): ${title}`);
+        break;
+      }
+      case "decision":
+        if (entry.choice !== null) {
+          lines.push(
+            `- run ${entry.runId}, decision answered "${oneLine(entry.choice)}": ${title}`,
+          );
+        }
+        break;
+    }
+  }
+  return lines;
 };

@@ -1,8 +1,8 @@
 name: Build server archives (internal)
 
-# Reusable half of Cut release: the Linux server archives boot services and
-# remote installs download. Both are attached to the same draft the installer
-# workflows file, and publish waits for them.
+# Reusable half of Cut release: the server archives boot services and remote
+# installs download. Every official desktop platform gets one; they are attached
+# to the same draft the installer workflows file, and publish waits for them.
 on:
   workflow_call:
     inputs:
@@ -27,8 +27,18 @@ jobs:
         include:
           - runner: ubuntu-24.04
             arch: x64
+            platform: linux
           - runner: ubuntu-24.04-arm
             arch: arm64
+            platform: linux
+          # Native per architecture: the Node single-executable and the native
+          # packages beside it (node-pty, keyring) are not portable across arches.
+          - runner: macos-latest
+            arch: arm64
+            platform: darwin
+          - runner: macos-15-intel
+            arch: x64
+            platform: darwin
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Record start time
@@ -71,13 +81,13 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/build-server-archive.mjs \
-            --platform linux --arch ${{ matrix.arch }} \
+            --platform ${{ matrix.platform }} --arch ${{ matrix.arch }} \
             --version "${{ inputs.version }}" \
             --output-dir release-server
 
       - uses: actions/upload-artifact@v7
         with:
-          name: houston-server-${{ inputs.version }}-linux-${{ matrix.arch }}
+          name: houston-server-${{ inputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}
           path: release-server/*.tar.gz
           if-no-files-found: error
 
@@ -89,10 +99,10 @@ jobs:
           {
             echo "| Job | Elapsed (s) |"
             echo "|---|---|"
-            echo "| server-archive (linux-${{ matrix.arch }}) | $elapsed |"
+            echo "| server-archive (${{ matrix.platform }}-${{ matrix.arch }}) | $elapsed |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # One SHA256SUMS covers both architectures, in the space-separated form
+  # One SHA256SUMS covers every architecture, in the space-separated form
   # parseChecksums in packages/shared/src/cliRelease.ts reads.
   finalize:
     needs: archive
@@ -112,7 +122,7 @@ jobs:
           set -euo pipefail
           cd release-server
           archives=(houston-*.tar.gz)
-          [ "${#archives[@]}" -eq 2 ] || { echo "::error::expected two server archives, found ${#archives[@]}"; printf '  %s\n' "${archives[@]}"; exit 1; }
+          [ "${#archives[@]}" -eq 4 ] || { echo "::error::expected four server archives (linux and darwin, two arches each), found ${#archives[@]}"; printf '  %s\n' "${archives[@]}"; exit 1; }
           sha256sum "${archives[@]}" > SHA256SUMS
           cat SHA256SUMS
 

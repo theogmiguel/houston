@@ -248,8 +248,16 @@ import {
   HoustonHarnessSnapshot,
 } from "./houston/harnessReview.ts";
 import {
+  HoustonNightReport,
+  HoustonNightShiftCloseInput,
+  HoustonNightShiftCloseResult,
+  HoustonNightShiftDecideInput,
   HoustonNightShiftEmptyResult,
+  HoustonNightShiftEntryInput,
   HoustonNightShiftError,
+  HoustonNightShiftImportResult,
+  HoustonNightShiftImportStatus,
+  NightEntry,
   HoustonNightShiftOverviewEvent,
   HoustonNightShiftOverviewInput,
   HoustonNightShiftPreflightInput,
@@ -638,6 +646,12 @@ export const WS_METHODS = {
   houstonNightShiftRunNow: "houston.nightShift.runNow",
   houstonNightShiftWrapUp: "houston.nightShift.wrapUp",
   houstonNightShiftStop: "houston.nightShift.stop",
+  houstonNightShiftReport: "houston.nightShift.report",
+  houstonNightShiftDecide: "houston.nightShift.decide",
+  houstonNightShiftMarkQaPassed: "houston.nightShift.markQaPassed",
+  houstonNightShiftClosePullRequests: "houston.nightShift.closePullRequests",
+  houstonNightShiftImportV1Status: "houston.nightShift.importV1.status",
+  houstonNightShiftImportV1Run: "houston.nightShift.importV1.run",
   houstonMergeQueueGet: "houston.mergeQueue.get",
   houstonMergeQueueSubscribe: "houston.mergeQueue.subscribe",
   houstonMergeQueueSubscribeSummary: "houston.mergeQueue.subscribeSummary",
@@ -2138,6 +2152,45 @@ const WsHoustonNightShiftStopRpc = Rpc.make(WS_METHODS.houstonNightShiftStop, {
   error: HoustonNightShiftRpcError,
 });
 
+const WsHoustonNightShiftReportRpc = Rpc.make(WS_METHODS.houstonNightShiftReport, {
+  payload: HoustonNightShiftRunInput,
+  success: HoustonNightReport,
+  error: HoustonNightShiftRpcError,
+});
+
+const WsHoustonNightShiftDecideRpc = Rpc.make(WS_METHODS.houstonNightShiftDecide, {
+  payload: HoustonNightShiftDecideInput,
+  success: NightEntry,
+  error: HoustonNightShiftRpcError,
+});
+
+const WsHoustonNightShiftMarkQaPassedRpc = Rpc.make(WS_METHODS.houstonNightShiftMarkQaPassed, {
+  payload: HoustonNightShiftEntryInput,
+  success: NightEntry,
+  error: HoustonNightShiftRpcError,
+});
+
+const WsHoustonNightShiftClosePullRequestsRpc = Rpc.make(
+  WS_METHODS.houstonNightShiftClosePullRequests,
+  {
+    payload: HoustonNightShiftCloseInput,
+    success: HoustonNightShiftCloseResult,
+    error: HoustonNightShiftRpcError,
+  },
+);
+
+const WsHoustonNightShiftImportV1StatusRpc = Rpc.make(WS_METHODS.houstonNightShiftImportV1Status, {
+  payload: HoustonNightShiftOverviewInput,
+  success: HoustonNightShiftImportStatus,
+  error: HoustonNightShiftRpcError,
+});
+
+const WsHoustonNightShiftImportV1RunRpc = Rpc.make(WS_METHODS.houstonNightShiftImportV1Run, {
+  payload: HoustonNightShiftOverviewInput,
+  success: HoustonNightShiftImportResult,
+  error: HoustonNightShiftRpcError,
+});
+
 const WsHoustonMergeQueueEnqueueRpc = Rpc.make(WS_METHODS.houstonMergeQueueEnqueue, {
   payload: HoustonMergeQueueEnqueueInput,
   success: HoustonMergeQueueEntry,
@@ -2829,6 +2882,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonNightShiftRunNowRpc,
   WsHoustonNightShiftWrapUpRpc,
   WsHoustonNightShiftStopRpc,
+  WsHoustonNightShiftReportRpc,
+  WsHoustonNightShiftDecideRpc,
+  WsHoustonNightShiftMarkQaPassedRpc,
+  WsHoustonNightShiftClosePullRequestsRpc,
+  WsHoustonNightShiftImportV1StatusRpc,
+  WsHoustonNightShiftImportV1RunRpc,
   WsHoustonMergeQueueGetRpc,
   WsHoustonMergeQueueSubscribeRpc,
   WsHoustonMergeQueueSubscribeSummaryRpc,

@@ -1,5 +1,5 @@
-// Credential shapes Houston masks wherever text leaves the server: the merge queue's verification
-// output and the harness review's digest. Each caller names its own placeholder.
+// Credential shapes and paths Houston masks wherever text leaves the server: the merge queue's
+// verification output, the harness review's digest, Slack and Night shift's pull requests.
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -23,3 +23,21 @@ export const credentialRules = (placeholder: string): CredentialRules => [
 
 export const applyCredentialRules = (text: string, rules: CredentialRules) =>
   rules.reduce((current, [pattern, replacement]) => current.replace(pattern, replacement), text);
+
+// An absolute POSIX or Windows path at a word start, so a URL's path is left alone.
+const ABSOLUTE_PATH =
+  /(?<=^|[\s'"(=[`])(?:[A-Za-z]:[\\/]|\/)(?:[^\s'"()[\]\\/`]+[\\/])+([^\s'"()[\]\\/`]*)/g;
+
+/** `text` with each absolute path cut to its last part, so no home or user directory is named. */
+export const cutAbsolutePaths = (text: string) => text.replace(ABSOLUTE_PATH, "$1");
+
+/** `text` with paths under `root` made relative to it, in either slash form and any case. */
+export const relativeToRoot = (text: string, root: string) => {
+  const trimmed = root.replace(/[\\/]+$/, "");
+  if (trimmed.length === 0) return text;
+  const pattern = escape(trimmed).replace(/\\\\|\//g, "[\\\\/]");
+  return text.replace(
+    new RegExp(`${pattern}(?:([\\\\/])|(?=$|[\\s'"\`)]))`, "gim"),
+    (_match, separator: string | undefined) => (separator === undefined ? "." : ""),
+  );
+};

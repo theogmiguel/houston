@@ -27,9 +27,13 @@ import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ThreadLaunchService from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
 import {
+  commitIn,
   createProject,
   fireDue,
   kindOf,
+  Landing,
+  landingInput,
+  seedLandingRun,
   makeKit,
   makeRepository,
   messageOf,
@@ -44,7 +48,11 @@ import {
   Store,
   type Kit,
 } from "./nightShift.testkit.ts";
+import * as CrewGate from "./CrewGate.ts";
 import * as Threads from "./Threads.ts";
+import { makeRunsHarness, runWith } from "../tasks/taskRuns.testkit.ts";
+import { layerBacklog, NightShiftBacklog, type UpNextTask } from "./Host.ts";
+import { pickTasks } from "./rules.ts";
 
 const GIB = 1024 ** 3;
 const runner = Runner.HoustonNightShiftRunner;
@@ -110,35 +118,29 @@ const stopOps = (kit: Kit) =>
   kit.state.ops.filter((op) => op.startsWith("cancel:") || op.startsWith("stop:"));
 
 describe("night shift preflight and start", () => {
-  it.effect("until the crew gate ships every start is refused by name", () =>
+  it.effect("with the crew gate the server's default starts runs", () =>
     Effect.gen(function* () {
-      const kit = yield* makeKit("no-gate", { crewGate: false });
+      // The AD-104 refusal left with the crew gate: the kit sets nothing to allow a start.
+      const source = NodeFS.readFileSync(new URL("./Runner.ts", import.meta.url), "utf8");
+      assert.notInclude(source, "start once the crew gate ships");
+      assert.notInclude(source, "CrewGatePresent");
+      assert.notProperty(Runner, "STARTS_REFUSED");
+      const kit = yield* makeKit("gate-default");
       yield* runKit(
         kit,
         Effect.gen(function* () {
           const night = yield* service;
           const store = yield* Store.HoustonNightShiftStore;
-          const { projectId } = yield* setUp("no-gate", EVERY_NIGHT);
-
-          // Settings, the window, preflight and status keep working.
-          const checked = yield* night.preflight({ projectId, durationMinutes: 60 });
-          assert.isAbove(checked.items.length, 0);
-          assert.isNotNull((yield* night.get({ projectId })).settings);
-
-          const refused = (yield* Effect.flip(
-            night.runNow({ projectId, durationMinutes: 60 }),
-          )) as HoustonNightShiftError;
-          assert.equal(refused.kind, "unsupported");
-          assert.equal(refused.message, Runner.STARTS_REFUSED);
-          assert.equal(Runner.STARTS_REFUSED, "Night shift runs start once the crew gate ships");
+          const { projectId } = yield* setUp("gate-default", EVERY_NIGHT);
+          const started = yield* night.runNow({ projectId, durationMinutes: 60 });
+          assert.equal((yield* getRun(started.runId)).phase, "running");
+          assert.lengthOf(kit.state.launches, 1);
+          yield* night.stop({ runId: started.runId });
 
           const fired = yield* fireDue((yield* nightTask(projectId))!);
-          assert.equal(fired?.lastRunStatus, "failed");
-          assert.include(fired?.lastRunError ?? "", Runner.STARTS_REFUSED);
-
-          assert.lengthOf(yield* store.listRuns(projectId, 30), 0);
-          assert.lengthOf(kit.state.launches, 0);
-          assert.lengthOf(kit.state.spawns, 0);
+          assert.notEqual(fired?.lastRunStatus, "failed", fired?.lastRunError ?? "");
+          assert.lengthOf(yield* store.listRuns(projectId, 30), 2);
+          assert.lengthOf(kit.state.launches, 2);
         }),
       );
     }),
@@ -550,6 +552,49 @@ describe("night shift run life", () => {
     }),
   );
 
+  it.effect("the hard stop cancels the review a crew handback started", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("hard-stop-review");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const store = yield* Store.HoustonNightShiftStore;
+          const gate = yield* CrewGate.HoustonCrewGate;
+          const { projectId } = yield* setUp("hard-stop-review");
+          const started = yield* start(projectId, 60);
+          const run = yield* getRun(started.runId);
+          yield* addCrew(started.runId, "worker-1", started.threadId, run.startedAt);
+          busy(kit, "worker-1");
+
+          // The worker's handback starts a review: Tasks asks the gate and records its thread.
+          const admission = yield* gate.review({
+            callerThreadId: ThreadId.make("worker-1"),
+            providerInstanceId: "codex",
+          });
+          yield* admission.record(ThreadId.make("task-review-1"));
+          busy(kit, "task-review-1");
+          const refused = yield* Effect.flip(
+            gate.review({ callerThreadId: ThreadId.make("worker-1"), providerInstanceId: "codex" }),
+          );
+          assert.include(refused, "1 of 1 live review");
+
+          yield* TestClock.adjust("61 minutes");
+          yield* tick;
+          assert.equal((yield* getRun(started.runId)).stopReason, "hardStop");
+          const ops = stopOps(kit);
+          assert.sameMembers(ops.slice(0, 2), ["cancel:worker-1", "cancel:task-review-1"]);
+          assert.deepEqual(ops.slice(2), [`stop:${started.threadId}`]);
+          assert.isFalse(kit.state.states.get("task-review-1")!.activeRun);
+          const review = (yield* store.crew(started.runId)).find(
+            (member) => member.threadId === "task-review-1",
+          );
+          assert.equal(review?.role, "review");
+          assert.isNotNull(review?.endedAt);
+        }),
+      );
+    }),
+  );
+
   it.effect("a run settles on the report and its run's end only", () =>
     Effect.gen(function* () {
       const kit = yield* makeKit("report-settle");
@@ -890,6 +935,51 @@ describe("night shift run life", () => {
       );
     }),
   );
+
+  it.effect("a settle after a long server stop charges at most up to the hard stop", () =>
+    Effect.gen(function* () {
+      const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "night-cost-"));
+      const kit = yield* makeKit("restart-cost", {
+        databaseFile: NodePath.join(directory, "state.sqlite"),
+        serverRunner: true,
+      });
+      const ids = { runId: 0, hardStopAt: "" };
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const p = yield* setUp("restart-cost");
+          const started = yield* start(p.projectId, 60);
+          yield* addCrew(started.runId, "cost-worker", started.threadId, NOW);
+          ids.runId = started.runId;
+          ids.hardStopAt = (yield* getRun(started.runId)).hardStopAt!;
+        }),
+      );
+
+      // The server comes back three days later, long past the 60-minute run's hard stop.
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const run = yield* getRun(ids.runId);
+          assert.equal(run.phase, "settled");
+          assert.equal(run.stopReason, "serverRestart");
+          const cost = run.cost as {
+            readonly members: ReadonlyArray<{ readonly threadId: string; readonly hours: number }>;
+            readonly instances: Record<string, number>;
+          };
+          const limit = (Date.parse(ids.hardStopAt) - Date.parse(NOW)) / 3_600_000;
+          assert.isAtMost(limit, 1.01);
+          assert.lengthOf(cost.members, 2);
+          for (const member of cost.members) {
+            assert.isAtMost(member.hours, limit, member.threadId);
+          }
+          const worker = cost.members.find((member) => member.threadId === "cost-worker");
+          assert.closeTo(worker!.hours, limit, 1e-9);
+          assert.isAtMost(cost.instances.claudeAgent!, 2 * limit);
+        }),
+        Date.parse(NOW) + 3 * 24 * 60 * 60_000,
+      );
+    }),
+  );
 });
 
 describe("houston's messages to the orchestrator", () => {
@@ -984,6 +1074,365 @@ describe("houston's messages to the orchestrator", () => {
           assert.equal(queued[0]!.role, "user");
           assert.equal(queued[0]!.text, "Wrap-up: once");
           assert.equal(queued[0]!.delivery?.intent, "queue");
+        }),
+      );
+    }),
+  );
+});
+
+const withProviders = (kit: Kit, states: Record<string, ProviderReadiness>) => {
+  kit.state.providers = kit.state.providers.map((provider) =>
+    provider.instanceId in states
+      ? { ...provider, readiness: states[provider.instanceId]! }
+      : provider,
+  );
+};
+
+const runBrief = (runId: number) =>
+  Effect.map(ServerConfig.ServerConfig, (config) =>
+    NodeFS.readFileSync(NodePath.join(Store.runFolder(config.baseDir, runId), "brief.md"), "utf8"),
+  );
+
+const upNext = (
+  projectId: ProjectId,
+  number: number,
+  queue = "up_next",
+): UpNextTask & { readonly text: string } => ({
+  number,
+  key: `HOU-${number}`,
+  title: `Task ${number}`,
+  projectId,
+  queue,
+  text: `The text of HOU-${number}.`,
+});
+
+describe("night shift crew limits, picks and the ledger at start", () => {
+  it.effect("readiness limits mark instances for the run and clear at reset", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("limits");
+      kit.state.providers.push({
+        instanceId: "claude-work",
+        driver: "claudeAgent",
+        readiness: { state: "ready" },
+      });
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const fixture = makeRepository("limits", { kind: "bare" });
+          const projectId = yield* createProject("limits", fixture.root);
+          yield* seedNightShift(projectId, {
+            orchestrator: model("codex"),
+            workers: [
+              model("claudeAgent"),
+              model("opencode"),
+              model("claude-work"),
+              model("antigravity"),
+            ],
+          });
+          const started = yield* start(projectId);
+          const resetsAt = "2026-10-30T23:00:00.000Z";
+          withProviders(kit, {
+            claudeAgent: { state: "outOfUsage", resetsAt, message: "Claude usage limit", at: NOW },
+          });
+          yield* tick;
+          withProviders(kit, {
+            opencode: { state: "outOfUsage", resetsAt: null, message: "OpenCode usage", at: NOW },
+            "claude-work": { state: "signedOut", source: "turn", message: "Sign in again" },
+            antigravity: {
+              state: "rejected",
+              code: "invalid_api_key",
+              message: "Key refused",
+              at: NOW,
+            },
+          });
+          yield* tick;
+          yield* tick;
+          const limited = (yield* getRun(started.runId)).limited;
+          assert.deepEqual(
+            limited.map((limit) => [
+              limit.instanceId,
+              limit.state,
+              limit.resetsAt,
+              limit.clearedAt,
+            ]),
+            [
+              ["claudeAgent", "outOfUsage", resetsAt, null],
+              ["opencode", "outOfUsage", null, null],
+              ["claude-work", "signedOut", null, null],
+              ["antigravity", "rejected", null, null],
+            ],
+          );
+          for (const limit of limited) assert.equal(limit.at, NOW);
+          const limitNotes = notesOf(kit, started.runId, "limit");
+          assert.deepEqual(
+            limitNotes.map((note) => note.messageId),
+            ["claudeAgent", "opencode", "claude-work", "antigravity"].map(
+              (id) => `message:night-shift:${started.runId}:limit:${id}`,
+            ),
+          );
+          // Claude names the next ready instance; once every worker is limited, none is ready.
+          assert.include(limitNotes[0]!.text, "claudeAgent is outOfUsage");
+          assert.include(limitNotes[0]!.text, resetsAt);
+          assert.include(limitNotes[0]!.text, "opencode");
+          assert.include(limitNotes[3]!.text, "No other worker instance is ready");
+          assert.equal(
+            (yield* getRun(started.runId)).phase,
+            "running",
+            "a worker limit settles nothing",
+          );
+
+          // Ready again before the reset: still limited. After the reset: unlimited, recorded.
+          withProviders(kit, { claudeAgent: { state: "ready" } });
+          yield* tick;
+          assert.isNull((yield* getRun(started.runId)).limited[0]!.clearedAt);
+          yield* TestClock.setTime(Date.parse(resetsAt) + 1_000);
+          yield* tick;
+          const cleared = (yield* getRun(started.runId)).limited[0]!;
+          assert.equal(cleared.instanceId, "claudeAgent");
+          assert.equal(cleared.clearedAt, "2026-10-30T23:00:01.000Z");
+          assert.lengthOf(notesOf(kit, started.runId, "limit"), 4, "a clear sends no message");
+
+          // Readiness is read as published: no quota request and no probe process.
+          assert.deepEqual(kit.state.httpRequests, []);
+          assert.deepEqual(
+            kit.state.spawns.map((spawn) => spawn.command),
+            ["systemd-inhibit"],
+          );
+        }),
+      );
+    }),
+  );
+
+  it.effect("picks reach the brief and the ledger", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("picks");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const store = yield* Store.HoustonNightShiftStore;
+          const night = yield* runner;
+          const fixture = makeRepository("picks", { kind: "bare" });
+          const projectId = yield* createProject("picks", fixture.root);
+          yield* seedNightShift(projectId, { backlog: { enabled: true, max: 3 } });
+          kit.state.backlog = [
+            upNext(projectId, 7),
+            upNext(projectId, 9),
+            upNext(projectId, 12),
+            upNext(projectId, 13),
+            upNext(projectId, 14, "none"),
+          ];
+          const first = yield* start(projectId);
+          const picks = (yield* store.runEntries(first.runId)).filter(
+            (entry) => entry.kind === "pick",
+          );
+          assert.deepEqual(
+            picks.map((entry) => entry.task_number),
+            [7, 9, 12],
+          );
+          const brief = yield* runBrief(first.runId);
+          for (const number of [7, 9, 12]) {
+            assert.include(brief, `HOU-${number}: Task ${number}`);
+            assert.include(brief, `The text of HOU-${number}.`);
+          }
+          assert.notInclude(brief, "HOU-13");
+          assert.notInclude(brief, "HOU-14");
+          assert.include(brief, "houston_task_claim");
+          assert.include(brief, "houston_task_handback");
+          yield* night.stop(first.runId);
+
+          // Picked last run and not done since: skipped; done since: picked again.
+          kit.state.doneSince.add("HOU-9");
+          const second = yield* start(projectId);
+          assert.deepEqual(
+            (yield* store.runEntries(second.runId))
+              .filter((entry) => entry.kind === "pick")
+              .map((entry) => entry.task_number),
+            [9, 13],
+          );
+          yield* night.stop(second.runId);
+
+          // Picks off: no pick entry, and the brief names no task.
+          const other = makeRepository("picks-off", { kind: "bare" });
+          const offProject = yield* createProject("picks-off", other.root);
+          yield* seedNightShift(offProject);
+          kit.state.backlog = [upNext(offProject, 21)];
+          const off = yield* start(offProject);
+          assert.lengthOf(
+            (yield* store.runEntries(off.runId)).filter((entry) => entry.kind === "pick"),
+            0,
+          );
+          const offBrief = yield* runBrief(off.runId);
+          assert.notInclude(offBrief, "HOU-21");
+          assert.include(offBrief, "No backlog tasks are picked for this run.");
+        }),
+      );
+    }),
+  );
+
+  it.effect("a refused start records no picks, so the next start picks the same tasks", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("picks-refused");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const store = yield* Store.HoustonNightShiftStore;
+          const config = yield* ServerConfig.ServerConfig;
+          const fixture = makeRepository("picks-refused", { kind: "bare" });
+          const projectId = yield* createProject("picks-refused", fixture.root);
+          yield* seedNightShift(projectId, { backlog: { enabled: true, max: 3 } });
+          kit.state.backlog = [
+            upNext(projectId, 7),
+            upNext(projectId, 9),
+            upNext(projectId, 12),
+            upNext(projectId, 13),
+          ];
+          const picksOf = (runId: number) =>
+            Effect.map(store.runEntries(runId), (entries) =>
+              entries.filter((entry) => entry.kind === "pick").map((entry) => entry.task_number),
+            );
+
+          // The brief cannot be written: a file stands where the run folders go.
+          const folders = NodePath.join(config.baseDir, "houston", "night-shift");
+          NodeFS.mkdirSync(NodePath.dirname(folders), { recursive: true });
+          NodeFS.writeFileSync(folders, "not a folder");
+          assert.include(messageOf(yield* Effect.flip(start(projectId))), "writing the brief");
+          NodeFS.rmSync(folders);
+
+          // The orchestrator cannot be launched.
+          kit.state.launchFailure = "the provider could not start a session";
+          assert.include(
+            messageOf(yield* Effect.flip(start(projectId))),
+            "the provider could not start a session",
+          );
+          kit.state.launchFailure = null;
+
+          const refused = yield* store.listRuns(projectId, 30);
+          assert.deepEqual(
+            refused.map((run) => run.phase),
+            ["refused", "refused"],
+          );
+          for (const run of refused) assert.deepEqual(yield* picksOf(run.id), [], "no picks");
+
+          // No crew worked those tasks, so the next start picks them again.
+          const next = yield* start(projectId);
+          assert.deepEqual(yield* picksOf(next.runId), [7, 9, 12]);
+          const brief = yield* runBrief(next.runId);
+          for (const number of [7, 9, 12]) assert.include(brief, `HOU-${number}: Task ${number}`);
+        }),
+      );
+    }),
+  );
+
+  it.effect("earlier pull requests get their fate at the next start", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("fates");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const store = yield* Store.HoustonNightShiftStore;
+          const night = yield* runner;
+          const { projectId } = yield* setUp("fates");
+          const first = yield* start(projectId);
+          const pullRequest = (number: number, status: string | null = null) =>
+            store.addEntry({
+              runId: first.runId,
+              projectId,
+              kind: "pr",
+              title: `Change ${number}`,
+              prNumber: number,
+              status,
+              createdAt: NOW,
+            });
+          const merged = yield* pullRequest(1);
+          const closed = yield* pullRequest(2);
+          const open = yield* pullRequest(3);
+          const unreadable = yield* pullRequest(4);
+          const known = yield* pullRequest(5, "merged");
+          yield* night.stop(first.runId);
+          kit.state.pullRequestStates.set(1, "merged");
+          kit.state.pullRequestStates.set(2, "closed");
+          kit.state.pullRequestStates.set(3, "open");
+
+          const second = yield* start(projectId);
+          assert.deepEqual(kit.state.pullRequestReads.toSorted(), [1, 2, 3, 4], "each read once");
+          const statusOf = (id: number) =>
+            Effect.map(store.getEntry(id), (entry) => entry?.status ?? null);
+          assert.equal(yield* statusOf(merged.id), "merged");
+          assert.equal(yield* statusOf(closed.id), "closed");
+          assert.isNull(yield* statusOf(open.id), "open is no fate yet");
+          assert.isNull(yield* statusOf(unreadable.id));
+          assert.equal(yield* statusOf(known.id), "merged");
+          const brief = yield* runBrief(second.runId);
+          assert.include(brief, "pull request #1 (merged): Change 1");
+          assert.include(brief, "pull request #2 (closed): Change 2");
+          assert.include(brief, "pull request #3 (open): Change 3");
+          assert.include(brief, "pull request #4 (fate unknown): Change 4");
+          assert.include(brief, "pull request #5 (merged): Change 5");
+        }),
+      );
+    }),
+  );
+
+  it.effect("a picked task is claimed by its worker and told about its pull request", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeRunsHarness("night-claim");
+      yield* runWith(harness, (context) =>
+        Effect.gen(function* () {
+          yield* context.setSettings({ access: "write" });
+          const task = yield* context.readyTask("Retry the upload");
+          const backlog = yield* NightShiftBacklog;
+          const listed = yield* backlog.tasks(context.projectId);
+          const picked = pickTasks({
+            projectId: context.projectId,
+            max: 3,
+            backlog: listed,
+            earlierPicks: new Map(),
+          });
+          assert.deepEqual(picked, [task.number]);
+
+          // The worker Night shift delegated claims the picked task under its own thread.
+          const worker = ThreadId.make("night-worker:7");
+          const claimed = yield* context.runs.claim(
+            {
+              threadId: worker,
+              projectId: context.projectId,
+              actor: `agent:${worker} (Night shift worker)`,
+              provider: "claudeAgent",
+            },
+            { id: task.key },
+          );
+          assert.equal(claimed.threadId, worker);
+          const detail = yield* context.tasks.get({ id: task.key });
+          assert.equal(detail.task.status, "in_progress");
+          assert.equal(detail.runs[0]?.threadId, worker);
+
+          // The backlog's comment reaches the task as Houston's Night shift.
+          yield* backlog.comment(
+            task.key,
+            "Night shift run 1 opened draft pull request #7.",
+            "houston:night-shift",
+          );
+          const commented = yield* context.tasks.get({ id: task.key });
+          const last = commented.comments.at(-1);
+          assert.equal(last?.author, "houston:night-shift");
+          assert.equal(last?.body, "Night shift run 1 opened draft pull request #7.");
+        }).pipe(Effect.provide(layerBacklog)),
+      );
+
+      // Recording the pull request with `task: HOU-7` comments once; a re-record adds none.
+      const kit = yield* makeKit("night-claim-comment");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const seeded = yield* seedLandingRun(kit, "night-claim-comment");
+          const landing = yield* Landing.HoustonNightLanding;
+          const first = yield* landing.record(landingInput(seeded, { task: "HOU-7" }));
+          assert.deepEqual(kit.state.taskComments, [
+            `HOU-7|houston:night-shift|Night shift run ${seeded.runId} opened draft pull request #${first.pullRequest.number}.`,
+          ]);
+          const next = commitIn(seeded.worktree.path, "second head");
+          yield* landing.record(landingInput(seeded, { task: "HOU-7", head: next }));
+          assert.equal(kit.state.taskComments.length, 1);
         }),
       );
     }),

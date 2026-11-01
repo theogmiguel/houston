@@ -12,11 +12,16 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 
 import * as HostPowerMonitor from "../../background/HostPowerMonitor.ts";
+import * as PullRequestService from "../../pullRequest/PullRequestService.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import * as HoustonMergeQueueStore from "../mergeQueue/Store.ts";
+import { compareReady } from "../tasks/rules.ts";
+import * as HoustonTaskService from "../tasks/TaskService.ts";
 import { onPath } from "./detect.ts";
+import { NightShiftGit } from "./Git.ts";
 import { localTimeZone } from "./window.ts";
 
 export interface MachineReadings {
@@ -51,11 +56,27 @@ export class NightShiftProviders extends Context.Service<
   { readonly list: Effect.Effect<ReadonlyArray<ProviderState>> }
 >()("houston/houston/nightShift/Host/NightShiftProviders") {}
 
-/** The project's merge queue verification command, or null when none is set. */
+/** A merge queue log row the settle audit reads: a push or a merge into `refName`. */
+export interface QueueLogRow {
+  readonly kind: string;
+  readonly refName: string | null;
+  readonly newSha: string | null;
+  readonly at: string;
+}
+
+/** What Night shift reads of the project's merge queue: its verification command and its log. */
 export class NightShiftMergeQueue extends Context.Service<
   NightShiftMergeQueue,
-  { readonly verificationCommand: (projectId: string) => Effect.Effect<string | null> }
+  {
+    /** The verification command, or null when none is set. */
+    readonly verificationCommand: (projectId: string) => Effect.Effect<string | null>;
+    /** Log rows at or after `since`. */
+    readonly log: (projectId: string, since: string) => Effect.Effect<ReadonlyArray<QueueLogRow>>;
+  }
 >()("houston/houston/nightShift/Host/NightShiftMergeQueue") {}
+
+/** Log rows the audit reads at most; a run's window holds far fewer. */
+const QUEUE_LOG_READ = 1_000;
 
 /** `reg.exe query <args>` as a child process the event loop does not wait on; undefined if absent. */
 const regQuery = (args: ReadonlyArray<string>) =>
@@ -79,14 +100,19 @@ const REBOOT_KEYS = [
 ];
 
 const activeHoursValue = (output: string | undefined, name: string) => {
-  const match = output === undefined ? null : new RegExp(`${name}\\s+REG_DWORD\\s+0x([0-9a-f]+)`, "i").exec(output);
+  const match =
+    output === undefined
+      ? null
+      : new RegExp(`${name}\\s+REG_DWORD\\s+0x([0-9a-f]+)`, "i").exec(output);
   return match === null ? null : Number.parseInt(match[1]!, 16);
 };
 
 const availableMemory = (platform: NodeJS.Platform) => {
   if (platform === "linux") {
     try {
-      const match = /^MemAvailable:\s+(\d+)\s+kB/m.exec(NodeFS.readFileSync("/proc/meminfo", "utf8"));
+      const match = /^MemAvailable:\s+(\d+)\s+kB/m.exec(
+        NodeFS.readFileSync("/proc/meminfo", "utf8"),
+      );
       if (match !== null) return Number(match[1]) * 1024;
     } catch {
       // Falls back to the kernel's free count.
@@ -112,36 +138,36 @@ const makeMachine = Effect.gen(function* () {
   const query = yield* RegistryQuery;
   return NightShiftMachine.of({
     readings: Effect.fn("NightShiftMachine.readings")(function* (root) {
-        const onBattery = Option.isSome(power)
-          ? (yield* power.value.snapshot).onBattery
-          : ("unknown" as const);
-        const [settings, ...reboot] =
-          platform === "win32"
-            ? yield* Effect.all(
-                [
-                  query(["HKLM\\SOFTWARE\\Microsoft\\WindowsUpdate\\UX\\Settings"]),
-                  ...REBOOT_KEYS.map((key) => query([key])),
-                ],
-                { concurrency: "unbounded" },
-              )
-            : [undefined];
-        const start = activeHoursValue(settings, "ActiveHoursStart");
-        const end = activeHoursValue(settings, "ActiveHoursEnd");
-        return {
-          onBattery,
-          freeMemoryBytes: availableMemory(platform),
-          freeDiskBytes: freeDisk(root),
-          platform,
-          inhibitAvailable:
-            platform === "linux"
-              ? path("systemd-inhibit")
-              : platform === "win32"
-                ? path("powershell")
-                : false,
-          restartPending: reboot.some((output) => output !== undefined),
-          activeHours: start === null || end === null ? null : { start, end },
-        };
-      }),
+      const onBattery = Option.isSome(power)
+        ? (yield* power.value.snapshot).onBattery
+        : ("unknown" as const);
+      const [settings, ...reboot] =
+        platform === "win32"
+          ? yield* Effect.all(
+              [
+                query(["HKLM\\SOFTWARE\\Microsoft\\WindowsUpdate\\UX\\Settings"]),
+                ...REBOOT_KEYS.map((key) => query([key])),
+              ],
+              { concurrency: "unbounded" },
+            )
+          : [undefined];
+      const start = activeHoursValue(settings, "ActiveHoursStart");
+      const end = activeHoursValue(settings, "ActiveHoursEnd");
+      return {
+        onBattery,
+        freeMemoryBytes: availableMemory(platform),
+        freeDiskBytes: freeDisk(root),
+        platform,
+        inhibitAvailable:
+          platform === "linux"
+            ? path("systemd-inhibit")
+            : platform === "win32"
+              ? path("powershell")
+              : false,
+        restartPending: reboot.some((output) => output !== undefined),
+        activeHours: start === null || end === null ? null : { start, end },
+      };
+    }),
     onPath: Effect.fn("NightShiftMachine.onPath")((program) => Effect.sync(() => path(program))),
     timeZone: Effect.sync(localTimeZone),
   });
@@ -172,11 +198,169 @@ export const layerMergeQueue = Layer.effect(
   Effect.gen(function* () {
     const store = yield* HoustonMergeQueueStore.HoustonMergeQueueStore;
     return NightShiftMergeQueue.of({
-      verificationCommand: Effect.fn("NightShiftMergeQueue.verificationCommand")(function* (
-        projectId,
-      ) {
-        const command = (yield* store.settings(ProjectId.make(projectId))).verificationCommand;
-        return command.trim() === "" ? null : command;
+      verificationCommand: Effect.fn("NightShiftMergeQueue.verificationCommand")(
+        function* (projectId) {
+          const command = (yield* store.settings(ProjectId.make(projectId))).verificationCommand;
+          return command.trim() === "" ? null : command;
+        },
+      ),
+      log: Effect.fn("NightShiftMergeQueue.log")(function* (projectId, since) {
+        const rows = yield* store.log(projectId, since, QUEUE_LOG_READ);
+        return rows.map((row) => ({
+          kind: row.kind,
+          refName: row.refName,
+          newSha: row.newSha,
+          at: row.at,
+        }));
+      }),
+    });
+  }),
+);
+
+export interface UpNextTask {
+  readonly number: number;
+  readonly key: string;
+  readonly title: string;
+  readonly projectId: string | null;
+  readonly queue: string;
+}
+
+/** The project's Tasks backlog as Night shift picks from it; every read is local. */
+export class NightShiftBacklog extends Context.Service<
+  NightShiftBacklog,
+  {
+    /** The project's unarchived tasks in Tasks' ready order. */
+    readonly tasks: (projectId: string) => Effect.Effect<ReadonlyArray<UpNextTask>>;
+    /** A task's description; empty when it cannot be read. */
+    readonly text: (key: string) => Effect.Effect<string>;
+    /** Whether the task's status was set to done at or after `since`. */
+    readonly doneSince: (key: string, since: string) => Effect.Effect<boolean>;
+    /** The task's status, or null when it cannot be read. */
+    readonly status: (key: string) => Effect.Effect<string | null>;
+    /** Adds a comment as `author`; a refusal is logged, not raised. */
+    readonly comment: (key: string, body: string, author: string) => Effect.Effect<void>;
+  }
+>()("houston/houston/nightShift/Host/NightShiftBacklog") {}
+
+const statusChangedToDone = (changes: string) => {
+  try {
+    const parsed = JSON.parse(changes) as { readonly status?: { readonly new?: unknown } };
+    return parsed.status?.new === "done";
+  } catch {
+    return false;
+  }
+};
+
+/** The backlog over the Tasks service; without one, a project has no tasks to pick. */
+export const layerBacklog = Layer.effect(
+  NightShiftBacklog,
+  Effect.gen(function* () {
+    const service = yield* Effect.serviceOption(HoustonTaskService.HoustonTaskService);
+    if (Option.isNone(service)) {
+      const none: ReadonlyArray<UpNextTask> = [];
+      return NightShiftBacklog.of({
+        tasks: Effect.fn("NightShiftBacklog.noTasks")(() => Effect.succeed(none)),
+        text: Effect.fn("NightShiftBacklog.noText")(() => Effect.succeed("")),
+        doneSince: Effect.fn("NightShiftBacklog.notDone")(() => Effect.succeed(false)),
+        status: Effect.fn("NightShiftBacklog.noStatus")(() => Effect.succeed(null)),
+        comment: Effect.fn("NightShiftBacklog.noComment")(() => Effect.void),
+      });
+    }
+    const tasks = service.value;
+    return NightShiftBacklog.of({
+      tasks: Effect.fn("NightShiftBacklog.tasks")(
+        function* (projectId) {
+          const [first] = yield* tasks
+            .subscribe({ scope: "all" })
+            .pipe(Stream.take(1), Stream.runCollect);
+          const all = first !== undefined && "snapshot" in first ? first.snapshot.tasks : [];
+          return all
+            .filter((task) => task.archivedAt === null && task.projectId === projectId)
+            .toSorted(compareReady)
+            .map((task) => ({
+              number: task.number,
+              key: task.key,
+              title: task.title,
+              projectId: task.projectId,
+              queue: task.queue,
+            }));
+        },
+        Effect.orElseSucceed(() => []),
+      ),
+      text: Effect.fn("NightShiftBacklog.text")(
+        function* (key) {
+          return (yield* tasks.get({ id: key })).task.description;
+        },
+        Effect.orElseSucceed(() => ""),
+      ),
+      doneSince: Effect.fn("NightShiftBacklog.doneSince")(
+        function* (key, since) {
+          const detail = yield* tasks.get({ id: key });
+          return (
+            detail.task.status === "done" ||
+            detail.history.some(
+              (entry) => entry.createdAt >= since && statusChangedToDone(entry.changes),
+            )
+          );
+        },
+        Effect.orElseSucceed(() => false),
+      ),
+      status: Effect.fn("NightShiftBacklog.status")(
+        function* (key) {
+          return (yield* tasks.get({ id: key })).task.status as string;
+        },
+        Effect.orElseSucceed(() => null),
+      ),
+      comment: Effect.fn("NightShiftBacklog.comment")((key, body, author) =>
+        tasks.comment({ id: key, body }, author).pipe(
+          Effect.asVoid,
+          Effect.catch((error) =>
+            Effect.logWarning("Night shift could not comment on a task", { key, error }),
+          ),
+        ),
+      ),
+    });
+  }),
+);
+
+/** A pull request's state on GitHub, read once per earlier pull request at a run's start. */
+export class NightShiftPullRequests extends Context.Service<
+  NightShiftPullRequests,
+  {
+    readonly state: (
+      projectId: ProjectId,
+      root: string,
+      number: number,
+    ) => Effect.Effect<"open" | "closed" | "merged", string>;
+  }
+>()("houston/houston/nightShift/Host/NightShiftPullRequests") {}
+
+/** `owner/repo` of a github.com remote URL in the https, ssh or scp form; null otherwise. */
+export const githubRepository = (url: string): string | null => {
+  const match = /github\.com[/:]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i.exec(url.trim());
+  return match === null ? null : `${match[1]}/${match[2]}`;
+};
+
+/** Reads through upstream's pull request service; without one, every fate stays unknown. */
+export const layerPullRequests = Layer.effect(
+  NightShiftPullRequests,
+  Effect.gen(function* () {
+    const service = yield* Effect.serviceOption(PullRequestService.PullRequestService);
+    const git = yield* NightShiftGit;
+    return NightShiftPullRequests.of({
+      state: Effect.fn("NightShiftPullRequests.state")(function* (projectId, root, number) {
+        if (Option.isNone(service)) {
+          return yield* Effect.fail("pull request reads are not available on this server");
+        }
+        const origin = yield* git.origin(root);
+        const repository = origin.kind === "origin" ? githubRepository(origin.url) : null;
+        if (repository === null) {
+          return yield* Effect.fail(`the origin of ${root} is not a github.com repository`);
+        }
+        const detail = yield* service.value
+          .detail({ projectId, host: "github.com", repository, number, allowStale: false })
+          .pipe(Effect.mapError((error) => error.message));
+        return detail.state;
       }),
     });
   }),

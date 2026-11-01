@@ -43,6 +43,29 @@ export interface StackRequest {
   readonly number?: number;
 }
 
+export interface CheckHeadRequest {
+  readonly repo: string;
+  readonly remote: string;
+  readonly branch: string;
+  readonly headSha: string;
+  readonly commands: ReadonlyArray<string>;
+  readonly timeLimitMinutes: number;
+  readonly scratch: string;
+  readonly protectedRoots: ReadonlyArray<string>;
+}
+
+export type CheckHeadOutcome =
+  | {
+      readonly _tag: "Ran";
+      readonly results: ReadonlyArray<{
+        readonly command: string;
+        readonly code: number | null;
+        readonly timedOut: boolean;
+        readonly tail: string;
+      }>;
+    }
+  | { readonly _tag: "Refused"; readonly message: string };
+
 /** The private ref a branch is fetched into; the user's remote-tracking refs never move. */
 export const queueRef = (remote: string, branch: string) =>
   `refs/houston/merge-queue/${remote}/${branch}`;
@@ -189,6 +212,8 @@ export class HoustonMergeVerifier extends Context.Service<
     ) => Effect.Effect<string, string>;
     /** Drops a branch's private ref once its entry leaves the queue. */
     readonly forget: (repo: string, remote: string, branch: string) => Effect.Effect<void>;
+    /** Night shift: runs each command on the pushed head as it is, in the scratch worktree. */
+    readonly checkHead: (request: CheckHeadRequest) => Effect.Effect<CheckHeadOutcome>;
   }
 >()("houston/houston/mergeQueue/Verifier/HoustonMergeVerifier") {}
 
@@ -409,7 +434,62 @@ const make = Effect.gen(function* () {
     ),
   );
 
-  return HoustonMergeVerifier.of({ scratchPath, verify, fetch, remoteSha, forget });
+  const checkHead: HoustonMergeVerifier["Service"]["checkHead"] = Effect.fn(
+    "HoustonMergeVerifier.checkHead",
+  )(
+    function* (request) {
+      const inside = request.protectedRoots.find((root) => resolvesInside(request.scratch, root));
+      if (inside !== undefined) {
+        return yield* Effect.fail(
+          `refusing the scratch path ${request.scratch}: it resolves inside ${inside}`,
+        );
+      }
+      yield* fetch(request.repo, request.remote, [request.branch]);
+      const found = yield* remoteSha(request.repo, request.remote, request.branch);
+      yield* forget(request.repo, request.remote, request.branch);
+      if (found !== request.headSha) {
+        return yield* Effect.fail(
+          `${request.remote}/${request.branch} is at ${found}, not the recorded ${request.headSha}`,
+        );
+      }
+      return yield* Effect.gen(function* () {
+        yield* removeScratch(request.repo, request.scratch);
+        yield* Effect.sync(() =>
+          NodeFS.mkdirSync(NodePath.dirname(request.scratch), { recursive: true }),
+        );
+        yield* withVcs(
+          gitOk(request.repo, [
+            "worktree",
+            "add",
+            "--detach",
+            "--force",
+            request.scratch,
+            request.headSha,
+          ]),
+        ).pipe(Effect.mapError((error) => `creating the scratch worktree failed: ${error}`));
+        const results: Array<{
+          command: string;
+          code: number | null;
+          timedOut: boolean;
+          tail: string;
+        }> = [];
+        for (const command of request.commands) {
+          const run = yield* runCommand(
+            command,
+            request.scratch,
+            Duration.minutes(request.timeLimitMinutes),
+          );
+          results.push({ command, code: run.code, timedOut: run.timedOut, tail: run.tail });
+        }
+        return { _tag: "Ran", results } satisfies CheckHeadOutcome;
+      }).pipe(Effect.ensuring(removeScratch(request.repo, request.scratch)));
+    },
+    Effect.catch((message: string) =>
+      Effect.succeed({ _tag: "Refused", message } satisfies CheckHeadOutcome),
+    ),
+  );
+
+  return HoustonMergeVerifier.of({ scratchPath, verify, fetch, remoteSha, forget, checkHead });
 });
 
 export const layer = Layer.effect(HoustonMergeVerifier, make);

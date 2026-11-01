@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts/houston/slack";
 
 import { redactSecrets } from "../mergeQueue/redact.ts";
+import { cutAbsolutePaths } from "../redact.ts";
 import { keychainService } from "../secrets/HoustonKeychain.ts";
 import { slackText } from "./text.ts";
 
@@ -511,16 +512,11 @@ export const OPEN_REQUEST_STATES: ReadonlySet<HoustonSlackRequestState> = new Se
 export const escapeMrkdwn = (value: string): string =>
   value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
-// An absolute POSIX or Windows path at a word start, so a URL's path is left alone.
-const ABSOLUTE_PATH =
-  /(?<=^|[\s'"(=[])(?:[A-Za-z]:[\\/]|\/)(?:[^\s'"()[\]\\/]+[\\/])+([^\s'"()[\]\\/]*)/g;
 const SLACK_APP_TOKEN = /\bxapp-[A-Za-z0-9-]{10,}/g;
 
 /** Text Houston did not write, such as an error: secrets redacted, paths cut to their last part, escaped. */
 export const outboundText = (value: string): string =>
-  escapeMrkdwn(
-    redactSecrets(value).replace(SLACK_APP_TOKEN, "[redacted]").replace(ABSOLUTE_PATH, "$1"),
-  );
+  escapeMrkdwn(cutAbsolutePaths(redactSecrets(value).replace(SLACK_APP_TOKEN, "[redacted]")));
 
 /** An agent's field for Slack: project-relative paths, `hide` (task key, branch) removed. */
 export const agentText = (
