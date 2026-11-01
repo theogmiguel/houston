@@ -1,15 +1,12 @@
 import type { EnvironmentId, EnvironmentMachineKind } from "@t3tools/contracts";
 
 import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
-import type { Project } from "../types";
 import {
   buildCommandPaletteProjectMetadata,
   buildProjectActionItems,
   type CommandPaletteProject,
-  ITEM_ICON_CLASS,
 } from "./CommandPalette.logic";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
-import { ProjectFavicon } from "./ProjectFavicon";
 import { COMMAND_PALETTE_META_ICON_CLASS, CommandPaletteMetaDot } from "./ThreadCommandSubtitle";
 
 export interface CommandPaletteProjectLocation {
@@ -29,10 +26,6 @@ interface ProjectItemsInput {
   readonly projectGroupByTargetKey: ReadonlyMap<string, SidebarProjectSnapshot>;
   readonly locationByEnvironmentId: ReadonlyMap<EnvironmentId, CommandPaletteProjectLocation>;
   readonly runProject: (project: CommandPaletteProject) => Promise<void>;
-}
-
-function projectFaviconIcon(project: Project) {
-  return <ProjectFavicon project={project} className={ITEM_ICON_CLASS} />;
 }
 
 /** Projects as root search results; a grouped project matches on every member. */
@@ -64,7 +57,6 @@ export function buildProjectSearchItems(input: ProjectItemsInput) {
         />
       );
     },
-    icon: projectFaviconIcon,
     runProject: input.runProject,
   });
 }
@@ -88,7 +80,6 @@ export function buildNewThreadInProjectItems(input: ProjectItemsInput) {
         workspaceRoot={project.workspaceRoot}
       />
     ),
-    icon: projectFaviconIcon,
     runProject: input.runProject,
   });
 }
