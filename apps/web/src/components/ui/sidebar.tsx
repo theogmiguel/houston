@@ -31,6 +31,21 @@ const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_RESIZE_DEFAULT_MIN_WIDTH = 16 * 16;
 const SIDEBAR_TITLEBAR_CONTROL_SIZE = "max-sm:[--workspace-titlebar-control-size:--spacing(8)]";
 
+/** A rail row paints its focus ring on the row, not only on the title inside it. */
+export const FOCUS_ROW_CLS =
+  "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-inset";
+
+/** Small icon and action buttons on the rail keep a visible keyboard focus state. */
+export const FOCUS_ACTION_CLS =
+  "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+
+/** A row's hover actions stay reachable as soon as the row has keyboard focus. */
+export const ROW_ACTIONS_FOCUS_REVEAL = "group-has-[:focus-visible]/th:flex";
+
+/** Chevrons turn with the same short ease as the rest of the rail. */
+export const SIDEBAR_CHEVRON_CLS =
+  "transition-transform duration-150 ease-out motion-reduce:transition-none";
+
 type SidebarContextProps = {
   state: ResponsiveSidebarState;
   open: boolean;
