@@ -7,8 +7,18 @@ import { GridThreadCell } from "./GridThreadCell";
 
 const state = vi.hoisted(() => ({
   draftSession: null as unknown,
+  archivedSnapshots: [] as unknown[],
   promoted: null as unknown,
   setDraftId: vi.fn(),
+}));
+
+vi.mock("../../lib/archivedThreadsState", () => ({
+  useArchivedThreadSnapshots: () => ({
+    snapshots: state.archivedSnapshots ?? [],
+    error: null,
+    isLoading: false,
+    refresh: () => {},
+  }),
 }));
 
 vi.mock("../ChatView", () => ({
@@ -61,6 +71,7 @@ vi.mock("../../composerDraftStore", () => ({
 }));
 
 vi.mock("../../grid/gridStore", () => ({
+  MAX_GRID_THREADS: 6,
   useGridStore: (selector: (store: { setDraftId: typeof state.setDraftId }) => unknown) =>
     selector({ setDraftId: state.setDraftId }),
 }));
