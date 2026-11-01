@@ -173,10 +173,12 @@ describe("searchSettings", () => {
   });
 
   it("sends commands without a default binding to the section", () => {
-    expect(searchSettings("thread.stop")[0]).toMatchObject({
-      id: "keybinding-thread.stop",
+    // thread.stop has a default binding (Escape), so it opens its own row.
+    expect(searchSettings("rightPanel.toggleMaximized")[0]).toMatchObject({
+      id: "keybinding-rightPanel.toggleMaximized",
       targetId: "keybindings",
     });
+    expect(searchSettings("thread.stop")[0]?.targetId).toBeUndefined();
     expect(searchSettings("sidebar.toggle")[0]?.targetId).toBeUndefined();
   });
 
