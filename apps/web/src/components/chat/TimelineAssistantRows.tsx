@@ -14,7 +14,7 @@ import { checkpointFileTotals } from "@t3tools/client-runtime/state/thread-check
 import { ChangedFilesCard } from "./ChangedFilesTree";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
 import { useAssistantMessageText, useProject, useThreadShell } from "../../state/entities";
-import { MessageCopyButton } from "./MessageCopyButton";
+import { CopyButton } from "../ui/copy-button";
 import { AssistantCitationSource } from "./AssistantCitationSource";
 import { resolveAssistantMessageCopyState } from "./MessagesTimeline.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -242,7 +242,14 @@ function AssistantCopyButton({
     return null;
   }
 
-  return <MessageCopyButton text={assistantCopyState.text ?? ""} variant="ghost" />;
+  return (
+    <CopyButton
+      label="Copy message"
+      size="xs"
+      value={assistantCopyState.text ?? ""}
+      variant="ghost-muted"
+    />
+  );
 }
 
 export function ProposedPlanTimelineRow({

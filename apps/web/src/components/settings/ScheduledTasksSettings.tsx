@@ -3,7 +3,6 @@ import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
 import { AsyncResult } from "effect/reactivity";
 import {
   Clock3Icon,
-  CopyIcon,
   InboxIcon,
   MoreHorizontalIcon,
   PencilIcon,
@@ -51,7 +50,6 @@ import { providerInstanceEntriesFor } from "../../providerInstances";
 import { requestConfirmDialog } from "../../confirmDialog";
 import { webhookAddress } from "@t3tools/client-runtime/webhook-address";
 import { useNavigate } from "@tanstack/react-router";
-import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import {
   useEnvironment,
@@ -91,6 +89,7 @@ import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "..
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { CopyButton } from "../ui/copy-button";
 import {
   Dialog,
   DialogClose,
@@ -1003,7 +1002,6 @@ function WebhookEndpointField({
     serverEnvironment.rotateScheduledTaskWebhookToken.permissionAtom(environmentId),
   );
   const httpBaseUrl = useEnvironmentHttpBaseUrl(environmentId);
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "webhook URL" });
   const rotate = useAtomCommand(serverEnvironment.rotateScheduledTaskWebhookToken, {
     label: "scheduled task rotate webhook token",
   });
@@ -1041,16 +1039,16 @@ function WebhookEndpointField({
           value={url}
           onFocus={(event) => event.currentTarget.select()}
         />
-        <Button
-          size="sm"
-          variant="outline"
-          type="button"
+        <CopyButton
+          ariaLabel="Copy webhook URL"
           disabled={!copyable}
-          onClick={() => copyToClipboard(url, undefined)}
-        >
-          <CopyIcon />
-          {isCopied ? "Copied" : "Copy"}
-        </Button>
+          label="Copy"
+          showLabel
+          size="sm"
+          target="webhook URL"
+          value={url}
+          variant="outline"
+        />
         <Button
           size="sm"
           variant="outline"

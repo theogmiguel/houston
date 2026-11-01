@@ -1,6 +1,6 @@
-import { DownloadIcon, CopyIcon, CheckIcon } from "lucide-react";
-import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { DownloadIcon } from "lucide-react";
 import { Spinner } from "~/components/ui/spinner";
+import { CopyButton } from "~/components/ui/copy-button";
 import {
   AuthPreviewOperateScope,
   type EditorId,
@@ -1564,7 +1564,6 @@ export function WorkspaceLargeTextPreview(props: {
     disposition: "attachment",
   } as const;
   const copyContents = useRef<(() => Promise<string>) | null>(null);
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: props.name });
   const [saving, setSaving] = useState(false);
   const [revision, setRevision] = useState(0);
   const showError = (cause: unknown) => {
@@ -1608,18 +1607,18 @@ export function WorkspaceLargeTextPreview(props: {
     <>
       <div className={FILE_SURFACE_SUBHEADER_CLASS}>
         <span className="min-w-0 flex-1 text-xs text-muted-foreground">Full file</span>
-        <FileSurfaceAction
-          label={isCopied ? "Copied" : "Copy contents"}
-          onPress={() => {
+        <CopyButton
+          className="shrink-0"
+          getValue={() => {
             const copy = copyContents.current;
-            if (!copy) return;
-            void copy()
-              .then((text) => copyToClipboard(text, undefined))
-              .catch(showError);
+            if (!copy) return Promise.reject(new Error("The file contents are not ready yet."));
+            return copy();
           }}
-        >
-          {isCopied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
-        </FileSurfaceAction>
+          label="Copy contents"
+          onError={showError}
+          target={props.name}
+          variant="ghost"
+        />
         <FileSurfaceAction
           label={saving ? "Preparing file…" : "Save file"}
           disabled={saving}

@@ -56,7 +56,7 @@ import { DiffStatLabel } from "./chat/DiffStatLabel";
 import { AnnotatableCodeView } from "./diffs/AnnotatableCodeView";
 import { DiffFileTree } from "./diffs/DiffFileTree";
 import { diffFileTreeEntries } from "./diffs/diffFileTree.logic";
-import { DiffFilePathCopyButton } from "./DiffFilePathCopyButton";
+import { CopyButton } from "./ui/copy-button";
 import { Button } from "./ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { Switch } from "./ui/switch";
@@ -179,7 +179,15 @@ function DiffFileHeaderSuffix({
   return (
     <>
       <span data-diff-copy-path className="inline-flex">
-        <DiffFilePathCopyButton filePath={filePath} />
+        <CopyButton
+          ariaLabel="Copy file path"
+          className="[&_svg]:size-[15px]"
+          label="Copy path"
+          size="icon"
+          target="file path"
+          value={filePath}
+          variant="ghost-muted"
+        />
       </span>
       {hasStat ? (
         <DiffFileStatus error={error} truncated={truncated} retry={() => onRetry(filePath)} />
