@@ -11,17 +11,15 @@ import type {
   ServerProvider,
 } from "@t3tools/contracts";
 import { lazy, Suspense, useRef, useState } from "react";
-import { CopyIcon } from "lucide-react";
 
-import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { ensureLocalApi } from "../../localApi";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
+import { CopyButton } from "../ui/copy-button";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SettingsRow } from "./settingsLayout";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 
@@ -217,31 +215,22 @@ export function ProviderAuthenticationSection({
               >
                 Open browser
               </Button>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      aria-label="Copy sign-in link"
-                      size="icon-sm"
-                      variant="ghost-muted"
-                      disabled={disabled}
-                      onClick={() => {
-                        // Copy during the click to retain clipboard activation; consent must still be
-                        // recorded before use.
-                        const copied = writeTextToClipboard(url, "Provider sign-in link");
-                        void (async () => {
-                          await copied;
-                          if (interaction?.type === "browser" && interaction.requiresConsent)
-                            await send({ type: "browser", action: "accept" });
-                        })().catch(() => setError("Could not copy the sign-in link."));
-                      }}
-                    >
-                      <CopyIcon />
-                    </Button>
-                  }
-                />
-                <TooltipPopup>Copy sign-in link</TooltipPopup>
-              </Tooltip>
+              <CopyButton
+                ariaLabel="Copy sign-in link"
+                disabled={disabled}
+                label="Copy sign-in link"
+                onCopy={() => {
+                  if (interaction?.type === "browser" && interaction.requiresConsent)
+                    void send({ type: "browser", action: "accept" }).catch(() =>
+                      setError("Could not copy the sign-in link."),
+                    );
+                }}
+                onError={() => setError("Could not copy the sign-in link.")}
+                size="icon-sm"
+                target="Provider sign-in link"
+                value={url}
+                variant="ghost-muted"
+              />
             </>
           ) : null}
           <>

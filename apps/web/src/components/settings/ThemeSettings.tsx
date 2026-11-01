@@ -1,5 +1,4 @@
 import {
-  CheckIcon,
   CopyIcon,
   MoonIcon,
   PaintbrushIcon,
@@ -38,6 +37,7 @@ import {
   AlertDialogTitle,
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
+import { Checkbox } from "../ui/checkbox";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { ThemeImportDialog } from "./ThemeImportDialog";
@@ -947,24 +947,19 @@ export function ThemeLibrary({
                         htmlFor={checkboxId}
                         key={customTheme.id}
                       >
-                        <span className="absolute right-2 top-2 inline-grid size-5 grid-cols-1 sm:size-4">
-                          <input
-                            checked={checked}
-                            className="col-start-1 row-start-1 size-full appearance-none rounded-sm border border-input bg-background outline-none checked:border-primary checked:bg-primary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring checked:focus-visible:inset-ring-3 checked:focus-visible:inset-ring-background dark:not-checked:bg-input/32 forced-colors:appearance-auto"
-                            id={checkboxId}
-                            name="themes-to-remove"
-                            type="checkbox"
-                            onChange={(event) => {
-                              const shouldRemove = event.currentTarget.checked;
-                              setThemeIdsToRemove((current) =>
-                                shouldRemove
-                                  ? [...current, customTheme.id]
-                                  : current.filter((themeId) => themeId !== customTheme.id),
-                              );
-                            }}
-                          />
-                          <CheckIcon className="pointer-events-none col-start-1 row-start-1 size-3.5 shrink-0 self-center justify-self-center stroke-primary-foreground opacity-0 group-has-checked:opacity-100 sm:size-3" />
-                        </span>
+                        <Checkbox
+                          checked={checked}
+                          className="absolute right-2 top-2"
+                          id={checkboxId}
+                          name="themes-to-remove"
+                          onCheckedChange={(shouldRemove) => {
+                            setThemeIdsToRemove((current) =>
+                              shouldRemove
+                                ? [...current, customTheme.id]
+                                : current.filter((themeId) => themeId !== customTheme.id),
+                            );
+                          }}
+                        />
                         <span className="flex min-h-12 items-center justify-center gap-1">
                           {card.previews.map((preview) => (
                             <span

@@ -50,7 +50,7 @@ import {
   SNAP_SHOT_ATTACHMENT_FRAME_CLASS,
   SnapShotAttachmentDetails,
 } from "./SnapShotAttachmentDetails";
-import { MessageCopyButton } from "./MessageCopyButton";
+import { CopyButton } from "../ui/copy-button";
 import { promptLinkFor } from "../promptLinks/copyPromptLink";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { formatBytes } from "../../lib/formatBytes";
@@ -324,13 +324,14 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
               {typeof revertTurnCount === "number" && (
                 <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
               )}
-              <MessageCopyButton text={text} variant="ghost" />
+              <CopyButton label="Copy message" size="xs" value={text} variant="ghost-muted" />
               {promptLink !== null && (
-                <MessageCopyButton
-                  text={promptLink}
-                  label="Copy prompt link"
+                <CopyButton
                   icon={LinkIconNode}
-                  variant="ghost"
+                  label="Copy prompt link"
+                  size="xs"
+                  value={promptLink}
+                  variant="ghost-muted"
                 />
               )}
             </div>
@@ -926,8 +927,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                 <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
               )}
               {copyText && (
-                <MessageCopyButton
-                  text={contextClipboardFragment ? copyText : plainText}
+                <CopyButton
+                  label="Copy message"
+                  size="xs"
+                  value={contextClipboardFragment ? copyText : plainText}
+                  variant="ghost-muted"
                   {...(contextClipboardFragment
                     ? {
                         extraFlavors: {
@@ -935,15 +939,15 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                         },
                       }
                     : {})}
-                  variant="ghost"
                 />
               )}
               {promptLink !== null && (
-                <MessageCopyButton
-                  text={promptLink}
-                  label="Copy prompt link"
+                <CopyButton
                   icon={LinkIconNode}
-                  variant="ghost"
+                  label="Copy prompt link"
+                  size="xs"
+                  value={promptLink}
+                  variant="ghost-muted"
                 />
               )}
             </div>

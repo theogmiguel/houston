@@ -5,7 +5,6 @@ import {
   CheckIcon,
   ChevronRightIcon,
   ArrowUpCircleIcon,
-  CopyIcon,
   DownloadIcon,
   ExternalLinkIcon,
   LayersIcon,
@@ -38,11 +37,11 @@ import {
   toCustomModelSetting,
 } from "@t3tools/shared/model";
 import { cn } from "../../lib/utils";
-import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { normalizeProviderAccentColor } from "../../providerInstances";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { CopyButton } from "../ui/copy-button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { DraftInput } from "../ui/draft-input";
 import { SecretSourceInput, type SecretSource } from "./SecretSourceInput";
@@ -747,25 +746,6 @@ export function ProviderInstanceCard({
   const displayName =
     instance.displayName?.trim() || driverOption?.label || String(instance.driver);
   const accentColor = normalizeProviderAccentColor(instance.accentColor);
-  const { copyToClipboard } = useCopyToClipboard<{ providerName: string }>({
-    onCopy: ({ providerName }) => {
-      toastManager.add({
-        type: "success",
-        title: `${providerName} update command copied`,
-        description: "Run it in a terminal when you are ready to update.",
-      });
-    },
-    onError: (error, { providerName }) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: `Could not copy ${providerName} update command`,
-          description: error.message,
-        }),
-      );
-    },
-  });
-
   const driverKind: ProviderDriverKind | null = isProviderDriverKind(instance.driver)
     ? instance.driver
     : null;
@@ -1015,23 +995,25 @@ export function ProviderInstanceCard({
               <code className="min-w-0 flex-1 truncate font-mono text-2xs text-foreground">
                 {updateCommand}
               </code>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      type="button"
-                      size="icon-xs"
-                      variant="ghost-muted"
-                      className="shrink-0"
-                      onClick={() => copyToClipboard(updateCommand, { providerName: displayName })}
-                      aria-label="Copy update command"
-                    >
-                      <CopyIcon className="size-3" />
-                    </Button>
-                  }
-                />
-                <TooltipPopup side="top">Copy command</TooltipPopup>
-              </Tooltip>
+              <CopyButton
+                ariaLabel="Copy update command"
+                className="shrink-0"
+                iconClassName="size-3"
+                label="Copy command"
+                onError={(error) =>
+                  toastManager.add(
+                    stackedThreadToast({
+                      type: "error",
+                      title: `Could not copy ${displayName} update command`,
+                      description: error.message,
+                    }),
+                  )
+                }
+                size="icon-xs"
+                target={`${displayName} update command`}
+                value={updateCommand}
+                variant="ghost-muted"
+              />
             </div>
           ) : null}
         </div>

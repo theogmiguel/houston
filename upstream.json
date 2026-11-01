@@ -397,7 +397,9 @@
     "apps/web/src/grid/useOpenGridDraft.ts",
     "apps/web/src/hooks/useRightPanelSurfaceClose.browser.test.tsx",
     "apps/web/src/lib/sideChatPane.ts",
-    "packages/client-runtime/src/state/composerDispatch.test.ts"
+    "packages/client-runtime/src/state/composerDispatch.test.ts",
+    "apps/web/src/components/ui/copy-button.tsx",
+    "apps/web/src/components/ui/copy-button.browser.test.tsx"
   ],
   "removed": [
     "apps/web/src/legalLinks.ts",
@@ -407,7 +409,9 @@
     "apps/web/src/state/npmRelease.test.ts",
     "apps/web/src/state/npmRelease.ts",
     "packages/client-runtime/src/pullRequestProjectFilter.ts",
-    "apps/web/src/components/Sidebar.tsx"
+    "apps/web/src/components/Sidebar.tsx",
+    "apps/web/src/components/DiffFilePathCopyButton.tsx",
+    "apps/web/src/components/chat/MessageCopyButton.tsx"
   ],
   "adapted": {
     "apps/web/index.html": "Houston branding",
@@ -1177,6 +1181,12 @@
     "apps/server/src/mcp/toolkits/thread/handlers.ts": "night shift: run_scheduled_task_now asks the Houston crew gate first, which refuses it for a thread of a live run (AD-112)",
     "packages/client-runtime/src/state/threads-sync.test.ts": "a first bounded snapshot that 404s before creation keeps the thread live",
     "apps/server/src/usage/UsageService.test.ts": "the saved-usage window test dates its transcript from the clock instead of a fixed day the 92-day cache retention ages out",
-    "packages/client-runtime/src/state/composerDispatch.ts": "a follow-up falls back to the queue when the provider cannot steer"
+    "packages/client-runtime/src/state/composerDispatch.ts": "a follow-up falls back to the queue when the provider cannot steer",
+    "apps/web/src/components/files/FilePreviewPanel.tsx": "the copy-contents action uses the shared CopyButton",
+    "apps/web/src/components/pullRequest/PullRequestCopyableCode.tsx": "keeps its code-line layout on the shared clipboard behaviour",
+    "apps/web/src/components/settings/ProviderAuthenticationSection.tsx": "the sign-in link copy action uses the shared CopyButton",
+    "apps/web/src/components/settings/ProviderInstanceCard.tsx": "the update command copy action uses the shared CopyButton",
+    "apps/web/src/components/settings/ScheduledTasksSettings.tsx": "the webhook copy action uses the shared CopyButton",
+    "apps/web/src/components/settings/ThemeSettings.tsx": "the theme removal checkbox uses the Checkbox primitive"
   }
 }
