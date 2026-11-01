@@ -53,7 +53,8 @@ import { formatWorktreePathForDisplay } from "../worktreeCleanup";
 import { ThreadStateGlyph, threadStateTextClass } from "./ui/thread-state-glyph";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
-  PULL_REQUEST_STATE_PRESENTATION,
+  PULL_REQUEST_PRESENTATION,
+  pullRequestStateHoverToneClassName,
   PullRequestGlyph,
   type PullRequestGlyphIcon,
 } from "./pullRequest/pullRequestIcons";
@@ -175,7 +176,7 @@ function resolveThreadPullRequestBadgePresentation({
 }): ThreadPullRequestBadgePresentation | null {
   const terminology = changeRequestTerminologyForUrl(url);
   if (badge?.kind === "stack") {
-    const aggregate = PULL_REQUEST_STATE_PRESENTATION[badge.state];
+    const aggregate = PULL_REQUEST_PRESENTATION[badge.state];
     return {
       Icon: PullRequestGlyph.stack,
       toneClassName: aggregate.toneClassName,
@@ -187,7 +188,7 @@ function resolveThreadPullRequestBadgePresentation({
 
   const tooltip = status?.tooltip ?? `${terminology.shortLabel} #${number}, status pending`;
   if (badge?.kind === "pull-request" && badge.others > 0) {
-    const aggregate = PULL_REQUEST_STATE_PRESENTATION[badge.state];
+    const aggregate = PULL_REQUEST_PRESENTATION[badge.state];
     return {
       Icon: aggregate.Icon,
       toneClassName: aggregate.toneClassName,
@@ -506,7 +507,7 @@ export function terminalStatusFromRunningIds(
   }
   return {
     label: "Terminal process running",
-    colorClass: "text-teal-600 dark:text-teal-300/90",
+    colorClass: "text-info-foreground",
     pulse: true,
   };
 }
@@ -806,16 +807,7 @@ export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSumma
 }
 
 function settledPrHoverColorClass(state: ThreadPullRequestBadge["state"]): string {
-  switch (state) {
-    case "draft":
-      return "group-hover/sidebar-row:text-zinc-500 dark:group-hover/sidebar-row:text-zinc-400/80";
-    case "open":
-      return "group-hover/sidebar-row:text-emerald-600 dark:group-hover/sidebar-row:text-emerald-300/90";
-    case "merged":
-      return "group-hover/sidebar-row:text-violet-600 dark:group-hover/sidebar-row:text-violet-300/90";
-    case "closed":
-      return "group-hover/sidebar-row:text-red-600 dark:group-hover/sidebar-row:text-red-300/90";
-  }
+  return pullRequestStateHoverToneClassName(state);
 }
 
 // Search rows are already buttons, so this renders the sidebar badge's look without its controls.

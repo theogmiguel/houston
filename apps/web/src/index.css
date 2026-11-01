@@ -300,6 +300,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-update: var(--update);
   --color-success-foreground: var(--success-foreground);
   --color-success: var(--success);
+  --color-merged-foreground: var(--merged-ink);
+  --color-merged: var(--merged);
   --color-diff-addition: var(--diff-addition);
   --color-diff-deletion: var(--diff-deletion);
   --color-diff-addition-foreground: var(--diff-addition-foreground);
@@ -1196,6 +1198,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --stop-ink: #c0362c;
   --warn-ink: #9a4a06;
   --info-ink: #155e75;
+  /* A merged pull request: the one status colour Houston has no other use for. */
+  --merged: #7c3aed;
+  --merged-ink: #6d28d9;
   --danger-fill: #c0362c;
   --danger-wash: rgba(192, 54, 44, 0.08);
   --warn-wash: rgba(180, 83, 9, 0.06);
@@ -1330,6 +1335,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --stop-ink: #ff6b61;
   --warn-ink: #f5a524;
   --info-ink: #7cb7ff;
+  --merged: #a78bfa;
+  --merged-ink: #c4b5fd;
   --danger-fill: #d93a30;
   --danger-wash: rgba(255, 107, 97, 0.1);
   --warn-wash: rgba(245, 165, 36, 0.08);

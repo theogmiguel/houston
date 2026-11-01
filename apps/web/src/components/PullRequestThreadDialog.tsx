@@ -32,6 +32,7 @@ import {
   DialogPopup,
   DialogTitle,
 } from "./ui/dialog";
+import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { Input } from "./ui/input";
 import { Spinner } from "./ui/spinner";
 import { toastManager } from "./ui/toast";
@@ -44,19 +45,6 @@ interface PullRequestThreadDialogProps {
   initialReference: string | null;
   onOpenChange: (open: boolean) => void;
   onPrepared: (input: { branch: string; worktreePath: string | null }) => Promise<void> | void;
-}
-
-function pullRequestStatusTone(state: string | undefined): string {
-  switch (state) {
-    case "merged":
-      return "text-violet-600 dark:text-violet-300/90";
-    case "closed":
-      return "text-zinc-500 dark:text-zinc-400/80";
-    case "open":
-      return "text-emerald-600 dark:text-emerald-300/90";
-    default:
-      return "text-muted-foreground";
-  }
 }
 
 export function PullRequestThreadDialog({
@@ -119,7 +107,13 @@ export function PullRequestThreadDialog({
       parsedReference !== parsedDebouncedReference ||
       pullRequestResolution.isPending ||
       pullRequestResolution.isFetching);
-  const statusTone = pullRequestStatusTone(resolvedPullRequest?.state);
+  const statusTone =
+    resolvedPullRequest === null
+      ? "text-muted-foreground"
+      : resolvePullRequestState({
+          state: resolvedPullRequest.state,
+          isDraft: false,
+        }).toneClassName;
 
   const handleConfirm = async (mode: "local" | "worktree") => {
     if (!preparePullRequestThreadAction.isAllowed) return;
