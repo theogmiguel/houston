@@ -297,7 +297,7 @@ function AccessOption({
         aria-hidden
         className={cn(
           "mt-0.5 size-4 shrink-0",
-          selected ? "text-primary" : "text-muted-foreground",
+          selected ? "text-(--accent-ink)" : "text-muted-foreground",
         )}
       />
       <span className="min-w-0">

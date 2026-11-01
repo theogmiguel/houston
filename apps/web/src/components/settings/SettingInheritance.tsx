@@ -248,7 +248,7 @@ export function SettingInheritance({
           <LayersIcon
             className={cn(
               "size-3",
-              state === "overridden" && "text-primary",
+              state === "overridden" && "text-(--accent-ink)",
               state === "mixed" && "text-warning",
             )}
           />
@@ -291,7 +291,7 @@ export function SettingInheritance({
                     >
                       <span className="max-w-32 truncate">{layer.value}</span>
                       {layer.effective ? (
-                        <CheckIcon aria-hidden className="size-3.5 shrink-0 text-primary" />
+                        <CheckIcon aria-hidden className="size-3.5 shrink-0 text-(--accent-ink)" />
                       ) : (
                         <span aria-hidden className="size-3.5 shrink-0" />
                       )}

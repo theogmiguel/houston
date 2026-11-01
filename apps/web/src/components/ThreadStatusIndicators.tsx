@@ -50,7 +50,7 @@ import {
 
 import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
-import { StreamingGlyph } from "./chat/TimelineRowParts";
+import { ThreadStateGlyph, threadStateTextClass } from "./ui/thread-state-glyph";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
   PULL_REQUEST_STATE_PRESENTATION,
@@ -619,15 +619,14 @@ function ThreadStatusLabel({
             <span
               role="img"
               aria-label={status.label}
-              className={`inline-flex size-3.5 shrink-0 items-center justify-center ${status.colorClass}`}
+              className={cn(
+                "inline-flex size-3.5 shrink-0 items-center justify-center",
+                threadStateTextClass(status.state),
+              )}
             />
           }
         >
-          {status.pulse ? (
-            <StreamingGlyph className="size-3" />
-          ) : (
-            <span className={`size-[9px] rounded-full ${status.dotClass}`} />
-          )}
+          <ThreadStateGlyph state={status.state} className="size-3" />
         </TooltipTrigger>
         <TooltipPopup side="top">{status.label}</TooltipPopup>
       </Tooltip>
@@ -641,15 +640,14 @@ function ThreadStatusLabel({
           <span
             role="img"
             aria-label={status.label}
-            className={`inline-flex items-center gap-1 text-3xs ${status.colorClass}`}
+            className={cn(
+              "inline-flex items-center gap-1 text-3xs",
+              threadStateTextClass(status.state),
+            )}
           />
         }
       >
-        {status.pulse ? (
-          <StreamingGlyph className="size-3" />
-        ) : (
-          <span className={`h-1.5 w-1.5 rounded-full ${status.dotClass}`} />
-        )}
+        <ThreadStateGlyph state={status.state} className="size-3" />
         <span className="hidden md:inline">{status.label}</span>
       </TooltipTrigger>
       <TooltipPopup side="top">{status.label}</TooltipPopup>

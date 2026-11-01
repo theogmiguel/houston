@@ -1,46 +1,33 @@
-import { StreamingGlyph } from "../chat/TimelineRowParts";
-import {
-  resolveSidebarStatusGlyphState,
-  type SidebarStatusGlyphState,
-  type ThreadStatusPill,
-} from "../Sidebar.logic";
+import { cn } from "../../lib/utils";
+import type { ThreadStatusPill } from "../Sidebar.logic";
+import { ThreadStateGlyph, threadStateTextClass, type ThreadState } from "../ui/thread-state-glyph";
 
-const GLYPH_LABEL: Record<Exclude<SidebarStatusGlyphState, "idle">, string> = {
-  working: "Running",
+const GLYPH_LABEL: Record<ThreadState, string> = {
+  running: "Running",
   needs: "Needs you",
-  done: "Ready",
-  error: "Failed",
+  ready: "Ready",
+  failed: "Failed",
+  back: "Back",
 };
 
-/**
- * The rail's status mark, laid out beside the time so titles line up. The board
- * gives each state one shape: dotted ring, warn dot, check or error circle.
- */
+/** The rail's status mark, laid out beside the time so titles line up. */
 export function SidebarStatusGlyph({
   state,
   label,
 }: {
-  state: SidebarStatusGlyphState;
+  state: ThreadState;
   label?: string | null | undefined;
 }) {
-  if (state === "idle") return null;
   return (
     <span
       role="img"
       aria-label={label ?? GLYPH_LABEL[state]}
-      className="inline-grid size-3.5 shrink-0 place-items-center"
-    >
-      {state === "working" ? (
-        <StreamingGlyph className="size-3.5" />
-      ) : state === "needs" ? (
-        <span className="size-2 rounded-full bg-warning ring-2 ring-warning/30" />
-      ) : state === "done" ? (
-        <span className="h-2 w-1 -translate-y-px rotate-45 border-r-2 border-b-2 border-ring" />
-      ) : (
-        <span className="grid size-[11px] place-items-center rounded-full bg-destructive text-4xs font-extrabold leading-none text-destructive-foreground">
-          !
-        </span>
+      className={cn(
+        "inline-grid size-3.5 shrink-0 place-items-center",
+        threadStateTextClass(state),
       )}
+    >
+      <ThreadStateGlyph state={state} />
     </span>
   );
 }
@@ -52,5 +39,6 @@ export function SidebarThreadStatusGlyph({
   status: ThreadStatusPill | null;
   label?: string | null | undefined;
 }) {
-  return <SidebarStatusGlyph state={resolveSidebarStatusGlyphState(status)} label={label} />;
+  if (status === null) return null;
+  return <SidebarStatusGlyph state={status.state} label={label} />;
 }

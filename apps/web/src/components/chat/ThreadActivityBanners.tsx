@@ -16,8 +16,6 @@ import {
   CircleDashedIcon,
   CircleStopIcon,
   GitBranchIcon,
-  MessageCircleIcon,
-  ShieldQuestionIcon,
   TargetIcon,
   TerminalIcon,
   TriangleAlertIcon,
@@ -25,6 +23,7 @@ import {
 import { Fragment } from "react";
 import { tickTextContent } from "~/lib/tickTextContent";
 import { cn } from "~/lib/utils";
+import { ThreadStateGlyph } from "../ui/thread-state-glyph";
 import { Button, InlineButton } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
@@ -41,12 +40,8 @@ export function childInputNowItem(input: {
   if (!first || input.parentAwaitingUser) return null;
   return {
     id: `child-input:${first.id}`,
-    // The only line at the end of the timeline that needs you gets the info color.
-    icon: first.hasPendingApprovals ? (
-      <ShieldQuestionIcon className="text-info-foreground" />
-    ) : (
-      <MessageCircleIcon className="text-info-foreground" />
-    ),
+    // The only line at the end of the timeline that needs you gets the needs mark.
+    icon: <ThreadStateGlyph state="needs" className="text-(--warn-ink)" />,
     title: childThreadInputsTitle(childThreadInputs),
     waitingLabel: childThreadInputs.every((child) => child.lineage.sideChat === true)
       ? "Side chat waiting"

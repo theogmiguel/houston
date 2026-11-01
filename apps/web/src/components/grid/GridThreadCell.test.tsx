@@ -7,6 +7,7 @@ import { GridThreadCell } from "./GridThreadCell";
 
 const state = vi.hoisted(() => ({
   draftSession: null as unknown,
+  pill: null as unknown,
   archivedSnapshots: [] as unknown[],
   promoted: null as unknown,
   setDraftId: vi.fn(),
@@ -77,8 +78,7 @@ vi.mock("../../grid/gridStore", () => ({
 }));
 
 vi.mock("../Sidebar.logic", () => ({
-  resolveThreadStatusPill: () => null,
-  resolveSidebarStatusGlyphState: () => "idle",
+  resolveThreadStatusPill: () => state.pill,
 }));
 
 function grid(): GridRecord {

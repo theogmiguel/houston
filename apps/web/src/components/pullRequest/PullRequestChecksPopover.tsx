@@ -96,7 +96,7 @@ function ChecksBody({
                 {check.url === null ? null : (
                   <button
                     type="button"
-                    className="text-primary hover:underline"
+                    className="text-(--accent-ink) hover:underline"
                     onClick={() => {
                       if (!check.url) return;
                       void openLink(check.url).catch((error: unknown) => {

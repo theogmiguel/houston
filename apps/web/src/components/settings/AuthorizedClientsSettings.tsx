@@ -992,7 +992,7 @@ export const AdvertisedEndpointListRow = memo(function AdvertisedEndpointListRow
         </div>
         <div className="ml-auto flex min-h-6 shrink-0 items-center justify-end gap-2">
           {isDefault ? (
-            <span className="rounded-md border border-primary/30 bg-primary/10 px-1 py-0.5 text-3xs text-primary">
+            <span className="rounded-md border border-primary/30 bg-primary/10 px-1 py-0.5 text-3xs text-(--accent-ink)">
               Default
             </span>
           ) : null}

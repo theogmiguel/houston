@@ -12,9 +12,9 @@ import { SidebarStatusGlyph } from "./SidebarStatusGlyph";
 
 const FOLDER_GLYPH_STATE = {
   attention: "needs",
-  failed: "error",
-  unread: "done",
-  working: "working",
+  failed: "failed",
+  unread: "ready",
+  working: "running",
 } as const;
 
 const FOLDER_GLYPH_LABEL = {

@@ -14,7 +14,6 @@ import {
   orderItemsByPreferredIds,
   pinOrderKeyBetween,
   resolveProjectStatusIndicator,
-  resolveSidebarStatusGlyphState,
   resolveSidebarSweepKeys,
   resolveSidebarThreadStatus,
   resolveThreadStatusPill,
@@ -31,7 +30,6 @@ import {
   shouldNavigateAfterThreadPark,
   type SidebarListItem,
   type SidebarListMarker,
-  type ThreadStatusPill,
   type SidebarSection,
   resolveSidebarDropVerb,
   groupSidebarThreadsByProject,
@@ -431,19 +429,19 @@ describe("resolveThreadStatusPill", () => {
     },
   };
 
-  it("shows an active thread wait without a pulse and resumes Working when it ends", () => {
+  it("shows an active thread wait as the running mark and resumes Running when it ends", () => {
     const blocked = { ...baseThread, blockedOnThreadWait: true };
     expect(resolveSidebarThreadStatus(blocked)).toBe("waiting");
     expect(resolveThreadStatusPill({ thread: blocked })).toMatchObject({
       label: "Waiting",
-      pulse: false,
+      state: "running",
     });
 
     const resumed = { ...blocked, blockedOnThreadWait: false };
     expect(resolveSidebarThreadStatus(resumed)).toBe("working");
     expect(resolveThreadStatusPill({ thread: resumed })).toMatchObject({
       label: "Running",
-      pulse: true,
+      state: "running",
     });
   });
 
@@ -462,12 +460,7 @@ describe("resolveThreadStatusPill", () => {
           },
         },
       }),
-    ).toMatchObject({
-      label: "Waiting",
-      colorClass: "text-sidebar-muted-foreground",
-      dotClass: "bg-sidebar-muted-foreground",
-      pulse: false,
-    });
+    ).toMatchObject({ label: "Waiting", state: "running" });
   });
 
   it("shows plan ready when a settled plan turn has a proposed plan ready for follow-up", () => {
@@ -484,7 +477,7 @@ describe("resolveThreadStatusPill", () => {
           },
         },
       }),
-    ).toMatchObject({ label: "Plan Ready", pulse: false });
+    ).toMatchObject({ label: "Plan Ready", state: "needs" });
   });
 
   it("does not manufacture completed state without a client visit marker", () => {
@@ -518,7 +511,7 @@ describe("resolveThreadStatusPill", () => {
           },
         },
       }),
-    ).toMatchObject({ label: "Ready", pulse: false });
+    ).toMatchObject({ label: "Ready", state: "ready" });
   });
 
   it("shows failed, not completed, when the unseen run failed", () => {
@@ -537,7 +530,7 @@ describe("resolveThreadStatusPill", () => {
           },
         },
       }),
-    ).toMatchObject({ label: "Failed", pulse: false });
+    ).toMatchObject({ label: "Failed", state: "failed" });
   });
 
   it("shows failed, not plan ready, when a plan run proposed a plan and then failed", () => {
@@ -569,57 +562,71 @@ describe("resolveThreadStatusPill", () => {
   });
 });
 
-describe("resolveSidebarStatusGlyphState", () => {
-  const pill = (label: ThreadStatusPill["label"]): ThreadStatusPill => ({
-    label,
-    colorClass: "",
-    dotClass: "",
-    pulse: false,
+describe("thread state vocabulary", () => {
+  const stateThread = (overrides: Record<string, unknown>) => ({
+    hasActionableProposedPlan: false,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    interactionMode: "default" as const,
+    latestRun: null,
+    runtime: { status: "idle", activeRunId: null },
+    ...overrides,
   });
 
-  it("maps every thread status to one rail glyph", () => {
-    expect(resolveSidebarStatusGlyphState(null)).toBe("idle");
-    for (const label of ["Running", "Connecting", "Waiting"] as const) {
-      expect(resolveSidebarStatusGlyphState(pill(label))).toBe("working");
+  it("maps every legacy pill label onto one canonical mark", () => {
+    const cases: ReadonlyArray<[Record<string, unknown>, string | null]> = [
+      [{ runtime: { status: "running", activeRunId: "turn-1" } }, "running"],
+      [{ runtime: { status: "preparing", activeRunId: null } }, "running"],
+      [
+        { runtime: { status: "running", activeRunId: "turn-1" }, blockedOnThreadWait: true },
+        "running",
+      ],
+      [{ hasPendingApprovals: true }, "needs"],
+      [{ hasPendingUserInput: true }, "needs"],
+      [
+        {
+          hasActionableProposedPlan: true,
+          interactionMode: "plan",
+          latestRun: makeLatestRun(),
+          runtime: { status: "completed", activeRunId: null },
+        },
+        "needs",
+      ],
+      [
+        {
+          latestRun: makeLatestRun(),
+          lastVisitedAt: "2026-03-09T10:04:00.000Z",
+          runtime: { status: "completed", activeRunId: null },
+        },
+        "ready",
+      ],
+      [
+        {
+          latestRun: { ...makeLatestRun(), status: "failed" },
+          lastVisitedAt: "2026-03-09T10:04:00.000Z",
+          runtime: { status: "failed", activeRunId: null, lastError: "Provider turn failed." },
+        },
+        "failed",
+      ],
+      [{}, null],
+    ];
+    for (const [thread, state] of cases) {
+      expect(resolveThreadStatusPill({ thread: stateThread(thread) as never })?.state ?? null).toBe(
+        state,
+      );
     }
-    for (const label of ["Pending Approval", "Needs you", "Plan Ready"] as const) {
-      expect(resolveSidebarStatusGlyphState(pill(label))).toBe("needs");
-    }
-    expect(resolveSidebarStatusGlyphState(pill("Ready"))).toBe("done");
-    expect(resolveSidebarStatusGlyphState(pill("Failed"))).toBe("error");
   });
 });
 
 describe("resolveProjectStatusIndicator", () => {
   it("ranks waiting below active work and above plan-ready", () => {
-    const waiting = {
-      label: "Waiting" as const,
-      colorClass: "text-sidebar-muted-foreground",
-      dotClass: "bg-sidebar-muted-foreground",
-      pulse: false,
-    };
+    const waiting = { label: "Waiting" as const, state: "running" as const };
 
     expect(
-      resolveProjectStatusIndicator([
-        waiting,
-        {
-          label: "Running",
-          colorClass: "text-sky-600",
-          dotClass: "bg-sky-500",
-          pulse: true,
-        },
-      ]),
+      resolveProjectStatusIndicator([waiting, { label: "Running", state: "running" }]),
     ).toMatchObject({ label: "Running" });
     expect(
-      resolveProjectStatusIndicator([
-        {
-          label: "Plan Ready",
-          colorClass: "text-violet-600",
-          dotClass: "bg-violet-500",
-          pulse: false,
-        },
-        waiting,
-      ]),
+      resolveProjectStatusIndicator([{ label: "Plan Ready", state: "needs" }, waiting]),
     ).toMatchObject({ label: "Waiting" });
   });
 });

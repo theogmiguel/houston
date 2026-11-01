@@ -6,11 +6,8 @@ import {
 } from "@t3tools/client-runtime/state/thread-settled";
 import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
 
-import {
-  isSidebarHiddenThread,
-  resolveSidebarStatusGlyphState,
-  resolveThreadStatusPill,
-} from "../components/Sidebar.logic";
+import { isSidebarHiddenThread, resolveThreadStatusPill } from "../components/Sidebar.logic";
+import type { ThreadState } from "../components/ui/thread-state-glyph";
 import { workspaceKeyOf, type GridRecord } from "./gridStore";
 import { preorderThreads } from "./tree";
 
@@ -18,25 +15,14 @@ import { preorderThreads } from "./tree";
  * The grid rail's one status vocabulary. `idle` cards show their age; every
  * other state shows an outlined glyph and a word.
  */
-export type GridThreadState = "running" | "ready" | "needs" | "failed" | "back" | "idle";
+export type GridThreadState = ThreadState | "idle";
 
 export function resolveGridThreadState(
   thread: EnvironmentThreadShell,
   now: string,
 ): GridThreadState {
   const status = resolveThreadStatusPill({ thread });
-  switch (resolveSidebarStatusGlyphState(status)) {
-    case "working":
-      return "running";
-    case "needs":
-      return "needs";
-    case "error":
-      return "failed";
-    case "done":
-      return "ready";
-    case "idle":
-      break;
-  }
+  if (status !== null) return status.state;
   // A reopened thread uses the same Back mark as a woken one: its unsettle
   // time is the last thing the user has not seen.
   const wokeAt = threadWokeAt(thread, { now }) ?? thread.unsettledAt;

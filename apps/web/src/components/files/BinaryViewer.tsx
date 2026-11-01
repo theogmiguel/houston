@@ -315,7 +315,7 @@ export default function BinaryViewer(props: {
                     <td className="max-w-0 border-b border-border/60">
                       <button
                         type="button"
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:text-primary focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:text-(--accent-ink) focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                         onClick={() => {
                           if (item.directory) setFolder(`${item.path}/`);
                           else {

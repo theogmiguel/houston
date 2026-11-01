@@ -352,7 +352,7 @@ export function AddEnvironmentDialog({
             className={cn(
               "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border",
               selected
-                ? "border-primary/30 bg-primary/10 text-primary"
+                ? "border-primary/30 bg-primary/10 text-(--accent-ink)"
                 : "border-border/70 bg-background text-muted-foreground group-hover:text-foreground",
             )}
           >

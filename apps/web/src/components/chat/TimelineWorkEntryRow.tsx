@@ -540,7 +540,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           {createdThread ? (
             <button
               type="button"
-              className="shrink-0 rounded-sm text-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              className="shrink-0 rounded-sm text-sm text-(--accent-ink) hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               aria-label={`Open ${createdThread.title ?? "created thread"}`}
               onClick={(event) => {
                 event.stopPropagation();

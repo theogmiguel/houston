@@ -100,7 +100,7 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanelShell";
 import { FaviconImage } from "./preview/PreviewFaviconIcon";
 import { previewBridge } from "./preview/previewBridge";
-import { StreamingGlyph } from "./chat/TimelineRowParts";
+import { ThreadStateGlyph, threadStateTextClass, type ThreadState } from "./ui/thread-state-glyph";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -697,16 +697,18 @@ function SurfaceIcon({
   }
 }
 
-/** What a side chat tab's dot shows and its title's accessible name says. */
-function sideChatTabState(shell: EnvironmentThreadShell | null) {
+/** What a side chat tab's mark shows and its title's accessible name says. */
+function sideChatTabState(
+  shell: EnvironmentThreadShell | null,
+): { label: string; state: ThreadState } | null {
   if (shell === null) return null;
   if (shell.hasPendingApprovals || shell.pendingSubagentRequest === "approval") {
-    return "needs approval";
+    return { label: "needs approval", state: "needs" };
   }
   if (shell.hasPendingUserInput || shell.pendingSubagentRequest === "user_input") {
-    return "needs input";
+    return { label: "needs input", state: "needs" };
   }
-  return threadRuntimeIsActive(shell.runtime) ? "running" : null;
+  return threadRuntimeIsActive(shell.runtime) ? { label: "running", state: "running" } : null;
 }
 
 // The running mark spins with the thread; attention marks stay static.
@@ -719,10 +721,13 @@ function SideChatTabIcon(props: { environmentId: EnvironmentId | null; threadId:
   return (
     <>
       <MessagesSquare className="size-3 shrink-0" />
-      {state === null ? null : state === "running" ? (
-        <StreamingGlyph className="absolute -top-1 -right-1 size-2.5" />
-      ) : (
-        <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-info" aria-hidden />
+      {state === null ? null : (
+        <span
+          className={cn("absolute -top-1 -right-1", threadStateTextClass(state.state))}
+          aria-hidden
+        >
+          <ThreadStateGlyph state={state.state} className="size-2.5" />
+        </span>
       )}
     </>
   );
@@ -974,7 +979,7 @@ function RightPanelTab(
                   if (surface.kind === "device" && props.canRename) onStartRename(surface.id);
                 }}
                 className="cursor-pointer flex min-w-0 items-center"
-                aria-label={sideChatState === null ? undefined : `${title}, ${sideChatState}`}
+                aria-label={sideChatState === null ? undefined : `${title}, ${sideChatState.label}`}
                 onClick={() => onActivate(surface)}
               >
                 <span className="truncate">{title}</span>
