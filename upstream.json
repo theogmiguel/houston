@@ -402,7 +402,10 @@
     "apps/web/src/components/ui/copy-button.browser.test.tsx",
     "apps/web/src/hooks/useReducedMotion.ts",
     "apps/web/src/hooks/useReducedMotion.browser.test.tsx",
-    "apps/web/src/components/settings/RedactedSensitiveText.browser.test.tsx"
+    "apps/web/src/components/settings/RedactedSensitiveText.browser.test.tsx",
+    "apps/web/src/themeReveal.ts",
+    "apps/web/src/themeReveal.test.ts",
+    "apps/web/src/components/sidebar/SidebarThemeReveal.browser.test.tsx"
   ],
   "removed": [
     "apps/web/src/legalLinks.ts",
@@ -414,7 +417,17 @@
     "packages/client-runtime/src/pullRequestProjectFilter.ts",
     "apps/web/src/components/Sidebar.tsx",
     "apps/web/src/components/DiffFilePathCopyButton.tsx",
-    "apps/web/src/components/chat/MessageCopyButton.tsx"
+    "apps/web/src/components/chat/MessageCopyButton.tsx",
+    "apps/web/src/components/ProjectFavicon.tsx",
+    "apps/web/src/components/ProjectMonogram.tsx",
+    "apps/web/src/components/settings/ProjectIconPickerDialog.tsx",
+    "apps/web/src/components/settings/ProjectFaviconPickerDialog.tsx",
+    "apps/web/src/components/settings/ProjectFaviconThumbnail.tsx",
+    "apps/web/src/projectIconColors.ts",
+    "apps/web/src/projectIconOptions.ts",
+    "apps/web/src/projectIconOptions.test.ts",
+    "apps/web/src/projectIdentity.ts",
+    "apps/web/src/assets/projectFaviconCache.ts"
   ],
   "adapted": {
     "apps/web/index.html": "Houston branding",
@@ -1264,6 +1277,9 @@
     "apps/web/src/components/sidebar/SidebarDraftBlock.tsx": "draft rows carry no project icon",
     "apps/web/src/components/sidebar/SidebarThreadRow.tsx": "thread rows and hover cards carry no project icon",
     "apps/web/src/connection/storage.ts": "the project favicon cache is not persisted",
-    "apps/web/src/state/assets.ts": "the project favicon atom is removed"
+    "apps/web/src/state/assets.ts": "the project favicon atom is removed",
+    "apps/web/src/hooks/useTheme.ts": "theme switches reveal the new palette as a circle from the clicked control",
+    "apps/web/src/components/CommandPaletteThemeItems.tsx": "theme commands reveal from the window centre",
+    "apps/web/src/shortcuts/commandPaletteCommands.ts": "the appearance shortcut reveals from the window centre"
   }
 }

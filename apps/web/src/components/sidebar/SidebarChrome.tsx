@@ -124,7 +124,7 @@ function SidebarUtilityItem({
 }: {
   icon: ReactNode;
   label: string;
-  onClick: () => void;
+  onClick: (source: Element) => void;
 }) {
   return (
     <SidebarMenuItem className="shrink-0">
@@ -133,7 +133,7 @@ function SidebarUtilityItem({
           render={
             <SidebarMenuButton
               aria-label={label}
-              onClick={onClick}
+              onClick={(event) => onClick(event.currentTarget)}
               size="icon"
               className="size-7 [&_svg]:size-[15px]"
             >
@@ -147,7 +147,7 @@ function SidebarUtilityItem({
   );
 }
 
-const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
+export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -163,8 +163,8 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const themeLabel = railThemeLabel(appearanceMode);
   const ThemeIcon =
     appearanceMode === "dark" ? MoonIcon : appearanceMode === "light" ? SunIcon : MonitorIcon;
-  const cycleTheme = () => {
-    setAppearanceMode(nextRailThemeMode(appearanceMode));
+  const cycleTheme = (source: Element) => {
+    setAppearanceMode(nextRailThemeMode(appearanceMode), source);
   };
   const handleSettingsClick = () => {
     closeMobileSidebar();
