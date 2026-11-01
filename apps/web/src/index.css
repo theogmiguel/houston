@@ -433,6 +433,13 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
+/* A wash is a tint, not a ground. Over the composer's opaque surface the tint
+   keeps its color while the timeline scrolling behind cannot show through. */
+@utility warning-wash-surface {
+  background-color: var(--composer);
+  background-image: linear-gradient(var(--warning-surface), var(--warning-surface));
+}
+
 @utility alert-glass {
   --alert-glass-tint: transparent;
   background:
