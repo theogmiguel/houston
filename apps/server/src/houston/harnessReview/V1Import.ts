@@ -24,7 +24,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as ServerConfig from "../../config.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import { HostedLaunch } from "../baseDir.ts";
-import { v1PathMatches } from "../tasks/rules.ts";
+import { v1PathMatches, v1PathUnder } from "../tasks/rules.ts";
 import { HoustonHarnessStore } from "./Store.ts";
 
 const OPERATION = "houston.harness.importV1.run";
@@ -172,11 +172,14 @@ const make = Effect.gen(function* () {
     const roots = (yield* projects.list().pipe(Effect.orDie)).filter(
       (project) => project.deletedAt === null,
     );
-    return (workspace: SqlValue | undefined): ProjectId | null =>
+    const match = (workspace: SqlValue | undefined) =>
       typeof workspace !== "string"
-        ? null
-        : (roots.find((project) => v1PathMatches(workspace, project.workspaceRoot, platform))
-            ?.projectId ?? null);
+        ? undefined
+        : roots.find((project) => v1PathMatches(workspace, project.workspaceRoot, platform));
+    return Object.assign(
+      (workspace: SqlValue | undefined): ProjectId | null => match(workspace)?.projectId ?? null,
+      { rootOf: (workspace: SqlValue | undefined) => match(workspace)?.workspaceRoot ?? null },
+    );
   });
 
   const status: HoustonHarnessV1Import["Service"]["status"] = Effect.gen(function* () {
@@ -232,11 +235,23 @@ const make = Effect.gen(function* () {
       }
       // A v1 review still running when the copy was taken never publishes here.
       const running = review.status !== "published" && review.status !== "failed";
+      // v1 stored an absolute directory, or "" when it could not prepare one; the report reader
+      // resolves a run directory under the project root.
+      const v1Dir = typeof review.run_dir === "string" ? review.run_dir : "";
+      const root = projectOf.rootOf(review.workspace);
+      const runDir = root === null ? null : v1PathUnder(v1Dir, root, platform);
+      if (runDir === null) {
+        notes.push(
+          v1Dir === ""
+            ? `Houston 1 review ${String(review.id)} recorded no run directory, so its report cannot be opened`
+            : `Houston 1 review ${String(review.id)}'s run directory ${v1Dir} is not inside its project, so it is kept as it was and its report cannot be opened`,
+        );
+      }
       const [inserted] = yield* sql<{ readonly id: number }>`
         INSERT INTO houston_harness_reviews (project_id, trigger, status, run_dir, started_at,
           ended_at, window_since, window_until, threads, prompts, cost_usd, finding_count,
           summary, error)
-        VALUES (${projectId}, 'imported', ${running ? "failed" : review.status}, ${review.run_dir},
+        VALUES (${projectId}, 'imported', ${running ? "failed" : review.status}, ${runDir ?? v1Dir},
           ${iso(review.started_at_ms)}, ${iso(review.ended_at_ms) ?? iso(review.started_at_ms)},
           ${review.window_since}, ${review.window_until}, ${review.sessions}, ${review.prompts},
           ${review.cost_usd},

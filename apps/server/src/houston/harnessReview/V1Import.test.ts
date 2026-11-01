@@ -34,6 +34,10 @@ const ROOT = WINDOWS ? "C:\\work\\shop" : "/work/shop";
 // The path v1 recorded: on Windows another case and a trailing separator, as a user typed it.
 const V1_ROOT = WINDOWS ? "c:\\Work\\Shop\\" : "/work/shop";
 const OTHER = WINDOWS ? "C:\\work\\gone" : "/work/gone";
+// v1's run directories are absolute: `<pane folder>/.houston/harness/r<run>`, joined by the OS.
+const R5 = NodePath.join(V1_ROOT, ".houston", "harness", "r5");
+// A review pane that ran in a folder beside the project, not inside it.
+const R9 = NodePath.join(`${ROOT}-review`, ".houston", "harness", "r9");
 
 const importer = HoustonHarnessV1Import.HoustonHarnessV1Import;
 
@@ -70,7 +74,14 @@ const failureOf = <A, E>(exit: Exit.Exit<A, E>) => {
 const TASKS: V1Fixture = {
   nextNumber: 4,
   tasks: [
-    { id: 7, workspace: V1_ROOT, number: 3, title: "Allow git push", status: "done", createdAtMs: T0 },
+    {
+      id: 7,
+      workspace: V1_ROOT,
+      number: 3,
+      title: "Allow git push",
+      status: "done",
+      createdAtMs: T0,
+    },
   ],
 };
 
@@ -80,7 +91,7 @@ const HARNESS: V1HarnessFixture = {
       id: 5,
       workspace: V1_ROOT,
       status: "published",
-      runDir: ".houston/harness/r5",
+      runDir: R5,
       startedAtMs: T0,
       endedAtMs: T0 + HOUR,
       windowSince: "2026-08-18T00:00:00Z",
@@ -94,7 +105,7 @@ const HARNESS: V1HarnessFixture = {
       id: 6,
       workspace: OTHER,
       status: "published",
-      runDir: ".houston/harness/r6",
+      runDir: NodePath.join(OTHER, ".houston", "harness", "r6"),
       startedAtMs: T0,
       endedAtMs: T0 + HOUR,
     },
@@ -102,7 +113,8 @@ const HARNESS: V1HarnessFixture = {
       id: 8,
       workspace: V1_ROOT,
       status: "failed",
-      runDir: ".houston/harness/r8",
+      // v1 stored "" when it could not prepare the run directory.
+      runDir: "",
       startedAtMs: T0 + 3 * DAY,
       endedAtMs: T0 + 3 * DAY + HOUR,
       error: "the run ended without publishing",
@@ -111,7 +123,7 @@ const HARNESS: V1HarnessFixture = {
       id: 9,
       workspace: V1_ROOT,
       status: "published",
-      runDir: ".houston/harness/r9",
+      runDir: R9,
       startedAtMs: T0 + 7 * DAY,
       endedAtMs: T0 + 7 * DAY + HOUR,
       windowSince: "2026-09-01T00:00:00Z",
@@ -321,7 +333,15 @@ describe("the import", () => {
               verifications: 1,
               defects: 2,
             });
-            assert.lengthOf(result.notes, 2);
+            assert.lengthOf(result.notes, 4);
+            assert.isTrue(
+              result.notes.some((note) => note.includes("review 8") && note.includes("no run")),
+              "a review v1 recorded without a run directory is one note",
+            );
+            assert.isTrue(
+              result.notes.some((note) => note.includes(R9) && note.includes("not inside")),
+              "a run directory outside the project is kept and noted",
+            );
             assert.isTrue(
               result.notes.some((note) => note.includes(OTHER)),
               "a workspace with no project is one note",
@@ -352,9 +372,14 @@ describe("the import", () => {
             reviews.map((row) => [row.id, row.project_id, row.trigger, row.status, row.run_dir]),
             [
               [1, projectId, "imported", "published", ".houston/harness/r5"],
-              [2, projectId, "imported", "failed", ".houston/harness/r8"],
-              [3, projectId, "imported", "published", ".houston/harness/r9"],
+              [2, projectId, "imported", "failed", ""],
+              [3, projectId, "imported", "published", R9],
             ],
+          );
+          // The report reader joins the run directory under the project root: v1's folder.
+          assert.strictEqual(
+            NodePath.join(ROOT, ...reviews[0]!.run_dir.split("/")).toLowerCase(),
+            R5.toLowerCase(),
           );
           assert.strictEqual(reviews[0]?.window_since, "2026-08-18T00:00:00Z");
           assert.strictEqual(reviews[0]?.window_until, "2026-09-01T00:00:00Z");
