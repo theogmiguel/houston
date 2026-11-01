@@ -4,7 +4,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
 import type { GridRecord } from "../../grid/gridStore";
 import type { ThreadDragHandleProps, ThreadDropTargetProps } from "../../grid/threadDrag";
-import { threadLeaf, type Side, type ThreadNode } from "../../grid/tree";
+import { threadLeaf, type Side, type SplitSide, type ThreadNode } from "../../grid/tree";
 import { render } from "../../../test/render";
 import { GridThreadCell } from "./GridThreadCell";
 
@@ -107,6 +107,8 @@ async function renderCell(
     dropTargetProps?: ThreadDropTargetProps;
     swapTargets?: ReadonlyArray<{ threadId: string; title: string }>;
     onSwapWith?: (threadId: string) => void;
+    onSplit?: (side: SplitSide, threadId: string) => void;
+    onNewThread?: (side: SplitSide) => void;
   },
 ) {
   return render(
@@ -131,7 +133,8 @@ async function renderCell(
         : { dropTargetProps: options.dropTargetProps })}
       swapTargets={options?.swapTargets ?? []}
       {...(options?.onSwapWith === undefined ? {} : { onSwapWith: options.onSwapWith })}
-      onSplit={() => {}}
+      onSplit={options?.onSplit ?? (() => {})}
+      onNewThread={options?.onNewThread}
       onOpenThread={() => {}}
     />,
     { router: false },
@@ -244,7 +247,8 @@ describe("GridThreadCell surfaces", () => {
     );
 
     await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
-    await userEvent.click(screen.getByRole("button", { name: "Archive thread" }));
+    await userEvent.click(screen.getByRole("button", { name: "More cell actions" }));
+    await userEvent.click(page.getByRole("menuitem", { name: "Archive thread" }));
     expect(state.archiveThread).toHaveBeenCalledWith(
       expect.objectContaining({ threadId: "thread-a" }),
       expect.objectContaining({ onArchived: onClose }),
@@ -273,12 +277,60 @@ describe("GridThreadCell surfaces", () => {
     );
 
     await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
-    await userEvent.click(screen.getByRole("button", { name: "Split cell right" }));
+    await userEvent.click(screen.getByRole("button", { name: "Split cell" }));
+    await userEvent.hover(page.getByRole("menuitem", { name: "Split right" }));
+    await expect
+      .element(page.getByRole("menuitem", { name: "This grid holds six threads" }))
+      .toBeVisible();
     const items = [...document.querySelectorAll('[data-slot="menu-item"]')].map(
       (item) => item.textContent ?? "",
     );
     expect(items).not.toContain("Seventh thread");
     expect(items).toContain("This grid holds six threads");
+  });
+
+  it("splits right or down from one split menu", async () => {
+    state.draftSession = null;
+    const onSplit = vi.fn();
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      {
+        availableThreads: [{ threadId: "thread-b", title: "Beta thread" }],
+        onSplit,
+      },
+    );
+
+    await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
+    await userEvent.click(screen.getByRole("button", { name: "Split cell" }));
+    await expect.element(page.getByRole("menuitem", { name: "Split right" })).toBeVisible();
+    await expect.element(page.getByRole("menuitem", { name: "Split down" })).toBeVisible();
+    await userEvent.hover(page.getByRole("menuitem", { name: "Split right" }));
+    const pick = page.getByRole("menuitem", { name: "Beta thread" });
+    await expect.element(pick).toBeVisible();
+    await userEvent.click(pick);
+    expect(onSplit).toHaveBeenCalledWith("right", "thread-b");
+  });
+
+  it("splits down from the same menu", async () => {
+    state.draftSession = null;
+    const onSplit = vi.fn();
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      {
+        availableThreads: [{ threadId: "thread-b", title: "Beta thread" }],
+        onSplit,
+      },
+    );
+
+    await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
+    await userEvent.click(screen.getByRole("button", { name: "Split cell" }));
+    await userEvent.hover(page.getByRole("menuitem", { name: "Split down" }));
+    const pick = page.getByRole("menuitem", { name: "Beta thread" });
+    await expect.element(pick).toBeVisible();
+    await userEvent.click(pick);
+    expect(onSplit).toHaveBeenCalledWith("bottom", "thread-b");
   });
 });
 
@@ -327,7 +379,8 @@ describe("GridThreadCell archive", () => {
     );
 
     await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
-    await userEvent.click(screen.getByRole("button", { name: "Archive thread" }));
+    await userEvent.click(screen.getByRole("button", { name: "More cell actions" }));
+    await userEvent.click(page.getByRole("menuitem", { name: "Archive thread" }));
     expect(onArchiveClose).toHaveBeenCalledTimes(1);
     expect(onClose).not.toHaveBeenCalled();
   });
@@ -370,9 +423,36 @@ describe("GridThreadCell move", () => {
     );
 
     await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
-    await userEvent.click(screen.getByRole("button", { name: "Move cell" }));
-    await userEvent.click(page.getByRole("menuitem", { name: "Swap with Beta thread" }));
+    await userEvent.click(screen.getByRole("button", { name: "More cell actions" }));
+    await userEvent.hover(page.getByRole("menuitem", { name: "Move to…" }));
+    const swap = page.getByRole("menuitem", { name: "Swap with Beta thread" });
+    await expect.element(swap).toBeVisible();
+    await userEvent.click(swap);
 
     expect(onSwapWith).toHaveBeenCalledWith("thread-b");
+  });
+});
+
+describe("GridThreadCell keyboard", () => {
+  it("closes the overflow menu on Escape and returns focus to its trigger", async () => {
+    state.draftSession = null;
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      { swapTargets: [{ threadId: "thread-b", title: "Beta thread" }], onSwapWith: () => {} },
+    );
+
+    await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
+    const trigger = screen.container.querySelector<HTMLElement>(
+      'button[aria-label="More cell actions"]',
+    );
+    if (trigger === null) throw new Error("more actions trigger missing");
+    await userEvent.click(trigger);
+    await expect.element(page.getByRole("menuitem", { name: "Archive thread" })).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await expect
+      .element(page.getByRole("menuitem", { name: "Archive thread" }))
+      .not.toBeInTheDocument();
+    expect(document.activeElement).toBe(trigger);
   });
 });

@@ -1,13 +1,6 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
-import {
-  ArchiveIcon,
-  ArrowDownIcon,
-  ArrowRightIcon,
-  ArrowRightLeftIcon,
-  Maximize2Icon,
-  XIcon,
-} from "lucide-react";
+import { EllipsisIcon, Maximize2Icon, SquareSplitHorizontalIcon, XIcon } from "lucide-react";
 import { useEffect, useState, type CSSProperties, type RefObject } from "react";
 
 import ChatView, { type RightPanelPortalTarget } from "../ChatView";
@@ -25,7 +18,17 @@ import { type Side, type SplitSide, type ThreadNode, preorderThreads } from "../
 import type { ThreadDragHandleProps, ThreadDropTargetProps } from "../../grid/threadDrag";
 import { Button } from "../ui/button";
 import { GridDropIndicator } from "../ui/grid-drop-indicator";
-import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
+import {
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuSub,
+  MenuSubPopup,
+  MenuSubTrigger,
+  MenuTrigger,
+} from "../ui/menu";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 import { TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR } from "../chat/composerFocusRedirect";
 import { ThreadOpenProvider } from "./threadOpenContext";
@@ -120,6 +123,10 @@ export function GridThreadCell({
   // A grid holds six threads; the sixth cell still offers "New thread", whose
   // handler asks before moving the new thread to its own grid.
   const availableForSplit = threadCount >= MAX_GRID_THREADS ? [] : availableThreads;
+  const moveTargets = onSwapWith === undefined ? [] : swapTargets;
+  const canArchive = draftId === undefined;
+  const showOverflow = moveTargets.length > 0 || canArchive;
+  const showSplit = availableThreads.length > 0 || onNewThread !== undefined;
   const archived = useArchivedThreadSnapshots([environmentId]);
   const closeCellStable = useStableCallback(closeArchivedCell);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drops a cell whose thread was archived elsewhere (the sidebar or another window)
@@ -230,55 +237,59 @@ export function GridThreadCell({
           </span>
           <SidebarThreadStatusGlyph status={status} label={status?.label} />
           <div className="flex max-w-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[max-width,opacity] duration-150 ease-out group-hover/pane:max-w-40 group-hover/pane:opacity-100 group-focus-within/label:max-w-40 group-focus-within/label:opacity-100 motion-reduce:transition-none">
-            {availableThreads.length > 0 || onNewThread !== undefined ? (
-              <>
-                <SplitMenu
-                  side="right"
-                  availableThreads={availableForSplit}
-                  atCap={threadCount >= MAX_GRID_THREADS}
-                  onPick={(pickedThreadId) => onSplit("right", pickedThreadId)}
-                  onNewThread={onNewThread === undefined ? undefined : () => onNewThread("right")}
-                />
-                <SplitMenu
-                  side="bottom"
-                  availableThreads={availableForSplit}
-                  atCap={threadCount >= MAX_GRID_THREADS}
-                  onPick={(pickedThreadId) => onSplit("bottom", pickedThreadId)}
-                  onNewThread={onNewThread === undefined ? undefined : () => onNewThread("bottom")}
-                />
-              </>
-            ) : null}
-            {onSwapWith === undefined || swapTargets.length === 0 ? null : (
-              <MoveCellMenu targets={swapTargets} onPick={onSwapWith} />
-            )}
-            {draftId === undefined ? (
-              <Button
-                variant="ghost-muted"
-                size="icon-sm"
-                aria-label="Archive thread"
-                onClick={() => void archiveThread(threadRef, { onArchived: closeArchivedCell })}
-              >
-                <ArchiveIcon />
-              </Button>
+            {showSplit ? (
+              <SplitMenu
+                availableThreads={availableForSplit}
+                atCap={threadCount >= MAX_GRID_THREADS}
+                onPick={onSplit}
+                onNewThread={onNewThread}
+              />
             ) : null}
             {onMaximize === undefined ? null : (
-              <Button
-                variant="ghost-muted"
-                size="icon-sm"
-                aria-label={maximized ? "Restore cell" : "Maximize cell"}
-                onClick={onMaximize}
-              >
-                <Maximize2Icon />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="ghost-muted"
+                      size="icon-sm"
+                      aria-label={maximized ? "Restore cell" : "Maximize cell"}
+                      onClick={onMaximize}
+                    />
+                  }
+                >
+                  <Maximize2Icon />
+                </TooltipTrigger>
+                <TooltipPopup side="bottom">
+                  {maximized ? "Restore cell" : "Maximize cell"}
+                </TooltipPopup>
+              </Tooltip>
             )}
-            <Button
-              variant="ghost-muted"
-              size="icon-sm"
-              aria-label="Close cell"
-              onClick={discardDraft}
-            >
-              <XIcon />
-            </Button>
+            {showOverflow ? (
+              <MoreCellMenu
+                targets={moveTargets}
+                onPick={onSwapWith}
+                onArchive={
+                  canArchive
+                    ? () => void archiveThread(threadRef, { onArchived: closeArchivedCell })
+                    : undefined
+                }
+              />
+            ) : null}
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost-muted"
+                    size="icon-sm"
+                    aria-label="Close cell"
+                    onClick={discardDraft}
+                  />
+                }
+              >
+                <XIcon />
+              </TooltipTrigger>
+              <TooltipPopup side="bottom">Close cell</TooltipPopup>
+            </Tooltip>
           </div>
         </div>
       ) : null}
@@ -313,99 +324,158 @@ export function GridThreadCell({
   );
 }
 
-function MoveCellMenu({
+const SPLIT_CHOICES = [
+  { side: "right", label: "Split right" },
+  { side: "bottom", label: "Split down" },
+] as const satisfies ReadonlyArray<{ side: SplitSide; label: string }>;
+
+function MoreCellMenu({
   targets,
   onPick,
+  onArchive,
 }: {
   targets: ReadonlyArray<{ threadId: string; title: string }>;
-  onPick: (threadId: string) => void;
+  onPick?: ((threadId: string) => void) | undefined;
+  onArchive?: (() => void) | undefined;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <Menu open={open} onOpenChange={setOpen}>
-      <MenuTrigger
-        render={
-          <Button variant="ghost-muted" size="icon-sm" aria-label="Move cell">
-            <ArrowRightLeftIcon />
-          </Button>
-        }
-      />
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <MenuTrigger
+              render={
+                <Button variant="ghost-muted" size="icon-sm" aria-label="More cell actions" />
+              }
+            />
+          }
+        >
+          <EllipsisIcon />
+        </TooltipTrigger>
+        <TooltipPopup side="bottom">More cell actions</TooltipPopup>
+      </Tooltip>
       <MenuPopup side="bottom" align="end">
-        {targets.map((target) => (
-          <MenuItem
-            key={target.threadId}
-            onClick={() => {
-              setOpen(false);
-              onPick(target.threadId);
-            }}
-          >
-            Swap with {target.title}
-          </MenuItem>
-        ))}
+        {targets.length === 0 ? null : (
+          <MenuSub>
+            <MenuSubTrigger>Move to…</MenuSubTrigger>
+            <MenuSubPopup>
+              {targets.map((target) => (
+                <MenuItem
+                  key={target.threadId}
+                  onClick={() => {
+                    setOpen(false);
+                    onPick?.(target.threadId);
+                  }}
+                >
+                  Swap with {target.title}
+                </MenuItem>
+              ))}
+            </MenuSubPopup>
+          </MenuSub>
+        )}
+        {onArchive === undefined ? null : (
+          <>
+            {targets.length === 0 ? null : <MenuSeparator />}
+            <MenuItem
+              onClick={() => {
+                setOpen(false);
+                onArchive();
+              }}
+            >
+              Archive thread
+            </MenuItem>
+          </>
+        )}
       </MenuPopup>
     </Menu>
   );
 }
 
 function SplitMenu({
-  side,
   availableThreads,
   atCap,
   onPick,
   onNewThread,
 }: {
-  side: SplitSide;
+  availableThreads: ReadonlyArray<{ threadId: string; title: string }>;
+  atCap: boolean;
+  onPick: (side: SplitSide, threadId: string) => void;
+  onNewThread?: ((side: SplitSide) => void) | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Menu open={open} onOpenChange={setOpen}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <MenuTrigger
+              render={<Button variant="ghost-muted" size="icon-sm" aria-label="Split cell" />}
+            />
+          }
+        >
+          <SquareSplitHorizontalIcon />
+        </TooltipTrigger>
+        <TooltipPopup side="bottom">Split cell</TooltipPopup>
+      </Tooltip>
+      <MenuPopup side="bottom" align="end">
+        {SPLIT_CHOICES.map(({ side, label }) => (
+          <MenuSub key={side}>
+            <MenuSubTrigger>{label}</MenuSubTrigger>
+            <MenuSubPopup>
+              <SplitTargetItems
+                availableThreads={availableThreads}
+                atCap={atCap}
+                onPick={(threadId) => {
+                  setOpen(false);
+                  onPick(side, threadId);
+                }}
+                onNewThread={
+                  onNewThread === undefined
+                    ? undefined
+                    : () => {
+                        setOpen(false);
+                        onNewThread(side);
+                      }
+                }
+              />
+            </MenuSubPopup>
+          </MenuSub>
+        ))}
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+function SplitTargetItems({
+  availableThreads,
+  atCap,
+  onPick,
+  onNewThread,
+}: {
   availableThreads: ReadonlyArray<{ threadId: string; title: string }>;
   atCap: boolean;
   onPick: (threadId: string) => void;
   onNewThread?: (() => void) | undefined;
 }) {
-  const [open, setOpen] = useState(false);
-  const horizontal = side === "right";
   return (
-    <Menu open={open} onOpenChange={setOpen}>
-      <MenuTrigger
-        render={
-          <Button
-            variant="ghost-muted"
-            size="icon-sm"
-            aria-label={horizontal ? "Split cell right" : "Split cell down"}
-          >
-            {horizontal ? <ArrowRightIcon /> : <ArrowDownIcon />}
-          </Button>
-        }
-      />
-      <MenuPopup side="bottom" align="end">
-        {availableThreads.map((thread) => (
-          <MenuItem
-            key={thread.threadId}
-            onClick={() => {
-              setOpen(false);
-              onPick(thread.threadId);
-            }}
-          >
-            {thread.title}
-          </MenuItem>
-        ))}
-        {availableThreads.length === 0 ? (
-          <MenuItem disabled>
-            {atCap ? "This grid holds six threads" : "No other thread in this workspace"}
-          </MenuItem>
-        ) : null}
-        {onNewThread === undefined ? null : (
-          <>
-            <MenuSeparator />
-            <MenuItem
-              onClick={() => {
-                setOpen(false);
-                onNewThread();
-              }}
-            >
-              New thread…
-            </MenuItem>
-          </>
-        )}
-      </MenuPopup>
-    </Menu>
+    <>
+      {availableThreads.map((thread) => (
+        <MenuItem key={thread.threadId} onClick={() => onPick(thread.threadId)}>
+          {thread.title}
+        </MenuItem>
+      ))}
+      {availableThreads.length === 0 ? (
+        <MenuItem disabled>
+          {atCap ? "This grid holds six threads" : "No other thread in this workspace"}
+        </MenuItem>
+      ) : null}
+      {onNewThread === undefined ? null : (
+        <>
+          <MenuSeparator />
+          <MenuItem onClick={onNewThread}>New thread…</MenuItem>
+        </>
+      )}
+    </>
   );
 }
