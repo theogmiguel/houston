@@ -29,17 +29,42 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
 import * as ServerConfig from "../../config.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
-import { composeBrief } from "./brief.ts";
+import { composeBrief, ledgerDigest, type BriefPick, type DigestEntry } from "./brief.ts";
+import { HoustonCrewGate } from "./CrewGate.ts";
 import { NightShiftGit } from "./Git.ts";
-import { NightShiftMachine, NightShiftMergeQueue, NightShiftProviders } from "./Host.ts";
+import {
+  NightShiftBacklog,
+  NightShiftMachine,
+  NightShiftMergeQueue,
+  NightShiftProviders,
+  NightShiftPullRequests,
+} from "./Host.ts";
 import { NightShiftKeepAwake } from "./KeepAwake.ts";
 import { blockingItems, evaluatePreflight } from "./preflight.ts";
-import { fallbackReport, headline, idleDecision, threadHours } from "./rules.ts";
-import { HoustonNightShiftStore, liveRunText, runFolder, toJson, type StoredRun } from "./Store.ts";
+import {
+  fallbackReport,
+  headline,
+  idleDecision,
+  pickTasks,
+  substituteInstance,
+  threadHours,
+  type InstanceState,
+} from "./rules.ts";
+import {
+  HoustonNightShiftStore,
+  liveRunText,
+  runFolder,
+  toJson,
+  type LedgerEntry,
+  type NewEntry,
+  type NightLimit,
+  type StoredRun,
+} from "./Store.ts";
 import { messageId, NightShiftThreads } from "./Threads.ts";
 import { runTimes, type RunTimes } from "./window.ts";
 
@@ -64,14 +89,6 @@ export interface StartInput {
 export const SettleObserver = Context.Reference<(step: string, runId: number) => void>(
   "houston/houston/nightShift/Runner/SettleObserver",
   { defaultValue: () => () => undefined },
-);
-
-export const STARTS_REFUSED = "Night shift runs start once the crew gate ships";
-
-/** Until the crew gate bounds delegations, every start is refused; tests that drive a run set it. */
-export const CrewGatePresent = Context.Reference<boolean>(
-  "houston/houston/nightShift/Runner/CrewGatePresent",
-  { defaultValue: () => false },
 );
 
 export class HoustonNightShiftRunner extends Context.Service<
@@ -116,6 +133,30 @@ const refuse = (
 
 const iso = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms));
 
+const decodeDetail = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
+
+const digestEntry = (entry: LedgerEntry): DigestEntry => {
+  const detail = decodeDetail(entry.detail_json);
+  const competitor =
+    Option.isSome(detail) &&
+    detail.value !== null &&
+    typeof detail.value === "object" &&
+    typeof (detail.value as { competitor?: unknown }).competitor === "string"
+      ? (detail.value as { competitor: string }).competitor
+      : undefined;
+  return {
+    id: entry.id,
+    runId: entry.run_id,
+    kind: entry.kind,
+    title: entry.title,
+    status: entry.status,
+    prNumber: entry.pr_number,
+    body: entry.body,
+    choice: entry.choice,
+    competitor,
+  };
+};
+
 export const wrapUpText = (hardStopAt: string) =>
   `Wrap-up: start nothing new, finish or park what is open, and publish the report with houston_night_report before ${hardStopAt}.`;
 export const idleText =
@@ -136,7 +177,9 @@ const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const observe = yield* SettleObserver;
-  const crewGatePresent = yield* CrewGatePresent;
+  const gate = yield* HoustonCrewGate;
+  const backlog = yield* NightShiftBacklog;
+  const pullRequests = yield* NightShiftPullRequests;
 
   const startLock = yield* Semaphore.make(1);
   const settling = yield* Ref.make<ReadonlySet<number>>(new Set());
@@ -261,6 +304,72 @@ const make = Effect.gen(function* () {
             ),
           );
 
+  /** Earlier entries after one read of each fateless pull request; merged and closed are stored. */
+  const fates = Effect.fn("HoustonNightShiftRunner.fates")(function* (
+    run: StoredRun,
+    root: string,
+  ) {
+    const earlier = yield* store.projectEntries(run.projectId, run.id);
+    const read: LedgerEntry[] = [];
+    for (const entry of earlier) {
+      if (
+        entry.kind !== "pr" ||
+        entry.pr_number === null ||
+        entry.status === "merged" ||
+        entry.status === "closed"
+      ) {
+        read.push(entry);
+        continue;
+      }
+      const state = yield* pullRequests
+        .state(run.projectId, root, entry.pr_number)
+        .pipe(Effect.option);
+      if (Option.isSome(state) && state.value !== "open") {
+        yield* store.setEntryStatus(entry.id, state.value);
+      }
+      read.push({ ...entry, status: Option.isSome(state) ? state.value : null });
+    }
+    return read;
+  });
+
+  /** The run's backlog picks, with the `pick` entries to record once the run is running. */
+  const pick = Effect.fn("HoustonNightShiftRunner.pick")(function* (run: StoredRun) {
+    const picks: BriefPick[] = [];
+    const entries: NewEntry[] = [];
+    if (!run.settings.backlog.enabled) return { picks, entries };
+    const tasks = yield* backlog.tasks(run.projectId);
+    const earlierPicks = new Map<number, boolean>();
+    for (const entry of yield* store.projectEntries(run.projectId, run.id)) {
+      if (entry.kind !== "pick" || entry.task_number === null) continue;
+      if (earlierPicks.get(entry.task_number) === false) continue;
+      const task = tasks.find((candidate) => candidate.number === entry.task_number);
+      earlierPicks.set(
+        entry.task_number,
+        task === undefined ? false : yield* backlog.doneSince(task.key, entry.created_at),
+      );
+    }
+    const numbers = pickTasks({
+      projectId: run.projectId,
+      max: run.settings.backlog.max,
+      backlog: tasks,
+      earlierPicks,
+    });
+    for (const number of numbers) {
+      const task = tasks.find((candidate) => candidate.number === number)!;
+      picks.push({ number, title: task.title, text: yield* backlog.text(task.key) });
+      entries.push({
+        runId: run.id,
+        projectId: run.projectId,
+        kind: "pick",
+        title: `${task.key}: ${task.title}`,
+        taskNumber: number,
+        detail: { key: task.key },
+        createdAt: run.startedAt,
+      });
+    }
+    return { picks, entries };
+  });
+
   /** Starts the orchestrator of an opened run; a failed launch refuses the run. */
   const launch = Effect.fn("HoustonNightShiftRunner.launch")(function* (
     run: StoredRun,
@@ -284,6 +393,8 @@ const make = Effect.gen(function* () {
 
     const base = yield* git.defaultBranch(root).pipe(Effect.result);
     if (base._tag === "Failure") return yield* failed(base.failure);
+    const earlier = yield* fates(run, root);
+    const { picks, entries: pickEntries } = yield* pick(run);
     const brief = composeBrief({
       runId: run.id,
       settings: run.settings,
@@ -291,8 +402,8 @@ const make = Effect.gen(function* () {
       wrapUpAt: run.wrapUpAt!,
       hardStopAt: run.hardStopAt!,
       branch,
-      picks: [],
-      digest: [],
+      picks,
+      digest: ledgerDigest(earlier.map(digestEntry)),
     });
     const written = yield* fs
       .makeDirectory(folder, { recursive: true })
@@ -357,6 +468,8 @@ const make = Effect.gen(function* () {
       startedAt: run.startedAt,
       endedAt: null,
     });
+    // Recorded only now: a refused start's picks would keep its tasks from every later run.
+    for (const entry of pickEntries) yield* store.addEntry(entry);
     return { runId: run.id, threadId };
   });
 
@@ -454,7 +567,6 @@ const make = Effect.gen(function* () {
   const start: HoustonNightShiftRunner["Service"]["start"] = Effect.fn(
     "HoustonNightShiftRunner.start",
   )(function* (input) {
-    if (!crewGatePresent) return yield* refuse("unsupported", input.operation, STARTS_REFUSED);
     const project = yield* projectOf(input.operation, input.projectId);
     const stored = yield* settingsOf(input.operation, input.projectId);
     const nowMs = yield* Clock.currentTimeMillis;
@@ -727,6 +839,66 @@ const make = Effect.gen(function* () {
     return `${instanceId} is ${readiness.state}${reset}: ${"message" in readiness ? readiness.message : ""}`;
   });
 
+  /** Limits a crew instance that became unusable, with one message; clears it after its reset. */
+  const limits = Effect.fn("HoustonNightShiftRunner.limits")(function* (
+    run: StoredRun,
+    nowMs: number,
+  ) {
+    const listed = yield* providers.list;
+    const crew = yield* store.crew(run.id);
+    const chain = run.settings.workers.map((worker) => worker.instanceId as string);
+    const instances = [
+      ...new Set([...chain, ...crew.map((member) => member.providerInstanceId)]),
+    ].filter((id) => id !== run.settings.orchestrator.instanceId);
+    const at = iso(nowMs);
+    const limited: NightLimit[] = [...run.limited];
+    let changed = false;
+    for (const instanceId of instances) {
+      const readiness = listed.find((provider) => provider.instanceId === instanceId)?.readiness;
+      const active = limited.find(
+        (limit) => limit.instanceId === instanceId && limit.clearedAt === null,
+      );
+      if (readiness !== undefined && LIMITED_STATES.has(readiness.state)) {
+        if (active !== undefined) continue;
+        const resetsAt = readiness.state === "outOfUsage" ? (readiness.resetsAt ?? null) : null;
+        limited.push({ instanceId, state: readiness.state, resetsAt, at, clearedAt: null });
+        changed = true;
+        const states = new Map<string, InstanceState>(
+          listed.map((provider) => [
+            provider.instanceId,
+            {
+              instanceId: provider.instanceId,
+              state: provider.readiness?.state ?? "unknown",
+              limited: limited.some(
+                (limit) => limit.instanceId === provider.instanceId && limit.clearedAt === null,
+              ),
+            },
+          ]),
+        );
+        const next = substituteInstance({ requested: instanceId, chain, states });
+        const reset = resetsAt === null ? "" : `, resets at ${resetsAt}`;
+        yield* notify(
+          run,
+          "limit",
+          instanceId,
+          `Night shift: ${instanceId} is ${readiness.state}${reset}. ${
+            "instanceId" in next
+              ? `Delegations to it run on ${next.instanceId} until it is ready again.`
+              : "No other worker instance is ready, so delegations are refused until one is."
+          }`,
+        );
+      } else if (
+        active !== undefined &&
+        readiness?.state === "ready" &&
+        (active.resetsAt === null || nowMs >= Date.parse(active.resetsAt))
+      ) {
+        limited[limited.indexOf(active)] = { ...active, clearedAt: at };
+        changed = true;
+      }
+    }
+    if (changed) yield* store.setLimited(run.id, limited);
+  });
+
   const evaluate = Effect.fn("HoustonNightShiftRunner.evaluate")(function* (run: StoredRun) {
     if (run.phase !== "running" && run.phase !== "wrappingUp") return;
     const nowMs = yield* Clock.currentTimeMillis;
@@ -748,6 +920,8 @@ const make = Effect.gen(function* () {
     if (run.phase === "running" && run.wrapUpAt !== null && nowMs >= Date.parse(run.wrapUpAt)) {
       yield* sendWrapUp(run, run.wrapUpAt);
     }
+    yield* gate.refresh(run.id);
+    yield* limits(run, nowMs);
 
     const liveCrew = (yield* store.crew(run.id)).filter(
       (member) => member.role !== "orchestrator" && member.endedAt === null,

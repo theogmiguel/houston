@@ -469,6 +469,9 @@ const layerAuth = EnvironmentAuth.layer.pipe(
 );
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
+  // Houston: Night shift reads each earlier pull request's fate once at a run's start.
+  Layer.provide(layerPullRequestService),
+  Layer.provide(RuntimeLayer.layerProjectService),
   Layer.provide(ProviderEventIngestor.layerAnalytics),
   Layer.provide(layerCheckpointStore),
   Layer.provide(layerGitWorkflow),

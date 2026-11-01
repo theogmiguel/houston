@@ -1,6 +1,7 @@
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import { OrchestratorToolkit } from "./tools.ts";
 import * as Effect from "effect/Effect";
+import { admitOperation, crewGateFailure } from "../../../houston/nightShift/CrewGate.ts";
 
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
 import * as PeerLinkRequests from "../../../peer/PeerLinkRequests.ts";
@@ -196,6 +197,8 @@ const handlers = {
   t3_environment_link: McpToolAccess.writesEnvironment((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
+      // Houston: a live Night shift run stays on this machine.
+      yield* admitOperation(scope, "t3_environment_link").pipe(Effect.mapError(crewGateFailure));
       const requests = yield* PeerLinkRequests.PeerLinkRequests;
       return yield* requests.request(scope, input);
     }),

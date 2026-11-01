@@ -9,6 +9,7 @@ import {
   PreflightItem,
   type NightCrewMember,
   type NightCrewRole,
+  type NightEntryKind,
   type NightRun,
   type NightRunPhase,
   type NightRunTrigger,
@@ -45,6 +46,7 @@ interface RunRow {
   readonly nudged_at: string | null;
   readonly ended_at: string | null;
   readonly preflight_json: string;
+  readonly limited_json: string;
   readonly remote_heads_json: string | null;
   readonly interruptions_json: string;
   readonly summary: string | null;
@@ -77,6 +79,44 @@ export interface EntryRow {
   readonly choice: string | null;
 }
 
+/** A ledger entry with every column the toolkit, the brief and the report read. */
+export interface LedgerEntry extends EntryRow {
+  readonly project_id: string;
+  readonly theme: string | null;
+  readonly task_number: number | null;
+  readonly head_sha: string | null;
+  readonly branch: string | null;
+  readonly body: string;
+  readonly detail_json: string;
+  readonly author_thread_id: string | null;
+  readonly created_at: string;
+  readonly decided_at: string | null;
+}
+
+export interface NewEntry {
+  readonly runId: number;
+  readonly projectId: ProjectId;
+  readonly kind: NightEntryKind;
+  readonly title: string;
+  readonly theme?: string | null;
+  readonly status?: string | null;
+  readonly prNumber?: number | null;
+  readonly taskNumber?: number | null;
+  readonly body?: string;
+  readonly detail?: unknown;
+  readonly authorThreadId?: ThreadId | null;
+  readonly createdAt: string;
+}
+
+/** An instance limited for a run, from the readiness change until its reset passes. */
+export interface NightLimit {
+  readonly instanceId: string;
+  readonly state: string;
+  readonly resetsAt: string | null;
+  readonly at: string;
+  readonly clearedAt: string | null;
+}
+
 export interface StoredSettings {
   readonly settings: HoustonNightShiftSettings;
   readonly revision: number;
@@ -89,6 +129,7 @@ export interface StoredRun extends NightRun {
   readonly nudgedAt: string | null;
   readonly remoteHeads: Readonly<Record<string, string>> | null;
   readonly noticeSent: boolean;
+  readonly limited: ReadonlyArray<NightLimit>;
 }
 
 export interface Notice {
@@ -106,6 +147,19 @@ const decodeInterruptions = Schema.decodeUnknownSync(
 );
 const decodeHeads = Schema.decodeUnknownSync(
   Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)),
+);
+const decodeLimited = Schema.decodeUnknownSync(
+  Schema.fromJsonString(
+    Schema.Array(
+      Schema.Struct({
+        instanceId: Schema.String,
+        state: Schema.String,
+        resetsAt: Schema.NullOr(Schema.String),
+        at: Schema.String,
+        clearedAt: Schema.NullOr(Schema.String),
+      }),
+    ),
+  ),
 );
 export const toJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -136,6 +190,7 @@ const toRun = (row: RunRow): StoredRun => ({
   nudgedAt: row.nudged_at,
   remoteHeads: row.remote_heads_json === null ? null : decodeHeads(row.remote_heads_json),
   noticeSent: row.notice_sent === 1,
+  limited: decodeLimited(row.limited_json),
 });
 
 const toCrew = (row: CrewRow): NightCrewMember => ({
@@ -241,6 +296,28 @@ export class HoustonNightShiftStore extends Context.Service<
     readonly crew: (runId: number) => Effect.Effect<ReadonlyArray<NightCrewMember>>;
     readonly endCrew: (runId: number, threadId: ThreadId, at: string) => Effect.Effect<void>;
     readonly entries: (runId: number) => Effect.Effect<ReadonlyArray<EntryRow>>;
+    /** The live run whose crew `threadId` is in, with its row; undefined outside every live run. */
+    readonly liveCrewOf: (
+      threadId: ThreadId,
+    ) => Effect.Effect<{ readonly run: StoredRun; readonly member: NightCrewMember } | undefined>;
+    readonly setLimited: (id: number, limited: ReadonlyArray<NightLimit>) => Effect.Effect<void>;
+    readonly addEntry: (entry: NewEntry) => Effect.Effect<LedgerEntry>;
+    /** Adds the entry only while its run is under both bounds, checked in the insert itself;
+     * otherwise answers the run's entry and decision counts. */
+    readonly addEntryWithin: (
+      entry: NewEntry,
+      bounds: { readonly entries: number; readonly decisions: number },
+    ) => Effect.Effect<
+      { readonly entry: LedgerEntry } | { readonly entries: number; readonly decisions: number }
+    >;
+    readonly getEntry: (id: number) => Effect.Effect<LedgerEntry | undefined>;
+    readonly runEntries: (runId: number) => Effect.Effect<ReadonlyArray<LedgerEntry>>;
+    /** Every entry of the project's runs other than `exceptRunId`, newest first. */
+    readonly projectEntries: (
+      projectId: ProjectId,
+      exceptRunId: number,
+    ) => Effect.Effect<ReadonlyArray<LedgerEntry>>;
+    readonly setEntryStatus: (id: number, status: string) => Effect.Effect<void>;
     readonly runStarts: (projectId: ProjectId) => Effect.Effect<ReadonlyArray<string>>;
     readonly projects: Effect.Effect<ReadonlyArray<ProjectId>>;
     /** Deletes the project's settings, runs, crew, entries and pushes; answers the run ids. */
@@ -393,7 +470,10 @@ const make = Effect.gen(function* () {
     ),
     listRuns: Effect.fn("HoustonNightShiftStore.listRuns")((projectId, limit) =>
       sql<RunRow>`SELECT * FROM houston_night_runs WHERE project_id = ${projectId}
-        ORDER BY id DESC LIMIT ${limit}`.pipe(Effect.map((rows) => rows.map(toRun)), Effect.orDie),
+        ORDER BY id DESC LIMIT ${limit}`.pipe(
+        Effect.map((rows) => rows.map(toRun)),
+        Effect.orDie,
+      ),
     ),
     liveRuns: sql<RunRow>`SELECT * FROM houston_night_runs
       WHERE phase IN ('preflight', 'running', 'wrappingUp') ORDER BY id`.pipe(
@@ -401,7 +481,10 @@ const make = Effect.gen(function* () {
       Effect.orDie,
     ),
     setPreflight: Effect.fn("HoustonNightShiftStore.setPreflight")((id, items) =>
-      writeRun(id, sql`UPDATE houston_night_runs SET preflight_json = ${toJson(items)} WHERE id = ${id}`),
+      writeRun(
+        id,
+        sql`UPDATE houston_night_runs SET preflight_json = ${toJson(items)} WHERE id = ${id}`,
+      ),
     ),
     refuse: Effect.fn("HoustonNightShiftStore.refuse")((id, input) =>
       writeRun(
@@ -453,7 +536,10 @@ const make = Effect.gen(function* () {
       ),
     ),
     setRemoteChanges: Effect.fn("HoustonNightShiftStore.setRemoteChanges")((id, json) =>
-      writeRun(id, sql`UPDATE houston_night_runs SET remote_changes_json = ${json} WHERE id = ${id}`),
+      writeRun(
+        id,
+        sql`UPDATE houston_night_runs SET remote_changes_json = ${json} WHERE id = ${id}`,
+      ),
     ),
     setCost: Effect.fn("HoustonNightShiftStore.setCost")((id, json) =>
       writeRun(id, sql`UPDATE houston_night_runs SET cost_json = ${json} WHERE id = ${id}`),
@@ -487,7 +573,10 @@ const make = Effect.gen(function* () {
     ),
     crew: Effect.fn("HoustonNightShiftStore.crew")((runId) =>
       sql<CrewRow>`SELECT * FROM houston_night_crew WHERE run_id = ${runId}
-        ORDER BY started_at, thread_id`.pipe(Effect.map((rows) => rows.map(toCrew)), Effect.orDie),
+        ORDER BY started_at, thread_id`.pipe(
+        Effect.map((rows) => rows.map(toCrew)),
+        Effect.orDie,
+      ),
     ),
     endCrew: Effect.fn("HoustonNightShiftStore.endCrew")((runId, threadId, at) =>
       writeRun(
@@ -496,6 +585,78 @@ const make = Effect.gen(function* () {
           WHERE run_id = ${runId} AND thread_id = ${threadId} AND ended_at IS NULL`,
       ),
     ),
+    liveCrewOf: Effect.fn("HoustonNightShiftStore.liveCrewOf")(function* (threadId) {
+      const rows = yield* sql<CrewRow>`SELECT c.* FROM houston_night_crew c
+        JOIN houston_night_runs r ON r.id = c.run_id
+        WHERE c.thread_id = ${threadId} AND r.phase IN ('running', 'wrappingUp')
+        ORDER BY c.run_id DESC LIMIT 1`.pipe(Effect.orDie);
+      const row = rows[0];
+      if (row === undefined) return undefined;
+      const run = yield* getRun(row.run_id);
+      return run === undefined ? undefined : { run, member: toCrew(row) };
+    }),
+    setLimited: Effect.fn("HoustonNightShiftStore.setLimited")((id, limited) =>
+      writeRun(
+        id,
+        sql`UPDATE houston_night_runs SET limited_json = ${toJson(limited)} WHERE id = ${id}`,
+      ),
+    ),
+    addEntry: Effect.fn("HoustonNightShiftStore.addEntry")(function* (entry) {
+      const inserted = yield* sql<LedgerEntry>`INSERT INTO houston_night_entries
+          (run_id, project_id, kind, title, theme, status, pr_number, task_number, body,
+            detail_json, author_thread_id, created_at)
+        VALUES (${entry.runId}, ${entry.projectId}, ${entry.kind}, ${entry.title},
+          ${entry.theme ?? null}, ${entry.status ?? null}, ${entry.prNumber ?? null},
+          ${entry.taskNumber ?? null}, ${entry.body ?? ""}, ${toJson(entry.detail ?? {})},
+          ${entry.authorThreadId ?? null}, ${entry.createdAt})
+        RETURNING *`.pipe(Effect.orDie);
+      yield* touched(entry.projectId);
+      return inserted[0]!;
+    }),
+    addEntryWithin: Effect.fn("HoustonNightShiftStore.addEntryWithin")(function* (entry, bounds) {
+      const decisionBound = entry.kind === "decision" ? bounds.decisions : Number.MAX_SAFE_INTEGER;
+      const inserted = yield* sql<LedgerEntry>`INSERT INTO houston_night_entries
+          (run_id, project_id, kind, title, theme, status, pr_number, task_number, body,
+            detail_json, author_thread_id, created_at)
+        SELECT ${entry.runId}, ${entry.projectId}, ${entry.kind}, ${entry.title},
+          ${entry.theme ?? null}, ${entry.status ?? null}, ${entry.prNumber ?? null},
+          ${entry.taskNumber ?? null}, ${entry.body ?? ""}, ${toJson(entry.detail ?? {})},
+          ${entry.authorThreadId ?? null}, ${entry.createdAt}
+        WHERE (SELECT COUNT(*) FROM houston_night_entries WHERE run_id = ${entry.runId})
+            < ${bounds.entries}
+          AND (SELECT COUNT(*) FROM houston_night_entries
+            WHERE run_id = ${entry.runId} AND kind = 'decision') < ${decisionBound}
+        RETURNING *`.pipe(Effect.orDie);
+      if (inserted[0] !== undefined) {
+        yield* touched(entry.projectId);
+        return { entry: inserted[0] };
+      }
+      const [counts] = yield* sql<{ entries: number; decisions: number }>`SELECT
+          COUNT(*) AS entries,
+          COALESCE(SUM(CASE WHEN kind = 'decision' THEN 1 ELSE 0 END), 0) AS decisions
+        FROM houston_night_entries WHERE run_id = ${entry.runId}`.pipe(Effect.orDie);
+      return { entries: counts?.entries ?? 0, decisions: counts?.decisions ?? 0 };
+    }),
+    getEntry: Effect.fn("HoustonNightShiftStore.getEntry")((id) =>
+      sql<LedgerEntry>`SELECT * FROM houston_night_entries WHERE id = ${id}`.pipe(
+        Effect.map((rows) => rows[0]),
+        Effect.orDie,
+      ),
+    ),
+    runEntries: Effect.fn("HoustonNightShiftStore.runEntries")((runId) =>
+      sql<LedgerEntry>`SELECT * FROM houston_night_entries WHERE run_id = ${runId}
+        ORDER BY id`.pipe(Effect.orDie),
+    ),
+    projectEntries: Effect.fn("HoustonNightShiftStore.projectEntries")((projectId, exceptRunId) =>
+      sql<LedgerEntry>`SELECT * FROM houston_night_entries
+        WHERE project_id = ${projectId} AND run_id <> ${exceptRunId}
+        ORDER BY id DESC`.pipe(Effect.orDie),
+    ),
+    setEntryStatus: Effect.fn("HoustonNightShiftStore.setEntryStatus")(function* (id, status) {
+      const rows = yield* sql<{ project_id: string }>`UPDATE houston_night_entries
+        SET status = ${status} WHERE id = ${id} RETURNING project_id`.pipe(Effect.orDie);
+      if (rows[0] !== undefined) yield* touched(rows[0].project_id);
+    }),
     entries: Effect.fn("HoustonNightShiftStore.entries")((runId) =>
       sql<EntryRow>`SELECT id, run_id, kind, title, status, pr_number, choice
         FROM houston_night_entries WHERE run_id = ${runId} ORDER BY id`.pipe(Effect.orDie),

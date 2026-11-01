@@ -361,3 +361,37 @@ export class HoustonNightShiftError extends Schema.TaggedError<HoustonNightShift
     items: Schema.optional(Schema.Array(PreflightItem)),
   },
 ) {}
+
+/** The bounds of what a run's crew records through the `houston_night_*` tools. */
+export const HOUSTON_NIGHT_LEDGER_LIMITS = {
+  entriesPerRun: 200,
+  decisionsPerRun: 20,
+  pullRequestsPerRun: 30,
+  claimsMin: 1,
+  claimsMax: 20,
+  optionsMin: 2,
+  optionsMax: 5,
+  summaryChars: 200,
+} as const;
+
+export const HoustonNightToolErrorKind = Schema.Literals([
+  "invalid",
+  "limit",
+  "not_in_run",
+  "refused",
+  "remote",
+  "unsupported",
+]);
+export type HoustonNightToolErrorKind = typeof HoustonNightToolErrorKind.Type;
+
+/** A `houston_night_*` refusal; `limit` carries the bound and the value. */
+export class HoustonNightToolError extends Schema.TaggedError<HoustonNightToolError>()(
+  "HoustonNightToolError",
+  {
+    kind: HoustonNightToolErrorKind,
+    tool: Schema.String,
+    message: Schema.String,
+    limit: Schema.optional(Schema.Number),
+    actual: Schema.optional(Schema.Number),
+  },
+) {}
