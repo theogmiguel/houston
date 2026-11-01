@@ -4,7 +4,14 @@ import { StreamingGlyph } from "./TimelineRowParts";
 import { cn } from "~/lib/utils";
 
 /** The agent's running plan, drawn as the Timeline board's checklist card. */
-export function TimelinePlanCard({ steps }: { steps: ReadonlyArray<OrchestrationV2PlanStep> }) {
+export function TimelinePlanCard({
+  steps,
+  active = true,
+}: {
+  steps: ReadonlyArray<OrchestrationV2PlanStep>;
+  /** False for a finished or interrupted run: no step is still in progress then. */
+  active?: boolean;
+}) {
   if (steps.length === 0) return null;
   const completed = steps.filter((step) => step.status === "completed").length;
   return (
@@ -20,7 +27,7 @@ export function TimelinePlanCard({ steps }: { steps: ReadonlyArray<Orchestration
       </div>
       {steps.map((step) => {
         const done = step.status === "completed";
-        const running = step.status === "running";
+        const running = step.status === "running" && active;
         return (
           <div key={step.id} className="flex items-center gap-2.5">
             {done ? (

@@ -938,3 +938,37 @@ describe("Usage shortcuts", () => {
     );
   });
 });
+
+describe("Escape to stop", () => {
+  it("stops the running thread with Escape when no menu is open", () => {
+    assert.equal(
+      resolveChatShortcutCommand(
+        event({ key: "escape" }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        {
+          context: {
+            terminalFocus: false,
+            modelPickerOpen: false,
+            composerMenuOpen: false,
+          },
+        },
+      ),
+      "thread.stop",
+    );
+  });
+
+  it("leaves Escape to an open composer menu or model picker", () => {
+    for (const context of [{ composerMenuOpen: true }, { modelPickerOpen: true }]) {
+      assert.equal(
+        resolveChatShortcutCommand(
+          event({ key: "escape" }),
+          DEFAULT_RESOLVED_KEYBINDINGS,
+          DEFAULT_RESOLVED_KEYBINDINGS,
+          { context },
+        ),
+        null,
+      );
+    }
+  });
+});

@@ -32,6 +32,8 @@ export interface ShortcutMatchContext {
   isWeb: boolean;
   isDesktop: boolean;
   editableFocus?: boolean;
+  /** An inline composer menu owns Escape while it is open. */
+  composerMenuOpen?: boolean;
   [key: string]: boolean;
 }
 
