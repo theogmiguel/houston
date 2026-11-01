@@ -160,12 +160,19 @@ export const remoteChangesOutsideHouston = (input: {
   }>;
 }): ReadonlyArray<NightRemoteChange> => {
   const refs = [...new Set([...Object.keys(input.before), ...Object.keys(input.after)])].toSorted();
+  const queueMerged = input.queue.some((row) => row.kind === "merge");
   return refs
     .filter((ref) => input.before[ref] !== input.after[ref])
     .filter((ref) => {
       const now = input.after[ref];
-      if (now === undefined) return true;
       const branch = ref.replace(/^refs\/heads\//, "");
+      if (now === undefined) {
+        // GitHub deletes a merged head branch: one Houston or the queue pushed, once the queue merged.
+        const pushed =
+          input.pushes.some((push) => push.branch === branch) ||
+          input.queue.some((row) => row.kind === "push" && row.refName === branch);
+        return !(pushed && queueMerged);
+      }
       const byHouston = input.pushes.some((push) => push.branch === branch && push.newSha === now);
       const byQueue = input.queue.some(
         (row) =>

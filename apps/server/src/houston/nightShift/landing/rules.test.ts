@@ -191,4 +191,46 @@ describe("night shift landing rules", () => {
       }),
     ).toEqual([{ ref: "refs/heads/t3/a", oldSha: sha("1"), newSha: sha("4") }]);
   });
+
+  it("remote changes outside houston are listed, not a queue push or a merged branch's deletion", () => {
+    const sha = (char: string) => char.repeat(40);
+    // The queue rebased t3/a and pushed it: its push explains the new head.
+    expect(
+      remoteChangesOutsideHouston({
+        before: { "refs/heads/t3/a": sha("1") },
+        after: { "refs/heads/t3/a": sha("4") },
+        pushes: [{ branch: "t3/a", newSha: sha("1") }],
+        queue: [{ kind: "push", refName: "t3/a", newSha: sha("4") }],
+      }),
+    ).toEqual([]);
+    // The queue merged Houston's t3/fix-ws and GitHub deleted the merged head branch.
+    expect(
+      remoteChangesOutsideHouston({
+        before: { "refs/heads/main": sha("1"), "refs/heads/t3/fix-ws": sha("2") },
+        after: { "refs/heads/main": sha("4") },
+        pushes: [{ branch: "t3/fix-ws", newSha: sha("2") }],
+        queue: [{ kind: "merge", refName: "main", newSha: sha("4") }],
+      }),
+    ).toEqual([]);
+    // Without a queue merge, or for a branch Houston and the queue never pushed, a deletion is listed.
+    expect(
+      remoteChangesOutsideHouston({
+        before: { "refs/heads/t3/fix-ws": sha("2"), "refs/heads/old": sha("3") },
+        after: {},
+        pushes: [{ branch: "t3/fix-ws", newSha: sha("2") }],
+        queue: [],
+      }),
+    ).toEqual([
+      { ref: "refs/heads/old", oldSha: sha("3"), newSha: null },
+      { ref: "refs/heads/t3/fix-ws", oldSha: sha("2"), newSha: null },
+    ]);
+    expect(
+      remoteChangesOutsideHouston({
+        before: { "refs/heads/old": sha("3") },
+        after: {},
+        pushes: [],
+        queue: [{ kind: "merge", refName: "main", newSha: sha("4") }],
+      }),
+    ).toEqual([{ ref: "refs/heads/old", oldSha: sha("3"), newSha: null }]);
+  });
 });
