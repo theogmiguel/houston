@@ -6,6 +6,7 @@ import {
   type HoustonNightShiftErrorKind,
   type HoustonNightShiftSettings,
   type NightCheck,
+  type NightCrewRole,
   type NightStopReason,
 } from "@t3tools/contracts/houston/nightShift";
 
@@ -348,3 +349,113 @@ export const threadHours = (
     tokens: "not tracked" as const,
   };
 };
+
+/** Roles that count against live workers; review and test each have one slot of their own. */
+const WORKER_ROLES: ReadonlySet<NightCrewRole> = new Set([
+  "implementation",
+  "design",
+  "general",
+  "research",
+]);
+/** Roles that build, so each needs a worktree of its own. */
+const BUILDING_ROLES: ReadonlySet<NightCrewRole> = new Set([
+  "implementation",
+  "design",
+  "test",
+  "general",
+]);
+/** The live members a review or test slot holds. */
+const GATE_ROLE_SLOTS = 1;
+
+/** Why a delegation of `role` would exceed the run's caps, or null when it fits. */
+export const crewCapRefusal = (input: {
+  /** Roles of the live members other than the orchestrator, reservations included. */
+  readonly live: ReadonlyArray<NightCrewRole>;
+  readonly role: NightCrewRole;
+  readonly liveWorkers: number;
+}): string | null => {
+  if (WORKER_ROLES.has(input.role)) {
+    const count = input.live.filter((role) => WORKER_ROLES.has(role)).length;
+    return count < input.liveWorkers
+      ? null
+      : `${count} of ${input.liveWorkers} live workers are running; a ${input.role} task waits until one ends`;
+  }
+  const count = input.live.filter((role) => role === input.role).length;
+  return count < GATE_ROLE_SLOTS
+    ? null
+    : `${count} of ${GATE_ROLE_SLOTS} live ${input.role} task is running; a second waits until it ends`;
+};
+
+/** Why a delegation's isolation breaks the run's rules, or null when it keeps them. */
+export const isolationRefusal = (input: {
+  readonly role: NightCrewRole;
+  readonly isolation: "shared" | "worktree" | undefined;
+  readonly environmentId: string | undefined;
+}): string | null => {
+  if (input.environmentId !== undefined) {
+    return `a Night shift run stays on this machine; target.environmentId ${input.environmentId} is refused`;
+  }
+  if (BUILDING_ROLES.has(input.role) && input.isolation !== "worktree") {
+    return `a ${input.role} task needs its own worktree: pass isolation "worktree" (it was ${input.isolation ?? "shared, the default"})`;
+  }
+  return null;
+};
+
+export interface InstanceState {
+  readonly instanceId: string;
+  /** Readiness as last published; `missing` when no provider instance has the id. */
+  readonly state: string;
+  /** Limited for the run until its reset passes and it is ready again. */
+  readonly limited: boolean;
+}
+
+/** The requested instance when usable, else the chain's next usable one, else a refusal. */
+export const substituteInstance = (input: {
+  readonly requested: string;
+  readonly chain: ReadonlyArray<string>;
+  readonly states: ReadonlyMap<string, InstanceState>;
+}): { readonly instanceId: string } | { readonly refusal: string } => {
+  const usable = (id: string) => {
+    const state = input.states.get(id);
+    return state !== undefined && state.state === "ready" && !state.limited;
+  };
+  if (usable(input.requested)) return { instanceId: input.requested };
+  const next = input.chain.find(usable);
+  if (next !== undefined) return { instanceId: next };
+  const named = [...new Set([input.requested, ...input.chain])].map((id) => {
+    const state = input.states.get(id);
+    const text =
+      state === undefined
+        ? "missing"
+        : state.limited
+          ? `${state.state}, limited for this run`
+          : state.state;
+    return `${id} is ${text}`;
+  });
+  return { refusal: `no worker instance is ready and unlimited: ${named.join("; ")}` };
+};
+
+export interface BacklogTask {
+  readonly number: number;
+  readonly projectId: string | null;
+  readonly queue: string;
+}
+
+/** Up to `max` Up next tasks in ready order, skipping earlier picks not done since. */
+export const pickTasks = (input: {
+  readonly projectId: string;
+  readonly max: number;
+  /** In Tasks' ready order. */
+  readonly backlog: ReadonlyArray<BacklogTask>;
+  /** Task numbers earlier runs of the project picked, each with whether it was done since. */
+  readonly earlierPicks: ReadonlyMap<number, boolean>;
+}): ReadonlyArray<number> =>
+  input.backlog
+    .filter(
+      (task) =>
+        task.projectId === input.projectId &&
+        task.queue === "up_next" &&
+        input.earlierPicks.get(task.number) !== false,
+    )
+    .slice(0, input.max)
+    .map((task) => task.number);

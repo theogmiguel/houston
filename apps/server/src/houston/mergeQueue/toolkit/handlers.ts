@@ -12,6 +12,7 @@ import * as Schema from "effect/Schema";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../../mcp/McpToolAccess.ts";
 import { loadCaller } from "../../../mcp/threadAccess.ts";
+import { admitOperation, type GatedOperation } from "../../nightShift/CrewGate.ts";
 import { SIDE_THREAD_READ_ONLY } from "../../sideThreads.ts";
 import { HoustonMergeQueueProject } from "../Project.ts";
 import { refuse } from "../rules.ts";
@@ -68,6 +69,14 @@ const callerOf = Effect.fn("HoustonMergeQueueToolkit.callerOf")(function* (
   return { threadId: threadScope.thread.threadId, projectId: caller.projectId };
 });
 
+/** A live Night shift run's threads leave enqueueing to Night shift. */
+const admitNightShift = (tool: GatedOperation) =>
+  Effect.flatMap(McpInvocationContext.McpInvocationContext, (scope) =>
+    admitOperation(scope, tool).pipe(
+      Effect.mapError((message) => refuse("refused", tool, `Night shift: ${message}`)),
+    ),
+  );
+
 /** The number in the caller's repository; a URL of another repository is refused naming both. */
 const ownNumber = Effect.fn("HoustonMergeQueueToolkit.ownNumber")(function* (
   tool: string,
@@ -121,6 +130,7 @@ export const layer = McpToolAccess.toLayer(HoustonMergeQueueToolkit, {
   houston_merge_queue_enqueue: McpToolAccess.writesWithCapability((input) =>
     Effect.gen(function* () {
       const tool = "houston_merge_queue_enqueue";
+      yield* admitNightShift(tool);
       const agent = yield* callerOf(tool, "writes");
       const number = yield* ownNumber(tool, agent.projectId, input.pullRequest);
       const entry = yield* (yield* HoustonMergeQueueService).enqueue(
@@ -137,6 +147,7 @@ export const layer = McpToolAccess.toLayer(HoustonMergeQueueToolkit, {
   houston_merge_queue_dequeue: McpToolAccess.writesWithCapability((input) =>
     Effect.gen(function* () {
       const tool = "houston_merge_queue_dequeue";
+      yield* admitNightShift(tool);
       const agent = yield* callerOf(tool, "writes");
       const number = yield* ownNumber(tool, agent.projectId, input.pullRequest);
       return yield* (yield* HoustonMergeQueueService).dequeue({

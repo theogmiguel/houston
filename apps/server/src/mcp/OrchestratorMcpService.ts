@@ -119,6 +119,11 @@ import {
 } from "./delegatedTaskModes.ts";
 import { isLiveCallerShell, threadNotFound } from "./threadAccess.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
+import {
+  admitOperation,
+  crewGateFailure,
+  HoustonCrewGate,
+} from "../houston/nightShift/CrewGate.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 
@@ -971,6 +976,16 @@ const make = Effect.gen(function* () {
   const gitDriver = yield* GitVcsDriver.GitVcsDriver;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const remoteDelegation = yield* RemoteDelegation.RemoteDelegation;
+  // Houston: a live Night shift run's threads start work only within its crew rules.
+  const crewGate = yield* HoustonCrewGate;
+  const gateOperation = (
+    scope: McpInvocationScope,
+    operation: Parameters<typeof admitOperation>[1],
+  ) =>
+    admitOperation(scope, operation).pipe(
+      Effect.provideService(HoustonCrewGate, crewGate),
+      Effect.mapError(crewGateFailure),
+    );
 
   const requireProject = (projectId: ProjectId) =>
     projects.getById(projectId).pipe(
@@ -1836,6 +1851,7 @@ const make = Effect.gen(function* () {
 
   return OrchestratorMcpService.of({
     scheduleTask: Effect.fn("OrchestratorMcpService.scheduleTask")(function* (scope, input) {
+      yield* gateOperation(scope, "schedule_task");
       const { parent, limits } = yield* loadCaller(scope);
       const projectId = yield* resolveProjectTarget(parent, input.projectId);
       yield* assertLiveCallerForOtherProject(scope, parent, projectId);
@@ -1911,6 +1927,7 @@ const make = Effect.gen(function* () {
     ),
     updateScheduledTask: Effect.fn("OrchestratorMcpService.updateScheduledTask")(
       function* (scope, input) {
+        yield* gateOperation(scope, "schedule_task");
         const { parent, limits } = yield* loadCaller(scope);
         const existing = yield* loadScheduledTask(input.scheduledTaskId, limits);
         yield* assertLiveCallerForOtherProject(scope, parent, existing.projectId);
@@ -1963,6 +1980,7 @@ const make = Effect.gen(function* () {
     ),
     deleteScheduledTask: Effect.fn("OrchestratorMcpService.deleteScheduledTask")(
       function* (scope, input) {
+        yield* gateOperation(scope, "delete_scheduled_task");
         const { parent, limits } = yield* loadCaller(scope);
         const existing = yield* loadScheduledTask(input.scheduledTaskId, limits);
         yield* assertLiveCallerForOtherProject(scope, parent, existing.projectId);
@@ -2176,7 +2194,30 @@ const make = Effect.gen(function* () {
         },
       };
     }),
-    delegateTask: Effect.fn("OrchestratorMcpService.delegateTask")(function* (callerScope, input) {
+    delegateTask: Effect.fn("OrchestratorMcpService.delegateTask")(function* (
+      callerScope,
+      requested,
+    ) {
+      // Houston: the gate may refuse or move the target; its slot is held until this call ends.
+      const admission =
+        callerScope.thread === undefined
+          ? undefined
+          : yield* Effect.acquireRelease(
+              crewGate
+                .admit({
+                  callerThreadId: callerScope.thread.threadId,
+                  operation: "delegate_task",
+                  delegation: {
+                    role: requested.role,
+                    isolation: requested.isolation,
+                    target: requested.target,
+                  },
+                })
+                .pipe(Effect.mapError(crewGateFailure)),
+              (admitted) => admitted.release,
+            );
+      const input =
+        admission?.target === undefined ? requested : { ...requested, target: admission.target };
       const environmentId =
         input.target === undefined
           ? undefined
@@ -2328,6 +2369,14 @@ const make = Effect.gen(function* () {
           runId: childRunEvent.event.payload.id,
         });
       }
+      // Houston: the crew row, written before a wait so the caps and a stop see the child.
+      if (admission !== undefined) {
+        yield* admission.record({
+          taskId,
+          childThreadId,
+          providerInstanceId: taskEvent.event.payload.providerInstanceId,
+        });
+      }
 
       if (input.mode !== "wait") {
         return yield* readTask(scope, taskId, false, true);
@@ -2374,7 +2423,7 @@ const make = Effect.gen(function* () {
           ),
         );
       return yield* readTask(scope, taskId, Option.isNone(waited), true);
-    }),
+    }, Effect.scoped),
     taskStatus: Effect.fn("OrchestratorMcpService.taskStatus")(function* (callerScope, taskId) {
       const scope = yield* requireThreadScope(callerScope, "task_status");
       return yield* readTask(scope, taskId, false, true);
@@ -2595,6 +2644,7 @@ const make = Effect.gen(function* () {
     }),
     createThreads: Effect.fn("OrchestratorMcpService.createThreads")(
       function* (callerScope, input) {
+        yield* gateOperation(callerScope, "create_threads");
         const { scope, parent } = yield* loadThreadCaller(callerScope, "create_threads");
         const parentRun = ThreadManagementService.latestActiveRun(parent);
         if (

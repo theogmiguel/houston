@@ -13,6 +13,7 @@ import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../../mcp/McpToolAccess.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "../../../mcp/delegatedTaskModes.ts";
 import { type CallerLimits, loadCaller } from "../../../mcp/threadAccess.ts";
+import { admitOperation } from "../../nightShift/CrewGate.ts";
 import { compareReady, refuse } from "../rules.ts";
 import { HoustonTaskRuns, type HoustonTaskAgent } from "../TaskRuns.ts";
 import { HoustonTaskService } from "../TaskService.ts";
@@ -334,6 +335,10 @@ export const layer = McpToolAccess.toLayer(HoustonTaskToolkit, {
   houston_task_execute: McpToolAccess.writesWithCapability((input) =>
     Effect.gen(function* () {
       const tool = "houston_task_execute";
+      // A live Night shift run's threads start work only through delegate_task.
+      yield* admitOperation(yield* McpInvocationContext.McpInvocationContext, tool).pipe(
+        Effect.mapError((message) => refuse("unsupported", tool, `Night shift: ${message}`)),
+      );
       const agent = yield* agentFor(tool, "delegate");
       yield* ownTask(tool, agent, input.id);
       // The child runs unattended, so it never runs broader than the caller that started it.

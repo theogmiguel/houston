@@ -178,3 +178,63 @@ export const composeBrief = (input: BriefInput): { text: string; dropped: number
       : `${heading}${fenced("ledger", kept.join("\n"))}${dropped === 0 ? "" : `\n\n${dropped} older ledger items were left out to fit the brief.`}`;
   return { text: `${head}${ledger}\n\n${rules}\n`, dropped };
 };
+
+export interface DigestEntry {
+  readonly id: number;
+  readonly runId: number;
+  readonly kind: string;
+  readonly title: string;
+  readonly status: string | null;
+  readonly prNumber: number | null;
+  readonly body: string;
+  readonly choice: string | null;
+  /** `studied`: the competitor whose newest version alone is kept. */
+  readonly competitor?: string | undefined;
+}
+
+const PR_FATES: ReadonlySet<string> = new Set(["merged", "closed", "open"]);
+
+/** The project's earlier ledger for the next brief, newest first; one version per competitor. */
+export const ledgerDigest = (entries: ReadonlyArray<DigestEntry>): ReadonlyArray<string> => {
+  const newestFirst = entries.toSorted((left, right) => right.id - left.id);
+  const studied = new Set<string>();
+  const lines: string[] = [];
+  for (const entry of newestFirst) {
+    const title = oneLine(entry.title);
+    const body = oneLine(entry.body);
+    const tail = body === "" ? "" : `: ${body}`;
+    switch (entry.kind) {
+      case "deferred":
+        lines.push(`- run ${entry.runId}, ${entry.status ?? "deferred"}: ${title}${tail}`);
+        break;
+      case "lesson":
+        lines.push(`- run ${entry.runId}, lesson: ${title}${tail}`);
+        break;
+      case "flaky":
+        lines.push(`- run ${entry.runId}, flaky test: ${title}${tail}`);
+        break;
+      case "studied": {
+        const competitor = entry.competitor ?? title;
+        if (studied.has(competitor)) break;
+        studied.add(competitor);
+        lines.push(`- run ${entry.runId}, studied ${oneLine(competitor)}${tail}`);
+        break;
+      }
+      case "pr": {
+        const fate =
+          entry.status !== null && PR_FATES.has(entry.status) ? entry.status : "fate unknown";
+        const number = entry.prNumber === null ? "" : ` #${entry.prNumber}`;
+        lines.push(`- run ${entry.runId}, pull request${number} (${fate}): ${title}`);
+        break;
+      }
+      case "decision":
+        if (entry.choice !== null) {
+          lines.push(
+            `- run ${entry.runId}, decision answered "${oneLine(entry.choice)}": ${title}`,
+          );
+        }
+        break;
+    }
+  }
+  return lines;
+};
