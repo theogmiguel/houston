@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  MAX_CLOSED_CELLS_PER_GRID,
   addThreadToGrid,
   createGridRecord,
   gridById,
@@ -15,7 +16,7 @@ import { preorderLeaves } from "./tree";
 const workspaceKey = "env-1:project-1";
 
 function freshStore(): void {
-  useGridStore.setState({ grids: [] });
+  useGridStore.setState({ grids: [], closedCells: {}, threadOrigins: {} });
 }
 
 function createdGrid(): GridRecord {
@@ -235,5 +236,95 @@ describe("grid parsing", () => {
   it("returns an empty list for a corrupt document", () => {
     expect(parseGrids({ grids: [] })).toEqual([]);
     expect(parseGrids(undefined)).toEqual([]);
+  });
+});
+
+describe("closed cells", () => {
+  it("remembers a closed cell's slot and reopens it there", () => {
+    freshStore();
+    createdGrid();
+    for (const threadId of ["thread-a", "thread-b", "thread-c"]) {
+      useGridStore.getState().addThread("g-1", threadId);
+    }
+    useGridStore.getState().focusThread("g-1", "thread-b");
+    const previousTree = gridById(useGridStore.getState().grids, "g-1")!.tree;
+    useGridStore.getState().closeGridCell("g-1", "thread-b");
+
+    const closed = gridById(useGridStore.getState().grids, "g-1")!;
+    expect(preorderLeaves(closed.tree)).toEqual(["thread-a", "thread-c"]);
+    expect(useGridStore.getState().closedCells["g-1"]?.[0]).toMatchObject({
+      threadId: "thread-b",
+      slot: 1,
+    });
+    expect(useGridStore.getState().closedCells["g-1"]?.[0]?.tree).toEqual(previousTree);
+
+    const reopened = useGridStore.getState().reopenClosedCell("g-1");
+    expect(reopened).toMatchObject({ threadId: "thread-b", slot: 1 });
+    const restored = gridById(useGridStore.getState().grids, "g-1")!;
+    expect(restored.tree).toEqual(previousTree);
+    expect(restored.focusedThreadId).toBe("thread-b");
+    expect(useGridStore.getState().closedCells["g-1"]).toBeUndefined();
+  });
+
+  it("reopens the last pane of a grid after it empties", () => {
+    freshStore();
+    createdGrid();
+    useGridStore.getState().addThread("g-1", "thread-a");
+    useGridStore.getState().closeGridCell("g-1", "thread-a");
+    expect(gridById(useGridStore.getState().grids, "g-1")!.tree).toBeNull();
+
+    useGridStore.getState().reopenClosedCell("g-1");
+    const restored = gridById(useGridStore.getState().grids, "g-1")!;
+    expect(preorderLeaves(restored.tree)).toEqual(["thread-a"]);
+    expect(restored.focusedThreadId).toBe("thread-a");
+  });
+
+  it("keeps a capped stack, most recent last, and drops a thread that returns", () => {
+    freshStore();
+    createdGrid();
+    for (let index = 0; index < MAX_CLOSED_CELLS_PER_GRID + 2; index += 1) {
+      const threadId = `thread-${index}`;
+      useGridStore.getState().addThread("g-1", threadId);
+      useGridStore.getState().closeGridCell("g-1", threadId);
+    }
+    const stack = useGridStore.getState().closedCells["g-1"]!;
+    expect(stack).toHaveLength(MAX_CLOSED_CELLS_PER_GRID);
+    expect(stack.at(-1)?.threadId).toBe(`thread-${MAX_CLOSED_CELLS_PER_GRID + 1}`);
+
+    useGridStore.getState().addThread("g-1", "thread-3");
+    expect(
+      useGridStore.getState().closedCells["g-1"]?.some((cell) => cell.threadId === "thread-3"),
+    ).toBe(false);
+  });
+
+  it("drops a closed entry when the thread lands in another grid", () => {
+    freshStore();
+    createdGrid();
+    useGridStore.getState().createGrid({
+      environmentId: "env-1",
+      projectId: "project-1",
+      workspaceKey,
+      id: "g-2",
+      now: "2026-01-01T00:00:00Z",
+    });
+    useGridStore.getState().addThread("g-1", "thread-a");
+    useGridStore.getState().closeGridCell("g-1", "thread-a");
+    expect(useGridStore.getState().closedCells["g-1"]).toHaveLength(1);
+
+    useGridStore.getState().addThread("g-2", "thread-a");
+    expect(useGridStore.getState().closedCells["g-1"]).toBeUndefined();
+  });
+
+  it("does not offer a draft cell for reopen and forgets a deleted grid's stack", () => {
+    freshStore();
+    createdGrid();
+    useGridStore.getState().addThread("g-1", "thread-a", "draft-a");
+    useGridStore.getState().closeGridCell("g-1", "thread-a");
+    expect(useGridStore.getState().closedCells["g-1"]).toBeUndefined();
+
+    useGridStore.getState().addThread("g-1", "thread-b");
+    useGridStore.getState().closeGridCell("g-1", "thread-b");
+    useGridStore.getState().deleteGrid("g-1");
+    expect(useGridStore.getState().closedCells["g-1"]).toBeUndefined();
   });
 });

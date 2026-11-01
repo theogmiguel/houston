@@ -156,6 +156,17 @@ function MenuItemLabel({ className, ...props }: React.ComponentProps<"span">) {
   );
 }
 
+/** Secondary text at the end of a menu row, such as why an item is unavailable. */
+function MenuItemHint({ className, ...props }: React.ComponentProps<"span">) {
+  return (
+    <span
+      data-slot="menu-item-hint"
+      className={cn("ml-auto text-xs text-muted-foreground", className)}
+      {...props}
+    />
+  );
+}
+
 function MenuCheckboxItem({
   className,
   children,
@@ -372,6 +383,7 @@ export {
   MenuGroup,
   MenuGroup as DropdownMenuGroup,
   MenuItem,
+  MenuItemHint,
   MenuItemLabel,
   MenuItem as DropdownMenuItem,
   MenuCheckboxItem,
