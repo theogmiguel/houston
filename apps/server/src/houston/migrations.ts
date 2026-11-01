@@ -727,17 +727,51 @@ const houstonMigrationEntries = [
   [9, "NightShift", NightShift],
 ] as const;
 
-const run = Migrator.make({});
-
+// Ids land in merge order, so a database can record a higher id before a lower one; every
+// unrecorded id runs, ascending, each in its own transaction with its history row.
 export const runHoustonMigrations = Effect.fn("runHoustonMigrations")(function* () {
-  const executed = yield* run({
-    table: HOUSTON_MIGRATIONS_TABLE,
-    loader: Migrator.fromRecord(
-      Object.fromEntries(
-        houstonMigrationEntries.map(([id, name, migration]) => [`${id}_${name}`, migration]),
-      ),
-    ),
-  });
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS ${sql(HOUSTON_MIGRATIONS_TABLE)} (
+      migration_id integer PRIMARY KEY NOT NULL,
+      created_at datetime NOT NULL DEFAULT current_timestamp,
+      name VARCHAR(255) NOT NULL
+    )
+  `;
+  const recorded = new Set(
+    (yield* sql<{ readonly migration_id: number }>`
+      SELECT migration_id FROM ${sql(HOUSTON_MIGRATIONS_TABLE)}
+    `).map((row) => row.migration_id),
+  );
+  const executed: Array<readonly [number, string]> = [];
+  const pending = houstonMigrationEntries
+    .filter(([id]) => !recorded.has(id))
+    .toSorted(([left], [right]) => left - right);
+  for (const [id, name, migration] of pending) {
+    const applied = yield* sql.withTransaction(
+      Effect.gen(function* () {
+        // A second server that recorded this id first wins; this one skips it.
+        const claimed = yield* sql`
+          INSERT INTO ${sql(HOUSTON_MIGRATIONS_TABLE)} (migration_id, name) VALUES (${id}, ${name})
+          ON CONFLICT (migration_id) DO NOTHING RETURNING migration_id
+        `;
+        if (claimed.length === 0) return false;
+        yield* migration.pipe(
+          Effect.catch((cause) =>
+            Effect.die(
+              new Migrator.MigrationError({
+                cause,
+                kind: "Failed",
+                message: `Migration "${id}_${name}" failed`,
+              }),
+            ),
+          ),
+        );
+        return true;
+      }),
+    );
+    if (applied) executed.push([id, name] as const);
+  }
   if (executed.length > 0) {
     yield* Effect.log("Houston migrations ran successfully").pipe(
       Effect.annotateLogs({ migrations: executed.map(([id, name]) => `${id}_${name}`) }),
