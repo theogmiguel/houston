@@ -137,6 +137,77 @@ it(
   },
 );
 
+it(
+  "keeps the details card inside the focused cell's top right and follows focus",
+  { timeout: 60_000 },
+  async () => {
+    resetPanelStore();
+    const gridId = seedGrid(THREAD_IDS.slice(0, 2));
+    await using screen = await renderGrid(gridId, 1600, 1000);
+    await vi.waitFor(() => {
+      expect(cellsIn(screen.container)).toHaveLength(2);
+    });
+
+    const toggle = detailsToggle(screen.container);
+    expect(toggle).not.toBeNull();
+    await userEvent.click(toggle!);
+
+    const focusedCell = () =>
+      screen.container.querySelector<HTMLElement>('[data-grid-cell][data-focused="true"]');
+    const inlinePanelIn = (cell: HTMLElement | null) =>
+      cell?.querySelector<HTMLElement>('[data-thread-details-panel="inline"]') ?? null;
+
+    await vi.waitFor(() => {
+      expect(inlinePanelIn(focusedCell())).not.toBeNull();
+    });
+
+    const assertInsideTopRight = (cell: HTMLElement, panel: HTMLElement) => {
+      const cellRect = cell.getBoundingClientRect();
+      const cardRect = panel.getBoundingClientRect();
+      expect(cardRect.left).toBeGreaterThanOrEqual(cellRect.left);
+      expect(cardRect.right).toBeLessThanOrEqual(cellRect.right);
+      expect(cardRect.top).toBeGreaterThanOrEqual(cellRect.top);
+      expect(cardRect.bottom).toBeLessThanOrEqual(cellRect.bottom);
+      // The card hugs the right half and the top of the cell, not the gutter between cells.
+      expect(cardRect.right).toBeGreaterThan(cellRect.left + cellRect.width / 2);
+      expect(cardRect.top - cellRect.top).toBeLessThan(80);
+    };
+
+    const firstCell = focusedCell()!;
+    await vi.waitFor(() => assertInsideTopRight(firstCell, inlinePanelIn(firstCell)!));
+
+    const otherCell = cellsIn(screen.container).find((cell) => cell !== firstCell)!;
+    await userEvent.click(otherCell.querySelector<HTMLElement>("[data-pane-label]")!);
+
+    await vi.waitFor(() => {
+      expect(otherCell.getAttribute("data-focused")).toBe("true");
+      expect(inlinePanelIn(otherCell)).not.toBeNull();
+      expect(inlinePanelIn(firstCell)).toBeNull();
+    });
+
+    await vi.waitFor(() => assertInsideTopRight(otherCell, inlinePanelIn(otherCell)!));
+    expect(inlinePanelIn(otherCell)!.getAttribute("data-workspace-focus-key")).toContain(
+      THREAD_IDS[0],
+    );
+
+    for (const target of [firstCell, otherCell, firstCell]) {
+      await userEvent.click(target.querySelector<HTMLElement>("[data-pane-label]")!);
+      await vi.waitFor(() => {
+        expect(target.getAttribute("data-focused")).toBe("true");
+        expect(inlineCardsIn(screen.container)).toHaveLength(1);
+        expect(inlinePanelIn(target)).not.toBeNull();
+      });
+      await vi.waitFor(() => assertInsideTopRight(target, inlinePanelIn(target)!));
+    }
+
+    await userEvent.click(detailsToggle(screen.container)!);
+    await vi.waitFor(() => {
+      expect(focusedCell()?.querySelector("[data-thread-details-panel]")).toBeNull();
+      expect(popoverCard()).toBeNull();
+    });
+  },
+);
+
 for (const threadCount of [3, 6] as const) {
   it(
     `opens the focused thread's details as a popover in a ${threadCount}-thread grid`,
@@ -160,6 +231,28 @@ for (const threadCount of [3, 6] as const) {
     },
   );
 }
+
+it("toggles a compact cell's popover off from the same button", { timeout: 60_000 }, async () => {
+  resetPanelStore();
+  const gridId = seedGrid(THREAD_IDS.slice(0, 3));
+  await using screen = await renderGrid(gridId, 1400, 900);
+  await vi.waitFor(() => {
+    expect(cellsIn(screen.container)).toHaveLength(3);
+  });
+
+  const toggle = detailsToggle(screen.container);
+  expect(toggle).not.toBeNull();
+  await userEvent.click(toggle!);
+  await vi.waitFor(() => {
+    expect(popoverCard()).not.toBeNull();
+  });
+
+  await userEvent.click(detailsToggle(screen.container)!);
+  await vi.waitFor(() => {
+    expect(popoverCard()).toBeNull();
+    expect(detailsToggle(screen.container)!.getAttribute("aria-pressed")).toBe("false");
+  });
+});
 
 it("closes the popover on Escape and on an outside press", { timeout: 60_000 }, async () => {
   resetPanelStore();
