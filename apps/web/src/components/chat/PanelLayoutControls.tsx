@@ -137,6 +137,19 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   );
 });
 
+// While the right panel is open its own top row carries the terminal and panel toggles.
+export const ChatHeaderPanelControls = memo(function ChatHeaderPanelControls(
+  props: PanelLayoutControlsProps,
+) {
+  return props.rightPanelOpen ? (
+    <div className="flex h-full shrink-0 items-center pr-1">
+      <PanelLayoutControls {...props} showTerminalControl={false} showRightPanelControl={false} />
+    </div>
+  ) : (
+    <PanelLayoutControls {...props} />
+  );
+});
+
 export const RightPanelMaximizeControl = memo(function RightPanelMaximizeControl({
   maximized,
   onToggle,

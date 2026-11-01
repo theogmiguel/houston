@@ -1041,7 +1041,7 @@
     "apps/web/src/components/PreviousWorktreeItemContent.tsx": "Existing worktree wording",
     "apps/web/src/components/chat/ChatHeader.tsx": "project breadcrumb without a new-thread action",
     "apps/web/src/components/chat/ComposerPrimaryActions.tsx": "neutral send button",
-    "apps/web/src/components/chat/PanelLayoutControls.tsx": "grid layout control in the titlebar",
+    "apps/web/src/components/chat/PanelLayoutControls.tsx": "grid layout control in the titlebar; the chat header keeps thread details beside it while the right panel is open",
     "apps/web/src/components/chat/composerFocusRedirect.ts": "grid T opens a new draft pane",
     "apps/web/src/components/grid/GridHost.tsx": "empty grid renders the draft composer",
     "apps/web/src/components/grid/GridSidebar.tsx": "grid row + opens a new draft pane",
