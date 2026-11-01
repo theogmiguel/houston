@@ -291,7 +291,7 @@ export function CustomModelEditor({
         </label>
         <Input
           id={domId("name")}
-          size="sm"
+          size="compact"
           autoFocus
           value={draft.name}
           onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}

@@ -503,8 +503,8 @@ function RightPanelEmptyState(props: {
                   type="button"
                   onClick={action.onClick}
                   className={cn(
-                    "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm transition-colors group-hover:bg-accent/60",
-                    isHighlighted(action) && "bg-accent/60",
+                    "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm transition-colors group-hover:bg-hover/60",
+                    isHighlighted(action) && "bg-hover/60",
                   )}
                 >
                   {actionIcon(action, "size-4")}
@@ -1016,7 +1016,7 @@ function RightPanelTab(
         props.ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
         props.active
           ? "bg-selected text-foreground"
-          : "text-secondary-foreground hover:bg-accent hover:text-foreground",
+          : "text-secondary-foreground hover:bg-hover hover:text-foreground",
         isDragging && "relative z-10",
       )}
     >

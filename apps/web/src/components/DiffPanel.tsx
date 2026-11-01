@@ -1102,7 +1102,7 @@ export default function DiffPanel({
                       <div
                         key={commit.sha}
                         className={cn(
-                          "flex items-center rounded-sm hover:bg-accent has-data-highlighted:bg-accent has-focus-visible:bg-accent [&_[data-checked]]:bg-transparent [&_[data-highlighted]]:bg-transparent",
+                          "flex items-center rounded-sm hover:bg-hover has-data-highlighted:bg-hover has-focus-visible:bg-hover [&_[data-checked]]:bg-transparent [&_[data-highlighted]]:bg-transparent",
                           selectedCommitSha === commit.sha && "bg-foreground/[0.08]",
                         )}
                       >
@@ -1358,7 +1358,7 @@ export default function DiffPanel({
                 </div>
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                   <div
-                    className="flex h-[30px] min-h-[30px] shrink-0 items-center gap-1 border-b border-border bg-[var(--pane-head)] ps-1.5 pe-2"
+                    className="flex h-(--h-pane-head) min-h-(--h-pane-head) shrink-0 items-center gap-1 border-b border-border bg-[var(--pane-head)] ps-1.5 pe-2"
                     onClickCapture={(event) => {
                       const composedPath = event.nativeEvent.composedPath?.() ?? [];
                       for (const node of composedPath) {

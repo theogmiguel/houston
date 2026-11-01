@@ -146,7 +146,7 @@ function KeybindingsSearchInput({
         }}
         placeholder="Search commands or keys"
         aria-label="Search commands or keys"
-        size="sm"
+        size="compact"
       />
     </InputGroup>
   );
@@ -821,7 +821,7 @@ function KeybindingKeyControl({
           onClick={() => setDraft({ isRecording: true })}
           aria-label={`Edit shortcut for ${commandLabel(row.command)}: ${formatShortcutLabel(row.binding.shortcut)}`}
           className={cn(
-            "inline-flex h-8 cursor-pointer items-center rounded-md border border-transparent px-1.5 sm:h-7 outline-none transition-colors hover:border-border/70 hover:bg-accent focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/24",
+            "inline-flex h-8 cursor-pointer items-center rounded-md border border-transparent px-1.5 sm:h-7 outline-none transition-colors hover:border-border/70 hover:bg-hover focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/24",
             pillClassName,
           )}
         >
@@ -834,7 +834,7 @@ function KeybindingKeyControl({
           aria-label={`Keybinding for ${commandLabel(row.command)}`}
           value={isRecording ? "" : keyDraft}
           placeholder={isRecording ? "Press shortcut" : "Unassigned"}
-          size="sm"
+          size="compact"
           font="mono"
           className="w-44"
           onFocus={() => setDraft({ isRecording: true })}
@@ -1118,7 +1118,7 @@ function NewKeybindingKeyInput({
       aria-label={`Keybinding for ${draft.commandLabelText}`}
       value={draft.isRecording ? "" : draft.keyDraft}
       placeholder={draft.isRecording ? "Press shortcut" : "Unassigned"}
-      size="sm"
+      size="compact"
       font="mono"
       className={className}
       onFocus={() => draft.setDraft({ isRecording: true })}
@@ -1222,7 +1222,7 @@ function KeybindingTableRow(props: KeybindingRowProps) {
   return (
     <tr
       id={anchorId}
-      className="border-t border-border/70 outline-none first:border-t-0 hover:bg-accent focus-visible:bg-accent"
+      className="border-t border-border/70 outline-none first:border-t-0 hover:bg-hover focus-visible:bg-hover"
     >
       <td className="px-3.5 py-2 align-middle">
         <KeybindingRowTitle row={row} />

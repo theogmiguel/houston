@@ -138,7 +138,7 @@ function WorkflowMemberRow(props: {
                 onClick={() => props.onOpenThread(threadId)}
                 className={cn(
                   className,
-                  "cursor-pointer transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+                  "cursor-pointer transition-colors hover:bg-hover/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
                 )}
               />
             )

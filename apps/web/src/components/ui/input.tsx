@@ -4,7 +4,7 @@ import type * as React from "react";
 import { cn } from "~/lib/utils";
 
 type InputProps = Omit<InputPrimitive.Props & React.RefAttributes<HTMLInputElement>, "size"> & {
-  size?: "sm" | "compact" | "default" | "lg" | number;
+  size?: "compact" | "default" | "lg" | number;
   font?: "default" | "mono";
   unstyled?: boolean;
   nativeInput?: boolean;
@@ -21,7 +21,6 @@ function Input({
   const inputClassName = cn(
     "h-[26px] w-full min-w-0 rounded-[inherit] px-[9px] leading-[26px] outline-none placeholder:text-placeholder [transition:background-color_5000000s_ease-in-out_0s]",
     size === "compact" && "h-[22px] px-2 text-xs leading-[22px]",
-    size === "sm" && "h-[22px] px-2 text-xs leading-[22px]",
     size === "lg" && "h-[30px] px-[11px] leading-[30px]",
     props.type === "search" &&
       "[&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none [&::-webkit-search-results-button]:appearance-none [&::-webkit-search-results-decoration]:appearance-none",

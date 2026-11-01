@@ -168,8 +168,8 @@ function ThemeLibraryCard({
         render={
           <div
             className={cn(
-              "cursor-pointer overflow-hidden rounded-xl border border-border/70 bg-card/60 transition-colors hover:bg-accent/10",
-              isActive && "bg-accent/30",
+              "cursor-pointer overflow-hidden rounded-xl border border-border/70 bg-card/60 transition-colors hover:bg-hover/10",
+              isActive && "bg-hover/30",
             )}
             data-theme-library-card={theme.id}
             onClick={onUse}
@@ -943,7 +943,7 @@ export function ThemeLibrary({
                     const checkboxId = `remove-theme-${customTheme.id}`;
                     return (
                       <label
-                        className="group relative flex min-h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-border/70 bg-muted/25 p-3 has-checked:border-ring has-checked:bg-accent/20 hover:bg-muted/40"
+                        className="group relative flex min-h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-border/70 bg-muted/25 p-3 has-checked:border-ring has-checked:bg-hover/20 hover:bg-muted/40"
                         htmlFor={checkboxId}
                         key={customTheme.id}
                       >

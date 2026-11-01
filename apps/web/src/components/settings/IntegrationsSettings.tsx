@@ -723,7 +723,7 @@ function BrowserSearchEngineSetting() {
           control={
             <DraftInput
               nativeInput
-              size="sm"
+              size="compact"
               className="w-full sm:w-64"
               aria-label="Custom search URL"
               placeholder="https://example.com/search?q=%s"
@@ -1379,7 +1379,7 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
                 ) : (
                   <DraftInput
                     nativeInput
-                    size="sm"
+                    size="compact"
                     className="w-full max-w-56"
                     aria-label={`Rename ${profile.name}`}
                     disabled={profileWritesDisabled || importInFlight}

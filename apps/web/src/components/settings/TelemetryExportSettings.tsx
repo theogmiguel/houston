@@ -201,7 +201,7 @@ function TelemetryExportForm() {
               <div className="flex gap-2">
                 <Input
                   id={key}
-                  size="sm"
+                  size="compact"
                   type="url"
                   pattern="[Hh][Tt][Tt][Pp][Ss]?://.*"
                   title="Enter an HTTP or HTTPS endpoint, or leave empty to disable export."
@@ -222,7 +222,7 @@ function TelemetryExportForm() {
                 {canCheck && (
                   <Button
                     type="button"
-                    size="sm"
+                    size="compact"
                     variant="outline"
                     disabled={!isHttpUrl(url) || checks[key]?.result === null}
                     onClick={() => void checkEndpoint(key, signal, url)}

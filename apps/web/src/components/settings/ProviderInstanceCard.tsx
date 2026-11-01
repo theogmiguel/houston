@@ -291,7 +291,7 @@ function ProviderEnvironmentFieldRow(props: {
           {props.field.sensitive === false ? (
             <DraftInput
               id={inputId}
-              size="sm"
+              size="compact"
               className="min-w-0 flex-1"
               autoComplete="off"
               value={typeof value === "string" ? value : ""}
@@ -302,7 +302,7 @@ function ProviderEnvironmentFieldRow(props: {
           ) : (
             <SecretSourceInput
               id={inputId}
-              size="sm"
+              size="compact"
               className="min-w-0 flex-1"
               value={value}
               onCommit={(next) => props.onCommit(props.field, next)}
@@ -429,7 +429,7 @@ export function ProviderEnvironmentSection(props: {
           {rows.map((variable, index) => {
             const nameInput = (
               <DraftInput
-                size="sm"
+                size="compact"
                 font="mono"
                 className="min-w-0 flex-1"
                 value={variable.name}
@@ -500,7 +500,7 @@ export function ProviderEnvironmentSection(props: {
               <Fragment key={variable.id}>
                 {variable.sensitive ? (
                   <SecretSourceInput
-                    size="sm"
+                    size="compact"
                     font="mono"
                     className="min-w-0 flex-1"
                     value={variable.valueRedacted ? "" : variable.value}
@@ -518,7 +518,7 @@ export function ProviderEnvironmentSection(props: {
                   layout(
                     null,
                     <DraftInput
-                      size="sm"
+                      size="compact"
                       font="mono"
                       className="min-w-0 flex-1"
                       value={
@@ -1218,7 +1218,7 @@ export function ProviderInstanceCard({
               />
               <DraftInput
                 id={`provider-instance-${instanceId}-display-name`}
-                size="sm"
+                size="compact"
                 className="min-w-0 flex-1 @min-[32rem]/settings-row:w-56"
                 value={instance.displayName ?? ""}
                 onCommit={updateDisplayName}

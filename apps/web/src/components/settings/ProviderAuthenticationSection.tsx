@@ -388,7 +388,7 @@ export function ProviderAuthenticationSection({
                 <label key={field.name} className="grid gap-1">
                   {field.label}
                   <Input
-                    size="sm"
+                    size="compact"
                     type={field.secret ? "password" : "text"}
                     autoComplete="off"
                     value={values[field.name] ?? ""}
@@ -428,7 +428,7 @@ export function ProviderAuthenticationSection({
               <label className="grid gap-1">
                 If the final localhost page does not load, paste its full URL here.
                 <Input
-                  size="sm"
+                  size="compact"
                   id={`provider-callback-${instanceId}`}
                   type="url"
                   autoComplete="off"

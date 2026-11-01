@@ -6,7 +6,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "./popover";
 
 /** A grid heading reads as one quiet line: name, then workspace, then empty. */
 export const SIDEBAR_GRID_HEADING_CLS =
-  "group/grid flex h-7 w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg py-0 pr-13 pl-2 text-left text-xs outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "group/grid flex h-(--h-row) w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg py-0 pr-13 pl-2 text-left text-xs outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 export const SIDEBAR_GRID_HEADING_ACTIVE_CLS = "bg-sidebar-row-selected";
 

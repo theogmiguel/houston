@@ -15,7 +15,6 @@ const badgeVariants = cva(
       size: {
         control: "h-6 min-w-6 rounded-[var(--control-radius)] px-2 text-xs",
         default: "h-5 min-w-5 rounded-[var(--r-ctl)] px-1.5",
-        lg: "h-5.5 min-w-5.5 px-1.5 text-xs",
         // Fractional leading rounds font metrics and raises fixed-height labels, especially under zoom.
         sm: "h-4 min-w-4 px-1 text-[0.625rem]",
       },
@@ -24,7 +23,7 @@ const badgeVariants = cva(
         destructive: "bg-destructive text-white [button&,a&]:hover:bg-destructive/90",
         error: "bg-error-surface text-destructive-foreground",
         info: "bg-info/14 text-info-foreground dark:bg-info/18",
-        outline: "border-border bg-card text-foreground [button&,a&]:hover:bg-accent",
+        outline: "border-border bg-card text-foreground [button&,a&]:hover:bg-hover",
         secondary: "bg-secondary text-secondary-foreground [button&,a&]:hover:bg-secondary/90",
         success: "bg-success/14 text-success-foreground dark:bg-success/18",
         warning: "bg-warning-surface text-warning-foreground",

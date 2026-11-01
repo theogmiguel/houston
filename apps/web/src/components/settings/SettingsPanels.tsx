@@ -1568,7 +1568,7 @@ export function ThreadsSettingsPanel() {
         }
         control={
           <DraftInput
-            size="sm"
+            size="compact"
             className="w-full sm:w-72"
             value={mixedAddProjectBaseDirectory ? "" : settings.addProjectBaseDirectory}
             onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}

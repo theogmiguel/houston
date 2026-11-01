@@ -855,7 +855,7 @@ export function ThemeEditorPanel({
       <span className="text-sm font-medium">Theme name</span>
       <Input
         autoFocus
-        size="sm"
+        size="compact"
         onChange={(event) => {
           setName(event.currentTarget.value);
           setError(null);
@@ -921,7 +921,7 @@ export function ThemeEditorPanel({
             className="min-w-0 flex-1"
             onChange={(event) => setRoleQuery(event.currentTarget.value)}
             placeholder="Filter colors"
-            size="sm"
+            size="compact"
             value={roleQuery}
           />
         ) : null}

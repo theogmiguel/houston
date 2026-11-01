@@ -572,7 +572,7 @@ export function AcpSessionManagementSection(props: {
                         </SelectPopup>
                       </Select>
                       <Input
-                        size="sm"
+                        size="compact"
                         type="url"
                         aria-label={`${provider.providerId} base URL`}
                         placeholder="https://api.example.com"
@@ -582,7 +582,7 @@ export function AcpSessionManagementSection(props: {
                       />
                     </div>
                     <Input
-                      size="sm"
+                      size="compact"
                       type="password"
                       aria-label={`${provider.providerId} write-only headers JSON`}
                       placeholder='Write-only headers JSON, e.g. {"Authorization":"Bearer …"}'

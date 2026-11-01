@@ -21,12 +21,11 @@ const selectTriggerVariants = cva(
         default:
           "w-full min-w-36 border-border bg-[var(--field)] text-foreground pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 focus-visible:outline-2 focus-visible:outline-ring aria-invalid:border-destructive [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='text-'])]:text-icon-muted",
         ghost:
-          "border-transparent text-secondary-label focus-visible:outline-2 focus-visible:outline-ring data-pressed:bg-accent [:hover,[data-pressed]]:bg-accent [:hover,[data-pressed]]:text-foreground",
+          "border-transparent text-secondary-label focus-visible:outline-2 focus-visible:outline-ring data-pressed:bg-hover [:hover,[data-pressed]]:bg-hover [:hover,[data-pressed]]:text-foreground",
       },
       size: {
-        compact: "h-7 gap-1 px-2 text-xs",
-        default: "h-7 px-2.5",
-        lg: "h-8 px-3",
+        compact: "h-(--h-ctl) gap-1 px-2 text-xs",
+        default: "h-(--h-ctl) px-2.5",
         sm: "h-6 gap-1.5 px-2 text-xs",
         xs: "h-6 gap-1 px-2 text-xs",
       },
@@ -173,7 +172,7 @@ function SelectItem({
   return (
     <SelectPrimitive.Item
       className={cn(
-        "flex min-h-7 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer items-center rounded-[var(--r-ctl)] px-2 text-[13px] outline-none data-selected:bg-[var(--sel)] data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-[var(--sel)] data-highlighted:text-accent-foreground data-disabled:opacity-64 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "flex min-h-7 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer items-center rounded-[var(--r-ctl)] px-2 text-[13px] outline-none data-selected:bg-[var(--sel)] data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-[var(--sel)] data-highlighted:text-hover-foreground data-disabled:opacity-64 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         className,
       )}
       data-slot="select-item"

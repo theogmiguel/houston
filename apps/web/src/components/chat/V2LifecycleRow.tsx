@@ -289,9 +289,7 @@ function SubagentModelLabel(props: {
   providerInstanceId: ProviderInstanceId;
   model: string | null;
 }) {
-  const providers = useAtomValue(
-    serverEnvironment.providersValueAtom(props.environmentId),
-  );
+  const providers = useAtomValue(serverEnvironment.providersValueAtom(props.environmentId));
   if (props.model === null) return null;
   const provider = providers?.find(
     (candidate) => candidate.instanceId === props.providerInstanceId,
@@ -491,7 +489,7 @@ function SubagentTimelineLink(props: {
               onClick={open}
               className={cn(
                 className,
-                "cursor-pointer transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+                "cursor-pointer transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
               )}
             >
               {content}
@@ -533,9 +531,7 @@ function SubagentTimelineTooltip(
     parent ? scopeProjectRef(environmentId, parent.projectId) : null,
   );
   const childProject = useProject(child ? scopeProjectRef(environmentId, child.projectId) : null);
-  const provider = providers.find(
-    (candidate) => candidate.instanceId === props.providerInstanceId,
-  );
+  const provider = providers.find((candidate) => candidate.instanceId === props.providerInstanceId);
   return (
     <SubagentTooltipContent
       title={formatSubagentDisplayTitle(child?.title ?? props.title)}

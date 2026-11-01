@@ -50,6 +50,33 @@ describe("Houston primitives", () => {
     expect(getComputedStyle(badge).borderRadius).toBe("6px");
   });
 
+  it("maps the hover utility to the neutral hover token in both themes", async () => {
+    await using screen = await render(
+      <div>
+        <div data-testid="hover-utility" className="bg-hover" />
+        <div data-testid="hover-token" style={{ backgroundColor: "var(--hover)" }} />
+      </div>,
+      { router: false },
+    );
+
+    const utility = screen.container.querySelector('[data-testid="hover-utility"]')!;
+    const token = screen.container.querySelector('[data-testid="hover-token"]')!;
+    const root = document.documentElement;
+    root.classList.remove("dark");
+    try {
+      expect(getComputedStyle(utility).backgroundColor).toBe(
+        getComputedStyle(token).backgroundColor,
+      );
+      expect(getComputedStyle(utility).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+      root.classList.add("dark");
+      expect(getComputedStyle(utility).backgroundColor).toBe(
+        getComputedStyle(token).backgroundColor,
+      );
+    } finally {
+      root.classList.remove("dark");
+    }
+  });
+
   it("exposes the board palette on the canonical tokens", () => {
     const root = document.documentElement;
     const read = (name: string) => getComputedStyle(root).getPropertyValue(name).trim();

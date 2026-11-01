@@ -203,7 +203,7 @@ function LicenseHeaderAction({
             onSearchOpenChange(false);
           }}
           placeholder="Search licenses"
-          size="sm"
+          size="compact"
           type="search"
           value={query}
         />
