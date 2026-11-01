@@ -467,6 +467,21 @@ describe("the crew gate", () => {
       const after = yield* crewOf(runId);
       assert.isNotNull(after.find((member) => member.threadId === child.childThreadId)!.endedAt);
       assert.isNull(after.find((member) => member.threadId === general.childThreadId)!.endedAt);
+
+      // Each of the four terminal statuses ends its member and frees its slot (4 live workers).
+      yield* delegate(world, ORCHESTRATOR, worker());
+      let last = yield* delegate(world, ORCHESTRATOR, worker());
+      for (const status of ["completed", "failed", "cancelled", "interrupted"]) {
+        yield* refusedWith(delegate(world, ORCHESTRATOR, worker()), "4 of 4 live workers");
+        world.taskStatuses.set(`${ORCHESTRATOR}|${last.taskId}`, status);
+        yield* (yield* CrewGate.HoustonCrewGate).refresh(runId);
+        const ended = (yield* crewOf(runId)).find(
+          (member) => member.threadId === last.childThreadId,
+        )!;
+        assert.isNotNull(ended.endedAt, `a ${status} task ends its member`);
+        last = yield* delegate(world, ORCHESTRATOR, worker());
+        assert.isNotNull(last.childThreadId, `a ${status} task frees its slot`);
+      }
     }).pipe(Effect.provide(layerService(world)));
   });
 
@@ -502,6 +517,12 @@ describe("the crew gate", () => {
         (member) => member.role === "implementation" && member.endedAt === null,
       );
       assert.lengthOf(live, 4);
+
+      // The caps hold while the run wraps up.
+      assert.isTrue(yield* (yield* Store.HoustonNightShiftStore).markWrappingUp(runId, NOW));
+      const started = world.dispatched.length;
+      yield* refusedWith(delegate(world, ORCHESTRATOR, worker()), "4 of 4 live workers");
+      assert.equal(world.dispatched.length, started, "no child started while wrapping up");
     }).pipe(Effect.provide(layerService(world)));
   });
 
@@ -574,7 +595,7 @@ describe("the crew gate", () => {
   it.effect("a crew thread starts work only through delegate_task", () => {
     const world = freshWorld();
     return Effect.gen(function* () {
-      yield* seedRun(settingsWith());
+      const runId = yield* seedRun(settingsWith());
       const gate = yield* CrewGate.HoustonCrewGate;
       const operations = [
         ["create_threads", CrewGate.STARTS_ONLY_THROUGH_DELEGATION],
@@ -598,6 +619,12 @@ describe("the crew gate", () => {
         // Outside every live run the gate admits the same call unchanged.
         const outside = yield* gate.admit({ callerThreadId: OUTSIDER, operation });
         assert.isUndefined(outside.target);
+      }
+      // A run in its last 45 minutes still gates its crew.
+      assert.isTrue(yield* (yield* Store.HoustonNightShiftStore).markWrappingUp(runId, NOW));
+      for (const [operation, sentence] of operations) {
+        const refusal = yield* Effect.flip(gate.admit({ callerThreadId: ORCHESTRATOR, operation }));
+        assert.include(refusal, sentence, `${operation} while wrapping up`);
       }
 
       // Upstream's own handlers: refused before anything is created, scheduled or deleted.
@@ -768,7 +795,7 @@ describe("the crew gate", () => {
     return Effect.gen(function* () {
       const store = yield* Store.HoustonNightShiftStore;
       const runId = yield* seedRun(
-        settingsWith({ workers: [selection("codex"), selection("claudeAgent")] }),
+        settingsWith({ workers: [selection("codex"), selection("claudeAgent")], liveWorkers: 8 }),
       );
       world.readiness.set("codex", {
         state: "outOfUsage",
@@ -835,6 +862,41 @@ describe("the crew gate", () => {
         "claudeAgent is signedOut",
       );
       assert.equal(world.dispatched.length, before);
+
+      // The run's own limit record: an open limit substitutes even when readiness reads ready.
+      world.readiness.set("codex", { state: "ready" });
+      world.readiness.set("claudeAgent", { state: "ready" });
+      const limit = {
+        instanceId: "codex",
+        state: "outOfUsage",
+        resetsAt: "2026-10-31T01:00:00.000Z",
+        at: NOW,
+        clearedAt: null,
+      };
+      yield* store.setLimited(runId, [limit]);
+      const open = yield* delegate(
+        world,
+        ORCHESTRATOR,
+        worker({ target: { providerInstanceId: ProviderInstanceId.make("codex") } }),
+      );
+      assert.equal(open.providerInstanceId, "claudeAgent", "an open limit substitutes");
+
+      // Once reset clears the limit, the next delegation runs where it asked, with no new message.
+      yield* store.setLimited(runId, [{ ...limit, clearedAt: "2026-10-31T01:00:00.000Z" }]);
+      const cleared = yield* delegate(
+        world,
+        ORCHESTRATOR,
+        worker({ target: { providerInstanceId: ProviderInstanceId.make("codex") } }),
+      );
+      assert.equal(cleared.providerInstanceId, "codex", "a cleared limit no longer substitutes");
+      assert.equal(world.dispatched.at(-1)!.instanceId, "codex");
+      assert.lengthOf(
+        world.notes.filter((note) =>
+          note.messageId.startsWith(`message:night-shift:${runId}:substituted:`),
+        ),
+        1,
+        "no new substituted message",
+      );
     }).pipe(Effect.provide(layerService(world)));
   });
 
