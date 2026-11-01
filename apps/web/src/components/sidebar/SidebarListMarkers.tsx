@@ -63,7 +63,7 @@ export function SidebarSectionPlaceholder(props: {
         <div
           className={cn(
             "absolute inset-x-0 top-0 flex h-9 items-center justify-center rounded-md border border-dashed border-sidebar-foreground/25 text-xs text-sidebar-foreground/80",
-            props.isDropTarget && "border-primary/40 bg-primary/5 text-primary",
+            props.isDropTarget && "border-primary/40 bg-primary/5 text-(--accent-ink)",
           )}
         >
           {props.label}
@@ -90,7 +90,7 @@ export function SidebarDragBoundary(props: {
           <span
             className={cn(
               "shrink-0 text-xs font-medium",
-              props.isDropTarget ? "text-primary" : "text-sidebar-foreground/80",
+              props.isDropTarget ? "text-(--accent-ink)" : "text-sidebar-foreground/80",
             )}
           >
             {props.label}
@@ -136,7 +136,7 @@ export function SidebarShelfHeader(props: {
         className={cn(
           "flex h-7 w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 text-left text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
           props.isDropTarget
-            ? "bg-(--accent-muted) text-primary"
+            ? "bg-(--accent-muted) text-(--accent-ink)"
             : props.dragging
               ? "text-sidebar-foreground/80"
               : "text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-secondary-foreground",

@@ -574,7 +574,7 @@ function ProjectOverrideInheritance({
             />
           }
         >
-          <LayersIcon className="size-3 text-primary" />
+          <LayersIcon className="size-3 text-(--accent-ink)" />
         </TooltipTrigger>
         <TooltipPopup side="top">Overridden for this project</TooltipPopup>
       </Tooltip>
@@ -604,7 +604,7 @@ function ProjectOverrideInheritance({
               >
                 {layer.enabled ? "On" : "Off"}
                 {layer.effective ? (
-                  <CheckIcon aria-hidden className="size-3.5 shrink-0 text-primary" />
+                  <CheckIcon aria-hidden className="size-3.5 shrink-0 text-(--accent-ink)" />
                 ) : (
                   <span aria-hidden className="size-3.5 shrink-0" />
                 )}

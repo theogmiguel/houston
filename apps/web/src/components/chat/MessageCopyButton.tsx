@@ -53,7 +53,7 @@ export const MessageCopyButton = memo(function MessageCopyButton({
         }
       >
         <MorphIcon
-          className={cn("size-3", isCopied && "text-primary")}
+          className={cn("size-3", isCopied && "text-(--accent-ink)")}
           icon={isCopied ? Check : icon}
         />
       </TooltipTrigger>

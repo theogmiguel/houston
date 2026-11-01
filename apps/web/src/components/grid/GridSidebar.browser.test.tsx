@@ -133,13 +133,17 @@ describe("ThreadCard", () => {
   });
 });
 
-function accentColor(): string {
+function tokenColor(token: string): string {
   const probe = document.createElement("span");
-  probe.style.color = "var(--accent-ink)";
+  probe.style.color = `var(${token})`;
   document.body.append(probe);
   const color = getComputedStyle(probe).color;
   probe.remove();
   return color;
+}
+
+function accentColor(): string {
+  return tokenColor("--accent-ink");
 }
 
 describe("ThreadCard status marks", () => {
@@ -168,6 +172,7 @@ describe("ThreadCard status marks", () => {
     for (const dot of dots) {
       expect(getComputedStyle(dot).fill).toBe(accentColor());
     }
+    expect(getComputedStyle(screen.getByText("Running").element()).color).toBe(accentColor());
   });
 
   it("draws the other state marks as stroked outlines, not filled discs", async () => {
@@ -180,5 +185,6 @@ describe("ThreadCard status marks", () => {
     expect(circle).not.toBeNull();
     expect(getComputedStyle(circle!).fill).toBe("none");
     expect(getComputedStyle(circle!).stroke).not.toBe("none");
+    expect(getComputedStyle(circle!).stroke).toBe(tokenColor("--warn-ink"));
   });
 });

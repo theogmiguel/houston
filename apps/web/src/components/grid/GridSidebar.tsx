@@ -95,7 +95,7 @@ import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChro
 import { SidebarRailKbd, SidebarRailNav } from "../sidebar/SidebarRailNav";
 import { useOpenPullRequestCount } from "../pullRequest/useOpenPullRequestCount";
 import { SidebarProviderStack, type SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
-import { StreamingGlyph } from "../chat/TimelineRowParts";
+import { ThreadStateGlyph, threadStateTextClass } from "../ui/thread-state-glyph";
 import {
   EMPTY_PROVIDER_ENTRIES,
   sidebarProviderEntriesAtom,
@@ -1220,14 +1220,10 @@ function ThreadStateMark({
     <span
       className={cn(
         "inline-flex shrink-0 items-center gap-1 text-xs font-medium whitespace-nowrap tabular-nums",
-        state === "running" && "text-primary",
-        state === "ready" && "text-success-foreground",
-        state === "needs" && "text-(--warn-ink)",
-        state === "failed" && "text-error-foreground",
-        state === "back" && "text-secondary-foreground",
+        threadStateTextClass(state),
       )}
     >
-      <StateIcon state={state} />
+      <ThreadStateGlyph state={state} />
       <span>{gridThreadStateLabel(state)}</span>
       {elapsed}
     </span>
@@ -1239,80 +1235,6 @@ function RunningElapsed({ startedAt }: { startedAt: string }) {
   const startedMs = Date.parse(startedAt);
   if (Number.isNaN(startedMs)) return null;
   return <span>{formatWorkingDurationLabel(nowMs - startedMs)}</span>;
-}
-
-function StateIcon({ state }: { state: GridThreadState }) {
-  if (state === "running") {
-    return <StreamingGlyph className="size-3.5" />;
-  }
-  if (state === "ready") {
-    return (
-      <svg
-        aria-hidden
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="size-3.5 shrink-0"
-      >
-        <circle cx="12" cy="12" r="8.5" />
-        <path d="m8.5 12.2 2.4 2.4 4.6-4.8" />
-      </svg>
-    );
-  }
-  if (state === "needs") {
-    return (
-      <svg
-        aria-hidden
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="size-3.5 shrink-0"
-      >
-        <circle cx="12" cy="12" r="8.5" />
-        <path d="M9.8 9.6a2.3 2.3 0 0 1 4.4.9c0 1.6-2.2 1.9-2.2 3.2" />
-        <path d="M12 16.6v.1" />
-      </svg>
-    );
-  }
-  if (state === "failed") {
-    return (
-      <svg
-        aria-hidden
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="size-3.5 shrink-0"
-      >
-        <circle cx="12" cy="12" r="8.5" />
-        <path d="M12 7.8v5" />
-        <path d="M12 16.2v.1" />
-      </svg>
-    );
-  }
-  return (
-    <svg
-      aria-hidden
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-3.5 shrink-0"
-    >
-      <circle cx="12" cy="13" r="7" />
-      <path d="M12 10v3.2l2 1.4M5 5.5 7.5 3.5M19 5.5l-2.5-2" />
-    </svg>
-  );
 }
 
 export function ThreadCard({

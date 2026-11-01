@@ -35,18 +35,14 @@ import {
   CheckIcon,
   CircleAlertIcon,
   CircleCheckIcon,
-  CircleDashedIcon,
   CircleDotDashedIcon,
   ClockIcon,
   GitBranchIcon,
-  MessageCircleQuestionIcon,
   PinIcon,
   PinOffIcon,
-  ShieldQuestionIcon,
   SquarePenIcon,
   TerminalIcon,
   Undo2Icon,
-  UserRoundIcon,
   XIcon,
 } from "lucide-react";
 import {
@@ -105,7 +101,7 @@ import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Si
 import { useThreadShell } from "../../state/entities";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
-import { StreamingGlyph } from "../chat/TimelineRowParts";
+import { ThreadStateGlyph, threadStateTextClass, type ThreadState } from "../ui/thread-state-glyph";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { getTriggerDisplayModelName } from "../chat/providerIconUtils";
@@ -498,22 +494,25 @@ const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
   ),
 };
 
+/** The row's status word. States the canonical vocabulary lacks keep a lucide mark. */
+type TopStatus =
+  | { label: string; state: ThreadState }
+  | { label: string; icon: keyof typeof TOP_STATUS_ICONS; className: string };
+
 const TOP_STATUS_ICONS = {
-  working: CircleDashedIcon,
   waiting: CircleDotDashedIcon,
-  input: MessageCircleQuestionIcon,
-  request: UserRoundIcon,
-  approval: ShieldQuestionIcon,
   failed: CircleAlertIcon,
-  done: CircleCheckIcon,
-  woke: AlarmClockIcon,
 } as const;
 
-function TopStatusIcon(props: { icon: keyof typeof TOP_STATUS_ICONS; className: string }) {
-  if (props.icon === "working") {
-    return <StreamingGlyph className={cn("shrink-0", props.className)} />;
+function topStatusClassName(status: TopStatus): string {
+  return "state" in status ? threadStateTextClass(status.state) : status.className;
+}
+
+function TopStatusIcon(props: { status: TopStatus; className: string }) {
+  if ("state" in props.status) {
+    return <ThreadStateGlyph state={props.status.state} className={props.className} />;
   }
-  const Icon = TOP_STATUS_ICONS[props.icon];
+  const Icon = TOP_STATUS_ICONS[props.status.icon];
   return <Icon aria-hidden className={cn("shrink-0", props.className)} />;
 }
 
@@ -706,57 +705,25 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     isActive: props.isActive,
     isSelected,
   });
-  const topStatus =
+  const topStatus: TopStatus | null =
     status === "working"
-      ? {
-          label: thread.goal?.status === "active" ? "Goal" : "Running",
-          icon: "working" as const,
-          className: "text-info-foreground",
-        }
+      ? { label: thread.goal?.status === "active" ? "Goal" : "Running", state: "running" }
       : status === "waiting"
-        ? {
-            label: "Waiting",
-            icon: "waiting" as const,
-            className: "text-muted-foreground",
-          }
+        ? { label: "Waiting", icon: "waiting", className: "text-secondary-foreground" }
         : status === "approval"
-          ? {
-              label: "Approval",
-              icon: "approval" as const,
-              className: "text-warning-foreground",
-            }
+          ? { label: "Approval", state: "needs" }
           : status === "input"
-            ? {
-                label: "Needs you",
-                icon: "input" as const,
-                className: "text-indigo-600 dark:text-indigo-300",
-              }
+            ? { label: "Needs you", state: "needs" }
             : status === "limited"
-                ? {
-                    label: "Limited",
-                    icon: "failed" as const,
-                    className: "text-warning-foreground",
-                  }
-                : status === "failed"
-                  ? {
-                      label: "Failed",
-                      icon: "failed" as const,
-                      className: "text-error-foreground",
-                    }
-                  : isWoke
-                    ? {
-                        label: "Back",
-                        icon: "woke" as const,
-                        className: "text-warning-foreground",
-                      }
-                    : isUnread
-                      ? {
-                          label: "Ready",
-                          icon: "done" as const,
-                          className: "text-success-foreground",
-                        }
-                      : null;
-  const isWokeStatus = topStatus?.icon === "woke";
+              ? { label: "Limited", icon: "failed", className: "text-(--warn-ink)" }
+              : status === "failed"
+                ? { label: "Failed", state: "failed" }
+                : isWoke
+                  ? { label: "Back", state: "back" }
+                  : isUnread
+                    ? { label: "Ready", state: "ready" }
+                    : null;
+  const isWokeStatus = topStatus !== null && "state" in topStatus && topStatus.state === "back";
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
     effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
@@ -969,7 +936,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     destinationVerb !== null ? (
       <span
         role="status"
-        className="pointer-events-none ml-auto inline-flex h-5 shrink-0 items-center gap-1 rounded-sm border border-primary/40 bg-primary/10 px-1.5 text-2xs font-medium text-primary"
+        className="pointer-events-none ml-auto inline-flex h-5 shrink-0 items-center gap-1 rounded-sm border border-primary/40 bg-primary/10 px-1.5 text-2xs font-medium text-(--accent-ink)"
       >
         {dropVerbBadge[destinationVerb]}
       </span>
@@ -1283,10 +1250,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       <span
                         className={cn(
                           "inline-flex items-center gap-1 text-xs font-medium",
-                          topStatus.className,
+                          topStatusClassName(topStatus),
                         )}
                       >
-                        <TopStatusIcon icon={topStatus.icon} className="size-3" />
+                        <TopStatusIcon status={topStatus} className="size-3" />
                         {topStatus.label}
                       </span>
                     ) : (
@@ -1448,7 +1415,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                                 onClick={handleAcknowledgeWokeClick}
                                 className={cn(
                                   "inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                                  topStatus.className,
+                                  topStatusClassName(topStatus),
                                 )}
                               >
                                 <AlarmClockIcon aria-hidden className="size-4 shrink-0" />
@@ -1462,10 +1429,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         <span
                           className={cn(
                             "inline-flex items-center gap-1 font-medium",
-                            topStatus.className,
+                            topStatusClassName(topStatus),
                           )}
                         >
-                          <TopStatusIcon icon={topStatus.icon} className="size-4" />
+                          <TopStatusIcon status={topStatus} className="size-4" />
                           {/* Not a live region: a collapsed sidebar is inert, so
                             BackgroundThreadAnnouncer and the open thread's
                             timeline speak status changes instead. */}

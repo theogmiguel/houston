@@ -116,7 +116,7 @@ function EmptyDescription({
   return (
     <div
       className={cn(
-        "text-muted-foreground [&>a:hover]:text-primary [&>a]:underline [&>a]:underline-offset-4 [[data-slot=empty-title]+&]:mt-1 [[data-slot=empty-description]+&]:mt-1",
+        "text-muted-foreground [&>a:hover]:text-(--accent-ink) [&>a]:underline [&>a]:underline-offset-4 [[data-slot=empty-title]+&]:mt-1 [[data-slot=empty-description]+&]:mt-1",
         variant === "welcome" ? "text-headline" : "text-sm",
         className,
       )}

@@ -483,7 +483,7 @@ function CommitEvent({
       />
       <div className="flex min-w-0 items-center gap-2.5 py-1.5">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-xs font-semibold text-foreground transition-colors group-hover:text-primary">
+          <div className="truncate text-xs font-semibold text-foreground transition-colors group-hover:text-(--accent-ink)">
             {event.body ?? "Untitled commit"}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-3xs text-muted-foreground">

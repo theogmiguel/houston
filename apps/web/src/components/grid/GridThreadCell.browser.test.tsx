@@ -10,6 +10,7 @@ import { GridThreadCell } from "./GridThreadCell";
 
 const state = vi.hoisted(() => ({
   draftSession: null as unknown,
+  pill: null as unknown,
   archivedSnapshots: [] as unknown[],
   archiveThread: vi.fn(),
 }));
@@ -73,8 +74,7 @@ vi.mock("../../grid/gridStore", () => ({
 }));
 
 vi.mock("../Sidebar.logic", () => ({
-  resolveThreadStatusPill: () => null,
-  resolveSidebarStatusGlyphState: () => "idle",
+  resolveThreadStatusPill: () => state.pill,
 }));
 
 function grid(tree: GridRecord["tree"] = { kind: "thread", threadId: "thread-a", id: "p1" }) {
@@ -374,5 +374,46 @@ describe("GridThreadCell move", () => {
     await userEvent.click(page.getByRole("menuitem", { name: "Swap with Beta thread" }));
 
     expect(onSwapWith).toHaveBeenCalledWith("thread-b");
+  });
+});
+
+describe("GridThreadCell status mark", () => {
+  it("draws the shared needs glyph in the pane label, not a plain dot", async () => {
+    state.draftSession = null;
+    state.pill = { label: "Needs you", state: "needs" };
+    try {
+      await using screen = await renderCell(
+        { kind: "thread", threadId: "thread-a", id: "p1" },
+        twoThreadTree(),
+      );
+
+      const label = screen.container.querySelector("[data-pane-label]");
+      const mark = label?.querySelector('[role="img"][aria-label="Needs you"]');
+      const circle = mark?.querySelector("circle");
+      expect(mark).not.toBeNull();
+      expect(circle).not.toBeNull();
+      expect(getComputedStyle(circle!).fill).toBe("none");
+      expect(getComputedStyle(circle!).stroke).not.toBe("none");
+      expect(label?.querySelector(".rounded-full")).toBeNull();
+    } finally {
+      state.pill = null;
+    }
+  });
+
+  it("draws the shared running glyph in the pane label", async () => {
+    state.draftSession = null;
+    state.pill = { label: "Running", state: "running" };
+    try {
+      await using screen = await renderCell(
+        { kind: "thread", threadId: "thread-a", id: "p1" },
+        twoThreadTree(),
+      );
+
+      const label = screen.container.querySelector("[data-pane-label]");
+      expect(label?.querySelector('[role="img"][aria-label="Running"]')).not.toBeNull();
+      expect(label?.querySelectorAll("[data-streaming-dot]")).toHaveLength(8);
+    } finally {
+      state.pill = null;
+    }
   });
 });

@@ -30,16 +30,14 @@ describe("StreamingGlyph", () => {
   });
 
   it("gives the sidebar working state the same dotted glyph", async () => {
-    await using screen = await render(<SidebarStatusGlyph state="working" />, { router: false });
+    await using screen = await render(<SidebarStatusGlyph state="running" />, { router: false });
 
-    expect(
-      screen.container.querySelector('[role="img"][aria-label="Running"]'),
-    ).not.toBeNull();
+    expect(screen.container.querySelector('[role="img"][aria-label="Running"]')).not.toBeNull();
     expect(screen.container.querySelectorAll("[data-streaming-dot]")).toHaveLength(8);
   });
 
   it("keeps the other sidebar states as their own marks", async () => {
-    await using screen = await render(<SidebarStatusGlyph state="done" />, { router: false });
+    await using screen = await render(<SidebarStatusGlyph state="ready" />, { router: false });
 
     expect(screen.container.querySelector("[data-streaming-glyph]")).toBeNull();
   });

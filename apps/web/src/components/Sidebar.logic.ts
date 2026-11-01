@@ -35,6 +35,7 @@ import {
 } from "@t3tools/client-runtime/state/thread-sort";
 import type { SidebarThreadSummary, Thread } from "../types";
 import { normalizeSearchText } from "../lib/utils";
+import type { ThreadState } from "./ui/thread-state-glyph";
 import { isLatestRunSettled } from "../session-logic";
 import { observeIntersection } from "../lib/observeIntersection";
 import { deadlineAfter, deadlineStore } from "@t3tools/client-runtime/clock";
@@ -631,9 +632,7 @@ export interface ThreadStatusPill {
     | "Needs you"
     | "Waiting"
     | "Plan Ready";
-  colorClass: string;
-  dotClass: string;
-  pulse: boolean;
+  state: ThreadState;
 }
 
 const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
@@ -819,11 +818,7 @@ export function shouldRecedeSidebarThread(input: {
   isActive: boolean;
   isSelected: boolean;
 }): boolean {
-  if (
-    input.isActive ||
-    input.isSelected ||
-    input.status === "input"
-  ) {
+  if (input.isActive || input.isSelected || input.status === "input") {
     return false;
   }
   if (input.status === "working" || input.status === "waiting") return true;
@@ -875,11 +870,7 @@ export function resolveSidebarFolderDot(
   threads: ReadonlyArray<ThreadStatusInput & SidebarThreadStatusInput>,
 ): "attention" | "failed" | "unread" | "working" | null {
   const statuses = new Set(threads.map(resolveSidebarThreadStatus));
-  if (
-    statuses.has("input") ||
-    statuses.has("approval") ||
-    statuses.has("limited")
-  ) {
+  if (statuses.has("input") || statuses.has("approval") || statuses.has("limited")) {
     return "attention";
   }
   if (statuses.has("failed")) return "failed";
@@ -1069,33 +1060,18 @@ export function resolveThreadStatusPill(input: {
   const { thread } = input;
 
   if (thread.hasPendingApprovals || thread.pendingSubagentRequest === "approval") {
-    return {
-      label: "Pending Approval",
-      colorClass: "text-amber-600 dark:text-amber-300/90",
-      dotClass: "bg-amber-500 dark:bg-amber-300/90",
-      pulse: false,
-    };
+    return { label: "Pending Approval", state: "needs" };
   }
 
   if (thread.hasPendingUserInput || thread.pendingSubagentRequest === "user_input") {
-    return {
-      label: "Needs you",
-      colorClass: "text-indigo-600 dark:text-indigo-300/90",
-      dotClass: "bg-indigo-500 dark:bg-indigo-300/90",
-      pulse: false,
-    };
+    return { label: "Needs you", state: "needs" };
   }
 
   if (
     (thread.runtime?.status === "running" && thread.blockedOnThreadWait !== true) ||
     thread.runtime?.status === "waiting"
   ) {
-    return {
-      label: "Running",
-      colorClass: "text-sky-600 dark:text-sky-300/80",
-      dotClass: "bg-sky-500 dark:bg-sky-300/80",
-      pulse: true,
-    };
+    return { label: "Running", state: "running" };
   }
 
   if (
@@ -1103,33 +1079,18 @@ export function resolveThreadStatusPill(input: {
     thread.runtime?.status === "starting" ||
     thread.runtime?.status === "queued"
   ) {
-    return {
-      label: "Connecting",
-      colorClass: "text-sky-600 dark:text-sky-300/80",
-      dotClass: "bg-sky-500 dark:bg-sky-300/80",
-      pulse: true,
-    };
+    return { label: "Connecting", state: "running" };
   }
 
   if (
     (thread.runtime?.status === "running" && thread.blockedOnThreadWait === true) ||
     backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? [])
   ) {
-    return {
-      label: "Waiting",
-      colorClass: "text-sidebar-muted-foreground",
-      dotClass: "bg-sidebar-muted-foreground",
-      pulse: false,
-    };
+    return { label: "Waiting", state: "running" };
   }
 
   if (hasUnseenFailure(thread)) {
-    return {
-      label: "Failed",
-      colorClass: "text-red-600 dark:text-red-300/90",
-      dotClass: "bg-red-500 dark:bg-red-300/90",
-      pulse: false,
-    };
+    return { label: "Failed", state: "failed" };
   }
 
   const hasPlanReadyPrompt =
@@ -1138,21 +1099,11 @@ export function resolveThreadStatusPill(input: {
     isLatestRunSettled(thread.latestRun, thread.runtime) &&
     thread.hasActionableProposedPlan;
   if (hasPlanReadyPrompt) {
-    return {
-      label: "Plan Ready",
-      colorClass: "text-violet-600 dark:text-violet-300/90",
-      dotClass: "bg-violet-500 dark:bg-violet-300/90",
-      pulse: false,
-    };
+    return { label: "Plan Ready", state: "needs" };
   }
 
   if (hasUnseenCompletion(thread)) {
-    return {
-      label: "Ready",
-      colorClass: "text-emerald-600 dark:text-emerald-300/90",
-      dotClass: "bg-emerald-500 dark:bg-emerald-300/90",
-      pulse: false,
-    };
+    return { label: "Ready", state: "ready" };
   }
 
   return null;
@@ -1174,29 +1125,6 @@ export function resolveProjectStatusIndicator(
   }
 
   return highestPriorityStatus;
-}
-
-/** The rail's single status vocabulary: one glyph per state, never a second dot. */
-export type SidebarStatusGlyphState = "working" | "needs" | "done" | "error" | "idle";
-
-export function resolveSidebarStatusGlyphState(
-  status: ThreadStatusPill | null,
-): SidebarStatusGlyphState {
-  if (status === null) return "idle";
-  switch (status.label) {
-    case "Running":
-    case "Connecting":
-    case "Waiting":
-      return "working";
-    case "Pending Approval":
-    case "Needs you":
-    case "Plan Ready":
-      return "needs";
-    case "Ready":
-      return "done";
-    case "Failed":
-      return "error";
-  }
 }
 
 export function getFallbackThreadIdAfterDelete<
