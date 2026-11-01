@@ -1176,6 +1176,60 @@ describe("night shift crew limits, picks and the ledger at start", () => {
     }),
   );
 
+  it.effect("a refused start records no picks, so the next start picks the same tasks", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("picks-refused");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const store = yield* Store.HoustonNightShiftStore;
+          const config = yield* ServerConfig.ServerConfig;
+          const fixture = makeRepository("picks-refused", { kind: "bare" });
+          const projectId = yield* createProject("picks-refused", fixture.root);
+          yield* seedNightShift(projectId, { backlog: { enabled: true, max: 3 } });
+          kit.state.backlog = [
+            upNext(projectId, 7),
+            upNext(projectId, 9),
+            upNext(projectId, 12),
+            upNext(projectId, 13),
+          ];
+          const picksOf = (runId: number) =>
+            Effect.map(store.runEntries(runId), (entries) =>
+              entries.filter((entry) => entry.kind === "pick").map((entry) => entry.task_number),
+            );
+
+          // The brief cannot be written: a file stands where the run folders go.
+          const folders = NodePath.join(config.baseDir, "houston", "night-shift");
+          NodeFS.mkdirSync(NodePath.dirname(folders), { recursive: true });
+          NodeFS.writeFileSync(folders, "not a folder");
+          assert.include(messageOf(yield* Effect.flip(start(projectId))), "writing the brief");
+          NodeFS.rmSync(folders);
+
+          // The orchestrator cannot be launched.
+          kit.state.launchFailure = "the provider could not start a session";
+          assert.include(
+            messageOf(yield* Effect.flip(start(projectId))),
+            "the provider could not start a session",
+          );
+          kit.state.launchFailure = null;
+
+          const refused = yield* store.listRuns(projectId, 30);
+          assert.deepEqual(
+            refused.map((run) => run.phase),
+            ["refused", "refused"],
+          );
+          for (const run of refused) assert.deepEqual(yield* picksOf(run.id), [], "no picks");
+
+          // No crew worked those tasks, so the next start picks them again.
+          const next = yield* start(projectId);
+          assert.deepEqual(yield* picksOf(next.runId), [7, 9, 12]);
+          const brief = yield* runBrief(next.runId);
+          for (const number of [7, 9, 12]) assert.include(brief, `HOU-${number}: Task ${number}`);
+        }),
+      );
+    }),
+  );
+
   it.effect("earlier pull requests get their fate at the next start", () =>
     Effect.gen(function* () {
       const kit = yield* makeKit("fates");
