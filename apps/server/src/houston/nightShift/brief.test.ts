@@ -2,7 +2,7 @@ import { ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
 import { HOUSTON_NIGHT_SHIFT_LIMITS } from "@t3tools/contracts/houston/nightShift";
 import { describe, expect, it } from "vite-plus/test";
 
-import { composeBrief, type BriefInput } from "./brief.ts";
+import { composeBrief, ledgerDigest, type BriefInput, type DigestEntry } from "./brief.ts";
 import { defaultSettings } from "./rules.ts";
 
 const model = (instance: string): ModelSelection => ({
@@ -155,5 +155,56 @@ describe("night shift brief", () => {
     expect(small.dropped).toBe(0);
     expect(small.text).toContain("item 1: a deferral");
     expect(small.text).not.toMatch(/were left out/);
+  });
+
+  it("the next brief remembers the project's earlier runs", () => {
+    const entry = (id: number, patch: Partial<DigestEntry>): DigestEntry => ({
+      id,
+      runId: 1,
+      kind: "lesson",
+      title: `entry ${id}`,
+      status: null,
+      prNumber: null,
+      body: "",
+      choice: null,
+      ...patch,
+    });
+    const run1 = [
+      entry(1, {
+        kind: "deferred",
+        status: "deferred",
+        title: "Rewrite the sync",
+        body: "Too big",
+      }),
+      entry(2, { kind: "deferred", status: "rejected", title: "Drop Windows", body: "Supported" }),
+      entry(3, { kind: "lesson", title: "Use the fake clock", body: "Real timers flake" }),
+      entry(4, { kind: "flaky", title: "ws reconnect test", body: "Times out under load" }),
+      entry(5, { kind: "studied", title: "acme/rival", body: "v2.2.0", competitor: "acme/rival" }),
+      entry(6, { kind: "studied", title: "acme/rival", body: "v2.3.0", competitor: "acme/rival" }),
+      entry(7, { kind: "pr", title: "Retry uploads", prNumber: 41, status: "merged" }),
+      entry(8, { kind: "decision", title: "Keep the importer?", choice: "keep" }),
+      entry(9, { kind: "decision", title: "Unanswered question", choice: null }),
+      entry(10, { kind: "pick", title: "HOU-7: Retry the upload" }),
+    ];
+    const digest = ledgerDigest(run1);
+    expect(digest).toEqual([
+      '- run 1, decision answered "keep": Keep the importer?',
+      "- run 1, pull request #41 (merged): Retry uploads",
+      "- run 1, studied acme/rival: v2.3.0",
+      "- run 1, flaky test: ws reconnect test: Times out under load",
+      "- run 1, lesson: Use the fake clock: Real timers flake",
+      "- run 1, rejected: Drop Windows: Supported",
+      "- run 1, deferred: Rewrite the sync: Too big",
+    ]);
+    const { text } = composeBrief({ ...input, digest });
+    for (const line of digest) expect(text).toContain(line.slice(2));
+    expect(text).not.toContain("v2.2.0");
+    expect(text).not.toContain("Unanswered question");
+    // Another project's run 2 is composed from that project's ledger alone, which is empty.
+    const other = composeBrief({ ...input, digest: ledgerDigest([]) }).text;
+    for (const line of digest) expect(other).not.toContain(line.slice(2));
+    expect(ledgerDigest([entry(1, { kind: "pr", title: "Unread", prNumber: 3 })])).toEqual([
+      "- run 1, pull request #3 (fate unknown): Unread",
+    ]);
   });
 });

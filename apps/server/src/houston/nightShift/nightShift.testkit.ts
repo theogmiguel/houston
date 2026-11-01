@@ -59,13 +59,17 @@ import {
   layerWorkspacePaths,
   layerInstances,
 } from "../tasks/tasks.testkit.ts";
+import * as CrewGate from "./CrewGate.ts";
 import * as NightShiftGit from "./Git.ts";
 import {
+  NightShiftBacklog,
   NightShiftMachine,
   NightShiftMergeQueue,
   NightShiftProviders,
+  NightShiftPullRequests,
   type MachineReadings,
   type ProviderState,
+  type UpNextTask,
 } from "./Host.ts";
 import * as KeepAwake from "./KeepAwake.ts";
 import { defaultSettings } from "./rules.ts";
@@ -143,6 +147,18 @@ export interface KitState {
   readonly settleSteps: Array<string>;
   /** Every HTTP request any layer of the kit sent, GitHub's included. */
   readonly httpRequests: Array<string>;
+  /** Delegated task statuses by `<parent thread>|<task id>`. */
+  readonly taskStatuses: Map<string, string>;
+  /** Each thread's worktree and branch. */
+  readonly workspaces: Map<string, { readonly worktreePath: string; readonly branch: string }>;
+  /** The Tasks backlog in ready order, with each task's text. */
+  backlog: Array<UpNextTask & { readonly text: string }>;
+  /** Task keys whose status was set to done since a pick. */
+  readonly doneSince: Set<string>;
+  /** Pull request states GitHub answers; a missing number fails the read. */
+  readonly pullRequestStates: Map<number, "open" | "closed" | "merged">;
+  /** Each pull request state read, by number. */
+  readonly pullRequestReads: Array<number>;
 }
 
 const READY: ProviderReadiness = { state: "ready" };
@@ -180,6 +196,12 @@ export const freshState = (): KitState => ({
   spawnFailure: null,
   settleSteps: [],
   httpRequests: [],
+  taskStatuses: new Map(),
+  workspaces: new Map(),
+  backlog: [],
+  doneSince: new Set(),
+  pullRequestStates: new Map(),
+  pullRequestReads: [],
 });
 
 const layerRecordingHttp = (state: KitState) =>
@@ -195,8 +217,6 @@ export interface KitOptions {
   readonly databaseFile?: string;
   /** Whether the runner recovers and ticks on its own, as in the server. */
   readonly serverRunner?: boolean;
-  /** Whether starts are enabled as they will be once the crew gate exists; on by default. */
-  readonly crewGate?: boolean;
 }
 
 export const makeKit = Effect.fn("NightShiftKit.make")(function* (
@@ -283,6 +303,13 @@ const layerThreads = (state: KitState) => {
             text: input.text,
           });
         }),
+      taskStatus: (parentThreadId, taskId) =>
+        Effect.sync(() => state.taskStatuses.get(`${parentThreadId}|${taskId}`) ?? null),
+      workspace: (threadId) =>
+        Effect.sync(() => {
+          const known = state.workspaces.get(threadId);
+          return { worktreePath: known?.worktreePath ?? null, branch: known?.branch ?? null };
+        }),
       state: (threadId) =>
         Effect.flatMap(Clock.currentTimeMillis, (nowMs) =>
           Effect.sync(() => {
@@ -322,6 +349,29 @@ const layerHostDoubles = (state: KitState) =>
     Layer.succeed(
       NightShiftMergeQueue,
       NightShiftMergeQueue.of({ verificationCommand: () => Effect.sync(() => state.verification) }),
+    ),
+    Layer.succeed(
+      NightShiftBacklog,
+      NightShiftBacklog.of({
+        tasks: (projectId) =>
+          Effect.sync(() => state.backlog.filter((task) => task.projectId === projectId)),
+        text: (key) =>
+          Effect.sync(() => state.backlog.find((task) => task.key === key)?.text ?? ""),
+        doneSince: (key) => Effect.sync(() => state.doneSince.has(key)),
+      }),
+    ),
+    Layer.succeed(
+      NightShiftPullRequests,
+      NightShiftPullRequests.of({
+        state: (_projectId, _root, number) =>
+          Effect.suspend(() => {
+            state.pullRequestReads.push(number);
+            const known = state.pullRequestStates.get(number);
+            return known === undefined
+              ? Effect.fail(`GitHub could not be read for #${number}`)
+              : Effect.succeed(known);
+          }),
+      }),
     ),
   );
 
@@ -414,9 +464,10 @@ export const layerKit = (kit: Kit) => {
     Layer.succeed(Runner.SettleObserver, (step: string) => {
       state.settleSteps.push(step);
     }),
-    Layer.succeed(Runner.CrewGatePresent, kit.options.crewGate ?? true),
   );
+  // The server's crew gate over the kit's store, readiness and threads.
   const runner = (kit.options.serverRunner === true ? Runner.layer : Runner.layerManual).pipe(
+    Layer.provideMerge(CrewGate.layer),
     Layer.provideMerge(ports),
   );
   const nightShift = layerClaim.pipe(Layer.provideMerge(runner));
@@ -661,4 +712,4 @@ export const sql = SqlClient.SqlClient;
 export const kindOf = (error: unknown) => (error as { readonly kind?: string }).kind;
 export const messageOf = (error: unknown) => (error as { readonly message?: string }).message ?? "";
 
-export { Runner, Service, Store };
+export { CrewGate, Runner, Service, Store };

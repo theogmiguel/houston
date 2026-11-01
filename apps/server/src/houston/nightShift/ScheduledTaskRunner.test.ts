@@ -4,12 +4,14 @@ import * as NodeFS from "node:fs";
 import { assert, describe, it } from "@effect/vitest";
 import type { ScheduledTask } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import { TestClock } from "effect/testing";
 
 import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
 import {
   awaitTask,
   createProject,
+  CrewGate,
   fireDue,
   kindOf,
   localClock,
@@ -329,6 +331,16 @@ describe("startup", () => {
       // Upstream's scheduled-task tests build the service without the hook and claim nothing.
       const upstreamTest = source("../../scheduledTasks/ScheduledTaskService.test.ts");
       assert.notInclude(upstreamTest, "HoustonScheduledTaskRunner");
+      // One crew gate, in the runner's layer the runtime builds once; the kit builds the same.
+      const nightLayer = source("./layer.ts");
+      assert.equal(count(nightLayer, "CrewGate.layer"), 1, "the server's layer provides the gate");
+      assert.include(kitSource, "CrewGate.layer");
+      // Upstream's orchestrator MCP tests run with the default gate, which admits everything.
+      assert.notInclude(source("../../mcp/OrchestratorMcpService.test.ts"), "HoustonCrewGate");
+      assert.strictEqual(
+        yield* CrewGate.HoustonCrewGate.pipe(Effect.provide(Layer.empty)),
+        CrewGate.allowAll,
+      );
 
       const kit = yield* makeKit("startup-claim");
       yield* runKit(
@@ -336,6 +348,11 @@ describe("startup", () => {
         Effect.gen(function* () {
           const night = yield* service;
           const store = yield* Store.HoustonNightShiftStore;
+          assert.notStrictEqual(
+            yield* CrewGate.HoustonCrewGate,
+            CrewGate.allowAll,
+            "the kit's gate",
+          );
           const fixture = makeRepository("startup", { kind: "bare" });
           const projectId = yield* createProject("startup", fixture.root);
           yield* seedNightShift(projectId);
