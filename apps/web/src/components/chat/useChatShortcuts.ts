@@ -11,7 +11,10 @@ import { isInSideChatPane } from "../../lib/sideChatPane";
 import { getTerminalFocusOwner, type TerminalFocusOwner } from "../../lib/terminalFocus";
 import type { ComposerHandleRef } from "../../composerHandleContext";
 import type { BranchToolbarHandle } from "../BranchToolbar";
-import { shouldTypeToFocusComposer } from "./composerFocusRedirect";
+import {
+  shouldTypeToFocusComposer,
+  TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR,
+} from "./composerFocusRedirect";
 import { composerShortcutCommands } from "./composerShortcuts";
 
 /** Returning false lets the key event through untouched. */
@@ -68,6 +71,14 @@ export function useChatShortcuts(input: ChatShortcutsInput) {
     const terminalFocusOwner = getTerminalFocusOwner();
     if (event.defaultPrevented && terminalFocusOwner === null) return;
     const shortcutContext = input.getShortcutContext(event.target);
+    // Escape closes an open menu or popover before it reaches a shortcut such as Stop.
+    if (
+      event.key === "Escape" &&
+      (shortcutContext.composerMenuOpen ||
+        document.querySelector(TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR) !== null)
+    ) {
+      return;
+    }
 
     if (
       !shortcutContext.terminalFocus &&

@@ -16,6 +16,7 @@ const shortcutContext = {
   isWeb: true,
   isDesktop: false,
   modelPickerOpen: false,
+  composerMenuOpen: false,
 };
 
 const focusOnMount = (element: HTMLElement | null) => element?.focus();
@@ -182,6 +183,66 @@ function SideChat(props: { toggles: string[]; stops: string[] }) {
     </>
   );
 }
+
+const escapeStopKeybindings: ResolvedKeybindingsConfig = [
+  {
+    command: "thread.stop",
+    shortcut: {
+      key: "escape",
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      modKey: false,
+    },
+  },
+];
+
+function StopChat(props: { stops: string[]; composerMenuOpen?: boolean; floatingLayer?: boolean }) {
+  useChatShortcuts({
+    enabled: true,
+    keybindings: escapeStopKeybindings,
+    scriptKeybindings: [],
+    getShortcutContext: () => ({
+      ...shortcutContext,
+      composerMenuOpen: props.composerMenuOpen === true,
+    }),
+    threadFindActive: false,
+    composerRef: { current: null },
+    branchToolbarRef: { current: null },
+    closeThreadFind: () => {},
+    commands: { "thread.stop": () => void props.stops.push("stop") },
+    fallback: () => undefined,
+  });
+  return props.floatingLayer ? <div data-slot="menu-popup" data-open /> : null;
+}
+
+it("stops the running thread on Escape", async () => {
+  const stops: string[] = [];
+  await using _screen = await render(<StopChat stops={stops} />, options);
+
+  await userEvent.keyboard("{Escape}");
+
+  expect(stops).toEqual(["stop"]);
+});
+
+it("leaves Escape to an open composer menu instead of stopping the thread", async () => {
+  const stops: string[] = [];
+  await using _screen = await render(<StopChat stops={stops} composerMenuOpen />, options);
+
+  await userEvent.keyboard("{Escape}");
+
+  expect(stops).toEqual([]);
+});
+
+it("leaves Escape to an open popover instead of stopping the thread", async () => {
+  const stops: string[] = [];
+  await using _screen = await render(<StopChat stops={stops} floatingLayer />, options);
+
+  await userEvent.keyboard("{Escape}");
+
+  expect(stops).toEqual([]);
+});
 
 it("runs a side chat's composer chords only from its composer, and never thread commands", async () => {
   const toggles: string[] = [];
