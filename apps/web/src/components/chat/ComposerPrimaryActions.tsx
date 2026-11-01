@@ -1,5 +1,13 @@
 import { memo, type MouseEventHandler, type PointerEventHandler } from "react";
-import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, Minimize2Icon, PlayIcon } from "lucide-react";
+import {
+  ArrowUpIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  Minimize2Icon,
+  PlayIcon,
+  SquareIcon,
+} from "lucide-react";
 import { CornerUpRight, ListPlus } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
 import { formatContextWindowTokens } from "~/lib/contextWindow";
@@ -58,7 +66,7 @@ const formatPendingPrimaryActionLabel = (input: {
   questionIndex: number;
 }) => {
   if (input.isResponding) {
-    return "Submitting...";
+    return "Submitting…";
   }
   if (input.compact) {
     return input.isLastQuestion ? "Submit" : "Next";
@@ -199,9 +207,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           />
         }
       >
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-          <rect x="2" y="2" width="8" height="8" rx="1.5" />
-        </svg>
+        <SquareIcon aria-hidden="true" fill="currentColor" stroke="none" />
       </TooltipTrigger>
       <TooltipPopup>Interrupt</TooltipPopup>
     </Tooltip>
@@ -266,7 +272,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           {...pointerFocusProps}
           disabled={isSendBusy || isSendDisabled || isEnvironmentUnavailable}
         >
-          {isSendBusy ? "Sending..." : "Refine"}
+          {isSendBusy ? "Sending…" : "Refine"}
         </button>
       );
     }
@@ -279,7 +285,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           {...pointerFocusProps}
           disabled={isSendBusy || isSendDisabled || isEnvironmentUnavailable}
         >
-          {isSendBusy ? "Sending..." : "Implement"}
+          {isSendBusy ? "Sending…" : "Implement"}
         </button>
         <Menu>
           <MenuTrigger
@@ -385,15 +391,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       ) : isRunning ? (
         <MorphIcon className="size-4" icon={isQueuing ? ListPlus : CornerUpRight} />
       ) : (
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-          <path
-            d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        <ArrowUpIcon aria-hidden="true" strokeWidth="1.8" />
       )}
     </button>
   );

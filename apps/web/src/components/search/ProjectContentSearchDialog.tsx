@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 
 import { useActiveProjectTarget, type ActiveProjectTarget } from "~/hooks/useActiveProjectTarget";
 import { useRenderedAppearance, useTheme } from "~/hooks/useTheme";
+import { observeIntersection } from "~/lib/observeIntersection";
 import { cn } from "~/lib/utils";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { useProjectContentSearch } from "~/state/queries";
@@ -140,13 +141,11 @@ function OpenContentSearchDialog(props: {
 
   const observeLoadMoreSentinel = (sentinel: HTMLElement | null) => {
     if (!sentinel) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
+    return observeIntersection(sentinel, (entry) => {
+      if (entry.isIntersecting) {
         setVisibleCount((current) => current + VISIBLE_MATCH_WINDOW);
       }
     });
-    observer.observe(sentinel);
-    return () => observer.disconnect();
   };
 
   const openMatch = (match: ProjectContentMatch) => {

@@ -1,4 +1,5 @@
 /* oxlint-disable react/no-array-index-key -- A page keeps its ordinal throughout incremental layout. */
+import { observeIntersection } from "~/lib/observeIntersection";
 import { observeResize } from "~/lib/observeResize";
 import {
   useEffect,
@@ -149,12 +150,10 @@ function OfficePage(props: {
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observe the page's viewport proximity to limit painting and text layers to nearby pages.
   useEffect(() => {
     if (!row.current) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setNear(entry?.isIntersecting ?? false),
-      { root: root.current, rootMargin: "100% 0px" },
-    );
-    observer.observe(row.current);
-    return () => observer.disconnect();
+    return observeIntersection(row.current, (entry) => setNear(entry.isIntersecting), {
+      root: root.current,
+      rootMargin: "100% 0px",
+    });
   }, [root]);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Subscribe to display density changes so canvas rasters match the current screen.
   useEffect(() => {

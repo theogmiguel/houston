@@ -1108,7 +1108,11 @@ const ConversationTimeline = memo(function ConversationTimeline({
       )
     ) : (
       <div className="messages-timeline-row-frame">
-        <div className={parentThreadLink.sideChat ? "chat-content-lane pt-1 sm:pt-2" : "chat-content-lane"}>
+        <div
+          className={
+            parentThreadLink.sideChat ? "chat-content-lane pt-1 sm:pt-2" : "chat-content-lane"
+          }
+        >
           {parentThreadLink.sideChat ? (
             <TimelineSystemDivider
               label="Context from"
@@ -1383,7 +1387,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
                 navigateTimeline();
                 void listRef.current?.scrollToIndex({
                   index: item.rowIndex,
-                  animated: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+                  animated: !prefersReducedMotion,
                   viewOffset: 24,
                 });
               }}

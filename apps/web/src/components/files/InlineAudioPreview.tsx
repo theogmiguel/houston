@@ -2,6 +2,7 @@ import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
 import { useEffect, useRef, useState } from "react";
 
 import { useAssetUrlState } from "~/assets/assetUrls";
+import { observeIntersection } from "~/lib/observeIntersection";
 
 import { AudioPreview } from "./AudioPreview";
 
@@ -28,14 +29,13 @@ export function InlineAudioPreview(props: {
   useEffect(() => {
     const element = container.current;
     if (!element) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        setVisible(true);
-        observer.disconnect();
-      }
+    let stop = () => {};
+    stop = observeIntersection(element, (entry) => {
+      if (!entry.isIntersecting) return;
+      setVisible(true);
+      stop();
     });
-    observer.observe(element);
-    return () => observer.disconnect();
+    return () => stop();
   }, []);
 
   return (

@@ -1,8 +1,8 @@
 import { CheckIcon, FolderIcon, PlusIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 
 import { cn } from "~/lib/utils";
-import { Popover, PopoverPopup, PopoverTrigger } from "./popover";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "./menu";
 
 /** A grid heading reads as one quiet line: name, then workspace, then empty. */
 export const SIDEBAR_GRID_HEADING_CLS =
@@ -35,13 +35,10 @@ export const SIDEBAR_GRID_ACTION_CLS =
 export const SIDEBAR_GRID_RENAME_CLS =
   "h-7 min-w-0 flex-1 rounded-(--r-ctl) border border-input bg-background px-2 text-xs font-semibold text-foreground outline-none focus:border-ring focus-visible:ring-2 focus-visible:ring-ring";
 
-export const SIDEBAR_SECTION_ADD_CLS =
-  "-my-1.5 inline-grid size-6 shrink-0 cursor-pointer place-items-center rounded-(--control-radius) text-secondary-label transition-colors outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+export const SIDEBAR_SECTION_ACTION_CLS =
+  "-my-1.5 inline-grid size-6 shrink-0 cursor-pointer place-items-center rounded-(--r-ctl) text-secondary-label transition-colors outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
-export const SIDEBAR_SECTION_MENU_CLS =
-  "-my-1.5 inline-grid size-6 shrink-0 cursor-pointer place-items-center rounded-(--control-radius) text-secondary-label transition-colors outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
-
-export const SIDEBAR_NEW_GRID_POPOVER_CLS = "w-58 p-1.5";
+export const SIDEBAR_NEW_GRID_POPOVER_CLS = "w-58 [&>div]:p-1.5";
 
 const SIDEBAR_NEW_GRID_TITLE_CLS = "px-2 pt-1 pb-1.5 text-2xs font-semibold text-secondary-label";
 
@@ -53,8 +50,6 @@ const SIDEBAR_NEW_GRID_ROW_SELECTED_CLS = "bg-sidebar-row-selected text-sidebar-
 const SIDEBAR_NEW_GRID_ICON_CLS = "size-3.5 shrink-0 text-secondary-label";
 
 const SIDEBAR_NEW_GRID_CHECK_CLS = "ml-auto size-3.5 shrink-0 text-sidebar-foreground";
-
-const SIDEBAR_NEW_GRID_DIVIDER_CLS = "my-1.5 border-0 border-t border-sidebar-border";
 
 export interface SidebarNewGridWorkspace {
   readonly key: string;
@@ -78,29 +73,41 @@ export function SidebarNewGridMenu({
 }) {
   const [open, setOpen] = useState(false);
   const selected = workspaces.find((workspace) => workspace.key === selectedKey) ?? workspaces[0];
-  const selectedRef = useRef<HTMLButtonElement>(null);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        render={<button type="button" aria-label="New grid" className={SIDEBAR_SECTION_ADD_CLS} />}
+    <Menu open={open} onOpenChange={setOpen}>
+      <MenuTrigger
+        render={
+          <button type="button" aria-label="New grid" className={SIDEBAR_SECTION_ACTION_CLS} />
+        }
       >
         <PlusIcon aria-hidden className="size-[15px]" />
-      </PopoverTrigger>
-      <PopoverPopup
-        side="bottom"
+      </MenuTrigger>
+      <MenuPopup
         align="end"
-        padding="none"
+        side="bottom"
+        width="content"
         className={SIDEBAR_NEW_GRID_POPOVER_CLS}
-        initialFocus={selected === undefined ? true : selectedRef}
+        onKeyDown={(event) => {
+          // The menu opens with no item highlighted; Enter keeps creating in the preselected
+          // workspace, as the row-focused popover did, until the user moves the highlight.
+          if (
+            (event.key !== "Enter" && event.key !== " ") ||
+            event.currentTarget.querySelector("[data-highlighted]") !== null
+          ) {
+            return;
+          }
+          event.preventDefault();
+          setOpen(false);
+          if (selected) onSelect(selected.key);
+          else onOpenFolder();
+        }}
       >
         <div className={SIDEBAR_NEW_GRID_TITLE_CLS}>New grid in</div>
         {workspaces.map((workspace) => {
           const isSelected = workspace.key === selected?.key;
           return (
-            <button
+            <MenuItem
               key={workspace.key}
-              ref={isSelected ? selectedRef : undefined}
-              type="button"
               data-selected={isSelected ? "" : undefined}
               onClick={() => {
                 setOpen(false);
@@ -114,12 +121,11 @@ export function SidebarNewGridMenu({
               <FolderIcon aria-hidden className={SIDEBAR_NEW_GRID_ICON_CLS} />
               <span className="min-w-0 flex-1 truncate">{workspace.label}</span>
               {isSelected ? <CheckIcon aria-hidden className={SIDEBAR_NEW_GRID_CHECK_CLS} /> : null}
-            </button>
+            </MenuItem>
           );
         })}
-        {workspaces.length > 0 ? <hr className={SIDEBAR_NEW_GRID_DIVIDER_CLS} /> : null}
-        <button
-          type="button"
+        {workspaces.length > 0 ? <MenuSeparator className="my-1.5 bg-sidebar-border" /> : null}
+        <MenuItem
           onClick={() => {
             setOpen(false);
             onOpenFolder();
@@ -128,8 +134,8 @@ export function SidebarNewGridMenu({
         >
           <PlusIcon aria-hidden className={SIDEBAR_NEW_GRID_ICON_CLS} />
           <span className="min-w-0 flex-1 truncate">Open folder…</span>
-        </button>
-      </PopoverPopup>
-    </Popover>
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
   );
 }

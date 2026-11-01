@@ -5,6 +5,7 @@ import type { Root, RootContent } from "mdast";
 import ChatMarkdown from "~/components/ChatMarkdown";
 import { Button } from "~/components/ui/button";
 import ReadOnlySourcePreview from "./ReadOnlySourcePreview";
+import { observeIntersection } from "~/lib/observeIntersection";
 import DocumentPages from "./DocumentPages";
 import { FileSurfaceNotice } from "./fileSurfaceChrome";
 import type { OfficeWorkerResult } from "./officePreviewProtocol";
@@ -63,34 +64,39 @@ export default function NotebookPreview(props: {
     if (!root || !outputCount) return;
     const candidates = new Map<Element, string>();
     let active: Element[] = [];
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
+    const update = () => {
+      // Bound browsing contexts even when a cell contains hundreds of tiny HTML outputs.
+      const next = [...candidates.keys()].slice(0, 16);
+      const measured = active
+        .filter((node) => !next.includes(node))
+        .map(
+          (node) =>
+            [
+              (node as HTMLElement).dataset.notebookOutput!,
+              node.getBoundingClientRect().height,
+            ] as const,
+        );
+      active = next;
+      setOutputView((old) => ({
+        mounted: new Set(next.map((node) => candidates.get(node)!)),
+        heights: new Map([...old.heights, ...measured]),
+      }));
+    };
+    const stops = [...root.querySelectorAll("[data-notebook-output]")].map((node) =>
+      observeIntersection(
+        node,
+        (entry) => {
           if (entry.isIntersecting)
             candidates.set(entry.target, (entry.target as HTMLElement).dataset.notebookOutput!);
           else candidates.delete(entry.target);
-        }
-        // Bound browsing contexts even when a cell contains hundreds of tiny HTML outputs.
-        const next = [...candidates.keys()].slice(0, 16);
-        const measured = active
-          .filter((node) => !next.includes(node))
-          .map(
-            (node) =>
-              [
-                (node as HTMLElement).dataset.notebookOutput!,
-                node.getBoundingClientRect().height,
-              ] as const,
-          );
-        active = next;
-        setOutputView((old) => ({
-          mounted: new Set(next.map((node) => candidates.get(node)!)),
-          heights: new Map([...old.heights, ...measured]),
-        }));
-      },
-      { root, rootMargin: "160px" },
+          update();
+        },
+        { root, rootMargin: "160px" },
+      ),
     );
-    for (const node of root.querySelectorAll("[data-notebook-output]")) observer.observe(node);
-    return () => observer.disconnect();
+    return () => {
+      for (const stop of stops) stop();
+    };
   }, [outputCount]);
   return (
     <>

@@ -184,7 +184,7 @@
 18 apps/web/src/components/files/FileBrowserPanel.tsx
 3 apps/web/src/components/files/FileExplorerPane.tsx
 46 apps/web/src/components/files/FilePreviewPanel.tsx
-15 apps/web/src/components/files/fileSurfaceChrome.tsx
+13 apps/web/src/components/files/fileSurfaceChrome.tsx
 7 apps/web/src/components/files/FontViewer.tsx
 8 apps/web/src/components/files/LargeTextViewer.tsx
 3 apps/web/src/components/files/MermaidViewer.tsx

@@ -41,7 +41,7 @@ import {
   useState,
 } from "react";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
-import { Button } from "~/components/ui/button";
+import { Button, InlineButton } from "~/components/ui/button";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { readTextFromClipboard, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
@@ -1206,9 +1206,15 @@ function TerminalActionButton({
       <PopoverTrigger
         openOnHover
         render={
-          <button
+          <Button
             type="button"
-            className={cn(className, disabled && "opacity-64 cursor-not-allowed")}
+            size="icon-micro"
+            variant="ghost"
+            className={cn(
+              "size-auto rounded-sm p-1 [&_svg]:mx-0",
+              className,
+              disabled && "opacity-64 cursor-not-allowed",
+            )}
             onClick={disabled ? undefined : onClick}
             aria-label={label}
             aria-disabled={disabled}
@@ -1354,9 +1360,11 @@ function TerminalSidebarGroup({
   return (
     <div className="pb-0.5">
       {showHeader && (
-        <button
+        <Button
           type="button"
-          className={`flex h-[22px] w-full cursor-pointer items-center gap-1 rounded px-1.5 text-2xs ${
+          size="sm"
+          variant="ghost"
+          className={`h-[22px] w-full justify-start gap-1 rounded px-1.5 !font-normal text-2xs ${
             isGroupActive
               ? "bg-hover/50 text-foreground"
               : "text-muted-foreground hover:bg-hover/40 hover:text-foreground"
@@ -1366,7 +1374,7 @@ function TerminalSidebarGroup({
           <GroupIcon className="size-3 shrink-0" />
           <span className="min-w-0 flex-1 truncate text-left">{groupLabel}</span>
           <span className="text-muted-foreground/70 text-3xs tabular-nums">{terminalCount}</span>
-        </button>
+        </Button>
       )}
 
       <div className="flex flex-col gap-0.5">
@@ -1397,13 +1405,14 @@ function TerminalSidebarGroup({
               ) : (
                 <TerminalSquare className="size-3 shrink-0" />
               )}
-              <button
+              <InlineButton
                 type="button"
-                className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
+                tone="muted"
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left !font-normal hover:text-foreground hover:no-underline"
                 onClick={() => onActiveTerminalChange(terminalId)}
               >
                 <span className="truncate">{terminalLabel}</span>
-              </button>
+              </InlineButton>
             </div>
           );
         })}

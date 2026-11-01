@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { cn } from "../../lib/utils";
+import { InlineButton } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 const REDACTED_TEXT_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
@@ -41,10 +42,11 @@ export function RedactedSensitiveText(props: {
     <Tooltip>
       <TooltipTrigger
         render={
-          <button
+          <InlineButton
             type="button"
+            tone="muted"
             className={cn(
-              "min-w-0 cursor-pointer rounded-sm font-mono text-2xs leading-normal transition hover:text-foreground",
+              "min-w-0 cursor-pointer rounded-sm font-mono !font-normal text-2xs leading-normal transition hover:text-foreground hover:no-underline",
               revealed ? "text-muted-foreground" : "select-none text-muted-foreground blur-xs",
               props.className,
             )}
@@ -52,7 +54,7 @@ export function RedactedSensitiveText(props: {
             aria-label={props.ariaLabel}
           >
             {revealed ? value : redacted}
-          </button>
+          </InlineButton>
         }
       />
       <TooltipPopup side="top">{revealed ? props.hideTooltip : props.revealTooltip}</TooltipPopup>

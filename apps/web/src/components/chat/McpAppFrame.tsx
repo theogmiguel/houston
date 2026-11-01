@@ -26,6 +26,7 @@ import { useLongLivedAssetUrl } from "~/assets/longLivedAssetUrls";
 import { APP_VERSION } from "~/branding";
 import { isConfirmDialogActive, requestConfirmDialog } from "~/confirmDialog";
 import { useHtmlRenderTheme } from "~/hooks/useHtmlRenderTheme";
+import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { Button } from "~/components/ui/button";
 import { isElectron } from "~/env";
@@ -88,6 +89,8 @@ export function McpAppFrame(props: {
 }) {
   const { app } = props;
   const theme = useHtmlRenderTheme();
+  const pointerCoarse = useMediaQuery({ pointer: "coarse" });
+  const hoverCapable = useMediaQuery("(hover: hover)");
   const frameRef = useRef<HTMLIFrameElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -168,6 +171,8 @@ export function McpAppFrame(props: {
     updateModelContext,
     displayMode,
     toolDefinition,
+    pointerCoarse,
+    hoverCapable,
   }));
   const hostRef = useRef<McpAppHost | null>(null);
 
@@ -239,8 +244,8 @@ export function McpAppFrame(props: {
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         userAgent: `t3-code/${APP_VERSION}`,
         deviceCapabilities: {
-          touch: window.matchMedia("(pointer: coarse)").matches,
-          hover: window.matchMedia("(hover: hover)").matches,
+          touch: current.pointerCoarse,
+          hover: current.hoverCapable,
         },
         safeAreaInsets: { top: 0, right: 0, bottom: 0, left: 0 },
         ...(current.toolDefinition === undefined

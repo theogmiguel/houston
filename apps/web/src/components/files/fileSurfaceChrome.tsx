@@ -139,13 +139,15 @@ export function FileSurfaceFailure(props: {
     >
       <p className="text-destructive">{props.message}</p>
       {props.onRetry ? (
-        <button
+        <Button
           type="button"
+          size="sm"
+          variant="ghost"
           onClick={props.onRetry}
-          className="rounded-md border border-input px-2.5 py-1 text-xs text-foreground hover:bg-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          className="h-auto rounded-md border-input px-2.5 py-1 text-foreground"
         >
           Try again
-        </button>
+        </Button>
       ) : null}
     </div>
   );
