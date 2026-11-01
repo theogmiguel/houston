@@ -153,7 +153,7 @@ export function ThreadAutomationsPanel(props: {
         {boundTasks.map((task) => (
           <li
             key={task.id}
-            className="group flex min-h-7 items-center gap-2 rounded-md px-2 py-0.5 hover:bg-accent"
+            className="group flex min-h-7 items-center gap-2 rounded-md px-2 py-0.5 hover:bg-[var(--hover)]"
           >
             <span
               className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT_CLASS[task.lastRunStatus])}
@@ -214,6 +214,7 @@ export function ThreadAutomationsPanel(props: {
               )}
             </span>
             <Switch
+              size="sm"
               checked={task.enabled}
               disabled={!canOperate || busyTaskId !== null}
               aria-label={task.enabled ? `Pause ${task.title}` : `Resume ${task.title}`}

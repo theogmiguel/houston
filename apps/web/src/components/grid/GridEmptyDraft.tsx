@@ -1,5 +1,5 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 
 import ChatView from "../ChatView";
 import { type DraftId, useComposerDraftStore } from "../../composerDraftStore";
@@ -16,9 +16,12 @@ interface EmptyDraftState {
 /** An empty grid's composer: the draft has no pane head and no timeline. */
 export function GridEmptyDraft({
   grid,
+  threadDetailsAnchor,
   onDraftChange,
 }: {
   grid: GridRecord;
+  /** Anchors the draft's popover details card under the top bar control. */
+  threadDetailsAnchor?: RefObject<Element | null>;
   onDraftChange?: (draft: { threadId: ThreadId } | null) => void;
 }) {
   const handleNewThread = useNewThreadHandler();
@@ -75,6 +78,7 @@ export function GridEmptyDraft({
         threadId={draft.threadId}
         routeKind="draft"
         draftId={draft.draftId}
+        {...(threadDetailsAnchor ? { detailsCardAnchor: threadDetailsAnchor } : {})}
       />
     </div>
   );

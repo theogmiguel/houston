@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { RefObject } from "react";
 
 import { findThread } from "../../grid/tree";
 import type { GridRecord } from "../../grid/gridStore";
@@ -15,10 +16,13 @@ import { GridLayoutMenu } from "./GridLayoutMenu";
 export function GridTopBarControls({
   grid,
   emptyDraftThreadId = null,
+  threadPanelAnchorRef,
 }: {
   grid: GridRecord;
   /** The centred composer of an empty grid has no tree leaf yet. */
   emptyDraftThreadId?: string | null;
+  /** Anchors the focused cell's popover details card under the top bar control. */
+  threadPanelAnchorRef?: RefObject<HTMLElement | null>;
 }) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const focusedLeaf =
@@ -41,10 +45,16 @@ export function GridTopBarControls({
     (state) =>
       focusedRef !== null && state.byThreadKey[scopedThreadKey(focusedRef)]?.isOpen === true,
   );
+  const threadPanelPresentation = useRightPanelStore((state) =>
+    threadPanelRef === null
+      ? "inline"
+      : (state.threadPanelPresentationByThreadKey[scopedThreadKey(threadPanelRef)] ?? "inline"),
+  );
   const threadPanelOpen = useRightPanelStore((state) => {
     if (threadPanelRef === null) return false;
     const visibility = state.threadPanelVisibilityByThreadKey[scopedThreadKey(threadPanelRef)];
-    return visibility?.inlineOpen === true || visibility?.popoverOpen === true;
+    if (visibility === undefined) return false;
+    return threadPanelPresentation === "popover" ? visibility.popoverOpen : visibility.inlineOpen;
   });
 
   return (
@@ -57,6 +67,7 @@ export function GridTopBarControls({
       terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
       threadPanelOpen={threadPanelOpen}
       threadPanelPresentation="inline"
+      {...(threadPanelAnchorRef ? { threadPanelAnchorRef } : {})}
       threadPanelShortcutLabel={shortcutLabelForCommand(keybindings, "threadPanel.toggle")}
       rightPanelAvailable={focusedRef !== null}
       rightPanelOpen={rightPanelOpen}

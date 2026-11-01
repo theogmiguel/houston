@@ -203,7 +203,7 @@
 12 apps/web/src/components/files/ProjectFileTree.tsx
 1 apps/web/src/components/files/ReadOnlySourcePreview.tsx
 44 apps/web/src/components/files/VirtualTablePreview.tsx
-196 apps/web/src/components/GitActionsControl.tsx
+195 apps/web/src/components/GitActionsControl.tsx
 13 apps/web/src/components/grid/GridHost.tsx
 2 apps/web/src/components/grid/GridLayoutMenu.tsx
 5 apps/web/src/components/grid/GridShelves.tsx

@@ -115,6 +115,7 @@ import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { useAtomValue } from "@effect/atom-react";
 import {
   type ReactNode,
+  type RefObject,
   type SetStateAction,
   use,
   useEffect,
@@ -417,6 +418,8 @@ type ChatViewProps =
       hideDraftHeroHeadline?: boolean;
       /** A grid route renders the focused cell's panel beside the grid, not in the cell. */
       rightPanelPortal?: RightPanelPortalTarget | null | undefined;
+      /** The grid top bar's details control, which anchors a cell's popover card. */
+      detailsCardAnchor?: RefObject<Element | null>;
       routeKind: "server";
       draftId?: never;
     }
@@ -435,6 +438,8 @@ type ChatViewProps =
       hideDraftHeroHeadline?: boolean;
       /** A grid route renders the focused cell's panel beside the grid, not in the cell. */
       rightPanelPortal?: RightPanelPortalTarget | null | undefined;
+      /** The grid top bar's details control, which anchors a cell's popover card. */
+      detailsCardAnchor?: RefObject<Element | null>;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -463,6 +468,9 @@ export default function ChatView(props: ChatViewProps) {
   const centerDraftComposer = props.centerDraftComposer === true;
   const hideDraftHeroHeadline = props.hideDraftHeroHeadline === true;
   const rightPanelPortal = props.rightPanelPortal ?? null;
+  const detailsCardAnchor = props.detailsCardAnchor;
+  const allowInlineDetails =
+    paneDensity === undefined || paneDensity === "solo" || paneDensity === "comfortable";
   const parentPanel = typeof embeddedOption === "object" ? embeddedOption : undefined;
   const embedded = embeddedOption !== false;
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
@@ -3910,8 +3918,9 @@ export default function ChatView(props: ChatViewProps) {
 
             {parentPanel === undefined ? (
               <ThreadDetailsPanel
-                anchor={threadPanelPopoverAnchorRef}
+                anchor={detailsCardAnchor ?? threadPanelPopoverAnchorRef}
                 handle={threadPanelPopoverHandle}
+                allowInline={allowInlineDetails}
                 forceNewWorktree={multipleModelSelections !== null}
                 environmentId={activeThread.environmentId}
                 threadId={activeThread.id}

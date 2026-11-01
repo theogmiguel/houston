@@ -1,7 +1,7 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import { ArchiveIcon, ArrowDownIcon, ArrowRightIcon, XIcon } from "lucide-react";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties, type RefObject } from "react";
 
 import ChatView, { type RightPanelPortalTarget } from "../ChatView";
 import { resolveThreadStatusPill } from "../Sidebar.logic";
@@ -34,6 +34,7 @@ export function GridThreadCell({
   onNewThread,
   onOpenThread,
   rightPanelPortal,
+  threadDetailsAnchor,
 }: {
   node: ThreadNode;
   grid: GridRecord;
@@ -47,6 +48,8 @@ export function GridThreadCell({
   onOpenThread: (ref: ScopedThreadRef) => void;
   /** The focused cell mounts its thread's right panel beside the grid. */
   rightPanelPortal?: RightPanelPortalTarget | null;
+  /** The focused cell anchors its popover details card under the top bar control. */
+  threadDetailsAnchor?: RefObject<Element | null> | null;
 }) {
   const environmentId = grid.environmentId as EnvironmentId;
   const threadId = node.threadId as ThreadId;
@@ -235,6 +238,7 @@ export function GridThreadCell({
               threadId={threadId}
               paneDensity={density}
               rightPanelPortal={rightPanelPortal}
+              {...(threadDetailsAnchor ? { detailsCardAnchor: threadDetailsAnchor } : {})}
               routeKind="draft"
             />
           ) : (
@@ -244,6 +248,7 @@ export function GridThreadCell({
               threadId={threadId}
               paneDensity={density}
               rightPanelPortal={rightPanelPortal}
+              {...(threadDetailsAnchor ? { detailsCardAnchor: threadDetailsAnchor } : {})}
               routeKind="server"
             />
           )}

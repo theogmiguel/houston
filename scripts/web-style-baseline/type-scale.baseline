@@ -1,4 +1,4 @@
-3 apps/web/src/components/chat/threadDetailsPanelStyles.ts
+1 apps/web/src/components/chat/threadDetailsPanelStyles.ts
 2 apps/web/src/components/DiffPanel.tsx
 1 apps/web/src/components/pullRequest/PullRequestChecksTab.tsx
 1 apps/web/src/components/settings/FoldedSettingsSection.tsx

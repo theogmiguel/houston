@@ -41,7 +41,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { vcsEnvironment } from "../state/vcs";
 import { cn } from "../lib/utils";
 import { ThreadDetailsPrRows } from "./chat/ThreadDetailsPrRows";
-import { ThreadDetailsRowContent } from "./ui/thread-details-row";
+import { ThreadDetailsRowContent, ThreadDetailsRowMono } from "./ui/thread-details-row";
 import { parsePullRequestReference } from "@t3tools/client-runtime/pull-request-link-input";
 import { getSourceControlPresentation } from "../sourceControlPresentation";
 import { useComposerMenuProps } from "./chat/composerEventScope";
@@ -729,7 +729,11 @@ export function BranchToolbarBranchSelector({
                 }
                 {...(panelBaseRef
                   ? {
-                      right: <span>from {panelBaseRef}</span>,
+                      right: (
+                        <span>
+                          from <ThreadDetailsRowMono>{panelBaseRef}</ThreadDetailsRowMono>
+                        </span>
+                      ),
                     }
                   : {})}
               />

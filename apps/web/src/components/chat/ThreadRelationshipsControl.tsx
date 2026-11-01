@@ -111,7 +111,7 @@ function ThreadLineageRowList(props: {
         <button
           type="button"
           onClick={props.onShowMore}
-          className={`flex h-8 w-full cursor-pointer items-center rounded-lg ${THREAD_DETAILS_PANEL_ROW_CONTENT_CLASS} text-sm font-medium text-muted-foreground/70 hover:bg-black/[0.055] hover:text-foreground/80 dark:hover:bg-white/[0.075]`}
+          className={`flex min-h-7 w-full cursor-pointer items-center rounded-lg ${THREAD_DETAILS_PANEL_ROW_CONTENT_CLASS} text-sm font-medium text-muted-foreground/70 hover:bg-[var(--hover)] hover:text-foreground/80`}
         >
           <PlusIcon aria-hidden className="size-4 shrink-0" />
           Show {Math.min(props.hiddenCount, THREAD_LINEAGE_PAGE_COUNT)} more
@@ -236,7 +236,7 @@ function RemoteSubagentRow(props: {
     isSubagent: true,
   });
   return (
-    <li className="group relative flex h-8 items-center rounded-lg">
+    <li className="group relative flex min-h-7 items-center rounded-lg">
       <Tooltip>
         <TooltipTrigger
           delay={200}
@@ -294,7 +294,7 @@ function DelegatedFromRow(props: {
   const label = environment?.label ?? props.fallbackLabel;
   const title = parent?.title ?? delegatedFrom.title;
   return (
-    <li className="group relative flex h-8 items-center rounded-lg">
+    <li className="group relative flex min-h-7 items-center rounded-lg">
       <Tooltip>
         <TooltipTrigger
           delay={200}
@@ -687,7 +687,7 @@ export function ThreadRelationshipsPanel(props: {
       );
     }
     return (
-      <li key={threadId} className="group relative flex h-8 items-center rounded-lg">
+      <li key={threadId} className="group relative flex min-h-7 items-center rounded-lg">
         {isMergeTarget ? (
           <div className={THREAD_DETAILS_PANEL_SPLIT_GROUP_CLASS}>
             <Tooltip>

@@ -25,6 +25,7 @@ export function ThreadDetailsCard({
   handle,
   contentKey,
   defaultOpen = true,
+  allowInline = true,
   onContextMenu,
   children,
 }: {
@@ -35,6 +36,8 @@ export function ThreadDetailsCard({
   contentKey: string;
   /** Route threads open by default; a grid cell stays closed until its top bar toggles it. */
   defaultOpen?: boolean;
+  /** Compact and glance grid panes have no room for an inline card, so they only pop over. */
+  allowInline?: boolean;
   onContextMenu?: MouseEventHandler<HTMLDivElement>;
   children: (density: "full" | "compact" | "essential") => ReactNode;
 }) {
@@ -42,7 +45,7 @@ export function ThreadDetailsCard({
   const canvas = useChatCanvas();
   const preferredPlacement = canvas?.preferredDetailsCard ?? null;
   const placement = canvas?.detailsCardPlacement ?? null;
-  const mode = placement ? "inline" : "popover";
+  const mode = allowInline && placement ? "inline" : "popover";
   const topInset = canvas?.detailsCardTopInset ?? 0;
   const inlineOpen = useRightPanelStore((state) =>
     selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, threadRef, "inline", defaultOpen),
@@ -75,6 +78,12 @@ export function ThreadDetailsCard({
     if (mode === "inline" && popoverOpen)
       useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", false);
   }, [mode, popoverOpen, threadRef]);
+  // The grid moves an open inline card to the cell that gains focus; it reads
+  // this instead of guessing from the two open flags.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the presentation this card actually renders to the right panel store
+  useLayoutEffect(() => {
+    useRightPanelStore.getState().setThreadPanelPresentation(threadRef, mode);
+  }, [mode, threadRef]);
   const [contentElement, setContentElement] = useState<HTMLDivElement | null>(null);
   // A grid cell renders its own pane head and omits the route header that owns the
   // details button, so the popover anchors to the cell's top right instead of the viewport.

@@ -19,7 +19,7 @@ export function ThreadDetailsRowContent({
 }) {
   return (
     <>
-      <span className="flex min-w-0 items-center gap-1.5">
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <span className="min-w-0 truncate">{label}</span>
         {value === undefined || value === null ? null : (
           <span className={cn("min-w-0 truncate text-muted-foreground", mono && "font-mono")}>
@@ -39,16 +39,50 @@ export function ThreadDetailsRowContent({
 }
 
 export function ThreadDetailsRow({ className, ...props }: ComponentProps<"div">) {
-  return <div className={cn(ROW_CLASS, "cursor-default", className)} {...props} />;
+  return (
+    <div
+      data-thread-details-row=""
+      className={cn(ROW_CLASS, "cursor-default", className)}
+      {...props}
+    />
+  );
 }
 
 export function ThreadDetailsRowButton({ className, ...props }: ComponentProps<"button">) {
-  return <button type="button" className={cn(ROW_CLASS, "cursor-pointer", className)} {...props} />;
+  return (
+    <button
+      type="button"
+      data-thread-details-row=""
+      className={cn(ROW_CLASS, "cursor-pointer", className)}
+      {...props}
+    />
+  );
 }
 
-/** A row's label column: the same recipe without its own horizontal padding. */
+/** A mono value, such as a worktree or branch name, inside a row's right slot. */
+export function ThreadDetailsRowMono({
+  children,
+  className,
+}: {
+  readonly children: ReactNode;
+  readonly className?: string;
+}) {
+  return <span className={cn("min-w-0 truncate font-mono", className)}>{children}</span>;
+}
+
+/**
+ * A row's label column. It fills the row's content box without adding vertical
+ * padding of its own, which would make the row taller than the shared 28px.
+ */
 export function ThreadDetailsRowLabelButton({ className, ...props }: ComponentProps<"button">) {
   return (
-    <button type="button" className={cn(ROW_CLASS, "cursor-pointer px-0", className)} {...props} />
+    <button
+      type="button"
+      className={cn(
+        "flex min-w-0 cursor-pointer items-center self-stretch truncate rounded-md text-left text-body font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64",
+        className,
+      )}
+      {...props}
+    />
   );
 }

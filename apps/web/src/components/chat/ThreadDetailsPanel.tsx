@@ -34,7 +34,7 @@ const GitActionsControl = memo(BaseGitActionsControl);
 
 interface ThreadDetailsPanelProps extends Pick<
   ComponentProps<typeof ThreadDetailsCard>,
-  "anchor" | "handle" | "defaultOpen"
+  "anchor" | "handle" | "defaultOpen" | "allowInline"
 > {
   forceNewWorktree?: boolean;
   environmentId: EnvironmentId;
@@ -116,6 +116,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
       anchor={props.anchor}
       handle={props.handle}
       defaultOpen={props.defaultOpen ?? true}
+      allowInline={props.allowInline ?? true}
       contentKey={THREAD_DETAILS_ITEMS.filter((item) => visible[item.id])
         .map((item) => item.id)
         .join(",")}
@@ -206,7 +207,6 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 <ThreadDetailsSection
                   headingId="thread-details-version-control-heading"
                   title="Version control"
-                  separated={density === "full"}
                 >
                   <div className="flex flex-col">
                     {show.branch ? (

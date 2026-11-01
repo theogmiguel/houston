@@ -1258,7 +1258,7 @@ export default function GitActionsControl({
                 }
               : {})}
             right={
-              <span className="flex items-center gap-1.5 font-mono text-xs tabular-nums">
+              <span className="flex items-center gap-1.5 text-xs tabular-nums">
                 <span
                   className={
                     changesTotals?.insertions
@@ -1318,7 +1318,7 @@ export default function GitActionsControl({
             <>
               {quickAction.kind === "run_pull" || quickAction.kind === "open_publish" ? (
                 <Button
-                  size="compact"
+                  size="sm"
                   variant="outline"
                   disabled={!canWriteSourceControl || isGitActionRunning || quickAction.disabled}
                   onClick={runQuickAction}
@@ -1329,7 +1329,7 @@ export default function GitActionsControl({
               {gitActionMenuItems.map((item) => (
                 <Button
                   key={`${item.id}-${item.label}`}
-                  size="compact"
+                  size="sm"
                   variant={item.id === "pr" ? "ghost" : "outline"}
                   disabled={!canWriteSourceControl || item.disabled || isGitActionRunning}
                   onClick={() => openDialogForMenuItem(item)}
