@@ -228,6 +228,8 @@ import {
   HoustonSlackStreamEvent,
 } from "./houston/slack.ts";
 import {
+  HoustonHarnessCreateTaskInput,
+  HoustonHarnessCreateTaskResult,
   HoustonHarnessDecideInput,
   HoustonHarnessEmptyResult,
   HoustonHarnessError,
@@ -621,6 +623,7 @@ export const WS_METHODS = {
   houstonHarnessReport: "houston.harness.report",
   houstonHarnessDecide: "houston.harness.decide",
   houstonHarnessMarkSeen: "houston.harness.markSeen",
+  houstonHarnessCreateTask: "houston.harness.createTask",
   houstonNightShiftGet: "houston.nightShift.get",
   houstonNightShiftSubscribe: "houston.nightShift.subscribe",
   houstonNightShiftSubscribeOverview: "houston.nightShift.subscribeOverview",
@@ -2015,6 +2018,12 @@ const WsHoustonHarnessMarkSeenRpc = Rpc.make(WS_METHODS.houstonHarnessMarkSeen, 
   error: HoustonHarnessRpcError,
 });
 
+const WsHoustonHarnessCreateTaskRpc = Rpc.make(WS_METHODS.houstonHarnessCreateTask, {
+  payload: HoustonHarnessCreateTaskInput,
+  success: HoustonHarnessCreateTaskResult,
+  error: HoustonHarnessRpcError,
+});
+
 const HoustonNightShiftRpcError = Schema.Union([
   HoustonNightShiftError,
   EnvironmentAuthorizationError,
@@ -2791,6 +2800,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonHarnessReportRpc,
   WsHoustonHarnessDecideRpc,
   WsHoustonHarnessMarkSeenRpc,
+  WsHoustonHarnessCreateTaskRpc,
   WsHoustonNightShiftGetRpc,
   WsHoustonNightShiftSubscribeRpc,
   WsHoustonNightShiftSubscribeOverviewRpc,

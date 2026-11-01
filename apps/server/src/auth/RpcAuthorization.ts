@@ -217,6 +217,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.houstonHarnessReport]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonHarnessDecide]: AuthOrchestrationOperateScope,
   [WS_METHODS.houstonHarnessMarkSeen]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonHarnessCreateTask]: AuthOrchestrationOperateScope,
   [WS_METHODS.houstonNightShiftGet]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonNightShiftSubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonNightShiftSubscribeOverview]: AuthOrchestrationReadScope,
