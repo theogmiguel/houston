@@ -102,8 +102,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
       - run: pnpm --filter @t3tools/contracts --filter @t3tools/shared test
-      - name: Script tests (check-upstream and the licence generator)
-        run: node --test scripts/check-upstream.test.mjs scripts/gen-third-party-licenses.test.mjs
+      - name: Script tests (check-upstream, the licence generator and the style guard)
+        run: node --test scripts/check-upstream.test.mjs scripts/gen-third-party-licenses.test.mjs scripts/check-web-style.test.mjs
       - name: Fetch upstream t3code at the pinned commit
         run: |
           git init "$RUNNER_TEMP/t3code"
@@ -228,7 +228,6 @@ jobs:
         continue-on-error: ${{ matrix.os == 'windows-latest' }}
         if: ${{ !cancelled() }}
         run: pnpm --filter houston exec vp test run src/orchestration-v2 --exclude "src/orchestration-v2/Adapters/**"
-
 
   # Upstream's MCP toolkits: the server-side tools agents call through the
   # orchestration layer. Windows reports but does not fail the job yet.

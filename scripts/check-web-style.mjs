@@ -296,8 +296,43 @@ function jsxTags(code) {
   return out;
 }
 
+function stripJsxExpressions(attrs) {
+  let out = "";
+  let depth = 0;
+  let quote = null;
+  for (let i = 0; i < attrs.length; i++) {
+    const c = attrs[i];
+    if (depth > 0) {
+      if (quote) {
+        if (c === "\\") {
+          out += "  ";
+          i++;
+          continue;
+        }
+        if (c === quote) quote = null;
+      } else if (c === '"' || c === "'" || c === "`") {
+        quote = c;
+      } else if (c === "{") {
+        depth++;
+      } else if (c === "}") {
+        depth--;
+      }
+      out += c === "\n" ? "\n" : " ";
+      continue;
+    }
+    if (c === "{") {
+      depth = 1;
+      quote = null;
+      out += " ";
+      continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
 function hasAttr(attrs, name) {
-  return new RegExp(`(?:^|[\\s{])${name}\\s*=`).test(attrs);
+  return new RegExp(`(?:^|[\\s])${name}\\s*=`).test(stripJsxExpressions(attrs));
 }
 
 function classTokens(expr) {
@@ -309,7 +344,10 @@ function classTokens(expr) {
       if (!raw) continue;
       const token = raw.replace(/^[,;]+|[,;]+$/g, "");
       if (!token) continue;
-      if (/^[a-z][a-z0-9-]*(?:-\[[^\]]+\])?(?:\/[\w.]+)?$/.test(token) || /^\[[^\]]+\]$/.test(token)) {
+      if (
+        /^[a-z][a-z0-9-]*(?:-\[[^\]]+\])?(?:\/[\w.]+)?$/.test(token) ||
+        /^\[[^\]]+\]$/.test(token)
+      ) {
         tokens.push(token);
       }
     }
@@ -366,7 +404,8 @@ function classNameExpressions(code) {
 
 function clsConstants(code) {
   const out = [];
-  const re = /^(?:export\s+)?const\s+\w+_CLS\s*=\s*([\s\S]*?)(?=^(?:export\s+)?(?:const|function|type|interface)\b|(?![\s\S]))/gm;
+  const re =
+    /^(?:export\s+)?const\s+\w+_CLS\s*=\s*([\s\S]*?)(?=^(?:export\s+)?(?:const|function|type|interface)\b|(?![\s\S]))/gm;
   let match;
   while ((match = re.exec(code)) !== null) {
     out.push({ expr: match[1], index: match.index });
@@ -438,7 +477,10 @@ const RULES = [
       const hits = [];
       for (const tag of jsxTags(ctx.code)) {
         if (tag.name !== "input") continue;
-        const match = /\btype\s*=\s*(?:"(checkbox|radio)"|'(checkbox|radio)'|\{\s*["'](checkbox|radio)["']\s*\})/.exec(tag.attrs);
+        const match =
+          /\btype\s*=\s*(?:"(checkbox|radio)"|'(checkbox|radio)'|\{\s*["'](checkbox|radio)["']\s*\})/.exec(
+            tag.attrs,
+          );
         if (match) {
           hits.push({
             file: ctx.rel,
@@ -469,18 +511,21 @@ const RULES = [
       return jsxTags(ctx.code)
         .filter(
           (tag) =>
-            /^[a-z]/.test(tag.name) &&
-            !nativeTitle.has(tag.name) &&
-            hasAttr(tag.attrs, "title"),
+            /^[a-z]/.test(tag.name) && !nativeTitle.has(tag.name) && hasAttr(tag.attrs, "title"),
         )
-        .map((tag) => ({ file: ctx.rel, line: ctx.lineOf(tag.start), value: `<${tag.name} title=…>` }));
+        .map((tag) => ({
+          file: ctx.rel,
+          line: ctx.lineOf(tag.start),
+          value: `<${tag.name} title=…>`,
+        }));
     },
   },
   {
     id: "focus-visible",
     decision: "PORT",
     exts: [".ts", ".tsx"],
-    expected: "outline-none paired with a visible focus-visible paint, and literal classes instead of interpolated arbitrary values",
+    expected:
+      "outline-none paired with a visible focus-visible paint, and literal classes instead of interpolated arbitrary values",
     scan(ctx) {
       const hits = [];
       for (const literal of stringLiterals(ctx.code)) {
@@ -533,7 +578,8 @@ const RULES = [
     id: "shadow",
     decision: "ADAPT",
     exts: [".ts", ".tsx"],
-    expected: "a token (shadow-[var(--shadow-N)]) or a complete literal recipe class, never a hand-typed shadow",
+    expected:
+      "a token (shadow-[var(--shadow-N)]) or a complete literal recipe class, never a hand-typed shadow",
     scan(ctx) {
       const hits = [];
       const re = /shadow-\[([^\]]*)\]/g;
@@ -545,7 +591,11 @@ const RULES = [
         rest = rest.replace(/\$\{[^}]*\}/g, "");
         rest = rest.replace(/[,_\s]/g, "");
         if (rest.length > 0) {
-          hits.push({ file: ctx.rel, line: ctx.lineOf(match.index), value: `shadow-[${match[1]}]` });
+          hits.push({
+            file: ctx.rel,
+            line: ctx.lineOf(match.index),
+            value: `shadow-[${match[1]}]`,
+          });
         }
       }
       const inline = /\bboxShadow\s*:\s*["'`]([^"'`]*)["'`]/g;
@@ -556,7 +606,11 @@ const RULES = [
           .replace(/\$\{[^}]*\}/g, "")
           .replace(/[,_\s]/g, "");
         if (rest.length > 0) {
-          hits.push({ file: ctx.rel, line: ctx.lineOf(match.index), value: `boxShadow: ${match[1]}` });
+          hits.push({
+            file: ctx.rel,
+            line: ctx.lineOf(match.index),
+            value: `boxShadow: ${match[1]}`,
+          });
         }
       }
       return hits;
@@ -588,7 +642,7 @@ const RULES = [
     id: "spacing",
     decision: "ADAPT",
     exts: [".ts", ".tsx", ".css"],
-    expected: "the Tailwind spacing scale or a --space-* token, not a hand-typed length",
+    expected: "the Tailwind spacing scale, never a hand-typed length",
     scan(ctx) {
       const hits = hitsForPattern(
         ctx,
@@ -619,7 +673,8 @@ const RULES = [
     id: "control-metrics",
     decision: "ADAPT",
     exts: [".ts", ".tsx"],
-    expected: "h-(--h-ctl) / h-(--h-row) / h-(--h-pane-head) / h-(--h-pill), never a hand-typed control height",
+    expected:
+      "h-(--h-ctl) / h-(--h-row) / h-(--h-pane-head) / h-(--h-pill), never a hand-typed control height",
     scan(ctx) {
       const hits = [];
       for (const tag of jsxTags(ctx.code)) {
@@ -644,7 +699,8 @@ const RULES = [
     id: "icon-metrics",
     decision: "ADAPT",
     exts: [".tsx"],
-    expected: "icon size and stroke come from the size-* utility or a shared role, never a numeric prop",
+    expected:
+      "icon size and stroke come from the size-* utility or a shared role, never a numeric prop",
     scan(ctx) {
       const names = lucideLocalNames(ctx.code);
       const namespace = lucideNamespace(ctx.code);
@@ -653,9 +709,13 @@ const RULES = [
       for (const tag of jsxTags(ctx.code)) {
         const local = tag.name.includes(".") ? tag.name.split(".").pop() : tag.name;
         const isIcon =
-          names.has(tag.name) || names.has(local) || (namespace && tag.name.startsWith(`${namespace}.`));
+          names.has(tag.name) ||
+          names.has(local) ||
+          (namespace && tag.name.startsWith(`${namespace}.`));
         if (!isIcon) continue;
-        const match = /\b(?:size|strokeWidth)\s*=\s*\{\s*([0-9]+(?:\.[0-9]+)?)\s*\}/.exec(tag.attrs);
+        const match = /\b(?:size|strokeWidth)\s*=\s*\{\s*([0-9]+(?:\.[0-9]+)?)\s*\}/.exec(
+          tag.attrs,
+        );
         if (match) {
           hits.push({
             file: ctx.rel,
@@ -671,21 +731,36 @@ const RULES = [
     id: "icon-imports",
     decision: "ADAPT",
     exts: [".ts", ".tsx"],
-    expected: "named icon imports; only lib/lucideIconByName.ts may own a namespace or dynamic import",
+    expected:
+      "named icon imports; only lib/lucideIconByName.ts may own a namespace or dynamic import",
     scan(ctx) {
       if (/\/lib\/lucideIconByName\.ts$/.test(ctx.rel)) return [];
       const hits = [];
-      const namespace = /import\s+\*\s+as\s+[A-Za-z_$][\w$]*\s+from\s+["']lucide-react["']/.exec(ctx.code);
+      const namespace = /import\s+\*\s+as\s+[A-Za-z_$][\w$]*\s+from\s+["']lucide-react["']/.exec(
+        ctx.code,
+      );
       if (namespace) {
-        hits.push({ file: ctx.rel, line: ctx.lineOf(namespace.index), value: "import * as … from lucide-react" });
+        hits.push({
+          file: ctx.rel,
+          line: ctx.lineOf(namespace.index),
+          value: "import * as … from lucide-react",
+        });
       }
       const fallback = /import\s+[A-Za-z_$][\w$]*\s+from\s+["']lucide-react["']/.exec(ctx.code);
       if (fallback) {
-        hits.push({ file: ctx.rel, line: ctx.lineOf(fallback.index), value: "default import from lucide-react" });
+        hits.push({
+          file: ctx.rel,
+          line: ctx.lineOf(fallback.index),
+          value: "default import from lucide-react",
+        });
       }
       const dynamic = /from\s+["']lucide-react\/dynamic["']/.exec(ctx.code);
       if (dynamic) {
-        hits.push({ file: ctx.rel, line: ctx.lineOf(dynamic.index), value: "lucide-react/dynamic import" });
+        hits.push({
+          file: ctx.rel,
+          line: ctx.lineOf(dynamic.index),
+          value: "lucide-react/dynamic import",
+        });
       }
       return hits;
     },
@@ -703,13 +778,25 @@ const RULES = [
         const [prop, value] = [match[1], match[2]];
         const plain = value.replace(PROPER_NOUN, "");
         if (/\(\d+\)|·\s*\d+/.test(value)) {
-          hits.push({ file: ctx.rel, line: ctx.lineOf(match.index), value: `${prop}="${value}" (parenthesized count)` });
+          hits.push({
+            file: ctx.rel,
+            line: ctx.lineOf(match.index),
+            value: `${prop}="${value}" (parenthesized count)`,
+          });
         }
         if (prop !== "placeholder" && /\b[A-Z][a-z]+(?:\s+\b[A-Z][a-z]+){1,}\b/.test(plain)) {
-          hits.push({ file: ctx.rel, line: ctx.lineOf(match.index), value: `${prop}="${value}" (title case)` });
+          hits.push({
+            file: ctx.rel,
+            line: ctx.lineOf(match.index),
+            value: `${prop}="${value}" (title case)`,
+          });
         }
         if (/^\s*(?:Ok|Not there)\s*$/.test(value)) {
-          hits.push({ file: ctx.rel, line: ctx.lineOf(match.index), value: `${prop}="${value}" (banned status)` });
+          hits.push({
+            file: ctx.rel,
+            line: ctx.lineOf(match.index),
+            value: `${prop}="${value}" (banned status)`,
+          });
         }
       }
       return hits;
@@ -726,12 +813,13 @@ const RULES = [
       const report = (expr, index) => {
         for (const token of classTokens(expr)) {
           const bare = stripVariants(token);
-          if (LAYOUT_CLASS.test(bare) || /^gap-\[var\(--space-[\w.-]+\)\]$/.test(bare)) continue;
+          if (LAYOUT_CLASS.test(bare)) continue;
           hits.push({ file: ctx.rel, line: ctx.lineOf(index), value: token });
         }
       };
       for (const constant of clsConstants(ctx.code)) report(constant.expr, constant.index);
-      for (const expression of classNameExpressions(ctx.code)) report(expression.expr, expression.index);
+      for (const expression of classNameExpressions(ctx.code))
+        report(expression.expr, expression.index);
       return hits;
     },
   },
@@ -739,12 +827,51 @@ const RULES = [
     id: "page-width",
     decision: "ADAPT",
     exts: [".tsx"],
-    expected: "WorkspacePageContainer or max-w-[var(--page-w)], never a per-page pixel column",
+    expected:
+      "WorkspacePageContainer's readable/wide/expanded width, never a per-page pixel column",
     scan(ctx) {
       const isPage = ctx.rel.includes("/routes/") || /(?:^|\/)\w*Page\.tsx$/.test(ctx.rel);
       if (!isPage) return [];
       if (/WorkspacePageContainer\.tsx$/.test(ctx.rel)) return [];
       return hitsForPattern(ctx, /max-w-\[([0-9.]+(?:px|rem|em))\]/g, 1);
+    },
+  },
+  {
+    id: "raw-palette",
+    decision: "ADAPT",
+    exts: [".ts", ".tsx"],
+    expected:
+      "a semantic colour role (--ok/--warn/--stop/--info with -ink or -foreground), never a raw Tailwind palette shade",
+    scan(ctx) {
+      if (!/(?:^|\/)components\//.test(ctx.rel)) return [];
+      return hitsForPattern(
+        ctx,
+        /(?<![\w-])(?:text|bg|border|ring|fill|stroke|outline|divide|from|via|to)-(?:red|green|emerald|amber|yellow|orange|sky|blue|indigo|violet|purple|pink|rose|teal|cyan|lime|zinc|slate|gray|neutral|stone)-[0-9]{2,3}(?![\w-])/g,
+      );
+    },
+  },
+  {
+    id: "accent-utility",
+    decision: "ADAPT",
+    exts: [".ts", ".tsx"],
+    expected:
+      "the neutral hover utilities bg-hover / text-hover-foreground, never the retired bg-accent / text-accent-foreground names",
+    scan(ctx) {
+      return hitsForPattern(ctx, /(?<![\w-])(?:bg-accent|text-accent-foreground)(?![\w-])/g);
+    },
+  },
+  {
+    id: "accent-ink",
+    decision: "ADAPT",
+    exts: [".ts", ".tsx"],
+    expected:
+      "text-(--accent-ink) for brand text and icons; text-primary and text-(--accent) are fill roles with insufficient contrast",
+    scan(ctx) {
+      return [
+        ...hitsForPattern(ctx, /(?<![\w-])text-primary(?![\w-])/g),
+        ...hitsForPattern(ctx, /(?<![\w-])text-\(--accent\)(?![\w-])/g),
+        ...hitsForPattern(ctx, /(?<![\w-])text-\[var\(--accent\)\](?![\w-])/g),
+      ];
     },
   },
   {
@@ -783,7 +910,8 @@ const RULES = [
           .replace(/<[^>]*>/g, " ")
           .replace(/\{[^}]*\}/g, " ")
           .replace(/\s+/g, " ");
-        const imperative = /\b(?:add|start|create|pick|choose|click|open|connect|install|enable|select|run)\s+[a-z]/i;
+        const imperative =
+          /\b(?:add|start|create|pick|choose|click|open|connect|install|enable|select|run)\s+[a-z]/i;
         const negated = /\b(?:cannot|can't|won't|will not|unable to)\b/i;
         const control = /<(?:Button|Link|button|a)\b|\bonClick=/.test(block);
         if (imperative.test(text) && !negated.test(text) && !control) {
@@ -881,7 +1009,9 @@ function reportFailure(rule, hits) {
 function checkRule(rule) {
   const baseline = readBaseline(rule);
   if (!baseline) {
-    console.error(`FAIL: ${rule.id}: ${relPath(path.join(BASELINE_DIR, `${rule.id}.baseline`))} is missing; run scripts/check-web-style.sh --update.`);
+    console.error(
+      `FAIL: ${rule.id}: ${relPath(path.join(BASELINE_DIR, `${rule.id}.baseline`))} is missing; run scripts/check-web-style.sh --update.`,
+    );
     return false;
   }
   const hits = scanRule(rule, loadWebFiles());
@@ -891,26 +1021,42 @@ function checkRule(rule) {
     const pin = baseline.get(file);
     if (pin === undefined) {
       ok = false;
-      console.error(`FAIL: ${rule.id}: ${file} has ${count} new violation(s) and no baseline entry.`);
-      reportFailure(rule, hits.filter((hit) => hit.file === file));
+      console.error(
+        `FAIL: ${rule.id}: ${file} has ${count} new violation(s) and no baseline entry.`,
+      );
+      reportFailure(
+        rule,
+        hits.filter((hit) => hit.file === file),
+      );
     } else if (count > pin) {
       ok = false;
-      console.error(`FAIL: ${rule.id}: ${file} has ${count} violation(s), baseline ${pin}; the ratchet only falls.`);
-      reportFailure(rule, hits.filter((hit) => hit.file === file));
+      console.error(
+        `FAIL: ${rule.id}: ${file} has ${count} violation(s), baseline ${pin}; the ratchet only falls.`,
+      );
+      reportFailure(
+        rule,
+        hits.filter((hit) => hit.file === file),
+      );
     } else if (count < pin) {
       ok = false;
-      console.error(`FAIL: ${rule.id}: ${file} has ${count} violation(s), baseline ${pin} (stale); tighten with scripts/check-web-style.sh --update.`);
+      console.error(
+        `FAIL: ${rule.id}: ${file} has ${count} violation(s), baseline ${pin} (stale); tighten with scripts/check-web-style.sh --update.`,
+      );
     }
   }
   for (const [file, pin] of baseline) {
     if (!counts.has(file)) {
       ok = false;
-      console.error(`FAIL: ${rule.id}: ${file} is in the baseline (${pin}) but has no violation now; run scripts/check-web-style.sh --update.`);
+      console.error(
+        `FAIL: ${rule.id}: ${file} is in the baseline (${pin}) but has no violation now; run scripts/check-web-style.sh --update.`,
+      );
     }
   }
   if (ok) {
     const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
-    console.log(`ok: ${rule.id} (${total} baselined violation(s) in ${counts.size} file(s), none added)`);
+    console.log(
+      `ok: ${rule.id} (${total} baselined violation(s) in ${counts.size} file(s), none added)`,
+    );
   }
   return ok;
 }
@@ -925,14 +1071,18 @@ function selfTest() {
     const badDir = path.join(FIXTURE_DIR, rule.id, "bad");
     const goodDir = path.join(FIXTURE_DIR, rule.id, "good");
     if (!fs.existsSync(badDir) || !fs.existsSync(goodDir)) {
-      console.error(`FAIL: ${rule.id}: fixtures missing at ${relPath(badDir)} and ${relPath(goodDir)}`);
+      console.error(
+        `FAIL: ${rule.id}: fixtures missing at ${relPath(badDir)} and ${relPath(goodDir)}`,
+      );
       ok = false;
       continue;
     }
     const bad = scanFixture(rule, badDir);
     const good = scanFixture(rule, goodDir);
     if (bad.length === 0) {
-      console.error(`FAIL: ${rule.id}: the bad fixture did not trip the guard (${relPath(badDir)})`);
+      console.error(
+        `FAIL: ${rule.id}: the bad fixture did not trip the guard (${relPath(badDir)})`,
+      );
       ok = false;
     } else if (good.length > 0) {
       console.error(`FAIL: ${rule.id}: the good fixture tripped the guard:`);
@@ -945,61 +1095,71 @@ function selfTest() {
   return ok;
 }
 
-const args = process.argv.slice(2);
-const update = args.includes("--update");
-const list = args.includes("--list");
-const all = args.includes("--all");
-const test = args.includes("--self-test");
-const print = args.includes("--print");
-const named = args.filter((arg) => !arg.startsWith("-"));
+function main() {
+  const args = process.argv.slice(2);
+  const update = args.includes("--update");
+  const list = args.includes("--list");
+  const all = args.includes("--all");
+  const test = args.includes("--self-test");
+  const print = args.includes("--print");
+  const named = args.filter((arg) => !arg.startsWith("-"));
 
-if (list) {
-  for (const rule of RULES) console.log(`${rule.decision.padEnd(5)} ${rule.id}`);
-  process.exit(0);
-}
+  if (list) {
+    for (const rule of RULES) console.log(`${rule.decision.padEnd(5)} ${rule.id}`);
+    process.exit(0);
+  }
 
-if (test) {
-  process.exit(selfTest() ? 0 : 1);
-}
+  if (test) {
+    process.exit(selfTest() ? 0 : 1);
+  }
 
-if (print) {
+  if (print) {
+    const selected = named.length ? named.map((id) => RULE_BY_ID.get(id)) : RULES;
+    for (const rule of selected) {
+      if (!rule) {
+        console.error(`FAIL: unknown rule '${named.find((id) => !RULE_BY_ID.has(id))}'`);
+        process.exit(1);
+      }
+      for (const hit of scanRule(rule, loadWebFiles())) {
+        console.log(`${hit.file}:${hit.line}\t${hit.value}`);
+      }
+    }
+    process.exit(0);
+  }
+
+  if (update) {
+    const selected = named.length ? named.map((id) => RULE_BY_ID.get(id)) : RULES;
+    for (const rule of selected) {
+      if (!rule) {
+        console.error(`FAIL: unknown rule '${named.find((id) => !RULE_BY_ID.has(id))}'`);
+        process.exit(1);
+      }
+      updateRule(rule);
+    }
+    process.exit(0);
+  }
+
   const selected = named.length ? named.map((id) => RULE_BY_ID.get(id)) : RULES;
   for (const rule of selected) {
     if (!rule) {
       console.error(`FAIL: unknown rule '${named.find((id) => !RULE_BY_ID.has(id))}'`);
       process.exit(1);
     }
-    for (const hit of scanRule(rule, loadWebFiles())) {
-      console.log(`${hit.file}:${hit.line}\t${hit.value}`);
-    }
   }
-  process.exit(0);
-}
-
-if (update) {
-  const selected = named.length ? named.map((id) => RULE_BY_ID.get(id)) : RULES;
+  let ok = true;
   for (const rule of selected) {
-    if (!rule) {
-      console.error(`FAIL: unknown rule '${named.find((id) => !RULE_BY_ID.has(id))}'`);
-      process.exit(1);
-    }
-    updateRule(rule);
+    if (!checkRule(rule)) ok = false;
   }
-  process.exit(0);
+  if (!ok && !all && selected.length > 1) {
+    console.error(
+      "Baselines live in scripts/web-style-baseline/; never edit apps/web to satisfy a new guard in this PR.",
+    );
+  }
+  process.exit(ok ? 0 : 1);
 }
 
-const selected = named.length ? named.map((id) => RULE_BY_ID.get(id)) : RULES;
-for (const rule of selected) {
-  if (!rule) {
-    console.error(`FAIL: unknown rule '${named.find((id) => !RULE_BY_ID.has(id))}'`);
-    process.exit(1);
-  }
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
 }
-let ok = true;
-for (const rule of selected) {
-  if (!checkRule(rule)) ok = false;
-}
-if (!ok && !all && selected.length > 1) {
-  console.error("Baselines live in scripts/web-style-baseline/; never edit apps/web to satisfy a new guard in this PR.");
-}
-process.exit(ok ? 0 : 1);
+
+export { hasAttr, stripJsxExpressions };
