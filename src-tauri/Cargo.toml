@@ -10,6 +10,11 @@ authors = ["Théo Miguel"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+# Off by default: a release menu has no developer tools. Let a deliberate
+# `--features devtools` build include them without enabling them always.
+devtools = ["tauri/devtools"]
+
 # tracing must stay off this feature list: with it, eval_script_with_callback takes
 # wry's blocking getter path instead of send_user_message, letting the renderer
 # watchdog's supervisor thread block on the very event loop it watches (check-watchdog.sh).
