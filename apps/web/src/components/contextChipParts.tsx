@@ -4,7 +4,7 @@ import { useEffect, useState, type ComponentProps, type MouseEvent, type ReactNo
 import { useAssetUrlState } from "~/assets/assetUrls";
 import { documentChipKindForFileName } from "~/pierre-icons";
 
-import { PULL_REQUEST_STATE_PRESENTATION } from "~/components/pullRequest/pullRequestIcons";
+import { PULL_REQUEST_PRESENTATION } from "~/components/pullRequest/pullRequestIcons";
 import type { PullRequestContextDisplayState } from "~/lib/composerContextRecords";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { middleTruncateAttachmentName } from "./composerInlineChip";
@@ -97,7 +97,7 @@ export function PullRequestChip(props: {
   const previewTarget = usePullRequestPreviewTarget(props.environmentId, props.metadata.url);
   const displayState =
     props.metadata.state === "open" && props.metadata.isDraft ? "draft" : props.metadata.state;
-  const StateIcon = PULL_REQUEST_STATE_PRESENTATION[displayState].Icon;
+  const StateIcon = PULL_REQUEST_PRESENTATION[displayState].Icon;
   const button = (
     <ContextChip
       kind={props.kind}
