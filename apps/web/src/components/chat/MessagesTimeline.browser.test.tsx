@@ -1240,3 +1240,30 @@ it("keeps concurrent approvals actionable outside collapsed work and restores se
     .element(screen.getByRole("button", { name: "Open the current tab", exact: true }))
     .toBeVisible();
 });
+
+function paneBackground(): string {
+  const probe = document.createElement("div");
+  probe.style.backgroundColor = "var(--pane)";
+  document.body.append(probe);
+  const color = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return color;
+}
+
+describe("MessagesTimeline empty surface", () => {
+  it("paints the hidden empty state on the pane surface in both themes", async () => {
+    await using screen = await renderTimeline([], { hideEmptyPlaceholder: true });
+    const filler = screen.container.querySelector<HTMLElement>("[data-timeline-loading]");
+    expect(filler).not.toBeNull();
+
+    const root = document.documentElement;
+    root.classList.remove("dark");
+    try {
+      expect(getComputedStyle(filler!).backgroundColor).toBe(paneBackground());
+      root.classList.add("dark");
+      expect(getComputedStyle(filler!).backgroundColor).toBe(paneBackground());
+    } finally {
+      root.classList.remove("dark");
+    }
+  });
+});
