@@ -97,6 +97,14 @@ rm handoff/design/boards/.render.html
   ported code survives; one the board does not place goes under the `...` overflow menu.
 - **Grid pane focus** keeps its current treatment; the `Composer` board's pane frames do not change it.
 
+- **Right panel follows upstream: launcher + on-demand tabs; panel top row holds panel and
+  window controls** (overrides the fixed Changes, Files, Preview and Pull request tabs drawn on
+  `Panels`, `ScreenFiles`, `ScreenPreview`): the panel opens on the "Open a surface" launcher,
+  and tabs are created from the launcher or `+`. The panel spans the window height with `+` at
+  the left of its top row and, on the right, maximize, terminal, right-panel and the window
+  controls; when the panel closes, the window controls return to the main top bar. The main top
+  bar ends at the panel's 1px divider, with the grid layout control immediately left of it.
+
 - **Shell: square threads, dividers, floating labels** (approved; overrides the pane card,
   gutter and pane head drawn on `ScreenThread`, `Panels`, `GridFlow`, `Grid*` and every screen
   board; reference mocks in `mocks/shell-square/`):

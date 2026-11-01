@@ -66,10 +66,10 @@ import {
 } from "./toolkits/device/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
-import * as HoustonTaskHandlers from "../houston/tasks/toolkit/handlers.ts";
-import { HoustonTaskToolkit } from "../houston/tasks/toolkit/tools.ts";
 import * as HoustonMergeQueueHandlers from "../houston/mergeQueue/toolkit/handlers.ts";
 import { HoustonMergeQueueToolkit } from "../houston/mergeQueue/toolkit/tools.ts";
+import * as HoustonTaskHandlers from "../houston/tasks/toolkit/handlers.ts";
+import { HoustonTaskToolkit } from "../houston/tasks/toolkit/tools.ts";
 import * as HoustonNightHandlers from "../houston/nightShift/toolkit/handlers.ts";
 import { HoustonNightToolkit } from "../houston/nightShift/toolkit/tools.ts";
 
@@ -1023,16 +1023,16 @@ export const layerDeviceToolkit = Layer.mergeAll(
   layerDeviceScreenshotRegistration,
 );
 
-// Houston: the Tasks backlog for agents; each call checks the caller's project access.
-export const layerHoustonTaskToolkit = toolkitRegistration(
-  HoustonTaskToolkit,
-  HoustonTaskHandlers.layer,
-);
-
 // Houston: the merge queue for agents; enqueue, dequeue and status in the caller's project only.
 export const layerHoustonMergeQueueToolkit = toolkitRegistration(
   HoustonMergeQueueToolkit,
   HoustonMergeQueueHandlers.layer,
+);
+
+// Houston: the Tasks backlog for agents; each call checks the caller's project access.
+export const layerHoustonTaskToolkit = toolkitRegistration(
+  HoustonTaskToolkit,
+  HoustonTaskHandlers.layer,
 );
 
 // Houston: the Night shift ledger for the threads of a live run; each call finds the caller's run.
@@ -1062,8 +1062,8 @@ export const layerTools = Layer.mergeAll(
   layerPullRequestsToolkit,
   layerDeviceToolkit,
   layerHtmlToolkit,
-  layerHoustonTaskToolkit,
   layerHoustonMergeQueueToolkit,
+  layerHoustonTaskToolkit,
   layerHoustonNightToolkit,
 );
 

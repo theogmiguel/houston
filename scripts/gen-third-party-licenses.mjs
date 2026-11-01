@@ -274,7 +274,6 @@ function assetPackages() {
 function main() {
   const packages = [
     ...assetPackages(),
-    ...cargoPackages(join(ROOT, "core", "Cargo.toml")),
     ...cargoPackages(join(ROOT, "src-tauri", "Cargo.toml")),
     ...workspaceNpmPackages(),
   ];

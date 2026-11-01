@@ -100,14 +100,6 @@ jobs:
             src-tauri
           key: release-linux-${{ matrix.arch }}
           cache-on-failure: true
-      - name: Cache the pinned libghostty-vt source and Zig
-        uses: actions/cache@v5
-        with:
-          path: |
-            core/target/ghostty-vt
-            src-tauri/target/ghostty-vt
-          key: ghostty-vt-${{ matrix.arch }}-ubuntu-22.04-${{ hashFiles('core/houston-core/ghostty-vt.lock', 'core/houston-core/build.rs') }}
-
       - name: Cache the pinned Tauri CLI
         id: tauri-cli-cache
         uses: actions/cache@v5
@@ -181,7 +173,7 @@ jobs:
 
       # NO_STRIP: linuxdeploy strips every library it copies, a known failure
       # on newer runners; the app binary is stripped by the release profile.
-      - name: Build the bundles (renderer + protocol gate + appimage,deb)
+      - name: Build the bundles (appimage,deb)
         env:
           NO_STRIP: "true"
         run: |
@@ -350,7 +342,7 @@ jobs:
             apt-get install -y -qq ${{ matrix.packages }}
           fi
 
-      # --version exits before any window, channel or daemon, so it proves the
+      # --version exits before any window, channel or server, so it proves the
       # full dynamic dependency chain loads on this distribution headlessly.
       - name: Boot the AppImage headless
         shell: bash

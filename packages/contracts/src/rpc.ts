@@ -218,6 +218,18 @@ import {
   HoustonTaskSourceSyncResult,
 } from "./houston/taskSources.ts";
 import {
+  HoustonSlackConfigureInput,
+  HoustonSlackConnectInput,
+  HoustonSlackEmptyInput,
+  HoustonSlackError,
+  HoustonSlackInfo,
+  HoustonSlackRequest,
+  HoustonSlackRequestsListInput,
+  HoustonSlackStreamEvent,
+} from "./houston/slack.ts";
+import {
+  HoustonHarnessCreateTaskInput,
+  HoustonHarnessCreateTaskResult,
   HoustonHarnessDecideInput,
   HoustonHarnessEmptyResult,
   HoustonHarnessError,
@@ -596,6 +608,12 @@ export const WS_METHODS = {
   houstonTaskSourcesSubscribe: "houston.taskSources.subscribe",
   houstonTaskSourcesImportV1Status: "houston.taskSources.importV1.status",
   houstonTaskSourcesImportV1Run: "houston.taskSources.importV1.run",
+  houstonSlackGet: "houston.slack.get",
+  houstonSlackConnect: "houston.slack.connect",
+  houstonSlackDisconnect: "houston.slack.disconnect",
+  houstonSlackConfigure: "houston.slack.configure",
+  houstonSlackRequestsList: "houston.slack.requests.list",
+  houstonSlackSubscribe: "houston.slack.subscribe",
   houstonHarnessGet: "houston.harness.get",
   houstonHarnessSubscribe: "houston.harness.subscribe",
   houstonHarnessOverview: "houston.harness.overview",
@@ -605,6 +623,7 @@ export const WS_METHODS = {
   houstonHarnessReport: "houston.harness.report",
   houstonHarnessDecide: "houston.harness.decide",
   houstonHarnessMarkSeen: "houston.harness.markSeen",
+  houstonHarnessCreateTask: "houston.harness.createTask",
   houstonNightShiftGet: "houston.nightShift.get",
   houstonNightShiftSubscribe: "houston.nightShift.subscribe",
   houstonNightShiftSubscribeOverview: "houston.nightShift.subscribeOverview",
@@ -1902,6 +1921,45 @@ const WsHoustonTaskSourcesImportV1RunRpc = Rpc.make(WS_METHODS.houstonTaskSource
   error: HoustonTaskSourceRpcError,
 });
 
+const HoustonSlackRpcError = Schema.Union([HoustonSlackError, EnvironmentAuthorizationError]);
+
+const WsHoustonSlackGetRpc = Rpc.make(WS_METHODS.houstonSlackGet, {
+  payload: HoustonSlackEmptyInput,
+  success: HoustonSlackInfo,
+  error: HoustonSlackRpcError,
+});
+
+const WsHoustonSlackConnectRpc = Rpc.make(WS_METHODS.houstonSlackConnect, {
+  payload: HoustonSlackConnectInput,
+  success: HoustonSlackInfo,
+  error: HoustonSlackRpcError,
+});
+
+const WsHoustonSlackDisconnectRpc = Rpc.make(WS_METHODS.houstonSlackDisconnect, {
+  payload: HoustonSlackEmptyInput,
+  success: HoustonSlackInfo,
+  error: HoustonSlackRpcError,
+});
+
+const WsHoustonSlackConfigureRpc = Rpc.make(WS_METHODS.houstonSlackConfigure, {
+  payload: HoustonSlackConfigureInput,
+  success: HoustonSlackInfo,
+  error: HoustonSlackRpcError,
+});
+
+const WsHoustonSlackRequestsListRpc = Rpc.make(WS_METHODS.houstonSlackRequestsList, {
+  payload: HoustonSlackRequestsListInput,
+  success: Schema.Array(HoustonSlackRequest),
+  error: HoustonSlackRpcError,
+});
+
+const WsHoustonSlackSubscribeRpc = Rpc.make(WS_METHODS.houstonSlackSubscribe, {
+  payload: HoustonSlackEmptyInput,
+  success: HoustonSlackStreamEvent,
+  error: HoustonSlackRpcError,
+  stream: true,
+});
+
 const HoustonHarnessRpcError = Schema.Union([HoustonHarnessError, EnvironmentAuthorizationError]);
 
 const WsHoustonHarnessGetRpc = Rpc.make(WS_METHODS.houstonHarnessGet, {
@@ -1957,6 +2015,12 @@ const WsHoustonHarnessDecideRpc = Rpc.make(WS_METHODS.houstonHarnessDecide, {
 const WsHoustonHarnessMarkSeenRpc = Rpc.make(WS_METHODS.houstonHarnessMarkSeen, {
   payload: HoustonHarnessMarkSeenInput,
   success: HoustonHarnessMarkSeenResult,
+  error: HoustonHarnessRpcError,
+});
+
+const WsHoustonHarnessCreateTaskRpc = Rpc.make(WS_METHODS.houstonHarnessCreateTask, {
+  payload: HoustonHarnessCreateTaskInput,
+  success: HoustonHarnessCreateTaskResult,
   error: HoustonHarnessRpcError,
 });
 
@@ -2721,6 +2785,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTaskSourcesSubscribeRpc,
   WsHoustonTaskSourcesImportV1StatusRpc,
   WsHoustonTaskSourcesImportV1RunRpc,
+  WsHoustonSlackGetRpc,
+  WsHoustonSlackConnectRpc,
+  WsHoustonSlackDisconnectRpc,
+  WsHoustonSlackConfigureRpc,
+  WsHoustonSlackRequestsListRpc,
+  WsHoustonSlackSubscribeRpc,
   WsHoustonHarnessGetRpc,
   WsHoustonHarnessSubscribeRpc,
   WsHoustonHarnessOverviewRpc,
@@ -2730,6 +2800,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonHarnessReportRpc,
   WsHoustonHarnessDecideRpc,
   WsHoustonHarnessMarkSeenRpc,
+  WsHoustonHarnessCreateTaskRpc,
   WsHoustonNightShiftGetRpc,
   WsHoustonNightShiftSubscribeRpc,
   WsHoustonNightShiftSubscribeOverviewRpc,

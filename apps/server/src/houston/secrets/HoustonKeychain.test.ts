@@ -11,7 +11,7 @@ import * as Redacted from "effect/Redacted";
 
 import { HoustonKeychain, keychainService, layerMemory, makeMemory } from "./HoustonKeychain.ts";
 
-// The v1 name, as core/houston-core/src/task_trackers.rs derived it.
+// The v1 keychain service name, as v1's task tracker derived it.
 const v1Service = (stateDir: string, workspace: string) =>
   `houston-tracker-notion-${NodeCrypto.createHash("sha256")
     .update(`${stateDir}\u0000${workspace}`)

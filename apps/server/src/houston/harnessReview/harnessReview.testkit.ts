@@ -47,6 +47,8 @@ import {
   makeHarness,
   withReadOnlyRun,
 } from "../sideThreads.testkit.ts";
+import * as HoustonTaskService from "../tasks/TaskService.ts";
+import * as HoustonTaskStore from "../tasks/TaskStore.ts";
 import {
   layerInstances,
   layerProjectMetadata,
@@ -57,6 +59,7 @@ import { layerHarnessReview, layerHarnessScheduledTaskRunner } from "./layer.ts"
 import * as HarnessReviewReactor from "./Reactor.ts";
 import * as HoustonHarnessRunner from "./Runner.ts";
 import * as HoustonHarnessService from "./Service.ts";
+import type { VerificationWrite } from "./rules.ts";
 import * as HoustonHarnessStore from "./Store.ts";
 
 // The families test proves each adapter's own declaration; these doubles declare the same.
@@ -99,6 +102,10 @@ export interface KitOptions {
   readonly specs?: ReadonlyArray<DoubleSpec>;
   /** Whether the reactor starts with the layer, as in the server. */
   readonly reactor?: boolean;
+  /** Wraps the real Tasks service, to place a yield or an interrupt inside a Tasks call. */
+  readonly tasks?: (
+    service: HoustonTaskService.HoustonTaskService["Service"],
+  ) => HoustonTaskService.HoustonTaskService["Service"];
 }
 
 /** Thread launches of scheduled tasks Houston does not claim. */
@@ -205,12 +212,24 @@ export const layerKit = (kit: Kit) => {
         )
       : layerHarnessReview
   ).pipe(Layer.provideMerge(HoustonHarnessRunner.layer), Layer.provideMerge(scheduledTasks));
+  const wrapTasks = kit.options.tasks;
+  const taskService =
+    wrapTasks === undefined
+      ? HoustonTaskService.layer
+      : Layer.effect(
+          HoustonTaskService.HoustonTaskService,
+          Effect.gen(function* () {
+            return wrapTasks(yield* HoustonTaskService.HoustonTaskService);
+          }),
+        ).pipe(Layer.provide(HoustonTaskService.layer));
   return harnessReview.pipe(
+    // Fix tasks and verdict comments go through the real Tasks service, as in the server.
+    Layer.provideMerge(taskService),
     Layer.provideMerge(Layer.mergeAll(RuntimeLayer.layerProjectService, ProjectStore.layer)),
     Layer.provideMerge(ProjectionStore.layer),
     Layer.provideMerge(registry),
     Layer.provideMerge(orchestration),
-    Layer.provideMerge(HoustonHarnessStore.layer),
+    Layer.provideMerge(Layer.merge(HoustonHarnessStore.layer, HoustonTaskStore.layer)),
     Layer.provideMerge(layerInstances(["claudeAgent", "codex", "opencode", "opencode2"])),
     Layer.provideMerge(ProjectEnrichmentService.layer),
     Layer.provideMerge(layerWorkspacePaths),
@@ -337,6 +356,7 @@ export const seedPublished = Effect.fn("HarnessReviewKit.seedPublished")(functio
   readonly findings: ReadonlyArray<Record<string, unknown>>;
   readonly endedAt: string;
   readonly report?: string;
+  readonly verifications?: ReadonlyArray<VerificationWrite>;
 }) {
   const store = yield* HoustonHarnessStore.HoustonHarnessStore;
   const review = yield* store.openReview({
@@ -374,7 +394,7 @@ export const seedPublished = Effect.fn("HarnessReviewKit.seedPublished")(functio
       recommendation: String(finding.recommendation ?? "Allow it"),
       applyPrompt: String(finding.applyPrompt ?? "Add the rule"),
     })),
-    verifications: [],
+    verifications: input.verifications ?? [],
   });
   return review.id;
 });
@@ -394,7 +414,13 @@ export const runKit = <A, E>(
     return yield* body.pipe(Effect.provideContext(context));
   }).pipe(Effect.scoped);
 
-export { HarnessReviewReactor, HoustonHarnessRunner, HoustonHarnessService, HoustonHarnessStore };
+export {
+  HarnessReviewReactor,
+  HoustonHarnessRunner,
+  HoustonHarnessService,
+  HoustonHarnessStore,
+  HoustonTaskService,
+};
 export type { Harness };
 
 /** The database handle, for tests that read rows directly. */

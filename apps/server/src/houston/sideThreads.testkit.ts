@@ -15,6 +15,7 @@ import {
   type ModelSelection,
   type OrchestrationV2Command,
   type OrchestrationV2DomainEvent,
+  type OrchestrationV2ServerCommand,
   type OrchestrationV2ProviderCapabilities,
   type OrchestrationV2ProviderThread,
   type OrchestrationV2ProviderTurn,
@@ -457,7 +458,7 @@ export interface Context {
     text: string,
   ) => Effect.Effect<void, HarnessError>;
   readonly dispatch: (
-    command: OrchestrationV2Command,
+    command: OrchestrationV2ServerCommand,
   ) => Effect.Effect<void, Orchestrator.OrchestratorV2Error>;
 }
 

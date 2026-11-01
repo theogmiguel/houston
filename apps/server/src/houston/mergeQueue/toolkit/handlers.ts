@@ -61,9 +61,13 @@ const callerOf = Effect.fn("HoustonMergeQueueToolkit.callerOf")(function* (
   }
   // Side threads hold no credential; this backstops a credential that outlived that rule.
   if (access === "writes" && caller.side !== undefined) {
+    const side = caller.side;
+    const origin = hasSourceThread(side)
+      ? `${side.kind} of ${side.sourceThreadId}`
+      : `${side.kind} ${side.reviewId}`;
     return yield* new OrchestratorMcpFailure({
       code: "capability_denied",
-      message: `${tool} refused: ${caller.id} is a side thread (${caller.side.kind}${hasSourceThread(caller.side) ? ` of ${caller.side.sourceThreadId}` : ""}). ${SIDE_THREAD_READ_ONLY}`,
+      message: `${tool} refused: ${caller.id} is a side thread (${origin}). ${SIDE_THREAD_READ_ONLY}`,
     });
   }
   return { threadId: threadScope.thread.threadId, projectId: caller.projectId };

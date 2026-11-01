@@ -24,6 +24,7 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import type * as Scope from "effect/Scope";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 import { Headers } from "effect/http";
 import { TestClock } from "effect/testing";
@@ -103,12 +104,12 @@ import * as WorktreeSetupTracker from "../../project/WorktreeSetupTracker.ts";
 import { layerWsRpc, WS_RPC_SERVER_OPTIONS } from "../../ws.ts";
 import * as HoustonNightShiftService from "../nightShift/Service.ts";
 import * as HoustonReviewState from "../reviewState.ts";
-import * as HoustonTaskService from "../tasks/TaskService.ts";
 import * as HoustonTaskV1Import from "../tasks/V1Import.ts";
 import * as HoustonTaskSourceService from "../taskSources/SourceService.ts";
 import * as HoustonTaskSourceV1Import from "../taskSources/V1Import.ts";
 import * as HoustonTaskRuns from "../tasks/TaskRuns.ts";
 import * as HoustonMergeQueueService from "../mergeQueue/Service.ts";
+import * as HoustonSlackService from "../slack/Service.ts";
 import {
   HoustonHarnessService,
   HoustonHarnessStore,
@@ -143,13 +144,13 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(GitWorkflowService.GitWorkflowService)({}),
   Layer.mock(HostResources.HostResources)({}),
   Layer.mock(HoustonReviewState.HoustonReviewState)({}),
-  Layer.mock(HoustonTaskService.HoustonTaskService)({}),
   Layer.mock(HoustonTaskV1Import.HoustonTaskV1Import)({}),
   Layer.mock(HoustonTaskSourceService.HoustonTaskSourceService)({}),
   Layer.mock(HoustonTaskSourceV1Import.HoustonTaskSourceV1Import)({}),
   Layer.mock(HoustonNightShiftService.HoustonNightShiftService)({}),
   Layer.mock(HoustonTaskRuns.HoustonTaskRuns)({}),
   Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
+  Layer.mock(HoustonSlackService.HoustonSlackService)({}),
   Layer.mock(KnownWorkspaces.KnownWorkspaces)({}),
   Layer.mock(McpAppRequests.McpAppRequests)({}),
   Layer.mock(OtlpEndpointCheck.OtlpEndpointCheck)({}),
@@ -422,6 +423,16 @@ describe("subscriptions", () => {
           const afterDecision = (yield* Queue.take(listener.responses)) as HoustonHarnessSnapshot;
           assert.equal(afterDecision.findings[0]?.state, "dismissed");
 
+          // A fix task, through the RPC: the link reaches subscribers.
+          const created = yield* client.call(WS_METHODS.houstonHarnessCreateTask, {
+            projectId,
+            key: "denied-push",
+          });
+          assert.isNull(failureOf(created));
+          assert.equal((created as { task: { key: string } }).task.key, "HOU-1");
+          const afterLink = (yield* Queue.take(listener.responses)) as HoustonHarnessSnapshot;
+          assert.equal(afterLink.findings[0]?.task?.key, "HOU-1");
+
           yield* listener.interrupt(subscription);
           yield* overviewListener.interrupt(overviewSubscription);
         }),
@@ -497,8 +508,14 @@ describe("scopes and projects", () => {
               { projectId, reviewId },
               { projectId: unknownProject, reviewId },
             ],
+            [
+              WS_METHODS.houstonHarnessCreateTask,
+              AuthOrchestrationOperateScope,
+              { projectId, key: "denied-push" },
+              { projectId: unknownProject, key: "denied-push" },
+            ],
           ];
-          assert.lengthOf(methods, 9);
+          assert.lengthOf(methods, 10);
           for (const [method, scope, payload] of methods) {
             const client = yield* makeWsClient(
               ALL_SCOPES.filter((candidate) => candidate !== scope),
@@ -506,10 +523,13 @@ describe("scopes and projects", () => {
             const reply = yield* client.call(method, payload);
             assert.equal(failureOf(reply)?._tag, "EnvironmentAuthorizationError", method);
           }
-          // Nothing changed: no schedule, no decision, no cursor move.
+          // Nothing changed: no schedule, no decision, no cursor move, no fix task.
           assert.isUndefined(yield* reviewTask(projectId));
           const snapshot = yield* harness.get({ projectId });
           assert.equal(snapshot.findings[0]?.state, "open");
+          assert.isNull(snapshot.findings[0]?.task ?? null);
+          const sql = yield* SqlClient.SqlClient;
+          assert.deepEqual(yield* sql`SELECT COUNT(*) AS n FROM houston_tasks`, [{ n: 0 }]);
           assert.equal(snapshot.seenReviewId, 0);
           assert.isNull((yield* store.settings(projectId))?.scheduledTaskId ?? null);
 

@@ -530,6 +530,117 @@ const TaskRunsCursor = Effect.gen(function* () {
   `;
 });
 
+// Slack intake: one settings row, the channel map with catch-up cursors, the filed requests and
+// what each owes Slack. Both tokens live in the OS keychain; no column holds one.
+const SlackIntake = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_slack_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      enabled INTEGER NOT NULL,
+      owner_user_id TEXT,
+      language TEXT NOT NULL CHECK (language IN ('en', 'pt-BR')),
+      credential_set_at TEXT,
+      team_id TEXT,
+      team TEXT,
+      bot_user_id TEXT,
+      revision INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_slack_channels (
+      channel_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      cursor_ts TEXT NOT NULL,
+      mapped_at TEXT NOT NULL
+    )
+  `;
+  // awaiting_reply marks a mention refused for its text, whose requester's next reply is filed.
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_slack_requests (
+      id INTEGER PRIMARY KEY,
+      channel_id TEXT NOT NULL,
+      ts TEXT NOT NULL,
+      author TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      task_id INTEGER,
+      state TEXT NOT NULL CHECK (state IN ('pending', 'queued', 'started', 'refused', 'closed')),
+      status_reaction TEXT,
+      permalink TEXT,
+      queued_at TEXT,
+      created_at TEXT NOT NULL,
+      awaiting_reply INTEGER NOT NULL DEFAULT 0,
+      attachments_json TEXT,
+      UNIQUE (channel_id, ts)
+    )
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_slack_requests_task ON houston_slack_requests(task_id)`;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_slack_questions (
+      id INTEGER PRIMARY KEY,
+      request_id INTEGER NOT NULL,
+      task_run_id INTEGER NOT NULL,
+      thread_id TEXT NOT NULL,
+      form_json TEXT NOT NULL,
+      answer TEXT,
+      answered_by TEXT,
+      answer_ts TEXT,
+      created_at TEXT NOT NULL,
+      answered_at TEXT,
+      delivered_at TEXT
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_slack_results (
+      task_run_id INTEGER PRIMARY KEY,
+      request_id INTEGER NOT NULL,
+      form_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_slack_adjustments (
+      id INTEGER PRIMARY KEY,
+      request_id INTEGER NOT NULL,
+      task_run_id INTEGER NOT NULL,
+      ts TEXT NOT NULL,
+      text TEXT NOT NULL,
+      state TEXT NOT NULL CHECK (state IN ('pending', 'accepted', 'refused')),
+      created_at TEXT NOT NULL,
+      UNIQUE (request_id, ts)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_slack_outbox (
+      id INTEGER PRIMARY KEY,
+      request_id INTEGER NOT NULL,
+      dedupe_key TEXT NOT NULL UNIQUE,
+      target TEXT NOT NULL CHECK (target IN ('thread', 'dm', 'update', 'react', 'ephemeral')),
+      text TEXT NOT NULL,
+      blocks_json TEXT,
+      reaction TEXT,
+      remove_reaction TEXT,
+      message_ts TEXT,
+      update_of TEXT,
+      user_id TEXT,
+      posted_channel TEXT,
+      posted_ts TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      sent_at TEXT
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_slack_import (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      imported_at TEXT NOT NULL,
+      counts_json TEXT NOT NULL
+    )
+  `;
+});
+
 // The merge queue, keyed by upstream ProjectId without a foreign key; a deleted project's rows go
 // with its deletion hook. JSON columns hold camelCase facts, verification, failure and holds.
 const MergeQueue = Effect.gen(function* () {
@@ -604,7 +715,6 @@ const TaskSourceMarkerKey = Effect.gen(function* () {
   yield* sql`ALTER TABLE houston_task_source_identity ADD COLUMN marker_key TEXT`;
 });
 
-// Id 8 belongs to a Houston migration on another branch; the Migrator orders by id.
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -613,20 +723,55 @@ const houstonMigrationEntries = [
   [5, "MergeQueue", MergeQueue],
   [6, "TaskSourceMarkerKey", TaskSourceMarkerKey],
   [7, "HarnessReview", HarnessReview],
+  [8, "SlackIntake", SlackIntake],
   [9, "NightShift", NightShift],
 ] as const;
 
-const run = Migrator.make({});
-
+// Ids land in merge order, so a database can record a higher id before a lower one; every
+// unrecorded id runs, ascending, each in its own transaction with its history row.
 export const runHoustonMigrations = Effect.fn("runHoustonMigrations")(function* () {
-  const executed = yield* run({
-    table: HOUSTON_MIGRATIONS_TABLE,
-    loader: Migrator.fromRecord(
-      Object.fromEntries(
-        houstonMigrationEntries.map(([id, name, migration]) => [`${id}_${name}`, migration]),
-      ),
-    ),
-  });
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS ${sql(HOUSTON_MIGRATIONS_TABLE)} (
+      migration_id integer PRIMARY KEY NOT NULL,
+      created_at datetime NOT NULL DEFAULT current_timestamp,
+      name VARCHAR(255) NOT NULL
+    )
+  `;
+  const recorded = new Set(
+    (yield* sql<{ readonly migration_id: number }>`
+      SELECT migration_id FROM ${sql(HOUSTON_MIGRATIONS_TABLE)}
+    `).map((row) => row.migration_id),
+  );
+  const executed: Array<readonly [number, string]> = [];
+  const pending = houstonMigrationEntries
+    .filter(([id]) => !recorded.has(id))
+    .toSorted(([left], [right]) => left - right);
+  for (const [id, name, migration] of pending) {
+    const applied = yield* sql.withTransaction(
+      Effect.gen(function* () {
+        // A second server that recorded this id first wins; this one skips it.
+        const claimed = yield* sql`
+          INSERT INTO ${sql(HOUSTON_MIGRATIONS_TABLE)} (migration_id, name) VALUES (${id}, ${name})
+          ON CONFLICT (migration_id) DO NOTHING RETURNING migration_id
+        `;
+        if (claimed.length === 0) return false;
+        yield* migration.pipe(
+          Effect.catch((cause) =>
+            Effect.die(
+              new Migrator.MigrationError({
+                cause,
+                kind: "Failed",
+                message: `Migration "${id}_${name}" failed`,
+              }),
+            ),
+          ),
+        );
+        return true;
+      }),
+    );
+    if (applied) executed.push([id, name] as const);
+  }
   if (executed.length > 0) {
     yield* Effect.log("Houston migrations ran successfully").pipe(
       Effect.annotateLogs({ migrations: executed.map(([id, name]) => `${id}_${name}`) }),
