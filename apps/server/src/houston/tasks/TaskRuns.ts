@@ -76,7 +76,7 @@ import {
   taskBranch,
   taskRunStateOf,
 } from "./rules.ts";
-import { defangFences, fenceSlackRequest } from "../slack/rules.ts";
+import { slackBriefOf } from "../slack/Brief.ts";
 import * as TaskGit from "./TaskGit.ts";
 import { HoustonTaskService, USER_ACTOR } from "./TaskService.ts";
 import {
@@ -264,9 +264,6 @@ const decodeDecisions = Schema.decodeUnknownSync(
   Schema.fromJsonString(Schema.Array(Schema.String)),
 );
 const encodePlan = Schema.encodeSync(Schema.fromJsonString(HoustonTaskPlan));
-const decodeAttachments = Schema.decodeUnknownOption(
-  Schema.fromJsonString(Schema.Array(ChatAttachment)),
-);
 
 const runningAfterUserStatus = (row: TaskRow) => row.status === "todo" || row.status === "backlog";
 
@@ -350,25 +347,13 @@ const make = Effect.gen(function* () {
       WHERE d.task_id = ${taskId}
     `).pipe(Effect.map((rows) => rows[0]));
 
-  /** The Slack request a task was filed from, if any. */
-  const slackRequestOf = (row: TaskRow) =>
-    row.created_by.startsWith("slack:")
-      ? run(sql<{
-          readonly author: string;
-          readonly channel_id: string;
-          readonly attachments_json: string | null;
-        }>`
-          SELECT author, channel_id, attachments_json FROM houston_slack_requests
-          WHERE task_id = ${row.id} ORDER BY id LIMIT 1
-        `).pipe(Effect.map((rows) => Option.fromNullishOr(rows[0])))
-      : Effect.succeedNone;
+  const slackBrief = (row: TaskRow) =>
+    slackBriefOf(row).pipe(Effect.provideService(SqlClient.SqlClient, sql));
 
   /** A Slack request's images, attached to its run's brief message. */
   const slackImagesOf = (row: TaskRow) =>
-    Effect.map(slackRequestOf(row), (request): ReadonlyArray<ChatAttachment> =>
-      Option.isNone(request) || request.value.attachments_json === null
-        ? []
-        : Option.getOrElse(decodeAttachments(request.value.attachments_json), () => []),
+    Effect.map(slackBrief(row), (brief): ReadonlyArray<ChatAttachment> =>
+      Option.isNone(brief) ? [] : brief.value.attachments,
     );
 
   const briefFor = Effect.fn("HoustonTaskRuns.briefFor")(function* (
@@ -378,17 +363,11 @@ const make = Effect.gen(function* () {
     const detail = yield* store.detail(row);
     const initiative = yield* initiativeOf(row.id);
     // A requester's words from Slack reach the agent only attributed and fenced.
-    const slack = yield* slackRequestOf(row);
+    const slack = yield* slackBrief(row);
     return buildBrief({
       key: keyOf(row),
-      title: Option.isNone(slack) ? row.title : defangFences(row.title),
-      description: Option.isNone(slack)
-        ? row.description
-        : fenceSlackRequest({
-            author: slack.value.author,
-            channel: slack.value.channel_id,
-            text: row.description,
-          }),
+      title: Option.isNone(slack) ? row.title : slack.value.title,
+      description: Option.isNone(slack) ? row.description : slack.value.description,
       acceptance: detail.acceptance.map((item) => item.text),
       links: row.ref_url === null ? [] : [row.ref_url],
       initiative:

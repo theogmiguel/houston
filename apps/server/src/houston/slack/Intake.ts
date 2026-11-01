@@ -19,10 +19,19 @@ import { attachmentRelativePath, createAttachmentId } from "../../attachmentStor
 import * as ServerConfig from "../../config.ts";
 import { HoustonTaskRuns } from "../tasks/TaskRuns.ts";
 import { HoustonTaskService } from "../tasks/TaskService.ts";
-import { HoustonTaskStore, nowIso, type TaskRow } from "../tasks/TaskStore.ts";
+import { HoustonTaskStore, nowIso, type RunRow, type TaskRow } from "../tasks/TaskStore.ts";
 import { OPEN_RUN_STATES } from "../tasks/rules.ts";
 import {
+  ANSWER_ACTION,
+  ANSWER_CALLBACK,
+  HoustonSlackConversation,
+  OTHER_ANSWER_ACTION,
+} from "./Conversation.ts";
+import {
   ACCEPT_ACTION,
+  ADJUST_ACCEPT_ACTION,
+  ADJUST_IGNORE_ACTION,
+  answerAllowed,
   CHECK_MARK,
   REFUSE_ACTION,
   REFUSE_CALLBACK,
@@ -85,6 +94,18 @@ const EXTENSIONS: Readonly<Record<string, string>> = {
 };
 
 const encodeAttachments = Schema.encodeSync(Schema.fromJsonString(Schema.Array(ChatAttachment)));
+const decodeOptions = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Struct({ options: Schema.Array(Schema.String) })),
+);
+
+interface AdjustmentRow {
+  readonly id: number;
+  readonly request_id: number;
+  readonly task_run_id: number;
+  readonly ts: string;
+  readonly text: string;
+  readonly state: "pending" | "accepted" | "refused";
+}
 
 const section = (text: string) => ({ type: "section", text: { type: "mrkdwn", text } });
 
@@ -95,6 +116,7 @@ const make = Effect.gen(function* () {
   const tasks = yield* HoustonTaskService;
   const taskStore = yield* HoustonTaskStore;
   const runs = yield* HoustonTaskRuns;
+  const conversation = yield* HoustonSlackConversation;
   const config = yield* ServerConfig.ServerConfig;
   const fs = yield* FileSystem.FileSystem;
   const lock = yield* Semaphore.make(1);
@@ -123,7 +145,10 @@ const make = Effect.gen(function* () {
         (SELECT state FROM houston_task_runs
           WHERE task_id = r.task_id AND kind = 'implementation' ORDER BY id DESC LIMIT 1) AS run_state,
         (SELECT COUNT(*) FROM houston_slack_questions q
-          WHERE q.request_id = r.id AND q.answered_at IS NULL) AS asking
+          WHERE q.request_id = r.id AND q.answered_at IS NULL
+            AND q.task_run_id = (SELECT id FROM houston_task_runs
+              WHERE task_id = r.task_id AND kind = 'implementation' ORDER BY id DESC LIMIT 1)
+        ) AS asking
       FROM houston_slack_requests r WHERE r.state = 'started'
     `);
     return workingCount(
@@ -436,12 +461,71 @@ const make = Effect.gen(function* () {
     });
   });
 
+  const latestRunOf = (taskId: number) =>
+    run(sql<RunRow>`
+      SELECT * FROM houston_task_runs WHERE task_id = ${taskId} AND kind = 'implementation'
+      ORDER BY id DESC LIMIT 1
+    `).pipe(Effect.map((rows) => rows[0]));
+
+  /** The accepted adjustment a request waits to start, with the handed-back run it adjusts. */
+  const adjustmentToStart = Effect.fn("HoustonSlackIntake.adjustmentToStart")(function* (
+    request: RequestRow,
+  ) {
+    if (request.task_id === null) return undefined;
+    const latest = yield* latestRunOf(request.task_id);
+    if (latest === undefined || latest.state !== "handed_back") return undefined;
+    const [adjustment] = yield* run(sql<AdjustmentRow>`
+      SELECT * FROM houston_slack_adjustments
+      WHERE request_id = ${request.id} AND task_run_id = ${latest.id} AND state = 'accepted'
+      ORDER BY id DESC LIMIT 1
+    `);
+    return adjustment === undefined ? undefined : { adjustment, run: latest };
+  });
+
+  /** A new attempt on the adjusted run's branch; its brief carries the accepted adjustments. */
+  const startAdjustment = Effect.fn("HoustonSlackIntake.startAdjustment")(function* (
+    request: RequestRow,
+    previous: RunRow,
+    adjustment: AdjustmentRow,
+    settings: SettingsRow | undefined,
+  ) {
+    const text = slackText(language(settings));
+    const started = yield* Effect.result(runs.runControl({ runId: previous.id, action: "resume" }));
+    yield* store.write(
+      Effect.gen(function* () {
+        yield* run(sql`
+          UPDATE houston_slack_requests SET state = 'started', queued_at = NULL
+          WHERE id = ${request.id}
+        `);
+        if (started._tag === "Failure") {
+          yield* store.react(request.id, "warning");
+          yield* ownerDm(request, settings, `adjust-failed:${adjustment.id}`, [
+            `${text.attention}: ${text.couldNotStart(outboundText(started.failure.message))}`,
+          ]);
+        } else {
+          yield* store.react(request.id, "gear");
+          yield* adjustmentDmUpdate(request, adjustment, settings, text.adjustmentStarted);
+        }
+        return { result: undefined, requests: [request.id] };
+      }),
+    );
+  });
+
   const startRequest = Effect.fn("HoustonSlackIntake.startRequest")(function* (
     request: RequestRow,
     task: TaskRow,
     settings: SettingsRow | undefined,
   ) {
     const text = slackText(language(settings));
+    const pendingAttempt = yield* adjustmentToStart(request);
+    if (pendingAttempt !== undefined) {
+      return yield* startAdjustment(
+        request,
+        pendingAttempt.run,
+        pendingAttempt.adjustment,
+        settings,
+      );
+    }
     const started = yield* Effect.result(runs.start({ id: houstonTaskKey(task.number) }));
     if (started._tag === "Failure") {
       yield* store.write(
@@ -615,6 +699,7 @@ const make = Effect.gen(function* () {
     channel: string,
     user: string,
     key: string,
+    notice?: string,
   ) {
     const settings = yield* store.settings;
     yield* store.write(
@@ -623,7 +708,7 @@ const make = Effect.gen(function* () {
           requestId: request.id,
           dedupeKey: `ephemeral:${request.id}:${user}:${key}`,
           target: "ephemeral",
-          text: slackText(language(settings)).onlyOwner,
+          text: notice ?? slackText(language(settings)).onlyOwner,
           userId: user,
           channel,
         })
@@ -651,8 +736,334 @@ const make = Effect.gen(function* () {
         botToken,
         request,
       );
+      return;
+    }
+    const settings = yield* store.settings;
+    // Only the requester's or the owner's reply answers, joins the task or becomes an adjustment.
+    const fromRequesterOrOwner = answerAllowed({
+      user: classified.user,
+      requester: request.author,
+      ownerUserId: settings?.owner_user_id ?? null,
+    });
+    if (!fromRequesterOrOwner || classified.text.length === 0) return;
+    // Reply text is held to the dialog's bound wherever it goes.
+    const chars = [...classified.text].length;
+    if (chars > HOUSTON_SLACK_LIMITS.dialogChars) {
+      return yield* ephemeral(
+        request,
+        classified.channel,
+        classified.user,
+        `too-long:${classified.ts}`,
+        slackText(language(settings)).replyTooLong(chars),
+      );
+    }
+    // While a question is open, the requester's or owner's next reply is its answer.
+    const question = yield* conversation.openQuestion(request.id);
+    if (question !== undefined) {
+      yield* conversation.answer(question, classified.user, classified.text, classified.ts);
+      return;
+    }
+    if (request.task_id === null) return;
+    if (request.state === "pending" || request.state === "queued") {
+      return yield* complement(request, classified, settings);
+    }
+    if (request.state !== "started") return;
+    const latest = yield* latestRunOf(request.task_id);
+    const task = yield* taskStore.taskById(request.task_id);
+    if (latest?.state === "handed_back" && task?.status === "in_review") {
+      return yield* requestAdjustment(request, latest, classified, settings);
+    }
+    // The owner is not told about their own reply during the work.
+    if (
+      latest !== undefined &&
+      OPEN_RUN_STATES.has(latest.state) &&
+      classified.user === request.author
+    ) {
+      yield* midWork(request, classified, settings);
     }
   });
+
+  // Replies and adjustments.
+
+  const queued = (key: string) =>
+    run(sql<{ readonly one: number }>`
+      SELECT 1 AS one FROM houston_slack_outbox WHERE dedupe_key = ${key}
+    `).pipe(Effect.map((rows) => rows.length > 0));
+
+  const quote = (value: string) =>
+    escapeMrkdwn(value)
+      .split("\n")
+      .map((line) => `> ${line}`)
+      .join("\n");
+
+  /** 👀 on a reply, outside the request's one status reaction. */
+  const seen = (request: RequestRow, key: string, ts: string) =>
+    store.enqueue({
+      requestId: request.id,
+      dedupeKey: key,
+      target: "react",
+      text: "",
+      reaction: "eyes",
+      removeReaction: null,
+      messageTs: ts,
+    });
+
+  /** Before the work: the reply joins the task's description under a dated line. */
+  const complement = Effect.fn("HoustonSlackIntake.complement")(function* (
+    request: RequestRow,
+    classified: Extract<Classified, { kind: "reply" }>,
+    settings: SettingsRow | undefined,
+  ) {
+    const key = `reply-seen:${request.id}:${classified.ts}`;
+    if (yield* queued(key)) return;
+    const task = request.task_id === null ? undefined : yield* taskStore.taskById(request.task_id);
+    if (task === undefined) return;
+    const date = (yield* nowIso).slice(0, 10);
+    const added = slackText(language(settings)).addedInSlack(date);
+    const saved = yield* Effect.result(
+      tasks.save(
+        {
+          id: houstonTaskKey(task.number),
+          expectedRevision: task.revision,
+          patch: { description: `${task.description}\n\n${added}\n${classified.text}` },
+        },
+        `slack:${classified.user}`,
+      ),
+    );
+    if (saved._tag === "Failure") {
+      yield* Effect.logWarning(
+        `A Slack reply could not join ${houstonTaskKey(task.number)}: ${saved.failure.message}`,
+      );
+      // The owner hears it once per reply, so a replay does not repeat the message.
+      const prefix = `reply-not-joined:${request.id}:${classified.ts}`;
+      if (yield* queued(`${prefix}:1`)) return;
+      const text = slackText(language(settings));
+      yield* store.write(
+        ownerDm(request, settings, prefix, [
+          `${text.attention}: ${text.replyNotJoined(outboundText(saved.failure.message))}`,
+          quote([...classified.text].slice(0, HOUSTON_SLACK_LIMITS.previewChars).join("")),
+        ]).pipe(Effect.as({ result: undefined, requests: [request.id] })),
+      );
+      return;
+    }
+    yield* store.write(
+      seen(request, key, classified.ts).pipe(Effect.as({ result: undefined })),
+    );
+  });
+
+  /** During the work: the owner hears it; the agent does not. */
+  const midWork = Effect.fn("HoustonSlackIntake.midWork")(function* (
+    request: RequestRow,
+    classified: Extract<Classified, { kind: "reply" }>,
+    settings: SettingsRow | undefined,
+  ) {
+    const owner = settings?.owner_user_id;
+    if (owner === null || owner === undefined) return;
+    const text = slackText(language(settings));
+    const body = [
+      text.newRequest(request.channel_id, request.author),
+      text.midWork,
+      quote(classified.text),
+      `_${text.midWorkHint}_`,
+    ].join("\n");
+    yield* store.write(
+      Effect.gen(function* () {
+        yield* seen(request, `reply-seen:${request.id}:${classified.ts}`, classified.ts);
+        yield* store.enqueue({
+          requestId: request.id,
+          dedupeKey: `mid-work:${request.id}:${classified.ts}`,
+          target: "dm",
+          text: body,
+          blocks: [section(body)],
+          userId: owner,
+        });
+        return { result: undefined };
+      }),
+    );
+  });
+
+  /** After the hand-back: an adjustment the owner accepts into a new attempt or ignores. */
+  const requestAdjustment = Effect.fn("HoustonSlackIntake.requestAdjustment")(function* (
+    request: RequestRow,
+    adjusted: RunRow,
+    classified: Extract<Classified, { kind: "reply" }>,
+    settings: SettingsRow | undefined,
+  ) {
+    const text = slackText(language(settings));
+    const owner = settings?.owner_user_id;
+    const now = yield* nowIso;
+    yield* store.write(
+      Effect.gen(function* () {
+        const [row] = yield* run(sql<{ readonly id: number }>`
+          INSERT INTO houston_slack_adjustments (request_id, task_run_id, ts, text, state, created_at)
+          VALUES (${request.id}, ${adjusted.id}, ${classified.ts}, ${classified.text}, 'pending', ${now})
+          ON CONFLICT (request_id, ts) DO NOTHING RETURNING id
+        `);
+        if (row === undefined) return { result: undefined };
+        yield* seen(request, `adjust-seen:${row.id}`, classified.ts);
+        if (owner !== null && owner !== undefined) {
+          const body = [
+            text.newRequest(request.channel_id, request.author),
+            text.adjustmentTitle,
+            quote(classified.text),
+          ].join("\n");
+          yield* store.enqueue({
+            requestId: request.id,
+            dedupeKey: `dm-adjust:${row.id}`,
+            target: "dm",
+            text: body,
+            blocks: [
+              section(body),
+              {
+                type: "actions",
+                elements: [
+                  {
+                    type: "button",
+                    action_id: ADJUST_ACCEPT_ACTION,
+                    style: "primary",
+                    value: String(row.id),
+                    text: { type: "plain_text", text: text.accept },
+                  },
+                  {
+                    type: "button",
+                    action_id: ADJUST_IGNORE_ACTION,
+                    value: String(row.id),
+                    text: { type: "plain_text", text: text.ignore },
+                  },
+                ],
+              },
+            ],
+            userId: owner,
+          });
+        }
+        return { result: undefined, requests: [request.id] };
+      }),
+    );
+  });
+
+  /** The owner's message about an adjustment, edited to say what happened, without buttons. */
+  const adjustmentDmUpdate = (
+    request: RequestRow,
+    adjustment: AdjustmentRow,
+    settings: SettingsRow | undefined,
+    note: string,
+  ) => {
+    const text = slackText(language(settings));
+    const body = [
+      text.newRequest(request.channel_id, request.author),
+      text.adjustmentTitle,
+      quote(adjustment.text),
+      note,
+    ].join("\n");
+    return store.enqueue({
+      requestId: request.id,
+      dedupeKey: `dm-adjust-update:${adjustment.id}`,
+      target: "update",
+      text: body,
+      blocks: [section(body)],
+      updateOf: `dm-adjust:${adjustment.id}`,
+    });
+  };
+
+  const adjustmentById = (id: number) =>
+    run(sql<AdjustmentRow>`SELECT * FROM houston_slack_adjustments WHERE id = ${id}`).pipe(
+      Effect.map((rows) => rows[0]),
+    );
+
+  const adjustmentAt = (channel: string, ts: string) =>
+    run(sql<AdjustmentRow>`
+      SELECT a.* FROM houston_slack_adjustments a
+      JOIN houston_slack_requests r ON r.id = a.request_id
+      WHERE r.channel_id = ${channel} AND a.ts = ${ts}
+    `).pipe(Effect.map((rows) => rows[0]));
+
+  const acceptAdjustment = Effect.fn("HoustonSlackIntake.acceptAdjustment")(function* (
+    adjustment: AdjustmentRow,
+  ) {
+    if (adjustment.state !== "pending") return;
+    const request = yield* store.requestById(adjustment.request_id);
+    if (request === undefined || request.task_id === null) return;
+    const latest = yield* latestRunOf(request.task_id);
+    if (latest?.id !== adjustment.task_run_id || latest.state !== "handed_back") return;
+    const settings = yield* store.settings;
+    const accepted = { ...adjustment, state: "accepted" as const };
+    if (admit(yield* working) === "queue") {
+      const now = yield* nowIso;
+      yield* store.write(
+        Effect.gen(function* () {
+          yield* run(sql`
+            UPDATE houston_slack_adjustments SET state = 'accepted' WHERE id = ${adjustment.id}
+          `);
+          yield* run(sql`
+            UPDATE houston_slack_requests SET state = 'queued', queued_at = ${now}
+            WHERE id = ${request.id}
+          `);
+          const [position] = yield* run(sql<{ readonly n: number }>`
+            SELECT COUNT(*) AS n FROM houston_slack_requests
+            WHERE state = 'queued'
+              AND (queued_at < ${now} OR (queued_at = ${now} AND id <= ${request.id}))
+          `);
+          yield* adjustmentDmUpdate(
+            request,
+            accepted,
+            settings,
+            slackText(language(settings)).acceptedQueued(position?.n ?? 1),
+          );
+          return { result: undefined, requests: [request.id] };
+        }),
+      );
+      return;
+    }
+    yield* store.write(
+      run(sql`
+        UPDATE houston_slack_adjustments SET state = 'accepted' WHERE id = ${adjustment.id}
+      `).pipe(Effect.as({ result: undefined })),
+    );
+    yield* startAdjustment(request, latest, accepted, settings);
+  });
+
+  const ignoreAdjustment = Effect.fn("HoustonSlackIntake.ignoreAdjustment")(function* (
+    adjustment: AdjustmentRow,
+  ) {
+    if (adjustment.state !== "pending") return;
+    const request = yield* store.requestById(adjustment.request_id);
+    if (request === undefined) return;
+    const settings = yield* store.settings;
+    yield* store.write(
+      Effect.gen(function* () {
+        yield* run(sql`
+          UPDATE houston_slack_adjustments SET state = 'refused' WHERE id = ${adjustment.id}
+        `);
+        yield* store.enqueue({
+          requestId: request.id,
+          dedupeKey: `adjust-unseen:${adjustment.id}`,
+          target: "react",
+          text: "",
+          removeReaction: "eyes",
+          messageTs: adjustment.ts,
+        });
+        yield* adjustmentDmUpdate(
+          request,
+          adjustment,
+          settings,
+          slackText(language(settings)).ignored,
+        );
+        return { result: undefined };
+      }),
+    );
+  });
+
+  // Answers by button and dialog.
+
+  const questionOf = (id: number) =>
+    run(sql<{ readonly id: number; readonly request_id: number; readonly form_json: string }>`
+      SELECT id, request_id, form_json FROM houston_slack_questions WHERE id = ${id}
+    `).pipe(Effect.map((rows) => rows[0]));
+
+  const optionOf = (formJson: string, index: number): string | undefined => {
+    const options = decodeOptions(formJson).options;
+    return options[index];
+  };
 
   const event: HoustonSlackIntake["Service"]["event"] = (raw, botToken, source) =>
     withLock(
@@ -679,7 +1090,10 @@ const make = Effect.gen(function* () {
               return;
             }
             const request = yield* store.requestAt(classified.channel, classified.ts);
-            if (request !== undefined) yield* accept(request);
+            if (request !== undefined) return yield* accept(request);
+            // The owner's ✅ on a reply after the hand-back accepts that adjustment.
+            const adjustment = yield* adjustmentAt(classified.channel, classified.ts);
+            if (adjustment !== undefined) yield* acceptAdjustment(adjustment);
             return;
           }
           case "ignored":
@@ -700,11 +1114,89 @@ const make = Effect.gen(function* () {
         if (payload.type === "block_actions") {
           const action = Array.isArray(payload.actions) ? payload.actions[0] : undefined;
           if (!isObject(action)) return;
-          const request = yield* store.requestById(Number(str(action.value) ?? "0"));
-          if (request === undefined) return;
+          const actionId = str(action.action_id) ?? "";
           const channel = str(isObject(payload.channel) ? payload.channel.id : undefined);
           const clickKey = str(action.action_ts) ?? str(payload.trigger_id) ?? "click";
           const isOwner = ownerAccepts({ ownerUserId: owner, user });
+          const text = slackText(language(settings));
+          if (actionId === OTHER_ANSWER_ACTION || actionId.startsWith(`${ANSWER_ACTION}_`)) {
+            const [rawId = "0", rawIndex = ""] = (str(action.value) ?? "").split(":");
+            const question = yield* questionOf(Number(rawId));
+            if (question === undefined) return;
+            const request = yield* store.requestById(question.request_id);
+            if (request === undefined) return;
+            if (!answerAllowed({ user, requester: request.author, ownerUserId: owner })) {
+              return yield* ephemeral(
+                request,
+                channel ?? request.channel_id,
+                user,
+                clickKey,
+                text.onlyRequesterAnswers(request.author),
+              );
+            }
+            const closed = () =>
+              ephemeral(
+                request,
+                channel ?? request.channel_id,
+                user,
+                clickKey,
+                text.questionClosedNotice,
+              );
+            if (actionId !== OTHER_ANSWER_ACTION) {
+              const option = optionOf(question.form_json, Number(rawIndex));
+              if (option === undefined) return;
+              const outcome = yield* conversation.answer(question.id, user, option);
+              if (outcome === "closed") yield* closed();
+              return;
+            }
+            const triggerId = str(payload.trigger_id);
+            if (triggerId === undefined) return;
+            yield* web
+              .call(botToken, "views.open", {
+                trigger_id: triggerId,
+                view: {
+                  type: "modal",
+                  callback_id: ANSWER_CALLBACK,
+                  private_metadata: String(question.id),
+                  title: { type: "plain_text", text: text.otherTitle },
+                  submit: { type: "plain_text", text: text.send },
+                  close: { type: "plain_text", text: text.cancel },
+                  blocks: [
+                    {
+                      type: "input",
+                      block_id: "answer",
+                      label: { type: "plain_text", text: text.otherLabel },
+                      element: {
+                        type: "plain_text_input",
+                        action_id: "answer",
+                        multiline: true,
+                        max_length: HOUSTON_SLACK_LIMITS.dialogChars,
+                      },
+                    },
+                  ],
+                },
+              })
+              .pipe(
+                Effect.catch((error) =>
+                  Effect.logWarning(`Opening the Slack answer dialog failed: ${error.message}`),
+                ),
+              );
+            return;
+          }
+          if (actionId === ADJUST_ACCEPT_ACTION || actionId === ADJUST_IGNORE_ACTION) {
+            const adjustment = yield* adjustmentById(Number(str(action.value) ?? "0"));
+            if (adjustment === undefined) return;
+            const request = yield* store.requestById(adjustment.request_id);
+            if (request === undefined) return;
+            if (!isOwner) {
+              return yield* ephemeral(request, channel ?? request.channel_id, user, clickKey);
+            }
+            return yield* actionId === ADJUST_ACCEPT_ACTION
+              ? acceptAdjustment(adjustment)
+              : ignoreAdjustment(adjustment);
+          }
+          const request = yield* store.requestById(Number(str(action.value) ?? "0"));
+          if (request === undefined) return;
           if (action.action_id === ACCEPT_ACTION) {
             if (isOwner) return yield* accept(request);
             return yield* ephemeral(request, channel ?? request.channel_id, user, clickKey);
@@ -715,7 +1207,6 @@ const make = Effect.gen(function* () {
             }
             const triggerId = str(payload.trigger_id);
             if (triggerId === undefined) return;
-            const text = slackText(language(settings));
             yield* web
               .call(botToken, "views.open", {
                 trigger_id: triggerId,
@@ -753,6 +1244,29 @@ const make = Effect.gen(function* () {
         }
         if (payload.type === "view_submission") {
           const view = isObject(payload.view) ? payload.view : {};
+          if (view.callback_id === ANSWER_CALLBACK) {
+            const state = isObject(view.state) ? view.state : {};
+            const values = isObject(state.values) ? state.values : {};
+            const block = isObject(values.answer) ? values.answer : {};
+            const input = isObject(block.answer) ? block.answer : {};
+            const value = (str(input.value) ?? "").trim();
+            if (value.length === 0 || [...value].length > HOUSTON_SLACK_LIMITS.dialogChars) return;
+            const questionId = Number(str(view.private_metadata) ?? "0");
+            const outcome = yield* conversation.answer(questionId, user, value);
+            const question = outcome === "closed" ? yield* questionOf(questionId) : undefined;
+            const request =
+              question === undefined ? undefined : yield* store.requestById(question.request_id);
+            if (request !== undefined) {
+              yield* ephemeral(
+                request,
+                request.channel_id,
+                user,
+                `closed:${questionId}`,
+                slackText(language(settings)).questionClosedNotice,
+              );
+            }
+            return;
+          }
           if (view.callback_id !== REFUSE_CALLBACK) return;
           if (!ownerAccepts({ ownerUserId: owner, user }) || owner === null) return;
           const request = yield* store.requestById(Number(str(view.private_metadata) ?? "0"));

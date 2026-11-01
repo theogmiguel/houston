@@ -68,6 +68,8 @@ import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
 import * as HoustonMergeQueueHandlers from "../houston/mergeQueue/toolkit/handlers.ts";
 import { HoustonMergeQueueToolkit } from "../houston/mergeQueue/toolkit/tools.ts";
+import * as HoustonSlackHandlers from "../houston/slack/toolkit/handlers.ts";
+import { HoustonSlackToolkit } from "../houston/slack/toolkit/tools.ts";
 import * as HoustonTaskHandlers from "../houston/tasks/toolkit/handlers.ts";
 import { HoustonTaskToolkit } from "../houston/tasks/toolkit/tools.ts";
 import * as HoustonNightHandlers from "../houston/nightShift/toolkit/handlers.ts";
@@ -1023,6 +1025,12 @@ export const layerDeviceToolkit = Layer.mergeAll(
   layerDeviceScreenshotRegistration,
 );
 
+// Houston: the Slack intake's question and hand-back, refused outside a Slack-filed run.
+export const layerHoustonSlackToolkit = toolkitRegistration(
+  HoustonSlackToolkit,
+  HoustonSlackHandlers.layer,
+);
+
 // Houston: the merge queue for agents; enqueue, dequeue and status in the caller's project only.
 export const layerHoustonMergeQueueToolkit = toolkitRegistration(
   HoustonMergeQueueToolkit,
@@ -1062,6 +1070,7 @@ export const layerTools = Layer.mergeAll(
   layerPullRequestsToolkit,
   layerDeviceToolkit,
   layerHtmlToolkit,
+  layerHoustonSlackToolkit,
   layerHoustonMergeQueueToolkit,
   layerHoustonTaskToolkit,
   layerHoustonNightToolkit,

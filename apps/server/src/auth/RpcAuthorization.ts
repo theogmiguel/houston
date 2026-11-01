@@ -208,6 +208,8 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.houstonSlackConfigure]: AuthSettingsWriteScope,
   [WS_METHODS.houstonSlackRequestsList]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonSlackSubscribe]: AuthOrchestrationReadScope,
+  [WS_METHODS.houstonSlackImportV1Status]: AuthOrchestrationReadScope,
+  [WS_METHODS.houstonSlackImportV1Run]: AuthSettingsWriteScope,
   [WS_METHODS.houstonHarnessGet]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonHarnessSubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonHarnessOverview]: AuthOrchestrationReadScope,

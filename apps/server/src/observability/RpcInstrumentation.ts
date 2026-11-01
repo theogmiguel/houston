@@ -222,6 +222,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.houstonSlackConfigure]: "houstonSlack",
   [WS_METHODS.houstonSlackRequestsList]: "houstonSlack",
   [WS_METHODS.houstonSlackSubscribe]: "houstonSlack",
+  [WS_METHODS.houstonSlackImportV1Status]: "houstonSlack",
+  [WS_METHODS.houstonSlackImportV1Run]: "houstonSlack",
   [WS_METHODS.houstonHarnessGet]: "houstonHarness",
   [WS_METHODS.houstonHarnessSubscribe]: "houstonHarness",
   [WS_METHODS.houstonHarnessOverview]: "houstonHarness",

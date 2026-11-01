@@ -1,6 +1,13 @@
 import * as Schema from "effect/Schema";
 
-import { IsoDateTime, NonNegativeInt, PositiveInt, ProjectId } from "../baseSchemas.ts";
+import {
+  CommandId,
+  IsoDateTime,
+  NonNegativeInt,
+  PositiveInt,
+  ProjectId,
+  ThreadId,
+} from "../baseSchemas.ts";
 
 /** The bounds the Slack intake is checked against; a refusal names the bound and the value. */
 export const HOUSTON_SLACK_LIMITS = {
@@ -22,6 +29,24 @@ export const HOUSTON_SLACK_LIMITS = {
   titleChars: 72,
   outboxBatch: 10,
   outboxAttempts: 5,
+  // `houston_slack_ask`, in characters, as Houston 1 bounded its question form.
+  questionContextChars: 500,
+  questionChars: 300,
+  optionsMin: 2,
+  optionsMax: 4,
+  optionChars: 200,
+  whyChars: 200,
+  // `houston_slack_handback`, in characters, as Houston 1 bounded its result form.
+  subjectChars: 60,
+  changesChars: 1_500,
+  steps: 3,
+  stepChars: 300,
+  caveatsChars: 600,
+  /** The live and dropped notes. */
+  noteChars: 500,
+  /** Owner facts, warnings and blockers: lines each, characters per line. */
+  ownerLines: 6,
+  ownerLineChars: 200,
 } as const;
 
 export const HoustonSlackLanguage = Schema.Literals(["en", "pt-BR"]);
@@ -108,6 +133,7 @@ export const HoustonSlackErrorKind = Schema.Literals([
   "remote",
   "unsupported",
   "not_slack",
+  "busy",
 ]);
 export type HoustonSlackErrorKind = typeof HoustonSlackErrorKind.Type;
 
@@ -163,3 +189,48 @@ export const HoustonSlackRequestsListInput = Schema.Struct({
   projectId: Schema.optionalKey(ProjectId),
 });
 export type HoustonSlackRequestsListInput = typeof HoustonSlackRequestsListInput.Type;
+
+// The Houston 1 import.
+
+export const HoustonSlackImportCounts = Schema.Struct({
+  /** 1 when Houston 1's owner or language was copied. */
+  settings: NonNegativeInt,
+  channels: NonNegativeInt,
+  requests: NonNegativeInt,
+});
+export type HoustonSlackImportCounts = typeof HoustonSlackImportCounts.Type;
+
+export const HoustonSlackImportStatus = Schema.Union([
+  Schema.Struct({
+    state: Schema.Literal("available"),
+    source: Schema.String,
+    /** Houston 1's mapped channels and filed requests. */
+    channels: NonNegativeInt,
+    requests: NonNegativeInt,
+  }),
+  Schema.Struct({
+    state: Schema.Literal("imported"),
+    at: IsoDateTime,
+    counts: HoustonSlackImportCounts,
+  }),
+  Schema.Struct({ state: Schema.Literal("blocked"), reason: Schema.String }),
+  Schema.Struct({ state: Schema.Literal("unavailable") }),
+]);
+export type HoustonSlackImportStatus = typeof HoustonSlackImportStatus.Type;
+
+export const HoustonSlackImportResult = Schema.Struct({
+  imported: HoustonSlackImportCounts,
+  /** Each kind of row left behind, counted. */
+  notes: Schema.Array(Schema.String),
+});
+export type HoustonSlackImportResult = typeof HoustonSlackImportResult.Type;
+
+/** A question's fenced answer as one queued user message `slack-answer-<questionId>` (AD-066). */
+export const HoustonSlackAnswerCommand = Schema.Struct({
+  type: Schema.Literal("houston.slack.answer"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  questionId: PositiveInt,
+  text: Schema.String,
+});
+export type HoustonSlackAnswerCommand = typeof HoustonSlackAnswerCommand.Type;

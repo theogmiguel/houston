@@ -662,6 +662,8 @@ describe("each slack method requires its declared scope", () => {
             readonly method: string;
             readonly scope: AuthEnvironmentScope;
             readonly payload: object;
+            /** The method's own refusal with its scope, when the test server cannot satisfy it. */
+            readonly refusedWith?: string;
           }> = [
             { method: WS_METHODS.houstonSlackGet, scope: AuthOrchestrationReadScope, payload: {} },
             {
@@ -689,6 +691,18 @@ describe("each slack method requires its declared scope", () => {
               scope: AuthOrchestrationReadScope,
               payload: {},
             },
+            {
+              method: WS_METHODS.houstonSlackImportV1Status,
+              scope: AuthOrchestrationReadScope,
+              payload: {},
+            },
+            // Not hosted, so the import itself is refused, but only after its scope admits it.
+            {
+              method: WS_METHODS.houstonSlackImportV1Run,
+              scope: AuthSettingsWriteScope,
+              payload: {},
+              refusedWith: "HoustonSlackError",
+            },
           ];
           for (const entry of methods) {
             const before = yield* fingerprint;
@@ -701,10 +715,14 @@ describe("each slack method requires its declared scope", () => {
             const only = yield* makeWsClient([entry.scope]);
             const id = yield* only.send(entry.method, entry.payload);
             const allowed = yield* Queue.take(only.responses);
-            assert.isNull(
-              failureOf(allowed),
-              `${entry.method}: ${JSON.stringify(failureOf(allowed))}`,
-            );
+            if (entry.refusedWith === undefined) {
+              assert.isNull(
+                failureOf(allowed),
+                `${entry.method}: ${JSON.stringify(failureOf(allowed))}`,
+              );
+            } else {
+              assert.strictEqual(failureOf(allowed)?._tag, entry.refusedWith, entry.method);
+            }
             if (entry.method === WS_METHODS.houstonSlackSubscribe) yield* only.interrupt(id);
           }
         }),
