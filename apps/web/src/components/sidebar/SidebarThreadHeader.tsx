@@ -88,7 +88,7 @@ export function SidebarThreadHeader({
           ) : null}
         </div>
       }
-      workspaceActions={
+      sectionActions={
         hasProjects ? <span className="-my-1.5 flex items-center">{projectScope}</span> : null
       }
     />

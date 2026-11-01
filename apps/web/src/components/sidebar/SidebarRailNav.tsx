@@ -68,19 +68,29 @@ export function SidebarRailActionRow({
   );
 }
 
-export function SidebarRailSectionHeading({ actions }: { actions?: ReactNode }) {
+export function SidebarRailSectionHeading({
+  title = "Workspaces",
+  actions,
+  showAddProject = true,
+}: {
+  title?: string | undefined;
+  actions?: ReactNode;
+  showAddProject?: boolean;
+}) {
   return (
     <div className="flex h-7 shrink-0 items-center gap-1 px-2 pt-3 text-2xs leading-3.5 font-semibold tracking-wide text-secondary-label">
-      <span className="flex-1">Workspaces</span>
+      <span className="flex-1">{title}</span>
       {actions}
-      <button
-        type="button"
-        aria-label="Add project"
-        onClick={() => openCommandPalette({ open: "add-project" })}
-        className="-my-1.5 inline-grid size-6 shrink-0 cursor-pointer place-items-center rounded-(--control-radius) text-secondary-label transition-colors outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-      >
-        <PlusIcon aria-hidden className="size-[15px]" />
-      </button>
+      {showAddProject ? (
+        <button
+          type="button"
+          aria-label="Add project"
+          onClick={() => openCommandPalette({ open: "add-project" })}
+          className="-my-1.5 inline-grid size-6 shrink-0 cursor-pointer place-items-center rounded-(--control-radius) text-secondary-label transition-colors outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        >
+          <PlusIcon aria-hidden className="size-[15px]" />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -104,16 +114,20 @@ export function SidebarRailSearchButton() {
 
 /**
  * The rail's fixed entries, shared by the thread and grid sidebars: search,
- * pull requests, usage, then the Workspaces heading with add. Ctrl N still
- * starts a thread, but the row is gone: new threads start from a grid's +.
+ * pull requests, usage, then a section heading whose title and actions the
+ * caller owns. Ctrl N still starts a thread, but the row is gone.
  */
 export function SidebarRailNav({
   search,
-  workspaceActions,
+  sectionTitle,
+  sectionActions,
+  sectionAddProject = true,
   pullRequestCount = null,
 }: {
   search: ReactNode;
-  workspaceActions?: ReactNode;
+  sectionTitle?: string;
+  sectionActions?: ReactNode;
+  sectionAddProject?: boolean;
   pullRequestCount?: number | null;
 }) {
   const navigate = useNavigate();
@@ -156,7 +170,11 @@ export function SidebarRailNav({
         active={pathname === "/usage"}
         onClick={openUsage}
       />
-      <SidebarRailSectionHeading actions={workspaceActions} />
+      <SidebarRailSectionHeading
+        title={sectionTitle}
+        actions={sectionActions}
+        showAddProject={sectionAddProject}
+      />
     </div>
   );
 }
