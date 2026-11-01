@@ -2312,6 +2312,7 @@ const make = Effect.gen(function* () {
       }
       // Houston: dispatch through the crew row is uninterruptible, so a child the dispatch
       // accepted is always recorded, gated and stopped with its run.
+      const parentNodeId = parentRun.rootNodeId;
       const taskId = yield* Effect.uninterruptible(
         Effect.gen(function* () {
           // ThreadManagementService.dispatch is the chokepoint for this command
@@ -2325,7 +2326,7 @@ const make = Effect.gen(function* () {
               commandId,
               parentThreadId: scope.thread.threadId,
               parentRunId: parentRun.id,
-              parentNodeId: parentRun.rootNodeId,
+              parentNodeId,
               task: taskPrompt(input),
               ...(input.title === undefined ? {} : { title: input.title }),
               modelSelection: target.modelSelection,
