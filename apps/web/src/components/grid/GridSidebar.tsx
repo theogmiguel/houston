@@ -134,8 +134,7 @@ import {
   SIDEBAR_GRID_NAME_CLS,
   SIDEBAR_GRID_RENAME_CLS,
   SIDEBAR_GRID_WORKSPACE_CLS,
-  SIDEBAR_SECTION_ADD_CLS,
-  SIDEBAR_SECTION_MENU_CLS,
+  SIDEBAR_SECTION_ACTION_CLS,
   SidebarNewGridMenu,
 } from "../ui/sidebar-grids";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -879,7 +878,7 @@ function HiddenGridsMenu({
     <Menu>
       <MenuTrigger
         render={
-          <button type="button" aria-label="Hidden grids" className={SIDEBAR_SECTION_MENU_CLS} />
+          <button type="button" aria-label="Hidden grids" className={SIDEBAR_SECTION_ACTION_CLS} />
         }
       >
         <MoreHorizontalIcon aria-hidden className="size-[15px]" />

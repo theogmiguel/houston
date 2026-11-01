@@ -1392,7 +1392,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
                 navigateTimeline();
                 void listRef.current?.scrollToIndex({
                   index: item.rowIndex,
-                  animated: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+                  animated: !prefersReducedMotion,
                   viewOffset: 24,
                 });
               }}

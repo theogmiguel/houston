@@ -3,6 +3,7 @@ import { Plug2Icon, SearchIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { isElectron } from "~/env";
+import { observeIntersection } from "~/lib/observeIntersection";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { RefreshIcon } from "../ui/refresh-icon";
@@ -117,12 +118,9 @@ export function PullRequestsColumn({
   useEffect(() => {
     const marker = markerRef.current;
     if (!marker) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setCondensed(entry ? !entry.isIntersecting : false),
-      { root: scrollRef.current },
-    );
-    observer.observe(marker);
-    return () => observer.disconnect();
+    return observeIntersection(marker, (entry) => setCondensed(!entry.isIntersecting), {
+      root: scrollRef.current,
+    });
   }, [scrollRef]);
   // Typing into the topbar search narrows the list, and a short enough list un-scrolls the
   // page — which dissolves the condensed topbar and unmounts the very input being typed in.

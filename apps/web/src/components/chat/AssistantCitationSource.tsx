@@ -7,6 +7,7 @@ import {
 } from "~/lib/assistantTextSelection";
 import { toastManager } from "../ui/toast";
 import { observeResize } from "~/lib/observeResize";
+import { useReducedMotion } from "~/hooks/useReducedMotion";
 
 const CITATION_PULSE_DURATION_MS = 650;
 const CITATION_HIGHLIGHT_HOLD_MS = 1575;
@@ -104,17 +105,18 @@ function observeAssistantCitationSource({
   itemKey,
   request,
   list,
+  reducedMotion,
 }: {
   root: HTMLElement;
   itemKey: string;
   request: AssistantCitationTarget;
   list: LegendListRef;
+  reducedMotion: boolean;
 }) {
   const activation = request.activationRef.current;
   if (activation.dismissed) return;
   const scrollNode = list.getScrollableNode();
   if (!(scrollNode instanceof HTMLElement)) return;
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   let highlighted: Highlight | null = null;
   let ownedRange: Range | null = null;
   let selected: { range: Range; snapshot: Range } | null = null;
@@ -348,13 +350,14 @@ export function AssistantCitationSource({
   children: ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const reducedMotion = useReducedMotion();
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes this message's DOM for a citation reveal request and scrolls the LegendList to it
   useEffect(() => {
     const root = rootRef.current;
     const list = listRef.current;
     if (!root || !list || !request || request.citation.messageId !== messageId) return;
-    return observeAssistantCitationSource({ root, itemKey, request, list });
-  }, [itemKey, listRef, messageId, request]);
+    return observeAssistantCitationSource({ root, itemKey, request, list, reducedMotion });
+  }, [itemKey, listRef, messageId, request, reducedMotion]);
 
   return (
     <div

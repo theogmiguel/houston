@@ -338,12 +338,30 @@ describe("New grid menu", () => {
     );
 
     await userEvent.click(page.getByRole("button", { name: "New grid" }).element());
-    const selected = page.getByRole("button", { name: "notes" }).element();
+    const selected = page.getByRole("menuitem", { name: "notes" }).element();
     expect(selected.getAttribute("data-selected")).toBe("");
-    expect(document.activeElement).toBe(selected);
+    await vi.waitUntil(() => document.activeElement?.getAttribute("role") === "menu");
 
     await userEvent.keyboard("{Enter}");
     expect(onSelect).toHaveBeenCalledWith("env-1:project-3");
+  });
+
+  it("creates in the preselected workspace with Space before any navigation", async () => {
+    const onSelect = vi.fn();
+    await using _screen = await render(
+      <SidebarNewGridMenu
+        workspaces={workspaces}
+        selectedKey="env-1:project-2"
+        onSelect={onSelect}
+        onOpenFolder={() => {}}
+      />,
+    );
+
+    await userEvent.click(page.getByRole("button", { name: "New grid" }).element());
+    await vi.waitUntil(() => document.activeElement?.getAttribute("role") === "menu");
+
+    await userEvent.keyboard(" ");
+    expect(onSelect).toHaveBeenCalledWith("env-1:project-2");
   });
 
   it("creates in another workspace when its row is clicked", async () => {
@@ -358,7 +376,7 @@ describe("New grid menu", () => {
     );
 
     await userEvent.click(page.getByRole("button", { name: "New grid" }).element());
-    await userEvent.click(page.getByRole("button", { name: "houston-site" }).element());
+    await userEvent.click(page.getByRole("menuitem", { name: "houston-site" }).element());
     expect(onSelect).toHaveBeenCalledWith("env-1:project-2");
   });
 
@@ -374,7 +392,7 @@ describe("New grid menu", () => {
     );
 
     await userEvent.click(page.getByRole("button", { name: "New grid" }).element());
-    await userEvent.click(page.getByRole("button", { name: /Open folder/ }).element());
+    await userEvent.click(page.getByRole("menuitem", { name: /Open folder/ }).element());
     expect(onOpenFolder).toHaveBeenCalledTimes(1);
   });
 });

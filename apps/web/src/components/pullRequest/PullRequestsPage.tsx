@@ -21,6 +21,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowDownUpIcon, LayersIcon, Plug2Icon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState, type ComponentProps } from "react";
+import { observeIntersection } from "~/lib/observeIntersection";
 
 import {
   collectPullRequestListFacets,
@@ -730,8 +731,8 @@ export function PullRequestsPage() {
     input,
   }));
   const statsQuery = usePullRequestListStats(statsTargets);
-  const statsObserver = useRef<IntersectionObserver | null>(null);
   const statsRows = useRef(new Set<HTMLDivElement>());
+  const statsStops = useRef(new Map<HTMLDivElement, () => void>());
   // Called from a row's ref cleanup, which keeps the render it attached in; this reads the latest.
   const releaseStatsRow = useStableCallback((key: string | undefined) => {
     const visible = visibleStatsKeys.current;
@@ -748,17 +749,6 @@ export function PullRequestsPage() {
       const batches = retainVisiblePullRequestStatsBatches(current.batches, visible.values);
       return batches.length === current.batches.length ? current : { key: current.key, batches };
     });
-  });
-  // Every row takes this as its ref, so a new identity would detach and reattach them all.
-  const registerStatsRow = useStableCallback((node: HTMLDivElement | null) => {
-    if (node === null || typeof IntersectionObserver === "undefined") return;
-    statsRows.current.add(node);
-    statsObserver.current?.observe(node);
-    return () => {
-      statsRows.current.delete(node);
-      statsObserver.current?.unobserve(node);
-      releaseStatsRow(node.dataset.pullRequestStatsKey);
-    };
   });
   // Arriving stats must not re-run the effects that ask for them.
   const readStatsProgress = useEffectEvent(() => ({
@@ -785,56 +775,72 @@ export function PullRequestsPage() {
   }, [filterKey, entriesByStatsKey, statsPolicy]);
   // The observer outlives the rows it watches, so it reads the rows held at the time it fires.
   const readStatsRows = useEffectEvent(() => entriesByStatsKey);
+  const handleStatsRowIntersection = useStableCallback((item: IntersectionObserverEntry) => {
+    const visible = visibleStatsKeys.current;
+    if (visible.key !== filterKey) return;
+    const key = (item.target as HTMLElement).dataset.pullRequestStatsKey;
+    if (key === undefined) return;
+    const wasVisible = visible.values.has(key);
+    const entriesByKey = readStatsRows();
+    if (item.isIntersecting && entriesByKey.has(key)) {
+      visible.values.add(key);
+    } else {
+      visible.values.delete(key);
+    }
+    if (wasVisible === visible.values.has(key)) return;
+    const entered = new Set(item.isIntersecting && entriesByKey.has(key) ? [key] : []);
+    const progress = readStatsProgress();
+    setStatsTargetState((current) => {
+      const batches = current.key === filterKey ? current.batches : [];
+      const retained = progress.pending
+        ? batches
+        : retainVisiblePullRequestStatsBatches(batches, visible.values);
+      const added = pullRequestStatsRequestBatches({
+        entriesByKey,
+        candidateKeys: entered,
+        policy: statsPolicy,
+        activeBatches: batches,
+        statsByRow: progress.statsByRow,
+      });
+      if (added.length === 0 && retained.length === batches.length) return current;
+      return { key: filterKey, batches: [...retained, ...added] };
+    });
+  });
+  const subscribeStatsRow = useStableCallback((node: HTMLDivElement) => {
+    const stop = observeIntersection(node, handleStatsRowIntersection, {
+      root: scrollRef.current,
+      rootMargin: "480px",
+    });
+    statsStops.current.set(node, stop);
+    return () => {
+      stop();
+      if (statsStops.current.get(node) === stop) statsStops.current.delete(node);
+    };
+  });
+  // Every row takes this as its ref, so a new identity would detach and reattach them all.
+  const registerStatsRow = useStableCallback((node: HTMLDivElement | null) => {
+    if (node === null || typeof IntersectionObserver === "undefined") return;
+    statsRows.current.add(node);
+    const stop = statsPolicy === "visible" ? subscribeStatsRow(node) : undefined;
+    return () => {
+      statsRows.current.delete(node);
+      stop?.();
+      releaseStatsRow(node.dataset.pullRequestStatsKey);
+    };
+  });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- IntersectionObserver on rows requests stats for rows that scroll into view
   useEffect(() => {
     if (statsPolicy !== "visible" || typeof IntersectionObserver === "undefined") return;
     visibleStatsKeys.current = { key: filterKey, values: new Set() };
-    const observer = new IntersectionObserver(
-      (observed) => {
-        const visible = visibleStatsKeys.current;
-        if (visible.key !== filterKey) return;
-        let changed = false;
-        const entered = new Set<string>();
-        const entriesByKey = readStatsRows();
-        for (const item of observed) {
-          const key = (item.target as HTMLElement).dataset.pullRequestStatsKey;
-          if (key === undefined) continue;
-          const wasVisible = visible.values.has(key);
-          if (item.isIntersecting && entriesByKey.has(key)) {
-            visible.values.add(key);
-            if (!wasVisible) entered.add(key);
-          } else {
-            visible.values.delete(key);
-          }
-          if (wasVisible !== visible.values.has(key)) changed = true;
-        }
-        if (!changed) return;
-        const progress = readStatsProgress();
-        setStatsTargetState((current) => {
-          const batches = current.key === filterKey ? current.batches : [];
-          const retained = progress.pending
-            ? batches
-            : retainVisiblePullRequestStatsBatches(batches, visible.values);
-          const added = pullRequestStatsRequestBatches({
-            entriesByKey,
-            candidateKeys: entered,
-            policy: statsPolicy,
-            activeBatches: batches,
-            statsByRow: progress.statsByRow,
-          });
-          if (added.length === 0 && retained.length === batches.length) return current;
-          return { key: filterKey, batches: [...retained, ...added] };
-        });
-      },
-      { root: scrollRef.current, rootMargin: "480px" },
-    );
-    statsObserver.current = observer;
-    for (const row of statsRows.current) observer.observe(row);
+    for (const row of statsRows.current) {
+      statsStops.current.get(row)?.();
+      statsStops.current.set(row, subscribeStatsRow(row));
+    }
     return () => {
-      observer.disconnect();
-      if (statsObserver.current === observer) statsObserver.current = null;
+      for (const stop of statsStops.current.values()) stop();
+      statsStops.current.clear();
     };
-  }, [filterKey, statsPolicy]);
+  }, [filterKey, statsPolicy, subscribeStatsRow]);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- prunes stats batches to the observer's visible rows once a stats request settles
   useEffect(() => {
     if (statsPolicy !== "visible" || statsQuery.isPending) return;

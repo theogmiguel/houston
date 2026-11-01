@@ -22,6 +22,7 @@ import {
   type ThemeColorRole,
   type ThemeDefinition,
 } from "../../themePalette";
+import { useReducedMotion } from "../../hooks/useReducedMotion";
 import { useViewportSize } from "../../hooks/useViewportSize";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
@@ -333,6 +334,7 @@ export function ThemeEditorPanel({
   restoreTheme: () => void;
 }) {
   const isEditing = editingTheme !== null;
+  const reducedMotion = useReducedMotion();
   const [name, setName] = useState("");
   const [activeAppearance, setActiveAppearance] = useState<ThemeAppearance>(initialAppearance);
   const [isAdvanced, setIsAdvanced] = useState(false);
@@ -483,7 +485,7 @@ export function ThemeEditorPanel({
 
     requestAnimationFrame(() => {
       panelRef.current?.querySelector(`[data-theme-color-role="${visibleRole}"]`)?.scrollIntoView({
-        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        behavior: reducedMotion ? "auto" : "smooth",
         block: "nearest",
       });
     });

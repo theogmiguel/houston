@@ -66,6 +66,7 @@ import type { RightPanelSurface } from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
 import { resolveShortcutCommand, type ShortcutMatchContext } from "~/keybindings";
 import { readLocalApi } from "~/localApi";
+import { useReducedMotion } from "~/hooks/useReducedMotion";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { Button } from "~/components/ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
@@ -932,9 +933,11 @@ function RightPanelTab(
         <Tooltip>
           <TooltipTrigger
             render={
-              <button
+              <Button
                 type="button"
-                className="cursor-pointer flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted"
+                size="icon-tiny"
+                variant="ghost-muted"
+                className="size-4 rounded-sm text-inherit hover:bg-muted"
                 aria-label={audio === "muted" ? `Unmute ${title}` : `Mute ${title}`}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -944,7 +947,7 @@ function RightPanelTab(
                 }}
               >
                 <MorphIcon className="size-3" icon={audio === "muted" ? VolumeOff : Volume2} />
-              </button>
+              </Button>
             }
           />
           <TooltipPopup>{audio === "muted" ? "Unmute tab" : "Mute tab"}</TooltipPopup>
@@ -1030,6 +1033,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const ownsDesktopTitleBar = (isElectron || isTauriHost()) && props.mode === "inline";
   const browserProfiles = useBrowserDefaults().profiles;
   const { resolvedTheme } = useTheme();
+  const reducedMotion = useReducedMotion();
   const tabListRef = useRef<HTMLDivElement>(null);
   const addSurfaceTriggerRef = useRef<HTMLButtonElement>(null);
   const [renamingDevice, setRenamingDevice] = useState<string | null>(null);
@@ -1086,10 +1090,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const scrollTabs = (direction: -1 | 1) => {
     const viewport = tabScrollViewport(tabListRef.current);
     if (!viewport) return;
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     viewport.scrollBy({
       left: direction * Math.max(120, viewport.clientWidth * 0.75),
-      behavior: reduceMotion ? "auto" : "smooth",
+      behavior: reducedMotion ? "auto" : "smooth",
     });
   };
 

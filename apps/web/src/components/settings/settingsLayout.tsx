@@ -8,6 +8,7 @@ import * as Equal from "effect/Equal";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { createContext, type ComponentPropsWithoutRef, type ReactNode, useContext } from "react";
 
+import { prefersReducedMotion } from "../../hooks/useReducedMotion";
 import {
   PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE,
   usePrimarySettingsAvailable,
@@ -72,7 +73,7 @@ let pendingTargetScroll: AbortController | undefined;
 
 function scrollAndFocusSettingsTarget(target: HTMLElement, highlight = true): void {
   pendingTargetScroll?.abort();
-  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const reducedMotion = prefersReducedMotion();
   const markedScrollTarget =
     typeof target.querySelector === "function"
       ? target.querySelector<HTMLElement>(":scope > [data-settings-scroll-target]")
@@ -85,7 +86,7 @@ function scrollAndFocusSettingsTarget(target: HTMLElement, highlight = true): vo
 
   const scroll = () =>
     scrollTarget.scrollIntoView({
-      behavior: prefersReducedMotion ? "auto" : "smooth",
+      behavior: reducedMotion ? "auto" : "smooth",
       block: "center",
     });
   scroll();
@@ -139,7 +140,7 @@ function scrollAndFocusSettingsTarget(target: HTMLElement, highlight = true): vo
   }
   target.focus({ preventScroll: true });
   target.classList.remove("settings-search-target-pulse");
-  if (!highlight || prefersReducedMotion) return;
+  if (!highlight || reducedMotion) return;
   void target.offsetWidth;
   target.classList.add("settings-search-target-pulse");
   target.addEventListener("blur", () => target.classList.remove("settings-search-target-pulse"), {

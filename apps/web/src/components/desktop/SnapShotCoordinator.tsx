@@ -14,6 +14,7 @@ import {
   useComposerDraftStore,
 } from "../../composerDraftStore";
 import { useHandleNewThread } from "../../hooks/useHandleNewThread";
+import { useReducedMotion } from "../../hooks/useReducedMotion";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { getClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { readThreadShell } from "../../state/entities";
@@ -234,6 +235,7 @@ export function SnapShotCoordinator() {
     settings.snapShotPlaySound ? settings.snapShotSound : null,
   );
   const animateCaptures = useClientSettings((settings) => settings.snapShotAnimations);
+  const reducedMotion = useReducedMotion();
   const enabled = useClientSettings((settings) => settings.snapShotEnabled);
   const captureTargetsRef = useRef(new Map<string, Promise<CaptureTarget | null>>());
   const questionPinsRef = useRef(new Map<string, DraftId | null>());
@@ -428,7 +430,7 @@ export function SnapShotCoordinator() {
             (target) =>
               target && resolveSnapShotAttachmentTarget(questionPinsRef.current, event.id, target),
           );
-          if (animateCaptures && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          if (animateCaptures && !reducedMotion) {
             void beginSnapShotAnimationWhenReady(
               event.id,
               target,
