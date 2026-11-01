@@ -17,12 +17,17 @@ export function GridTopBarControls({
   grid,
   emptyDraftThreadId = null,
   threadPanelAnchorRef,
+  detailsOpen,
+  onToggleDetails,
 }: {
   grid: GridRecord;
   /** The centred composer of an empty grid has no tree leaf yet. */
   emptyDraftThreadId?: string | null;
   /** Anchors the focused cell's popover details card under the top bar control. */
   threadPanelAnchorRef?: RefObject<HTMLElement | null>;
+  /** The grid's one details flag; when the grid owns it the control follows it. */
+  detailsOpen?: boolean;
+  onToggleDetails?: (() => void) | undefined;
 }) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const focusedLeaf =
@@ -56,6 +61,7 @@ export function GridTopBarControls({
     if (visibility === undefined) return false;
     return threadPanelPresentation === "popover" ? visibility.popoverOpen : visibility.inlineOpen;
   });
+  const gridOwnsDetails = onToggleDetails !== undefined;
 
   return (
     <PanelLayoutControls
@@ -65,7 +71,7 @@ export function GridTopBarControls({
       terminalAvailable={focusedRef !== null}
       terminalOpen={terminalOpen}
       terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
-      threadPanelOpen={threadPanelOpen}
+      threadPanelOpen={gridOwnsDetails ? detailsOpen === true : threadPanelOpen}
       threadPanelPresentation="inline"
       {...(threadPanelAnchorRef ? { threadPanelAnchorRef } : {})}
       threadPanelShortcutLabel={shortcutLabelForCommand(keybindings, "threadPanel.toggle")}
@@ -79,6 +85,10 @@ export function GridTopBarControls({
         }
       }}
       onToggleThreadPanel={() => {
+        if (onToggleDetails !== undefined) {
+          onToggleDetails();
+          return;
+        }
         if (threadPanelRef === null) return;
         const store = useRightPanelStore.getState();
         const open = !threadPanelOpen;

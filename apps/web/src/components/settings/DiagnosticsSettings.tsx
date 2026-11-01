@@ -5,7 +5,7 @@ import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { AuthEnvironmentMaintainScope } from "@t3tools/contracts";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { AlertTriangleIcon, CopyIcon, FolderOpenIcon, InfoIcon } from "lucide-react";
+import { AlertTriangleIcon, FolderOpenIcon, InfoIcon } from "lucide-react";
 import { ChevronDown, ChevronRight } from "lucide";
 import {
   isAtomCommandInterrupted,
@@ -20,14 +20,15 @@ import type {
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 
+import { formatBytes } from "../../lib/formatBytes";
 import { cn } from "../../lib/utils";
 import { ensureLocalApi } from "../../localApi";
 import { useOpenInPreferredEditor } from "../../editorPreferences";
 import { useRelativeTimeState } from "../../hooks/useRelativeTimeState";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
-import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { Button } from "../ui/button";
+import { CopyButton } from "../ui/copy-button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { ScrollArea } from "../ui/scroll-area";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
@@ -49,18 +50,6 @@ function formatCount(value: number): string {
 function formatDuration(value: number): string {
   if (value < 1_000) return `${Math.round(value)} ms`;
   return `${(value / 1_000).toFixed(value >= 10_000 ? 1 : 2).replace(/\.0+$/, "")} s`;
-}
-
-function formatBytes(value: number): string {
-  if (value < 1024) return `${value} B`;
-  const units = ["KB", "MB", "GB"] as const;
-  let unitIndex = -1;
-  let next = value;
-  do {
-    next /= 1024;
-    unitIndex += 1;
-  } while (next >= 1024 && unitIndex < units.length - 1);
-  return `${next.toFixed(next >= 10 ? 1 : 2)} ${units[unitIndex]}`;
 }
 
 function RelativeTimeNoWrap(props: { value: DateTime.Utc }) {
@@ -97,13 +86,9 @@ function StatBlock({
           <Tooltip>
             <TooltipTrigger
               render={
-                <button
-                  type="button"
-                  className="cursor-pointer inline-flex size-3.5 shrink-0 items-center justify-center rounded-sm text-muted-foreground/60 hover:text-foreground"
-                  aria-label={`${label} details`}
-                >
+                <Button aria-label={`${label} details`} size="icon-tiny" variant="ghost-muted">
                   <InfoIcon className="size-3" />
-                </button>
+                </Button>
               }
             />
             <TooltipPopup side="top">{tooltip}</TooltipPopup>
@@ -202,11 +187,6 @@ function DiagnosticsTable({
 }
 
 function TraceIdCell({ traceId }: { traceId: string }) {
-  const { copyToClipboard, isCopied: copied } = useCopyToClipboard({
-    target: "trace ID",
-    timeout: 1_200,
-  });
-
   return (
     <div className="flex w-full min-w-0 max-w-full items-center gap-2">
       <Tooltip>
@@ -221,21 +201,16 @@ function TraceIdCell({ traceId }: { traceId: string }) {
           {traceId}
         </TooltipPopup>
       </Tooltip>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              size="icon-micro"
-              variant="ghost-muted"
-              aria-label={copied ? "Copied trace ID" : "Copy trace ID"}
-              onClick={() => copyToClipboard(traceId)}
-            >
-              <CopyIcon className="size-3" />
-            </Button>
-          }
-        />
-        <TooltipPopup side="top">{copied ? "Copied" : "Copy full trace ID"}</TooltipPopup>
-      </Tooltip>
+      <CopyButton
+        ariaLabel="Copy trace ID"
+        iconClassName="size-3"
+        label="Copy full trace ID"
+        size="icon-micro"
+        target="trace ID"
+        timeout={1_200}
+        value={traceId}
+        variant="ghost-muted"
+      />
     </div>
   );
 }
@@ -886,7 +861,8 @@ function DiagnosticsSettingsBody() {
         toastManager.add({
           type: "info",
           title: "Process already exited",
-          description: "The process is not a child of the Houston server. It might already have exited.",
+          description:
+            "The process is not a child of the Houston server. It might already have exited.",
         });
         return;
       }

@@ -421,6 +421,9 @@ type ChatViewProps =
       rightPanelPortal?: RightPanelPortalTarget | null | undefined;
       /** The grid top bar's details control, which anchors a cell's popover card. */
       detailsCardAnchor?: RefObject<Element | null>;
+      /** The grid owns one details flag; the focused cell shows its card. */
+      detailsOpen?: boolean;
+      onDetailsOpenChange?: (open: boolean) => void;
       routeKind: "server";
       draftId?: never;
     }
@@ -441,6 +444,9 @@ type ChatViewProps =
       rightPanelPortal?: RightPanelPortalTarget | null | undefined;
       /** The grid top bar's details control, which anchors a cell's popover card. */
       detailsCardAnchor?: RefObject<Element | null>;
+      /** The grid owns one details flag; the focused cell shows its card. */
+      detailsOpen?: boolean;
+      onDetailsOpenChange?: (open: boolean) => void;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -470,8 +476,14 @@ export default function ChatView(props: ChatViewProps) {
   const hideDraftHeroHeadline = props.hideDraftHeroHeadline === true;
   const rightPanelPortal = props.rightPanelPortal ?? null;
   const detailsCardAnchor = props.detailsCardAnchor;
+  const detailsOpen = props.detailsOpen;
+  const onDetailsOpenChange = props.onDetailsOpenChange;
   const allowInlineDetails =
     paneDensity === undefined || paneDensity === "solo" || paneDensity === "comfortable";
+  // A comfortable grid pane is too narrow for the chat lane and the card side by side, but
+  // it still shows the card inline inside the cell rather than as a top-bar popover.
+  const detailsCardAllowOverlap = paneDensity === "comfortable";
+  const detailsCardAnimateFollow = paneDensity === "comfortable" || paneDensity === "solo";
   const parentPanel = typeof embeddedOption === "object" ? embeddedOption : undefined;
   const embedded = embeddedOption !== false;
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
@@ -2013,6 +2025,7 @@ export default function ChatView(props: ChatViewProps) {
   const threadPanelInlineOpen = useRightPanelStore((state) =>
     selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, activeThreadRef, "inline"),
   );
+  const detailsInlineOpen = detailsOpen ?? threadPanelInlineOpen;
   // Selects only the mode, so canvas resizes rerender the chat view only when the
   // card switches presentation.
   const threadPanelPresentation = useStore(
@@ -2023,7 +2036,8 @@ export default function ChatView(props: ChatViewProps) {
         detailsCardMeasurement: state.detailsCardMeasurement,
         threadRef: activeThreadRef,
         preview: canvasPreview,
-        detailsCardInlineOpen: threadPanelInlineOpen,
+        detailsCardInlineOpen: detailsInlineOpen,
+        detailsCardAllowOverlap: detailsCardAllowOverlap,
       }).detailsCardMode,
   );
   const threadPanelOpen = useRightPanelStore((state) =>
@@ -3454,6 +3468,7 @@ export default function ChatView(props: ChatViewProps) {
             threadRef={activeThreadRef}
             preview={canvasPreview}
             detailsCardTopInset={isThreadFindActive ? THREAD_FIND_BAR_RESERVED_HEIGHT : 0}
+            detailsCardAllowOverlap={detailsCardAllowOverlap}
             composerOverlayElement={isDraftHeroState ? null : composerOverlayElement}
             data-chat-workspace-drop-target="true"
             onDragEnter={workspaceFileDropHandlers.onDragEnter}
@@ -3924,6 +3939,11 @@ export default function ChatView(props: ChatViewProps) {
                 anchor={detailsCardAnchor ?? threadPanelPopoverAnchorRef}
                 handle={threadPanelPopoverHandle}
                 allowInline={allowInlineDetails}
+                {...(detailsOpen === undefined ? {} : { open: detailsOpen })}
+                {...(onDetailsOpenChange === undefined
+                  ? {}
+                  : { onOpenChange: onDetailsOpenChange })}
+                animateFollow={detailsCardAnimateFollow}
                 forceNewWorktree={multipleModelSelections !== null}
                 environmentId={activeThread.environmentId}
                 threadId={activeThread.id}

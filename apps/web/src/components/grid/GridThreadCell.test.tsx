@@ -151,7 +151,7 @@ describe("GridThreadCell", () => {
     );
     expect(html).toContain("data-pane-label");
     expect(html).toContain("Alpha thread");
-    expect(html).toContain("Archive thread");
+    expect(html).toContain("More cell actions");
     expect(html).toContain("Close cell");
   });
 

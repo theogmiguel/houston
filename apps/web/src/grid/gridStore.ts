@@ -62,6 +62,8 @@ export interface GridRecord {
   workspaceKey: string;
   tree: LayoutNode | null;
   focusedThreadId: string | null;
+  /** The grid's one thread-details flag; the focused cell shows its card while set. */
+  detailsOpen?: boolean;
   /** Pinned grids sort above their workspace's other grids. */
   pinnedAt: string | null;
   /** Hidden grids keep their threads but drop out of the workspace tree. */
@@ -87,6 +89,7 @@ export interface GridStoreState {
   removeThreadFromGrid: (gridId: string, threadId: string) => void;
   setTree: (gridId: string, tree: LayoutNode | null) => void;
   focusThread: (gridId: string, threadId: string | null) => void;
+  setGridDetailsOpen: (gridId: string, open: boolean) => void;
   setDraftId: (gridId: string, threadId: string, draftId: string | null) => void;
   reconcileGridThreads: (gridId: string, threadIds: string[]) => void;
   pinGrid: (gridId: string, now?: string) => void;
@@ -256,6 +259,7 @@ function parseGrid(value: unknown): GridRecord | null {
       typeof raw.focusedThreadId === "string" && containsThreadId(tree, raw.focusedThreadId)
         ? raw.focusedThreadId
         : defaultFocus(tree),
+    ...(raw.detailsOpen === true ? { detailsOpen: true as const } : {}),
     pinnedAt: typeof raw.pinnedAt === "string" ? raw.pinnedAt : null,
     hidden: raw.hidden === true,
     createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date(0).toISOString(),
@@ -546,6 +550,15 @@ export const useGridStore = create<GridStoreState>()(
                 ? threadId
                 : grid.focusedThreadId,
           })),
+        })),
+      setGridDetailsOpen: (gridId, open) =>
+        set((state) => ({
+          grids: updateGrid(state.grids, gridId, (grid) => {
+            if ((grid.detailsOpen === true) === open) return grid;
+            if (open) return { ...grid, detailsOpen: true };
+            const { detailsOpen: _closed, ...rest } = grid;
+            return rest;
+          }),
         })),
       setDraftId: (gridId, threadId, draftId) =>
         set((state) => ({

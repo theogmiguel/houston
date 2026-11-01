@@ -1,12 +1,14 @@
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
 import {
   useLayoutEffect,
+  useRef,
   useState,
   type MouseEventHandler,
   type ReactNode,
   type RefObject,
 } from "react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/utils";
 import { Popover, PopoverPopup, PopoverCreateHandle } from "../ui/popover";
@@ -18,6 +20,20 @@ import {
 } from "./threadDetailsCardLayout";
 import { observeResize } from "../../lib/observeResize";
 import { requestWorkspaceFocus } from "../../lib/workspaceFocus";
+import { readInlineDetailsHandoff, recordInlineDetailsHandoff } from "./inlineDetailsFollow";
+
+// The grid cannot paint a card across its cell borders, so a focus move becomes a short
+// slide and fade from the previous cell's side instead of a full cross-cell flight.
+const FOLLOW_OFFSET_MAX_X = 28;
+const FOLLOW_OFFSET_MAX_Y = 16;
+const FOLLOW_DURATION_MS = 200;
+
+const cappedOffset = (delta: number, max: number) =>
+  Math.sign(delta) * Math.min(Math.abs(delta), max);
+
+const prefersReducedMotion = () =>
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export function ThreadDetailsCard({
   threadRef,
@@ -26,6 +42,9 @@ export function ThreadDetailsCard({
   contentKey,
   defaultOpen = true,
   allowInline = true,
+  open,
+  onOpenChange,
+  animateFollow = false,
   onContextMenu,
   children,
 }: {
@@ -38,6 +57,11 @@ export function ThreadDetailsCard({
   defaultOpen?: boolean;
   /** Compact and glance grid panes have no room for an inline card, so they only pop over. */
   allowInline?: boolean;
+  /** A grid owns its one details flag, so it controls the card instead of the thread store. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** A grid focus move slides the inline card in from the cell that lost focus. */
+  animateFollow?: boolean;
   onContextMenu?: MouseEventHandler<HTMLDivElement>;
   children: (density: "full" | "compact" | "essential") => ReactNode;
 }) {
@@ -47,10 +71,11 @@ export function ThreadDetailsCard({
   const placement = canvas?.detailsCardPlacement ?? null;
   const mode = allowInline && placement ? "inline" : "popover";
   const topInset = canvas?.detailsCardTopInset ?? 0;
-  const inlineOpen = useRightPanelStore((state) =>
+  const controlled = open !== undefined;
+  const storedInlineOpen = useRightPanelStore((state) =>
     selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, threadRef, "inline", defaultOpen),
   );
-  const popoverOpen = useRightPanelStore((state) =>
+  const storedPopoverOpen = useRightPanelStore((state) =>
     selectThreadPanelOpen(
       state.threadPanelVisibilityByThreadKey,
       threadRef,
@@ -58,6 +83,8 @@ export function ThreadDetailsCard({
       defaultOpen,
     ),
   );
+  const inlineOpen = open ?? storedInlineOpen;
+  const popoverOpen = open ?? storedPopoverOpen;
   const measurementKey = `${threadRef.environmentId}:${threadRef.threadId}:${preferredPlacement?.width ?? "popup"}:${contentKey}`;
   const [measurements, setMeasurements] = useState({
     key: measurementKey,
@@ -75,15 +102,45 @@ export function ThreadDetailsCard({
   // when the card returns to popover mode.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the popover flag in the right panel store when the derived mode turns inline
   useLayoutEffect(() => {
-    if (mode === "inline" && popoverOpen)
+    if (!controlled && mode === "inline" && popoverOpen)
       useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", false);
-  }, [mode, popoverOpen, threadRef]);
+  }, [controlled, mode, popoverOpen, threadRef]);
   // The grid moves an open inline card to the cell that gains focus; it reads
   // this instead of guessing from the two open flags.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the presentation this card actually renders to the right panel store
   useLayoutEffect(() => {
     useRightPanelStore.getState().setThreadPanelPresentation(threadRef, mode);
   }, [mode, threadRef]);
+  const asideRef = useRef<HTMLElement | null>(null);
+  const threadKey = scopedThreadKey(threadRef);
+  // The grid hands the card's rect from the cell that lost focus to the cell that gained
+  // it; the new card slides in from that side. A fresh opening has no handoff.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records the inline card's rect and animates it when a grid cell gains focus
+  useLayoutEffect(() => {
+    if (!animateFollow) return;
+    const element = asideRef.current;
+    if (mode !== "inline" || !inlineOpen || element === null) return;
+    const rect = element.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const previous = readInlineDetailsHandoff();
+    if (
+      previous.threadKey !== null &&
+      previous.threadKey !== threadKey &&
+      previous.rect !== null &&
+      !prefersReducedMotion()
+    ) {
+      const dx = cappedOffset(previous.rect.left - rect.left, FOLLOW_OFFSET_MAX_X);
+      const dy = cappedOffset(previous.rect.top - rect.top, FOLLOW_OFFSET_MAX_Y);
+      element.animate(
+        [
+          { transform: `translate(${dx}px, ${dy}px)`, opacity: 0 },
+          { transform: "translate(0px, 0px)", opacity: 1 },
+        ],
+        { duration: FOLLOW_DURATION_MS, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
+      );
+    }
+    recordInlineDetailsHandoff(threadKey, rect);
+  }, [animateFollow, inlineOpen, mode, placement, threadKey]);
   const [contentElement, setContentElement] = useState<HTMLDivElement | null>(null);
   // A grid cell renders its own pane head and omits the route header that owns the
   // details button, so the popover anchors to the cell's top right instead of the viewport.
@@ -182,11 +239,27 @@ export function ThreadDetailsCard({
             details.cancel();
             return;
           }
+          // The grid's details button closes the popover itself; letting the outside press
+          // close it first would make the same click reopen it.
+          if (
+            controlled &&
+            !open &&
+            target instanceof Element &&
+            target.closest('[aria-label="Toggle thread details panel"]')
+          ) {
+            details.cancel();
+            return;
+          }
+          if (controlled) {
+            onOpenChange?.(open);
+            return;
+          }
           useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", open);
         }}
       >
         {placement && inlineOpen ? (
           <aside
+            ref={asideRef}
             {...detailsArea}
             data-workspace-focus-key={`details:${threadRef.environmentId}:${threadRef.threadId}`}
             // Skip the return transition to avoid overlapping the rising preview.
