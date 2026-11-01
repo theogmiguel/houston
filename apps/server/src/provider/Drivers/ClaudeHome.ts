@@ -1,9 +1,10 @@
-import type { ClaudeSettings } from "@t3tools/contracts";
+import type { ClaudeSettings, ProviderInstanceEnvironment } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
+import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
@@ -25,6 +26,37 @@ export const resolveClaudeHomePath = Effect.fn("resolveClaudeHomePath")(function
     return path.resolve(inherited);
   }
   return path.resolve(path.join(home, ".claude"));
+});
+
+// A Claude Code session that launched Houston exports these; a claude spawned with them joins that session.
+export const CLAUDE_HOST_SESSION_VARIABLES = [
+  "CLAUDECODE",
+  "CLAUDE_CODE_ENTRYPOINT",
+  "CLAUDE_CODE_SESSION_ID",
+  "CLAUDE_CODE_HOST_SESSION_ID",
+  "CLAUDE_CODE_CHILD_SESSION",
+  "CLAUDE_CODE_SESSION_ATTENDED",
+  "CLAUDE_CODE_MESSAGING_SOCKET",
+  "CLAUDE_CODE_MESSAGING_TOKEN",
+  "CLAUDE_CODE_BRIDGE_SESSION_ID",
+  "CLAUDE_CODE_REMOTE",
+  "CLAUDE_CODE_REMOTE_SESSION_ID",
+  "CLAUDE_CODE_EXECPATH",
+  "CLAUDE_CODE_DESKTOP_APP_VERSION",
+  "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
+  "CLAUDE_JOB_DIR",
+  "CLAUDE_EFFORT",
+  "CLAUDE_PID",
+  "CLAUDE_AGENT_SDK_VERSION",
+];
+
+export const mergeClaudeProcessEnvironment = Effect.fn("mergeClaudeProcessEnvironment")(function* (
+  environment: ProviderInstanceEnvironment | undefined,
+  hostEnvironment: NodeJS.ProcessEnv,
+) {
+  const baseEnv = { ...hostEnvironment };
+  for (const name of CLAUDE_HOST_SESSION_VARIABLES) delete baseEnv[name];
+  return yield* mergeProviderInstanceEnvironment(environment, baseEnv);
 });
 
 export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function* (

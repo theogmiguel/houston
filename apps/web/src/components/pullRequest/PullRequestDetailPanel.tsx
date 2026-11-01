@@ -30,6 +30,7 @@ import {
   ArrowDownUpIcon,
   ArrowLeftIcon,
   CircleDotIcon,
+  ExternalLinkIcon,
   FileDiffIcon,
   GitCommitHorizontalIcon,
   MessageSquareIcon,
@@ -144,6 +145,7 @@ import {
 } from "./pullRequestDetail.logic";
 import { resolvePickableEnvironments } from "./pullRequestProjectAssignment.logic";
 import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
+import { PullRequestChecksTab } from "./PullRequestChecksTab";
 import {
   PullRequestActorLabel,
   PullRequestMetaLine,
@@ -196,11 +198,14 @@ const actionFailureHints = (term: string): Record<PullRequestAction, string> => 
 const UPDATE_BRANCH_REBASE_FAILURE_HINT =
   "The host refused it. A rebase stops at the first commit that does not apply cleanly; updating with a merge commit may still work.";
 
+// Checks is a local view; the persisted tab set stays in the right-panel store.
+type DetailTab = PullRequestDetailTab | "checks";
+
 const TABS: ReadonlyArray<{ value: PullRequestDetailTab; label: string }> = [
   { value: "summary", label: "Summary" },
   { value: "guide", label: "Guide" },
   { value: "timeline", label: "Timeline" },
-  { value: "code", label: "Code" },
+  { value: "code", label: "Files" },
 ];
 
 // Defer the diff viewer's worker pool until Code is approached.
@@ -352,6 +357,7 @@ export function PullRequestDetailPanel({
     detail,
   } = usePullRequestDetail(environmentId, reference, matchingListEntry);
   const [selectedTab, setTab] = useState<PullRequestDetailTab>(initialTab);
+  const [checksTabOpen, setChecksTabOpen] = useState(false);
   const reviewGuidesEnabled = useEnvironmentSettings(
     environmentId,
     (settings) => settings.reviewGuidesEnabled,
@@ -360,13 +366,28 @@ export function PullRequestDetailPanel({
   const pageTab = useGuideRunStore((state) =>
     tabOnPage && state.pageDetailTab?.key === guideKey ? state.pageDetailTab.tab : null,
   );
-  const requestedTab = tabOnPage ? (pageTab ?? initialTab) : selectedTab;
-  const isTabAvailable = (value: PullRequestDetailTab) =>
+  const requestedTab: DetailTab = checksTabOpen
+    ? "checks"
+    : tabOnPage
+      ? (pageTab ?? initialTab)
+      : selectedTab;
+  const isTabAvailable = (value: DetailTab) =>
     (value !== "code" || detail === null || detail.capabilities.diff) &&
-    (value !== "guide" || reviewGuidesEnabled);
+    (value !== "guide" || reviewGuidesEnabled) &&
+    (value !== "checks" || detail !== null);
   // An unavailable tab falls back without overwriting the saved selection.
   const tab = isTabAvailable(requestedTab) ? requestedTab : "summary";
-  const selectTab = (next: PullRequestDetailTab) => {
+  // A review-guide notification switches the page tab; a local Checks view must yield to it.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the local Checks tab when the page tab changes outside this component
+  useEffect(() => {
+    if (tabOnPage && pageTab !== null) setChecksTabOpen(false);
+  }, [pageTab, tabOnPage]);
+  const selectTab = (next: DetailTab) => {
+    if (next === "checks") {
+      setChecksTabOpen(true);
+      return;
+    }
+    setChecksTabOpen(false);
     if (tabOnPage) useGuideRunStore.getState().showPageDetailTab(guideKey, next);
     else setTab(next);
     onTabChange?.(next);
@@ -398,22 +419,20 @@ export function PullRequestDetailPanel({
   const tabScopeKey = `${environmentId}:${pullRequestKey}`;
   const [tabMountState, setTabMountState] = useState(() => ({
     key: tabScopeKey,
-    tabs: new Set<PullRequestDetailTab>([tab]),
+    tabs: new Set<DetailTab>([tab]),
   }));
   // Hidden Code tabs must not fetch later pull requests' diffs.
   const mountedTabs =
-    tabMountState.key === tabScopeKey ? tabMountState.tabs : new Set<PullRequestDetailTab>([tab]);
+    tabMountState.key === tabScopeKey ? tabMountState.tabs : new Set<DetailTab>([tab]);
   if (tabMountState.key !== tabScopeKey) {
     setTabMountState({ key: tabScopeKey, tabs: new Set([tab]) });
   } else if (!tabMountState.tabs.has(tab)) {
     setTabMountState({ key: tabScopeKey, tabs: new Set(tabMountState.tabs).add(tab) });
   }
   // Each tab restores the condensed state its own scrolling left behind.
-  const [condensedByTab, setCondensedByTab] = useState<
-    Partial<Record<PullRequestDetailTab, boolean>>
-  >({});
+  const [condensedByTab, setCondensedByTab] = useState<Partial<Record<DetailTab, boolean>>>({});
   const condensed = condensedByTab[tab] ?? false;
-  const scrollerByTab = useRef<Partial<Record<PullRequestDetailTab, HTMLDivElement | null>>>({});
+  const scrollerByTab = useRef<Partial<Record<DetailTab, HTMLDivElement | null>>>({});
   // Fresh ref callbacks would detach and reattach every scroller on each render.
   const [scrollerRefs] = useState(() => ({
     summary: (node: HTMLDivElement | null) => {
@@ -431,7 +450,7 @@ export function PullRequestDetailPanel({
   // Save the target before collapse: the browser may clamp scrollTop as the viewport grows,
   // so applying a delta afterward would compensate twice.
   const compensationRef = useRef<{
-    tab: PullRequestDetailTab;
+    tab: DetailTab;
     scroller: HTMLDivElement;
     target: number;
   } | null>(null);
@@ -1117,7 +1136,19 @@ export function PullRequestDetailPanel({
   const workflowApprovalsRequired =
     detail?.state === "open" ? (detail.workflowApprovalsRequired ?? 0) : 0;
   const freshness = detail === null ? null : resolveBaseFreshness(detail);
-  const visibleTabs = TABS.filter((item) => isTabAvailable(item.value));
+  const visibleTabs: ReadonlyArray<{ readonly value: DetailTab; readonly label: string }> = [
+    ...TABS.filter((item) => isTabAvailable(item.value)).map((item) =>
+      item.value === "code" && detail
+        ? {
+            value: "code" as const,
+            label: `Files ${detail.changedFiles.toLocaleString()}`,
+          }
+        : item,
+    ),
+    ...(detail && detail.checks.length > 0 && isTabAvailable("checks")
+      ? [{ value: "checks" as const, label: `Checks ${detail.checks.length.toLocaleString()}` }]
+      : []),
+  ];
   const can = (action: PullRequestAction) =>
     detail?.capabilities.actions.includes(action) === true &&
     detail.viewerPermissions.actions.includes(action);
@@ -1680,6 +1711,14 @@ export function PullRequestDetailPanel({
                 </Button>
               </div>
             ) : null}
+            <button
+              type="button"
+              className="ml-auto inline-flex shrink-0 items-center gap-1 text-xs text-[var(--t3)] underline-offset-2 hover:text-[var(--t1)] hover:underline"
+              onClick={() => void readLocalApi()?.shell.openExternal(detail.url)}
+            >
+              {openOnHostText}
+              <ExternalLinkIcon aria-hidden className="size-3" />
+            </button>
           </PullRequestDetailTabBar>
         ) : null}
       </div>
@@ -1833,6 +1872,13 @@ export function PullRequestDetailPanel({
                     revealRequest={codeRevealRequest}
                   />
                 </Suspense>
+              </div>
+            ) : null}
+            {mountedTabs.has("checks") ? (
+              <div
+                className={cn("absolute inset-0 overflow-y-auto", tab !== "checks" && "invisible")}
+              >
+                <PullRequestChecksTab checks={detail.checks} threadRef={threadRef} />
               </div>
             ) : null}
           </PullRequestMarkdownContext>

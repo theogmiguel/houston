@@ -43,7 +43,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
           <ComposerControl
             ref={triggerRef}
             size={size}
-            className="shrink-0"
+            className="h-5.5! w-5.5! shrink-0 px-0!"
             aria-label="More composer controls"
             data-composer-shortcut={
               [

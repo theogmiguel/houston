@@ -7,69 +7,35 @@ What the suites are, where new tests go, and how to read a failure. Commands and
 
 | Layer | Location | Runner |
 |---|---|---|
-| Daemon unit tests | `#[cfg(test)]` in `core/houston-core/src/*.rs` | `cargo nextest run --lib <module>` |
-| Daemon integration | modules of one binary, `core/houston-core/tests/it/*.rs` (listed in `tests/it/main.rs`), harness `tests/common/mod.rs` — boots a real daemon on a throwaway state dir and speaks `/ws` | `cargo nextest run -E 'binary(<name>)'` |
-| Perf floors | `tests/it/perf_smoke.rs` (throughput and RSS floors, both `#[ignore]`) | `cargo nextest run --release -j 1 --run-ignored only -E 'test(/^perf_smoke::/)'` |
-| App | `src-tauri/tests/*.rs` (daemon ownership, channel flags), unit tests in `src/` | `cargo test`, and again with `--features bench` |
-| Renderer | `*.test.ts(x)` beside the code, jsdom + Testing Library | `bun run test` (vitest) |
-| Renderer CSS | `ui/scripts/check-css-scoping.mjs` runs headless Chromium against the *built* stylesheet | `bun run check:css` after `bun run build` |
-| Safety | `scripts/check-*.sh`, hermetic, sub-second | each script, from the repo root |
+| Server | `*.test.ts` beside the code under `apps/server/src`; Houston's under `src/houston/` | `pnpm --filter houston exec vp test run <files>` |
+| Contracts and shared | `packages/contracts/src`, `packages/shared/src` | `pnpm --filter @t3tools/contracts --filter @t3tools/shared test` |
+| Renderer | `*.test.ts(x)` beside the code under `apps/web/src` | the package's `test` script |
+| Host | unit tests in `src-tauri/src` | `cargo test` in `src-tauri` |
+| Repository tooling | `scripts/*.test.mjs`, `scripts/test-*.py` | `node --test`, `python3` |
+| Safety | `scripts/check-*.sh`, hermetic, sub-second | each script, from the repository root |
 
 Rules:
 
-- New daemon behaviour gets an integration test. Bug fixes get a regression test that fails
-  before the fix.
-- CI runs every `houston-core` test on Linux: the `core-integration` job is the full
-  `cargo nextest run -p houston-core` (library and `it`) on every PR and every push to
-  `main`. A test file is covered once its `mod` line is in `tests/it/main.rs`.
-  Windows runs unit tests and a named set of portable suites. Graphical tests and the
-  `#[ignore]`d perf and latency gates stay local because their results depend on an idle
-  machine or a desktop session.
-- Tests redirect the state dir through `HOME` (`home_dir.rs` is environment-first for this
-  reason) and never touch a real channel.
-- An in-process daemon takes its environment from `tests/common`'s `base_env()` or
-  `capture_env()`, never from the raw process environment: they drop the pane and agent-session
-  identity the runner inherited (`HOUSTON_SESSION`, `HOUSTON_MCP_*`, `CLAUDECODE`,
-  `CLAUDE_CODE_*`, `ZCODE_HOUSTON_MCP_URL*`, multiplexer markers), so a run inside a Houston
-  pane matches one under CI, swap the account's config homes for a throwaway and confine the
-  test process, after which `ConfigHome` refuses any
-  config home outside the temp, fixture and target scratch roots, whatever the runner.
-  Unit tests build daemons from `HostEnv::capture_with_home`. The confinement covers
-  Houston's own config writes; a real CLI the daemon runs still sees the daemon's `HOME`.
-- The app's tests that spawn a real daemon (`src-tauri/src/daemon_host.rs`) start it through
-  `test_home::isolate`, which points `HOME`, `USERPROFILE`, `XDG_CONFIG_HOME`, `CODEX_HOME` and
-  `CLAUDE_CONFIG_DIR` into the test's throwaway home. Each such test then reads the spawned
-  daemon's `/proc/<pid>/environ` and fails when any of them locates configuration elsewhere,
-  because a daemon that inherits the account's home installs hooks and Codex trust blocks in
-  the developer's real configuration.
-- The integration files are modules of one binary and a test runs in its own process under
-  nextest. A test that re-executes its binary with `--exact` builds the name with
-  `common::exact_path(module_path!(), name)`, which refuses a name that matches no test:
-  `--exact` with an unknown name runs zero tests and exits 0, a silent pass.
+- Tests come before code. A bug fix gets a regression test that fails before the fix.
+  Fixtures represent states the system can produce; a composed fixture is labelled as
+  composed.
+- A filter that matches no package, and a `-t` pattern that matches no test, exit 0 without
+  running anything. Confirm with `--reporter=verbose` that a proof ran.
+- Server code that reaches a provider, GitHub, Notion, Slack or the keychain is tested against
+  replay fixtures, local fakes and the in-memory keychain layer, never the real service. Only
+  `server.ts` provides the live keychain.
+- Host tests that touch agent CLI configuration or the channel directory build them under a
+  temporary home (`test_home::isolate`, or a `tempfile` directory passed in explicitly) and
+  never read the real one. A test that needs an agent CLI puts a fake on the `PATH` it hands
+  the code under test; it never runs the real CLI.
+- `tracing`-capture tests call `ensure_permissive_global_default()` from
+  `sys/test_tracing_capture.rs` before their own `with_default`. Callsite interest is
+  process-global: a sibling test with no subscriber votes `never` and silences that callsite
+  for the whole binary (measured 4/30 and 16/60 failure rates before the fix, 0/100 after).
 - Wait on events and receipts, not sleeps. A wall-clock deadline is acceptable only for a
   liveness property, and it must be generous enough to survive a cold page cache.
-- The shared renderer harness loads application modules during test collection. Keep this
-  setup outside individual test deadlines: a timed-out asynchronous React `act` can remain
-  pending and make every subsequent test in that file fail before rendering.
-- The renderer's one Vitest setup file gives jsdom's `Range` the empty geometry jsdom already
-  gives `Element`. Without it every mounted CodeMirror editor logs a caught
-  `getClientRects is not a function` TypeError, which reads like a failure in CI output.
-  Keep other environment state in the test files: Vitest runs without globals.
-- `tracing`-capture tests call `ensure_permissive_global_default()` from
-  `test_tracing_capture.rs` before their own `with_default`. Callsite interest is
-  process-global: a sibling test with no subscriber votes `never` and silences that callsite
-  for the whole binary. One test that forgets breaks the crate's captures (measured 4/30
-  and 16/60 failure rates before the fix, 0/100 after).
-- A test that reads a whole-process figure (VmRSS, thread count, context switches) is only
-  meaningful if it is the only test touching that figure while it samples. `cargo test` runs
-  a binary's tests concurrently by default, so `tests/it/idle_loops_wire.rs`'s perf tests
-  serialize on a shared mutex and tear their own sessions down, waiting for threads to
-  settle, before returning. A reading taken any other way is contaminated by its neighbours.
-- A test that spawns a daemon binary owns a guard that stops whatever generation its channel
-  dir records, so a failing test cannot leave a daemon behind — `daemon_adoption_wire.rs`'s
-  `ChannelGuard` is the shape: it reads `<dir>/daemon.json` on drop and stops that pid, not
-  just the supervisor or the one `Child` the test itself spawned, since a handed-off
-  generation outlives both.
+- A test that starts a process owns it and stops it by the handle it holds, on success and
+  failure alike.
 
 ## Reading a failure
 
@@ -79,118 +45,12 @@ A known failure mode is believable only through the discriminator that matches i
 | Shape | Discriminator | Not a discriminator |
 |---|---|---|
 | Wall-clock deadline missed on the first run after a relink | re-run **warm**; cold page-cache cost was measured at 23× (7 s cold vs 310 ms warm, same binary, idle machine) | `--test-threads=1`, running standalone |
-| `perf_smoke` below floor | re-run on an **idle** machine at normal priority | any number from a busy box |
 | Empty `tracing` capture buffer only when siblings run | the missing `ensure_permissive_global_default()` call | re-running the one test |
-| Harness `ETXTBSY` (a concurrent spawn forks between a fixture's chmod and exec) | `--test-threads=1` — it is a within-module race, so `cargo test --lib` reproduces it | standalone |
-| GUI-probe geometry (`--browser-selftest`) reads back the unrealized sentinel everywhere | `loginctl show-session` says `LockedHint=no`, then re-run; a locked screen maps no window | anything else |
-| A full `ui/` run on a loaded cold machine shows N failures | re-run warm and report **both** numbers — the red one is what lets a reviewer verify the noise | reporting only the green re-run |
-
-A shape that was *called* flaky and was not:
-
-- A "replay proof" in an IME dedup test compared strings that could never correspond under
-  real use; every isolated run was green for a reason unrelated to the claim. Deleted, not
-  tuned.
+| `ETXTBSY` from a fixture script (a concurrent spawn forks between its chmod and exec) | `--test-threads=1` reproduces it as a within-binary race | standalone |
+| A full run on a loaded cold machine shows N failures | re-run warm and report **both** numbers — the red one is what lets a reviewer verify the noise | reporting only the green re-run |
 
 ## Inverted evidence
 
 A green test whose fixture pins a state the system cannot produce is the strongest possible
-argument for a false property. Three past cases gave a replacing session the *same* id the
-old row had, when `Daemon::respawn` always mints a new one. Read a mock against the real
-collaborator's contract, not just against its own assertions.
-
-## Fixtures
-
-- `ansi_flood` (`src/bin/ansi_flood.rs`) sprays heavy TUI output at maximum speed for
-  throughput tests.
-- Agent sessions launched with an explicit `cmd` run that command, so a fixture never
-  silently launches whichever real CLI is installed. A fake provider binary is found through
-  the daemon's captured `PATH`, not the process's: a rig that puts one on `PATH` after the
-  daemon started uses `common::prepend_path_for(&daemon, dir)`. A test passes with no `claude`
-  or `codex` installed and with them installed. Shell sessions select their configured
-  shell instead; fixtures must also isolate `SHELL` to avoid first-run setup prompts.
-- `HOUSTON_DISABLE_AUTO_RESTORE=1` and `HOUSTON_SAFE_MODE=1` keep a booted test
-  daemon from restoring or auto-launching anything.
-- `m9-baseline.sh` uses a throwaway `m9bench` channel, wiped before every run and refused if
-  a live daemon holds its lock.
-
-The real-WASM colour regression in `core.selection.test.ts` churns distinct RGB values
-across disposed terminals while another terminal retains a live colour. It checks cache
-eviction, value equality and unchanged colour fidelity. Run it with
-`cd ui && bun run test -- src/renderer/src/ghostty/core.selection.test.ts`.
-The standalone terminal surface diagnostics in the [development runbook](../operations/development.md#terminal-surface-diagnostics)
-measure lifetime retention and pause/reveal behaviour separately from native PTY and
-hibernation tests. Structural cache bounds and regression results do not establish CPU,
-RSS or native WebKit memory safety.
-
-## Native watchdog ownership
-
-The watchdog unit fixtures hold an executor while logical probes expire, then release
-its closures after generation invalidation or stop. Physical permits must remain bounded
-until queued closures or native callbacks finish; clearing `ProbeTable` is not evidence
-of cancelled native work. The ingress fixture floods ordinary receipts while preserving
-process loss, the latest visibility and a reserved Wait answer. The blocked log sink
-checks queue plateau, loss reporting and worker release separately from supervisor exit.
-
-Paint recovery coverage must enable recovery and reach `Recovering`, including the
-post-reload navigation boundary. A valid JavaScript reply must retain the paint incident,
-prompt and unavailable health until a current-generation animation-frame report arrives.
-Prompt coverage must release an executor after the original deadline and resolve an old
-incident's answer while another incident owns confirmation. An expired entry must not
-construct an interactive dialog. Linux dialog and window-destruction runtime checks still
-require an isolated, unlocked display; the pure fixtures do not establish GTK or WebView2
-callback teardown. Queue counts establish structural bounds, not memory or CPU performance.
-Measure those on an idle machine at normal priority before making performance claims.
-
-## Windows
-
-Windows CI runs core unit tests and selected integration suites. The
-`windows_orchestration_wire` suite uses isolated provider fixtures with ConPTY to check
-worktree spawns through HTTP and MCP, recorded checkout identity and rollback after
-provider preparation fails. It also checks Tasks start/stop/resume across all six
-providers, queue execution, structured results and independent review. Each rig keeps
-its launch receipts in its own state directory so recycled session IDs cannot mix
-receipts across tests. `tasks_wire` covers the portable backlog protocol on Windows.
-The broader orchestration and chaos suites remain Unix-only.
-
-The native `--browser-selftest` also runs on Windows with an isolated development
-channel. It checks WebView2 navigation, history, captures, cookie persistence, host
-and child focus, and denial of child IPC over both HTTP and data URLs. The main
-renderer must retain its large-response channel transport. Unsupported picker,
-cache-bypass reload and crash-injection operations require explicit refusals; GTK
-corner-paint metrics are Linux-only.
-
-Run the full core suite under both Git Bash and `pwsh` before landing a change that touches
-the shell/home ladders. `$SHELL` and `$HOME` feed production ladders in `daemon.rs`, `home_dir.rs` and
-`ssh_config.rs`, and two tests once disagreed between the shells. A Windows-only failure in
-one shell is a real finding about that ladder, not harness noise.
-
-## Orchestration chaos fixtures
-
-Shared Unix subprocess fixtures shield all six provider executable names and preserve that
-PATH through a fixture login shell. This also isolates startup MCP maintenance, which can
-invoke a provider even when a test creates no agent session.
-
-On Unix, `orchestration_chaos_wire` substitutes `fake_agent` for all six spawnable provider
-executables. Scripts replay hook fixtures through `tr-helper` and call the local MCP
-endpoint with the pane credential. The fixture refuses remote endpoints and records
-monotonic JSONL receipts for ordering and delivery checks. It never launches provider
-CLIs. Documentation-derived payloads retain their original evidence limitations.
-
-The default matrix uses seeds `1`, `42` and `24301`. Run the ignored
-`soak_500_delegations` test explicitly for 500 delegations; `HOUSTON_CHAOS_SEED` selects
-the base seed and failure output names the provider, scenario and seed.
-`HOUSTON_CHAOS_SCENARIO` and `HOUSTON_CHAOS_PROVIDER` narrow the fast matrix for diagnosis
-only. Run Cargo under
-the memory guard described in the development runbook, with three build jobs.
-
-## Local speech model latency
-
-The ignored `voice_model_latency` integration test uses the actual local transcriber
-on Linux. Set `HOUSTON_VOICE_BENCH_MODELS` to a directory containing all catalogue model
-files and `HOUSTON_VOICE_BENCH_CLIP` to one fixed English WAV (16 kHz, mono, PCM16).
-It verifies catalogue hashes and makes no downloads. Build the test under the development
-runbook's memory guard, then run it with `cargo nextest run --release -j 1 --run-ignored only
---no-capture -E 'test(/^voice_model_latency::/)'` on an idle machine at normal priority. Report the clip hash, duration, CPU and memory,
-and each model's load, fixed-English and auto-language timings. Transcription timings
-exclude model loading and hash verification; one pass per language is a latency sample,
-not a statistical performance comparison.
+argument for a false property. Read a mock against the real collaborator's contract, not just
+against its own assertions, and build fixtures from what the producing code writes.

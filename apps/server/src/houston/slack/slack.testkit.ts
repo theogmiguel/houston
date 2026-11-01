@@ -147,13 +147,21 @@ export const layerFakeRuns = (fake: FakeRuns) =>
             );
             return { run: toRun(run) };
           }),
+        claim: unused,
+        agentHandback: unused,
+        execute: unused,
+        taskOfRun: unused,
         runControl: (input) =>
           Effect.gen(function* () {
             const [previous] = yield* sql<RunRow>`
               SELECT * FROM houston_task_runs WHERE id = ${input.runId}
             `.pipe(Effect.orDie);
             if (previous === undefined) {
-              return yield* refuse("not_found", "houston.tasks.runControl", `no run ${input.runId}`);
+              return yield* refuse(
+                "not_found",
+                "houston.tasks.runControl",
+                `no run ${input.runId}`,
+              );
             }
             const task = (yield* store.taskById(previous.task_id)) as TaskRow;
             const brief = yield* slackBriefOf(task).pipe(
@@ -483,10 +491,7 @@ export const startedRequest = (fake: SlackFake, ts: string, text: string) =>
   Effect.gen(function* () {
     const tasks = yield* HoustonTaskService.HoustonTaskService;
     yield* sendEvent(fake, mentionEvent(ts, text));
-    yield* until(
-      `${ts} filed`,
-      storedRequest(ts).pipe(Effect.map((row) => row?.task_id != null)),
-    );
+    yield* until(`${ts} filed`, storedRequest(ts).pipe(Effect.map((row) => row?.task_id != null)));
     const filed = (yield* storedRequest(ts)) as StoredRequest;
     const taskId = filed.task_id as number;
     const detail = yield* tasks.get({ id: String(taskId) });

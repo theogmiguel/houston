@@ -41,7 +41,13 @@ import {
 } from "./baseSchemas.ts";
 import { AuthMcpClientAccess } from "./auth.ts";
 import { MessageDelivery, MessageDeliveryJson } from "./houston/messageDelivery.ts";
-import { HoustonSideThread, makeHoustonSideThreadCommands } from "./houston/sideThreads.ts";
+import {
+  HoustonHarnessReviewStartCommand,
+  HoustonNightShiftNotifyCommand,
+  HoustonSideThread,
+  makeHoustonSideThreadCommands,
+} from "./houston/sideThreads.ts";
+import { HoustonMergeQueueNotifyCommand } from "./houston/mergeQueue.ts";
 import { HoustonSlackAnswerCommand } from "./houston/slack.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import {
@@ -154,8 +160,13 @@ export const OrchestrationV2AppThreadLineage = Schema.Struct({
   parentThreadId: Schema.NullOr(ThreadId),
   relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent"])),
   rootThreadId: ThreadId,
+  sideChat: Schema.optional(Schema.Boolean),
 });
 export type OrchestrationV2AppThreadLineage = typeof OrchestrationV2AppThreadLineage.Type;
+
+/** Subagents and side chats live inside their parent's view, never in thread lists. */
+export const isListedThreadLineage = (lineage: OrchestrationV2AppThreadLineage): boolean =>
+  lineage.relationshipToParent !== "subagent" && lineage.sideChat !== true;
 
 export const OrchestrationV2ContextTransferType = Schema.Literals([
   "fork",
@@ -707,6 +718,24 @@ export function orchestrationV2RunWorkStartedAt(
   run: Pick<OrchestrationV2Run, "workStartedAt" | "startedAt" | "requestedAt">,
 ): OrchestrationV2Run["requestedAt"] {
   return run.workStartedAt ?? run.startedAt ?? run.requestedAt;
+}
+
+/**
+ * Work started now would run in the project checkout, not the worktree the thread asked for. A
+ * failed or interrupted setup leaves the request standing until a worktree exists.
+ */
+export function orchestrationV2WorktreePending(
+  worktreePath: string | null,
+  runs: ReadonlyArray<Pick<OrchestrationV2Run, "status" | "workspacePreparation">>,
+): boolean {
+  return (
+    worktreePath === null &&
+    runs.some(
+      (run) =>
+        (run.status === "preparing" || run.status === "failed" || run.status === "interrupted") &&
+        run.workspacePreparation?.type === "worktree",
+    )
+  );
 }
 
 export const OrchestrationV2RunAttempt = Schema.Struct({
@@ -2155,7 +2184,7 @@ export function isOlderSettledThreadShell(
   beforeMs: number,
 ): boolean {
   return (
-    thread.lineage.relationshipToParent !== "subagent" &&
+    isListedThreadLineage(thread.lineage) &&
     thread.settledOverride === "settled" &&
     thread.settledAt !== null &&
     DateTime.toEpochMillis(thread.settledAt) < beforeMs
@@ -2912,6 +2941,8 @@ export const OrchestrationV2Command = Schema.Union([
     type: Schema.Literal("thread.delete"),
     commandId: CommandId,
     threadId: ThreadId,
+    /** Delete only a thread with no runs and no messages; otherwise succeed without a change. */
+    onlyIfUnused: Schema.optional(Schema.Boolean),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.settle"),
@@ -3249,6 +3280,7 @@ export const OrchestrationV2Command = Schema.Union([
     targetThreadId: ThreadId,
     sourcePoint: OrchestrationV2ThreadForkSourcePoint,
     title: Schema.optional(TrimmedNonEmptyString),
+    sideChat: Schema.optional(Schema.Boolean),
     createdAt: Schema.optional(Schema.DateTimeUtc),
   }),
   Schema.Struct({
@@ -3314,6 +3346,7 @@ export const OrchestrationV2Command = Schema.Union([
     modelSelection: ModelSelection,
   }),
   ...makeHoustonSideThreadCommands(OrchestrationV2CreationFields),
+  HoustonMergeQueueNotifyCommand,
 ]);
 export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 
@@ -3321,6 +3354,8 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 const OrchestrationV2InternalCommand = Schema.Union([
   /** A Slack answer, fenced by the server; a client could otherwise send it unfenced. */
   HoustonSlackAnswerCommand,
+  HoustonHarnessReviewStartCommand,
+  HoustonNightShiftNotifyCommand,
   /** Moves a thread to a project rooted at the folder it already works in, so its cwd never changes. */
   Schema.Struct({
     type: Schema.Literal("thread.project.adopt-folder"),

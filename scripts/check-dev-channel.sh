@@ -148,12 +148,13 @@ import sys
 
 source, sandbox = map(Path, sys.argv[1:])
 repo = sandbox / "checkout"
-for directory in ("scripts", "ui", "core", "src-tauri/target/debug", "mock-bin"):
+for directory in ("scripts", "src-tauri/target/debug", "mock-bin"):
     (repo / directory).mkdir(parents=True, exist_ok=True)
 shutil.copyfile(source, repo / "scripts/dev.sh")
 state = sandbox / ".houston-dev"
 state.mkdir()
 discovery = state / "daemon.json"
+supervisor = state / "supervisor.json"
 log = sandbox / "build-log"
 
 mock = '''#!/usr/bin/env python3
@@ -164,20 +165,9 @@ name = Path(sys.argv[0]).name
 if name == "rustc":
     print("host: x86_64-unknown-linux-gnu")
     sys.exit(0)
-if name == "cargo":
-    if Path.cwd().name == "core":
-        Path("target/debug").mkdir(parents=True, exist_ok=True)
-        for binary in ("tr-helper", "houston-core", "houston-supervisor"):
-            Path("target/debug", binary).write_text("fresh " + binary)
-    else:
-        for binary in ("tr-helper", "houston-core", "houston-supervisor"):
-            staged = Path("binaries", binary + "-x86_64-unknown-linux-gnu")
-            assert staged.read_text() == "fresh " + binary, "app needs current sidecars"
-state = Path(os.environ["HOME"]) / ".houston-dev/daemon.json"
-if name == "houston-tauri":
-    assert not state.exists(), "fresh cleanup must finish before app launch"
-else:
-    assert state.exists(), "fresh replaced daemon state before builds completed"
+state = Path(os.environ["HOME"]) / ".houston-dev"
+for record in ("daemon.json", "supervisor.json"):
+    assert (state / record).exists(), f"--fresh deleted v1's {record} before {name} ran"
 with Path(os.environ["DEV_TEST_LOG"]).open("a") as f:
     f.write(name + " " + " ".join(sys.argv[1:]) + "\\n")
 if name == "npx" and os.environ.get("DEV_TEST_FAIL_BUILD"):
@@ -192,25 +182,29 @@ env = dict(os.environ, HOME=str(sandbox), HOUSTON_CHANNEL="release",
            PATH=str(repo / "mock-bin") + os.pathsep + os.environ["PATH"],
            DEV_TEST_LOG=str(log))
 for fails in (False, True):
-    # A stale discovery file needs no process, port or real daemon.
-    discovery.write_text(json.dumps({"protocol": 112}))
+    # v1's discovery records, naming no live process: v2 never deletes them.
+    records = {discovery: json.dumps({"protocol": 112}),
+               supervisor: json.dumps({"protocol": 1})}
+    for path, text in records.items():
+        path.write_text(text)
     log.write_text("")
     env["DEV_TEST_FAIL_BUILD"] = "1" if fails else ""
     result = subprocess.run(["bash", str(repo / "scripts/dev.sh"), "--fresh"],
                             env=env, capture_output=True, text=True, timeout=20)
     assert result.returncode == (23 if fails else 0), result.stdout + result.stderr
     calls = log.read_text().splitlines()
+    for path, text in records.items():
+        assert path.read_text() == text, f"--fresh changed v1's {path.name}"
     if fails:
-        assert discovery.exists() and calls == ["npx -y pnpm@12.14.0 --filter @t3tools/web build"], calls
+        assert calls == ["npx -y pnpm@12.14.0 --filter @t3tools/web build"], calls
     else:
         assert calls == [
             "npx -y pnpm@12.14.0 --filter @t3tools/web build",
             "npx -y pnpm@12.14.0 --filter houston build:bundle",
-            "cargo build --bin houston-core --bin houston-supervisor --bin tr-helper",
             "cargo build",
             "houston-tauri --channel dev",
         ], calls
-print("ok: fresh builds all sidecars before replacement; failed builds preserve daemon state")
+print("ok: --fresh builds and launches the app and leaves v1's daemon.json and supervisor.json")
 PY
 then
   fail=1

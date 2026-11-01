@@ -19,7 +19,7 @@ without a project. **By project** groups deliveries and their slices instead of 
 
 ## Suggested work and sources
 
-**Suggested** contains open, unlinked findings from [Review](harness-review.md) for the
+**Suggested** contains open, unlinked findings from Review for the
 selected workspace, or across workspaces in **All workspaces**. Each suggestion identifies
 its workspace and the reported session count. **Dismiss** records that decision in Review;
 **Add to queue** creates a linked task without starting an agent. The task uses the review
@@ -35,7 +35,7 @@ A Slack bot mention in a mapped channel files a pending task. The configured own
 it with Slack's `:white_check_mark:` reaction (✅), or another supported acceptance action;
 a reaction from another member does not approve it. Review findings wait for your decision
 to become tasks. Tracker synchronization follows its own configuration; it is not a Slack
-approval flow. See [Slack requests](slack.md) for setup, readiness and what is transmitted.
+approval flow.
 
 For Weekly review, **Set up** opens Routines. After setup, use Routines to manage its
 provider, schedule and runs; findings return to Suggested for triage.
@@ -236,8 +236,7 @@ their scope is the brief they were spawned with.
 
 For Slack tasks, `ask` takes two to four options; `--recommended N` is their 1-based
 position. A refusal with `--refused` needs a subject and reason in `--changes`; it does
-not require steps or the live and dropped notes. See [Slack requests](slack.md) for field
-limits and what reaches the requester and owner.
+not require steps or the live and dropped notes.
 
 The task key defaults to `$HOUSTON_TASK` when a task started the pane; otherwise pass
 `HOU-n`. Priorities are `1` urgent through `4` low.
@@ -252,8 +251,7 @@ implementation summary to the reviewer CLI as well. Access is per workspace and 
 **Read and write**. An agent's write is recorded with the pane's codename and role, so the
 attribution survives the pane.
 
-Tasks filed from Slack mentions are described in [Slack requests](slack.md), including
-what that connection sends.
+Tasks filed from Slack mentions return with Slack intake (parked on `v2`).
 
 While a task is in review with a run branch, Houston runs the GitHub CLI (`gh pr view`)
 in that task's worktree every five minutes. The request uses your `gh` credentials.

@@ -281,7 +281,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         if: inputs.resume_tag == '' && inputs.preview_only != true
 
-      - name: Write the version into the manifests and both lockfiles
+      - name: Write the version into the three manifests and src-tauri/Cargo.lock
         if: inputs.resume_tag == '' && inputs.preview_only != true
         run: ./scripts/set-version.sh "${{ steps.version.outputs.version }}"
 
@@ -296,8 +296,7 @@ jobs:
           # Named, not `git add -A`: a release commit carries the version bump
           # and nothing a runner happened to leave behind.
           git add src-tauri/tauri.conf.json src-tauri/Cargo.toml \
-            src-tauri/Cargo.lock ui/package.json apps/server/package.json \
-            core/Cargo.toml core/Cargo.lock
+            src-tauri/Cargo.lock apps/server/package.json
           git commit -m "release: v$VERSION"
           git tag -m "release: v$VERSION" "v$VERSION"
 

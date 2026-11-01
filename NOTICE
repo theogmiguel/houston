@@ -9,16 +9,15 @@ Licensed under the Apache License, Version 2.0 (see LICENSE).
 libghostty-vt (Ghostty) — MIT
 ================================================================================
 
-Houston vendors a build of Ghostty's terminal-emulation library. The daemon
-links the native library and the renderer loads a WebAssembly build of it:
+Houston vendors a build of Ghostty's terminal-emulation library. The renderer
+loads a WebAssembly build of it:
 
-  ui/src/renderer/src/ghostty/vendor/ghostty-vt.wasm
-  ui/src/renderer/src/ghostty/vendor/ghostty-write-pty.wasm
-  core/houston-core/ghostty-patches/
+  apps/web/src/terminal/ghostty/vendor/ghostty-vt.wasm
+  apps/web/src/terminal/ghostty/vendor/ghostty-write-pty.wasm
 
 Both artifacts are built from https://github.com/ghostty-org/ghostty at the
-revision pinned in core/houston-core/ghostty-vt.lock. MIT asks that a copy of
-the software carry this notice, so here it is in full:
+revision pinned in native/libghostty-vt/VERSION. MIT asks that a copy of the
+software carry this notice, so here it is in full:
 
   MIT License
 

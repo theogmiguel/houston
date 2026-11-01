@@ -36,7 +36,11 @@ import {
   type ServerProviderDraft,
 } from "@t3tools/provider-core/server/snapshotProbe";
 import { resolveClaudeSdkExecutablePath } from "./Drivers/ClaudeExecutable.ts";
-import { hasClaudeManagedMcpConfig, makeClaudeEnvironment } from "./Drivers/ClaudeHome.ts";
+import {
+  hasClaudeManagedMcpConfig,
+  makeClaudeEnvironment,
+  mergeClaudeProcessEnvironment,
+} from "./Drivers/ClaudeHome.ts";
 import { discoverClaudeSkills } from "./Drivers/ClaudeSkills.ts";
 import type { ProviderWorkspaceSnapshot } from "@t3tools/provider-core/server/driver";
 import { makeUnavailableUsageLimits } from "@t3tools/provider-core/server/usageLimits";
@@ -329,7 +333,10 @@ const probeClaudeCapabilities = (
 ) => {
   const abort = new AbortController();
   return Effect.gen(function* () {
-    const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
+    const claudeEnvironment = yield* makeClaudeEnvironment(
+      claudeSettings,
+      environment ?? (yield* mergeClaudeProcessEnvironment(undefined, process.env)),
+    );
     const executablePath = yield* resolveClaudeSdkExecutablePath(
       claudeSettings.binaryPath,
       claudeEnvironment,
@@ -411,7 +418,10 @@ const runClaudeCommand = Effect.fn("runClaudeCommand")(function* (
   environment?: NodeJS.ProcessEnv,
   cwd?: string,
 ) {
-  const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
+  const claudeEnvironment = yield* makeClaudeEnvironment(
+    claudeSettings,
+    environment ?? (yield* mergeClaudeProcessEnvironment(undefined, process.env)),
+  );
   const spawnCommand = yield* resolveSpawnCommand(claudeSettings.binaryPath, args, {
     env: claudeEnvironment,
   });
@@ -466,7 +476,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   never,
   ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > {
-  const resolvedEnvironment = environment ?? process.env;
+  const resolvedEnvironment =
+    environment ?? (yield* mergeClaudeProcessEnvironment(undefined, process.env));
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const allModels = providerModelsFromSettings(
     modelCatalog.models.map((entry) => entry.model),
