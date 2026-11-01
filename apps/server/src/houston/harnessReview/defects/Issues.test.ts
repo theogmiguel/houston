@@ -1,6 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off globalDateInEffect:off - real git origins; GitHub's reset time.
 // Issue drafts and filing against an in-process fake of api.github.com that records every request.
 import * as NodeChildProcess from "node:child_process";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 
 import { assert, describe, it } from "@effect/vitest";
 import { ThreadId, type ProjectId } from "@t3tools/contracts";
@@ -292,7 +294,10 @@ describe("filing", () => {
           kit.github.requests.length = 0;
           kit.github.respond = () =>
             json({ number: 41, html_url: "https://github.com/theogmiguel/houston/issues/41" }, 201);
-          const filed = yield* service.file({ ...base, repository: "TheogMiguel/Houston" });
+          // The edited title carries a token and the home path; both go before it is sent.
+          const home = NodeOS.homedir();
+          const title = `fix(harness): push failed with ${TOKEN} in ${NodePath.join(home, "notes.txt")}`;
+          const filed = yield* service.file({ ...base, title, repository: "TheogMiguel/Houston" });
           assert.strictEqual(filed.number, 41);
           assert.strictEqual(filed.url, "https://github.com/theogmiguel/houston/issues/41");
           assert.lengthOf(kit.github.requests, 1);
@@ -300,7 +305,12 @@ describe("filing", () => {
           assert.strictEqual(create!.method, "POST");
           assert.strictEqual(new URL(create!.url).pathname, "/repos/theogmiguel/houston/issues");
           const sent = create!.body as { readonly title: string; readonly body: string };
-          assert.strictEqual(sent.title, base.title);
+          assert.strictEqual(
+            sent.title,
+            `fix(harness): push failed with <redacted> in ~${NodePath.sep}notes.txt`,
+          );
+          assert.notInclude(sent.title, TOKEN);
+          assert.notInclude(sent.title, home);
           assert.include(sent.body, "GITHUB_TOKEN=<redacted>");
           assert.notInclude(sent.body, "GITHUB_TOKEN=x");
           const after = yield* stateOf(key);
@@ -336,6 +346,52 @@ describe("filing", () => {
             "GITHUB_TOKEN=<redacted>",
           );
           assert.strictEqual((yield* stateOf(second.key))?.state, "resolved");
+        }),
+      ),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "a filed defect is not filed again and a double submit opens one issue",
+    () =>
+      withIssues("issue-file-once", (kit) =>
+        Effect.gen(function* () {
+          const { projectId } = yield* repositoryProject("issue-file-once");
+          const service = yield* issues;
+          const { key } = yield* report(projectId, "worker re-asked the same question");
+          const input = {
+            projectId,
+            key,
+            title: "fix(harness): worker re-asked the same question",
+            body: "It asked twice.",
+            repository: "theogmiguel/houston",
+          };
+          let next = 50;
+          kit.github.respond = () => {
+            next += 1;
+            return json(
+              { number: next, html_url: `https://github.com/theogmiguel/houston/issues/${next}` },
+              201,
+            );
+          };
+
+          const both = yield* Effect.all(
+            [Effect.exit(service.file(input)), Effect.exit(service.file(input))],
+            { concurrency: 2 },
+          );
+          assert.lengthOf(kit.github.requests, 1, "a double submit sends one create");
+          assert.lengthOf(both.filter(Exit.isSuccess), 1);
+          const refused = failureOf(both.find(Exit.isFailure)!);
+          assert.strictEqual(refused.kind, "conflict");
+
+          const again = failureOf(yield* Effect.exit(service.file(input)));
+          assert.strictEqual(again.kind, "conflict");
+          assert.include(again.message ?? "", "https://github.com/theogmiguel/houston/issues/51");
+          assert.lengthOf(kit.github.requests, 1, "a filed defect sends nothing more");
+
+          // A comment on an existing issue is still allowed.
+          yield* service.file({ ...input, commentOn: 7 });
+          assert.lengthOf(kit.github.requests, 2);
         }),
       ),
     TIMEOUT,

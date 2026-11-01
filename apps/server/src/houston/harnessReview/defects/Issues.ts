@@ -193,10 +193,45 @@ const make = Effect.gen(function* () {
     },
   );
 
-  const file: HoustonDefectIssues["Service"]["file"] = Effect.fn("HoustonDefectIssues.file")(
+  // Defects with a file in flight: a double submit must not reach GitHub twice.
+  const filing = new Set<string>();
+
+  const file: HoustonDefectIssues["Service"]["file"] = (input) => {
+    const claim = `${input.projectId}\u0000${input.key}`;
+    return Effect.acquireUseRelease(
+      Effect.suspend(() => {
+        if (filing.has(claim)) {
+          return Effect.fail(
+            refuse(
+              "conflict",
+              "defects.file",
+              `defect ${input.key} is already being filed; refusing a second submit`,
+            ),
+          );
+        }
+        filing.add(claim);
+        return Effect.void;
+      }),
+      () => fileClaimed(input),
+      () => Effect.sync(() => filing.delete(claim)),
+    );
+  };
+
+  const fileClaimed: HoustonDefectIssues["Service"]["file"] = Effect.fn("HoustonDefectIssues.file")(
     function* (input) {
       const operation = "defects.file";
-      const { root, repository: expected } = yield* target(operation, input.projectId, input.key);
+      const {
+        defect,
+        root,
+        repository: expected,
+      } = yield* target(operation, input.projectId, input.key);
+      if (defect.issueUrl !== null && input.commentOn === undefined) {
+        return yield* refuse(
+          "conflict",
+          operation,
+          `defect ${input.key} was already filed as ${defect.issueUrl}; refusing to open another issue`,
+        );
+      }
       const repository = parseRepository(input.repository);
       if (repository === null) {
         return yield* refuse(
