@@ -2013,6 +2013,34 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
+  it.effect("keeps a thread live when its first snapshot is missing before creation", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        httpSnapshot: { _tag: "missing" },
+      });
+
+      // A 404 before the launch creates the thread must not tombstone its id nor park
+      // the subscription: the creation may still be in flight on the server.
+      yield* Queue.offer(
+        harness.inputs,
+        snapshot({
+          ...BASE_PROJECTION,
+          thread: { ...BASE_PROJECTION.thread, title: "Created after the miss" },
+        }),
+      );
+
+      const state = yield* awaitThreadState(
+        harness.observed,
+        (value) => value.status === "deleted" || value.status === "live",
+      );
+
+      expect(state.status).toBe("live");
+      expect(Option.getOrThrow(state.data).thread.title).toBe("Created after the miss");
+      expect(yield* SubscriptionRef.get(harness.subscriptionCount)).toBe(1);
+      expect(yield* Ref.get(harness.removedThreads)).toEqual([]);
+    }),
+  );
+
   it.effect("does not recreate a deleted cache from a queued save or finalizer", () =>
     Effect.gen(function* () {
       const scope = yield* Scope.make();
