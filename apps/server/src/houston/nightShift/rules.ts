@@ -356,12 +356,18 @@ export const runCost = (input: {
     readonly tokens: number | null;
   }>;
   readonly nowMs: number;
+  /** Nothing runs past the hard stop, so a settle after a long server stop charges up to it only. */
+  readonly hardStopMs?: number | null;
 }) => {
   const members = input.crew.map((member) => ({
     threadId: member.threadId,
     providerInstanceId: member.providerInstanceId,
     hours:
-      chargedMs(member.startedAtMs, member.endedAtMs ?? input.nowMs, input.downtime) / 3_600_000,
+      chargedMs(
+        member.startedAtMs,
+        Math.min(member.endedAtMs ?? input.nowMs, input.hardStopMs ?? Number.POSITIVE_INFINITY),
+        input.downtime,
+      ) / 3_600_000,
   }));
   const instances: Record<string, number> = {};
   for (const member of members) {

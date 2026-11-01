@@ -699,8 +699,10 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const nowMs = yield* Clock.currentTimeMillis;
           const crew = yield* store.crew(runId);
-          // The server records no stop time, so no downtime is known; usage is not recorded yet.
+          // The server records no stop time, so the hard stop bounds a restart gap; usage is not
+          // recorded yet.
           const cost = runCost({
+            hardStopMs: run.hardStopAt === null ? null : Date.parse(run.hardStopAt),
             crew: crew.map((member) => ({
               threadId: member.threadId,
               providerInstanceId: member.providerInstanceId,

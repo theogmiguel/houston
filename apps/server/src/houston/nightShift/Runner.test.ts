@@ -935,6 +935,51 @@ describe("night shift run life", () => {
       );
     }),
   );
+
+  it.effect("a settle after a long server stop charges at most up to the hard stop", () =>
+    Effect.gen(function* () {
+      const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "night-cost-"));
+      const kit = yield* makeKit("restart-cost", {
+        databaseFile: NodePath.join(directory, "state.sqlite"),
+        serverRunner: true,
+      });
+      const ids = { runId: 0, hardStopAt: "" };
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const p = yield* setUp("restart-cost");
+          const started = yield* start(p.projectId, 60);
+          yield* addCrew(started.runId, "cost-worker", started.threadId, NOW);
+          ids.runId = started.runId;
+          ids.hardStopAt = (yield* getRun(started.runId)).hardStopAt!;
+        }),
+      );
+
+      // The server comes back three days later, long past the 60-minute run's hard stop.
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const run = yield* getRun(ids.runId);
+          assert.equal(run.phase, "settled");
+          assert.equal(run.stopReason, "serverRestart");
+          const cost = run.cost as {
+            readonly members: ReadonlyArray<{ readonly threadId: string; readonly hours: number }>;
+            readonly instances: Record<string, number>;
+          };
+          const limit = (Date.parse(ids.hardStopAt) - Date.parse(NOW)) / 3_600_000;
+          assert.isAtMost(limit, 1.01);
+          assert.lengthOf(cost.members, 2);
+          for (const member of cost.members) {
+            assert.isAtMost(member.hours, limit, member.threadId);
+          }
+          const worker = cost.members.find((member) => member.threadId === "cost-worker");
+          assert.closeTo(worker!.hours, limit, 1e-9);
+          assert.isAtMost(cost.instances.claudeAgent!, 2 * limit);
+        }),
+        Date.parse(NOW) + 3 * 24 * 60 * 60_000,
+      );
+    }),
+  );
 });
 
 describe("houston's messages to the orchestrator", () => {
