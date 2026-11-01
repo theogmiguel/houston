@@ -66,6 +66,11 @@ import {
 } from "../../grid/sidebar";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { GridShelves } from "./GridShelves";
+import {
+  COLLAPSED_GRIDS_STORAGE_KEY,
+  COLLAPSED_WORKSPACES_STORAGE_KEY,
+  useCollapsedKeys,
+} from "./sidebarCollapse";
 import { preorderThreads } from "../../grid/tree";
 import { useOpenGridDraft } from "../../grid/useOpenGridDraft";
 import { useQuietThreadShells, useProjects } from "../../state/entities";
@@ -108,7 +113,15 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 import { Separator } from "../ui/separator";
-import { SidebarContent, SidebarHeader, useSidebarVisibility } from "../ui/sidebar";
+import {
+  FOCUS_ACTION_CLS,
+  FOCUS_ROW_CLS,
+  ROW_ACTIONS_FOCUS_REVEAL,
+  SIDEBAR_CHEVRON_CLS,
+  SidebarContent,
+  SidebarHeader,
+  useSidebarVisibility,
+} from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
@@ -192,7 +205,8 @@ export function GridSidebar() {
 
   const [search, setSearch] = useState("");
   const [selection, setSelection] = useState<ThreadSelection>(clearThreadSelection);
-  const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<ReadonlySet<string>>(new Set());
+  const collapsedWorkspaces = useCollapsedKeys(COLLAPSED_WORKSPACES_STORAGE_KEY);
+  const collapsedGrids = useCollapsedKeys(COLLAPSED_GRIDS_STORAGE_KEY);
   const [dragging, setDragging] = useState<DraggedThread | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
@@ -613,7 +627,8 @@ export function GridSidebar() {
                 return [{ grid, threads: matchedThreads }];
               });
               if (query.length > 0 && !workspaceMatches && renderedGrids.length === 0) return null;
-              const collapsed = query.length === 0 && collapsedWorkspaces.has(workspaceKey);
+              const collapsed =
+                query.length === 0 && collapsedWorkspaces.collapsed.has(workspaceKey);
               const providerEntries =
                 providerEntriesByEnvironment.get(project.environmentId) ?? EMPTY_PROVIDER_ENTRIES;
               return (
@@ -631,14 +646,9 @@ export function GridSidebar() {
                   runningSubagents={runningSubagentsByThread}
                   dragging={dragging}
                   dropTarget={dropTarget}
-                  onToggle={() =>
-                    setCollapsedWorkspaces((current) => {
-                      const next = new Set(current);
-                      if (next.has(workspaceKey)) next.delete(workspaceKey);
-                      else next.add(workspaceKey);
-                      return next;
-                    })
-                  }
+                  onToggle={() => collapsedWorkspaces.toggle(workspaceKey)}
+                  collapsedGrids={collapsedGrids.collapsed}
+                  onToggleGrid={collapsedGrids.toggle}
                   onCreateGrid={() => {
                     const gridId = createGrid({
                       environmentId: project.environmentId,
@@ -817,6 +827,8 @@ function WorkspaceGroup({
   dragging,
   dropTarget,
   onToggle,
+  collapsedGrids,
+  onToggleGrid,
   onCreateGrid,
   onOpenThread,
   onSelectThread,
@@ -848,6 +860,8 @@ function WorkspaceGroup({
   dragging: DraggedThread | null;
   dropTarget: string | null;
   onToggle: () => void;
+  collapsedGrids: ReadonlySet<string>;
+  onToggleGrid: (gridId: string) => void;
   onCreateGrid: () => void;
   onOpenThread: (gridId: string, threadId: string) => void;
   onSelectThread: (
@@ -899,13 +913,16 @@ function WorkspaceGroup({
           onClick={onToggle}
           aria-expanded={!collapsed}
           className={cn(
-            "flex h-7 w-full min-w-0 cursor-pointer items-center gap-2 rounded-(--r-ctl) px-2 text-left text-headline font-semibold text-sidebar-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+            `flex h-7 w-full min-w-0 cursor-pointer items-center gap-2 rounded-(--r-ctl) px-2 text-left text-headline font-semibold text-sidebar-foreground outline-none hover:bg-sidebar-row-hover ${FOCUS_ACTION_CLS}`,
             isDropTarget && "bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset",
           )}
         >
           <ChevronDownIcon
             aria-hidden
-            className={cn("size-3 shrink-0 text-secondary-label", collapsed && "-rotate-90")}
+            className={cn(
+              `${SIDEBAR_CHEVRON_CLS} size-3 shrink-0 text-secondary-label`,
+              collapsed && "-rotate-90",
+            )}
           />
           <span className="min-w-0 truncate">
             <HighlightedText text={project.title} query={query} />
@@ -928,7 +945,10 @@ function WorkspaceGroup({
                 <button
                   type="button"
                   aria-label={`Workspace actions for ${project.title}`}
-                  className="absolute right-8 top-1/2 inline-grid size-5 -translate-y-1/2 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 focus-visible:opacity-100"
+                  className={cn(
+                    "absolute right-8 top-1/2 inline-grid size-5 -translate-y-1/2 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 focus-visible:opacity-100",
+                    FOCUS_ACTION_CLS,
+                  )}
                 >
                   <MoreHorizontalIcon aria-hidden className="size-3.5" />
                 </button>
@@ -973,6 +993,8 @@ function WorkspaceGroup({
               threads={threads}
               query={query}
               open={openGridId === grid.id}
+              collapsed={collapsedGrids.has(grid.id)}
+              onToggleCollapsed={() => onToggleGrid(grid.id)}
               providerEntries={providerEntries}
               nowIso={nowIso}
               selection={selection}
@@ -1020,6 +1042,8 @@ function GridRow({
   threads,
   query,
   open,
+  collapsed,
+  onToggleCollapsed,
   providerEntries,
   nowIso,
   selection,
@@ -1049,6 +1073,8 @@ function GridRow({
   threads: ReadonlyArray<EnvironmentThreadShell>;
   query: string;
   open: boolean;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
   nowIso: string;
   selection: ThreadSelection;
@@ -1074,7 +1100,6 @@ function GridRow({
   onDragLeave: () => void;
   readDragged: (event: ReactDragEvent) => DraggedThread | null;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(grid.name);
   const renameGrid = useGridStore((store) => store.renameGrid);
@@ -1136,7 +1161,7 @@ function GridRow({
         ) : (
           <button
             type="button"
-            onClick={() => setCollapsed((value) => !value)}
+            onClick={onToggleCollapsed}
             onKeyDown={(event) => {
               if (event.key === "F2") {
                 event.preventDefault();
@@ -1146,13 +1171,16 @@ function GridRow({
             }}
             aria-expanded={!collapsed}
             className={cn(
-              "group/grid flex h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-3 text-left text-xs outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+              `group/grid flex h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-3 text-left text-xs outline-none hover:bg-sidebar-row-hover ${FOCUS_ACTION_CLS}`,
               isDropTarget && "bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset",
             )}
           >
             <ChevronDownIcon
               aria-hidden
-              className={cn("size-3 shrink-0 text-secondary-label", collapsed && "-rotate-90")}
+              className={cn(
+                `${SIDEBAR_CHEVRON_CLS} size-3 shrink-0 text-secondary-label`,
+                collapsed && "-rotate-90",
+              )}
             />
             <span
               className={cn(
@@ -1166,7 +1194,10 @@ function GridRow({
               <TooltipTrigger
                 render={
                   <span
-                    className="inline-grid size-5 shrink-0 place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 group-focus-within/grid:opacity-100"
+                    className={cn(
+                      "inline-grid size-5 shrink-0 place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 group-focus-within/grid:opacity-100",
+                      FOCUS_ACTION_CLS,
+                    )}
                     role="button"
                     tabIndex={0}
                     aria-label={`New thread in ${grid.name}`}
@@ -1195,7 +1226,10 @@ function GridRow({
               <button
                 type="button"
                 aria-label={`Grid actions for ${grid.name}`}
-                className="absolute right-8 top-1/2 inline-grid size-5 -translate-y-1/2 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 focus-visible:opacity-100"
+                className={cn(
+                  "absolute right-8 top-1/2 inline-grid size-5 -translate-y-1/2 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 focus-visible:opacity-100",
+                  FOCUS_ACTION_CLS,
+                )}
               >
                 <MoreHorizontalIcon aria-hidden className="size-3.5" />
               </button>
@@ -1502,7 +1536,7 @@ export function ThreadCard({
               onOpen();
             }}
             className={cn(
-              "group/th relative flex w-full flex-col gap-0.75 rounded-lg py-1.75 pr-2.5 pl-7.5 text-left outline-none",
+              `group/th relative flex w-full flex-col gap-0.75 rounded-lg py-1.75 pr-2.5 pl-7.5 text-left outline-none ${FOCUS_ROW_CLS}`,
               "cursor-pointer",
               dragging && "opacity-50",
               selected ? "bg-(--accent-muted)" : focused ? "bg-(--sel)" : "hover:bg-(--hover)",
@@ -1577,7 +1611,7 @@ export function ThreadCard({
           <span
             className={cn(
               "shrink-0 items-center gap-0.5",
-              actionsVisible ? "flex" : "hidden group-hover/th:flex",
+              actionsVisible ? "flex" : `hidden group-hover/th:flex ${ROW_ACTIONS_FOCUS_REVEAL}`,
             )}
             onMouseEnter={() => setActionsHovered(true)}
             onMouseLeave={() => setActionsHovered(false)}
@@ -1587,7 +1621,10 @@ export function ThreadCard({
                 type="button"
                 aria-label={shelf === "snoozed" ? "Wake thread now" : "Reopen thread"}
                 onClick={shelf === "snoozed" ? onWake : onReopen}
-                className="inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground hover:bg-(--sel) hover:text-foreground"
+                className={cn(
+                  "inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
+                  FOCUS_ACTION_CLS,
+                )}
               >
                 {shelf === "snoozed" ? (
                   <>
@@ -1609,7 +1646,10 @@ export function ThreadCard({
                       <button
                         type="button"
                         aria-label="Hold"
-                        className="inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground"
+                        className={cn(
+                          "inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
+                          FOCUS_ACTION_CLS,
+                        )}
                       >
                         <ClockIcon aria-hidden className="size-3.5" />
                       </button>
@@ -1627,7 +1667,10 @@ export function ThreadCard({
                   type="button"
                   aria-label="Close thread"
                   onClick={close}
-                  className="inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground hover:bg-(--sel) hover:text-foreground"
+                  className={cn(
+                    "inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
+                    FOCUS_ACTION_CLS,
+                  )}
                 >
                   <XIcon aria-hidden className="size-3.5" />
                   Close
@@ -1638,7 +1681,10 @@ export function ThreadCard({
                       <button
                         type="button"
                         aria-label={`Thread actions for ${thread.title}`}
-                        className="inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground"
+                        className={cn(
+                          "inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
+                          FOCUS_ACTION_CLS,
+                        )}
                       >
                         <MoreHorizontalIcon aria-hidden className="size-3.5" />
                       </button>

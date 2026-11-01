@@ -103,6 +103,18 @@ describe("ThreadCard", () => {
     await expect.element(trigger).toBeVisible();
   });
 
+  it("shows a focus ring and the card actions when the title has keyboard focus", async () => {
+    await using screen = await render(card(thread()));
+
+    await userEvent.tab();
+    const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
+    expect(row.matches(":has(:focus-visible)")).toBe(true);
+    expect(getComputedStyle(row).boxShadow).not.toBe("none");
+
+    const actions = screen.getByRole("button", { name: /Thread actions for/ });
+    await expect.element(actions).toBeVisible();
+  });
+
   it("labels the auto-close toggle without a glued On suffix and toggles it", async () => {
     const onSetAutoClose = vi.fn();
     await using screen = await render(card(thread(), { onSetAutoClose }));
