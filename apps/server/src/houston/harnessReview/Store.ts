@@ -613,10 +613,12 @@ const make = Effect.gen(function* () {
           const [held] = yield* sql<{ n: number }>`
             SELECT COUNT(*) AS n FROM houston_defects WHERE project_id = ${input.projectId}`;
           if ((held?.n ?? 0) >= limit) {
+            // Only a defect that reads decided now: a decision older than its last report reads open.
             const [oldest] = yield* sql<{ key: string }>`
               SELECT d.key FROM houston_defects d
               JOIN houston_harness_decisions h ON h.project_id = d.project_id AND h.key = d.key
               WHERE d.project_id = ${input.projectId} AND h.state != 'open'
+                AND h.decided_at >= d.last_seen_at
               ORDER BY h.decided_at ASC, d.key ASC LIMIT 1`;
             if (oldest === undefined) {
               return yield* new HoustonHarnessError({
@@ -628,6 +630,8 @@ const make = Effect.gen(function* () {
               });
             }
             yield* sql`DELETE FROM houston_defects
+              WHERE project_id = ${input.projectId} AND key = ${oldest.key}`;
+            yield* sql`DELETE FROM houston_harness_decisions
               WHERE project_id = ${input.projectId} AND key = ${oldest.key}`;
           }
           yield* sql`

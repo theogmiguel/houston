@@ -176,6 +176,14 @@ describe("agent reports", () => {
             );
             assert.lengthOf(yield* defectsOf(projectId), 200, "a refusal stores nothing");
 
+            // Older decisions that no longer read decided: keys[2] reopened, keys[3] reported again.
+            yield* store.decide({ projectId, key: keys[2]!, decision: "dismiss" });
+            yield* store.decide({ projectId, key: keys[2]!, decision: "reopen" });
+            yield* store.decide({ projectId, key: keys[3]!, decision: "dismiss" });
+            yield* TestClock.adjust("1 minute");
+            yield* report(projectId, "defect number 3");
+            yield* TestClock.adjust("1 minute");
+
             yield* store.decide({ projectId, key: keys[0]!, decision: "dismiss" });
             yield* TestClock.adjust("1 minute");
             yield* store.decide({ projectId, key: keys[1]!, decision: "notABug" });
@@ -186,7 +194,27 @@ describe("agent reports", () => {
             assert.lengthOf(held, 200);
             assert.notInclude(held, keys[0], "the oldest decision is pruned");
             assert.include(held, keys[1]);
+            assert.include(held, keys[2], "a reopened defect is undecided");
+            assert.include(held, keys[3], "a recurred defect is undecided");
             assert.include(held, stored.key);
+            const database = yield* sql;
+            assert.lengthOf(
+              yield* database`SELECT key FROM houston_harness_decisions WHERE key = ${keys[0]!}`,
+              0,
+              "the pruned defect's decision goes with it",
+            );
+
+            yield* TestClock.adjust("1 minute");
+            const back = yield* report(projectId, "defect number 0");
+            assert.strictEqual(back.key, keys[0]);
+            assert.strictEqual(back.count, 1);
+            const returned = (yield* defectsOf(projectId)).find((row) => row.key === keys[0]);
+            assert.strictEqual(returned?.state, "open");
+            assert.isFalse(returned?.recurred, "a pruned defect reported again is new");
+            assert.notInclude(
+              (yield* defectsOf(projectId)).map((defect) => defect.key),
+              keys[1],
+            );
           }),
         );
       }),
