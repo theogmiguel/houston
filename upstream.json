@@ -396,7 +396,8 @@
     "apps/web/src/grid/newThreadDraft.ts",
     "apps/web/src/grid/useOpenGridDraft.ts",
     "apps/web/src/hooks/useRightPanelSurfaceClose.browser.test.tsx",
-    "apps/web/src/lib/sideChatPane.ts"
+    "apps/web/src/lib/sideChatPane.ts",
+    "packages/client-runtime/src/state/composerDispatch.test.ts"
   ],
   "removed": [
     "apps/web/src/legalLinks.ts",
@@ -1040,6 +1041,7 @@
     "packages/client-runtime/src/state/threadInbox.test.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)",
     "packages/client-runtime/src/state/threadInbox.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)",
     "packages/client-runtime/src/state/threadSettled.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)",
+    "packages/client-runtime/src/state/threadWorkflows.test.ts": "adds coverage for the active-steering capability the composer fallback reads",
     "packages/client-runtime/src/state/threadWorkflows.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services); exposes active steering for the composer fallback",
     "packages/client-runtime/src/userMessage.test.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)",
     "packages/client-runtime/src/userMessage.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)",
@@ -1172,6 +1174,8 @@
     "apps/server/src/mcp/toolkits/project/handlers.ts": "night shift: t3_thread_launch asks the Houston crew gate first, which refuses it for a thread of a live run (AD-086)",
     "apps/server/src/mcp/toolkits/orchestrator/handlers.ts": "night shift: t3_environment_link asks the Houston crew gate first, which refuses it for a thread of a live run (AD-086)",
     "apps/server/src/mcp/toolkits/thread/handlers.ts": "night shift: run_scheduled_task_now asks the Houston crew gate first, which refuses it for a thread of a live run (AD-112)",
-    "packages/client-runtime/src/state/threads-sync.test.ts": "a first bounded snapshot that 404s before creation keeps the thread live"
+    "packages/client-runtime/src/state/threads-sync.test.ts": "a first bounded snapshot that 404s before creation keeps the thread live",
+    "apps/server/src/usage/UsageService.test.ts": "the saved-usage window test dates its transcript from the clock instead of a fixed day the 92-day cache retention ages out",
+    "packages/client-runtime/src/state/composerDispatch.ts": "a follow-up falls back to the queue when the provider cannot steer"
   }
 }

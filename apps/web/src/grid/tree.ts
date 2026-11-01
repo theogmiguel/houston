@@ -491,6 +491,18 @@ export function swapThread(tree: LayoutNode | null, a: PaneKey, b: PaneKey): Lay
   return rec(tree);
 }
 
+/**
+ * Puts another thread in a cell's place without changing the layout or its
+ * sizes. A thread dropped on a cell from outside the grid replaces it.
+ */
+export function replaceThread(tree: LayoutNode, target: PaneKey, node: ThreadNode): LayoutNode {
+  if (tree.kind !== "split") return tree.threadId === target ? node : tree;
+  return {
+    ...tree,
+    children: tree.children.map((child) => replaceThread(child, target, node)),
+  };
+}
+
 export function setRatio(
   tree: LayoutNode,
   path: number[],

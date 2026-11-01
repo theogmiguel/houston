@@ -1,6 +1,13 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
-import { ArchiveIcon, ArrowDownIcon, ArrowRightIcon, Maximize2Icon, XIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  ArrowDownIcon,
+  ArrowRightIcon,
+  ArrowRightLeftIcon,
+  Maximize2Icon,
+  XIcon,
+} from "lucide-react";
 import { useEffect, useState, type CSSProperties, type RefObject } from "react";
 
 import ChatView, { type RightPanelPortalTarget } from "../ChatView";
@@ -14,8 +21,10 @@ import { useQuietThreadShell } from "../../state/entities";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { paneDensityLayout } from "../../grid/density";
 import { MAX_GRID_THREADS, type GridRecord, useGridStore } from "../../grid/gridStore";
-import { type SplitSide, type ThreadNode, preorderThreads } from "../../grid/tree";
+import { type Side, type SplitSide, type ThreadNode, preorderThreads } from "../../grid/tree";
+import type { ThreadDragHandleProps, ThreadDropTargetProps } from "../../grid/threadDrag";
 import { Button } from "../ui/button";
+import { GridDropIndicator } from "../ui/grid-drop-indicator";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { cn } from "../../lib/utils";
 import { TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR } from "../chat/composerFocusRedirect";
@@ -38,6 +47,12 @@ export function GridThreadCell({
   onOpenThread,
   rightPanelPortal,
   threadDetailsAnchor,
+  dragging = false,
+  dropIndicator = null,
+  dragHandleProps,
+  dropTargetProps,
+  swapTargets = [],
+  onSwapWith,
 }: {
   node: ThreadNode;
   grid: GridRecord;
@@ -58,6 +73,15 @@ export function GridThreadCell({
   rightPanelPortal?: RightPanelPortalTarget | null;
   /** The focused cell anchors its popover details card under the top bar control. */
   threadDetailsAnchor?: RefObject<Element | null> | null;
+  /** The cell's label is being dragged to another cell. */
+  dragging?: boolean;
+  /** Where a thread dropped on this cell would land. */
+  dropIndicator?: Side | null;
+  dragHandleProps?: ThreadDragHandleProps;
+  dropTargetProps?: ThreadDropTargetProps;
+  /** The other cells in this grid, for the label's keyboard move action. */
+  swapTargets?: ReadonlyArray<{ threadId: string; title: string }>;
+  onSwapWith?: ((threadId: string) => void) | undefined;
 }) {
   const environmentId = grid.environmentId as EnvironmentId;
   const threadId = node.threadId as ThreadId;
@@ -160,6 +184,8 @@ export function GridThreadCell({
       data-density={density}
       data-thread-id={node.threadId}
       data-focused={focused ? "true" : "false"}
+      data-dragging={dragging ? "true" : undefined}
+      {...dropTargetProps}
       onPointerDownCapture={onFocus}
       onFocusCapture={onFocus}
       style={
@@ -170,6 +196,7 @@ export function GridThreadCell({
               : `${layout.composerMaxWidth ?? layout.timelineMaxWidth}px`,
           ...(density === "solo" ? { "--text-prose--line-height": "1.3125rem" } : {}),
           ...(showLabel ? { "--pane-label-inset": "2.625rem" } : {}),
+          ...(dragging ? { opacity: 0.45 } : {}),
         } as CSSProperties
       }
       className={cn(
@@ -184,6 +211,8 @@ export function GridThreadCell({
       {showLabel ? (
         <div
           data-pane-label=""
+          {...dragHandleProps}
+          style={dragHandleProps?.draggable === true ? { cursor: "grab" } : undefined}
           className="group/label absolute top-2 left-2 z-20 flex h-[26px] max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-(--r-ctl) border border-(--divider) bg-(--pane) ps-2 pe-1 shadow-[var(--shadow-1)]"
         >
           <span className="grid size-3.5 shrink-0 place-items-center">
@@ -219,6 +248,9 @@ export function GridThreadCell({
                 />
               </>
             ) : null}
+            {onSwapWith === undefined || swapTargets.length === 0 ? null : (
+              <MoveCellMenu targets={swapTargets} onPick={onSwapWith} />
+            )}
             {draftId === undefined ? (
               <Button
                 variant="ghost-muted"
@@ -276,7 +308,42 @@ export function GridThreadCell({
           )}
         </ThreadOpenProvider>
       </div>
+      {dropIndicator === null ? null : <GridDropIndicator side={dropIndicator} />}
     </section>
+  );
+}
+
+function MoveCellMenu({
+  targets,
+  onPick,
+}: {
+  targets: ReadonlyArray<{ threadId: string; title: string }>;
+  onPick: (threadId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Menu open={open} onOpenChange={setOpen}>
+      <MenuTrigger
+        render={
+          <Button variant="ghost-muted" size="icon-sm" aria-label="Move cell">
+            <ArrowRightLeftIcon />
+          </Button>
+        }
+      />
+      <MenuPopup side="bottom" align="end">
+        {targets.map((target) => (
+          <MenuItem
+            key={target.threadId}
+            onClick={() => {
+              setOpen(false);
+              onPick(target.threadId);
+            }}
+          >
+            Swap with {target.title}
+          </MenuItem>
+        ))}
+      </MenuPopup>
+    </Menu>
   );
 }
 

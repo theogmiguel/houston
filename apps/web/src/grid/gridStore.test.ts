@@ -132,6 +132,108 @@ describe("grid records", () => {
     ]);
   });
 
+  it("moves a thread onto another grid's cell edge", () => {
+    freshStore();
+    createdGrid();
+    useGridStore.getState().createGrid({
+      environmentId: "env-1",
+      projectId: "project-1",
+      workspaceKey,
+      id: "g-2",
+      now: "2026-01-01T00:00:00Z",
+    });
+    useGridStore.getState().addThread("g-1", "thread-a");
+    useGridStore.getState().addThread("g-2", "thread-b");
+
+    const moved = useGridStore.getState().moveThreadToCell({
+      threadId: "thread-a",
+      targetGridId: "g-2",
+      targetThreadId: "thread-b",
+      side: "right",
+    });
+
+    expect(moved).toBe(true);
+    expect(gridById(useGridStore.getState().grids, "g-1")!.tree).toBeNull();
+    const target = gridById(useGridStore.getState().grids, "g-2")!;
+    expect(preorderLeaves(target.tree)).toEqual(["thread-b", "thread-a"]);
+    expect(target.focusedThreadId).toBe("thread-a");
+  });
+
+  it("replaces the target cell on a centre drop and keeps the layout", () => {
+    freshStore();
+    createdGrid();
+    useGridStore.getState().createGrid({
+      environmentId: "env-1",
+      projectId: "project-1",
+      workspaceKey,
+      id: "g-2",
+      now: "2026-01-01T00:00:00Z",
+    });
+    useGridStore.getState().addThread("g-1", "thread-a");
+    useGridStore.getState().addThread("g-1", "thread-x");
+    const layout = {
+      kind: "split" as const,
+      dir: "row" as const,
+      children: [
+        { kind: "thread" as const, threadId: "thread-b", id: "p-b" },
+        { kind: "thread" as const, threadId: "thread-c", id: "p-c" },
+      ],
+      weights: [70, 30],
+    };
+    useGridStore.getState().setTree("g-2", layout);
+
+    const replaced = useGridStore.getState().moveThreadToCell({
+      threadId: "thread-a",
+      targetGridId: "g-2",
+      targetThreadId: "thread-b",
+      side: "center",
+    });
+
+    expect(replaced).toBe(true);
+    expect(preorderLeaves(gridById(useGridStore.getState().grids, "g-1")!.tree)).toEqual([
+      "thread-x",
+    ]);
+    const target = gridById(useGridStore.getState().grids, "g-2")!.tree;
+    expect(preorderLeaves(target)).toEqual(["thread-a", "thread-c"]);
+    expect(target?.kind === "split" && target.weights).toEqual([70, 30]);
+  });
+
+  it("refuses an edge drop that would make a seventh cell", () => {
+    freshStore();
+    createdGrid();
+    useGridStore.getState().createGrid({
+      environmentId: "env-1",
+      projectId: "project-1",
+      workspaceKey,
+      id: "g-2",
+      now: "2026-01-01T00:00:00Z",
+    });
+    useGridStore.getState().addThread("g-1", "thread-a");
+    for (const threadId of [
+      "thread-1",
+      "thread-2",
+      "thread-3",
+      "thread-4",
+      "thread-5",
+      "thread-6",
+    ]) {
+      useGridStore.getState().addThread("g-2", threadId);
+    }
+
+    const refused = useGridStore.getState().moveThreadToCell({
+      threadId: "thread-a",
+      targetGridId: "g-2",
+      targetThreadId: "thread-1",
+      side: "right",
+    });
+
+    expect(refused).toBe(false);
+    expect(preorderLeaves(gridById(useGridStore.getState().grids, "g-1")!.tree)).toEqual([
+      "thread-a",
+    ]);
+    expect(preorderLeaves(gridById(useGridStore.getState().grids, "g-2")!.tree)).toHaveLength(6);
+  });
+
   it("follows the presets as an untouched grid fills instead of narrow columns", () => {
     freshStore();
     createdGrid();
