@@ -1189,8 +1189,6 @@
     "apps/web/src/components/settings/ScheduledTasksSettings.tsx": "the webhook copy action uses the shared CopyButton",
     "apps/web/src/components/settings/ThemeSettings.tsx": "the theme removal checkbox uses the Checkbox primitive",
     "apps/web/src/components/DiffPanelShell.tsx": "pane headers take their height from the --h-pane-head token",
-    "apps/web/src/components/GitActionsControl.tsx": "the neutral hover fill utility is named hover; upstream calls it accent",
-    "apps/web/src/components/ThreadStatusIndicators.tsx": "the neutral hover fill utility is named hover; upstream calls it accent",
     "apps/web/src/components/ThreadTerminalDrawer.tsx": "the neutral hover fill utility is named hover; upstream calls it accent",
     "apps/web/src/components/auth/ConnectAgentSurface.tsx": "the neutral hover fill utility is named hover; upstream calls it accent",
     "apps/web/src/components/chat/ChangedFilesTree.tsx": "the neutral hover fill utility is named hover; upstream calls it accent",
@@ -1236,6 +1234,14 @@
     "apps/web/src/components/settings/AcpRegistrySearchStep.tsx": "an InputGroup input uses the compact size; the duplicate sm size is removed",
     "apps/web/src/components/settings/OpenSourceLicenses.tsx": "an InputGroup input uses the compact size; the duplicate sm size is removed",
     "apps/web/src/components/settings/ProviderSettingsForm.tsx": "an Input uses the compact size; the duplicate sm size is removed",
-    "apps/web/src/components/settings/SecretSourceInput.tsx": "an Input uses the compact size; the duplicate sm size is removed"
+    "apps/web/src/components/settings/SecretSourceInput.tsx": "an Input uses the compact size; the duplicate sm size is removed",
+    "apps/web/src/components/ThreadStatusIndicators.tsx": "pull request and terminal status read the shared status tokens; the neutral hover fill utility is named hover (upstream: accent)",
+    "apps/web/src/components/pullRequest/pullRequestIcons.tsx": "one token-backed presentation map for every pull request and check state",
+    "apps/web/src/components/pullRequest/pullRequestPresentation.tsx": "check and review states read the shared presentation map",
+    "apps/web/src/components/PullRequestThreadDialog.tsx": "pull request state colour comes from the shared presentation map",
+    "apps/web/src/components/contextChipParts.tsx": "the pull request chip reads the shared presentation map",
+    "apps/web/src/components/ChatMarkdown.tsx": "GitHub alert colours use the semantic status tokens",
+    "apps/web/src/components/chat/ThreadAutomationsPanel.tsx": "scheduled-task status dots use the semantic status tokens",
+    "apps/web/src/components/GitActionsControl.tsx": "the commit summary uses the muted token instead of a one-off palette colour; the neutral hover fill utility is named hover (upstream: accent)"
   }
 }

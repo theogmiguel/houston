@@ -129,7 +129,7 @@ function categoryLabel(category: ResourceTelemetryProcessCategory): string {
 function categoryDotClass(category: ResourceTelemetryProcessCategory): string {
   if (category === "resource-monitor") return "bg-warning";
   if (category.startsWith("electron-")) return "bg-info";
-  if (category === "server") return "bg-violet-500";
+  if (category === "server") return "bg-(--accent)";
   return "bg-success";
 }
 
@@ -1280,8 +1280,8 @@ function ResourceTelemetryDiagnosticsBody({
         <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xs/5">
           <div className="bg-muted/15 px-4 py-3 text-2xs leading-relaxed text-muted-foreground sm:px-5">
             Native counters identify which process is reading or writing. These application-level
-            counters identify known Houston operations so process spikes can be correlated with specific
-            persistence and logging paths.
+            counters identify known Houston operations so process spikes can be correlated with
+            specific persistence and logging paths.
           </div>
           <AttributionTable entries={snapshot?.attribution.entries ?? []} />
         </div>
