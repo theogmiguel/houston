@@ -11,7 +11,7 @@ import {
   type UsageSummaryInput,
 } from "@t3tools/contracts";
 import { CircleAlertIcon, ChevronDownIcon, InfoIcon, SlidersHorizontalIcon } from "lucide-react";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Cause from "effect/Cause";
@@ -88,7 +88,14 @@ import { UsagePriceOverrides } from "./UsagePriceOverrides";
 import { UsageProviderChart } from "./UsageProviderChart";
 import { UsageModelDialog } from "./UsageModelDialog";
 import { UsageShareBar } from "./UsageShareBar";
-import { costTypeBoardSegments, modelShare, sortModelsByTokens, tokenTypeSegments } from "./usageBreakdown";
+import { UsageModelRow } from "./UsageModelRow";
+import { ProviderMark } from "./UsageProviderMark";
+import {
+  costTypeBoardSegments,
+  modelShare,
+  sortModelsByTokens,
+  tokenTypeSegments,
+} from "./usageBreakdown";
 import {
   METRIC_OPTIONS,
   WINDOW_OPTIONS,
@@ -197,7 +204,11 @@ export function UsagePage() {
   const [priceDialog, setPriceDialog] = useState<{ readonly model?: string } | null>(null);
   const [selectedEnvironmentIds, setSelectedEnvironmentIds] =
     useState<ReadonlySet<EnvironmentId> | null>(null);
-  const hiddenProviders = new Set(preferences.hiddenProviders);
+  // Identity-stable so kept usage survives a window switch instead of blanking to skeletons.
+  const hiddenProviders = useMemo(
+    () => new Set(preferences.hiddenProviders),
+    [preferences.hiddenProviders],
+  );
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
   const {
@@ -724,7 +735,9 @@ function UsageOverview({
       </div>
 
       <UsagePlanLimits
-        selectedEnvironmentIds={new Set(selectedEnvironments.map((environment) => environment.environmentId))}
+        selectedEnvironmentIds={
+          new Set(selectedEnvironments.map((environment) => environment.environmentId))
+        }
         hiddenProviders={hiddenProviders}
         now={now}
       />
@@ -762,158 +775,114 @@ function UsageOverview({
         </div>
 
         <div className="overflow-hidden rounded-[10px] border border-border bg-card">
-        {breakdown === "model" ? (
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="h-8 text-right text-xs text-[var(--t3)]">
-                <th className="px-4 text-left font-medium">Model</th>
-                <th className="w-20 px-4 font-medium">Tokens</th>
-                <th className="w-[100px] px-4 font-medium">Cost</th>
-                <th className="w-40 px-4 font-medium">Share</th>
-              </tr>
-            </thead>
-            <tbody>
-              {breakdownModels.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="py-6 text-center text-muted-foreground">
-                    No activity in this window.
-                  </td>
-                </tr>
-              ) : (
-                breakdownModels.map((model) => {
-                  const key = `${model.provider}:${model.model}`;
-                  const share = modelShare(model, metric === "tokens" ? "tokens" : "cost");
-                  const rowFigures = figureClass(loadingProviders.has(model.provider));
-                  return (
-                    <tr
-                      key={key}
-                      className="h-[38px] border-t border-border text-right whitespace-nowrap tabular-nums transition-colors hover:bg-[var(--hover)]"
-                    >
-                      <td className="px-4 text-left whitespace-normal">
-                        <button
-                          type="button"
-                          onClick={() => onSelectModel(key)}
-                          className="inline-flex items-center gap-2.5 text-left text-[var(--t1)] outline-none after:absolute after:inset-0"
-                        >
-                          <span
-                            aria-hidden
-                            className="inline-grid size-5 shrink-0 place-items-center rounded-[5px] border border-border"
-                          >
-                            <ProviderMark provider={model.provider} className="size-3" />
-                          </span>
-                          <span className="font-mono">{model.model}</span>
-                        </button>
-                      </td>
-                      <td className={cn("px-4 text-[var(--t3)]", rowFigures)}>
-                        {formatTokens(model.totalTokens)}
-                      </td>
-                      <td className={cn("px-4 text-[var(--t1)]", rowFigures)}>
-                        {isModelCostUnknown(model) ? (
-                          <span className="text-[var(--t3)]">Unpriced</span>
-                        ) : (
-                          formatUsd(model.costUsd)
-                        )}
-                      </td>
-                      <td className="px-4">
-                        <span className="flex items-center gap-2">
-                          <span className="block h-1 flex-1 overflow-hidden rounded-full bg-border">
-                            <span
-                              className="block h-full rounded-full"
-                              style={{
-                                width: `${Math.min(100, Math.max(0, (share ?? 0) * 100))}%`,
-                                backgroundColor: PROVIDER_PRESENTATION[model.provider].color,
-                              }}
-                            />
-                          </span>
-                          <span className={cn("w-11 text-right text-xs text-[var(--t3)]", rowFigures)}>
-                            {share === null ? "" : formatPercent(share)}
-                          </span>
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        ) : (
-          <div
-            className="overflow-x-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-            role="region"
-            aria-label="Usage breakdown by time"
-            tabIndex={0}
-          >
-            <table className="w-full text-sm whitespace-nowrap">
-              <colgroup>
-                <col className="w-2/5" />
-              </colgroup>
+          {breakdown === "model" ? (
+            <table className="w-full text-[13px]">
               <thead>
-                <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                  <th className="py-2 font-normal">{shownHourly ? "Hour" : "Day"}</th>
-                  {activeProviders.map((provider) => (
-                    <th key={provider} className="py-2 pl-4 text-right font-normal">
-                      {PROVIDER_PRESENTATION[provider].label}
-                    </th>
-                  ))}
-                  <th className="py-2 pl-4 text-right font-normal">Total</th>
-                  <th className="py-2 pl-4 text-right font-normal">Tokens</th>
+                <tr className="h-8 text-right text-xs text-[var(--t3)]">
+                  <th className="px-4 text-left font-medium">Model</th>
+                  <th className="w-20 px-4 font-medium">Tokens</th>
+                  <th className="w-[100px] px-4 font-medium">Cost</th>
+                  <th className="w-40 px-4 font-medium">Share</th>
                 </tr>
               </thead>
               <tbody>
-                {breakdownPeriods.length === 0 ? (
+                {breakdownModels.length === 0 ? (
                   <tr>
-                    <td
-                      colSpan={activeProviders.length + 3}
-                      className="py-6 text-center text-muted-foreground"
-                    >
+                    <td colSpan={4} className="py-6 text-center text-muted-foreground">
                       No activity in this window.
                     </td>
                   </tr>
                 ) : (
-                  breakdownPeriods.map((period) => (
-                    <tr
-                      key={"hourStart" in period ? period.hourStart : period.day}
-                      className="border-b border-border/50 transition-colors hover:bg-muted/50"
-                    >
-                      <td className="py-2 text-foreground">
-                        {"hourStart" in period
-                          ? formatHourShort(period.hourStart, shownWindow.timeZone, hour12)
-                          : formatDayShort(period.day)}
-                      </td>
-                      {activeProviders.map((provider) => (
-                        <td
-                          key={provider}
-                          className={cn(
-                            "py-2 pl-4 text-right text-muted-foreground tabular-nums",
-                            figureClass(loadingProviders.has(provider)),
-                          )}
-                        >
-                          {formatUsd(period.byProvider.get(provider)?.costUsd ?? 0)}
-                        </td>
-                      ))}
-                      <td
-                        className={cn(
-                          "py-2 pl-4 text-right text-foreground tabular-nums",
-                          figureClass(loadingPartial),
-                        )}
-                      >
-                        {formatUsd(period.costUsd)}
-                      </td>
-                      <td
-                        className={cn(
-                          "py-2 pl-4 text-right text-muted-foreground tabular-nums",
-                          figureClass(loadingPartial),
-                        )}
-                      >
-                        {formatTokens(period.totalTokens)}
-                      </td>
-                    </tr>
+                  breakdownModels.map((model) => (
+                    <UsageModelRow
+                      key={`${model.provider}:${model.model}`}
+                      loading={loadingProviders.has(model.provider)}
+                      metric={metric === "tokens" ? "tokens" : "cost"}
+                      model={model}
+                      onSelectModel={onSelectModel}
+                    />
                   ))
                 )}
               </tbody>
             </table>
-          </div>
-        )}
+          ) : (
+            <div
+              className="overflow-x-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              role="region"
+              aria-label="Usage breakdown by time"
+              tabIndex={0}
+            >
+              <table className="w-full text-sm whitespace-nowrap">
+                <colgroup>
+                  <col className="w-2/5" />
+                </colgroup>
+                <thead>
+                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                    <th className="py-2 font-normal">{shownHourly ? "Hour" : "Day"}</th>
+                    {activeProviders.map((provider) => (
+                      <th key={provider} className="py-2 pl-4 text-right font-normal">
+                        {PROVIDER_PRESENTATION[provider].label}
+                      </th>
+                    ))}
+                    <th className="py-2 pl-4 text-right font-normal">Total</th>
+                    <th className="py-2 pl-4 text-right font-normal">Tokens</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {breakdownPeriods.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={activeProviders.length + 3}
+                        className="py-6 text-center text-muted-foreground"
+                      >
+                        No activity in this window.
+                      </td>
+                    </tr>
+                  ) : (
+                    breakdownPeriods.map((period) => (
+                      <tr
+                        key={"hourStart" in period ? period.hourStart : period.day}
+                        className="border-b border-border/50 transition-colors hover:bg-muted/50"
+                      >
+                        <td className="py-2 text-foreground">
+                          {"hourStart" in period
+                            ? formatHourShort(period.hourStart, shownWindow.timeZone, hour12)
+                            : formatDayShort(period.day)}
+                        </td>
+                        {activeProviders.map((provider) => (
+                          <td
+                            key={provider}
+                            className={cn(
+                              "py-2 pl-4 text-right text-muted-foreground tabular-nums",
+                              figureClass(loadingProviders.has(provider)),
+                            )}
+                          >
+                            {formatUsd(period.byProvider.get(provider)?.costUsd ?? 0)}
+                          </td>
+                        ))}
+                        <td
+                          className={cn(
+                            "py-2 pl-4 text-right text-foreground tabular-nums",
+                            figureClass(loadingPartial),
+                          )}
+                        >
+                          {formatUsd(period.costUsd)}
+                        </td>
+                        <td
+                          className={cn(
+                            "py-2 pl-4 text-right text-muted-foreground tabular-nums",
+                            figureClass(loadingPartial),
+                          )}
+                        >
+                          {formatTokens(period.totalTokens)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </section>
       <UsageSourceFootnote environments={selectedEnvironments} />
@@ -950,7 +919,10 @@ function ByAgentCard({
       {rows.map((row) => {
         if (row.kind === "enable") {
           return (
-            <div key={`enable:${row.environment.environmentId}`} className="border-t border-border px-4 py-2.5">
+            <div
+              key={`enable:${row.environment.environmentId}`}
+              className="border-t border-border px-4 py-2.5"
+            >
               <CursorEnableRow
                 environmentId={row.environment.environmentId}
                 label={row.environment.label}
@@ -1107,10 +1079,7 @@ function UsageSourceFootnote({
   const sources = new Map<string, { path: string; sessions: number }>();
   for (const environment of environments) {
     for (const source of environment.summary?.sources ?? []) {
-      if (
-        source.fingerprint.provider !== "claude" &&
-        source.fingerprint.provider !== "codex"
-      ) {
+      if (source.fingerprint.provider !== "claude" && source.fingerprint.provider !== "codex") {
         continue;
       }
       if (source.distinctSessions === 0) continue;
@@ -1260,23 +1229,6 @@ function CursorEnableLimits({
         </div>
       </div>
     </section>
-  );
-}
-
-function ProviderMark({
-  provider,
-  className,
-}: {
-  readonly provider: UsageProviderKind;
-  readonly className: string;
-}) {
-  const presentation = PROVIDER_PRESENTATION[provider];
-  return (
-    <ProviderInstanceIcon
-      driverKind={presentation.driverKind}
-      displayName={presentation.label}
-      iconClassName={className}
-    />
   );
 }
 
