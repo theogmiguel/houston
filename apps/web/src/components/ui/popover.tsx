@@ -1,4 +1,5 @@
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
+import type { RefObject } from "react";
 
 import { cn } from "~/lib/utils";
 
@@ -11,6 +12,17 @@ function PopoverTrigger({ className, children, ...props }: PopoverPrimitive.Trig
     <PopoverPrimitive.Trigger className={className} data-slot="popover-trigger" {...props}>
       {children}
     </PopoverPrimitive.Trigger>
+  );
+}
+
+/** A zero-height anchor as wide as the details card, so a panel popover keeps its width. */
+function PopoverPanelAnchor({ anchorRef }: { anchorRef: RefObject<HTMLElement | null> }) {
+  return (
+    <span
+      ref={anchorRef}
+      aria-hidden
+      className="pointer-events-none absolute top-[calc(100%+0.5rem)] right-0 h-0 w-[calc(var(--thread-details-panel-width)+1rem)]"
+    />
   );
 }
 
@@ -137,6 +149,7 @@ function PopoverTitle({ className, ...props }: PopoverPrimitive.Title.Props) {
 export {
   PopoverCreateHandle,
   Popover,
+  PopoverPanelAnchor,
   PopoverTrigger,
   PopoverPopup,
   PopoverPopup as PopoverContent,

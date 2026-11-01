@@ -8,7 +8,7 @@ import {
   Maximize2Icon,
   XIcon,
 } from "lucide-react";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties, type RefObject } from "react";
 
 import ChatView, { type RightPanelPortalTarget } from "../ChatView";
 import { resolveThreadStatusPill } from "../Sidebar.logic";
@@ -46,6 +46,7 @@ export function GridThreadCell({
   onNewThread,
   onOpenThread,
   rightPanelPortal,
+  threadDetailsAnchor,
   dragging = false,
   dropIndicator = null,
   dragHandleProps,
@@ -70,6 +71,8 @@ export function GridThreadCell({
   onOpenThread: (ref: ScopedThreadRef) => void;
   /** The focused cell mounts its thread's right panel beside the grid. */
   rightPanelPortal?: RightPanelPortalTarget | null;
+  /** The focused cell anchors its popover details card under the top bar control. */
+  threadDetailsAnchor?: RefObject<Element | null> | null;
   /** The cell's label is being dragged to another cell. */
   dragging?: boolean;
   /** Where a thread dropped on this cell would land. */
@@ -289,6 +292,7 @@ export function GridThreadCell({
               threadId={threadId}
               paneDensity={density}
               rightPanelPortal={rightPanelPortal}
+              {...(threadDetailsAnchor ? { detailsCardAnchor: threadDetailsAnchor } : {})}
               routeKind="draft"
             />
           ) : (
@@ -298,6 +302,7 @@ export function GridThreadCell({
               threadId={threadId}
               paneDensity={density}
               rightPanelPortal={rightPanelPortal}
+              {...(threadDetailsAnchor ? { detailsCardAnchor: threadDetailsAnchor } : {})}
               routeKind="server"
             />
           )}

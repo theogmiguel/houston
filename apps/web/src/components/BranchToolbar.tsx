@@ -9,6 +9,7 @@ import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environ
 import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import {
   ArrowUpIcon,
+  ChevronDownIcon,
   FolderGit2Icon,
   FolderGitIcon,
   FolderIcon,
@@ -53,8 +54,8 @@ import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
 import { PreviousWorktreeItemContent } from "./PreviousWorktreeItemContent";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import {
+  THREAD_DETAILS_PANEL_CHEVRON_CLASS,
   THREAD_DETAILS_PANEL_ICON_CLASS,
-  THREAD_DETAILS_PANEL_LOCKED_ROW_CLASS,
 } from "./chat/threadDetailsPanelStyles";
 import { ComposerControl } from "./chat/ComposerControl";
 import {
@@ -74,7 +75,7 @@ import {
 import { Separator } from "./ui/separator";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { MiddleTruncate } from "./ui/middle-truncate";
-import { ThreadDetailsRowContent } from "./ui/thread-details-row";
+import { ThreadDetailsRow, ThreadDetailsRowContent } from "./ui/thread-details-row";
 import { ComposerSurface } from "./chat/ComposerSurface";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import { cn } from "~/lib/utils";
@@ -292,17 +293,19 @@ const RunContextSelector = memo(function RunContextSelector({
             .join(", ")}`}
           data-composer-context-control
         >
-          <span className={THREAD_DETAILS_PANEL_LOCKED_ROW_CLASS}>
-            <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate">
-              {panelMachineLabel}
-            </span>
-          </span>
-          <span className={THREAD_DETAILS_PANEL_LOCKED_ROW_CLASS}>
+          <ThreadDetailsRow>
+            <ThreadDetailsRowContent
+              label={panelMachineLabel}
+              right={<ChevronDownIcon aria-hidden className={THREAD_DETAILS_PANEL_CHEVRON_CLASS} />}
+            />
+          </ThreadDetailsRow>
+          <ThreadDetailsRow>
             <ThreadDetailsRowContent
               label={panelWorkspaceLabel}
               {...(panelWorkspaceValue ? { value: panelWorkspaceValue, mono: true } : {})}
+              right={<ChevronDownIcon aria-hidden className={THREAD_DETAILS_PANEL_CHEVRON_CLASS} />}
             />
-          </span>
+          </ThreadDetailsRow>
         </div>
       );
     }

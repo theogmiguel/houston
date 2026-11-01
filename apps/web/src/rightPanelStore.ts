@@ -108,6 +108,8 @@ interface RightPanelStoreState {
   requestMaximize: (ref: ScopedThreadRef) => void;
   consumeMaximizeRequest: (ref: ScopedThreadRef) => boolean;
   threadPanelVisibilityByThreadKey: Record<string, ThreadPanelVisibility>;
+  /** The presentation each details card actually renders, which a grid uses to follow focus. */
+  threadPanelPresentationByThreadKey: Record<string, ThreadPanelPresentation>;
   userActionRevisionByThreadKey: Record<string, number>;
   closeRevisionByThreadKey: Record<string, number>;
   getUserActionRevision: (ref: ScopedThreadRef) => number;
@@ -191,6 +193,7 @@ interface RightPanelStoreState {
     open: boolean,
   ) => void;
   toggleThreadPanel: (ref: ScopedThreadRef, presentation: ThreadPanelPresentation) => void;
+  setThreadPanelPresentation: (ref: ScopedThreadRef, presentation: ThreadPanelPresentation) => void;
   removeThread: (ref: ScopedThreadRef) => void;
 }
 
@@ -621,6 +624,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         return true;
       },
       threadPanelVisibilityByThreadKey: {},
+      threadPanelPresentationByThreadKey: {},
       userActionRevisionByThreadKey: {},
       closeRevisionByThreadKey: {},
       getUserActionRevision: (ref) =>
@@ -1118,12 +1122,25 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                 : { ...visibility, popoverOpen: !visibility.popoverOpen },
           ),
         })),
+      setThreadPanelPresentation: (ref, presentation) =>
+        set((state) => {
+          const threadKey = scopedThreadKey(ref);
+          return state.threadPanelPresentationByThreadKey[threadKey] === presentation
+            ? state
+            : {
+                threadPanelPresentationByThreadKey: {
+                  ...state.threadPanelPresentationByThreadKey,
+                  [threadKey]: presentation,
+                },
+              };
+        }),
       removeThread: (ref) =>
         set((state) => {
           const threadKey = scopedThreadKey(ref);
           if (
             !(threadKey in state.byThreadKey) &&
             !(threadKey in state.threadPanelVisibilityByThreadKey) &&
+            !(threadKey in state.threadPanelPresentationByThreadKey) &&
             !(threadKey in state.userActionRevisionByThreadKey) &&
             !(threadKey in state.closeRevisionByThreadKey)
           ) {
@@ -1132,6 +1149,8 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           const { [threadKey]: _removed, ...byThreadKey } = state.byThreadKey;
           const { [threadKey]: _visibility, ...threadPanelVisibilityByThreadKey } =
             state.threadPanelVisibilityByThreadKey;
+          const { [threadKey]: _presentation, ...threadPanelPresentationByThreadKey } =
+            state.threadPanelPresentationByThreadKey;
           const { [threadKey]: _revision, ...userActionRevisionByThreadKey } =
             state.userActionRevisionByThreadKey;
           const { [threadKey]: _closeRevision, ...closeRevisionByThreadKey } =
@@ -1139,6 +1158,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           return {
             byThreadKey,
             threadPanelVisibilityByThreadKey,
+            threadPanelPresentationByThreadKey,
             userActionRevisionByThreadKey,
             closeRevisionByThreadKey,
           };

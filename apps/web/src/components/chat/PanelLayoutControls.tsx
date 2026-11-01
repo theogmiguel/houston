@@ -1,10 +1,10 @@
 import { PanelBottomIcon, PanelRightIcon, SquareMenuIcon } from "lucide-react";
 import { Maximize2, Minimize2 } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
-import { memo, type ReactNode } from "react";
+import { memo, type ReactNode, type RefObject } from "react";
 
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
-import { PopoverCreateHandle, PopoverTrigger } from "../ui/popover";
+import { PopoverCreateHandle, PopoverPanelAnchor, PopoverTrigger } from "../ui/popover";
 import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -18,6 +18,8 @@ export interface PanelLayoutControlsProps {
   threadPanelOpen: boolean;
   threadPanelPresentation: ThreadPanelPresentation;
   threadPanelPopoverHandle?: ReturnType<typeof PopoverCreateHandle>;
+  /** Anchors a grid cell's popover card under this control, as wide as the card. */
+  threadPanelAnchorRef?: RefObject<HTMLElement | null>;
   threadPanelShortcutLabel: string | null;
   rightPanelAvailable: boolean;
   rightPanelOpen: boolean;
@@ -39,6 +41,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   threadPanelOpen,
   threadPanelPresentation,
   threadPanelPopoverHandle,
+  threadPanelAnchorRef,
   threadPanelShortcutLabel,
   rightPanelAvailable,
   rightPanelOpen,
@@ -62,19 +65,22 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
     </Toggle>
   );
   const threadPanelControl = (
-    <Tooltip>
-      <TooltipTrigger render={<span className="flex shrink-0" />}>
-        {threadPanelPresentation === "popover" ? (
-          <PopoverTrigger handle={threadPanelPopoverHandle} render={threadPanelToggle} />
-        ) : (
-          threadPanelToggle
-        )}
-      </TooltipTrigger>
-      <TooltipPopup side="bottom">
-        Toggle thread details
-        {threadPanelShortcutLabel ? ` (${threadPanelShortcutLabel})` : ""}
-      </TooltipPopup>
-    </Tooltip>
+    <span className="relative flex shrink-0">
+      <Tooltip>
+        <TooltipTrigger render={<span className="flex shrink-0" />}>
+          {threadPanelPresentation === "popover" ? (
+            <PopoverTrigger handle={threadPanelPopoverHandle} render={threadPanelToggle} />
+          ) : (
+            threadPanelToggle
+          )}
+        </TooltipTrigger>
+        <TooltipPopup side="bottom">
+          Toggle thread details
+          {threadPanelShortcutLabel ? ` (${threadPanelShortcutLabel})` : ""}
+        </TooltipPopup>
+      </Tooltip>
+      {threadPanelAnchorRef ? <PopoverPanelAnchor anchorRef={threadPanelAnchorRef} /> : null}
+    </span>
   );
 
   return (

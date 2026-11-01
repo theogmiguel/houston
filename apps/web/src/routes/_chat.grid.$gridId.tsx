@@ -3,7 +3,7 @@ import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environ
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { LayoutGridIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { GridEmptyDraft } from "../components/grid/GridEmptyDraft";
 import { GridHost } from "../components/grid/GridHost";
@@ -55,8 +55,10 @@ function GridRoute() {
   const [gridRow, setGridRow] = useState<HTMLDivElement | null>(null);
   const [rightPanelHost, setRightPanelHost] = useState<HTMLDivElement | null>(null);
   const [emptyDraftThreadId, setEmptyDraftThreadId] = useState<string | null>(null);
+  const threadDetailsAnchorRef = useRef<HTMLElement | null>(null);
   const [maximizedThreadId, setMaximizedThreadId] = useState<string | null>(null);
   const focusedThreadId = grid?.focusedThreadId ?? null;
+  const previousFocusedThreadIdRef = useRef<string | null>(focusedThreadId);
   const focusedRef =
     grid === null || focusedThreadId === null
       ? null
@@ -137,6 +139,28 @@ function GridRoute() {
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [gridId, keybindings]);
+
+  // A details card open in a solo or comfortable cell follows focus; a popover in a
+  // compact or glance cell closes instead of reopening over the next thread.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- moves the open details card when the focused cell changes
+  useEffect(() => {
+    const previousThreadId = previousFocusedThreadIdRef.current;
+    previousFocusedThreadIdRef.current = focusedThreadId;
+    if (grid === null || previousThreadId === null || previousThreadId === focusedThreadId) return;
+    const store = useRightPanelStore.getState();
+    const environmentId = grid.environmentId as EnvironmentId;
+    const previousRef = scopeThreadRef(environmentId, previousThreadId as ThreadId);
+    const previousKey = scopedThreadKey(previousRef);
+    const visibility = store.threadPanelVisibilityByThreadKey[previousKey];
+    if (visibility === undefined || (!visibility.inlineOpen && !visibility.popoverOpen)) return;
+    const wasInline = store.threadPanelPresentationByThreadKey[previousKey] === "inline";
+    store.setThreadPanelOpen(previousRef, "inline", false);
+    store.setThreadPanelOpen(previousRef, "popover", false);
+    if (!wasInline || focusedThreadId === null) return;
+    const nextRef = scopeThreadRef(environmentId, focusedThreadId as ThreadId);
+    store.setThreadPanelOpen(nextRef, "inline", true);
+    store.setThreadPanelOpen(nextRef, "popover", true);
+  }, [focusedThreadId, grid]);
 
   const workspaceThreads =
     grid === null
@@ -289,7 +313,11 @@ function GridRoute() {
               </Button>
             )}
             <span className="flex-1" />
-            <GridTopBarControls grid={grid} emptyDraftThreadId={emptyDraftThreadId} />
+            <GridTopBarControls
+              grid={grid}
+              emptyDraftThreadId={emptyDraftThreadId}
+              threadPanelAnchorRef={threadDetailsAnchorRef}
+            />
           </WorkspacePageHeader>
           <GridHost
             grid={grid}
@@ -330,6 +358,7 @@ function GridRoute() {
                     ? { host: rightPanelHost, container: gridRow }
                     : null
                 }
+                threadDetailsAnchor={focused ? threadDetailsAnchorRef : null}
                 onFocus={() => focusThread(grid.id, node.threadId)}
                 onClose={onClose}
                 onArchiveClose={onArchiveClose}
@@ -354,6 +383,7 @@ function GridRoute() {
               <GridEmptyDraft
                 key={grid.id}
                 grid={grid}
+                threadDetailsAnchor={threadDetailsAnchorRef}
                 onDraftChange={(draft) => setEmptyDraftThreadId(draft?.threadId ?? null)}
               />
             )}

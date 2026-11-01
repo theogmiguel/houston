@@ -170,7 +170,7 @@ function UsageRow({
             tabIndex={0}
             aria-label={`${label}: ${value ?? `${left}% left`}`}
             className={cn(
-              "col-span-3 grid min-h-7 cursor-default grid-cols-subgrid items-center rounded-md px-2 py-0.5 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:bg-accent",
+              "col-span-3 grid min-h-7 cursor-default grid-cols-subgrid items-center rounded-md px-2 py-0.5 outline-none hover:bg-[var(--hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:bg-[var(--hover)]",
               className,
             )}
           />

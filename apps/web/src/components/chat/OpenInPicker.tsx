@@ -376,8 +376,11 @@ export const OpenInPicker = memo(function OpenInPicker({
               <Button
                 type="button"
                 variant="ghost"
-                size="icon-sm"
-                className="col-start-2"
+                size="sm"
+                className={cn(
+                  "col-start-2 px-0",
+                  openFavoriteEditorShortcutLabel ? "w-auto" : "w-[22px]",
+                )}
                 aria-label="Choose editor"
               />
             }
