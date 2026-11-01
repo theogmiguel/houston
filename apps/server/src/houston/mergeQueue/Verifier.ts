@@ -13,7 +13,7 @@ import * as Layer from "effect/Layer";
 import * as ServerConfig from "../../config.ts";
 import * as VcsProcess from "../../vcs/VcsProcess.ts";
 import { GIT_NETWORK_TIMEOUT_MS, git, gitOk, resolvesInside } from "./Project.ts";
-import { keepTail, reportTail, type VerifyOutcome } from "./rules.ts";
+import { keepTail, noForkPoint, reportTail, type VerifyOutcome } from "./rules.ts";
 
 export type { VerifyOutcome } from "./rules.ts";
 
@@ -29,7 +29,42 @@ export interface VerifyRequest {
   readonly scratch: string;
   /** The project root and managed worktrees directories the scratch path may not resolve into. */
   readonly protectedRoots: ReadonlyArray<string>;
+  /** A dependency merged ahead of the entry: the restack replays only the entry's own commits. */
+  readonly stack?: StackRequest | null;
 }
+
+export interface StackRequest {
+  /** The merged dependency's head branch. */
+  readonly dependency: string;
+  /** Every head the queue recorded for the dependency (rules.recordedHeads). */
+  readonly recordedHeads: ReadonlyArray<string>;
+  /** Whether the pull request still targets the dependency's branch on GitHub. */
+  readonly targetsDependency: boolean;
+  readonly number?: number;
+}
+
+export interface CheckHeadRequest {
+  readonly repo: string;
+  readonly remote: string;
+  readonly branch: string;
+  readonly headSha: string;
+  readonly commands: ReadonlyArray<string>;
+  readonly timeLimitMinutes: number;
+  readonly scratch: string;
+  readonly protectedRoots: ReadonlyArray<string>;
+}
+
+export type CheckHeadOutcome =
+  | {
+      readonly _tag: "Ran";
+      readonly results: ReadonlyArray<{
+        readonly command: string;
+        readonly code: number | null;
+        readonly timedOut: boolean;
+        readonly tail: string;
+      }>;
+    }
+  | { readonly _tag: "Refused"; readonly message: string };
 
 /** The private ref a branch is fetched into; the user's remote-tracking refs never move. */
 export const queueRef = (remote: string, branch: string) =>
@@ -177,6 +212,8 @@ export class HoustonMergeVerifier extends Context.Service<
     ) => Effect.Effect<string, string>;
     /** Drops a branch's private ref once its entry leaves the queue. */
     readonly forget: (repo: string, remote: string, branch: string) => Effect.Effect<void>;
+    /** Night shift: runs each command on the pushed head as it is, in the scratch worktree. */
+    readonly checkHead: (request: CheckHeadRequest) => Effect.Effect<CheckHeadOutcome>;
   }
 >()("houston/houston/mergeQueue/Verifier/HoustonMergeVerifier") {}
 
@@ -264,7 +301,60 @@ const make = Effect.gen(function* () {
     return missing.flatMap((key) => ["-c", `${key}=${key === "user.name" ? name : email}`]);
   });
 
-  const inScratch = (request: VerifyRequest, baseSha: string) =>
+  const isAncestor = (repo: string, ancestor: string, descendant: string) =>
+    withVcs(git(repo, ["merge-base", "--is-ancestor", ancestor, descendant])).pipe(
+      Effect.map((result) => result.exitCode === 0),
+      Effect.orElseSucceed(() => false),
+    );
+
+  /** The newest recorded dependency head the head contains; null rebases plainly. */
+  const forkPoint = Effect.fn("HoustonMergeVerifier.forkPoint")(function* (
+    request: VerifyRequest,
+    stack: StackRequest,
+    baseSha: string,
+  ) {
+    const contained: Array<{ readonly sha: string; readonly depth: number }> = [];
+    for (const sha of stack.recordedHeads) {
+      if (!(yield* isAncestor(request.repo, sha, request.headSha))) continue;
+      const depth = yield* withVcs(gitOk(request.repo, ["rev-list", "--count", sha])).pipe(
+        Effect.map(Number),
+        Effect.orElseSucceed(() => 0),
+      );
+      contained.push({ sha, depth });
+    }
+    if (contained.length > 0) {
+      return { fork: contained.toSorted((left, right) => right.depth - left.depth)[0]!.sha };
+    }
+    // The dependency's branch, when it is still on the remote, shows commits it shares.
+    yield* fetch(request.repo, request.remote, [stack.dependency]).pipe(Effect.ignore);
+    const dependencyHead = yield* remoteSha(request.repo, request.remote, stack.dependency).pipe(
+      Effect.orElseSucceed(() => null),
+    );
+    yield* forget(request.repo, request.remote, stack.dependency);
+    let carries = stack.targetsDependency;
+    for (const sha of [
+      ...stack.recordedHeads,
+      ...(dependencyHead === null ? [] : [dependencyHead]),
+    ]) {
+      if (carries) break;
+      const shared = yield* withVcs(gitOk(request.repo, ["merge-base", request.headSha, sha])).pipe(
+        Effect.orElseSucceed(() => ""),
+      );
+      carries = shared.length > 0 && !(yield* isAncestor(request.repo, shared, baseSha));
+    }
+    if (!carries) return { fork: null };
+    return {
+      refusal: noForkPoint({
+        label: stack.number === undefined ? request.headRef : `PR #${stack.number}`,
+        headRef: request.headRef,
+        dependencyRef: stack.dependency,
+        baseRef: request.baseRef,
+        recordedHeads: stack.recordedHeads,
+      }),
+    };
+  });
+
+  const inScratch = (request: VerifyRequest, baseSha: string, fork: string | null) =>
     Effect.gen(function* () {
       const scratch = request.scratch;
       yield* removeScratch(request.repo, scratch);
@@ -284,7 +374,7 @@ const make = Effect.gen(function* () {
           "-c",
           "rebase.updateRefs=false",
           "rebase",
-          baseSha,
+          ...(fork === null ? [baseSha] : ["--onto", baseSha, fork]),
         ]),
       );
       if (rebase.exitCode !== 0) {
@@ -309,7 +399,12 @@ const make = Effect.gen(function* () {
       if (run.timedOut)
         return { _tag: "TimedOut", baseSha, tail: run.tail } satisfies VerifyOutcome;
       return run.code === 0
-        ? ({ _tag: "Passed", baseSha, verifiedSha } satisfies VerifyOutcome)
+        ? ({
+            _tag: "Passed",
+            baseSha,
+            verifiedSha,
+            ...(fork === null ? {} : { forkSha: fork }),
+          } satisfies VerifyOutcome)
         : ({ _tag: "Failed", baseSha, code: run.code, tail: run.tail } satisfies VerifyOutcome);
     }).pipe(Effect.ensuring(removeScratch(request.repo, request.scratch)));
 
@@ -327,14 +422,74 @@ const make = Effect.gen(function* () {
       const found = yield* remoteSha(request.repo, request.remote, request.headRef);
       if (found !== request.headSha) return { _tag: "HeadMoved", found } satisfies VerifyOutcome;
       const baseSha = yield* remoteSha(request.repo, request.remote, request.baseRef);
-      return yield* inScratch(request, baseSha);
+      const stack = request.stack ?? null;
+      const point = stack === null ? { fork: null } : yield* forkPoint(request, stack, baseSha);
+      if ("refusal" in point) {
+        return { _tag: "Refused", message: point.refusal } satisfies VerifyOutcome;
+      }
+      return yield* inScratch(request, baseSha, point.fork);
     },
     Effect.catch((message: string) =>
       Effect.succeed({ _tag: "Refused", message } satisfies VerifyOutcome),
     ),
   );
 
-  return HoustonMergeVerifier.of({ scratchPath, verify, fetch, remoteSha, forget });
+  const checkHead: HoustonMergeVerifier["Service"]["checkHead"] = Effect.fn(
+    "HoustonMergeVerifier.checkHead",
+  )(
+    function* (request) {
+      const inside = request.protectedRoots.find((root) => resolvesInside(request.scratch, root));
+      if (inside !== undefined) {
+        return yield* Effect.fail(
+          `refusing the scratch path ${request.scratch}: it resolves inside ${inside}`,
+        );
+      }
+      yield* fetch(request.repo, request.remote, [request.branch]);
+      const found = yield* remoteSha(request.repo, request.remote, request.branch);
+      yield* forget(request.repo, request.remote, request.branch);
+      if (found !== request.headSha) {
+        return yield* Effect.fail(
+          `${request.remote}/${request.branch} is at ${found}, not the recorded ${request.headSha}`,
+        );
+      }
+      return yield* Effect.gen(function* () {
+        yield* removeScratch(request.repo, request.scratch);
+        yield* Effect.sync(() =>
+          NodeFS.mkdirSync(NodePath.dirname(request.scratch), { recursive: true }),
+        );
+        yield* withVcs(
+          gitOk(request.repo, [
+            "worktree",
+            "add",
+            "--detach",
+            "--force",
+            request.scratch,
+            request.headSha,
+          ]),
+        ).pipe(Effect.mapError((error) => `creating the scratch worktree failed: ${error}`));
+        const results: Array<{
+          command: string;
+          code: number | null;
+          timedOut: boolean;
+          tail: string;
+        }> = [];
+        for (const command of request.commands) {
+          const run = yield* runCommand(
+            command,
+            request.scratch,
+            Duration.minutes(request.timeLimitMinutes),
+          );
+          results.push({ command, code: run.code, timedOut: run.timedOut, tail: run.tail });
+        }
+        return { _tag: "Ran", results } satisfies CheckHeadOutcome;
+      }).pipe(Effect.ensuring(removeScratch(request.repo, request.scratch)));
+    },
+    Effect.catch((message: string) =>
+      Effect.succeed({ _tag: "Refused", message } satisfies CheckHeadOutcome),
+    ),
+  );
+
+  return HoustonMergeVerifier.of({ scratchPath, verify, fetch, remoteSha, forget, checkHead });
 });
 
 export const layer = Layer.effect(HoustonMergeVerifier, make);

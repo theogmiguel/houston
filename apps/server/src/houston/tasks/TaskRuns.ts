@@ -1,6 +1,7 @@
 // Task runs as threads: Start launches a thread in a worktree through upstream's launcher, the
 // run follows that thread's stored events, and planners and reviewers run read-only (AD-048).
 import {
+  ChatAttachment,
   CommandId,
   MessageId,
   ModelSelection,
@@ -52,6 +53,7 @@ import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
+import { HoustonCrewGate } from "../nightShift/CrewGate.ts";
 import {
   HoustonReadOnlyThreads,
   hasReadOnlyRun,
@@ -74,6 +76,7 @@ import {
   taskBranch,
   taskRunStateOf,
 } from "./rules.ts";
+import { slackBriefOf } from "../slack/Brief.ts";
 import * as TaskGit from "./TaskGit.ts";
 import { HoustonTaskService, USER_ACTOR } from "./TaskService.ts";
 import {
@@ -275,6 +278,7 @@ const make = Effect.gen(function* () {
   const adapters = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
   const readOnlyThreads = readOnlyThreadsOf(sql);
   const fs = yield* FileSystem.FileSystem;
+  const crewGate = yield* HoustonCrewGate;
 
   const newThreadId = (prefix: string) =>
     Effect.map(randomUuidV4, (uuid) => ThreadId.make(`${prefix}-${uuid}`));
@@ -343,16 +347,27 @@ const make = Effect.gen(function* () {
       WHERE d.task_id = ${taskId}
     `).pipe(Effect.map((rows) => rows[0]));
 
+  const slackBrief = (row: TaskRow) =>
+    slackBriefOf(row).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+
+  /** A Slack request's images, attached to its run's brief message. */
+  const slackImagesOf = (row: TaskRow) =>
+    Effect.map(slackBrief(row), (brief): ReadonlyArray<ChatAttachment> =>
+      Option.isNone(brief) ? [] : brief.value.attachments,
+    );
+
   const briefFor = Effect.fn("HoustonTaskRuns.briefFor")(function* (
     row: TaskRow,
     findings?: ReadonlyArray<HoustonTaskReviewFinding>,
   ) {
     const detail = yield* store.detail(row);
     const initiative = yield* initiativeOf(row.id);
+    // A requester's words from Slack reach the agent only attributed and fenced.
+    const slack = yield* slackBrief(row);
     return buildBrief({
       key: keyOf(row),
-      title: row.title,
-      description: row.description,
+      title: Option.isNone(slack) ? row.title : slack.value.title,
+      description: Option.isNone(slack) ? row.description : slack.value.description,
       acceptance: detail.acceptance.map((item) => item.text),
       links: row.ref_url === null ? [] : [row.ref_url],
       initiative:
@@ -492,6 +507,7 @@ const make = Effect.gen(function* () {
       readonly modelSelection: ModelSelection;
       readonly workspaceStrategy: ThreadLaunch.ThreadLaunchWorkspaceStrategy;
       readonly message: string | null;
+      readonly attachments?: ReadonlyArray<ChatAttachment>;
       /** The thread the brief comes from, when an agent started the run. */
       readonly senderThreadId?: ThreadId;
       readonly authority?: LaunchAuthority;
@@ -517,7 +533,7 @@ const make = Effect.gen(function* () {
                   ? {}
                   : { senderThreadId: input.senderThreadId }),
                 text: input.message,
-                attachments: [],
+                attachments: input.attachments ?? [],
               },
             }),
         createdBy: authority.createdBy,
@@ -643,6 +659,7 @@ const make = Effect.gen(function* () {
       modelSelection,
       workspaceStrategy: { type: "worktree", baseRef, branch },
       message: send ? brief : null,
+      attachments: yield* slackImagesOf(row),
       ...(by.agent === undefined
         ? {}
         : {
@@ -923,19 +940,47 @@ const make = Effect.gen(function* () {
               reviewedHeads: [],
             }))
         ) {
-          yield* startReview(operation, handed, {
-            automatic: true,
-            settings,
-            model: reviewer,
-          }).pipe(
-            Effect.catch((error) =>
-              noteOnce(
-                row.id,
-                `handback:${open.id}`,
-                `Automatic review not started: ${error.message}`,
+          // A Night shift crew run's review counts in the run's review slot and stops with it.
+          const admission =
+            open.thread_id === null
+              ? undefined
+              : yield* crewGate
+                  .review({
+                    callerThreadId: ThreadId.make(open.thread_id),
+                    providerInstanceId: reviewer.instanceId,
+                  })
+                  .pipe(Effect.result);
+          if (admission?._tag === "Failure") {
+            yield* noteOnce(
+              row.id,
+              `handback:${open.id}`,
+              `Automatic review not started: Night shift: ${admission.failure}`,
+            );
+          } else {
+            yield* startReview(operation, handed, {
+              automatic: true,
+              settings,
+              model: reviewer,
+            }).pipe(
+              Effect.tap((detail) => {
+                const threadId = detail.runs.find(
+                  (candidate) => candidate.kind === "review",
+                )?.threadId;
+                if (admission === undefined || threadId === undefined || threadId === null) {
+                  return Effect.void;
+                }
+                return admission.success.record(threadId);
+              }),
+              Effect.ensuring(admission?.success.release ?? Effect.void),
+              Effect.catch((error) =>
+                noteOnce(
+                  row.id,
+                  `handback:${open.id}`,
+                  `Automatic review not started: ${error.message}`,
+                ),
               ),
-            ),
-          );
+            );
+          }
         }
       }
       return toRun((yield* runById(open.id)) as RunRow);

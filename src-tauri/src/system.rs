@@ -101,8 +101,8 @@ pub fn v2_open_system_settings(pane: String) -> Result<bool, String> {
     let url = system_settings_pane(&pane)?;
     #[cfg(target_os = "macos")]
     {
-        let status = std::process::Command::new("open").arg(url).status();
-        return Ok(status.map(|status| status.success()).unwrap_or(false));
+        let status = crate::sys::spawn::command("open").arg(url).status();
+        Ok(status.map(|status| status.success()).unwrap_or(false))
     }
     #[cfg(not(target_os = "macos"))]
     {

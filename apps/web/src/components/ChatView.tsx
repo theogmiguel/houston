@@ -280,6 +280,7 @@ import { useRemoteOpenState } from "~/remoteOpen";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
 import { useOpenFavoriteEditorShortcut } from "./chat/OpenInPickerShortcut";
 import {
+  ChatHeaderPanelControls,
   PanelLayoutControls,
   type PanelLayoutControlsProps,
   RightPanelMaximizeControl,
@@ -3313,12 +3314,13 @@ export default function ChatView(props: ChatViewProps) {
     rightPanelAvailable: activeProject !== null,
     rightPanelOpen,
     rightPanelShortcutLabel: shortcutLabelForCommand(keybindings, "rightPanel.toggle"),
-    gridLayoutControl: <GridLayoutMenu grid={activeGrid} />,
     onToggleTerminal: toggleTerminalVisibilityStable,
     onToggleThreadPanel: toggleThreadPanelStable,
     onToggleRightPanel: toggleRightPanelStable,
   } satisfies PanelLayoutControlsProps;
-  const panelToggleControls = <PanelLayoutControls {...panelToggleControlProps} />;
+  const panelOpenControls = (
+    <PanelLayoutControls {...panelToggleControlProps} showThreadPanelControl={false} />
+  );
   const workspaceFileDropHandlers = makeWorkspaceFileDropHandlers({
     setDragActive: setIsWorkspaceFileDragActive,
     addFiles: addDroppedFilesToComposer,
@@ -3348,7 +3350,7 @@ export default function ChatView(props: ChatViewProps) {
       >
         {/* A grid cell carries its own title and actions, so the route header would
             duplicate them and its drag region would fight the window controls. */}
-        {embedded ? null : (
+        {embedded || rightPanelMaximized ? null : (
           <header
             ref={threadPanelPopoverAnchorRef}
             data-chat-header
@@ -3357,12 +3359,18 @@ export default function ChatView(props: ChatViewProps) {
               "relative border-b border-(--divider) bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
               isElectron
                 ? cn(
-                    "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5 tauri:pr-(--workspace-native-controls-inset)",
+                    "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center",
+                    rightPanelOpen ? "pl-3 sm:pl-5 pr-0" : "px-3 sm:px-5",
+                    !inlineRightPanelOwnsTitleBar && "tauri:pr-(--workspace-native-controls-inset)",
                     reserveTitleBarControlInset &&
                       !inlineRightPanelOwnsTitleBar &&
                       "wco:pr-(--workspace-native-controls-inset)",
                   )
-                : "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start) pr-(--workspace-gutter-end) tauri:pr-(--workspace-native-controls-inset)",
+                : cn(
+                    "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start)",
+                    rightPanelOpen ? "pr-0" : "pr-(--workspace-gutter-end)",
+                    !inlineRightPanelOwnsTitleBar && "tauri:pr-(--workspace-native-controls-inset)",
+                  ),
               COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
             )}
           >
@@ -3380,10 +3388,12 @@ export default function ChatView(props: ChatViewProps) {
                 : {})}
               {...(threadFindEnabled ? { onFindInThread: openThreadFindStable } : {})}
             />
-            {rightPanelOpen ? null : panelToggleControls}
+            <ChatHeaderPanelControls
+              {...panelToggleControlProps}
+              gridLayoutControl={<GridLayoutMenu grid={activeGrid} />}
+            />
           </header>
         )}
-
 
         {environmentBannerItems.length > 0 ? (
           <div
@@ -3985,18 +3995,17 @@ export default function ChatView(props: ChatViewProps) {
           sheetAnimationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
           onCloseSheet={closePreviewPanelStable}
           open={rightPanelOpen}
-          fixedTabs
           keybindings={keybindings}
           getShortcutContext={getShortcutContextStable}
           maximized={rightPanelMaximized}
           layoutControls={
             rightPanelOpen ? (
-              <div className="mr-px flex items-center gap-1">
+              <div className="flex shrink-0 items-center gap-1">
                 <RightPanelMaximizeControl
                   maximized={rightPanelMaximized}
                   onToggle={toggleRightPanelMaximizedStable}
                 />
-                {embedded ? null : panelToggleControls}
+                {panelOpenControls}
               </div>
             ) : null
           }

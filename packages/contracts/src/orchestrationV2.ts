@@ -47,6 +47,8 @@ import {
   HoustonSideThread,
   makeHoustonSideThreadCommands,
 } from "./houston/sideThreads.ts";
+import { HoustonMergeQueueNotifyCommand } from "./houston/mergeQueue.ts";
+import { HoustonSlackAnswerCommand } from "./houston/slack.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import {
   OrchestrationSearchThreadsInput,
@@ -3349,8 +3351,12 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 
 // Excluded from dispatchCommand so only the server can send these.
 const OrchestrationV2InternalCommand = Schema.Union([
+  /** A Slack answer, fenced by the server; a client could otherwise send it unfenced. */
+  HoustonSlackAnswerCommand,
   HoustonHarnessReviewStartCommand,
   HoustonNightShiftNotifyCommand,
+  /** A merge queue notice; a client could otherwise post one into any thread. */
+  HoustonMergeQueueNotifyCommand,
   /** Moves a thread to a project rooted at the folder it already works in, so its cwd never changes. */
   Schema.Struct({
     type: Schema.Literal("thread.project.adopt-folder"),

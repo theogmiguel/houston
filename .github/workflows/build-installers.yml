@@ -7,16 +7,16 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Branch, tag or SHA to build'
+        description: 'Branch, tag or SHA to build; empty builds the ref this workflow was dispatched from'
         type: string
-        default: 'main'
-        required: true
+        default: ''
+        required: false
       platform:
         description: 'Installer platforms to validate; windows also builds the Linux bundles'
         type: choice
-        options: [all, linux, windows]
+        options: [all, linux, windows, macos]
         default: all
-        required: true
+        required: false
 
 permissions:
   contents: read
@@ -42,7 +42,7 @@ jobs:
 
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || github.ref }}
       - id: check
         run: |
           set -euo pipefail
@@ -78,9 +78,22 @@ jobs:
       require_signing: false
     secrets: inherit
 
+  macos-bundle:
+    needs: version-guard
+    if: inputs.platform == 'all' || inputs.platform == 'macos'
+    uses: ./.github/workflows/release-macos.yml
+    with:
+      ref: ${{ needs.version-guard.outputs.source_sha }}
+      version: ${{ needs.version-guard.outputs.version }}
+      tauri_cli_version: ${{ needs.version-guard.outputs.tauri_cli_version }}
+      # This workflow files nothing, so signing is never required; the bundle
+      # still signs when the updater/Apple secrets happen to be present.
+      require_signing: false
+    secrets: inherit
+
   windows-compile:
     needs: version-guard
-    if: inputs.platform != 'linux'
+    if: inputs.platform == 'all' || inputs.platform == 'windows'
     uses: ./.github/workflows/release-windows.yml
     with:
       stage: compile
@@ -91,7 +104,7 @@ jobs:
 
   windows-bundle:
     needs: [version-guard, linux-bundle, windows-compile]
-    if: inputs.platform != 'linux'
+    if: inputs.platform == 'all' || inputs.platform == 'windows'
     uses: ./.github/workflows/release-windows.yml
     with:
       stage: bundle

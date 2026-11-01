@@ -2,7 +2,6 @@ import {
   boundAttachmentIds,
   mergeDirectPreviewAnnotation,
   planComposerTurn,
-  shouldOpenDefaultRightPanelDiff,
   snapshotComposerSend,
   withMessageContext,
   deriveAvailableRevertTurnCounts,
@@ -1177,16 +1176,5 @@ describe("deriveWorkspaceMutationId", () => {
     expect(deriveWorkspaceMutationId([item("reply", "assistant_message", "completed")], null)).toBe(
       null,
     );
-  });
-});
-
-describe("shouldOpenDefaultRightPanelDiff", () => {
-  it("opens Changes for an empty panel when the thread has a diff", () => {
-    expect(shouldOpenDefaultRightPanelDiff({ surfaceCount: 0, diffAvailable: true })).toBe(true);
-  });
-
-  it("keeps an existing surface and the launcher when no diff applies", () => {
-    expect(shouldOpenDefaultRightPanelDiff({ surfaceCount: 1, diffAvailable: true })).toBe(false);
-    expect(shouldOpenDefaultRightPanelDiff({ surfaceCount: 0, diffAvailable: false })).toBe(false);
   });
 });

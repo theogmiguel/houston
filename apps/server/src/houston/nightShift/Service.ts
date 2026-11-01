@@ -1,5 +1,5 @@
 // houston.nightShift.*: a project's Night shift settings and schedule, its runs, preflight, Run now,
-// wrap-up and Stop, and the overview with one notice per settled run.
+// wrap-up and Stop, the overview with one notice per settled run, the morning and the v1 import.
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   type ProjectId,
@@ -10,7 +10,14 @@ import {
 import {
   HOUSTON_NIGHT_SHIFT_LIMITS as LIMITS,
   HoustonNightShiftError,
+  type HoustonNightReport,
+  type HoustonNightShiftCloseInput,
+  type HoustonNightShiftCloseResult,
+  type HoustonNightShiftDecideInput,
   type HoustonNightShiftEmptyResult,
+  type HoustonNightShiftEntryInput,
+  type HoustonNightShiftImportResult,
+  type HoustonNightShiftImportStatus,
   type HoustonNightShiftOverviewEvent,
   type HoustonNightShiftOverviewInput,
   type HoustonNightShiftPreflightInput,
@@ -24,15 +31,18 @@ import {
   type HoustonNightShiftStopResult,
   type HoustonNightShiftUpdateInput,
   type HoustonNightShiftWrapUpResult,
+  type NightEntry,
   type NightRun,
   type NightShiftOverviewRow,
 } from "@t3tools/contracts/houston/nightShift";
+import * as FileSystem from "effect/FileSystem";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
+import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
@@ -40,16 +50,53 @@ import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
 import { detect } from "./detect.ts";
 import { NightShiftGit } from "./Git.ts";
-import { NightShiftMachine, NightShiftMergeQueue, NightShiftProviders } from "./Host.ts";
+import {
+  NightShiftBacklog,
+  NightShiftMachine,
+  NightShiftMergeQueue,
+  NightShiftProviders,
+} from "./Host.ts";
+import { HoustonNightLanding } from "./landing/Landing.ts";
+import { buildReport } from "./Report.ts";
 import { defaultSettings, headline, ORCHESTRATOR_DRIVERS, validateSettings } from "./rules.ts";
 import { HoustonNightShiftRunner } from "./Runner.ts";
 import { HoustonNightShiftClaim } from "./ScheduledTaskRunner.ts";
-import { HoustonNightShiftStore, liveRunText, LIVE_PHASES, type StoredRun } from "./Store.ts";
+import {
+  HoustonNightShiftStore,
+  liveRunText,
+  LIVE_PHASES,
+  type LedgerEntry,
+  type StoredRun,
+} from "./Store.ts";
+import { makeV1Import } from "./V1Import.ts";
+
+/** A ledger row as the morning's methods answer it. */
+export const toNightEntry = (row: LedgerEntry): NightEntry => ({
+  id: row.id,
+  runId: row.run_id,
+  kind: row.kind as NightEntry["kind"],
+  title: row.title,
+  theme: row.theme,
+  status: row.status,
+  prNumber: row.pr_number,
+  taskNumber: row.task_number,
+  headSha: row.head_sha,
+  branch: row.branch,
+  visible: row.visible === 1,
+  qaPassed: row.qa_passed === 1,
+  body: row.body,
+  choice: row.choice,
+  decidedAt: row.decided_at,
+  createdAt: row.created_at,
+});
 
 export const TASK_PROMPT =
   "Houston Night shift of this project. Houston writes each run's brief; edit the start time, nights or pause here.";
 const DEFAULT_START = "23:30";
 const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
+const decodeOptions = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Struct({ options: Schema.optional(Schema.Array(Schema.String)) })),
+);
 
 const refuse = (
   kind: HoustonNightShiftError["kind"],
@@ -117,6 +164,24 @@ export class HoustonNightShiftService extends Context.Service<
     readonly stop: (
       input: HoustonNightShiftRunInput,
     ) => Effect.Effect<HoustonNightShiftStopResult, HoustonNightShiftError>;
+    readonly report: (
+      input: HoustonNightShiftRunInput,
+    ) => Effect.Effect<HoustonNightReport, HoustonNightShiftError>;
+    readonly decide: (
+      input: HoustonNightShiftDecideInput,
+    ) => Effect.Effect<NightEntry, HoustonNightShiftError>;
+    readonly markQaPassed: (
+      input: HoustonNightShiftEntryInput,
+    ) => Effect.Effect<NightEntry, HoustonNightShiftError>;
+    readonly closePullRequests: (
+      input: HoustonNightShiftCloseInput,
+    ) => Effect.Effect<HoustonNightShiftCloseResult, HoustonNightShiftError>;
+    readonly importV1Status: (
+      input: HoustonNightShiftOverviewInput,
+    ) => Effect.Effect<HoustonNightShiftImportStatus, HoustonNightShiftError>;
+    readonly importV1Run: (
+      input: HoustonNightShiftOverviewInput,
+    ) => Effect.Effect<HoustonNightShiftImportResult, HoustonNightShiftError>;
   }
 >()("houston/houston/nightShift/Service/HoustonNightShiftService") {}
 
@@ -131,6 +196,10 @@ const make = Effect.gen(function* () {
   const providers = yield* NightShiftProviders;
   const mergeQueue = yield* NightShiftMergeQueue;
   const runNowLock = yield* Semaphore.make(1);
+  const landing = yield* HoustonNightLanding;
+  const backlog = yield* NightShiftBacklog;
+  const fs = yield* FileSystem.FileSystem;
+  const v1Import = yield* makeV1Import;
 
   const projectOf = (operation: string, projectId: ProjectId) =>
     projects.get(projectId).pipe(
@@ -274,14 +343,12 @@ const make = Effect.gen(function* () {
           Stream.merge(
             Stream.fromSubscription(changes).pipe(Stream.mapEffect(() => overview)),
             Stream.fromSubscription(notices).pipe(
-              Stream.map(
-                (notice): HoustonNightShiftOverviewEvent => ({
-                  type: "notice",
-                  projectId: notice.projectId,
-                  runId: notice.runId,
-                  headline: notice.headline,
-                }),
-              ),
+              Stream.map((notice): HoustonNightShiftOverviewEvent => ({
+                type: "notice",
+                projectId: notice.projectId,
+                runId: notice.runId,
+                headline: notice.headline,
+              })),
             ),
           ),
         );
@@ -413,7 +480,11 @@ const make = Effect.gen(function* () {
     const project = yield* projectOf("update", input.projectId);
     const stored = yield* store.settings(input.projectId);
     if (stored === undefined) {
-      return yield* refuse("not_found", "update", `project ${input.projectId} has no Night shift; set it up first`);
+      return yield* refuse(
+        "not_found",
+        "update",
+        `project ${input.projectId} has no Night shift; set it up first`,
+      );
     }
     if (stored.revision !== input.expectedRevision) {
       return yield* refuse(
@@ -425,7 +496,11 @@ const make = Effect.gen(function* () {
     }
     const task = yield* findTask(stored.scheduledTaskId);
     if (task === undefined) {
-      return yield* refuse("not_found", "update", `project ${input.projectId}'s Night shift task was deleted; set it up again`);
+      return yield* refuse(
+        "not_found",
+        "update",
+        `project ${input.projectId}'s Night shift task was deleted; set it up again`,
+      );
     }
     const schedule =
       task.schedule.type === "fixed_time"
@@ -463,8 +538,7 @@ const make = Effect.gen(function* () {
       projectId: input.projectId,
       settings: input.settings,
       schedule,
-      baseRef:
-        task.workspaceStrategy.type === "worktree" ? task.workspaceStrategy.baseRef : "HEAD",
+      baseRef: task.workspaceStrategy.type === "worktree" ? task.workspaceStrategy.baseRef : "HEAD",
       operation: "update",
     });
     return yield* snapshot(input.projectId, project.workspaceRoot);
@@ -480,9 +554,16 @@ const make = Effect.gen(function* () {
     }
     const live = (yield* store.liveRuns).find((run) => run.projectId === input.projectId);
     if (live !== undefined) {
-      return yield* refuse("busy", "delete", `${liveRunText(live)}; stop it before deleting Night shift`);
+      return yield* refuse(
+        "busy",
+        "delete",
+        `${liveRunText(live)}; stop it before deleting Night shift`,
+      );
     }
-    if (stored.scheduledTaskId !== null && (yield* findTask(stored.scheduledTaskId)) !== undefined) {
+    if (
+      stored.scheduledTaskId !== null &&
+      (yield* findTask(stored.scheduledTaskId)) !== undefined
+    ) {
       yield* scheduled.delete({ id: stored.scheduledTaskId }).pipe(
         Effect.mapError(
           (error) =>
@@ -576,6 +657,61 @@ const make = Effect.gen(function* () {
     runNow,
     wrapUp: Effect.fn("HoustonNightShiftService.wrapUp")((input) => runner.wrapUp(input.runId)),
     stop: Effect.fn("HoustonNightShiftService.stop")((input) => runner.stop(input.runId)),
+    report: Effect.fn("HoustonNightShiftService.report")((input) =>
+      buildReport(input.runId).pipe(
+        Effect.provideService(HoustonNightShiftStore, store),
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(NightShiftBacklog, backlog),
+      ),
+    ),
+    decide: Effect.fn("HoustonNightShiftService.decide")(function* (input) {
+      const operation = "decide";
+      const row = yield* store.getEntry(input.entryId);
+      if (row === undefined) {
+        return yield* refuse("not_found", operation, `no ledger entry ${input.entryId}`);
+      }
+      if (row.kind !== "decision") {
+        return yield* refuse(
+          "invalid",
+          operation,
+          `entry ${input.entryId} is a ${row.kind}, not a decision`,
+        );
+      }
+      if (row.choice !== null) {
+        return yield* refuse(
+          "conflict",
+          operation,
+          `decision ${input.entryId} was already answered "${row.choice}"`,
+        );
+      }
+      const options = decodeOptions(row.detail_json).options ?? [];
+      if (!options.includes(input.choice)) {
+        return yield* refuse(
+          "invalid",
+          operation,
+          `"${input.choice}" is not an option of decision ${input.entryId} (${options.join(", ")})`,
+        );
+      }
+      if (!(yield* store.decide(row.id, input.choice, yield* nowIso))) {
+        const first = yield* store.getEntry(row.id);
+        return yield* refuse(
+          "conflict",
+          operation,
+          `decision ${input.entryId} was already answered "${first?.choice ?? ""}"`,
+        );
+      }
+      return toNightEntry((yield* store.getEntry(row.id))!);
+    }),
+    markQaPassed: Effect.fn("HoustonNightShiftService.markQaPassed")((input) =>
+      landing.markQaPassed(input.entryId).pipe(Effect.map(toNightEntry)),
+    ),
+    closePullRequests: Effect.fn("HoustonNightShiftService.closePullRequests")((input) =>
+      landing.closePullRequests(input.runId, input.numbers),
+    ),
+    importV1Status: Effect.fn("HoustonNightShiftService.importV1Status")(() => v1Import.status),
+    importV1Run: Effect.fn("HoustonNightShiftService.importV1Run")(() =>
+      v1Import.run((task) => upsertTask(task)),
+    ),
   });
 });
 

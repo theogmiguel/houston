@@ -34,6 +34,7 @@ ARCHES = {
 }
 EXPECTED_LINUX_ARCHES = {"x86_64", "aarch64"}
 EXPECTED_WINDOWS_ARCHES = {"x86_64"}
+EXPECTED_MACOS_ARCHES = {"x86_64", "aarch64"}
 
 # Order matters: the .tar.gz suffix is the AppImage updater payload in Tauri's
 # v1-compatible mode and would otherwise be read as an unknown artifact.
@@ -60,9 +61,24 @@ BUNDLES = (
         "nsis",
         re.compile(r"^Houston_(?P<version>[^_]+)_(?P<arch>x64|arm64)-setup\.exe$"),
     ),
+    # The macOS updater payload Tauri writes is Houston.app.tar.gz; the bundle
+    # workflow renames it with the version and arch so both architectures can
+    # coexist in one release. The .dmg is the installer a person downloads.
+    (
+        "macos_app",
+        re.compile(
+            r"^Houston_(?P<version>[^_]+)_(?P<arch>x64|aarch64)\.app\.tar\.gz$"
+        ),
+    ),
+    (
+        "dmg",
+        re.compile(r"^Houston_(?P<version>[^_]+)_(?P<arch>x64|aarch64)\.dmg$"),
+    ),
 )
 
-SERVER_ARCHIVE = re.compile(r"^houston-(?P<version>[^/]+)-linux-(?:x64|arm64)\.tar\.gz$")
+SERVER_ARCHIVE = re.compile(
+    r"^houston-(?P<version>[^/]+)-(?:linux|darwin)-(?:x64|arm64)\.tar\.gz$"
+)
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$")
 REPOSITORY_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
 TAG_RE = re.compile(r"^[0-9A-Za-z._+-]+$")
@@ -150,10 +166,12 @@ def collect(
     signatures: dict[str, str],
     *,
     include_windows: bool,
-) -> tuple[dict[str, dict[str, Bundle]], dict[str, Bundle]]:
+    include_macos: bool,
+) -> tuple[dict[str, dict[str, Bundle]], dict[str, Bundle], dict[str, dict[str, Bundle]]]:
     artifact_version = version.split("+", 1)[0]
     linux: dict[str, dict[str, Bundle]] = {}
     windows: dict[str, Bundle] = {}
+    darwin: dict[str, dict[str, Bundle]] = {}
     sig_names: set[str] = set()
 
     for path in sorted(artifacts.iterdir()):
@@ -197,6 +215,13 @@ def collect(
                     f"two Windows NSIS installers for {arch}: {windows[arch].name} and {path.name}; expected one"
                 )
             windows[arch] = bundle
+        elif kind in ("macos_app", "dmg"):
+            by_kind = darwin.setdefault(arch, {})
+            if kind in by_kind:
+                raise Refused(
+                    f"two {kind} bundles for {arch}: {by_kind[kind].name} and {path.name}; expected one"
+                )
+            by_kind[kind] = bundle
         else:
             by_kind = linux.setdefault(arch, {})
             if kind in by_kind:
@@ -205,7 +230,11 @@ def collect(
                 )
             by_kind[kind] = bundle
 
-    every = [b for by_kind in linux.values() for b in by_kind.values()] + list(windows.values())
+    every = (
+        [b for by_kind in linux.values() for b in by_kind.values()]
+        + list(windows.values())
+        + [b for by_kind in darwin.values() for b in by_kind.values()]
+    )
     missing_sigs = sorted(b.name for b in every if b.name not in sig_names)
     if missing_sigs:
         raise Refused(
@@ -231,17 +260,31 @@ def collect(
             problems.append(f"missing the Windows NSIS setup .exe for {arch}")
     elif windows:
         problems.append("Windows artifacts were provided for a Linux-only release")
+    if include_macos:
+        for arch in sorted(EXPECTED_MACOS_ARCHES - darwin.keys()):
+            problems.append(f"missing the macOS bundles for {arch}")
+        for arch in sorted(EXPECTED_MACOS_ARCHES & darwin.keys()):
+            by_kind = darwin[arch]
+            if "macos_app" not in by_kind:
+                problems.append(f"missing the macOS updater .app.tar.gz for {arch}")
+            if "dmg" not in by_kind:
+                problems.append(f"missing the macOS .dmg for {arch}")
+    elif darwin:
+        problems.append("macOS artifacts were provided for a release that excludes macOS")
     unexpected_linux = sorted(linux.keys() - EXPECTED_LINUX_ARCHES)
     unexpected_windows = sorted(windows.keys() - EXPECTED_WINDOWS_ARCHES)
+    unexpected_darwin = sorted(darwin.keys() - EXPECTED_MACOS_ARCHES)
     if unexpected_linux:
         problems.append(f"unsupported Linux architecture(s) {', '.join(unexpected_linux)}")
     if unexpected_windows:
         problems.append(f"unsupported Windows architecture(s) {', '.join(unexpected_windows)}")
+    if unexpected_darwin:
+        problems.append(f"unsupported macOS architecture(s) {', '.join(unexpected_darwin)}")
     if problems:
         raise Refused(
             f"invalid artifact set: {', '.join(problems)}; a release carries every official platform's bundle"
         )
-    return linux, windows
+    return linux, windows, darwin
 
 
 def assemble(
@@ -253,6 +296,7 @@ def assemble(
     repository: str,
     pub_date: str | None = None,
     include_windows: bool = True,
+    include_macos: bool = True,
     tauri_config: Path = TAURI_CONFIG,
 ) -> dict:
     if not VERSION_RE.match(version):
@@ -263,8 +307,12 @@ def assemble(
         raise Refused(f"tag {tag!r} is not a URL-safe git tag; expected e.g. v0.11.0 or v0.12.0-rc.1")
 
     signatures: dict[str, str] = {}
-    linux, windows = collect(
-        artifacts_dir, version, signatures, include_windows=include_windows
+    linux, windows, darwin = collect(
+        artifacts_dir,
+        version,
+        signatures,
+        include_windows=include_windows,
+        include_macos=include_macos,
     )
     verify_signatures(artifacts_dir, signatures, tauri_config)
 
@@ -290,6 +338,11 @@ def assemble(
     for arch in sorted(windows):
         platforms[f"windows-{arch}"] = entry(windows[arch])
         platforms[f"windows-{arch}-nsis"] = entry(windows[arch])
+    for arch in sorted(darwin):
+        app = darwin[arch]["macos_app"]
+        platforms[f"darwin-{arch}"] = entry(app)
+        # The host names the running bundle type, which is always App on macOS.
+        platforms[f"darwin-{arch}-app"] = entry(app)
 
     if pub_date is None:
         pub_date = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -317,7 +370,17 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--linux-only",
         action="store_true",
-        help="accept and publish the complete Linux artifact set without Windows",
+        help="accept and publish the complete Linux artifact set without Windows or macOS",
+    )
+    parser.add_argument(
+        "--no-windows",
+        action="store_true",
+        help="accept and publish Linux and macOS without Windows installers",
+    )
+    parser.add_argument(
+        "--no-macos",
+        action="store_true",
+        help="accept and publish Linux and Windows without macOS bundles",
     )
     args = parser.parse_args(argv)
 
@@ -329,7 +392,8 @@ def main(argv: list[str]) -> int:
             tag=args.tag,
             repository=args.repository,
             pub_date=args.pub_date,
-            include_windows=not args.linux_only,
+            include_windows=not args.linux_only and not args.no_windows,
+            include_macos=not args.linux_only and not args.no_macos,
             tauri_config=args.tauri_config,
         )
     except Refused as refused:

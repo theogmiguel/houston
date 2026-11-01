@@ -221,17 +221,30 @@ fn build_view_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu:
         true,
         Some("Shift+CmdOrCtrl+R"),
     )?;
-    let developer_tools = MenuItem::with_id(
-        app,
-        "toggle-devtools",
-        "Toggle Developer Tools",
-        true,
-        Some(if cfg!(target_os = "macos") {
-            "Alt+Command+I"
-        } else {
-            "Ctrl+Shift+I"
-        }),
-    )?;
+    // Tauri compiles the devtools API only for debug builds unless its
+    // `devtools` feature is turned on, so the release menu omits the item.
+    #[cfg(any(debug_assertions, feature = "devtools"))]
+    let view = {
+        let developer_tools = MenuItem::with_id(
+            app,
+            "toggle-devtools",
+            "Toggle Developer Tools",
+            true,
+            Some(if cfg!(target_os = "macos") {
+                "Alt+Command+I"
+            } else {
+                "Ctrl+Shift+I"
+            }),
+        )?;
+        SubmenuBuilder::new(app, "View")
+            .item(&reload)
+            .item(&force_reload)
+            .item(&developer_tools)
+    };
+    #[cfg(not(any(debug_assertions, feature = "devtools")))]
+    let view = SubmenuBuilder::new(app, "View")
+        .item(&reload)
+        .item(&force_reload);
     let actual_size =
         MenuItem::with_id(app, "zoom-reset", "Actual Size", true, Some("CmdOrCtrl+0"))?;
     let zoom_in = MenuItem::with_id(app, "zoom-in", "Zoom In", true, Some("CmdOrCtrl+="))?;
@@ -247,11 +260,7 @@ fn build_view_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu:
             "F11"
         }),
     )?;
-    SubmenuBuilder::new(app, "View")
-        .item(&reload)
-        .item(&force_reload)
-        .item(&developer_tools)
-        .separator()
+    view.separator()
         .item(&actual_size)
         .item(&zoom_in)
         .item(&zoom_out)
@@ -301,6 +310,7 @@ pub fn handle_menu_event(app: &AppHandle, id: &str) -> bool {
             true
         }
         "toggle-devtools" => {
+            #[cfg(any(debug_assertions, feature = "devtools"))]
             if let Some(webview) = app.get_webview("main") {
                 if webview.is_devtools_open() {
                     webview.close_devtools();

@@ -302,7 +302,7 @@
 18 apps/web/src/components/PullRequestThreadDialog.tsx
 7 apps/web/src/components/QuitHoldOverlay.tsx
 1 apps/web/src/components/RightPanelSheet.tsx
-57 apps/web/src/components/RightPanelTabs.tsx
+48 apps/web/src/components/RightPanelTabs.tsx
 3 apps/web/src/components/search/HighlightedSearchLine.tsx
 39 apps/web/src/components/search/ProjectContentSearchDialog.tsx
 13 apps/web/src/components/ServerUpdateAction.tsx
@@ -408,7 +408,7 @@
 28 apps/web/src/components/sidebar/SidebarProviderUpdatePill.tsx
 35 apps/web/src/components/sidebar/SidebarRailNav.tsx
 3 apps/web/src/components/sidebar/SidebarRowTime.tsx
-19 apps/web/src/components/sidebar/SidebarStatusGlyph.tsx
+14 apps/web/src/components/sidebar/SidebarStatusGlyph.tsx
 16 apps/web/src/components/sidebar/SidebarThreadHeader.tsx
 191 apps/web/src/components/sidebar/SidebarThreadRow.tsx
 8 apps/web/src/components/sidebar/SidebarThreadUndoNotice.tsx

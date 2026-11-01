@@ -36,6 +36,7 @@ import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as HoustonTaskStore from "../houston/tasks/TaskStore.ts";
 import * as HoustonTaskSourceStore from "../houston/taskSources/SourceStore.ts";
+import * as HoustonSlackStore from "../houston/slack/Store.ts";
 import * as HoustonMergeQueueStore from "../houston/mergeQueue/Store.ts";
 import * as HoustonHarnessStore from "../houston/harnessReview/Store.ts";
 import * as HoustonNightShiftStore from "../houston/nightShift/Store.ts";
@@ -173,6 +174,7 @@ export const make = Effect.gen(function* () {
   const houstonTaskSources = yield* Effect.serviceOption(
     HoustonTaskSourceStore.HoustonTaskSourceStore,
   );
+  const houstonSlack = yield* Effect.serviceOption(HoustonSlackStore.HoustonSlackStore);
   const houstonMergeQueue = yield* Effect.serviceOption(
     HoustonMergeQueueStore.HoustonMergeQueueStore,
   );
@@ -533,6 +535,7 @@ export const make = Effect.gen(function* () {
         if (Option.isSome(houstonTaskSources)) {
           yield* houstonTaskSources.value.projectRemoved(projectId);
         }
+        if (Option.isSome(houstonSlack)) yield* houstonSlack.value.projectRemoved(projectId);
         if (Option.isSome(houstonMergeQueue)) {
           yield* houstonMergeQueue.value.projectRemoved(projectId);
         }

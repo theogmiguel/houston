@@ -39,7 +39,7 @@ function thread(overrides: Partial<EnvironmentThreadShell> = {}): EnvironmentThr
 
 function card(
   value: EnvironmentThreadShell,
-  overrides: { onSetAutoClose?: (enabled: boolean) => void } = {},
+  overrides: { onSetAutoClose?: (enabled: boolean) => void; timeLabel?: string | null } = {},
 ) {
   return (
     <TooltipProvider delay={0}>
@@ -53,7 +53,7 @@ function card(
         selected={false}
         dragging={false}
         workspaceTitle="Houston"
-        timeLabel="9:00"
+        timeLabel={overrides.timeLabel === undefined ? "9:00" : overrides.timeLabel}
         onOpen={() => {}}
         onSelect={() => {}}
         onClose={() => {}}
@@ -118,5 +118,55 @@ describe("ThreadCard", () => {
     await userEvent.click(toggle);
 
     expect(onSetAutoClose).toHaveBeenCalledWith(false);
+  });
+});
+
+function accentColor(): string {
+  const probe = document.createElement("span");
+  probe.style.color = "var(--accent-ink)";
+  document.body.append(probe);
+  const color = getComputedStyle(probe).color;
+  probe.remove();
+  return color;
+}
+
+describe("ThreadCard status marks", () => {
+  it("draws a running thread's mark as the accent dotted ring", async () => {
+    await using screen = await render(
+      card(
+        thread({
+          runtime: { status: "running" } as never,
+          latestRun: {
+            id: "run-1",
+            status: "running",
+            startedAt: "2025-12-31T23:59:30.000Z",
+            completedAt: null,
+          } as never,
+        }),
+        { timeLabel: null },
+      ),
+    );
+
+    const glyph = screen.container.querySelector("[data-streaming-glyph]");
+    const dots = [...screen.container.querySelectorAll("[data-streaming-dot]")];
+    expect(glyph).not.toBeNull();
+    expect(dots).toHaveLength(8);
+    expect(getComputedStyle(glyph!).animationName).not.toBe("none");
+    expect(getComputedStyle(glyph!).color).toBe(accentColor());
+    for (const dot of dots) {
+      expect(getComputedStyle(dot).fill).toBe(accentColor());
+    }
+  });
+
+  it("draws the other state marks as stroked outlines, not filled discs", async () => {
+    await using screen = await render(
+      card(thread({ hasPendingUserInput: true }), { timeLabel: null }),
+    );
+
+    const label = screen.getByText("Needs you").element();
+    const circle = label.parentElement?.querySelector("circle");
+    expect(circle).not.toBeNull();
+    expect(getComputedStyle(circle!).fill).toBe("none");
+    expect(getComputedStyle(circle!).stroke).not.toBe("none");
   });
 });

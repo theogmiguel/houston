@@ -88,6 +88,7 @@ import { isAppModalPage } from "../sidebar/mainAppLocation";
 import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { SidebarRailKbd, SidebarRailNav } from "../sidebar/SidebarRailNav";
 import { SidebarProviderStack, type SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
+import { StreamingGlyph } from "../chat/TimelineRowParts";
 import {
   EMPTY_PROVIDER_ENTRIES,
   sidebarProviderEntriesAtom,
@@ -106,6 +107,7 @@ import {
   MenuSubTrigger,
   MenuTrigger,
 } from "../ui/menu";
+import { Separator } from "../ui/separator";
 import { SidebarContent, SidebarHeader, useSidebarVisibility } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -665,73 +667,73 @@ export function GridSidebar() {
               );
             })}
           </div>
-          <div className="mt-auto flex flex-col gap-px pt-2">
-            <GridShelves
-              held={shelves.held}
-              closed={shelves.closed}
-              closedDropTarget={dropTarget === "shelf:closed"}
-              onClosedDragOver={(event) => {
-                if (readDragged(event) === null) return;
-                event.preventDefault();
-                setDropTarget("shelf:closed");
-              }}
-              onClosedDragLeave={() => {
-                if (dropTarget === "shelf:closed") setDropTarget(null);
-              }}
-              onClosedDrop={(event) => {
-                const source = readDragged(event);
-                event.preventDefault();
-                setDropTarget(null);
-                if (source === null) return;
-                const thread = threadById.get(source.threadId);
-                if (thread !== undefined) closeThreads([thread]);
-              }}
-              renderCard={(thread, shelf) => (
-                <ThreadCard
-                  key={thread.id}
-                  gridId={null}
-                  thread={thread}
-                  query=""
-                  providerEntries={
-                    providerEntriesByEnvironment.get(thread.environmentId) ?? EMPTY_PROVIDER_ENTRIES
-                  }
-                  nowIso={nowIso}
-                  focused={false}
-                  selected={false}
-                  dragging={false}
-                  runningSubagents={runningSubagentsByThread.get(subagentParentKey(thread)) ?? 0}
-                  workspaceTitle={
-                    workspaceTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ??
-                    ""
-                  }
-                  timeLabel={
-                    shelf === "snoozed" && thread.snoozedUntil !== null
-                      ? wakeTimeLabel(thread.snoozedUntil)
-                      : null
-                  }
-                  shelf={shelf}
-                  onOpen={() => {
-                    if (shelf === "snoozed") wakeShelfThread(thread);
-                    else reopenShelfThread(thread);
-                  }}
-                  onSelect={() => {}}
-                  onClose={() => {}}
-                  onHold={() => {}}
-                  onPickHoldTime={pickHoldTime}
-                  onRename={() => {}}
-                  onSetAutoClose={() => {}}
-                  onWake={() => wakeShelfThread(thread)}
-                  onReopen={() => reopenShelfThread(thread)}
-                  onDragStart={() => {}}
-                  onDragEnd={() => {}}
-                  onDropOnThread={() => {}}
-                  readDragged={readDragged}
-                />
-              )}
-            />
-          </div>
         </div>
       </SidebarContent>
+      <div className="shrink-0 px-2 pt-1 pb-1" data-testid="grid-shelves-pin">
+        <Separator className="mb-1" />
+        <GridShelves
+          held={shelves.held}
+          closed={shelves.closed}
+          closedDropTarget={dropTarget === "shelf:closed"}
+          onClosedDragOver={(event) => {
+            if (readDragged(event) === null) return;
+            event.preventDefault();
+            setDropTarget("shelf:closed");
+          }}
+          onClosedDragLeave={() => {
+            if (dropTarget === "shelf:closed") setDropTarget(null);
+          }}
+          onClosedDrop={(event) => {
+            const source = readDragged(event);
+            event.preventDefault();
+            setDropTarget(null);
+            if (source === null) return;
+            const thread = threadById.get(source.threadId);
+            if (thread !== undefined) closeThreads([thread]);
+          }}
+          renderCard={(thread, shelf) => (
+            <ThreadCard
+              key={thread.id}
+              gridId={null}
+              thread={thread}
+              query=""
+              providerEntries={
+                providerEntriesByEnvironment.get(thread.environmentId) ?? EMPTY_PROVIDER_ENTRIES
+              }
+              nowIso={nowIso}
+              focused={false}
+              selected={false}
+              dragging={false}
+              runningSubagents={runningSubagentsByThread.get(subagentParentKey(thread)) ?? 0}
+              workspaceTitle={
+                workspaceTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ?? ""
+              }
+              timeLabel={
+                shelf === "snoozed" && thread.snoozedUntil !== null
+                  ? wakeTimeLabel(thread.snoozedUntil)
+                  : null
+              }
+              shelf={shelf}
+              onOpen={() => {
+                if (shelf === "snoozed") wakeShelfThread(thread);
+                else reopenShelfThread(thread);
+              }}
+              onSelect={() => {}}
+              onClose={() => {}}
+              onHold={() => {}}
+              onPickHoldTime={pickHoldTime}
+              onRename={() => {}}
+              onSetAutoClose={() => {}}
+              onWake={() => wakeShelfThread(thread)}
+              onReopen={() => reopenShelfThread(thread)}
+              onDragStart={() => {}}
+              onDragEnd={() => {}}
+              onDropOnThread={() => {}}
+              readDragged={readDragged}
+            />
+          )}
+        />
+      </div>
       {selection.selectedThreadKeys.size > 0 ? (
         <div className="flex items-center gap-1 px-2 pb-2">
           <div className="flex h-8 min-w-0 flex-1 items-center gap-1 rounded-(--r-ctl) border border-sidebar-border bg-(--surface-raised) px-2.5 text-xs text-secondary-foreground">
@@ -1300,15 +1302,20 @@ function RunningElapsed({ startedAt }: { startedAt: string }) {
 
 function StateIcon({ state }: { state: GridThreadState }) {
   if (state === "running") {
-    return (
-      <svg aria-hidden viewBox="0 0 24 24" className="size-3.5 shrink-0">
-        <circle cx="12" cy="12" r="8" strokeDasharray="3 3.3" />
-      </svg>
-    );
+    return <StreamingGlyph className="size-3.5" />;
   }
   if (state === "ready") {
     return (
-      <svg aria-hidden viewBox="0 0 24 24" className="size-3.5 shrink-0">
+      <svg
+        aria-hidden
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="size-3.5 shrink-0"
+      >
         <circle cx="12" cy="12" r="8.5" />
         <path d="m8.5 12.2 2.4 2.4 4.6-4.8" />
       </svg>
@@ -1316,7 +1323,16 @@ function StateIcon({ state }: { state: GridThreadState }) {
   }
   if (state === "needs") {
     return (
-      <svg aria-hidden viewBox="0 0 24 24" className="size-3.5 shrink-0">
+      <svg
+        aria-hidden
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="size-3.5 shrink-0"
+      >
         <circle cx="12" cy="12" r="8.5" />
         <path d="M9.8 9.6a2.3 2.3 0 0 1 4.4.9c0 1.6-2.2 1.9-2.2 3.2" />
         <path d="M12 16.6v.1" />
@@ -1325,7 +1341,16 @@ function StateIcon({ state }: { state: GridThreadState }) {
   }
   if (state === "failed") {
     return (
-      <svg aria-hidden viewBox="0 0 24 24" className="size-3.5 shrink-0">
+      <svg
+        aria-hidden
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="size-3.5 shrink-0"
+      >
         <circle cx="12" cy="12" r="8.5" />
         <path d="M12 7.8v5" />
         <path d="M12 16.2v.1" />
@@ -1333,7 +1358,16 @@ function StateIcon({ state }: { state: GridThreadState }) {
     );
   }
   return (
-    <svg aria-hidden viewBox="0 0 24 24" className="size-3.5 shrink-0">
+    <svg
+      aria-hidden
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-3.5 shrink-0"
+    >
       <circle cx="12" cy="13" r="7" />
       <path d="M12 10v3.2l2 1.4M5 5.5 7.5 3.5M19 5.5l-2.5-2" />
     </svg>

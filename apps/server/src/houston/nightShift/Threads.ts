@@ -38,6 +38,12 @@ export class NightShiftThreads extends Context.Service<
       readonly text: string;
     }) => Effect.Effect<void, string>;
     readonly state: (threadId: ThreadId) => Effect.Effect<ThreadState>;
+    /** A delegated task's status as its parent records it; null when it is not found. */
+    readonly taskStatus: (parentThreadId: ThreadId, taskId: string) => Effect.Effect<string | null>;
+    /** Where a thread works: its worktree and branch, null when it has none. */
+    readonly workspace: (
+      threadId: ThreadId,
+    ) => Effect.Effect<{ readonly worktreePath: string | null; readonly branch: string | null }>;
   }
 >()("houston/houston/nightShift/Threads/NightShiftThreads") {}
 
@@ -62,19 +68,16 @@ export const layer = Layer.effect(
           Effect.mapError(text),
         ),
       ),
-      cancelCrew: Effect.fn("NightShiftThreads.cancelCrew")(
-        function* (threadId, commandId) {
-          yield* threads.dispatch({
-            type: "thread.stop",
-            commandId,
-            threadId,
-            stopDelegatedTasks: false,
-            reason: STOP_REASON,
-          });
-          yield* threads.stopDelegatedTasks({ threadId, commandId, reason: STOP_REASON });
-        },
-        Effect.mapError(text),
-      ),
+      cancelCrew: Effect.fn("NightShiftThreads.cancelCrew")(function* (threadId, commandId) {
+        yield* threads.dispatch({
+          type: "thread.stop",
+          commandId,
+          threadId,
+          stopDelegatedTasks: false,
+          reason: STOP_REASON,
+        });
+        yield* threads.stopDelegatedTasks({ threadId, commandId, reason: STOP_REASON });
+      }, Effect.mapError(text)),
       stop: Effect.fn("NightShiftThreads.stop")((threadId, commandId) =>
         threads
           .dispatch({ type: "thread.stop", commandId, threadId, reason: STOP_REASON })
@@ -107,6 +110,21 @@ export const layer = Layer.effect(
         },
         // A failed read is not an ended thread: read as busy, so nothing settles on it.
         Effect.orElseSucceed(() => ({ present: true, activeRun: true, lastRunStatus: null })),
+      ),
+      taskStatus: Effect.fn("NightShiftThreads.taskStatus")(
+        function* (parentThreadId, taskId) {
+          const records = yield* threads.getThreadRecords(parentThreadId, ["subagents"]);
+          return records.subagents.find((task) => task.id === taskId)?.status ?? null;
+        },
+        // A failed read is not an ended task.
+        Effect.orElseSucceed(() => null),
+      ),
+      workspace: Effect.fn("NightShiftThreads.workspace")(
+        function* (threadId) {
+          const shell = yield* threads.getThreadShell(threadId);
+          return { worktreePath: shell?.worktreePath ?? null, branch: shell?.branch ?? null };
+        },
+        Effect.orElseSucceed(() => ({ worktreePath: null, branch: null })),
       ),
     });
   }),

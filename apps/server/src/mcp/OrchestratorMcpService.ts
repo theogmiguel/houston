@@ -119,6 +119,11 @@ import {
 } from "./delegatedTaskModes.ts";
 import { isLiveCallerShell, threadNotFound } from "./threadAccess.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
+import {
+  admitOperation,
+  crewGateFailure,
+  HoustonCrewGate,
+} from "../houston/nightShift/CrewGate.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 
@@ -971,6 +976,16 @@ const make = Effect.gen(function* () {
   const gitDriver = yield* GitVcsDriver.GitVcsDriver;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const remoteDelegation = yield* RemoteDelegation.RemoteDelegation;
+  // Houston: a live Night shift run's threads start work only within its crew rules.
+  const crewGate = yield* HoustonCrewGate;
+  const gateOperation = (
+    scope: McpInvocationScope,
+    operation: Parameters<typeof admitOperation>[1],
+  ) =>
+    admitOperation(scope, operation).pipe(
+      Effect.provideService(HoustonCrewGate, crewGate),
+      Effect.mapError(crewGateFailure),
+    );
 
   const requireProject = (projectId: ProjectId) =>
     projects.getById(projectId).pipe(
@@ -1836,6 +1851,7 @@ const make = Effect.gen(function* () {
 
   return OrchestratorMcpService.of({
     scheduleTask: Effect.fn("OrchestratorMcpService.scheduleTask")(function* (scope, input) {
+      yield* gateOperation(scope, "schedule_task");
       const { parent, limits } = yield* loadCaller(scope);
       const projectId = yield* resolveProjectTarget(parent, input.projectId);
       yield* assertLiveCallerForOtherProject(scope, parent, projectId);
@@ -1911,6 +1927,7 @@ const make = Effect.gen(function* () {
     ),
     updateScheduledTask: Effect.fn("OrchestratorMcpService.updateScheduledTask")(
       function* (scope, input) {
+        yield* gateOperation(scope, "schedule_task");
         const { parent, limits } = yield* loadCaller(scope);
         const existing = yield* loadScheduledTask(input.scheduledTaskId, limits);
         yield* assertLiveCallerForOtherProject(scope, parent, existing.projectId);
@@ -1963,6 +1980,7 @@ const make = Effect.gen(function* () {
     ),
     deleteScheduledTask: Effect.fn("OrchestratorMcpService.deleteScheduledTask")(
       function* (scope, input) {
+        yield* gateOperation(scope, "delete_scheduled_task");
         const { parent, limits } = yield* loadCaller(scope);
         const existing = yield* loadScheduledTask(input.scheduledTaskId, limits);
         yield* assertLiveCallerForOtherProject(scope, parent, existing.projectId);
@@ -2176,7 +2194,30 @@ const make = Effect.gen(function* () {
         },
       };
     }),
-    delegateTask: Effect.fn("OrchestratorMcpService.delegateTask")(function* (callerScope, input) {
+    delegateTask: Effect.fn("OrchestratorMcpService.delegateTask")(function* (
+      callerScope,
+      requested,
+    ) {
+      // Houston: the gate may refuse or move the target; its slot is held until this call ends.
+      const admission =
+        callerScope.thread === undefined
+          ? undefined
+          : yield* Effect.acquireRelease(
+              crewGate
+                .admit({
+                  callerThreadId: callerScope.thread.threadId,
+                  operation: "delegate_task",
+                  delegation: {
+                    role: requested.role,
+                    isolation: requested.isolation,
+                    target: requested.target,
+                  },
+                })
+                .pipe(Effect.mapError(crewGateFailure)),
+              (admitted) => admitted.release,
+            );
+      const input =
+        admission?.target === undefined ? requested : { ...requested, target: admission.target };
       const environmentId =
         input.target === undefined
           ? undefined
@@ -2269,65 +2310,83 @@ const make = Effect.gen(function* () {
         }
         workspaceStrategy = { type: "worktree", baseRef: base.commitSha, startFromOrigin: false };
       }
-      // ThreadManagementService.dispatch is the chokepoint for this command
-      // type's own enablement check, using the same command id and its
-      // receipt-replay exemption, so no separate assert runs here.
-      const result = yield* threadManagement
-        .dispatch({
-          type: "delegated_task.request",
-          createdBy: "agent",
-          creationSource: "mcp",
-          commandId,
-          parentThreadId: scope.thread.threadId,
-          parentRunId: parentRun.id,
-          parentNodeId: parentRun.rootNodeId,
-          task: taskPrompt(input),
-          ...(input.title === undefined ? {} : { title: input.title }),
-          modelSelection: target.modelSelection,
-          runtimeMode,
-          interactionMode,
-          ...(workspaceStrategy === undefined ? {} : { workspaceStrategy }),
-          // Async delegations wake the parent on every child terminal; wait
-          // delegations deliver through the blocking tool call, so a wake is
-          // only needed if the parent settled first (timeout, disconnect).
-          completionWake: input.mode === "wait" ? "settled_only" : "always",
-        })
-        .pipe(
-          Effect.mapError((error) =>
-            error._tag === "ThreadManagementProviderInstanceDisabledError"
-              ? threadManagementFailure(error)
-              : failure(
-                  "orchestration_error",
-                  `Unable to create delegated task: ${errorMessage(error)}`,
-                ),
-          ),
-        );
-      const taskEvent = result.storedEvents.find(
-        (stored) =>
-          stored.event.type === "subagent.updated" && stored.event.payload.origin === "app_owned",
+      // Houston: dispatch through the crew row is uninterruptible, so a child the dispatch
+      // accepted is always recorded, gated and stopped with its run.
+      const parentNodeId = parentRun.rootNodeId;
+      const taskId = yield* Effect.uninterruptible(
+        Effect.gen(function* () {
+          // ThreadManagementService.dispatch is the chokepoint for this command
+          // type's own enablement check, using the same command id and its
+          // receipt-replay exemption, so no separate assert runs here.
+          const result = yield* threadManagement
+            .dispatch({
+              type: "delegated_task.request",
+              createdBy: "agent",
+              creationSource: "mcp",
+              commandId,
+              parentThreadId: scope.thread.threadId,
+              parentRunId: parentRun.id,
+              parentNodeId,
+              task: taskPrompt(input),
+              ...(input.title === undefined ? {} : { title: input.title }),
+              modelSelection: target.modelSelection,
+              runtimeMode,
+              interactionMode,
+              ...(workspaceStrategy === undefined ? {} : { workspaceStrategy }),
+              // Async delegations wake the parent on every child terminal; wait
+              // delegations deliver through the blocking tool call, so a wake is
+              // only needed if the parent settled first (timeout, disconnect).
+              completionWake: input.mode === "wait" ? "settled_only" : "always",
+            })
+            .pipe(
+              Effect.mapError((error) =>
+                error._tag === "ThreadManagementProviderInstanceDisabledError"
+                  ? threadManagementFailure(error)
+                  : failure(
+                      "orchestration_error",
+                      `Unable to create delegated task: ${errorMessage(error)}`,
+                    ),
+              ),
+            );
+          const taskEvent = result.storedEvents.find(
+            (stored) =>
+              stored.event.type === "subagent.updated" &&
+              stored.event.payload.origin === "app_owned",
+          );
+          if (taskEvent?.event.type !== "subagent.updated") {
+            return yield* failure(
+              "orchestration_error",
+              "Delegated task command did not produce a task projection.",
+            );
+          }
+          const taskId = taskEvent.event.payload.id;
+          const childThreadId = taskEvent.event.payload.childThreadId;
+          const childRunEvent = result.storedEvents.find(
+            (stored) =>
+              stored.event.type === "run.created" && stored.event.threadId === childThreadId,
+          );
+          if (
+            childThreadId !== null &&
+            childRunEvent?.event.type === "run.created" &&
+            childRunEvent.event.payload.workspacePreparation !== undefined
+          ) {
+            yield* threadLaunch.prepareRun({
+              commandId,
+              threadId: childThreadId,
+              runId: childRunEvent.event.payload.id,
+            });
+          }
+          // Houston: the crew row, written before a wait so the caps and a stop see the child.
+          if (admission !== undefined) {
+            yield* admission.record({
+              taskId,
+              childThreadId,
+              providerInstanceId: taskEvent.event.payload.providerInstanceId,
+            });
+          }
+          return taskId;
+        }),
       );
-      if (taskEvent?.event.type !== "subagent.updated") {
-        return yield* failure(
-          "orchestration_error",
-          "Delegated task command did not produce a task projection.",
-        );
-      }
-      const taskId = taskEvent.event.payload.id;
-      const childThreadId = taskEvent.event.payload.childThreadId;
-      const childRunEvent = result.storedEvents.find(
-        (stored) => stored.event.type === "run.created" && stored.event.threadId === childThreadId,
-      );
-      if (
-        childThreadId !== null &&
-        childRunEvent?.event.type === "run.created" &&
-        childRunEvent.event.payload.workspacePreparation !== undefined
-      ) {
-        yield* threadLaunch.prepareRun({
-          commandId,
-          threadId: childThreadId,
-          runId: childRunEvent.event.payload.id,
-        });
-      }
 
       if (input.mode !== "wait") {
         return yield* readTask(scope, taskId, false, true);
@@ -2374,7 +2433,7 @@ const make = Effect.gen(function* () {
           ),
         );
       return yield* readTask(scope, taskId, Option.isNone(waited), true);
-    }),
+    }, Effect.scoped),
     taskStatus: Effect.fn("OrchestratorMcpService.taskStatus")(function* (callerScope, taskId) {
       const scope = yield* requireThreadScope(callerScope, "task_status");
       return yield* readTask(scope, taskId, false, true);
@@ -2595,6 +2654,7 @@ const make = Effect.gen(function* () {
     }),
     createThreads: Effect.fn("OrchestratorMcpService.createThreads")(
       function* (callerScope, input) {
+        yield* gateOperation(callerScope, "create_threads");
         const { scope, parent } = yield* loadThreadCaller(callerScope, "create_threads");
         const parentRun = ThreadManagementService.latestActiveRun(parent);
         if (
@@ -2910,6 +2970,16 @@ const make = Effect.gen(function* () {
       } satisfies OrchestratorMcpThreadReadResult;
     }),
     sendToThread: Effect.fn("OrchestratorMcpService.sendToThread")(function* (scope, input) {
+      // Houston: a live Night shift run's threads send only to its live crew children.
+      if (scope.thread !== undefined) {
+        yield* crewGate
+          .admit({
+            callerThreadId: scope.thread.threadId,
+            operation: "t3_thread_send",
+            targetThreadId: input.threadId,
+          })
+          .pipe(Effect.mapError(crewGateFailure));
+      }
       const { parent, limits, target } = yield* loadScopedThread(scope, input.threadId);
       yield* assertLiveCallerForOtherThread(scope, parent, target);
       yield* resolveRuntimeMode(limits.runtimeMode, target.thread.runtimeMode);

@@ -24,6 +24,7 @@ import * as Layer from "effect/Layer";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
 import { layerNoReadOnlyThreads } from "./sideThreads.ts";
+import { SLACK_ANSWER_ALREADY_SENT } from "./slackAnswer.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
 import {
   CLAUDE,
@@ -1293,6 +1294,69 @@ describe("a side thread's limits", () => {
               .map((event) => event.threadId);
             assert.sameMembers(deleted, [source, "review", "aside-2"]);
             assert.lengthOf(deleted, 3);
+          }),
+        );
+      }),
+    ),
+  );
+});
+
+describe("a Slack answer", () => {
+  it.effect("houston.slack.answer queues one user message per question", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness("slack-answer");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const { source } = yield* sourceWithTurn(context, harness, {
+              threadId: "slack-run",
+              driver: "codex",
+            });
+            harness.script.hold.add("message:slack-run:2");
+            yield* context.turn(source, "message:slack-run:2", "keep working");
+            const answer = (questionId: number, commandId: string, text: string) =>
+              context.dispatch({
+                type: "houston.slack.answer",
+                commandId: CommandId.make(commandId),
+                threadId: source,
+                questionId,
+                text,
+              });
+            const answers = (projection: OrchestrationV2ThreadProjection) =>
+              projection.messages.filter((message) => message.id.startsWith("slack-answer-"));
+
+            // A running thread queues the answer behind its turn, never steering it.
+            const steeredBefore = harness.log.steered.length;
+            yield* answer(7, "houston-slack-answer:7", "The requester answered: CSV");
+            const queued = answers(yield* context.orchestrator.getThreadProjection(source));
+            assert.deepEqual(
+              queued.map((message) => [message.id, message.role, message.text]),
+              [["slack-answer-7", "user", "The requester answered: CSV"]],
+            );
+            assert.equal(queued[0]?.delivery?.intent, "queue");
+            assert.lengthOf(harness.log.steered.slice(steeredBefore), 0);
+
+            // Once per question: the same command replays, another one is refused.
+            yield* answer(7, "houston-slack-answer:7", "The requester answered: CSV");
+            const again = yield* refusal(answer(7, "houston-slack-answer:7:again", "JSON"));
+            assert.equal(again, SLACK_ANSWER_ALREADY_SENT);
+            yield* answer(8, "houston-slack-answer:8", "The owner answered: both");
+            const both = answers(yield* context.orchestrator.getThreadProjection(source));
+            assert.deepEqual(
+              both.map((message) => message.id),
+              ["slack-answer-7", "slack-answer-8"],
+            );
+
+            yield* harness.release("message:slack-run:2");
+            yield* context.settle;
+            const order = harness.log.started
+              .filter((turn) => turn.input.threadId === source)
+              .map((turn) => turn.input.message.messageId);
+            assert.deepEqual(order.slice(-3), [
+              "message:slack-run:2",
+              "slack-answer-7",
+              "slack-answer-8",
+            ]);
           }),
         );
       }),

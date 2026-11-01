@@ -46,7 +46,23 @@ fn image_name(pid: u32) -> Option<String> {
         .map(|n| n.to_string_lossy().into_owned())
 }
 
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(target_os = "macos")]
+fn image_name(pid: u32) -> Option<String> {
+    let pid = crate::sys::pid::checked_pid(pid).ok()?;
+    let mut buffer = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+    // SAFETY: the buffer is writable for exactly the length passed.
+    let length =
+        unsafe { libc::proc_pidpath(pid, buffer.as_mut_ptr().cast(), buffer.len() as u32) };
+    if length <= 0 {
+        return None;
+    }
+    let path = std::str::from_utf8(&buffer[..length as usize]).ok()?;
+    Path::new(path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 fn image_name(_pid: u32) -> Option<String> {
     None
 }

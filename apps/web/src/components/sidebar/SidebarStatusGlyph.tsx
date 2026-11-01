@@ -1,3 +1,4 @@
+import { StreamingGlyph } from "../chat/TimelineRowParts";
 import {
   resolveSidebarStatusGlyphState,
   type SidebarStatusGlyphState,
@@ -13,7 +14,7 @@ const GLYPH_LABEL: Record<Exclude<SidebarStatusGlyphState, "idle">, string> = {
 
 /**
  * The rail's status mark, laid out beside the time so titles line up. The board
- * gives each state one shape: spinner, warn dot, check or error circle.
+ * gives each state one shape: dotted ring, warn dot, check or error circle.
  */
 export function SidebarStatusGlyph({
   state,
@@ -30,7 +31,7 @@ export function SidebarStatusGlyph({
       className="inline-grid size-3.5 shrink-0 place-items-center"
     >
       {state === "working" ? (
-        <span className="size-2.5 animate-spin rounded-full border border-ring border-r-transparent motion-reduce:animate-none" />
+        <StreamingGlyph className="size-3.5" />
       ) : state === "needs" ? (
         <span className="size-2 rounded-full bg-warning ring-2 ring-warning/30" />
       ) : state === "done" ? (

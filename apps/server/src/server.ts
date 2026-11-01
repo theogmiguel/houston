@@ -121,8 +121,14 @@ import * as HoustonTaskSourceNotion from "./houston/taskSources/NotionClient.ts"
 import * as HoustonTaskSourceOutbox from "./houston/taskSources/Outbox.ts";
 import * as HoustonTaskSourceStore from "./houston/taskSources/SourceStore.ts";
 import { layerTaskSources } from "./houston/taskSources/layer.ts";
+import * as SlackConnection from "./houston/slack/Connection.ts";
+import { layerSlack } from "./houston/slack/layer.ts";
+import * as SlackRunMessages from "./houston/slack/RunMessages.ts";
+import * as HoustonSlackStore from "./houston/slack/Store.ts";
+import * as SlackWebApi from "./houston/slack/WebApi.ts";
 import { layerMergeQueue } from "./houston/mergeQueue/layer.ts";
 import * as HoustonMergeQueueStore from "./houston/mergeQueue/Store.ts";
+import * as HoustonMergeQueueThreads from "./houston/mergeQueue/Threads.ts";
 import { layerHarnessReview } from "./houston/harnessReview/layer.ts";
 import * as HoustonHarnessRunner from "./houston/harnessReview/Runner.ts";
 import * as HoustonHarnessStore from "./houston/harnessReview/Store.ts";
@@ -464,6 +470,9 @@ const layerAuth = EnvironmentAuth.layer.pipe(
 );
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
+  // Houston: Night shift reads each earlier pull request's fate once at a run's start.
+  Layer.provide(layerPullRequestService),
+  Layer.provide(RuntimeLayer.layerProjectService),
   Layer.provide(ProviderEventIngestor.layerAnalytics),
   Layer.provide(layerCheckpointStore),
   Layer.provide(layerGitWorkflow),
@@ -577,6 +586,26 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
   Layer.effectDiscard(HoustonTaskProjectSweep.sweep),
   Layer.effectDiscard(HoustonTaskSourceStore.sweep),
+  Layer.effectDiscard(HoustonSlackStore.sweep),
+  // Slack accepts requests through the same task runs the server offers.
+  layerSlack(
+    Layer.mergeAll(
+      SlackWebApi.layer,
+      SlackConnection.layerSocketTransport,
+      SlackRunMessages.layer,
+    ),
+  ).pipe(
+    Layer.provideMerge(
+      HoustonTaskRuns.layer.pipe(
+        Layer.provide(
+          Layer.merge(
+            RuntimeLayer.layerEventSink,
+            ProviderAdapterRegistry.layerFromProviderInstanceRegistry,
+          ),
+        ),
+      ),
+    ),
+  ),
   // The harness review service and its one reactor, over the orchestration runtime below; defect
   // issues use the GitHub client the merge queue and task sources share.
   layerHarnessReview.pipe(
@@ -587,18 +616,14 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ),
   // The Night shift service over the runner and claim the orchestration runtime below exports.
   layerNightShift,
-  HoustonTaskRuns.layer.pipe(
-    Layer.provide(
-      Layer.merge(
-        RuntimeLayer.layerEventSink,
-        ProviderAdapterRegistry.layerFromProviderInstanceRegistry,
-      ),
-    ),
-  ),
 ).pipe(
   // The merge queue reads through the PR page's own service and GitHub client.
   Layer.provideMerge(
-    layerMergeQueue(Layer.mergeAll(GitHubRest.layerWithDependencies, layerPullRequestService)),
+    layerMergeQueue(
+      Layer.mergeAll(GitHubRest.layerWithDependencies, layerPullRequestService).pipe(
+        Layer.merge(HoustonMergeQueueThreads.layer),
+      ),
+    ),
   ),
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer, HoustonTaskV1Import.layer)),
@@ -624,6 +649,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
       HoustonNightShiftStore.layer,
     ),
   ),
+  Layer.provideMerge(HoustonSlackStore.layer),
   Layer.provideMerge(HoustonKeychain.layerLive),
   Layer.provideMerge(layerHoustonTaskPersistence),
   Layer.provideMerge(layerPersistence),
@@ -635,15 +661,15 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   // Provider hydration builds the Claude runner, which reports agents to the same scanner the
   // terminal and preview layers share.
   Layer.provideMerge(layerPortScanner),
+);
+
+const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(
     Layer.mergeAll(
       AntigravityInstallation.AntigravityInstallation.layer,
       CodexInstallation.CodexInstallation.layer,
     ),
   ),
-);
-
-const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(layerPtyAdapter),
   Layer.provideMerge(AcpRegistrySupport.layerFromHost.pipe(Layer.provide(ProviderHostLive.layer))),
   Layer.provideMerge(
