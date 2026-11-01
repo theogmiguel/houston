@@ -50,6 +50,7 @@ import {
 
 import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
+import { StreamingGlyph } from "./chat/TimelineRowParts";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
   PULL_REQUEST_STATE_PRESENTATION,
@@ -622,11 +623,11 @@ function ThreadStatusLabel({
             />
           }
         >
-          <span
-            className={`size-[9px] rounded-full ${status.dotClass} ${
-              status.pulse ? "motion-safe:animate-status-pulse" : ""
-            }`}
-          />
+          {status.pulse ? (
+            <StreamingGlyph className="size-3" />
+          ) : (
+            <span className={`size-[9px] rounded-full ${status.dotClass}`} />
+          )}
         </TooltipTrigger>
         <TooltipPopup side="top">{status.label}</TooltipPopup>
       </Tooltip>
@@ -644,11 +645,11 @@ function ThreadStatusLabel({
           />
         }
       >
-        <span
-          className={`h-1.5 w-1.5 rounded-full ${status.dotClass} ${
-            status.pulse ? "motion-safe:animate-status-pulse" : ""
-          }`}
-        />
+        {status.pulse ? (
+          <StreamingGlyph className="size-3" />
+        ) : (
+          <span className={`h-1.5 w-1.5 rounded-full ${status.dotClass}`} />
+        )}
         <span className="hidden md:inline">{status.label}</span>
       </TooltipTrigger>
       <TooltipPopup side="top">{status.label}</TooltipPopup>

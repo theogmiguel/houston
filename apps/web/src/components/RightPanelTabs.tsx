@@ -100,6 +100,7 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanelShell";
 import { FaviconImage } from "./preview/PreviewFaviconIcon";
 import { previewBridge } from "./preview/previewBridge";
+import { StreamingGlyph } from "./chat/TimelineRowParts";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -708,7 +709,7 @@ function sideChatTabState(shell: EnvironmentThreadShell | null) {
   return threadRuntimeIsActive(shell.runtime) ? "running" : null;
 }
 
-// Static dots: a side chat tab can stay open for a whole run.
+// The running mark spins with the thread; attention marks stay static.
 function SideChatTabIcon(props: { environmentId: EnvironmentId | null; threadId: ThreadId }) {
   const state = sideChatTabState(
     useQuietThreadShell(
@@ -718,14 +719,10 @@ function SideChatTabIcon(props: { environmentId: EnvironmentId | null; threadId:
   return (
     <>
       <MessagesSquare className="size-3 shrink-0" />
-      {state === null ? null : (
-        <span
-          className={cn(
-            "absolute -top-0.5 -right-0.5 size-1.5 rounded-full",
-            state === "running" ? "bg-muted-foreground" : "bg-info",
-          )}
-          aria-hidden
-        />
+      {state === null ? null : state === "running" ? (
+        <StreamingGlyph className="absolute -top-1 -right-1 size-2.5" />
+      ) : (
+        <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-info" aria-hidden />
       )}
     </>
   );
