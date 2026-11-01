@@ -166,6 +166,8 @@ export interface StoredRun extends NightRun {
   readonly cost: unknown;
   readonly noticeSent: boolean;
   readonly limited: ReadonlyArray<NightLimit>;
+  /** Crew-gate refusals per reason, in the order each reason first occurred. */
+  readonly refusals: Readonly<Partial<Record<NightGateRefusal, number>>>;
 }
 
 export interface Notice {
@@ -184,19 +186,44 @@ const decodeInterruptions = Schema.decodeUnknownSync(
 const decodeHeads = Schema.decodeUnknownSync(
   Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)),
 );
+const Limits = Schema.Array(
+  Schema.Struct({
+    instanceId: Schema.String,
+    state: Schema.String,
+    resetsAt: Schema.NullOr(Schema.String),
+    at: Schema.String,
+    clearedAt: Schema.NullOr(Schema.String),
+  }),
+);
+// `limited_json` is the run's gate record: `{limits, refusals}`, or a bare list of limits from a
+// row written before refusals were counted.
 const decodeLimited = Schema.decodeUnknownSync(
   Schema.fromJsonString(
-    Schema.Array(
-      Schema.Struct({
-        instanceId: Schema.String,
-        state: Schema.String,
-        resetsAt: Schema.NullOr(Schema.String),
-        at: Schema.String,
-        clearedAt: Schema.NullOr(Schema.String),
-      }),
-    ),
+    Schema.Union([
+      Limits,
+      Schema.Struct({ limits: Limits, refusals: Schema.Record(Schema.String, Schema.Number) }),
+    ]),
   ),
 );
+const gateRecord = (json: string) => {
+  const decoded = decodeLimited(json);
+  return "limits" in decoded ? decoded : { limits: decoded, refusals: {} };
+};
+/** The column as `{limits, refusals}`, whichever shape the row holds. */
+const GATE_RECORD = `CASE WHEN json_type(limited_json) = 'array'
+  THEN json_object('limits', json(limited_json), 'refusals', json_object())
+  ELSE limited_json END`;
+
+/** Why the crew gate refused an operation; the report lists a count per reason. */
+export type NightGateRefusal =
+  | "isolation"
+  | "crewCap"
+  | "workersChain"
+  | "noReadyInstance"
+  | "threadSend"
+  | "mergeQueue"
+  | "operation"
+  | "reviewCap";
 export const toJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -229,7 +256,9 @@ const toRun = (row: RunRow): StoredRun => ({
   remoteChanges: row.remote_changes_json === null ? null : decodeJson(row.remote_changes_json),
   cost: row.cost_json === null ? null : decodeJson(row.cost_json),
   noticeSent: row.notice_sent === 1,
-  limited: decodeLimited(row.limited_json),
+  ...((record) => ({ limited: record.limits, refusals: record.refusals }))(
+    gateRecord(row.limited_json),
+  ),
 });
 
 const toCrew = (row: CrewRow): NightCrewMember => ({
@@ -340,6 +369,8 @@ export class HoustonNightShiftStore extends Context.Service<
       threadId: ThreadId,
     ) => Effect.Effect<{ readonly run: StoredRun; readonly member: NightCrewMember } | undefined>;
     readonly setLimited: (id: number, limited: ReadonlyArray<NightLimit>) => Effect.Effect<void>;
+    /** Adds one refusal of `reason` to the run, in one statement, so parallel counts all land. */
+    readonly countRefusal: (id: number, reason: NightGateRefusal) => Effect.Effect<void>;
     readonly addEntry: (entry: NewEntry) => Effect.Effect<LedgerEntry>;
     /** Adds the entry only while its run is under every bound, checked in the insert itself;
      * otherwise answers the run's entry, decision and pull request counts. */
@@ -663,9 +694,18 @@ const make = Effect.gen(function* () {
     setLimited: Effect.fn("HoustonNightShiftStore.setLimited")((id, limited) =>
       writeRun(
         id,
-        sql`UPDATE houston_night_runs SET limited_json = ${toJson(limited)} WHERE id = ${id}`,
+        sql`UPDATE houston_night_runs
+          SET limited_json = json_set(${sql.literal(GATE_RECORD)}, '$.limits', json(${toJson(limited)}))
+          WHERE id = ${id}`,
       ),
     ),
+    countRefusal: Effect.fn("HoustonNightShiftStore.countRefusal")(function* (id, reason) {
+      const path = `$.refusals.${reason}`;
+      yield* sql`UPDATE houston_night_runs
+        SET limited_json = json_set(${sql.literal(GATE_RECORD)}, ${path},
+          COALESCE(json_extract(${sql.literal(GATE_RECORD)}, ${path}), 0) + 1)
+        WHERE id = ${id}`.pipe(Effect.orDie);
+    }),
     addEntry: Effect.fn("HoustonNightShiftStore.addEntry")(function* (entry) {
       const inserted = yield* sql<LedgerEntry>`INSERT INTO houston_night_entries
           (run_id, project_id, kind, title, theme, status, pr_number, task_number, head_sha,

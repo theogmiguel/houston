@@ -7,6 +7,7 @@ import * as NodePath from "node:path";
 import { assert, describe, it } from "@effect/vitest";
 import { ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import {
   NOW,
@@ -23,6 +24,74 @@ const ORCHESTRATOR = ThreadId.make("report-orchestrator");
 const MIB = 1024 * 1024;
 
 describe("night shift morning report", () => {
+  it.effect("gate refusals are kept per reason beside the limits and listed in the report", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("report-gate");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const fixture = makeRepository("report-gate", null);
+          const projectId = yield* createProject("report-gate", fixture.root);
+          yield* seedNightShift(projectId);
+          const store = yield* Store.HoustonNightShiftStore;
+          const service = yield* Service.HoustonNightShiftService;
+          const sql = yield* SqlClient.SqlClient;
+          const run = yield* store.openRun({
+            projectId,
+            trigger: "manual",
+            scheduledTaskId: null,
+            settings: (yield* store.settings(projectId))!.settings,
+            startedAt: NOW,
+            wrapUpAt: "2026-10-31T06:45:00.000Z",
+            hardStopAt: "2026-10-31T07:30:00.000Z",
+            operation: "test",
+          });
+          const limit = {
+            instanceId: "codex",
+            state: "outOfUsage",
+            resetsAt: null,
+            at: "2026-10-31T02:00:00.000Z",
+            clearedAt: null,
+          };
+          // A row written before refusals were kept holds the bare list of limits.
+          yield* sql`UPDATE houston_night_runs SET limited_json = ${Store.toJson([limit])}
+            WHERE id = ${run.id}`;
+          let stored = (yield* store.getRun(run.id))!;
+          assert.deepEqual(stored.limited, [limit]);
+          assert.deepEqual(stored.refusals, {});
+
+          yield* store.countRefusal(run.id, "workersChain");
+          yield* store.countRefusal(run.id, "workersChain");
+          yield* store.countRefusal(run.id, "crewCap");
+          const cleared = { ...limit, clearedAt: "2026-10-31T05:00:00.000Z" };
+          yield* store.setLimited(run.id, [cleared]);
+          yield* Effect.all(
+            Array.from({ length: 5 }, () => store.countRefusal(run.id, "operation")),
+            { concurrency: "unbounded" },
+          );
+          stored = (yield* store.getRun(run.id))!;
+          assert.deepEqual(stored.limited, [cleared], "counting keeps the limits");
+          assert.deepEqual(
+            stored.refusals,
+            { workersChain: 2, crewCap: 1, operation: 5 },
+            "a limit change keeps the counts",
+          );
+
+          const report = yield* service.report({ runId: run.id });
+          const gate = report.events.filter((event) => event.kind === "gate");
+          assert.deepEqual(
+            gate.map((event) => event.text),
+            [
+              "The crew gate refused 2 delegations outside the workers chain",
+              "The crew gate refused 1 delegation over the crew cap",
+              "The crew gate refused 5 operations that start work outside delegate_task",
+            ],
+          );
+        }),
+      );
+    }),
+  );
+
   it.effect("the morning report gathers the run", () =>
     Effect.gen(function* () {
       const kit = yield* makeKit("report");

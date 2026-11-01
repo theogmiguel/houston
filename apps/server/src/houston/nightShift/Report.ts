@@ -19,7 +19,23 @@ import { NightShiftBacklog } from "./Host.ts";
 import { mergeOrder } from "./landing/rules.ts";
 import { planDependencies, prDetail } from "./landing/Landing.ts";
 import { headline } from "./rules.ts";
-import { HoustonNightShiftStore, type LedgerEntry } from "./Store.ts";
+import { HoustonNightShiftStore, type LedgerEntry, type NightGateRefusal } from "./Store.ts";
+
+const REFUSED: Record<NightGateRefusal, readonly [one: string, many: string, why: string]> = {
+  isolation: ["delegation", "delegations", "that would have left this machine or its worktree"],
+  crewCap: ["delegation", "delegations", "over the crew cap"],
+  workersChain: ["delegation", "delegations", "outside the workers chain"],
+  noReadyInstance: ["delegation", "delegations", "with no worker instance ready"],
+  threadSend: ["message", "messages", "to a thread that is not a live crew child"],
+  mergeQueue: ["merge queue call", "merge queue calls", "that Night shift makes itself"],
+  operation: ["operation", "operations", "that start work outside delegate_task"],
+  reviewCap: ["automatic review", "automatic reviews", "over the review slot"],
+};
+
+const refusalText = (reason: NightGateRefusal, count: number) => {
+  const [one, many, why] = REFUSED[reason] ?? ["operation", "operations", `(${reason})`];
+  return `The crew gate refused ${count} ${count === 1 ? one : many} ${why}`;
+};
 
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const isCost = Schema.is(NightCost);
@@ -156,6 +172,11 @@ export const buildReport = Effect.fn("HoustonNightReport.build")(function* (runI
       kind: "limit" as const,
       at: limit.at,
       text: `${limit.instanceId} became ${limit.state}${limit.resetsAt === null ? "" : `, resetting at ${limit.resetsAt}`}${limit.clearedAt === null ? "" : `; usable again at ${limit.clearedAt}`}`,
+    })),
+    ...Object.entries(run.refusals).map(([reason, count]) => ({
+      kind: "gate" as const,
+      at: null,
+      text: refusalText(reason as NightGateRefusal, count ?? 0),
     })),
     ...crew
       .filter(

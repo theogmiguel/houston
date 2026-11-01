@@ -454,6 +454,7 @@ export const NightReportEventKind = Schema.Literals([
   "interruption",
   "limit",
   "substitution",
+  "gate",
   "ci",
 ]);
 export type NightReportEventKind = typeof NightReportEventKind.Type;

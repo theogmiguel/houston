@@ -705,6 +705,43 @@ describe("the crew gate", () => {
     }).pipe(Effect.provide(layerService(world)));
   });
 
+  it.effect("the gate keeps a count of its refusals per reason on the run", () => {
+    const world = freshWorld();
+    return Effect.gen(function* () {
+      const runId = yield* seedRun(settingsWith());
+      const gate = yield* CrewGate.HoustonCrewGate;
+      const store = yield* Store.HoustonNightShiftStore;
+      for (const operation of ["create_threads", "schedule_task"] as const) {
+        yield* Effect.flip(gate.admit({ callerThreadId: ORCHESTRATOR, operation }));
+      }
+      yield* Effect.flip(
+        gate.admit({ callerThreadId: ORCHESTRATOR, operation: "houston_merge_queue_enqueue" }),
+      );
+      yield* refusedWith(
+        delegate(world, ORCHESTRATOR, {
+          role: "research",
+          target: { environmentId: EnvironmentId.make("environment:laptop") },
+        }),
+        "a Night shift run stays on this machine",
+      );
+      yield* refusedWith(
+        delegate(world, ORCHESTRATOR, {
+          ...worker(),
+          target: { providerInstanceId: ProviderInstanceId.make("opencode") },
+        }),
+        "workers chain",
+      );
+      // Admissions and calls outside every live run count nothing.
+      yield* gate.admit({ callerThreadId: OUTSIDER, operation: "create_threads" });
+      assert.deepEqual((yield* store.getRun(runId))?.refusals, {
+        operation: 2,
+        mergeQueue: 1,
+        isolation: 1,
+        workersChain: 1,
+      });
+    }).pipe(Effect.provide(layerService(world)));
+  });
+
   it.effect("a crew thread starts work only through delegate_task", () => {
     const world = freshWorld();
     return Effect.gen(function* () {
