@@ -10,13 +10,13 @@ on:
         description: 'Branch, tag or SHA to build; empty builds the ref this workflow was dispatched from'
         type: string
         default: ''
-        required: true
+        required: false
       platform:
         description: 'Installer platforms to validate; windows also builds the Linux bundles'
         type: choice
         options: [all, linux, windows, macos]
         default: all
-        required: true
+        required: false
 
 permissions:
   contents: read
