@@ -253,6 +253,9 @@ import {
 import type { PaneDensity } from "../../grid/density";
 import { type ComposerPromptHistoryPosition } from "./composerPromptHistory";
 import type { PendingUserInputDraftAnswer } from "@t3tools/client-runtime/state/pending-user-input";
+import type { ThreadStatusPill } from "../Sidebar.logic";
+import { THREAD_STATE_TEXT_CLASS } from "../ui/thread-state-glyph";
+import { resolveBlockedThreadStatus } from "./TimelineWorkGroupRows.logic";
 import type {
   LatestProposedPlanState,
   PendingApproval,
@@ -378,6 +381,8 @@ export interface ChatComposerProps {
   activeThreadId: ThreadId | null;
   activeThread: Thread | undefined;
   activeThreadShell: ThreadShell | null;
+  /** The thread's status as the sidebar derives it; the footer names a blocked turn. */
+  threadStatusPill?: ThreadStatusPill | null;
   promptHistoryMessages: ReadonlyArray<ChatMessage>;
   forceExpandedOnMobile: boolean;
   /** A grid pane's density; glance keeps the composer on one line until focused. */
@@ -537,6 +542,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onMultipleModelSelectionsChange: setMultipleModelSelections,
     activeThreadId,
     activeThread,
+    threadStatusPill = null,
     promptHistoryMessages,
     forceExpandedOnMobile,
     paneDensity,
@@ -1202,6 +1208,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   });
 
   const isComposerApprovalState = activePendingApproval !== null;
+  // The running footer borrows the sidebar's label, so a turn blocked on the user
+  // never reads as work in progress.
+  const needsUserStatus = resolveBlockedThreadStatus(threadStatusPill);
   // A send declines the approvals shown here to redirect the agent, so it steers the waiting
   // turn instead of queueing behind it. Approvals the typing guard holds stay unseen and pending.
   const followUpBehavior = pendingApprovals.some(
@@ -3577,9 +3586,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   {phase === "running" && activeTurnStartedAt ? (
                     <span
                       role="status"
-                      className="shrink-0 px-1.5 text-(--t3) text-xs tabular-nums"
+                      className={cn(
+                        "shrink-0 px-1.5 text-xs tabular-nums",
+                        needsUserStatus === null ? "text-(--t3)" : THREAD_STATE_TEXT_CLASS.needs,
+                      )}
                     >
-                      Running ·{" "}
+                      {needsUserStatus?.label ?? "Running"} ·{" "}
                       <span
                         ref={tickTextContent(
                           (nowMs) =>

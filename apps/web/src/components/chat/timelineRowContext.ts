@@ -29,6 +29,7 @@ import { type MessagesTimelineRow, type WorkGroupScrollAnchor } from "./Messages
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import type { TurnItemDetailSource } from "../../state/queries";
 import { type HandoffTimelineRun } from "./V2LifecycleRow";
+import type { ThreadStatusPill } from "../Sidebar.logic";
 
 /** Where an expanded row reads an item's detail and a command's output. */
 export interface TurnItemSource {
@@ -98,6 +99,8 @@ export interface TimelineRowActivityState {
   isCompacting: boolean;
   isRevertingCheckpoint: boolean;
   awaitingUser: boolean;
+  /** The thread's status as the sidebar derives it; drives the live row's mark. */
+  threadStatusPill: ThreadStatusPill | null;
   isPreparingWorktree: boolean;
   latestRunId: RunId | null;
   backgroundWorktreeSetup: WorktreeSetupSnapshot | null;

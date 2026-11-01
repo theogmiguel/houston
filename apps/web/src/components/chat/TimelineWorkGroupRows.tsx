@@ -23,6 +23,7 @@ import {
 } from "./MessagesTimeline.logic";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Spinner } from "../ui/spinner";
+import { ThreadStateGlyph, THREAD_STATE_TEXT_CLASS } from "../ui/thread-state-glyph";
 import { WorktreeSetupCard } from "./WorktreeSetupCard";
 import { cn } from "~/lib/utils";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
@@ -52,7 +53,7 @@ import {
   toolGroupSummaryIconName,
   workEntryIconName,
 } from "./TimelineWorkEntryRow.logic";
-import { formatWorkingTimerNow } from "./TimelineWorkGroupRows.logic";
+import { formatWorkingTimerNow, resolveBlockedThreadStatus } from "./TimelineWorkGroupRows.logic";
 
 export const WorkGroupSection = memo(function WorkGroupSection({
   anchorKey,
@@ -275,29 +276,40 @@ function ExpandedWorkGroupEntries({
 const workEntryKey = (entry: TimelineWorkEntry) => entry.id;
 
 export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
-  const { isCompacting, isPreparingWorktree, backgroundWorktreeSetup } =
+  const { isCompacting, isPreparingWorktree, backgroundWorktreeSetup, threadStatusPill } =
     use(TimelineRowActivityCtx);
   const compacting = row.compacting === true || isCompacting;
   const shimmer = isPreparingWorktree || compacting;
+  // The sidebar's own status says when the turn is blocked on the user. The row keeps
+  // the turn's timer, but the needs mark replaces the running spinner.
+  const needsUser = resolveBlockedThreadStatus(threadStatusPill);
   const label = isPreparingWorktree ? (
     "Setting up worktree…"
   ) : compacting ? (
     <CompactingLabel createdAt={row.createdAt} />
   ) : row.createdAt ? (
     <>
-      <span className="text-(--accent-ink)">Running</span>
+      <span className={needsUser ? THREAD_STATE_TEXT_CLASS.needs : "text-(--accent-ink)"}>
+        {needsUser?.label ?? "Running"}
+      </span>
       <span>
         {" "}
         · <WorkingTimer createdAt={row.createdAt} />
       </span>
     </>
+  ) : needsUser ? (
+    <span className={THREAD_STATE_TEXT_CLASS.needs}>{needsUser.label}</span>
   ) : (
     "Running"
   );
   return (
     <div className="group/timeline-row">
       <div className="flex min-h-7 min-w-0 items-center gap-2 px-2 text-body text-(--t2) tabular-nums">
-        <StreamingGlyph />
+        {needsUser ? (
+          <ThreadStateGlyph state="needs" className={THREAD_STATE_TEXT_CLASS.needs} />
+        ) : (
+          <StreamingGlyph />
+        )}
         <span
           ref={shimmer ? observeVisibleAnimation : undefined}
           className="relative shrink-0 overflow-hidden whitespace-nowrap"

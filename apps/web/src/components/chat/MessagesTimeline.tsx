@@ -96,6 +96,7 @@ import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { type HandoffTimelineRun } from "./V2LifecycleRow";
+import type { ThreadStatusPill } from "../Sidebar.logic";
 import { SubagentParentHeader } from "./SubagentParentHeader";
 import { TimelineSystemDivider } from "./TimelineSystemDivider";
 
@@ -238,6 +239,8 @@ interface MessagesTimelineProps {
   awaitingUser?: "approval" | "input" | null;
   /** Which request is waiting, so a second one of the same kind is announced too. */
   awaitingRequestId?: string | null;
+  /** The thread's status as the sidebar derives it; the live row shows its needs mark. */
+  threadStatusPill?: ThreadStatusPill | null;
   footer?: ReactNode;
 
   listRef: React.RefObject<LegendListRef | null>;
@@ -351,6 +354,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   isCompacting = false,
   awaitingUser = null,
   awaitingRequestId = null,
+  threadStatusPill = null,
   listRef,
   timelineEntries,
   findOpen = false,
@@ -1084,6 +1088,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     isRevertingCheckpoint,
     backgroundWorktreeSetup,
     awaitingUser: awaitingUser !== null,
+    threadStatusPill,
     isPreparingWorktree,
     latestRunId: latestRun?.runId ?? null,
   };
@@ -1108,7 +1113,11 @@ const ConversationTimeline = memo(function ConversationTimeline({
       )
     ) : (
       <div className="messages-timeline-row-frame">
-        <div className={parentThreadLink.sideChat ? "chat-content-lane pt-1 sm:pt-2" : "chat-content-lane"}>
+        <div
+          className={
+            parentThreadLink.sideChat ? "chat-content-lane pt-1 sm:pt-2" : "chat-content-lane"
+          }
+        >
           {parentThreadLink.sideChat ? (
             <TimelineSystemDivider
               label="Context from"
