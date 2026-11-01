@@ -20,10 +20,16 @@ import type { HoustonNightShiftSettings } from "@t3tools/contracts/houston/night
 import type { ProviderReadiness } from "@t3tools/contracts/houston/providerReadiness";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
+import * as GitHubAppSignIn from "@t3tools/source-control-github/server/GitHubAppSignIn";
+import * as GitHubCredentials from "@t3tools/source-control-github/server/GitHubCredentials";
+import * as GitHubQuota from "@t3tools/source-control-github/server/GitHubQuota";
+import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
-import { HttpClient } from "effect/http";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import * as SqlClient from "effect/sql/SqlClient";
 import { TestClock } from "effect/testing";
 
@@ -45,8 +51,11 @@ import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService
 import * as Scheduler from "../../scheduling/Scheduler.ts";
 import * as SecretRequests from "../../secrets/SecretRequests.ts";
 import * as ServerSettings from "../../serverSettings.ts";
+import * as VcsProcess from "../../vcs/VcsProcess.ts";
 import { HostedLaunch } from "../baseDir.ts";
 import * as HoustonHarnessStore from "../harnessReview/Store.ts";
+import * as HoustonBuildSlot from "../mergeQueue/BuildSlot.ts";
+import * as HoustonMergeVerifier from "../mergeQueue/Verifier.ts";
 import {
   ANTIGRAVITY,
   CLAUDE,
@@ -72,6 +81,8 @@ import {
   type UpNextTask,
 } from "./Host.ts";
 import * as KeepAwake from "./KeepAwake.ts";
+import * as Landing from "./landing/Landing.ts";
+import { NightShiftCi, NightShiftLandingQueue } from "./landing/Ports.ts";
 import { defaultSettings } from "./rules.ts";
 import * as Runner from "./Runner.ts";
 import { layerClaim, layerHoustonScheduledTaskRunner } from "./ScheduledTaskRunner.ts";
@@ -159,6 +170,62 @@ export interface KitState {
   readonly pullRequestStates: Map<number, "open" | "closed" | "merged">;
   /** Each pull request state read, by number. */
   readonly pullRequestReads: Array<number>;
+  /** GitHub's REST API as landing reaches it through upstream's GitHubRest. */
+  readonly github: GitHubFake;
+  /** Check reads by pull request number, as upstream's pull request service answers them. */
+  readonly ciChecks: Map<number, ReadonlyArray<CiCheck>>;
+  /** Each CI read, by pull request number. */
+  readonly ciReads: Array<number>;
+  /** Branches checked out in a managed worktree of the project. */
+  readonly managed: Set<string>;
+  /** The merge queue as landing reaches it. */
+  readonly queue: QueueFake;
+  /** Task statuses by key, as the report reads them for picks. */
+  readonly backlogStatuses: Map<string, string>;
+  /** Comments landing added to tasks: `<key>|<author>|<body>`. */
+  readonly taskComments: Array<string>;
+  /** Every git process run through VcsProcess: its arguments and GIT_CONFIG_* keys. */
+  readonly gitRuns: Array<{
+    readonly args: ReadonlyArray<string>;
+    readonly config: ReadonlyArray<string>;
+  }>;
+}
+
+export interface CiCheck {
+  readonly name: string;
+  readonly status: "passed" | "failed" | "pending";
+  readonly url: string | null;
+}
+
+export interface GitHubRequest {
+  readonly method: string;
+  readonly path: string;
+  readonly body: any;
+}
+
+export interface GitHubFake {
+  readonly requests: Array<GitHubRequest>;
+  nextNumber: number;
+  /** Answers the next pull request create with this status and message. */
+  createFailure: { readonly status: number; readonly message: string } | null;
+  /** Workflow run statuses by run id. */
+  readonly runs: Map<number, "completed" | "in_progress">;
+  rerunRefused: boolean;
+  closeFailure: string | null;
+}
+
+export interface QueueFake {
+  /** `enqueue:<n>:after:<m|none>:owner:<thread>`, `dequeue:<n>`, in order. */
+  readonly ops: Array<string>;
+  readonly queued: Set<number>;
+  enqueueFailure: string | null;
+  /** The merge queue log: pushes and merges. */
+  readonly log: Array<{
+    readonly kind: string;
+    readonly refName: string;
+    readonly newSha: string | null;
+    readonly at: string;
+  }>;
 }
 
 const READY: ProviderReadiness = { state: "ready" };
@@ -202,21 +269,150 @@ export const freshState = (): KitState => ({
   doneSince: new Set(),
   pullRequestStates: new Map(),
   pullRequestReads: [],
+  github: {
+    requests: [],
+    nextNumber: 101,
+    createFailure: null,
+    runs: new Map(),
+    rerunRefused: false,
+    closeFailure: null,
+  },
+  ciChecks: new Map(),
+  ciReads: [],
+  managed: new Set(),
+  queue: { ops: [], queued: new Set(), enqueueFailure: null, log: [] },
+  backlogStatuses: new Map(),
+  taskComments: [],
+  gitRuns: [],
 });
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+
+/** api.github.com as landing uses it; every other host is refused. */
+const answerGitHub = (github: GitHubFake, method: string, path: string, body: any): Response => {
+  github.requests.push({ method, path, body });
+  const pulls = /^\/repos\/([^/]+\/[^/]+)\/pulls$/.exec(path);
+  if (method === "POST" && pulls !== null) {
+    if (github.createFailure !== null) {
+      const failure = github.createFailure;
+      github.createFailure = null;
+      return json({ message: failure.message }, failure.status);
+    }
+    const number = github.nextNumber++;
+    return json({ number, html_url: `https://github.com/${pulls[1]}/pull/${number}` }, 201);
+  }
+  const pull = /^\/repos\/([^/]+\/[^/]+)\/pulls\/(\d+)$/.exec(path);
+  if (method === "PATCH" && pull !== null) {
+    if (body?.state === "closed" && github.closeFailure !== null) {
+      return json({ message: github.closeFailure }, 403);
+    }
+    return json({
+      number: Number(pull[2]),
+      html_url: `https://github.com/${pull[1]}/pull/${pull[2]}`,
+    });
+  }
+  const comment = /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)\/comments$/.exec(path);
+  if (method === "POST" && comment !== null) return json({ id: 1 }, 201);
+  const rerun = /^\/repos\/[^/]+\/[^/]+\/actions\/runs\/(\d+)\/rerun-failed-jobs$/.exec(path);
+  if (method === "POST" && rerun !== null) {
+    return github.rerunRefused ? json({ message: "Resource not accessible" }, 403) : json({}, 201);
+  }
+  const run = /^\/repos\/[^/]+\/[^/]+\/actions\/runs\/(\d+)$/.exec(path);
+  if (method === "GET" && run !== null) {
+    const status = github.runs.get(Number(run[1]));
+    return status === undefined
+      ? json({ message: "Not Found" }, 404)
+      : json({ id: Number(run[1]), status });
+  }
+  return json({ message: `the Night shift GitHub fake has no answer for ${method} ${path}` }, 404);
+};
 
 const layerRecordingHttp = (state: KitState) =>
   Layer.succeed(
     HttpClient.HttpClient,
-    HttpClient.make((request) => {
-      state.httpRequests.push(`${request.method} ${request.url}`);
-      return Effect.die(`Night shift tests answer no HTTP request: ${request.url}`);
-    }),
+    HttpClient.make((request) =>
+      Effect.sync(() => {
+        state.httpRequests.push(`${request.method} ${request.url}`);
+        const url = new URL(request.url);
+        if (url.hostname !== "api.github.com") {
+          throw new Error(`Night shift tests answer no HTTP request: ${request.url}`);
+        }
+        const body =
+          request.body._tag === "Uint8Array"
+            ? JSON.parse(new TextDecoder().decode(request.body.body))
+            : undefined;
+        return HttpClientResponse.fromWeb(
+          request,
+          answerGitHub(state.github, request.method, url.pathname, body),
+        );
+      }),
+    ),
   );
+
+/** Upstream's GitHubRest with a Settings credential over the kit's HTTP client. */
+const layerGitHubRest = GitHubRest.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      Layer.succeed(
+        GitHubCredentials.GitHubCredentials,
+        GitHubCredentials.GitHubCredentials.of({
+          get: (host) =>
+            Effect.succeed({
+              host,
+              token: Redacted.make("ghp_night_shift_test_token"),
+              source: "settings" as const,
+              fingerprint: `${host}:settings`,
+            }),
+          saved: () => Effect.succeedNone,
+          fingerprint: (host, token) => Effect.succeed(`${host}:${token.length}`),
+          invalidate: () => Effect.void,
+        }),
+      ),
+      Layer.mock(GitHubAppSignIn.GitHubAppSignIn)({
+        enabled: false,
+        token: () => Effect.succeedNone,
+        invalidate: () => Effect.void,
+      }),
+    ),
+  ),
+  Layer.provideMerge(GitHubQuota.layer),
+  Layer.provideMerge(SourceControlRateLimit.layer),
+);
+
+/** The real VcsProcess, recording each git process's arguments and command-scope config keys. */
+const layerRecordingVcs = (state: KitState) =>
+  Layer.effect(
+    VcsProcess.VcsProcess,
+    Effect.gen(function* () {
+      const real = yield* VcsProcess.VcsProcess;
+      return VcsProcess.VcsProcess.of({
+        run: (input) =>
+          Effect.suspend(() => {
+            const env = input.env ?? {};
+            state.gitRuns.push({
+              args: input.args,
+              config: Object.keys(env)
+                .filter((key) => key.startsWith("GIT_CONFIG_KEY_"))
+                .map((key) => String(env[key])),
+            });
+            return real.run(input);
+          }),
+      });
+    }),
+  ).pipe(Layer.provide(VcsProcess.layer));
 
 export interface KitOptions {
   readonly databaseFile?: string;
   /** Whether the runner recovers and ticks on its own, as in the server. */
   readonly serverRunner?: boolean;
+  /** The server's base dir; a temporary one when absent. */
+  readonly baseDir?: string;
+  /** Whether the server runs as the desktop app's hosted server (v1's database sits beside it). */
+  readonly hosted?: boolean;
 }
 
 export const makeKit = Effect.fn("NightShiftKit.make")(function* (
@@ -348,7 +544,47 @@ const layerHostDoubles = (state: KitState) =>
     ),
     Layer.succeed(
       NightShiftMergeQueue,
-      NightShiftMergeQueue.of({ verificationCommand: () => Effect.sync(() => state.verification) }),
+      NightShiftMergeQueue.of({
+        verificationCommand: () => Effect.sync(() => state.verification),
+        log: (_projectId, since) =>
+          Effect.sync(() => state.queue.log.filter((row) => row.at >= since)),
+      }),
+    ),
+    Layer.succeed(
+      NightShiftCi,
+      NightShiftCi.of({
+        checks: (_projectId, _root, number) =>
+          Effect.suspend(() => {
+            state.ciReads.push(number);
+            const checks = state.ciChecks.get(number);
+            return checks === undefined
+              ? Effect.fail(`GitHub could not be read for #${number}`)
+              : Effect.succeed(checks);
+          }),
+      }),
+    ),
+    Layer.succeed(
+      NightShiftLandingQueue,
+      NightShiftLandingQueue.of({
+        managedBranches: () => Effect.sync(() => new Set(state.managed) as ReadonlySet<string>),
+        queued: () => Effect.sync(() => new Set(state.queue.queued) as ReadonlySet<number>),
+        enqueue: (input) =>
+          Effect.suspend(() => {
+            if (state.queue.enqueueFailure !== null) {
+              return Effect.fail(state.queue.enqueueFailure);
+            }
+            state.queue.ops.push(
+              `enqueue:${input.number}:after:${input.dependsOn ?? "none"}:owner:${input.ownerThreadId}`,
+            );
+            state.queue.queued.add(input.number);
+            return Effect.void;
+          }),
+        dequeue: (_projectId, number) =>
+          Effect.sync(() => {
+            state.queue.ops.push(`dequeue:${number}`);
+            state.queue.queued.delete(number);
+          }),
+      }),
     ),
     Layer.succeed(
       NightShiftBacklog,
@@ -358,6 +594,11 @@ const layerHostDoubles = (state: KitState) =>
         text: (key) =>
           Effect.sync(() => state.backlog.find((task) => task.key === key)?.text ?? ""),
         doneSince: (key) => Effect.sync(() => state.doneSince.has(key)),
+        status: (key) => Effect.sync(() => state.backlogStatuses.get(key) ?? null),
+        comment: (key, body, author) =>
+          Effect.sync(() => {
+            state.taskComments.push(`${key}|${author}|${body}`);
+          }),
       }),
     ),
     Layer.succeed(
@@ -487,7 +728,14 @@ export const layerKit = (kit: Kit) => {
       ),
     ),
   );
+  // Landing over the merge queue's slot and verifier, upstream's GitHubRest and the real git.
+  const landing = Landing.layer.pipe(
+    Layer.provideMerge(Layer.mergeAll(HoustonMergeVerifier.layer, HoustonBuildSlot.layer)),
+    Layer.provideMerge(layerGitHubRest),
+    Layer.provideMerge(layerRecordingVcs(state)),
+  );
   return Service.layer.pipe(
+    Layer.provideMerge(landing),
     Layer.provideMerge(scheduledTasks),
     Layer.provideMerge(Layer.mergeAll(RuntimeLayer.layerProjectService, ProjectStore.layer)),
     Layer.provideMerge(ProjectionStore.layer),
@@ -500,9 +748,14 @@ export const layerKit = (kit: Kit) => {
     Layer.provideMerge(layerProjectMetadata),
     Layer.provideMerge(kit.database),
     Layer.provideMerge(ServerSettings.layerTest()),
-    Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "houston-night-test-" })),
+    Layer.provideMerge(
+      ServerConfig.layerTest(
+        process.cwd(),
+        kit.options.baseDir ?? { prefix: "houston-night-test-" },
+      ),
+    ),
     Layer.provideMerge(NodeServices.layer),
-    Layer.provideMerge(Layer.succeed(HostedLaunch, false)),
+    Layer.provideMerge(Layer.succeed(HostedLaunch, kit.options.hosted ?? false)),
     Layer.provideMerge(layerRecordingHttp(state)),
   );
 };
@@ -522,7 +775,7 @@ export const runKit = <A, E>(
     return yield* body.pipe(Effect.provideContext(context));
   }).pipe(Effect.scoped);
 
-const git = (cwd: string, ...args: ReadonlyArray<string>) =>
+export const git = (cwd: string, ...args: ReadonlyArray<string>) =>
   NodeChildProcess.execFileSync("git", [...args], {
     cwd,
     encoding: "utf8",
@@ -571,6 +824,29 @@ export const makeRepository = (
     git(root, "remote", "add", "origin", origin.url);
   }
   return { root, bare, head };
+};
+
+/** Names `origin` as github.com `repository` while git still reaches the bare repository. */
+export const githubOrigin = (fixture: Fixture, repository = "o/r") => {
+  const url = `https://github.com/${repository}.git`;
+  git(fixture.root, "remote", "set-url", "origin", url);
+  git(fixture.root, "config", `url.${fixture.bare!}.insteadOf`, url);
+  return url;
+};
+
+/** A worktree of the fixture on a new branch from main with one commit; answers its path and head. */
+export const crewWorktree = (fixture: Fixture, branch: string) => {
+  const path = NodePath.join(NodePath.dirname(fixture.root), branch.replaceAll("/", "-"));
+  git(fixture.root, "worktree", "add", "--quiet", "-b", branch, path, "main");
+  return { path, head: commitIn(path, `${branch} 1`) };
+};
+
+/** Commits one new file in `dir`; answers the new head. */
+export const commitIn = (dir: string, label: string) => {
+  NodeFS.writeFileSync(NodePath.join(dir, `${label.replaceAll(/[^a-z0-9]/gi, "-")}.txt`), label);
+  git(dir, "add", ".");
+  git(dir, "commit", "--quiet", "-m", label);
+  return git(dir, "rev-parse", "HEAD");
 };
 
 /** Moves `branch` on the bare origin to a new commit made in a scratch clone. */
@@ -667,6 +943,90 @@ export const seedNightShift = Effect.fn("NightShiftKit.seedNightShift")(function
   return created.task;
 });
 
+export const LANDING_ORCHESTRATOR = ThreadId.make("land-orchestrator");
+export const LANDING_WORKER = ThreadId.make("land-worker");
+export const LANDING_REVIEWER = ThreadId.make("land-reviewer");
+
+export interface LandingRun {
+  readonly fixture: Fixture;
+  readonly runId: number;
+  readonly projectId: ProjectId;
+  readonly worktree: { readonly path: string; readonly head: string };
+}
+
+/** A live run whose origin is a bare repository named github.com/o/r; a worker on `t3/fix-ws`. */
+export const seedLandingRun = Effect.fn("NightShiftKit.seedLandingRun")(function* (
+  kit: Kit,
+  name: string,
+  patch: Partial<HoustonNightShiftSettings> = {},
+) {
+  const fixture = makeRepository(name, { kind: "bare" });
+  githubOrigin(fixture);
+  const projectId = yield* createProject(name, fixture.root);
+  yield* seedNightShift(projectId, { checks: [], ...patch });
+  const store = yield* Store.HoustonNightShiftStore;
+  const stored = yield* store.settings(projectId);
+  const run = yield* store.openRun({
+    projectId,
+    trigger: "manual",
+    scheduledTaskId: null,
+    settings: stored!.settings,
+    startedAt: NOW,
+    wrapUpAt: "2026-10-31T06:45:00.000Z",
+    hardStopAt: "2026-10-31T07:30:00.000Z",
+    operation: "test",
+  });
+  const heads: Record<string, string> = {};
+  for (const line of git(fixture.root, "ls-remote", "--heads", "origin").split("\n")) {
+    const [sha, ref] = line.trim().split(/\s+/);
+    if (sha !== undefined && ref !== undefined) heads[ref] = sha;
+  }
+  yield* store.markRunning(run.id, {
+    threadId: LANDING_ORCHESTRATOR,
+    worktreePath: "/worktrees/night",
+    branch: `houston/night/${run.id}`,
+    remoteHeads: heads,
+  });
+  const worktree = crewWorktree(fixture, "t3/fix-ws");
+  kit.state.managed.add("t3/fix-ws");
+  kit.state.managed.add(`houston/night/${run.id}`);
+  for (const [threadId, role, branch] of [
+    [LANDING_ORCHESTRATOR, "orchestrator", `houston/night/${run.id}`],
+    [LANDING_WORKER, "implementation", "t3/fix-ws"],
+    [LANDING_REVIEWER, "review", null],
+  ] as const) {
+    yield* store.addCrew({
+      runId: run.id,
+      threadId,
+      taskId: role === "orchestrator" ? null : `task:${threadId}`,
+      parentThreadId: role === "orchestrator" ? null : LANDING_ORCHESTRATOR,
+      role,
+      providerInstanceId: "claudeAgent",
+      requestedInstanceId: null,
+      worktreePath: branch === "t3/fix-ws" ? worktree.path : null,
+      branch,
+      startedAt: NOW,
+      endedAt: null,
+    });
+  }
+  return { fixture, runId: run.id, projectId, worktree } satisfies LandingRun;
+});
+
+/** `houston_night_pr`'s input for the worker's branch at its head. */
+export const landingInput = (seeded: LandingRun, patch: Record<string, unknown> = {}) => ({
+  runId: seeded.runId,
+  callerThreadId: LANDING_ORCHESTRATOR,
+  head: seeded.worktree.head,
+  branch: "t3/fix-ws",
+  title: "Fix the websocket retry",
+  body: "Retries a dropped socket.",
+  theme: "reliability",
+  plans: [] as ReadonlyArray<number>,
+  builtBy: [LANDING_WORKER] as ReadonlyArray<ThreadId>,
+  visible: false,
+  ...patch,
+});
+
 /** Runs effects the orchestrator queued, as the server's worker would. */
 export const settleOrchestrator = Effect.gen(function* () {
   const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -712,4 +1072,4 @@ export const sql = SqlClient.SqlClient;
 export const kindOf = (error: unknown) => (error as { readonly kind?: string }).kind;
 export const messageOf = (error: unknown) => (error as { readonly message?: string }).message ?? "";
 
-export { CrewGate, Runner, Service, Store };
+export { CrewGate, Landing, Runner, Service, Store };

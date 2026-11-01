@@ -24,7 +24,7 @@ import * as SqlitePersistence from "../../../persistence/Sqlite.ts";
 import { defaultSettings } from "../rules.ts";
 import { HoustonNightShiftRunner } from "../Runner.ts";
 import * as Store from "../Store.ts";
-import { LANDING_PENDING } from "./handlers.ts";
+import { HoustonNightLanding } from "../landing/Landing.ts";
 import { NIGHT_TOOLS } from "./tools.ts";
 
 const NOW = "2026-10-30T22:00:00.000Z";
@@ -79,6 +79,8 @@ const layerStore = Store.layer.pipe(
 );
 
 const published: Array<{ readonly runId: number; readonly summary: string }> = [];
+/** Each pull request the tool handed to landing: `<run>|<caller>|<branch>|<head>`. */
+const landed: Array<string> = [];
 
 const layerToolkit = McpHttpServer.layerHoustonNightToolkit.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
@@ -104,6 +106,39 @@ const layerToolkit = McpHttpServer.layerHoustonNightToolkit.pipe(
               Effect.sync(() => published.push({ runId, summary: input.summary })).pipe(
                 Effect.andThen(store.setReport(runId, input)),
               ),
+          } as never);
+        }),
+      ),
+      // Landing's own behaviour is Landing.test.ts's; here it records the hand-off.
+      Layer.effect(
+        HoustonNightLanding,
+        Effect.gen(function* () {
+          const store = yield* Store.HoustonNightShiftStore;
+          return HoustonNightLanding.of({
+            record: (input: {
+              readonly runId: number;
+              readonly callerThreadId: string;
+              readonly branch: string;
+              readonly head: string;
+              readonly title: string;
+            }) =>
+              Effect.gen(function* () {
+                landed.push(`${input.runId}|${input.callerThreadId}|${input.branch}|${input.head}`);
+                const run = yield* store.getRun(input.runId);
+                const entry = yield* store.addEntry({
+                  runId: input.runId,
+                  projectId: run!.projectId,
+                  kind: "pr",
+                  title: input.title,
+                  prNumber: 41,
+                  createdAt: NOW,
+                });
+                return {
+                  entry,
+                  pullRequest: { number: 41, url: "https://github.com/o/r/pull/41" },
+                  push: { branch: input.branch, oldSha: null, newSha: input.head },
+                };
+              }),
           } as never);
         }),
       ),
@@ -258,7 +293,7 @@ describe("night shift ledger tools", () => {
 
   it.effect("ledger tools answer only their run's threads", () =>
     Effect.gen(function* () {
-      yield* seedRun();
+      const runId = yield* seedRun();
       // The orchestrator's ledger calls are accepted; its own verdict is refused.
       for (const name of [
         "houston_night_plan",
@@ -269,13 +304,15 @@ describe("night shift ledger tools", () => {
       ] as const) {
         accepted(yield* call(ORCHESTRATOR, name, VALID[name]), name);
       }
-      // Recording a pull request is landing's (PR 3): refused by name until it ships.
-      refused(
-        yield* call(ORCHESTRATOR, "houston_night_pr", VALID.houston_night_pr),
-        "pr",
-        "unsupported",
-        LANDING_PENDING,
-      );
+      // The orchestrator's pull request is handed to landing, which answers its number and URL.
+      const recorded = yield* call(ORCHESTRATOR, "houston_night_pr", VALID.houston_night_pr);
+      accepted(recorded, "houston_night_pr");
+      assert.equal(recorded.value.entry.kind, "pr");
+      assert.deepEqual(recorded.value.pullRequest, {
+        number: 41,
+        url: "https://github.com/o/r/pull/41",
+      });
+      assert.equal(landed.at(-1), `${runId}|${ORCHESTRATOR}|t3/fix-upload|${"a".repeat(40)}`);
       refused(
         yield* call(ORCHESTRATOR, "houston_night_verdict", VALID.houston_night_verdict),
         "orchestrator verdict",

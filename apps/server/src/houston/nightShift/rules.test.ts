@@ -6,6 +6,7 @@ import {
   defaultSettings,
   idleDecision,
   pickTasks,
+  runCost,
   validateSettings,
   validateWindow,
 } from "./rules.ts";
@@ -304,5 +305,45 @@ describe("night shift backlog picks", () => {
     expect(pickTasks({ projectId: "p", max: 1, backlog: upNext, earlierPicks: new Map() })).toEqual(
       [7],
     );
+  });
+});
+
+describe("night shift cost", () => {
+  const hour = 3_600_000;
+  it("cost counts thread-hours and tokens and never stops a run", () => {
+    const cost = runCost({
+      crew: [
+        { threadId: "o", providerInstanceId: "claudeAgent", startedAtMs: 0, endedAtMs: 8 * hour },
+        { threadId: "w1", providerInstanceId: "codex", startedAtMs: hour, endedAtMs: 3 * hour },
+        // Still live: counted to now.
+        { threadId: "w2", providerInstanceId: "codex", startedAtMs: 6 * hour, endedAtMs: null },
+      ],
+      // The server was stopped from 4 h to 6 h: no member is charged for it.
+      downtime: [{ fromMs: 4 * hour, toMs: 6 * hour }],
+      usage: [
+        { providerInstanceId: "claudeAgent", tokens: 1_200 },
+        { providerInstanceId: "claudeAgent", tokens: 800 },
+        { providerInstanceId: "codex", tokens: null },
+      ],
+      nowMs: 7 * hour,
+    });
+    expect(cost.members).toEqual([
+      { threadId: "o", providerInstanceId: "claudeAgent", hours: 6 },
+      { threadId: "w1", providerInstanceId: "codex", hours: 2 },
+      { threadId: "w2", providerInstanceId: "codex", hours: 1 },
+    ]);
+    expect(cost.instances).toEqual({ claudeAgent: 6, codex: 3 });
+    // Tokens where the provider reported them; "not tracked" for a provider without any.
+    expect(cost.tokens).toEqual({ claudeAgent: 2_000, codex: "not tracked" });
+
+    // A run whose cost exceeds any amount is never stopped by it: cost has no verdict to give.
+    const huge = runCost({
+      crew: [{ threadId: "o", providerInstanceId: "x", startedAtMs: 0, endedAtMs: null }],
+      downtime: [],
+      usage: [{ providerInstanceId: "x", tokens: Number.MAX_SAFE_INTEGER }],
+      nowMs: 10_000 * hour,
+    });
+    expect(Object.keys(huge).toSorted()).toEqual(["instances", "members", "tokens"]);
+    expect(huge.instances.x).toBe(10_000);
   });
 });

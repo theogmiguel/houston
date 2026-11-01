@@ -142,7 +142,11 @@ describe("night shift service", () => {
           });
           const before = yield* nightTask(projectId);
           const stale = yield* Effect.flip(
-            night.update({ projectId, settings: { ...settings, liveWorkers: 9 }, expectedRevision: 2 }),
+            night.update({
+              projectId,
+              settings: { ...settings, liveWorkers: 9 },
+              expectedRevision: 2,
+            }),
           );
           assert.equal(kindOf(stale), "conflict");
           assert.include(messageOf(stale), "revision 3");
@@ -226,7 +230,9 @@ describe("night shift service", () => {
           const taskP = (yield* nightTask(projectP))!;
           yield* night.delete({ projectId: projectP });
           const count = (table: string, column: string, value: string | number) =>
-            db<{ n: number }>`SELECT COUNT(*) AS n FROM ${db(table)} WHERE ${db(column)} = ${value}`.pipe(
+            db<{
+              n: number;
+            }>`SELECT COUNT(*) AS n FROM ${db(table)} WHERE ${db(column)} = ${value}`.pipe(
               Effect.map((rows) => rows[0]!.n),
             );
           assert.isUndefined(yield* store.settings(projectP));
@@ -261,6 +267,84 @@ describe("night shift service", () => {
           assert.isDefined(yield* store.settings(projectR));
           assert.equal(yield* count("houston_night_runs", "project_id", projectR), 1);
           assert.isTrue(NodeFS.existsSync(Store.runFolder(config.baseDir, runR.runId)));
+        }),
+      );
+    }),
+  );
+
+  it.effect("a decision is answered once", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("decide");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const night = yield* service;
+          const runner = yield* Runner.HoustonNightShiftRunner;
+          const store = yield* Store.HoustonNightShiftStore;
+          const config = yield* ServerConfig.ServerConfig;
+          const fixture = makeRepository("decide", { kind: "bare" });
+          const projectId = yield* createProject("decide", fixture.root);
+          yield* seedNightShift(projectId);
+          const first = yield* runner.start({
+            projectId,
+            trigger: "manual",
+            scheduledTaskId: null,
+            durationMinutes: 120,
+            operation: "runNow",
+          });
+          const decision = yield* store.addEntry({
+            runId: first.runId,
+            projectId,
+            kind: "decision",
+            title: "Keep the v1 importer?",
+            body: "Keep it or drop it?",
+            detail: { options: ["keep", "drop"], recommendation: "keep" },
+            createdAt: "2026-10-30T22:10:00.000Z",
+          });
+          const lesson = yield* store.addEntry({
+            runId: first.runId,
+            projectId,
+            kind: "lesson",
+            title: "Use the fake clock",
+            createdAt: "2026-10-30T22:11:00.000Z",
+          });
+          yield* runner.stop(first.runId);
+
+          // A choice not offered, and an entry that is not a decision, are invalid.
+          const notOffered = yield* Effect.flip(
+            night.decide({ entryId: decision.id, choice: "maybe" }),
+          );
+          assert.equal(kindOf(notOffered), "invalid");
+          assert.include(messageOf(notOffered), "maybe");
+          const notDecision = yield* Effect.flip(
+            night.decide({ entryId: lesson.id, choice: "keep" }),
+          );
+          assert.equal(kindOf(notDecision), "invalid");
+          const missing = yield* Effect.flip(night.decide({ entryId: 999_999, choice: "keep" }));
+          assert.equal(kindOf(missing), "not_found");
+          assert.include(messageOf(missing), "999999");
+
+          const answered = yield* night.decide({ entryId: decision.id, choice: "drop" });
+          assert.equal(answered.choice, "drop");
+          assert.isString(answered.decidedAt);
+          const again = yield* Effect.flip(night.decide({ entryId: decision.id, choice: "keep" }));
+          assert.equal(kindOf(again), "conflict");
+          assert.include(messageOf(again), "drop");
+          assert.equal((yield* store.getEntry(decision.id))?.choice, "drop");
+
+          // The answer reaches the next run's brief.
+          const second = yield* runner.start({
+            projectId,
+            trigger: "manual",
+            scheduledTaskId: null,
+            durationMinutes: 120,
+            operation: "runNow",
+          });
+          const brief = NodeFS.readFileSync(
+            `${Store.runFolder(config.baseDir, second.runId)}/brief.md`,
+            "utf8",
+          );
+          assert.include(brief, `decision answered "drop": Keep the v1 importer?`);
         }),
       );
     }),
