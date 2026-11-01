@@ -814,6 +814,7 @@ const make = Effect.gen(function* () {
             check.status === "failed" &&
             flaky.includes(check.name) &&
             !detail.ci.reruns.includes(key) &&
+            !detail.ci.rerunRefused.includes(key) &&
             workflowRun !== null
           ) {
             const origin = yield* originOnce;

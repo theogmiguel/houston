@@ -567,6 +567,44 @@ describe("night shift landing", () => {
     }),
   );
 
+  it.effect("a re-run github refused is not read again", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("land-refused");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const seeded = yield* seedRun(kit, "land-refused");
+          const landing = yield* Landing.HoustonNightLanding;
+          const store = yield* Store.HoustonNightShiftStore;
+          yield* store.addEntry({
+            runId: seeded.runId,
+            projectId: seeded.projectId as never,
+            kind: "flaky",
+            title: "The e2e suite flakes",
+            detail: { check: "e2e" },
+            createdAt: NOW,
+          });
+          const recorded = yield* landing.record(recordInput(seeded));
+          const sent = (suffix: RegExp) =>
+            kit.state.github.requests.filter((request) => suffix.test(request.path)).length;
+          kit.state.github.runs.set(77, "completed");
+          kit.state.github.rerunRefused = true;
+          kit.state.ciChecks.set(recorded.pullRequest.number, [
+            { name: "e2e", status: "failed", url: "https://github.com/o/r/actions/runs/77/job/1" },
+          ]);
+
+          yield* landing.readCi(seeded.runId);
+          assert.equal(sent(/\/rerun-failed-jobs$/), 1);
+          assert.equal(sent(/\/actions\/runs\/77$/), 1);
+          yield* landing.readCi(seeded.runId);
+          yield* landing.readCi(seeded.runId);
+          assert.equal(sent(/\/rerun-failed-jobs$/), 1, "the refused re-run is not sent again");
+          assert.equal(sent(/\/actions\/runs\/77$/), 1, "its workflow run is not read again");
+        }),
+      );
+    }),
+  );
+
   it.effect("merge queue output enqueues passed pull requests unless held", () =>
     Effect.gen(function* () {
       const kit = yield* makeKit("land-queue");
