@@ -5,16 +5,21 @@ import { randomUUID } from "../lib/utils";
 import { resolveStorage } from "../lib/storage";
 import {
   type LayoutNode,
+  type Side,
   type ThreadNode,
   appendThread,
   arrangeThreads,
+  findThread,
   gridPreset,
+  insertBeside,
   insertThreadAtSlot,
   isGridPreset,
   isLayoutNode,
+  moveThread,
   preorderThreads,
   reconcileThreads,
   removeThread,
+  replaceThread,
   sameLayout,
   swapThread,
   threadLeaf,
@@ -89,6 +94,16 @@ export interface GridStoreState {
   setGridHidden: (gridId: string, hidden: boolean) => void;
   /** Swaps two panes so the dragged thread takes the target's place. */
   reorderGridThreads: (gridId: string, draggedThreadId: string, targetThreadId: string) => void;
+  /**
+   * Drops a thread onto a cell: the centre replaces it, an edge splits toward
+   * that side. Returns false when the grid is full and the drop would add a cell.
+   */
+  moveThreadToCell: (input: {
+    threadId: string;
+    targetGridId: string;
+    targetThreadId: string;
+    side: Side;
+  }) => boolean;
   /** Reflows the grid to the automatic arrangement for its thread count. */
   autoArrangeGrid: (gridId: string) => void;
   /** Removes a held or closed thread from its grid, remembering where it sat. */
@@ -568,6 +583,52 @@ export const useGridStore = create<GridStoreState>()(
               : withTree(grid, swapThread(grid.tree, draggedThreadId, targetThreadId)),
           ),
         })),
+      moveThreadToCell: (input) => {
+        const state = get();
+        const target = gridById(state.grids, input.targetGridId);
+        if (target === null || target.tree === null) return false;
+        if (findThread(target.tree, input.targetThreadId) === null) return false;
+        const sourceInTarget = findThread(target.tree, input.threadId) !== null;
+        if (
+          input.side !== "center" &&
+          !sourceInTarget &&
+          preorderThreads(target.tree).length >= MAX_GRID_THREADS
+        ) {
+          return false;
+        }
+        let grids = state.grids;
+        const sourceGrid = grids.find(
+          (grid) => grid.tree !== null && findThread(grid.tree, input.threadId) !== null,
+        );
+        if (sourceGrid !== undefined && sourceGrid.id !== target.id) {
+          grids = updateGrid(grids, sourceGrid.id, (grid) =>
+            withTree(grid, grid.tree === null ? null : removeThread(grid.tree, input.threadId)),
+          );
+        }
+        const current = gridById(grids, target.id);
+        if (current === null || current.tree === null) return false;
+        const nextTree =
+          input.side === "center"
+            ? sourceInTarget
+              ? (swapThread(current.tree, input.threadId, input.targetThreadId) ?? current.tree)
+              : replaceThread(current.tree, input.targetThreadId, threadLeaf(input.threadId))
+            : sourceInTarget
+              ? moveThread(current.tree, input.threadId, input.targetThreadId, input.side)
+              : insertBeside(
+                  current.tree,
+                  input.targetThreadId,
+                  threadLeaf(input.threadId),
+                  input.side,
+                );
+        set({
+          grids: updateGrid(grids, target.id, (grid) => ({
+            ...withTree(grid, nextTree),
+            focusedThreadId: input.threadId,
+          })),
+          closedCells: forgetClosedCellEverywhere(state.closedCells, input.threadId),
+        });
+        return true;
+      },
       autoArrangeGrid: (gridId) =>
         set((state) => ({
           grids: updateGrid(state.grids, gridId, (grid) => {
