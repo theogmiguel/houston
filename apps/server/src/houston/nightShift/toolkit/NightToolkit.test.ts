@@ -82,71 +82,91 @@ const published: Array<{ readonly runId: number; readonly summary: string }> = [
 /** Each pull request the tool handed to landing: `<run>|<caller>|<branch>|<head>`. */
 const landed: Array<string> = [];
 
-const layerToolkit = McpHttpServer.layerHoustonNightToolkit.pipe(
-  Layer.provideMerge(McpServer.McpServer.layer),
-  Layer.provide(
-    Layer.mergeAll(
-      Layer.mock(ThreadManagementService.ThreadManagementService)({
-        getThreadShell: (threadId) =>
-          Effect.succeed({
-            ...liveThreadShell(threadId),
-            projectId,
-            providerInstanceId: ProviderInstanceId.make("claudeAgent"),
-          }),
+/** The real store, yielding to other fibers after each read of a run's entries, as a busy
+ * server's scheduler may between a check and the write that follows it. */
+const layerYieldingStore = Layer.merge(
+  layerStore,
+  Layer.effect(
+    Store.HoustonNightShiftStore,
+    Effect.map(Store.HoustonNightShiftStore, (real) =>
+      Store.HoustonNightShiftStore.of({
+        ...real,
+        runEntries: (runId) => real.runEntries(runId).pipe(Effect.tap(() => Effect.yieldNow)),
       }),
-      Layer.effect(
-        HoustonNightShiftRunner,
-        Effect.gen(function* () {
-          const store = yield* Store.HoustonNightShiftStore;
-          return HoustonNightShiftRunner.of({
-            reportPublished: (
-              runId: number,
-              input: { readonly reportPath: string; readonly summary: string },
-            ) =>
-              Effect.sync(() => published.push({ runId, summary: input.summary })).pipe(
-                Effect.andThen(store.setReport(runId, input)),
-              ),
-          } as never);
+    ),
+  ).pipe(Layer.provide(layerStore)),
+);
+
+const layerToolkitOver = <E>(store: Layer.Layer<Layer.Success<typeof layerStore>, E>) =>
+  McpHttpServer.layerHoustonNightToolkit.pipe(
+    Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.mock(ThreadManagementService.ThreadManagementService)({
+          getThreadShell: (threadId) =>
+            Effect.succeed({
+              ...liveThreadShell(threadId),
+              projectId,
+              providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+            }),
         }),
-      ),
-      // Landing's own behaviour is Landing.test.ts's; here it records the hand-off.
-      Layer.effect(
-        HoustonNightLanding,
-        Effect.gen(function* () {
-          const store = yield* Store.HoustonNightShiftStore;
-          return HoustonNightLanding.of({
-            evaluateNumber: () => Effect.void,
-            record: (input: {
-              readonly runId: number;
-              readonly callerThreadId: string;
-              readonly branch: string;
-              readonly head: string;
-              readonly title: string;
-            }) =>
-              Effect.gen(function* () {
-                landed.push(`${input.runId}|${input.callerThreadId}|${input.branch}|${input.head}`);
-                const run = yield* store.getRun(input.runId);
-                const entry = yield* store.addEntry({
-                  runId: input.runId,
-                  projectId: run!.projectId,
-                  kind: "pr",
-                  title: input.title,
-                  prNumber: 41,
-                  createdAt: NOW,
-                });
-                return {
-                  entry,
-                  pullRequest: { number: 41, url: "https://github.com/o/r/pull/41" },
-                  push: { branch: input.branch, oldSha: null, newSha: input.head },
-                };
-              }),
-          } as never);
-        }),
+        Layer.effect(
+          HoustonNightShiftRunner,
+          Effect.gen(function* () {
+            const store = yield* Store.HoustonNightShiftStore;
+            return HoustonNightShiftRunner.of({
+              reportPublished: (
+                runId: number,
+                input: { readonly reportPath: string; readonly summary: string },
+              ) =>
+                Effect.sync(() => published.push({ runId, summary: input.summary })).pipe(
+                  Effect.andThen(store.setReport(runId, input)),
+                ),
+            } as never);
+          }),
+        ),
+        // Landing's own behaviour is Landing.test.ts's; here it records the hand-off.
+        Layer.effect(
+          HoustonNightLanding,
+          Effect.gen(function* () {
+            const store = yield* Store.HoustonNightShiftStore;
+            return HoustonNightLanding.of({
+              evaluateNumber: () => Effect.void,
+              record: (input: {
+                readonly runId: number;
+                readonly callerThreadId: string;
+                readonly branch: string;
+                readonly head: string;
+                readonly title: string;
+              }) =>
+                Effect.gen(function* () {
+                  landed.push(
+                    `${input.runId}|${input.callerThreadId}|${input.branch}|${input.head}`,
+                  );
+                  const run = yield* store.getRun(input.runId);
+                  const entry = yield* store.addEntry({
+                    runId: input.runId,
+                    projectId: run!.projectId,
+                    kind: "pr",
+                    title: input.title,
+                    prNumber: 41,
+                    createdAt: NOW,
+                  });
+                  return {
+                    entry,
+                    pullRequest: { number: 41, url: "https://github.com/o/r/pull/41" },
+                    push: { branch: input.branch, oldSha: null, newSha: input.head },
+                  };
+                }),
+            } as never);
+          }),
+        ),
       ),
     ),
-  ),
-  Layer.provideMerge(layerStore),
-);
+    Layer.provideMerge(store),
+  );
+
+const layerToolkit = layerToolkitOver(layerStore);
 
 interface Answer {
   readonly isError: boolean;
@@ -416,6 +436,43 @@ describe("night shift ledger tools", () => {
       refused(yield* plan({}), "the 201st entry", "limit", "200");
       assert.lengthOf(yield* store.runEntries(runId), 200);
     }).pipe(Effect.provide(layerToolkit)),
+  );
+
+  it.effect("the ledger bounds hold under parallel calls", () =>
+    Effect.gen(function* () {
+      const store = yield* Store.HoustonNightShiftStore;
+      const runId = yield* seedRun();
+      const fill = (kind: "decision" | "lesson", count: number) =>
+        Effect.forEach(Array.from({ length: count }), (_, index) =>
+          store.addEntry({ runId, projectId, kind, title: `${kind}${index}`, createdAt: NOW }),
+        );
+      const parallel = (name: (typeof NIGHT_TOOLS)[number]) =>
+        Effect.forEach(Array.from({ length: 4 }), () => call(ORCHESTRATOR, name, VALID[name]), {
+          concurrency: "unbounded",
+        });
+      const kinds = Effect.map(store.runEntries(runId), (rows) => rows.map((row) => row.kind));
+
+      // At 19 decisions, four decisions at once: one is recorded, three name the limit of 20.
+      yield* fill("decision", 19);
+      const decisions = yield* parallel("houston_night_decision");
+      assert.equal(decisions.filter((answer) => !answer.isError).length, 1);
+      for (const answer of decisions.filter((answer) => answer.isError)) {
+        refused(answer, "a parallel 21st decision", "limit", "20");
+      }
+      assert.lengthOf(
+        (yield* kinds).filter((kind) => kind === "decision"),
+        20,
+      );
+
+      // At 199 entries, four plans at once: one is recorded, three name the limit of 200.
+      yield* fill("lesson", 199 - (yield* kinds).length);
+      const plans = yield* parallel("houston_night_plan");
+      assert.equal(plans.filter((answer) => !answer.isError).length, 1);
+      for (const answer of plans.filter((answer) => answer.isError)) {
+        refused(answer, "a parallel 201st entry", "limit", "200");
+      }
+      assert.lengthOf(yield* kinds, 200);
+    }).pipe(Effect.provide(layerToolkitOver(layerYieldingStore))),
   );
 
   it.effect("verdicts come from an independent crew thread", () =>

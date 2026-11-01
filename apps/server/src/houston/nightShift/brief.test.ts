@@ -157,6 +157,38 @@ describe("night shift brief", () => {
     expect(small.text).not.toMatch(/were left out/);
   });
 
+  it("long picks are cut and noted so the whole brief stays within the budget", () => {
+    const pickText = (number: number) => `Start of HOU-${number}. ${"x".repeat(60_000)}`;
+    const picks = [
+      { number: 7, title: "Rework the sync engine", text: pickText(7) },
+      { number: 9, title: "Rewrite the importer", text: pickText(9) },
+    ];
+    for (const digest of [[], Array.from({ length: 3_000 }, (_, index) => `- item ${index}`)]) {
+      const { text } = composeBrief({ ...input, picks, digest });
+      expect(text.length).toBeLessThanOrEqual(HOUSTON_NIGHT_SHIFT_LIMITS.briefChars);
+      for (const { number, title } of picks) {
+        expect(text).toContain(`- HOU-${number}: ${title}`);
+        expect(text).toContain(`> Start of HOU-${number}.`);
+        expect(text).toContain(`read the full text of HOU-${number} with houston_task_get`);
+      }
+      // Houston's rules still close the brief.
+      expect(text.trimEnd().split("\n").at(-1)).toContain("houston_night_pr");
+    }
+    // Fence markers and short lines grow when quoted; the bound still holds.
+    const marked = composeBrief({
+      ...input,
+      picks: [
+        { number: 7, title: "Markers", text: "<<<".repeat(20_000) },
+        { number: 9, title: "Lines", text: "x\n".repeat(30_000) },
+      ],
+    });
+    expect(marked.text.length).toBeLessThanOrEqual(HOUSTON_NIGHT_SHIFT_LIMITS.briefChars);
+    // A pick within its share is kept whole, with no note.
+    const short = composeBrief({ ...input, picks: [picks[0]!, { ...picks[1]!, text: "Short." }] });
+    expect(short.text).toContain("> Short.");
+    expect(short.text).not.toContain("read the full text of HOU-9");
+  });
+
   it("the next brief remembers the project's earlier runs", () => {
     const entry = (id: number, patch: Partial<DigestEntry>): DigestEntry => ({
       id,

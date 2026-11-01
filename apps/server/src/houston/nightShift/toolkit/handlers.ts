@@ -95,34 +95,32 @@ const record = Effect.fn("HoustonNightToolkit.record")(function* (
   },
 ) {
   const store = yield* HoustonNightShiftStore;
-  const existing = yield* store.runEntries(caller.run.id);
-  if (existing.length >= LEDGER.entriesPerRun) {
+  // The bounds are checked in the insert, so parallel calls cannot both take the last place.
+  const added = yield* store.addEntryWithin(
+    {
+      runId: caller.run.id,
+      projectId: caller.run.projectId,
+      authorThreadId: caller.threadId,
+      createdAt: iso(yield* Clock.currentTimeMillis),
+      ...entry,
+    },
+    { entries: LEDGER.entriesPerRun, decisions: LEDGER.decisionsPerRun },
+  );
+  if ("entry" in added) return { entry: toEntry(added.entry) };
+  if (added.entries >= LEDGER.entriesPerRun) {
     return yield* fail(
       "limit",
       tool,
-      `run ${caller.run.id} holds ${existing.length} entries; the limit is ${LEDGER.entriesPerRun} per run`,
-      { limit: LEDGER.entriesPerRun, actual: existing.length },
+      `run ${caller.run.id} holds ${added.entries} entries; the limit is ${LEDGER.entriesPerRun} per run`,
+      { limit: LEDGER.entriesPerRun, actual: added.entries },
     );
   }
-  if (
-    entry.kind === "decision" &&
-    existing.filter((row) => row.kind === "decision").length >= LEDGER.decisionsPerRun
-  ) {
-    return yield* fail(
-      "limit",
-      tool,
-      `run ${caller.run.id} holds ${LEDGER.decisionsPerRun} decisions; the limit is ${LEDGER.decisionsPerRun} per run`,
-      { limit: LEDGER.decisionsPerRun, actual: LEDGER.decisionsPerRun },
-    );
-  }
-  const row = yield* store.addEntry({
-    runId: caller.run.id,
-    projectId: caller.run.projectId,
-    authorThreadId: caller.threadId,
-    createdAt: iso(yield* Clock.currentTimeMillis),
-    ...entry,
-  });
-  return { entry: toEntry(row) };
+  return yield* fail(
+    "limit",
+    tool,
+    `run ${caller.run.id} holds ${added.decisions} decisions; the limit is ${LEDGER.decisionsPerRun} per run`,
+    { limit: LEDGER.decisionsPerRun, actual: added.decisions },
+  );
 });
 
 const decodeDetail = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));

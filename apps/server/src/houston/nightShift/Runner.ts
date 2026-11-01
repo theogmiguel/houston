@@ -62,6 +62,7 @@ import {
   runFolder,
   toJson,
   type LedgerEntry,
+  type NewEntry,
   type NightLimit,
   type StoredRun,
 } from "./Store.ts";
@@ -332,10 +333,11 @@ const make = Effect.gen(function* () {
     return read;
   });
 
-  /** The run's backlog picks, each recorded as a `pick` entry with its task number. */
+  /** The run's backlog picks, with the `pick` entries to record once the run is running. */
   const pick = Effect.fn("HoustonNightShiftRunner.pick")(function* (run: StoredRun) {
-    const none: ReadonlyArray<BriefPick> = [];
-    if (!run.settings.backlog.enabled) return none;
+    const picks: BriefPick[] = [];
+    const entries: NewEntry[] = [];
+    if (!run.settings.backlog.enabled) return { picks, entries };
     const tasks = yield* backlog.tasks(run.projectId);
     const earlierPicks = new Map<number, boolean>();
     for (const entry of yield* store.projectEntries(run.projectId, run.id)) {
@@ -353,11 +355,10 @@ const make = Effect.gen(function* () {
       backlog: tasks,
       earlierPicks,
     });
-    const picks: BriefPick[] = [];
     for (const number of numbers) {
       const task = tasks.find((candidate) => candidate.number === number)!;
       picks.push({ number, title: task.title, text: yield* backlog.text(task.key) });
-      yield* store.addEntry({
+      entries.push({
         runId: run.id,
         projectId: run.projectId,
         kind: "pick",
@@ -367,7 +368,7 @@ const make = Effect.gen(function* () {
         createdAt: run.startedAt,
       });
     }
-    return picks;
+    return { picks, entries };
   });
 
   /** Starts the orchestrator of an opened run; a failed launch refuses the run. */
@@ -394,7 +395,7 @@ const make = Effect.gen(function* () {
     const base = yield* git.defaultBranch(root).pipe(Effect.result);
     if (base._tag === "Failure") return yield* failed(base.failure);
     const earlier = yield* fates(run, root);
-    const picks = yield* pick(run);
+    const { picks, entries: pickEntries } = yield* pick(run);
     const brief = composeBrief({
       runId: run.id,
       settings: run.settings,
@@ -468,6 +469,8 @@ const make = Effect.gen(function* () {
       startedAt: run.startedAt,
       endedAt: null,
     });
+    // Recorded only now: a refused start's picks would keep its tasks from every later run.
+    for (const entry of pickEntries) yield* store.addEntry(entry);
     return { runId: run.id, threadId };
   });
 

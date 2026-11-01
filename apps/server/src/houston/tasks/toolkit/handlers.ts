@@ -361,6 +361,10 @@ export const layer = McpToolAccess.toLayer(HoustonTaskToolkit, {
   houston_task_review: McpToolAccess.writesWithCapability((input) =>
     Effect.gen(function* () {
       const tool = "houston_task_review";
+      // A live Night shift run's threads start work only through delegate_task.
+      yield* admitOperation(yield* McpInvocationContext.McpInvocationContext, tool).pipe(
+        Effect.mapError((message) => refuse("unsupported", tool, `Night shift: ${message}`)),
+      );
       const agent = yield* agentFor(tool, "delegate");
       const runs = yield* HoustonTaskRuns;
       const task = yield* runs.taskOfRun(input.runId);

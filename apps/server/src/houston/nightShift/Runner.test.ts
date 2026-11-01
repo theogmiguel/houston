@@ -48,6 +48,7 @@ import {
   Store,
   type Kit,
 } from "./nightShift.testkit.ts";
+import * as CrewGate from "./CrewGate.ts";
 import * as Threads from "./Threads.ts";
 import { makeRunsHarness, runWith } from "../tasks/taskRuns.testkit.ts";
 import { layerBacklog, NightShiftBacklog, type UpNextTask } from "./Host.ts";
@@ -546,6 +547,49 @@ describe("night shift run life", () => {
           assert.isAtLeast(stoppedAfter!, 58);
           assert.isAtMost(stoppedAfter!, 61);
           assert.equal((yield* getRun(d.runId)).stopReason, "stopped");
+        }),
+      );
+    }),
+  );
+
+  it.effect("the hard stop cancels the review a crew handback started", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("hard-stop-review");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const store = yield* Store.HoustonNightShiftStore;
+          const gate = yield* CrewGate.HoustonCrewGate;
+          const { projectId } = yield* setUp("hard-stop-review");
+          const started = yield* start(projectId, 60);
+          const run = yield* getRun(started.runId);
+          yield* addCrew(started.runId, "worker-1", started.threadId, run.startedAt);
+          busy(kit, "worker-1");
+
+          // The worker's handback starts a review: Tasks asks the gate and records its thread.
+          const admission = yield* gate.review({
+            callerThreadId: ThreadId.make("worker-1"),
+            providerInstanceId: "codex",
+          });
+          yield* admission.record(ThreadId.make("task-review-1"));
+          busy(kit, "task-review-1");
+          const refused = yield* Effect.flip(
+            gate.review({ callerThreadId: ThreadId.make("worker-1"), providerInstanceId: "codex" }),
+          );
+          assert.include(refused, "1 of 1 live review");
+
+          yield* TestClock.adjust("61 minutes");
+          yield* tick;
+          assert.equal((yield* getRun(started.runId)).stopReason, "hardStop");
+          const ops = stopOps(kit);
+          assert.sameMembers(ops.slice(0, 2), ["cancel:worker-1", "cancel:task-review-1"]);
+          assert.deepEqual(ops.slice(2), [`stop:${started.threadId}`]);
+          assert.isFalse(kit.state.states.get("task-review-1")!.activeRun);
+          const review = (yield* store.crew(started.runId)).find(
+            (member) => member.threadId === "task-review-1",
+          );
+          assert.equal(review?.role, "review");
+          assert.isNotNull(review?.endedAt);
         }),
       );
     }),
@@ -1175,6 +1219,60 @@ describe("night shift crew limits, picks and the ledger at start", () => {
           const offBrief = yield* runBrief(off.runId);
           assert.notInclude(offBrief, "HOU-21");
           assert.include(offBrief, "No backlog tasks are picked for this run.");
+        }),
+      );
+    }),
+  );
+
+  it.effect("a refused start records no picks, so the next start picks the same tasks", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("picks-refused");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const store = yield* Store.HoustonNightShiftStore;
+          const config = yield* ServerConfig.ServerConfig;
+          const fixture = makeRepository("picks-refused", { kind: "bare" });
+          const projectId = yield* createProject("picks-refused", fixture.root);
+          yield* seedNightShift(projectId, { backlog: { enabled: true, max: 3 } });
+          kit.state.backlog = [
+            upNext(projectId, 7),
+            upNext(projectId, 9),
+            upNext(projectId, 12),
+            upNext(projectId, 13),
+          ];
+          const picksOf = (runId: number) =>
+            Effect.map(store.runEntries(runId), (entries) =>
+              entries.filter((entry) => entry.kind === "pick").map((entry) => entry.task_number),
+            );
+
+          // The brief cannot be written: a file stands where the run folders go.
+          const folders = NodePath.join(config.baseDir, "houston", "night-shift");
+          NodeFS.mkdirSync(NodePath.dirname(folders), { recursive: true });
+          NodeFS.writeFileSync(folders, "not a folder");
+          assert.include(messageOf(yield* Effect.flip(start(projectId))), "writing the brief");
+          NodeFS.rmSync(folders);
+
+          // The orchestrator cannot be launched.
+          kit.state.launchFailure = "the provider could not start a session";
+          assert.include(
+            messageOf(yield* Effect.flip(start(projectId))),
+            "the provider could not start a session",
+          );
+          kit.state.launchFailure = null;
+
+          const refused = yield* store.listRuns(projectId, 30);
+          assert.deepEqual(
+            refused.map((run) => run.phase),
+            ["refused", "refused"],
+          );
+          for (const run of refused) assert.deepEqual(yield* picksOf(run.id), [], "no picks");
+
+          // No crew worked those tasks, so the next start picks them again.
+          const next = yield* start(projectId);
+          assert.deepEqual(yield* picksOf(next.runId), [7, 9, 12]);
+          const brief = yield* runBrief(next.runId);
+          for (const number of [7, 9, 12]) assert.include(brief, `HOU-${number}: Task ${number}`);
         }),
       );
     }),

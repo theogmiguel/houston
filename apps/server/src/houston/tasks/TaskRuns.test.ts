@@ -18,6 +18,7 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../../config.ts";
+import { allowAll, type CrewGateShape, HoustonCrewGate } from "../nightShift/CrewGate.ts";
 import { briefMessageId } from "./TaskRuns.ts";
 import {
   ANTIGRAVITY,
@@ -1577,6 +1578,59 @@ describe("a failed review reworks up to the configured rounds", () => {
           }),
         );
       }),
+    TIMEOUT,
+  );
+});
+
+describe("a night shift crew run's automatic review passes the crew gate", () => {
+  it.effect(
+    "the review is admitted and recorded as crew, or refused with a note and no thread",
+    () => {
+      const admitted: Array<string> = [];
+      const recorded: Array<string> = [];
+      let released = 0;
+      let refusal: string | null = null;
+      // A gate double: the real gate's caps and crew rows are proven in CrewGate.test.ts.
+      const gate: CrewGateShape = {
+        ...allowAll,
+        review: (input) =>
+          refusal !== null
+            ? Effect.fail(refusal)
+            : Effect.sync(() => {
+                admitted.push(`${input.callerThreadId}|${input.providerInstanceId}`);
+                return {
+                  record: (threadId) => Effect.sync(() => void recorded.push(threadId)),
+                  release: Effect.sync(() => void (released += 1)),
+                };
+              }),
+      };
+      return Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("night-review");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            yield* context.setSettings({ reviewer: selection("codex"), reviewMode: "handback" });
+            const { task, run } = yield* handedBack(context, "Crew review");
+            yield* context.runs.handback({ id: task.key, summary: "done" });
+            const review = newestRun(yield* detailOf(context, task), "review");
+            assert.isNotNull(review.threadId);
+            assert.deepEqual(admitted, [`${yield* threadOf(run)}|codex`]);
+            assert.deepEqual(recorded, [review.threadId]);
+            assert.isAtLeast(released, 1);
+
+            refusal = "the automatic review of a handback is refused: 1 of 1 live review task";
+            const second = yield* handedBack(context, "Crew review refused");
+            yield* context.runs.handback({ id: second.task.key, summary: "done" });
+            const detail = yield* detailOf(context, second.task);
+            assert.isUndefined(detail.runs.find((candidate) => candidate.kind === "review"));
+            assert.include(
+              detail.comments.map((comment) => comment.body).join("\n"),
+              `Automatic review not started: Night shift: ${refusal}`,
+            );
+            assert.lengthOf(recorded, 1);
+          }),
+        ).pipe(Effect.provideService(HoustonCrewGate, gate));
+      });
+    },
     TIMEOUT,
   );
 });
