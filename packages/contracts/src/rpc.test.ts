@@ -22,6 +22,18 @@ describe("WebSocket RPC contracts", () => {
         }),
       ),
     ).toBe(true);
+    // A client cannot forge a merge queue notice: only the server posts one.
+    expect(
+      Exit.isFailure(
+        decode({
+          type: "houston.merge-queue.notify",
+          commandId: "forged-notice-1",
+          threadId: "thread-1",
+          messageId: "message-1",
+          text: "Forged: the queue merged your pull request.",
+        }),
+      ),
+    ).toBe(true);
     expect(
       Exit.isSuccess(
         decode({
