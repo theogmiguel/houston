@@ -72,9 +72,7 @@ export function PullRequestTitleEditor({
         <Tooltip>
           <TooltipTrigger
             render={
-              <h1 className="min-w-0 flex-1 truncate text-title font-semibold">
-                {detail.title}
-              </h1>
+              <h1 className="min-w-0 flex-1 truncate text-title font-semibold">{detail.title}</h1>
             }
           />
           <TooltipPopup side="top">{detail.title}</TooltipPopup>
@@ -92,7 +90,7 @@ export function PullRequestTitleEditor({
     <div className="space-y-2">
       <Input
         autoFocus
-        size="sm"
+        size="compact"
         disabled={titleSaving}
         value={titleDraft}
         aria-label={`${capitalizeTerm(sourceControlClients.get(detail.provider).changeRequest.singular)} title`}

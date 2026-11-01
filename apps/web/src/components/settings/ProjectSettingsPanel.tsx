@@ -492,7 +492,7 @@ function ProjectDetail({
             control={
               <Input
                 key={`${group.projectKey}:${group.displayName}`}
-                size="sm"
+                size="compact"
                 className="w-full sm:w-64"
                 aria-label="Project name"
                 disabled={!canEditGroup}

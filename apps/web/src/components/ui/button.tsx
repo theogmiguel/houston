@@ -15,26 +15,21 @@ const buttonVariants = cva(
     variants: {
       size: {
         compact:
-          "h-7 gap-1 rounded-[var(--r-ctl)] px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",
-        default: "h-7 px-3",
+          "h-(--h-ctl) gap-1 rounded-[var(--r-ctl)] px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",
+        default: "h-(--h-ctl) px-3",
         icon: "size-7",
-        "icon-lg": "size-9",
         "icon-micro": "size-5 rounded-[var(--r-badge)] p-0 [&_svg:not([class*='size-'])]:size-3",
         "icon-tiny": "size-4 p-0 [&_svg:not([class*='size-'])]:size-3",
         "icon-sm": "size-[22px] rounded-[var(--r-ctl)] [&_svg:not([class*='size-'])]:size-3.5",
-        "icon-xl":
-          "size-11 sm:size-10 [&_svg:not([class*='size-'])]:size-5 sm:[&_svg:not([class*='size-'])]:size-4.5",
         "icon-xs":
           "size-7 sm:size-6 not-in-data-[slot=input-group]:[&_svg:not([class*='size-'])]:size-4 sm:not-in-data-[slot=input-group]:[&_svg:not([class*='size-'])]:size-3.5",
-        lg: "h-9 px-3.5",
         micro:
           "h-5 gap-1 rounded-[var(--r-badge)] px-1.5 text-[11px] [&_svg:not([class*='size-'])]:size-3",
         sm: "h-[22px] gap-1.5 px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",
         selection:
-          "h-[26px] gap-1.5 rounded-[7px] px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3.5",
+          "h-(--h-pill) gap-1.5 rounded-[7px] px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3.5",
         "sm-multiline":
           "min-h-[22px] gap-1.5 px-2 py-1 whitespace-normal [&_svg:not([class*='size-'])]:size-3.5",
-        xl: "h-10 px-4 text-base [&_svg:not([class*='size-'])]:size-5",
         xs: "h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",
       },
       variant: {
@@ -44,16 +39,12 @@ const buttonVariants = cva(
           "border-transparent bg-[var(--accent)] text-white [:hover,[data-pressed]]:bg-[var(--accent-hover)]",
         destructive:
           "border-transparent bg-[var(--danger-fill)] text-white [:hover,[data-pressed]]:bg-[color-mix(in_srgb,var(--danger-fill)_90%,black)]",
-        danger:
-          "border-transparent bg-transparent text-destructive-foreground [:hover,[data-pressed]]:bg-[var(--danger-wash)]",
-        "danger-solid":
-          "border-transparent bg-[var(--danger-fill)] text-white [:hover,[data-pressed]]:bg-[color-mix(in_srgb,var(--danger-fill)_90%,black)]",
         "destructive-outline":
           "border-border bg-transparent text-destructive-foreground [:hover,[data-pressed]]:border-destructive/32 [:hover,[data-pressed]]:bg-error-surface",
         ghost:
-          "[--control-icon-color:var(--contrast-muted-foreground)] border-transparent text-secondary-foreground data-pressed:bg-accent [:hover,[data-pressed]]:bg-accent [:hover,[data-pressed]]:text-foreground",
+          "[--control-icon-color:var(--contrast-muted-foreground)] border-transparent text-secondary-foreground data-pressed:bg-hover [:hover,[data-pressed]]:bg-hover [:hover,[data-pressed]]:text-foreground",
         "ghost-muted":
-          "[--control-icon-color:currentColor] border-transparent text-muted-foreground data-pressed:bg-accent [:hover,[data-pressed]]:bg-accent [:hover,[data-pressed]]:text-foreground",
+          "[--control-icon-color:currentColor] border-transparent text-muted-foreground data-pressed:bg-hover [:hover,[data-pressed]]:bg-hover [:hover,[data-pressed]]:text-foreground",
         "ghost-destructive":
           "[--control-icon-color:currentColor] border-transparent text-muted-foreground data-pressed:bg-error-surface [:hover,[data-pressed]]:bg-error-surface [:hover,[data-pressed]]:text-destructive",
         glass:

@@ -1358,8 +1358,8 @@ function TerminalSidebarGroup({
           type="button"
           className={`flex h-[22px] w-full cursor-pointer items-center gap-1 rounded px-1.5 text-2xs ${
             isGroupActive
-              ? "bg-accent/50 text-foreground"
-              : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
+              ? "bg-hover/50 text-foreground"
+              : "text-muted-foreground hover:bg-hover/40 hover:text-foreground"
           }`}
           onClick={() => onActiveTerminalChange(groupActiveTerminalId)}
         >
@@ -1382,8 +1382,8 @@ function TerminalSidebarGroup({
               className={cn(
                 "group/tab flex h-6 w-full items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs",
                 isActive
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                  ? "bg-hover text-foreground"
+                  : "text-muted-foreground hover:bg-hover/60 hover:text-foreground",
               )}
             >
               {canOperateTerminal ? (
@@ -1792,7 +1792,7 @@ export default function ThreadTerminalDrawer({
               className={`p-1 text-foreground/90 transition-colors ${
                 hasReachedSplitLimit
                   ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                  : "hover:bg-accent"
+                  : "hover:bg-hover"
               }`}
               onClick={onSplitTerminalAction}
               label={splitTerminalActionLabel}
@@ -1805,7 +1805,7 @@ export default function ThreadTerminalDrawer({
               className={`p-1 text-foreground/90 transition-colors ${
                 hasReachedSplitLimit
                   ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                  : "hover:bg-accent"
+                  : "hover:bg-hover"
               }`}
               onClick={onSplitTerminalVerticalAction}
               label={splitTerminalVerticalActionLabel}
@@ -1815,7 +1815,7 @@ export default function ThreadTerminalDrawer({
             <div className="h-4 w-px bg-border/80" />
             <TerminalActionButton
               disabled={!canOperateTerminal}
-              className="p-1 text-foreground/90 transition-colors hover:bg-accent"
+              className="p-1 text-foreground/90 transition-colors hover:bg-hover"
               onClick={onNewTerminalAction}
               label={newTerminalActionLabel}
             >
@@ -1824,7 +1824,7 @@ export default function ThreadTerminalDrawer({
             <div className="h-4 w-px bg-border/80" />
             <TerminalActionButton
               disabled={!canOperateTerminal}
-              className="p-1 text-foreground/90 transition-colors hover:bg-accent"
+              className="p-1 text-foreground/90 transition-colors hover:bg-hover"
               onClick={() => confirmCloseTerminal(resolvedActiveTerminalId)}
               label={closeTerminalActionLabel}
             >
@@ -1868,7 +1868,7 @@ export default function ThreadTerminalDrawer({
                     className={`inline-flex h-full items-center px-1 text-foreground/90 transition-colors ${
                       hasReachedSplitLimit
                         ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                        : "hover:bg-accent/70"
+                        : "hover:bg-hover/70"
                     }`}
                     onClick={onSplitTerminalAction}
                     label={splitTerminalActionLabel}
@@ -1880,7 +1880,7 @@ export default function ThreadTerminalDrawer({
                     className={`inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors ${
                       hasReachedSplitLimit
                         ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                        : "hover:bg-accent/70"
+                        : "hover:bg-hover/70"
                     }`}
                     onClick={onSplitTerminalVerticalAction}
                     label={splitTerminalVerticalActionLabel}
@@ -1889,7 +1889,7 @@ export default function ThreadTerminalDrawer({
                   </TerminalActionButton>
                   <TerminalActionButton
                     disabled={!canOperateTerminal}
-                    className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"
+                    className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-hover/70"
                     onClick={onNewTerminalAction}
                     label={newTerminalActionLabel}
                   >
@@ -1897,7 +1897,7 @@ export default function ThreadTerminalDrawer({
                   </TerminalActionButton>
                   <TerminalActionButton
                     disabled={!canOperateTerminal}
-                    className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"
+                    className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-hover/70"
                     onClick={() => confirmCloseTerminal(resolvedActiveTerminalId)}
                     label={closeTerminalActionLabel}
                   >

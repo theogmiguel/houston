@@ -171,7 +171,7 @@ export function AcpRegistrySearchStep({
             disabled={preparingId !== null}
             onChange={(event) => registry.type(event.currentTarget.value)}
             placeholder="Search agents…"
-            size="sm"
+            size="compact"
             type="search"
             value={query}
           />

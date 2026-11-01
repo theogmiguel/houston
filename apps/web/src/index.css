@@ -110,14 +110,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   /* Reserved top lane for a grid pane's floating label; the thread itself sets it. */
   --pane-label-inset: 0px;
   --h-ctl: 28px;
-  --h-ctl-mini: 22px;
   --h-row: 28px;
   --h-pill: 26px;
   --page-w: 960px;
   --settings-w: 720px;
-  /* Motion from the design's TypeLayout board. */
-  --ease-fast: cubic-bezier(0.2, 0, 0.38, 1);
-  --ease-menu: cubic-bezier(0.16, 1, 0.3, 1);
   --sidebar-content-inset: 0.5rem;
   --sidebar-control-gap: 0.5rem;
   --sidebar-icon-color: color-mix(
@@ -249,15 +245,11 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --font-weight-emphasis: 650;
   /* Motion. drawer is the decelerating curve for surfaces that slide or pop in
      (composer context, pills). */
-  --inset-shadow-control-highlight: 0 1px rgb(255 255 255 / 16%);
-  --inset-shadow-control-pressed: 0 1px rgb(0 0 0 / 8%);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   /* The composer's elevation: a soft drop pulled in under the surface, shared
      by the composer, its context strip and attached banners. */
   --shadow-composer: 0 1px 2px rgb(0 0 0 / 5%);
   --shadow-composer-dark: 0 14px 32px -18px rgb(0 0 0 / 75%);
-  /* Overlap the lower toolbar backdrop by one pixel to cover the composer seam. */
-  --spacing-composer-seam: calc(var(--spacing) * 4 - 1px);
   /* Dark-mode shade where an attached surface meets the composer: 10px of
      shadow fading away from the seam. Inline, so the offsets resolve on the
      element. below: the context strip under the composer (1rem seam, faint
@@ -314,8 +306,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-input: var(--contrast-input);
   --color-border: var(--contrast-border);
   --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--contrast-accent-foreground);
-  --color-accent: var(--accent-surface);
+  --color-hover-foreground: var(--contrast-accent-foreground);
+  --color-hover: var(--accent-surface);
   --color-selected: var(--sel);
   --color-pane: var(--pane);
   --color-pane-head: var(--pane-head);
@@ -1178,7 +1170,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --divider: rgba(0, 0, 0, 0.14);
   --border-hover: rgba(0, 0, 0, 0.16);
   --line-strong: rgba(0, 0, 0, 0.16);
-  --line-focus: rgba(0, 0, 0, 0.3);
   --field: rgba(0, 0, 0, 0.05);
   --hover: rgba(0, 0, 0, 0.045);
   --sel: rgba(0, 0, 0, 0.09);
@@ -1219,7 +1210,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --r-ctl: 6px;
   --r-group: 10px;
   --r-dialog: 14px;
-  --r-composer: 12px;
+  /* The 7px pill the board draws for grid labels and selection buttons. */
+  --r-selection: 7px;
   --r-pill: 999px;
 
   /* Semantic aliases for the copied feature components. */
@@ -1246,9 +1238,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --message-action: var(--primary);
   --message-action-foreground: var(--primary-foreground);
   --message-action-hover: var(--primary-hover);
-  /* Upstream utilities treat `accent` as the neutral hover fill; the blue
-     brand value lives on `--accent` for primitives and focus, so the utility
-     points at the overlay role instead. */
+  /* The `--color-hover*` utilities are Houston's neutral hover fill (the
+     upstream `accent` utility renamed); the blue brand value stays on
+     `--accent` for primitives and focus. */
   --accent-foreground: var(--t1);
   --error: var(--stop);
   --error-foreground: var(--stop-ink);
@@ -1313,7 +1305,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --divider: rgba(255, 255, 255, 0.14);
   --border-hover: rgba(255, 255, 255, 0.16);
   --line-strong: rgba(255, 255, 255, 0.16);
-  --line-focus: rgba(255, 255, 255, 0.3);
   --field: rgba(255, 255, 255, 0.06);
   --hover: rgba(255, 255, 255, 0.05);
   --sel: rgba(255, 255, 255, 0.09);

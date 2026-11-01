@@ -225,7 +225,7 @@ export function GridThreadCell({
           data-pane-label=""
           {...dragHandleProps}
           style={dragHandleProps?.draggable === true ? { cursor: "grab" } : undefined}
-          className="group/label absolute top-2 left-2 z-20 flex h-[26px] max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-(--r-ctl) border border-(--divider) bg-(--pane) ps-2 pe-1 shadow-[var(--shadow-1)]"
+          className="group/label absolute top-2 left-2 z-20 flex h-(--h-pill) max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-(--r-selection) border border-(--divider) bg-(--pane-head) ps-2 pe-1 shadow-[var(--shadow-1)]"
         >
           <span className="grid size-3.5 shrink-0 place-items-center">
             {shell !== null ? (

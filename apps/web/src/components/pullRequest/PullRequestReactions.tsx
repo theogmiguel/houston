@@ -141,7 +141,7 @@ export function PullRequestReactionBar({
                     aria-pressed={reacted}
                     aria-label={pullRequestReactionName(content)}
                     className={cn(
-                      "flex size-7 items-center justify-center rounded-md text-base outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                      "flex size-7 items-center justify-center rounded-md text-base outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                       reacted && "bg-primary/10",
                     )}
                     onClick={() => {

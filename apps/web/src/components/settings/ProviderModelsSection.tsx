@@ -299,7 +299,7 @@ export function ProviderModelsSection({
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
             placeholder="Filter models"
-            size="sm"
+            size="compact"
             className="w-56 max-w-full"
             spellCheck={false}
             aria-label="Filter models"
@@ -392,7 +392,7 @@ export function ProviderModelsSection({
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <Input
             id={`provider-instance-${instanceId}-custom-model`}
-            size="sm"
+            size="compact"
             autoFocus
             value={input}
             onChange={(event) => {

@@ -130,7 +130,7 @@ function LinkRowImpl({
     actionEntry !== null && pullRequestQuickActions(actionEntry, linkHostActions).length > 0;
   return (
     <div
-      className={cn(PULL_REQUEST_ROW_CLASS, "relative hover:bg-accent/60")}
+      className={cn(PULL_REQUEST_ROW_CLASS, "relative hover:bg-hover/60")}
       onContextMenu={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -296,7 +296,7 @@ function LinkRowImpl({
           speedMode && hasQuickActions && "hidden",
         )}
       >
-        <span aria-hidden className="absolute inset-0 bg-accent/60" />
+        <span aria-hidden className="absolute inset-0 bg-hover/60" />
         <Menu
           open={menuOpen}
           onOpenChange={(open) => {

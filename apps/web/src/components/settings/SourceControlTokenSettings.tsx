@@ -98,7 +98,7 @@ export function SourceControlTokenSettings({
             <Input
               id={`${definition.kind}-token-host-${environmentId}`}
               autoComplete="off"
-              size="sm"
+              size="compact"
               placeholder={defaultHost}
               value={host}
               onChange={(event) => setHost(event.target.value)}
@@ -108,7 +108,7 @@ export function SourceControlTokenSettings({
             <Label htmlFor={`${definition.kind}-token-${environmentId}`}>Token</Label>
             <SecretInput
               id={`${definition.kind}-token-${environmentId}`}
-              size="sm"
+              size="compact"
               configured={isSaved}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}

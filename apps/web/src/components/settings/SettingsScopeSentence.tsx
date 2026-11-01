@@ -140,7 +140,7 @@ function ScopeMenu({
     <Trigger
       aria-label={`${ariaLabel}: ${label}`}
       render={<Button variant="ghost" size="sm" />}
-      className="h-auto min-h-0 min-w-0 max-w-72 gap-1 rounded-sm px-1 py-0 text-[15px] leading-[22px] font-semibold text-foreground hover:bg-accent sm:text-[15px]"
+      className="h-auto min-h-0 min-w-0 max-w-72 gap-1 rounded-sm px-1 py-0 text-[15px] leading-[22px] font-semibold text-foreground hover:bg-hover sm:text-[15px]"
     >
       {icon}
       <span className="min-w-0 truncate">{label}</span>

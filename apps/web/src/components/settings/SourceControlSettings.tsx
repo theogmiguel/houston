@@ -230,7 +230,7 @@ function DiscoveryItemRow({
   if (seenSearchTargetId !== searchTargetId) setSeenSearchTargetId(searchTargetId);
 
   return (
-    <div className={cn("transition-colors hover:bg-accent", isVcsNotReady(item) && "opacity-80")}>
+    <div className={cn("transition-colors hover:bg-hover", isVcsNotReady(item) && "opacity-80")}>
       <div className="px-3.5 py-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 flex-1 space-y-1">

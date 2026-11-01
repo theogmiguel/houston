@@ -413,7 +413,7 @@ function SnoozePresetFields(props: {
           <span className="text-xs text-muted-foreground">at</span>
           <Input
             nativeInput
-            size="sm"
+            size="compact"
             type="time"
             className="w-32"
             aria-label="Time"

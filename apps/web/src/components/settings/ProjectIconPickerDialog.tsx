@@ -177,8 +177,8 @@ function ProjectIconPickerBody({
                     aria-label={iconLabel(name)}
                     aria-pressed={iconName === name}
                     className={cn(
-                      "flex aspect-square items-center justify-center rounded-md border border-transparent outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                      iconName === name && "border-border bg-accent",
+                      "flex aspect-square items-center justify-center rounded-md border border-transparent outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                      iconName === name && "border-border bg-hover",
                       selectedColorClassName,
                     )}
                     onClick={() => setIconName(name)}
@@ -227,8 +227,8 @@ function ProjectIconPickerBody({
                     aria-label={option.label}
                     aria-pressed={emoji === option.emoji}
                     className={cn(
-                      "flex aspect-square items-center justify-center rounded-md border border-transparent text-xl outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                      emoji === option.emoji && "border-border bg-accent",
+                      "flex aspect-square items-center justify-center rounded-md border border-transparent text-xl outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                      emoji === option.emoji && "border-border bg-hover",
                     )}
                     onClick={() => setEmoji(option.emoji)}
                   >

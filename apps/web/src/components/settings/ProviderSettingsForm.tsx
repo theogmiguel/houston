@@ -234,7 +234,7 @@ function ProviderCommandArguments({
           {rows.map((argument, index) => (
             <div key={argument.id} className="flex min-w-0 items-center gap-1.5">
               <DraftInput
-                size="sm"
+                size="compact"
                 font="mono"
                 value={argument.value}
                 onCommit={(next) =>
@@ -429,7 +429,7 @@ function ProviderSettingsFieldRow({
           <SecretInput
             id={inputId}
             aria-describedby={descriptionId}
-            size="sm"
+            size="compact"
             className="min-w-0 flex-1"
             configured={secretConfigured}
             value=""
@@ -451,7 +451,7 @@ function ProviderSettingsFieldRow({
         <DraftInput
           id={inputId}
           aria-describedby={descriptionId}
-          size="sm"
+          size="compact"
           className="w-full max-w-full @min-[32rem]/settings-row:w-56"
           type={field.control === "password" ? "password" : undefined}
           autoComplete={field.control === "password" ? "off" : undefined}
@@ -547,7 +547,7 @@ function ProviderSettingsFieldRow({
         {variant === "card" ? (
           <BufferedInput
             id={inputId}
-            size="sm"
+            size="compact"
             className="mt-1.5"
             type={field.secret ? undefined : type}
             autoComplete={!field.secret && field.control === "password" ? "off" : undefined}

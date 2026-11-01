@@ -178,7 +178,7 @@ export function SettingsSearchTarget({
 
 // Settings pickers reuse composer controls but match the bordered selects beside them.
 export const SETTINGS_PICKER_TRIGGER_CLASSNAME =
-  "min-w-0 max-w-none shrink-0 border-input bg-background font-normal text-foreground shadow-xs/5 hover:bg-accent/50 dark:bg-input/32 [&_svg[data-composer-control-chevron]]:stroke-[1.75] [&_svg[data-composer-control-chevron]]:opacity-70";
+  "min-w-0 max-w-none shrink-0 border-input bg-background font-normal text-foreground shadow-xs/5 hover:bg-hover/50 dark:bg-input/32 [&_svg[data-composer-control-chevron]]:stroke-[1.75] [&_svg[data-composer-control-chevron]]:opacity-70";
 
 export function PolicyTooltip({
   children,
@@ -465,7 +465,7 @@ export function SettingsRow({
       tabIndex={rowProps.id ? -1 : rowProps.tabIndex}
       data-slot="settings-row"
       className={cn(
-        "@container/settings-row min-h-12 px-3.5 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground hover:bg-accent",
+        "@container/settings-row min-h-12 px-3.5 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground hover:bg-hover",
         children ? "pt-3 pb-1" : "py-2.5",
         className,
       )}
@@ -579,7 +579,7 @@ export function SettingsPageContainer({
         <WorkspacePageContainer
           width={width}
           className={cn(
-            width === "readable" && "max-w-[720px] gap-7 px-6 pt-8 pb-16 sm:px-8",
+            width === "readable" && "max-w-(--settings-w) gap-7 px-6 pt-8 pb-16 sm:px-8",
             className,
           )}
         >

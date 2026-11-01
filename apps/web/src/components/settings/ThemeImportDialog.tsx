@@ -511,7 +511,7 @@ function ThemeImportBody({
             <div
               className={cn(
                 "flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed px-3 py-3 transition-colors",
-                isDropTarget ? "border-ring bg-accent/20" : "border-border/80 bg-muted/20",
+                isDropTarget ? "border-ring bg-hover/20" : "border-border/80 bg-muted/20",
               )}
               {...dropHandlers}
             >

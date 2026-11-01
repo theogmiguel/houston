@@ -150,30 +150,34 @@ function twoThreadTree(): GridRecord["tree"] {
   };
 }
 
-function surfaceColors(container: HTMLElement): { strip: string; body: string } {
-  const cell = container.querySelector("[data-grid-cell]");
-  const strip = container.querySelector("[data-pane-label]");
-  if (cell === null || strip === null) throw new Error("grid cell or pane label missing");
-  return {
-    strip: getComputedStyle(strip).backgroundColor,
-    body: getComputedStyle(cell).backgroundColor,
-  };
+function paneHeadColor(): string {
+  const probe = document.createElement("div");
+  probe.style.backgroundColor = "var(--pane-head)";
+  document.body.append(probe);
+  const color = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return color;
 }
 
-function expectMatchingSurface(container: HTMLElement) {
+function expectPaneHeadSurface(container: HTMLElement) {
+  const strip = container.querySelector("[data-pane-label]");
+  if (strip === null) throw new Error("pane label missing");
   const root = document.documentElement;
+  const style = getComputedStyle(strip);
+  expect(style.borderRadius).toBe("7px");
+  expect(style.height).toBe("26px");
   root.classList.remove("dark");
   try {
-    expect(surfaceColors(container).strip).toBe(surfaceColors(container).body);
+    expect(style.backgroundColor).toBe(paneHeadColor());
     root.classList.add("dark");
-    expect(surfaceColors(container).strip).toBe(surfaceColors(container).body);
+    expect(getComputedStyle(strip).backgroundColor).toBe(paneHeadColor());
   } finally {
     root.classList.remove("dark");
   }
 }
 
 describe("GridThreadCell surfaces", () => {
-  it("draws a new thread's pane label on the cell surface", async () => {
+  it("draws a new thread's pane label on the pane head surface", async () => {
     state.draftSession = { id: "draft-1" };
     await using screen = await renderCell({
       kind: "thread",
@@ -183,10 +187,10 @@ describe("GridThreadCell surfaces", () => {
     });
 
     expect(screen.container.textContent).toContain("New thread");
-    expectMatchingSurface(screen.container);
+    expectPaneHeadSurface(screen.container);
   });
 
-  it("draws an existing thread's pane label on the same cell surface", async () => {
+  it("draws an existing thread's pane label on the pane head surface", async () => {
     state.draftSession = null;
     await using screen = await renderCell(
       { kind: "thread", threadId: "thread-a", id: "p1" },
@@ -199,7 +203,7 @@ describe("GridThreadCell surfaces", () => {
     );
 
     expect(screen.container.textContent).toContain("Alpha thread");
-    expectMatchingSurface(screen.container);
+    expectPaneHeadSurface(screen.container);
   });
   it("closes a cell whose thread was archived in another surface", async () => {
     state.draftSession = null;
