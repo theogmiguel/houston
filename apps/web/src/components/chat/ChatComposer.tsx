@@ -235,7 +235,7 @@ import { importComposerThreadAttachment } from "./composerThreadImport";
 import { observeResize } from "~/lib/observeResize";
 
 const isEnvironmentRequestInvalidError = Schema.is(EnvironmentRequestInvalidError);
-import { toastManager } from "../ui/toast";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 import { PlayIcon } from "lucide-react";
 import { proposedPlanTitle } from "@t3tools/shared/proposedPlanText";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
@@ -259,7 +259,7 @@ import type {
   PendingUserInput,
 } from "../../session-logic";
 import {
-  resolveComposerDispatchMode,
+  resolveFollowUpDispatch,
   type ComposerDispatchMode,
 } from "@t3tools/client-runtime/state/composer-dispatch";
 import type { ContextWindowSnapshot } from "../../lib/contextWindow";
@@ -388,6 +388,8 @@ export interface ChatComposerProps {
 
   phase: SessionPhase;
   canInterrupt: boolean;
+  /** The provider can redirect an active run in place; otherwise a steer queues instead. */
+  canSteerActiveRun: boolean;
   isSendBusy: boolean;
   canResume: boolean;
   isRevertingCheckpoint?: boolean;
@@ -542,6 +544,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     projectSelectionRequired,
     phase,
     canInterrupt,
+    canSteerActiveRun,
     isSendBusy,
     canResume,
     isRevertingCheckpoint = false,
@@ -1206,6 +1209,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   )
     ? "steer"
     : settings.followUpBehavior;
+  const resolveSubmitDispatchMode = (alternateModifier: boolean): ComposerDispatchMode => {
+    const dispatch = resolveFollowUpDispatch({
+      running: phase === "running",
+      alternateModifier,
+      activeTurnDefault: followUpBehavior,
+      canSteer: !isCompacting,
+      providerSupportsActiveSteering: canSteerActiveRun,
+    });
+    if (dispatch.queuedBecauseProviderCannotSteer) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "info",
+          title: "Queued for this provider",
+          description:
+            "This provider can't redirect a running turn, so the message sends when it finishes.",
+        }),
+      );
+    }
+    return dispatch.mode;
+  };
   const composerSuggestionsVisible = composerMenuOpen;
   const composerSuggestionListVisible = composerSuggestionsVisible && composerMenuItems.length > 0;
   const activePendingUserInput = pendingUserInputs[0] ?? null;
@@ -2172,17 +2195,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       event,
       onSend: (sendEvent) => {
         providerInputRejectedRef.current = false;
-        onSend(
-          sendEvent,
-          dispatchMode ??
-            resolveComposerDispatchMode({
-              running: phase === "running",
-              alternateModifier: false,
-              activeTurnDefault: followUpBehavior,
-              canSteer: !isCompacting,
-            }),
-          submissionIntent,
-        );
+        onSend(sendEvent, dispatchMode ?? resolveSubmitDispatchMode(false), submissionIntent);
         return !providerInputRejectedRef.current;
       },
     });
@@ -2196,27 +2209,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const submitComposerStable = useStableCallback(submitComposer);
   const handleSubmitMessage = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
-    submitComposer(
-      event,
-      resolveComposerDispatchMode({
-        running: phase === "running",
-        alternateModifier: event.metaKey || event.ctrlKey,
-        activeTurnDefault: followUpBehavior,
-        canSteer: !isCompacting,
-      }),
-    );
+    submitComposer(event, resolveSubmitDispatchMode(event.metaKey || event.ctrlKey));
   };
   const handleSubmitMessageStable = useStableCallback(handleSubmitMessage);
   const submitCitationAndSend = () => {
-    submitComposer(
-      undefined,
-      resolveComposerDispatchMode({
-        running: phase === "running",
-        alternateModifier: false,
-        activeTurnDefault: followUpBehavior,
-        canSteer: !isCompacting,
-      }),
-    );
+    submitComposer(undefined, resolveSubmitDispatchMode(false));
   };
   const submitCitationAndSendStable = useStableCallback(submitCitationAndSend);
   const submitMultipleModelSelection = () => {
@@ -2277,8 +2274,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       sendShortcut: settings.sendShortcut,
       routeKind,
       phase,
-      isCompacting,
-      followUpBehavior,
+      resolveSubmitDispatchMode,
       isSoftwareKeyboardOpen,
       planModeUiEnabled,
       isLiteralPendingAnswer,
@@ -3607,7 +3603,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     isRunning={phase === "running"}
                     canInterrupt={canInterrupt}
                     followUpBehavior={followUpBehavior}
-                    canSteer={!isCompacting}
+                    canSteer={!isCompacting && canSteerActiveRun}
                     alternateShortcutLabel={shortcutLabelForCommand(
                       keybindings,
                       "composer.sendAlternate",

@@ -1,9 +1,6 @@
 import type { ChatComposerProps } from "./ChatComposer";
 import { type ComposerCommandItem } from "./ComposerCommandMenu";
-import {
-  type ComposerDispatchMode,
-  resolveComposerDispatchMode,
-} from "@t3tools/client-runtime/state/composer-dispatch";
+import type { ComposerDispatchMode } from "@t3tools/client-runtime/state/composer-dispatch";
 import { type ComposerPromptEditorHandle } from "../ComposerPromptEditorTiptap";
 import {
   type ComposerPromptHistoryPosition,
@@ -33,8 +30,7 @@ export function composerCommandKeyHandler(input: {
   readonly sendShortcut: ChatComposerProps["settings"]["sendShortcut"];
   readonly routeKind: ChatComposerProps["routeKind"];
   readonly phase: ChatComposerProps["phase"];
-  readonly isCompacting: boolean;
-  readonly followUpBehavior: ChatComposerProps["settings"]["followUpBehavior"];
+  readonly resolveSubmitDispatchMode: (alternateModifier: boolean) => ComposerDispatchMode;
   readonly isSoftwareKeyboardOpen: boolean;
   readonly planModeUiEnabled: boolean;
   readonly isLiteralPendingAnswer: boolean;
@@ -85,8 +81,7 @@ export function composerCommandKeyHandler(input: {
     sendShortcut,
     routeKind,
     phase,
-    isCompacting,
-    followUpBehavior,
+    resolveSubmitDispatchMode,
     isSoftwareKeyboardOpen,
     planModeUiEnabled,
     isLiteralPendingAnswer,
@@ -218,12 +213,7 @@ export function composerCommandKeyHandler(input: {
     if (submissionIntent) {
       submitComposer(
         undefined,
-        resolveComposerDispatchMode({
-          running: phase === "running",
-          alternateModifier: submissionIntent === "alternate",
-          activeTurnDefault: followUpBehavior,
-          canSteer: !isCompacting,
-        }),
+        resolveSubmitDispatchMode(submissionIntent === "alternate"),
         submissionIntent,
       );
       return true;
