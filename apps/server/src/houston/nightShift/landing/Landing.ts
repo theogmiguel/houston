@@ -16,6 +16,7 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -548,159 +549,199 @@ const make = Effect.gen(function* () {
       }
       const entries = yield* store.runEntries(run.id);
       const existing = entries.find((row) => isOpen(row) && row.branch === input.branch);
-      if (existing === undefined && entries.length >= LEDGER.entriesPerRun) {
-        return yield* toolFail(
-          "limit",
-          `run ${run.id} holds ${entries.length} entries; the limit is ${LEDGER.entriesPerRun} per run`,
-          { limit: LEDGER.entriesPerRun, actual: entries.length },
-        );
-      }
-      const opened = entries.filter((row) => row.kind === "pr").length;
-      if (existing === undefined && opened >= LEDGER.pullRequestsPerRun) {
-        return yield* toolFail(
-          "limit",
-          `run ${run.id} opened ${opened} pull requests; the limit is ${LEDGER.pullRequestsPerRun} per run`,
-          { limit: LEDGER.pullRequestsPerRun, actual: opened },
-        );
-      }
       const origin = yield* repositoryOf(root).pipe(
         Effect.catch((message: string) => toolFail("refused", message)),
       );
-
-      // The push: only while the remote branch is where Houston last pushed it.
-      const expected = yield* store.lastPush(run.projectId, input.branch);
-      const pushed = yield* withVcs(
-        pushWithLease(root, "origin", input.branch, expected ?? "", input.head),
-      ).pipe(Effect.result);
-      if (pushed._tag === "Failure") {
-        const actual = yield* withVcs(
-          git(root, ["ls-remote", "origin", `refs/heads/${input.branch}`], GIT_NETWORK_TIMEOUT_MS),
-        ).pipe(
-          Effect.map((result) => result.stdout.trim().split(/\s+/)[0] || "no branch"),
-          Effect.orElseSucceed(() => "unreadable"),
-        );
-        return yield* toolFail(
-          "remote",
-          `${pushed.failure}; origin/${input.branch} is at ${actual}, Houston expected ${expected ?? "no branch"}`,
-        );
+      if (existing !== undefined) {
+        return yield* publish(input, run, root, origin, defaultBranch, existing, null);
       }
-      const at = yield* now;
-      yield* store.addPush({
-        runId: run.id,
-        branch: input.branch,
-        oldSha: expected,
-        newSha: input.head,
-        prNumber: existing?.pr_number ?? null,
-        at,
-      });
 
-      // The draft pull request: opened once per branch, then updated.
-      const title = outboundText(input.title, root);
-      const body = outboundText(input.body, root);
-      const answer = yield* (
-        existing === undefined
-          ? rest(
-              origin.host,
-              "houston.nightShift.openPullRequest",
-              "POST",
-              `repos/${origin.repository}/pulls`,
-              { title, head: input.branch, base: defaultBranch, body, draft: true },
-            )
-          : rest(
-              origin.host,
-              "houston.nightShift.updatePullRequest",
-              "PATCH",
-              `repos/${origin.repository}/pulls/${existing.pr_number}`,
-              { title, body },
-            )
-      ).pipe(
-        Effect.catch((message: string) =>
-          toolFail("remote", `GitHub refused the pull request for ${input.branch}: ${message}`),
-        ),
-      );
-      const number =
-        existing?.pr_number ?? (typeof answer.number === "number" ? answer.number : null);
-      if (number === null) {
-        return yield* toolFail(
-          "remote",
-          `GitHub answered no pull request number for ${input.branch}`,
-        );
-      }
-      const url =
-        typeof answer.html_url === "string"
-          ? answer.html_url
-          : `https://${origin.host}/${origin.repository}/pull/${number}`;
-      yield* store.addPush({
-        runId: run.id,
-        branch: input.branch,
-        oldSha: expected,
-        newSha: input.head,
-        prNumber: number,
-        at,
-      });
-
-      const reset = (previous: PrDetail | null): PrDetail => ({
-        ...(previous ?? {
-          ci: { ...emptyCiState, failing: [], rerunRefused: [] },
-          ciNote: null,
-          held: false,
-          queued: false,
-          enqueueError: null,
-        }),
-        plans: input.plans,
-        builtBy: input.builtBy,
-        visible: input.visible,
-        task: input.task ?? previous?.task ?? null,
-        url,
-        gates: { ...(previous?.gates ?? DEFAULT_GATES), checks: "pending", ci: "pending" },
-        checks: { head: input.head, status: "pending", results: [] },
-      });
-      let entryId: number;
-      if (existing === undefined) {
-        const added = yield* store.addEntry({
+      // A new pull request takes its place in the ledger before anything is pushed, with the
+      // bounds checked in the insert, so parallel calls cannot pass them together.
+      const reserved = yield* store.addEntryWithin(
+        {
           runId: run.id,
           projectId: run.projectId,
           kind: "pr",
           title: input.title,
           theme: input.theme,
-          status: "open",
-          prNumber: number,
+          status: "opening",
           headSha: input.head,
           branch: input.branch,
           visible: input.visible,
           body: input.body,
-          detail: reset(null),
           authorThreadId: input.callerThreadId,
-          createdAt: at,
-        });
-        entryId = added.id;
-        if (input.task !== undefined) {
-          yield* backlog.comment(
-            input.task,
-            `Night shift run ${run.id} opened draft pull request #${number}.`,
-            AUTHOR,
-          );
-        }
-      } else {
-        entryId = existing.id;
-        yield* store.updatePullRequest(existing.id, {
-          headSha: input.head,
-          title: input.title,
-          theme: input.theme,
-          body: input.body,
-          visible: input.visible,
-          detail: reset(prDetail(existing)),
-        });
+          createdAt: yield* now,
+        },
+        {
+          entries: LEDGER.entriesPerRun,
+          decisions: Number.MAX_SAFE_INTEGER,
+          pullRequests: LEDGER.pullRequestsPerRun,
+        },
+      );
+      if (!("entry" in reserved)) {
+        return yield* reserved.entries >= LEDGER.entriesPerRun
+          ? toolFail(
+              "limit",
+              `run ${run.id} holds ${reserved.entries} entries; the limit is ${LEDGER.entriesPerRun} per run`,
+              { limit: LEDGER.entriesPerRun, actual: reserved.entries },
+            )
+          : toolFail(
+              "limit",
+              `run ${run.id} opened ${reserved.pullRequests} pull requests; the limit is ${LEDGER.pullRequestsPerRun} per run`,
+              { limit: LEDGER.pullRequestsPerRun, actual: reserved.pullRequests },
+            );
       }
-      yield* startChecks(entryId);
-      const entry = (yield* store.getEntry(entryId))!;
-      return {
-        entry,
-        pullRequest: { number, url },
-        push: { branch: input.branch, oldSha: expected, newSha: input.head },
-      } satisfies RecordResult;
+      const id = reserved.entry.id;
+      return yield* publish(input, run, root, origin, defaultBranch, undefined, id).pipe(
+        // The place is given back unless GitHub opened the pull request it was taken for.
+        Effect.onExit((exit) =>
+          Exit.isSuccess(exit)
+            ? Effect.void
+            : store
+                .getEntry(id)
+                .pipe(
+                  Effect.flatMap((row) =>
+                    row?.pr_number == null ? store.deleteEntry(id) : Effect.void,
+                  ),
+                ),
+        ),
+      );
     },
   );
+
+  /** Pushes and opens or updates the draft; `reserved` is a new pull request's ledger place. */
+  const publish = Effect.fn("HoustonNightLanding.publish")(function* (
+    input: RecordInput,
+    run: StoredRun,
+    root: string,
+    origin: { readonly host: string; readonly repository: string },
+    defaultBranch: string | null,
+    existing: LedgerEntry | undefined,
+    reserved: number | null,
+  ) {
+    // The push: only while the remote branch is where Houston last pushed it.
+    const expected = yield* store.lastPush(run.projectId, input.branch);
+    const pushed = yield* withVcs(
+      pushWithLease(root, "origin", input.branch, expected ?? "", input.head),
+    ).pipe(Effect.result);
+    if (pushed._tag === "Failure") {
+      const actual = yield* withVcs(
+        git(root, ["ls-remote", "origin", `refs/heads/${input.branch}`], GIT_NETWORK_TIMEOUT_MS),
+      ).pipe(
+        Effect.map((result) => result.stdout.trim().split(/\s+/)[0] || "no branch"),
+        Effect.orElseSucceed(() => "unreadable"),
+      );
+      return yield* toolFail(
+        "remote",
+        `${pushed.failure}; origin/${input.branch} is at ${actual}, Houston expected ${expected ?? "no branch"}`,
+      );
+    }
+    const at = yield* now;
+    yield* store.addPush({
+      runId: run.id,
+      branch: input.branch,
+      oldSha: expected,
+      newSha: input.head,
+      prNumber: existing?.pr_number ?? null,
+      at,
+    });
+
+    // The draft pull request: opened once per branch, then updated.
+    const title = outboundText(input.title, root);
+    const body = outboundText(input.body, root);
+    const answer = yield* (
+      existing === undefined
+        ? rest(
+            origin.host,
+            "houston.nightShift.openPullRequest",
+            "POST",
+            `repos/${origin.repository}/pulls`,
+            { title, head: input.branch, base: defaultBranch, body, draft: true },
+          )
+        : rest(
+            origin.host,
+            "houston.nightShift.updatePullRequest",
+            "PATCH",
+            `repos/${origin.repository}/pulls/${existing.pr_number}`,
+            { title, body },
+          )
+    ).pipe(
+      Effect.catch((message: string) =>
+        toolFail("remote", `GitHub refused the pull request for ${input.branch}: ${message}`),
+      ),
+    );
+    const number =
+      existing?.pr_number ?? (typeof answer.number === "number" ? answer.number : null);
+    if (number === null) {
+      return yield* toolFail(
+        "remote",
+        `GitHub answered no pull request number for ${input.branch}`,
+      );
+    }
+    const url =
+      typeof answer.html_url === "string"
+        ? answer.html_url
+        : `https://${origin.host}/${origin.repository}/pull/${number}`;
+    yield* store.addPush({
+      runId: run.id,
+      branch: input.branch,
+      oldSha: expected,
+      newSha: input.head,
+      prNumber: number,
+      at,
+    });
+
+    const reset = (previous: PrDetail | null): PrDetail => ({
+      ...(previous ?? {
+        ci: { ...emptyCiState, failing: [], rerunRefused: [] },
+        ciNote: null,
+        held: false,
+        queued: false,
+        enqueueError: null,
+      }),
+      plans: input.plans,
+      builtBy: input.builtBy,
+      visible: input.visible,
+      task: input.task ?? previous?.task ?? null,
+      url,
+      gates: { ...(previous?.gates ?? DEFAULT_GATES), checks: "pending", ci: "pending" },
+      checks: { head: input.head, status: "pending", results: [] },
+    });
+    let entryId: number;
+    if (existing === undefined) {
+      entryId = reserved!;
+      yield* store.updatePullRequest(entryId, {
+        status: "open",
+        prNumber: number,
+        detail: reset(null),
+      });
+      if (input.task !== undefined) {
+        yield* backlog.comment(
+          input.task,
+          `Night shift run ${run.id} opened draft pull request #${number}.`,
+          AUTHOR,
+        );
+      }
+    } else {
+      entryId = existing.id;
+      yield* store.updatePullRequest(existing.id, {
+        headSha: input.head,
+        title: input.title,
+        theme: input.theme,
+        body: input.body,
+        visible: input.visible,
+        detail: reset(prDetail(existing)),
+      });
+    }
+    yield* startChecks(entryId);
+    const entry = (yield* store.getEntry(entryId))!;
+    return {
+      entry,
+      pullRequest: { number, url },
+      push: { branch: input.branch, oldSha: expected, newSha: input.head },
+    } satisfies RecordResult;
+  });
 
   // CI.
 

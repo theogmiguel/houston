@@ -173,6 +173,64 @@ describe("night shift landing", () => {
     }),
   );
 
+  it.effect("parallel records cannot pass the 30 pull request limit together", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("land-parallel");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const seeded = yield* seedRun(kit, "land-parallel");
+          const landing = yield* Landing.HoustonNightLanding;
+          const store = yield* Store.HoustonNightShiftStore;
+          for (let index = 0; index < 29; index += 1) {
+            yield* store.addEntry({
+              runId: seeded.runId,
+              projectId: seeded.projectId as never,
+              kind: "pr",
+              title: `seeded ${index}`,
+              prNumber: 500 + index,
+              createdAt: NOW,
+            });
+          }
+          const second = crewWorktree(seeded.fixture, "t3/second");
+          kit.state.managed.add("t3/second");
+          yield* store.addCrew({
+            runId: seeded.runId,
+            threadId: ThreadId.make("land-worker-2"),
+            taskId: "task:2",
+            parentThreadId: ORCHESTRATOR,
+            role: "implementation",
+            providerInstanceId: "claudeAgent",
+            requestedInstanceId: null,
+            worktreePath: second.path,
+            branch: "t3/second",
+            startedAt: NOW,
+            endedAt: null,
+          });
+
+          const outcomes = yield* Effect.all(
+            [
+              Effect.result(landing.record(recordInput(seeded))),
+              Effect.result(
+                landing.record(recordInput(seeded, { branch: "t3/second", head: second.head })),
+              ),
+            ],
+            { concurrency: "unbounded" },
+          );
+          const failures = outcomes.filter((outcome) => outcome._tag === "Failure");
+          assert.lengthOf(failures, 1, "one of the two takes the last place");
+          const refused = failures[0]!.failure as unknown;
+          assert.equal(kindOf(refused), "limit");
+          assert.include(messageOf(refused), "30");
+          assert.equal(posts(kit).length, 1, "one pull request was opened");
+          const prs = (yield* store.runEntries(seeded.runId)).filter((row) => row.kind === "pr");
+          assert.lengthOf(prs, 30);
+          assert.isTrue(prs.every((row) => row.pr_number !== null));
+        }),
+      );
+    }),
+  );
+
   it.effect("only the run's own branches pass the push guard", () =>
     Effect.gen(function* () {
       const kit = yield* makeKit("land-guard");
