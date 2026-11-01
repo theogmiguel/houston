@@ -6,7 +6,6 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import {
   formatWorkingDurationLabel,
@@ -17,7 +16,6 @@ import {
   AlarmClockIcon,
   AlarmClockOffIcon,
   CheckIcon,
-  ChevronDownIcon,
   ChevronRightIcon,
   ClockIcon,
   EyeOffIcon,
@@ -37,7 +35,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { isCommandPaletteOpen } from "../../commandPaletteBus";
+import { isCommandPaletteOpen, openCommandPalette } from "../../commandPaletteBus";
 import { requestCustomSnooze } from "../CustomSnoozeDialog";
 import { isElectron } from "../../env";
 import {
@@ -66,11 +64,7 @@ import {
 } from "../../grid/sidebar";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { GridShelves } from "./GridShelves";
-import {
-  COLLAPSED_GRIDS_STORAGE_KEY,
-  COLLAPSED_WORKSPACES_STORAGE_KEY,
-  useCollapsedKeys,
-} from "./sidebarCollapse";
+import { COLLAPSED_GRIDS_STORAGE_KEY, useCollapsedKeys } from "./sidebarCollapse";
 import { preorderThreads } from "../../grid/tree";
 import { useOpenGridDraft } from "../../grid/useOpenGridDraft";
 import { useQuietThreadShells, useProjects } from "../../state/entities";
@@ -100,7 +94,6 @@ import {
 } from "../sidebar/sidebarProviderEntries";
 import { useSnoozeWakeClock } from "../Sidebar.logic";
 import { resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
-import { Button } from "../ui/button";
 import {
   Menu,
   MenuItem,
@@ -117,11 +110,24 @@ import {
   FOCUS_ACTION_CLS,
   FOCUS_ROW_CLS,
   ROW_ACTIONS_FOCUS_REVEAL,
-  SIDEBAR_CHEVRON_CLS,
   SidebarContent,
   SidebarHeader,
   useSidebarVisibility,
 } from "../ui/sidebar";
+import {
+  SIDEBAR_GRID_ACTION_CLS,
+  SIDEBAR_GRID_COLLAPSED_ICON_CLS,
+  SIDEBAR_GRID_EMPTY_CLS,
+  SIDEBAR_GRID_HEADING_ACTIVE_CLS,
+  SIDEBAR_GRID_HEADING_CLS,
+  SIDEBAR_GRID_HEADING_DROP_CLS,
+  SIDEBAR_GRID_NAME_CLS,
+  SIDEBAR_GRID_RENAME_CLS,
+  SIDEBAR_GRID_WORKSPACE_CLS,
+  SIDEBAR_SECTION_ADD_CLS,
+  SIDEBAR_SECTION_MENU_CLS,
+  SidebarNewGridMenu,
+} from "../ui/sidebar-grids";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
@@ -205,10 +211,10 @@ export function GridSidebar() {
 
   const [search, setSearch] = useState("");
   const [selection, setSelection] = useState<ThreadSelection>(clearThreadSelection);
-  const collapsedWorkspaces = useCollapsedKeys(COLLAPSED_WORKSPACES_STORAGE_KEY);
   const collapsedGrids = useCollapsedKeys(COLLAPSED_GRIDS_STORAGE_KEY);
   const [dragging, setDragging] = useState<DraggedThread | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const openGridDraft = useOpenGridDraft();
 
   const actions = useThreadActions();
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
@@ -218,6 +224,23 @@ export function GridSidebar() {
   const openThread = (gridId: string, threadId: string) => {
     useGridStore.getState().focusThread(gridId, threadId);
     void navigate({ to: "/grid/$gridId", params: { gridId } });
+  };
+
+  const createGridInWorkspace = (workspaceKey: string) => {
+    const project = projects.find(
+      (candidate) => workspaceKeyOf(candidate.environmentId, candidate.id) === workspaceKey,
+    );
+    if (project === undefined) return;
+    const gridId = createGrid({
+      environmentId: project.environmentId,
+      projectId: project.id,
+      workspaceKey,
+    });
+    void navigate({ to: "/grid/$gridId", params: { gridId } });
+  };
+
+  const createThreadInGrid = (grid: GridRecord) => {
+    void openGridDraft({ gridId: grid.id, focusedThreadId: grid.focusedThreadId });
   };
 
   const orderedThreadKeys = projects.flatMap((project) =>
@@ -443,16 +466,6 @@ export function GridSidebar() {
     }
     moveThreadToGrid(source, targetGridId);
   };
-  const moveThreadToWorkspace = (project: EnvironmentProject, source: DraggedThread) => {
-    const gridId = createGrid({
-      environmentId: project.environmentId,
-      projectId: project.id,
-      workspaceKey: workspaceKeyOf(project.environmentId, project.id),
-    });
-    moveThreadToGrid(source, gridId);
-    useGridStore.getState().focusThread(gridId, source.threadId);
-  };
-
   const wakeShelfThread = (thread: EnvironmentThreadShell) => {
     void (async () => {
       const result = await actions.unsnoozeThread(scopeThreadRef(thread.environmentId, thread.id));
@@ -535,11 +548,55 @@ export function GridSidebar() {
       ),
   );
 
+  const hiddenGridGroups = projects.flatMap((project) => {
+    const workspaceKey = workspaceKeyOf(project.environmentId, project.id);
+    const workspaceHidden = orderedGridsForWorkspace(grids, workspaceKey).filter(
+      (grid) => grid.hidden,
+    );
+    return workspaceHidden.length === 0
+      ? []
+      : [{ workspaceKey, title: project.title, grids: workspaceHidden }];
+  });
+
+  const workspaceChoices = projects
+    .map((project) => ({
+      key: workspaceKeyOf(project.environmentId, project.id),
+      label: project.title,
+      updatedAt: project.updatedAt,
+    }))
+    .toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  const activeWorkspaceKey = openGrid?.workspaceKey ?? workspaceChoices[0]?.key ?? null;
+  const orderedWorkspaceChoices =
+    activeWorkspaceKey === null
+      ? workspaceChoices
+      : workspaceChoices.toSorted(
+          (left, right) =>
+            Number(right.key === activeWorkspaceKey) - Number(left.key === activeWorkspaceKey),
+        );
+
   return (
     <>
       <SidebarChromeHeader isElectron={isElectron} />
       <SidebarHeader>
         <SidebarRailNav
+          sectionTitle="Grids"
+          sectionAddProject={false}
+          sectionActions={
+            <>
+              {hiddenGridGroups.length > 0 ? (
+                <HiddenGridsMenu
+                  groups={hiddenGridGroups}
+                  onShowGrid={(gridId) => useGridStore.getState().setGridHidden(gridId, false)}
+                />
+              ) : null}
+              <SidebarNewGridMenu
+                workspaces={orderedWorkspaceChoices.map(({ key, label }) => ({ key, label }))}
+                selectedKey={activeWorkspaceKey}
+                onSelect={createGridInWorkspace}
+                onOpenFolder={() => openCommandPalette({ open: "add-project" })}
+              />
+            </>
+          }
           search={
             <label className="flex h-7 w-full shrink-0 items-center gap-2 rounded-(--control-radius) bg-(--field) px-2 text-sm text-secondary-foreground focus-within:ring-2 focus-within:ring-ring focus-within:ring-inset">
               <SearchIcon aria-hidden className="size-[15px] shrink-0 text-secondary-label" />
@@ -593,88 +650,80 @@ export function GridSidebar() {
             {projects.map((project) => {
               const workspaceKey = workspaceKeyOf(project.environmentId, project.id);
               const workspaceGrids = orderedGridsForWorkspace(grids, workspaceKey);
-              const visibleGrids = workspaceGrids.filter((grid) => !grid.hidden);
               const hiddenGrids = workspaceGrids.filter((grid) => grid.hidden);
               const workspaceMatches =
                 query.length > 0 &&
                 project.title.toLocaleLowerCase().includes(query.toLocaleLowerCase());
-              const renderedGrids = visibleGrids.flatMap((grid) => {
-                const gridMatches =
-                  query.length > 0 &&
-                  grid.name.toLocaleLowerCase().includes(query.toLocaleLowerCase());
-                const gridThreads = visibleGridThreads(grid, threads, nowIso);
-                const matchedThreads =
-                  query.length === 0 || workspaceMatches || gridMatches
-                    ? gridThreads
-                    : gridThreads.filter((thread) =>
-                        threadMatchesGridSearch(
-                          {
-                            title: thread.title,
-                            branch: thread.branch,
-                            pullRequests: thread.pullRequests,
-                          },
-                          query,
-                        ),
-                      );
-                if (
-                  query.length > 0 &&
-                  !workspaceMatches &&
-                  !gridMatches &&
-                  matchedThreads.length === 0
-                ) {
-                  return [];
-                }
-                return [{ grid, threads: matchedThreads }];
-              });
-              if (query.length > 0 && !workspaceMatches && renderedGrids.length === 0) return null;
-              const collapsed =
-                query.length === 0 && collapsedWorkspaces.collapsed.has(workspaceKey);
               const providerEntries =
                 providerEntriesByEnvironment.get(project.environmentId) ?? EMPTY_PROVIDER_ENTRIES;
-              return (
-                <WorkspaceGroup
-                  key={workspaceKey}
-                  project={project}
-                  collapsed={collapsed}
-                  query={query}
-                  grids={renderedGrids}
-                  hiddenGrids={hiddenGrids}
-                  providerEntries={providerEntries}
-                  openGridId={openGrid?.id ?? null}
-                  nowIso={nowIso}
-                  selection={selection}
-                  runningSubagents={runningSubagentsByThread}
-                  dragging={dragging}
-                  dropTarget={dropTarget}
-                  onToggle={() => collapsedWorkspaces.toggle(workspaceKey)}
-                  collapsedGrids={collapsedGrids.collapsed}
-                  onToggleGrid={collapsedGrids.toggle}
-                  onCreateGrid={() => {
-                    const gridId = createGrid({
-                      environmentId: project.environmentId,
-                      projectId: project.id,
-                      workspaceKey,
-                    });
-                    void navigate({ to: "/grid/$gridId", params: { gridId } });
-                  }}
-                  onOpenThread={openThread}
-                  onSelectThread={selectThread}
-                  onCloseThread={(thread) => closeThreads([thread])}
-                  onHoldThread={(thread, preset) => holdThreads([thread], preset.snoozedUntil)}
-                  onPickHoldTime={pickHoldTime}
-                  onDragStart={handleDragStart}
-                  onDragEnd={handleDragEnd}
-                  onDragOverGrid={setDropTarget}
-                  onDropOnGrid={(source, targetGridId) => moveThreadToGrid(source, targetGridId)}
-                  onDropOnThread={dropThreadOnThread}
-                  onDropOnWorkspace={(source) => moveThreadToWorkspace(project, source)}
-                  onDragLeave={() => setDropTarget(null)}
-                  readDragged={readDragged}
-                  onRenameThread={renameThread}
-                  onSetAutoClose={setAutoClose}
-                  onShowGrid={(gridId) => useGridStore.getState().setGridHidden(gridId, false)}
-                />
-              );
+              return workspaceGrids
+                .filter((grid) => !grid.hidden)
+                .map((grid) => {
+                  const gridMatches =
+                    query.length > 0 &&
+                    grid.name.toLocaleLowerCase().includes(query.toLocaleLowerCase());
+                  const gridThreads = visibleGridThreads(grid, threads, nowIso);
+                  const matchedThreads =
+                    query.length === 0 || workspaceMatches || gridMatches
+                      ? gridThreads
+                      : gridThreads.filter((thread) =>
+                          threadMatchesGridSearch(
+                            {
+                              title: thread.title,
+                              branch: thread.branch,
+                              pullRequests: thread.pullRequests,
+                            },
+                            query,
+                          ),
+                        );
+                  if (
+                    query.length > 0 &&
+                    !workspaceMatches &&
+                    !gridMatches &&
+                    matchedThreads.length === 0
+                  ) {
+                    return null;
+                  }
+                  return (
+                    <GridGroup
+                      key={grid.id}
+                      grid={grid}
+                      workspaceTitle={project.title}
+                      threads={matchedThreads}
+                      solo={gridThreads.length === 1}
+                      query={query}
+                      open={openGrid?.id === grid.id}
+                      collapsed={query.length === 0 && collapsedGrids.collapsed.has(grid.id)}
+                      onToggleCollapsed={() => collapsedGrids.toggle(grid.id)}
+                      providerEntries={providerEntries}
+                      nowIso={nowIso}
+                      selection={selection}
+                      runningSubagents={runningSubagentsByThread}
+                      dragging={dragging}
+                      dropTarget={dropTarget}
+                      hiddenGrids={hiddenGrids}
+                      onOpenThread={openThread}
+                      onSelectThread={selectThread}
+                      onCloseThread={(thread) => closeThreads([thread])}
+                      onHoldThread={(thread, preset) => holdThreads([thread], preset.snoozedUntil)}
+                      onPickHoldTime={pickHoldTime}
+                      onDragStart={handleDragStart}
+                      onDragEnd={handleDragEnd}
+                      onDragOverGrid={setDropTarget}
+                      onDropOnGrid={(source, targetGridId) =>
+                        moveThreadToGrid(source, targetGridId)
+                      }
+                      onDropOnThread={dropThreadOnThread}
+                      onDragLeave={() => setDropTarget(null)}
+                      readDragged={readDragged}
+                      onCreateThread={() => createThreadInGrid(grid)}
+                      onRenameThread={renameThread}
+                      onSetAutoClose={setAutoClose}
+                      onShowGrid={(gridId) => useGridStore.getState().setGridHidden(gridId, false)}
+                      onCreateGrid={() => createGridInWorkspace(workspaceKey)}
+                    />
+                  );
+                });
             })}
           </div>
         </div>
@@ -813,214 +862,46 @@ export function GridSidebar() {
   );
 }
 
-function WorkspaceGroup({
-  project,
-  collapsed,
-  query,
-  grids,
-  hiddenGrids,
-  providerEntries,
-  openGridId,
-  nowIso,
-  selection,
-  runningSubagents,
-  dragging,
-  dropTarget,
-  onToggle,
-  collapsedGrids,
-  onToggleGrid,
-  onCreateGrid,
-  onOpenThread,
-  onSelectThread,
-  onCloseThread,
-  onHoldThread,
-  onPickHoldTime,
-  onDragStart,
-  onDragEnd,
-  onDragOverGrid,
-  onDropOnGrid,
-  onDropOnThread,
-  onDropOnWorkspace,
-  onDragLeave,
-  readDragged,
-  onRenameThread,
-  onSetAutoClose,
+function HiddenGridsMenu({
+  groups,
   onShowGrid,
 }: {
-  project: EnvironmentProject;
-  collapsed: boolean;
-  query: string;
-  grids: ReadonlyArray<{ grid: GridRecord; threads: EnvironmentThreadShell[] }>;
-  hiddenGrids: ReadonlyArray<GridRecord>;
-  providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
-  openGridId: string | null;
-  nowIso: string;
-  selection: ThreadSelection;
-  runningSubagents: ReadonlyMap<string, number>;
-  dragging: DraggedThread | null;
-  dropTarget: string | null;
-  onToggle: () => void;
-  collapsedGrids: ReadonlySet<string>;
-  onToggleGrid: (gridId: string) => void;
-  onCreateGrid: () => void;
-  onOpenThread: (gridId: string, threadId: string) => void;
-  onSelectThread: (
-    thread: EnvironmentThreadShell,
-    input: { shiftKey: boolean; toggleKey: boolean },
-  ) => void;
-  onCloseThread: (thread: EnvironmentThreadShell) => void;
-  onHoldThread: (
-    thread: EnvironmentThreadShell,
-    preset: Pick<SnoozePreset, "snoozedUntil">,
-  ) => void;
-  onPickHoldTime: () => Promise<Pick<SnoozePreset, "snoozedUntil"> | null>;
-  onDragStart: (gridId: string, thread: EnvironmentThreadShell) => void;
-  onDragEnd: () => void;
-  onDragOverGrid: (key: string | null) => void;
-  onDropOnGrid: (source: DraggedThread, targetGridId: string) => void;
-  onDropOnThread: (source: DraggedThread, targetGridId: string, targetThreadId: string) => void;
-  onDropOnWorkspace: (source: DraggedThread) => void;
-  onDragLeave: () => void;
-  readDragged: (event: ReactDragEvent) => DraggedThread | null;
-  onRenameThread: (thread: EnvironmentThreadShell, title: string) => void;
-  onSetAutoClose: (thread: EnvironmentThreadShell, enabled: boolean) => void;
+  groups: ReadonlyArray<{
+    workspaceKey: string;
+    title: string;
+    grids: ReadonlyArray<GridRecord>;
+  }>;
   onShowGrid: (gridId: string) => void;
 }) {
-  const workspaceKey = workspaceKeyOf(project.environmentId, project.id);
-  const isDropTarget = dropTarget === `workspace:${workspaceKey}`;
   return (
-    <section className="flex flex-col gap-px">
-      <div
-        className="group/grid relative flex items-center"
-        onDragOver={(event) => {
-          if (readDragged(event) === null) return;
-          event.preventDefault();
-          onDragOverGrid(`workspace:${workspaceKey}`);
-        }}
-        onDragLeave={(event) => {
-          if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-          onDragLeave();
-        }}
-        onDrop={(event) => {
-          const source = readDragged(event);
-          event.preventDefault();
-          onDragOverGrid(null);
-          if (source !== null) onDropOnWorkspace(source);
-        }}
+    <Menu>
+      <MenuTrigger
+        render={
+          <button type="button" aria-label="Hidden grids" className={SIDEBAR_SECTION_MENU_CLS} />
+        }
       >
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={!collapsed}
-          className={cn(
-            `flex h-7 w-full min-w-0 cursor-pointer items-center gap-2 rounded-(--r-ctl) px-2 text-left text-headline font-semibold text-sidebar-foreground outline-none hover:bg-sidebar-row-hover ${FOCUS_ACTION_CLS}`,
-            isDropTarget && "bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset",
-          )}
-        >
-          <ChevronDownIcon
-            aria-hidden
-            className={cn(
-              `${SIDEBAR_CHEVRON_CLS} size-3 shrink-0 text-secondary-label`,
-              collapsed && "-rotate-90",
-            )}
-          />
-          <span className="min-w-0 truncate">
-            <HighlightedText text={project.title} query={query} />
-          </span>
-        </button>
-        <span className="absolute inset-y-0 right-1 flex items-center">
-          <Button
-            variant="ghost-muted"
-            size="icon-micro"
-            aria-label={`New grid in ${project.title}`}
-            onClick={onCreateGrid}
-          >
-            <PlusIcon />
-          </Button>
-        </span>
-        {hiddenGrids.length > 0 ? (
-          <Menu>
-            <MenuTrigger
-              render={
-                <button
-                  type="button"
-                  aria-label={`Workspace actions for ${project.title}`}
-                  className={cn(
-                    "absolute right-8 top-1/2 inline-grid size-5 -translate-y-1/2 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 focus-visible:opacity-100",
-                    FOCUS_ACTION_CLS,
-                  )}
-                >
-                  <MoreHorizontalIcon aria-hidden className="size-3.5" />
-                </button>
-              }
-            />
-            <MenuPopup side="bottom" align="end">
-              <MenuSub>
-                <MenuSubTrigger>
-                  Show hidden grids ({hiddenGrids.length})
-                  <ChevronRightIcon aria-hidden className="ml-auto size-3.5 text-secondary-label" />
-                </MenuSubTrigger>
-                <MenuSubPopup>
-                  {hiddenGrids.map((hiddenGrid) => (
-                    <MenuItem key={hiddenGrid.id} onClick={() => onShowGrid(hiddenGrid.id)}>
-                      <EyeOffIcon aria-hidden className="size-3.5" />
-                      <span className="min-w-0 flex-1 truncate">{hiddenGrid.name}</span>
-                      <span className="text-2xs text-secondary-label">Show</span>
-                    </MenuItem>
-                  ))}
-                </MenuSubPopup>
-              </MenuSub>
-            </MenuPopup>
-          </Menu>
-        ) : null}
-      </div>
-      {collapsed ? null : (
-        <div className="flex flex-col gap-px">
-          {grids.length === 0 && query.length === 0 ? (
-            <button
-              type="button"
-              onClick={onCreateGrid}
-              className="flex h-7 items-center gap-2 rounded-(--r-ctl) pl-7 pr-2 text-left text-sm text-secondary-label hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-            >
-              <PlusIcon aria-hidden className="size-[15px]" />
-              New grid
-            </button>
-          ) : null}
-          {grids.map(({ grid, threads }) => (
-            <GridRow
-              key={grid.id}
-              grid={grid}
-              threads={threads}
-              query={query}
-              open={openGridId === grid.id}
-              collapsed={collapsedGrids.has(grid.id)}
-              onToggleCollapsed={() => onToggleGrid(grid.id)}
-              providerEntries={providerEntries}
-              nowIso={nowIso}
-              selection={selection}
-              runningSubagents={runningSubagents}
-              dragging={dragging}
-              dropTarget={dropTarget}
-              onOpenThread={onOpenThread}
-              onSelectThread={onSelectThread}
-              onCloseThread={onCloseThread}
-              onHoldThread={onHoldThread}
-              onPickHoldTime={onPickHoldTime}
-              onDragStart={onDragStart}
-              onDragEnd={onDragEnd}
-              onDragOverGrid={onDragOverGrid}
-              onDropOnGrid={onDropOnGrid}
-              onDropOnThread={onDropOnThread}
-              onDragLeave={onDragLeave}
-              readDragged={readDragged}
-              workspaceTitle={project.title}
-              onRenameThread={onRenameThread}
-              onSetAutoClose={onSetAutoClose}
-            />
-          ))}
-        </div>
-      )}
-    </section>
+        <MoreHorizontalIcon aria-hidden className="size-[15px]" />
+      </MenuTrigger>
+      <MenuPopup side="bottom" align="end">
+        {groups.map((group) => (
+          <MenuSub key={group.workspaceKey}>
+            <MenuSubTrigger>
+              {group.title}
+              <ChevronRightIcon aria-hidden className="ml-auto size-3.5 text-secondary-label" />
+            </MenuSubTrigger>
+            <MenuSubPopup>
+              {group.grids.map((grid) => (
+                <MenuItem key={grid.id} onClick={() => onShowGrid(grid.id)}>
+                  <EyeOffIcon aria-hidden className="size-3.5" />
+                  <span className="min-w-0 flex-1 truncate">{grid.name}</span>
+                  <span className="text-2xs text-secondary-label">Show</span>
+                </MenuItem>
+              ))}
+            </MenuSubPopup>
+          </MenuSub>
+        ))}
+      </MenuPopup>
+    </Menu>
   );
 }
 
@@ -1037,9 +918,11 @@ async function deleteGridWithConfirm(
   if (confirmed) deleteGrid(grid.id);
 }
 
-function GridRow({
+export function GridGroup({
   grid,
+  workspaceTitle,
   threads,
+  solo,
   query,
   open,
   collapsed,
@@ -1050,6 +933,7 @@ function GridRow({
   runningSubagents,
   dragging,
   dropTarget,
+  hiddenGrids,
   onOpenThread,
   onSelectThread,
   onCloseThread,
@@ -1062,12 +946,15 @@ function GridRow({
   onDropOnThread,
   onDragLeave,
   readDragged,
-  workspaceTitle,
+  onCreateThread,
   onRenameThread,
   onSetAutoClose,
+  onShowGrid,
+  onCreateGrid,
 }: {
   grid: GridRecord;
   workspaceTitle: string;
+  solo: boolean;
   onRenameThread: (thread: EnvironmentThreadShell, title: string) => void;
   onSetAutoClose: (thread: EnvironmentThreadShell, enabled: boolean) => void;
   threads: ReadonlyArray<EnvironmentThreadShell>;
@@ -1081,6 +968,7 @@ function GridRow({
   runningSubagents: ReadonlyMap<string, number>;
   dragging: DraggedThread | null;
   dropTarget: string | null;
+  hiddenGrids: ReadonlyArray<GridRecord>;
   onOpenThread: (gridId: string, threadId: string) => void;
   onSelectThread: (
     thread: EnvironmentThreadShell,
@@ -1099,6 +987,9 @@ function GridRow({
   onDropOnThread: (source: DraggedThread, targetGridId: string, targetThreadId: string) => void;
   onDragLeave: () => void;
   readDragged: (event: ReactDragEvent) => DraggedThread | null;
+  onCreateThread: () => void;
+  onShowGrid: (gridId: string) => void;
+  onCreateGrid: () => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(grid.name);
@@ -1107,7 +998,6 @@ function GridRow({
   const unpinGrid = useGridStore((store) => store.unpinGrid);
   const setGridHidden = useGridStore((store) => store.setGridHidden);
   const deleteGrid = useGridStore((store) => store.deleteGrid);
-  const openGridDraft = useOpenGridDraft();
   const isDropTarget = dropTarget === `grid:${grid.id}`;
   const readyThreads = threads.filter(
     (thread) => resolveGridThreadState(thread, nowIso) === "ready",
@@ -1115,13 +1005,68 @@ function GridRow({
   const closeAllReady = () => {
     for (const thread of readyThreads) onCloseThread(thread);
   };
-
-  const createThread = () => {
-    void openGridDraft({ gridId: grid.id, focusedThreadId: grid.focusedThreadId });
+  const startRenaming = () => {
+    setName(grid.name);
+    setRenaming(true);
+  };
+  const finishRenaming = () => {
+    renameGrid(grid.id, name);
+    setRenaming(false);
   };
 
+  const gridMenuItems = (
+    <>
+      <MenuItem onClick={onCreateThread}>New thread</MenuItem>
+      <MenuItem onClick={startRenaming}>
+        Rename grid
+        <MenuShortcut>F2</MenuShortcut>
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem onClick={() => (grid.pinnedAt === null ? pinGrid(grid.id) : unpinGrid(grid.id))}>
+        {grid.pinnedAt === null ? "Pin grid" : "Unpin grid"}
+      </MenuItem>
+      <MenuItem onClick={() => setGridHidden(grid.id, true)}>Hide grid</MenuItem>
+      <MenuItem onClick={() => void deleteGridWithConfirm(grid, deleteGrid)}>Delete grid</MenuItem>
+      <MenuSeparator />
+      <MenuItem disabled={readyThreads.length === 0} onClick={closeAllReady}>
+        Close all ready
+      </MenuItem>
+      <MenuSeparator />
+      <MenuSub>
+        <MenuSubTrigger>
+          Workspace
+          <ChevronRightIcon aria-hidden className="ml-auto size-3.5 text-secondary-label" />
+        </MenuSubTrigger>
+        <MenuSubPopup>
+          <MenuItem onClick={onCreateGrid}>New grid in {workspaceTitle}</MenuItem>
+          {hiddenGrids.length > 0 ? (
+            <MenuSub>
+              <MenuSubTrigger>
+                Show hidden grids
+                <ChevronRightIcon aria-hidden className="ml-auto size-3.5 text-secondary-label" />
+              </MenuSubTrigger>
+              <MenuSubPopup>
+                {hiddenGrids.map((hiddenGrid) => (
+                  <MenuItem key={hiddenGrid.id} onClick={() => onShowGrid(hiddenGrid.id)}>
+                    <EyeOffIcon aria-hidden className="size-3.5" />
+                    <span className="min-w-0 flex-1 truncate">{hiddenGrid.name}</span>
+                    <span className="text-2xs text-secondary-label">Show</span>
+                  </MenuItem>
+                ))}
+              </MenuSubPopup>
+            </MenuSub>
+          ) : null}
+        </MenuSubPopup>
+      </MenuSub>
+    </>
+  );
+
   return (
-    <div className="mt-1 flex flex-col gap-px">
+    <div
+      className="mt-1 flex flex-col gap-px"
+      data-grid-key={grid.id}
+      data-solo={solo ? "" : undefined}
+    >
       <div
         className="group/grid relative flex items-center"
         onDragOver={(event) => {
@@ -1145,10 +1090,7 @@ function GridRow({
             autoFocus
             value={name}
             onChange={(event) => setName(event.target.value)}
-            onBlur={() => {
-              renameGrid(grid.id, name);
-              setRenaming(false);
-            }}
+            onBlur={finishRenaming}
             onKeyDown={(event) => {
               if (event.key === "Enter") event.currentTarget.blur();
               if (event.key === "Escape") {
@@ -1156,114 +1098,77 @@ function GridRow({
                 setRenaming(false);
               }
             }}
-            className="h-7 min-w-0 flex-1 rounded-(--r-ctl) border border-input bg-background px-2 text-xs font-semibold text-foreground outline-none focus:border-ring"
+            className={SIDEBAR_GRID_RENAME_CLS}
           />
-        ) : (
+        ) : solo ? null : (
           <button
             type="button"
             onClick={onToggleCollapsed}
             onKeyDown={(event) => {
               if (event.key === "F2") {
                 event.preventDefault();
-                setName(grid.name);
-                setRenaming(true);
+                startRenaming();
               }
             }}
             aria-expanded={!collapsed}
             className={cn(
-              `group/grid flex h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-3 text-left text-xs outline-none hover:bg-sidebar-row-hover ${FOCUS_ACTION_CLS}`,
-              isDropTarget && "bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset",
+              SIDEBAR_GRID_HEADING_CLS,
+              open && SIDEBAR_GRID_HEADING_ACTIVE_CLS,
+              isDropTarget && SIDEBAR_GRID_HEADING_DROP_CLS,
             )}
           >
-            <ChevronDownIcon
-              aria-hidden
-              className={cn(
-                `${SIDEBAR_CHEVRON_CLS} size-3 shrink-0 text-secondary-label`,
-                collapsed && "-rotate-90",
-              )}
-            />
-            <span
-              className={cn(
-                "min-w-0 flex-1 truncate font-semibold",
-                open ? "text-foreground" : "text-secondary-foreground",
-              )}
-            >
+            {collapsed ? (
+              <ChevronRightIcon aria-hidden className={SIDEBAR_GRID_COLLAPSED_ICON_CLS} />
+            ) : null}
+            <span className={SIDEBAR_GRID_NAME_CLS}>
               <HighlightedText text={grid.name} query={query} />
             </span>
-            <Tooltip>
-              <TooltipTrigger
+            <span className={SIDEBAR_GRID_WORKSPACE_CLS}>{workspaceTitle}</span>
+            {threads.length === 0 ? <span className={SIDEBAR_GRID_EMPTY_CLS}>empty</span> : null}
+          </button>
+        )}
+        {renaming || solo ? null : (
+          <>
+            <span className="absolute inset-y-0 right-7 flex items-center">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label={`New thread in ${grid.name}`}
+                      onClick={onCreateThread}
+                      className={SIDEBAR_GRID_ACTION_CLS}
+                    />
+                  }
+                >
+                  <PlusIcon aria-hidden className="size-3" />
+                </TooltipTrigger>
+                <TooltipPopup side="top">New thread · T</TooltipPopup>
+              </Tooltip>
+            </span>
+            <Menu>
+              <MenuTrigger
                 render={
-                  <span
+                  <button
+                    type="button"
+                    aria-label={`Grid actions for ${grid.name}`}
                     className={cn(
-                      "inline-grid size-5 shrink-0 place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 group-focus-within/grid:opacity-100",
-                      FOCUS_ACTION_CLS,
+                      SIDEBAR_GRID_ACTION_CLS,
+                      "absolute right-1 top-1/2 -translate-y-1/2",
                     )}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`New thread in ${grid.name}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      createThread();
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Enter" && event.key !== " ") return;
-                      event.preventDefault();
-                      event.stopPropagation();
-                      createThread();
-                    }}
                   />
                 }
               >
-                <PlusIcon aria-hidden className="size-3" />
-              </TooltipTrigger>
-              <TooltipPopup side="top">New thread · T</TooltipPopup>
-            </Tooltip>
-          </button>
-        )}
-        <Menu>
-          <MenuTrigger
-            render={
-              <button
-                type="button"
-                aria-label={`Grid actions for ${grid.name}`}
-                className={cn(
-                  "absolute right-8 top-1/2 inline-grid size-5 -translate-y-1/2 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 focus-visible:opacity-100",
-                  FOCUS_ACTION_CLS,
-                )}
-              >
                 <MoreHorizontalIcon aria-hidden className="size-3.5" />
-              </button>
-            }
-          />
-          <MenuPopup side="bottom" align="end">
-            <MenuItem onClick={createThread}>New thread</MenuItem>
-            <MenuItem
-              onClick={() => {
-                setName(grid.name);
-                setRenaming(true);
-              }}
-            >
-              Rename grid
-              <MenuShortcut>F2</MenuShortcut>
-            </MenuItem>
-            <MenuSeparator />
-            <MenuItem
-              onClick={() => (grid.pinnedAt === null ? pinGrid(grid.id) : unpinGrid(grid.id))}
-            >
-              {grid.pinnedAt === null ? "Pin grid" : "Unpin grid"}
-            </MenuItem>
-            <MenuItem onClick={() => setGridHidden(grid.id, true)}>Hide grid</MenuItem>
-            <MenuItem onClick={() => void deleteGridWithConfirm(grid, deleteGrid)}>
-              Delete grid
-            </MenuItem>
-            <MenuSeparator />
-            <MenuItem disabled={readyThreads.length === 0} onClick={closeAllReady}>
-              Close all ready
-            </MenuItem>
-          </MenuPopup>
-        </Menu>
+              </MenuTrigger>
+              <MenuPopup side="bottom" align="end">
+                {gridMenuItems}
+              </MenuPopup>
+            </Menu>
+          </>
+        )}
       </div>
-      {collapsed ? null : (
+      {collapsed && !solo ? null : (
         <div className="flex flex-col gap-px">
           {threads.map((thread) => (
             <ThreadCard
@@ -1280,6 +1185,22 @@ function GridRow({
               dragging={dragging?.threadId === thread.id}
               runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
               workspaceTitle={workspaceTitle}
+              workspacePrefix={solo ? workspaceTitle : null}
+              atGridLevel={solo}
+              gridActions={
+                solo ? (
+                  <MenuSub>
+                    <MenuSubTrigger>
+                      Grid
+                      <ChevronRightIcon
+                        aria-hidden
+                        className="ml-auto size-3.5 text-secondary-label"
+                      />
+                    </MenuSubTrigger>
+                    <MenuSubPopup>{gridMenuItems}</MenuSubPopup>
+                  </MenuSub>
+                ) : null
+              }
               onOpen={() => onOpenThread(grid.id, thread.id)}
               onSelect={(input) => onSelectThread(thread, input)}
               onClose={() => onCloseThread(thread)}
@@ -1418,6 +1339,9 @@ export function ThreadCard({
   selected,
   dragging,
   workspaceTitle,
+  workspacePrefix = null,
+  atGridLevel = false,
+  gridActions = null,
   timeLabel = null,
   shelf = null,
   runningSubagents = 0,
@@ -1444,6 +1368,9 @@ export function ThreadCard({
   selected: boolean;
   dragging: boolean;
   workspaceTitle: string;
+  workspacePrefix?: string | null;
+  atGridLevel?: boolean;
+  gridActions?: ReactNode;
   timeLabel?: string | null;
   shelf?: "snoozed" | "settled" | null;
   runningSubagents?: number;
@@ -1536,7 +1463,8 @@ export function ThreadCard({
               onOpen();
             }}
             className={cn(
-              `group/th relative flex w-full flex-col gap-0.75 rounded-lg py-1.75 pr-2.5 pl-7.5 text-left outline-none ${FOCUS_ROW_CLS}`,
+              `group/th relative flex w-full flex-col gap-0.75 rounded-lg py-1.75 pr-2.5 text-left outline-none ${FOCUS_ROW_CLS}`,
+              atGridLevel ? "pl-2.5" : "pl-7.5",
               "cursor-pointer",
               dragging && "opacity-50",
               selected ? "bg-(--accent-muted)" : focused ? "bg-(--sel)" : "hover:bg-(--hover)",
@@ -1732,6 +1660,12 @@ export function ThreadCard({
                         <CheckIcon aria-hidden className="ml-auto size-3.5 text-(--accent-ink)" />
                       ) : null}
                     </MenuItem>
+                    {gridActions !== null ? (
+                      <>
+                        <MenuSeparator />
+                        {gridActions}
+                      </>
+                    ) : null}
                   </MenuPopup>
                 </Menu>
               </>
@@ -1739,6 +1673,9 @@ export function ThreadCard({
           </span>
         </div>
         <div className="flex min-w-0 items-center gap-2 text-caption leading-3.75 text-secondary-label">
+          {workspacePrefix !== null ? (
+            <span className="shrink-0 truncate">{workspacePrefix} ·</span>
+          ) : null}
           <GitBranchIcon aria-hidden className="size-3 shrink-0" />
           <span className="min-w-0 flex-1 truncate font-mono text-2xs">
             {thread.branch ?? "no branch"}

@@ -2,8 +2,7 @@ import * as Schema from "effect/Schema";
 
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 
-/** Workspace and grid collapse survive a reload, like the shelves' expansion. */
-export const COLLAPSED_WORKSPACES_STORAGE_KEY = "t3code:sidebar:collapsed-workspaces";
+/** Grid collapse survives a reload, like the shelves' expansion. */
 export const COLLAPSED_GRIDS_STORAGE_KEY = "t3code:sidebar:collapsed-grids";
 
 const EMPTY_COLLAPSED_KEYS: ReadonlyArray<string> = [];

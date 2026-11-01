@@ -23,4 +23,19 @@ describe("SidebarRailNav", () => {
     expect(text).toContain("Usage");
     expect(text).toContain("Workspaces");
   });
+
+  it("takes the section title and actions from its caller", async () => {
+    await using screen = await render(
+      <SidebarRailNav
+        search={<span>Search</span>}
+        sectionTitle="Grids"
+        sectionActions={<button type="button">New grid</button>}
+      />,
+    );
+
+    const text = screen.container.textContent ?? "";
+    expect(text).toContain("Grids");
+    expect(text).not.toContain("Workspaces");
+    expect(screen.getByRole("button", { name: "New grid" }).element()).toBeVisible();
+  });
 });

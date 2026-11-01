@@ -2,11 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
-import {
-  COLLAPSED_GRIDS_STORAGE_KEY,
-  COLLAPSED_WORKSPACES_STORAGE_KEY,
-  useCollapsedKeys,
-} from "./sidebarCollapse";
+import { COLLAPSED_GRIDS_STORAGE_KEY, useCollapsedKeys } from "./sidebarCollapse";
 
 function Probe({ storageKey, itemKey }: { storageKey: string; itemKey: string }) {
   const { collapsed, toggle } = useCollapsedKeys(storageKey);
@@ -18,10 +14,8 @@ function Probe({ storageKey, itemKey }: { storageKey: string; itemKey: string })
 }
 
 describe("useCollapsedKeys", () => {
-  it.each([
-    ["workspaces", COLLAPSED_WORKSPACES_STORAGE_KEY],
-    ["grids", COLLAPSED_GRIDS_STORAGE_KEY],
-  ])("remembers a collapsed %s key across a remount", async (_label, storageKey) => {
+  it("remembers a collapsed grid key across a remount", async () => {
+    const storageKey = COLLAPSED_GRIDS_STORAGE_KEY;
     localStorage.clear();
     await using first = await render(<Probe storageKey={storageKey} itemKey="section-a" />, {
       router: false,
