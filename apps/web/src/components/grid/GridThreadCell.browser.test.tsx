@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   pill: null as unknown,
   archivedSnapshots: [] as unknown[],
   archiveThread: vi.fn(),
+  pendingQuestion: false,
 }));
 
 vi.mock("../../lib/archivedThreadsState", () => ({
@@ -24,12 +25,66 @@ vi.mock("../../lib/archivedThreadsState", () => ({
   }),
 }));
 
-vi.mock("../ChatView", () => ({
-  default: () => (
-    <div data-testid="chat-view">
-      <div data-testid="editor" contentEditable suppressContentEditableWarning />
-    </div>
-  ),
+// The composer's DOM contract, composed rather than the real ChatComposer: the grid only
+// targets its data attributes, and the real question panel renders inside the drawer.
+vi.mock("../ChatView", async () => {
+  const [{ ComposerPendingUserInputPanel }, { ComposerBanner }, contracts] = await Promise.all([
+    import("../chat/ComposerPendingUserInputPanel"),
+    import("../chat/ComposerBanner"),
+    import("@t3tools/contracts"),
+  ]);
+  const environmentId = contracts.EnvironmentId.make("env-1");
+  const threadId = contracts.ThreadId.make("thread-a");
+  const prompt = {
+    requestId: contracts.RuntimeRequestId.make("question-layout"),
+    createdAt: "2026-01-01T00:00:00.000Z",
+    dismissible: false,
+    responseCapability: "live" as const,
+    questions: [
+      {
+        id: "question-layout",
+        header: "Fixture",
+        question: "Should this fixture prefer strict schemas or UI flexibility?",
+        options: [
+          { label: "Strict schemas (Recommended)", description: "Prefer strict schemas" },
+          { label: "UI flexibility", description: "Prefer UI flexibility" },
+        ],
+        multiSelect: false,
+      },
+    ],
+  };
+  const noop = () => {};
+  return {
+    default: () => (
+      <div data-testid="chat-view" data-chat-composer-surface="true">
+        {state.pendingQuestion ? (
+          <ComposerBanner.Root data-chat-composer-top-drawer="true" inCard="drawer">
+            <ComposerPendingUserInputPanel
+              pendingUserInputs={[prompt]}
+              cwd={undefined}
+              threadRef={{ environmentId, threadId }}
+              respondingRequestIds={[]}
+              answers={{}}
+              questionIndex={0}
+              onToggleOption={noop}
+              onAdvance={noop}
+              onDismiss={noop}
+            />
+          </ComposerBanner.Root>
+        ) : null}
+        <div data-chat-composer-body="true">
+          <div data-testid="editor" contentEditable suppressContentEditableWarning />
+        </div>
+        <div data-chat-composer-footer="true">
+          <button type="button">Submit</button>
+        </div>
+      </div>
+    ),
+  };
+});
+
+vi.mock("../ChatMarkdown", () => ({
+  default: ({ text }: { text: string }) => <p>{text}</p>,
 }));
 
 vi.mock("../sidebar/SidebarThreadRow", () => ({
@@ -109,6 +164,7 @@ async function renderCell(
     onSwapWith?: (threadId: string) => void;
     onSplit?: (side: SplitSide, threadId: string) => void;
     onNewThread?: (side: SplitSide) => void;
+    container?: HTMLElement;
   },
 ) {
   return render(
@@ -137,7 +193,9 @@ async function renderCell(
       onNewThread={options?.onNewThread}
       onOpenThread={() => {}}
     />,
-    { router: false },
+    options?.container === undefined
+      ? { router: false }
+      : { router: false, container: options.container },
   );
 }
 
@@ -495,5 +553,62 @@ describe("GridThreadCell keyboard", () => {
       .element(page.getByRole("menuitem", { name: "Archive thread" }))
       .not.toBeInTheDocument();
     expect(document.activeElement).toBe(trigger);
+  });
+});
+
+describe("GridThreadCell pending question", () => {
+  beforeEach(() => {
+    state.pendingQuestion = false;
+  });
+
+  it("stacks the question above a full-width answer field at compact width", async () => {
+    state.draftSession = null;
+    state.pendingQuestion = true;
+    const container = document.createElement("div");
+    container.style.width = "520px";
+    container.style.height = "600px";
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      undefined,
+      { container },
+    );
+
+    const cell = screen.container.querySelector<HTMLElement>("[data-grid-cell]");
+    if (cell === null) throw new Error("grid cell missing");
+    await vi.waitFor(() => expect(cell.dataset.density).toBe("compact"));
+
+    const surface = screen.container.querySelector<HTMLElement>(
+      '[data-chat-composer-surface="true"]',
+    );
+    const drawer = screen.container.querySelector<HTMLElement>("[data-chat-composer-top-drawer]");
+    const body = screen.container.querySelector<HTMLElement>("[data-chat-composer-body]");
+    const editor = screen.container.querySelector<HTMLElement>('[data-testid="editor"]');
+    const footer = screen.container.querySelector<HTMLElement>("[data-chat-composer-footer]");
+    if (
+      surface === null ||
+      drawer === null ||
+      body === null ||
+      editor === null ||
+      footer === null
+    ) {
+      throw new Error("composer fixture incomplete");
+    }
+
+    const width = (element: HTMLElement) => element.getBoundingClientRect().width;
+    const surfaceWidth = width(surface);
+    expect(getComputedStyle(surface).display).toBe("block");
+    expect(drawer.textContent).toContain("Should this fixture prefer strict schemas");
+    // The drawer and the answer field share the card's full content width; the footer follows.
+    expect(width(drawer)).toBeGreaterThanOrEqual(surfaceWidth - 1);
+    expect(Math.abs(width(body) - surfaceWidth)).toBeLessThanOrEqual(1);
+    expect(width(editor)).toBeGreaterThanOrEqual(surfaceWidth * 0.9);
+    expect(Math.abs(width(footer) - surfaceWidth)).toBeLessThanOrEqual(1);
+
+    const options = [...drawer.querySelectorAll<HTMLElement>("button[aria-pressed]")];
+    expect(options).toHaveLength(2);
+    for (const option of options) {
+      expect(option.getBoundingClientRect().width).toBeGreaterThan(150);
+      expect(option.getBoundingClientRect().height).toBeGreaterThan(0);
+    }
   });
 });
