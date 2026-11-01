@@ -163,8 +163,9 @@ export const convertV1Settings = (json: string, label: string) => {
   const workers: Array<ModelSelection> = [];
   for (const agent of Array.isArray(doc.workers) ? doc.workers : []) {
     const selection = selectionOf(agent);
-    if (selection === null) notes.push(`${providerName(agent)} is not a v2 provider; dropped`);
-    else workers.push(selection);
+    if (selection === null) {
+      notes.push(`${label}: ${providerName(agent)} is not a v2 provider; dropped`);
+    } else workers.push(selection);
   }
   if (workers.length === 0) workers.push(orchestrator);
   const reviewer = doc.reviewer == null ? null : selectionOf(doc.reviewer);
@@ -400,7 +401,7 @@ export const makeV1Import = Effect.gen(function* () {
                 continue;
               }
               const converted = convertV1Settings(String(routine.json), workspace);
-              for (const note of converted.notes) if (!notes.includes(note)) notes.push(note);
+              notes.push(...converted.notes);
               yield* sql`INSERT INTO houston_night_shift_settings
                   (project_id, scheduled_task_id, settings_json, revision, updated_at)
                 VALUES (${projectId}, NULL, ${toJson(converted.settings)}, 1, ${now})`;

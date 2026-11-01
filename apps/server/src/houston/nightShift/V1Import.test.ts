@@ -216,6 +216,33 @@ describe("night shift v1 import", () => {
     }),
   );
 
+  it.effect("each dropped worker is one note naming its workspace", () =>
+    Effect.gen(function* () {
+      const dirs = channel("notes");
+      const kit = yield* makeKit("v1-notes", { baseDir: dirs.baseDir, hosted: true });
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const service = yield* Service.HoustonNightShiftService;
+          const first = makeRepository("v1-notes-a", { kind: "bare" });
+          const second = makeRepository("v1-notes-b", { kind: "bare" });
+          yield* createProject("v1-notes-a", first.root);
+          yield* createProject("v1-notes-b", second.root);
+          // Both v1 workspaces used ZCode as a worker.
+          writeV1NightDatabase(dirs.source, fixtureFor(first.root, second.root));
+
+          const result = yield* service.importV1Run({});
+          assert.equal(result.imported.settings, 2);
+          const dropped = result.notes.filter((note) => note.includes("ZCode"));
+          assert.deepEqual(dropped, [
+            `${first.root}: ZCode is not a v2 provider; dropped`,
+            `${second.root}: ZCode is not a v2 provider; dropped`,
+          ]);
+        }),
+      );
+    }),
+  );
+
   it.effect("the import carries settings and ledgers and drops what v2 cannot run", () =>
     Effect.gen(function* () {
       const dirs = channel("run");
@@ -242,7 +269,7 @@ describe("night shift v1 import", () => {
 
           const result = yield* service.importV1Run({});
           assert.deepEqual(result.imported, { settings: 1, runs: 2, entries: 8 });
-          assert.include(result.notes, "ZCode is not a v2 provider; dropped");
+          assert.include(result.notes, `${fixture.root}: ZCode is not a v2 provider; dropped`);
           assert.isTrue(
             result.notes.some((note) => note.includes("/elsewhere/not-a-project")),
             result.notes.join(" | "),
