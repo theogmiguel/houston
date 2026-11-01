@@ -34,5 +34,5 @@
 1 apps/web/src/components/ui/textarea.tsx
 3 apps/web/src/components/ui/toast.tsx
 1 apps/web/src/components/ui/window-control.tsx
-1 apps/web/src/components/usage/UsagePage.tsx
+1 apps/web/src/components/usage/UsageModelRow.tsx
 2 apps/web/src/contextMenuFallback.ts
