@@ -713,6 +713,9 @@ const make = Effect.gen(function* () {
       url,
       gates: { ...(previous?.gates ?? DEFAULT_GATES), checks: "pending", ci: "pending" },
       checks: { head: input.head, status: "pending", results: [] },
+      // The gates passed for the old head; `evaluate` holds or enqueues this one once they pass.
+      held: false,
+      queued: false,
     });
     let entryId: number;
     if (existing === undefined) {

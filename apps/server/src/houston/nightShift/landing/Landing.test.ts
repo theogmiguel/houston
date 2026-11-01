@@ -708,6 +708,64 @@ describe("night shift landing", () => {
     }),
   );
 
+  it.effect("a new head is no longer held, so mark qa passed refuses it until its gates pass", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("land-rehead");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const seeded = yield* seedRun(kit, "land-rehead", {
+            output: "mergeQueue",
+            holdForQa: true,
+          });
+          const landing = yield* Landing.HoustonNightLanding;
+          const store = yield* Store.HoustonNightShiftStore;
+          const plan = yield* store.addEntry({
+            runId: seeded.runId,
+            projectId: seeded.projectId as never,
+            kind: "plan",
+            title: "Retry the socket",
+            status: "planned",
+            detail: { claims: [{ claim: "It retries", proof: "ws.test.ts" }] },
+            createdAt: NOW,
+          });
+          const recorded = yield* landing.record(
+            recordInput(seeded, { plans: [plan.id], visible: true }),
+          );
+          const number = recorded.pullRequest.number;
+          kit.state.ciChecks.set(number, [{ name: "lint", status: "passed", url: null }]);
+          yield* store.addEntry({
+            runId: seeded.runId,
+            projectId: seeded.projectId as never,
+            kind: "verdict",
+            title: `#${number} plan ${plan.id} claim 0`,
+            status: "passed",
+            detail: { pullRequest: number, plan: plan.id, claim: 0, passed: true, evidence: "a:1" },
+            authorThreadId: REVIEWER,
+            createdAt: NOW,
+          });
+          yield* landing.checksSettled;
+          yield* landing.readCi(seeded.runId);
+          assert.isTrue(Landing.prDetail((yield* store.getEntry(recorded.entry.id))!).held);
+
+          // A new head: its checks and CI are pending again, so it is not held for QA.
+          kit.state.ciChecks.set(number, [{ name: "lint", status: "pending", url: null }]);
+          const next = commitIn(seeded.worktree.path, "new head");
+          yield* landing.record(
+            recordInput(seeded, { head: next, plans: [plan.id], visible: true }),
+          );
+          const detail = Landing.prDetail((yield* store.getEntry(recorded.entry.id))!);
+          assert.equal(detail.gates.ci, "pending");
+          assert.isFalse(detail.held);
+          assert.isFalse(detail.queued);
+          const refused = yield* failureOf(landing.markQaPassed(recorded.entry.id));
+          assert.equal(kindOf(refused), "invalid");
+          assert.deepEqual(kit.state.queue.ops, [], "nothing was enqueued");
+        }),
+      );
+    }),
+  );
+
   it.effect("mark qa passed enqueues in merge order before marking", () =>
     Effect.gen(function* () {
       const kit = yield* makeKit("land-qa");
