@@ -6,6 +6,7 @@ use tauri::menu::{
 use tauri::utils::config::Color;
 use tauri::{AppHandle, Emitter, Runtime, State, Webview, Window};
 
+#[cfg(any(target_os = "linux", test))]
 fn unquote_gsettings(raw: &str) -> &str {
     let t = raw.trim();
     if t.len() >= 2 && t.starts_with('\'') && t.ends_with('\'') {
@@ -17,19 +18,28 @@ fn unquote_gsettings(raw: &str) -> &str {
 
 #[tauri::command]
 pub fn window_button_layout() -> Option<String> {
-    let out = crate::sys::spawn::command("gsettings")
-        .args(["get", "org.gnome.desktop.wm.preferences", "button-layout"])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
+    // GNOME's button layout is the one desktop whose controls are not fixed by
+    // the platform; macOS and Windows use their native title bar.
+    #[cfg(target_os = "linux")]
+    {
+        let out = crate::sys::spawn::command("gsettings")
+            .args(["get", "org.gnome.desktop.wm.preferences", "button-layout"])
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let raw = String::from_utf8(out.stdout).ok()?;
+        let value = unquote_gsettings(&raw);
+        if value.is_empty() {
+            None
+        } else {
+            Some(value.to_string())
+        }
     }
-    let raw = String::from_utf8(out.stdout).ok()?;
-    let value = unquote_gsettings(&raw);
-    if value.is_empty() {
+    #[cfg(not(target_os = "linux"))]
+    {
         None
-    } else {
-        Some(value.to_string())
     }
 }
 

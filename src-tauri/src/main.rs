@@ -31,8 +31,10 @@ mod window_state;
 mod wsl;
 
 use shells::ShellEntry;
+#[cfg(debug_assertions)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+#[cfg(debug_assertions)]
 use tauri::webview::PageLoadEvent;
 use tauri::{Emitter, Manager};
 
@@ -745,13 +747,13 @@ fn main() {
 
             Ok(())
         })
-        .on_page_load(move |webview, payload| {
+        .on_page_load(move |_webview, _payload| {
             #[cfg(debug_assertions)]
-            if webview.label() == "main"
-                && payload.event() == PageLoadEvent::Finished
+            if _webview.label() == "main"
+                && _payload.event() == PageLoadEvent::Finished
                 && !wasm_csp_probe_fired.swap(true, Ordering::SeqCst)
             {
-                if let Err(err) = webview.eval(include_str!("wasm_csp_probe.js")) {
+                if let Err(err) = _webview.eval(include_str!("wasm_csp_probe.js")) {
                     eprintln!("houston-tauri: wasm-csp-probe eval failed: {err}");
                 }
             }

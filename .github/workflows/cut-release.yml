@@ -260,7 +260,7 @@ jobs:
             echo "## Release preview: $TAG"
             echo "Source commit: $SOURCE_SHA"
             echo "Previous public release: ${previous:-none}"
-            echo "Platforms: Linux x86_64/aarch64; Windows: $INCLUDE_WINDOWS"
+            echo "Platforms: Linux x86_64/aarch64; Windows: $INCLUDE_WINDOWS; macOS aarch64/x86_64"
             echo "Preview only: $PREVIEW_ONLY"
             fallbacks=$(jq -r '.fallbacks | map("#" + tostring) | join(", ")' "$RUNNER_TEMP/release-notes/metadata.json")
             if [ -n "$fallbacks" ]; then
@@ -375,14 +375,26 @@ jobs:
       require_signing: true
     secrets: inherit
 
+  macos-bundle:
+    needs: prepare
+    if: inputs.preview_only != true
+    uses: ./.github/workflows/release-macos.yml
+    with:
+      ref: ${{ needs.prepare.outputs.tag }}
+      version: ${{ needs.prepare.outputs.version }}
+      tauri_cli_version: ${{ needs.prepare.outputs.tauri_cli_version }}
+      require_signing: true
+    secrets: inherit
+
   publish:
     # The cut builds and publishes its own tag: no other workflow watches for
     # the push, so a run that stopped after the push would ship nothing.
-    needs: [prepare, linux-bundle, windows-bundle, server-archives]
+    needs: [prepare, linux-bundle, windows-bundle, macos-bundle, server-archives]
     if: >-
       always() && inputs.preview_only != true &&
       needs.prepare.result == 'success' &&
       needs.linux-bundle.result == 'success' &&
+      needs.macos-bundle.result == 'success' &&
       needs.server-archives.result == 'success' &&
       (inputs.include_windows != true || needs.windows-bundle.result == 'success')
     uses: ./.github/workflows/release-publish.yml
@@ -391,6 +403,7 @@ jobs:
       version: ${{ needs.prepare.outputs.version }}
       title: Houston ${{ needs.prepare.outputs.tag }}
       include_windows: ${{ inputs.include_windows }}
+      include_macos: true
       replace_existing: ${{ inputs.resume_tag != '' }}
       # An rc is a prerelease; on a resume the tag itself says so, since kind is
       # ignored then.

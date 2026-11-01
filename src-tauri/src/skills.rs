@@ -373,11 +373,13 @@ async fn is_allowed_skill_path(path: &Path, home: &Path) -> bool {
     };
     let resolved_str = resolved.to_string_lossy();
     let sep = std::path::MAIN_SEPARATOR;
-    if skill_roots(home)
-        .iter()
-        .any(|root| resolved_str.starts_with(&format!("{}{sep}", root.to_string_lossy())))
-    {
-        return true;
+    for root in skill_roots(home) {
+        // Darwin's tempdir paths and some homes are reached through /var, a
+        // symlink to /private/var; compare the resolved roots with the target.
+        let root = tokio::fs::canonicalize(&root).await.unwrap_or(root);
+        if resolved.starts_with(&root) {
+            return true;
+        }
     }
     let parts: Vec<&str> = resolved_str.split(sep).collect();
     match parts.iter().position(|p| *p == ".claude") {

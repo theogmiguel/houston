@@ -101,7 +101,9 @@ def promote(repository, tag, assets, shipped_path, notes_path, output, config, s
             "--notes-file", str(notes_path), "--artifacts-dir", str(assets),
             "--output", str(output), "--tauri-config", str(config)]
     if not any(key.startswith("windows-") for key in shipped["platforms"]):
-        args.append("--linux-only")
+        args.append("--no-windows")
+    if not any(key.startswith("darwin-") for key in shipped["platforms"]):
+        args.append("--no-macos")
     run(args)
     regenerated = json.loads(output.read_text(encoding="utf-8"))
     for field in ("version", "platforms"):

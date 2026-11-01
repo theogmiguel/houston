@@ -13,8 +13,6 @@ pub type RawPid = u32;
 pub enum Signal {
     Check,
     Term,
-    // Only Linux child-group cleanup sends it; other targets just match on it.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Kill,
 }
 
@@ -131,7 +129,8 @@ pub fn signal_process_checked(pid: u32, sig: Signal) -> Result<SignalOutcome, Si
 }
 
 /// Observe an owned child without reaping it, retaining its process-group identity.
-#[cfg(target_os = "linux")]
+/// WNOWAIT is part of POSIX and Darwin's waitid implements it.
+#[cfg(unix)]
 pub(crate) fn unreaped_child_exited(child: &std::process::Child) -> std::io::Result<bool> {
     let raw = checked_pid(child.id()).map_err(std::io::Error::other)?;
     // SAFETY: info is initialized and waitid writes only this out-parameter.
@@ -152,20 +151,16 @@ pub(crate) fn unreaped_child_exited(child: &std::process::Child) -> std::io::Res
 }
 
 /// Caller must retain this direct child without wait/try_wait until after delivery.
-#[cfg(target_os = "linux")]
+/// Darwin's posix_spawn path can leave the child in the caller's group, in which
+/// case only the direct child is signalled: never the caller's own group.
+#[cfg(unix)]
 pub(crate) fn signal_unreaped_child_group(
     child: &std::process::Child,
     sig: Signal,
 ) -> Result<(), SignalError> {
     let raw = checked_pid(child.id()).map_err(SignalError::InvalidPid)?;
-    // The unreaped direct child anchors identity; verify our session and group.
-    if unsafe { libc::getpgid(raw) } != raw
-        || unsafe { libc::getsid(raw) } != unsafe { libc::getsid(0) }
-    {
-        return Err(SignalError::Os(std::io::Error::other(format!(
-            "child pid {} is not an owned process group in the caller session",
-            child.id()
-        ))));
+    if unsafe { libc::getpgid(raw) } != raw {
+        return signal_process_checked(child.id(), sig).map(|_| ());
     }
     signal_process_group_checked(child.id(), sig)
 }
@@ -460,7 +455,7 @@ mod tests {
     #![allow(clippy::disallowed_methods)]
     use super::*;
 
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     #[test]
     fn exited_child_retains_group_identity_until_cleanup() {
         use std::os::unix::process::CommandExt;

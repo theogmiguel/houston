@@ -30,7 +30,7 @@ const builtExecutable = join(
   "apps",
   "server",
   "dist-exe",
-  `t3${isWindows ? ".exe" : ""}`,
+  `houston${isWindows ? ".exe" : ""}`,
 );
 
 const externalPatches = [
@@ -177,5 +177,5 @@ if (existsSync(prebuilds)) {
 const executableBytes = lstatSync(join(outputDir, executableName)).size;
 const treeBytes = directorySize(outputDir);
 console.log(
-  `[stage-v2-server] wrote ${outputDir}: executable ${executableBytes} bytes (t3 -> ${executableName}), runtime ${treeBytes} bytes total for ${platformKey}`,
+  `[stage-v2-server] wrote ${outputDir}: executable ${executableBytes} bytes (houston -> ${executableName}), runtime ${treeBytes} bytes total for ${platformKey}`,
 );

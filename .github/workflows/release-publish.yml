@@ -32,6 +32,11 @@ on:
         type: boolean
         required: false
         default: true
+      include_macos:
+        description: 'Require and publish the macOS .app/.dmg alongside Linux'
+        type: boolean
+        required: false
+        default: true
 
 permissions:
   contents: write
@@ -51,8 +56,8 @@ jobs:
       - name: Install signature verifier
         run: sudo apt-get update && sudo apt-get install -y minisign
 
-      # The release assets: desktop bundles plus the Linux server archives the
-      # boot service and remote installs download.
+      # The release assets: desktop bundles plus the server archives the boot
+      # service and remote installs download.
       - uses: actions/download-artifact@v7
         with:
           pattern: houston-*
@@ -95,7 +100,10 @@ jobs:
             --output artifacts/latest.json
           )
           if [ "${{ inputs.include_windows }}" != "true" ]; then
-            args+=(--linux-only)
+            args+=(--no-windows)
+          fi
+          if [ "${{ inputs.include_macos }}" != "true" ]; then
+            args+=(--no-macos)
           fi
           python3 scripts/gen-update-manifest.py "${args[@]}"
 

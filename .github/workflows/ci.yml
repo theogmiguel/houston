@@ -196,6 +196,57 @@ jobs:
           $elapsed = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [long]$env:JOB_START
           "| Job | Elapsed (s) |`n|---|---|`n| windows-checks | $elapsed |" >> $env:GITHUB_STEP_SUMMARY
 
+  # macOS on Apple silicon only: no Intel runner, because the host's own arch is
+  # what this job proves compiles. The bundles are built separately in
+  # release-macos.yml, which runs one native runner per architecture.
+  macos-checks:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      HOUSTON_CHANNEL: dev
+      CARGO_BUILD_JOBS: 3
+    steps:
+      - name: Record job start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri
+          key: macos-checks
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      # tauri.conf.json's frontendDist is the upstream web app's dist directory,
+      # which generate_context! requires at compile time.
+      - name: Build renderer assets for native compilation
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @t3tools/web build
+      - name: Check native application
+        working-directory: src-tauri
+        run: |
+          cargo fmt --all --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked -- --test-threads=3
+      - name: Report job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "| Job | Elapsed (s) |"
+            echo "|---|---|"
+            echo "| macos-checks | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # The committed third-party inventory is generated from the desktop host's Cargo
   # graph (cargo metadata, no build) and the pnpm workspace's node_modules at once.
   licence-inventory:
