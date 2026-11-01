@@ -10,7 +10,7 @@ import {
   MessageId,
   ProjectId,
   ThreadId,
-  type OrchestrationV2Command,
+  type OrchestrationV2ServerCommand,
 } from "@t3tools/contracts";
 import type { HoustonMergeQueueError } from "@t3tools/contracts/houston/mergeQueue";
 import * as DateTime from "effect/DateTime";
@@ -204,7 +204,7 @@ describe("a failure goes to the owner thread once and parks without one", () => 
                 threadId: owner,
                 messageId: MessageId.make(messageId),
                 text,
-              } as OrchestrationV2Command);
+              });
             const started = () =>
               harness.log.started
                 .filter((turn) => turn.input.threadId === owner)
@@ -252,12 +252,12 @@ describe("a failure goes to the owner thread once and parks without one", () => 
   );
 
   it.effect("a failure goes to the owner thread once and parks without one: the adapter", () => {
-    const dispatched: Array<OrchestrationV2Command> = [];
+    const dispatched: Array<OrchestrationV2ServerCommand> = [];
     const adapter = layerThreads.pipe(
       Layer.provide(
         Layer.mergeAll(
           Layer.mock(Orchestrator.OrchestratorV2)({
-            dispatch: (command: OrchestrationV2Command) =>
+            dispatch: (command: OrchestrationV2ServerCommand) =>
               Effect.sync(() => {
                 dispatched.push(command);
                 return { sequence: 1, storedEvents: [] };

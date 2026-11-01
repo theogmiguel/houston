@@ -4789,7 +4789,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   // Houston: the merge queue's note to an owner thread (mergeQueueNotify.ts holds the rules).
   const dispatchMergeQueueNotify = Effect.fn("orchestrationV2.dispatch.mergeQueueNotify")(
     function* (
-      command: Extract<OrchestrationV2Command, { readonly type: "houston.merge-queue.notify" }>,
+      command: Extract<
+        OrchestrationV2InternalCommand,
+        { readonly type: "houston.merge-queue.notify" }
+      >,
       events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
       effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
     ) {

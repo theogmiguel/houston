@@ -280,6 +280,7 @@ import { useRemoteOpenState } from "~/remoteOpen";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
 import { useOpenFavoriteEditorShortcut } from "./chat/OpenInPickerShortcut";
 import {
+  ChatHeaderPanelControls,
   PanelLayoutControls,
   type PanelLayoutControlsProps,
   RightPanelMaximizeControl,
@@ -3317,12 +3318,6 @@ export default function ChatView(props: ChatViewProps) {
     onToggleThreadPanel: toggleThreadPanelStable,
     onToggleRightPanel: toggleRightPanelStable,
   } satisfies PanelLayoutControlsProps;
-  const panelToggleControls = (
-    <PanelLayoutControls
-      {...panelToggleControlProps}
-      gridLayoutControl={<GridLayoutMenu grid={activeGrid} />}
-    />
-  );
   const panelOpenControls = (
     <PanelLayoutControls {...panelToggleControlProps} showThreadPanelControl={false} />
   );
@@ -3393,13 +3388,10 @@ export default function ChatView(props: ChatViewProps) {
                 : {})}
               {...(threadFindEnabled ? { onFindInThread: openThreadFindStable } : {})}
             />
-            {rightPanelOpen ? (
-              <div className="flex h-full shrink-0 items-center pr-1">
-                <GridLayoutMenu grid={activeGrid} />
-              </div>
-            ) : (
-              panelToggleControls
-            )}
+            <ChatHeaderPanelControls
+              {...panelToggleControlProps}
+              gridLayoutControl={<GridLayoutMenu grid={activeGrid} />}
+            />
           </header>
         )}
 

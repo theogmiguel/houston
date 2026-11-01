@@ -85,8 +85,8 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(HoustonMergeQueueProject)({}),
   Layer.mock(HoustonMergeQueueService)({}),
   Layer.mock(HoustonNightLanding)({}),
-  Layer.mock(HoustonNightShiftRunner)({}),
   Layer.mock(HoustonNightShiftStore)({ changes: undefined as never, notices: undefined as never }),
+  Layer.mock(HoustonNightShiftRunner)({}),
   Layer.mock(HoustonTaskRuns)({}),
   Layer.mock(HoustonTaskService)({}),
 ).pipe(Layer.provideMerge(NodeServices.layer));
