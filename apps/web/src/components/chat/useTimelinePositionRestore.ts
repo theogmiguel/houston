@@ -6,6 +6,8 @@ import type { TimelineViewport } from "./timelineViewport";
 // A streaming reply moves the end every frame, so the target may never hold
 // still. Past this many frames the list's own end maintenance takes over.
 const SETTLE_MAX_FRAMES = 60;
+// A row that folds just after the end lands would otherwise leave the scroll short.
+const SETTLE_END_MIN_FRAMES = 24;
 
 /**
  * Index and end scrolling start from estimated row sizes, so they can stop
@@ -17,7 +19,9 @@ export function settleListScroll(
   list: Pick<LegendListRef, "getScrollableNode" | "scrollToOffset">,
   target: (element: HTMLElement) => number | undefined,
   isCancelled: () => boolean,
+  options: { readonly minFrames?: number } = {},
 ): Promise<void> {
+  const minFrames = options.minFrames ?? 0;
   return new Promise((resolve) => {
     let stableFrames = 0;
     let frames = 0;
@@ -35,7 +39,7 @@ export function settleListScroll(
         return;
       }
       stableFrames += 1;
-      if (stableFrames >= 2) resolve();
+      if (stableFrames >= 2 && frames >= minFrames) resolve();
       else requestAnimationFrame(reconcile);
     };
     requestAnimationFrame(reconcile);
@@ -44,6 +48,12 @@ export function settleListScroll(
 
 export const measuredEndOffset = (element: HTMLElement) =>
   element.scrollHeight - element.clientHeight;
+
+/** A user-facing seek to the end, corrected through a short window of layout changes. */
+export const settleListScrollToEnd = (
+  list: Pick<LegendListRef, "getScrollableNode" | "scrollToOffset">,
+  isCancelled: () => boolean,
+) => settleListScroll(list, measuredEndOffset, isCancelled, { minFrames: SETTLE_END_MIN_FRAMES });
 
 /**
  * Scrolls a newly shown thread back to where the user left it, or to its end,

@@ -29,7 +29,7 @@ import {
   type TimelineViewport,
 } from "./timelineViewport";
 import { resolveTimelineIsAtEnd, type MessagesTimelineRow } from "./MessagesTimeline.logic";
-import { measuredEndOffset, settleListScroll } from "./useTimelinePositionRestore";
+import { settleListScrollToEnd } from "./useTimelinePositionRestore";
 import {
   releaseChatTimelineAnchor,
   shouldReleaseTimelineAnchorForToolActivity,
@@ -339,9 +339,8 @@ export function useTimelineFollow(input: TimelineFollowInput) {
           animated: animated && !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
         }),
       ).then(() =>
-        settleListScroll(
+        settleListScrollToEnd(
           list,
-          measuredEndOffset,
           () => readCurrentFollow().mode !== "following" || legendListRef.current !== list,
         ),
       );
