@@ -67,7 +67,7 @@ export const ComposerApprovalCard = memo(function ComposerApprovalCard({
       aria-label="Approval needed"
       data-composer-approval-card={density}
       className={cn(
-        "flex min-w-0 flex-col gap-2 rounded-xl border border-warning/30 bg-warning-surface",
+        "flex min-w-0 flex-col gap-2 rounded-xl border border-warning/30 warning-wash-surface",
         compact ? "px-2.5 py-2" : "px-3 py-3",
       )}
     >
