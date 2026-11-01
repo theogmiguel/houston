@@ -6,7 +6,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "./popover";
 
 /** A grid heading reads as one quiet line: name, then workspace, then empty. */
 export const SIDEBAR_GRID_HEADING_CLS =
-  "group/grid flex h-7 w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-xs outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "group/grid flex h-7 w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg py-0 pr-13 pl-2 text-left text-xs outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 export const SIDEBAR_GRID_HEADING_ACTIVE_CLS = "bg-sidebar-row-selected";
 
@@ -20,7 +20,14 @@ export const SIDEBAR_GRID_WORKSPACE_CLS = "min-w-0 truncate text-xs text-seconda
 
 export const SIDEBAR_GRID_EMPTY_CLS = "ml-auto shrink-0 text-xs text-secondary-label";
 
-export const SIDEBAR_GRID_COLLAPSED_ICON_CLS = "size-3 shrink-0 text-secondary-label";
+/** A fixed 12px box in both states; the chevron rotates inside instead of swapping icons. */
+export const SIDEBAR_GRID_CHEVRON_BOX_CLS =
+  "inline-grid size-3 shrink-0 place-items-center text-secondary-label";
+
+export const SIDEBAR_GRID_CHEVRON_CLS =
+  "size-3 transition-transform duration-150 motion-reduce:transition-none";
+
+export const SIDEBAR_GRID_CHEVRON_EXPANDED_CLS = "rotate-90";
 
 export const SIDEBAR_GRID_ACTION_CLS =
   "inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 group-focus-within/grid:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";

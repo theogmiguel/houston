@@ -116,7 +116,9 @@ import {
 } from "../ui/sidebar";
 import {
   SIDEBAR_GRID_ACTION_CLS,
-  SIDEBAR_GRID_COLLAPSED_ICON_CLS,
+  SIDEBAR_GRID_CHEVRON_BOX_CLS,
+  SIDEBAR_GRID_CHEVRON_CLS,
+  SIDEBAR_GRID_CHEVRON_EXPANDED_CLS,
   SIDEBAR_GRID_EMPTY_CLS,
   SIDEBAR_GRID_HEADING_ACTIVE_CLS,
   SIDEBAR_GRID_HEADING_CLS,
@@ -690,7 +692,6 @@ export function GridSidebar() {
                       grid={grid}
                       workspaceTitle={project.title}
                       threads={matchedThreads}
-                      solo={gridThreads.length === 1}
                       query={query}
                       open={openGrid?.id === grid.id}
                       collapsed={query.length === 0 && collapsedGrids.collapsed.has(grid.id)}
@@ -922,7 +923,6 @@ export function GridGroup({
   grid,
   workspaceTitle,
   threads,
-  solo,
   query,
   open,
   collapsed,
@@ -954,7 +954,6 @@ export function GridGroup({
 }: {
   grid: GridRecord;
   workspaceTitle: string;
-  solo: boolean;
   onRenameThread: (thread: EnvironmentThreadShell, title: string) => void;
   onSetAutoClose: (thread: EnvironmentThreadShell, enabled: boolean) => void;
   threads: ReadonlyArray<EnvironmentThreadShell>;
@@ -1062,11 +1061,7 @@ export function GridGroup({
   );
 
   return (
-    <div
-      className="mt-1 flex flex-col gap-px"
-      data-grid-key={grid.id}
-      data-solo={solo ? "" : undefined}
-    >
+    <div className="mt-1 flex flex-col gap-px" data-grid-key={grid.id}>
       <div
         className="group/grid relative flex items-center"
         onDragOver={(event) => {
@@ -1100,7 +1095,7 @@ export function GridGroup({
             }}
             className={SIDEBAR_GRID_RENAME_CLS}
           />
-        ) : solo ? null : (
+        ) : (
           <button
             type="button"
             onClick={onToggleCollapsed}
@@ -1117,9 +1112,15 @@ export function GridGroup({
               isDropTarget && SIDEBAR_GRID_HEADING_DROP_CLS,
             )}
           >
-            {collapsed ? (
-              <ChevronRightIcon aria-hidden className={SIDEBAR_GRID_COLLAPSED_ICON_CLS} />
-            ) : null}
+            <span className={SIDEBAR_GRID_CHEVRON_BOX_CLS} data-grid-chevron-box="">
+              <ChevronRightIcon
+                aria-hidden
+                className={cn(
+                  SIDEBAR_GRID_CHEVRON_CLS,
+                  !collapsed && SIDEBAR_GRID_CHEVRON_EXPANDED_CLS,
+                )}
+              />
+            </span>
             <span className={SIDEBAR_GRID_NAME_CLS}>
               <HighlightedText text={grid.name} query={query} />
             </span>
@@ -1127,7 +1128,7 @@ export function GridGroup({
             {threads.length === 0 ? <span className={SIDEBAR_GRID_EMPTY_CLS}>empty</span> : null}
           </button>
         )}
-        {renaming || solo ? null : (
+        {renaming ? null : (
           <>
             <span className="absolute inset-y-0 right-7 flex items-center">
               <Tooltip>
@@ -1168,7 +1169,7 @@ export function GridGroup({
           </>
         )}
       </div>
-      {collapsed && !solo ? null : (
+      {collapsed ? null : (
         <div className="flex flex-col gap-px">
           {threads.map((thread) => (
             <ThreadCard
@@ -1185,22 +1186,6 @@ export function GridGroup({
               dragging={dragging?.threadId === thread.id}
               runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
               workspaceTitle={workspaceTitle}
-              workspacePrefix={solo ? workspaceTitle : null}
-              atGridLevel={solo}
-              gridActions={
-                solo ? (
-                  <MenuSub>
-                    <MenuSubTrigger>
-                      Grid
-                      <ChevronRightIcon
-                        aria-hidden
-                        className="ml-auto size-3.5 text-secondary-label"
-                      />
-                    </MenuSubTrigger>
-                    <MenuSubPopup>{gridMenuItems}</MenuSubPopup>
-                  </MenuSub>
-                ) : null
-              }
               onOpen={() => onOpenThread(grid.id, thread.id)}
               onSelect={(input) => onSelectThread(thread, input)}
               onClose={() => onCloseThread(thread)}
@@ -1339,9 +1324,6 @@ export function ThreadCard({
   selected,
   dragging,
   workspaceTitle,
-  workspacePrefix = null,
-  atGridLevel = false,
-  gridActions = null,
   timeLabel = null,
   shelf = null,
   runningSubagents = 0,
@@ -1368,9 +1350,6 @@ export function ThreadCard({
   selected: boolean;
   dragging: boolean;
   workspaceTitle: string;
-  workspacePrefix?: string | null;
-  atGridLevel?: boolean;
-  gridActions?: ReactNode;
   timeLabel?: string | null;
   shelf?: "snoozed" | "settled" | null;
   runningSubagents?: number;
@@ -1463,8 +1442,7 @@ export function ThreadCard({
               onOpen();
             }}
             className={cn(
-              `group/th relative flex w-full flex-col gap-0.75 rounded-lg py-1.75 pr-2.5 text-left outline-none ${FOCUS_ROW_CLS}`,
-              atGridLevel ? "pl-2.5" : "pl-7.5",
+              `group/th relative flex w-full flex-col gap-0.75 rounded-lg py-1.75 pr-2.5 pl-7.5 text-left outline-none ${FOCUS_ROW_CLS}`,
               "cursor-pointer",
               dragging && "opacity-50",
               selected ? "bg-(--accent-muted)" : focused ? "bg-(--sel)" : "hover:bg-(--hover)",
@@ -1660,12 +1638,6 @@ export function ThreadCard({
                         <CheckIcon aria-hidden className="ml-auto size-3.5 text-(--accent-ink)" />
                       ) : null}
                     </MenuItem>
-                    {gridActions !== null ? (
-                      <>
-                        <MenuSeparator />
-                        {gridActions}
-                      </>
-                    ) : null}
                   </MenuPopup>
                 </Menu>
               </>
@@ -1673,9 +1645,6 @@ export function ThreadCard({
           </span>
         </div>
         <div className="flex min-w-0 items-center gap-2 text-caption leading-3.75 text-secondary-label">
-          {workspacePrefix !== null ? (
-            <span className="shrink-0 truncate">{workspacePrefix} ·</span>
-          ) : null}
           <GitBranchIcon aria-hidden className="size-3 shrink-0" />
           <span className="min-w-0 flex-1 truncate font-mono text-2xs">
             {thread.branch ?? "no branch"}
