@@ -1,5 +1,5 @@
 // Night shift as the server composes it: the runner with its ports and crew gate, the claim
-// upstream's scheduled tasks ask, and the RPC service with the catch-up of a missed night.
+// upstream's scheduled tasks ask, landing, and the RPC service with the catch-up of a missed night.
 import * as Layer from "effect/Layer";
 
 import * as CrewGate from "./CrewGate.ts";
@@ -12,6 +12,8 @@ import {
   layerPullRequests,
 } from "./Host.ts";
 import * as KeepAwake from "./KeepAwake.ts";
+import * as Landing from "./landing/Landing.ts";
+import { layerCi, layerLandingQueue } from "./landing/Ports.ts";
 import * as Runner from "./Runner.ts";
 import { layerCatchUp, layerClaim } from "./ScheduledTaskRunner.ts";
 import * as Service from "./Service.ts";
@@ -35,5 +37,12 @@ export const layerNightShiftRunner = layerClaim.pipe(
   Layer.provideMerge(layerNightShiftPorts),
 );
 
-/** The service over the runner above, and the catch-up the server runs once on start. */
-export const layerNightShift = Layer.mergeAll(Service.layer, layerCatchUp);
+/** Landing over the merge queue, upstream's GitHubRest and pull request service, and git. */
+export const layerNightLanding = Landing.layer.pipe(
+  Layer.provideMerge(Layer.mergeAll(layerCi, layerLandingQueue)),
+);
+
+/** The service and landing over the runner above, and the catch-up the server runs on start. */
+export const layerNightShift = Layer.mergeAll(Service.layer, layerCatchUp).pipe(
+  Layer.provideMerge(layerNightLanding),
+);

@@ -188,7 +188,7 @@ describe("night shift morning report", () => {
           const cost = {
             members: [{ threadId: ORCHESTRATOR, providerInstanceId: "claudeAgent", hours: 2 }],
             instances: { claudeAgent: 2 },
-            tokens: { claudeAgent: "not tracked" },
+            tokens: { claudeAgent: "not tracked" as const },
           };
           yield* store.setCost(run.id, Store.toJson(cost));
           const folder = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "night-report-"));

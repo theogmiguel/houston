@@ -51,10 +51,11 @@ import {
   headline,
   idleDecision,
   pickTasks,
+  runCost,
   substituteInstance,
-  threadHours,
   type InstanceState,
 } from "./rules.ts";
+import { remoteChangesOutsideHouston } from "./landing/rules.ts";
 import {
   HoustonNightShiftStore,
   liveRunText,
@@ -664,11 +665,13 @@ const make = Effect.gen(function* () {
     if (after._tag === "Failure") {
       return yield* store.setRemoteChanges(run.id, toJson({ error: after.failure }));
     }
-    const before = run.remoteHeads;
-    const refs = [...new Set([...Object.keys(before), ...Object.keys(after.success)])].toSorted();
-    const changes = refs
-      .filter((ref) => before[ref] !== after.success[ref])
-      .map((ref) => ({ ref, oldSha: before[ref] ?? null, newSha: after.success[ref] ?? null }));
+    const pushes = yield* store.pushes(run.id);
+    const changes = remoteChangesOutsideHouston({
+      before: run.remoteHeads,
+      after: after.success,
+      pushes: pushes.map((push) => ({ branch: push.branch, newSha: push.new_sha })),
+      queue: yield* mergeQueue.log(run.projectId, run.startedAt),
+    });
     yield* store.setRemoteChanges(run.id, toJson({ changes }));
   });
 
@@ -693,15 +696,18 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const nowMs = yield* Clock.currentTimeMillis;
           const crew = yield* store.crew(runId);
-          const cost = threadHours(
-            crew.map((member) => ({
+          // The server records no stop time, so no downtime is known; usage is not recorded yet.
+          const cost = runCost({
+            crew: crew.map((member) => ({
               threadId: member.threadId,
               providerInstanceId: member.providerInstanceId,
               startedAtMs: Date.parse(member.startedAt),
               endedAtMs: member.endedAt === null ? null : Date.parse(member.endedAt),
             })),
+            downtime: [],
+            usage: [],
             nowMs,
-          );
+          });
           yield* store.setCost(runId, toJson(cost));
         }),
       );

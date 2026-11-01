@@ -115,6 +115,7 @@ const layerToolkit = McpHttpServer.layerHoustonNightToolkit.pipe(
         Effect.gen(function* () {
           const store = yield* Store.HoustonNightShiftStore;
           return HoustonNightLanding.of({
+            evaluateNumber: () => Effect.void,
             record: (input: {
               readonly runId: number;
               readonly callerThreadId: string;

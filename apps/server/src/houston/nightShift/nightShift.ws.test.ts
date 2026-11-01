@@ -100,6 +100,7 @@ import * as WorkspaceFileSystem from "../../workspace/WorkspaceFileSystem.ts";
 import * as WorktreeSetupTracker from "../../project/WorktreeSetupTracker.ts";
 import { layerWsRpc, WS_RPC_SERVER_OPTIONS } from "../../ws.ts";
 import * as HoustonHarnessService from "../harnessReview/Service.ts";
+import * as HoustonTaskService from "../tasks/TaskService.ts";
 import * as HoustonReviewState from "../reviewState.ts";
 import * as HoustonTaskV1Import from "../tasks/V1Import.ts";
 import * as HoustonTaskSourceService from "../taskSources/SourceService.ts";
@@ -144,6 +145,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonTaskSourceService.HoustonTaskSourceService)({}),
   Layer.mock(HoustonTaskSourceV1Import.HoustonTaskSourceV1Import)({}),
   Layer.mock(HoustonHarnessService.HoustonHarnessService)({}),
+  Layer.mock(HoustonTaskService.HoustonTaskService)({}),
   Layer.mock(HoustonTaskRuns.HoustonTaskRuns)({}),
   Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
   Layer.mock(HoustonSlackService.HoustonSlackService)({}),

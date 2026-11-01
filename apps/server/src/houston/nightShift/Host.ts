@@ -56,11 +56,27 @@ export class NightShiftProviders extends Context.Service<
   { readonly list: Effect.Effect<ReadonlyArray<ProviderState>> }
 >()("houston/houston/nightShift/Host/NightShiftProviders") {}
 
-/** The project's merge queue verification command, or null when none is set. */
+/** A merge queue log row the settle audit reads: a push or a merge into `refName`. */
+export interface QueueLogRow {
+  readonly kind: string;
+  readonly refName: string | null;
+  readonly newSha: string | null;
+  readonly at: string;
+}
+
+/** What Night shift reads of the project's merge queue: its verification command and its log. */
 export class NightShiftMergeQueue extends Context.Service<
   NightShiftMergeQueue,
-  { readonly verificationCommand: (projectId: string) => Effect.Effect<string | null> }
+  {
+    /** The verification command, or null when none is set. */
+    readonly verificationCommand: (projectId: string) => Effect.Effect<string | null>;
+    /** Log rows at or after `since`. */
+    readonly log: (projectId: string, since: string) => Effect.Effect<ReadonlyArray<QueueLogRow>>;
+  }
 >()("houston/houston/nightShift/Host/NightShiftMergeQueue") {}
+
+/** Log rows the audit reads at most; a run's window holds far fewer. */
+const QUEUE_LOG_READ = 1_000;
 
 /** `reg.exe query <args>` as a child process the event loop does not wait on; undefined if absent. */
 const regQuery = (args: ReadonlyArray<string>) =>
@@ -188,6 +204,15 @@ export const layerMergeQueue = Layer.effect(
           return command.trim() === "" ? null : command;
         },
       ),
+      log: Effect.fn("NightShiftMergeQueue.log")(function* (projectId, since) {
+        const rows = yield* store.log(projectId, since, QUEUE_LOG_READ);
+        return rows.map((row) => ({
+          kind: row.kind,
+          refName: row.refName,
+          newSha: row.newSha,
+          at: row.at,
+        }));
+      }),
     });
   }),
 );
@@ -210,6 +235,10 @@ export class NightShiftBacklog extends Context.Service<
     readonly text: (key: string) => Effect.Effect<string>;
     /** Whether the task's status was set to done at or after `since`. */
     readonly doneSince: (key: string, since: string) => Effect.Effect<boolean>;
+    /** The task's status, or null when it cannot be read. */
+    readonly status: (key: string) => Effect.Effect<string | null>;
+    /** Adds a comment as `author`; a refusal is logged, not raised. */
+    readonly comment: (key: string, body: string, author: string) => Effect.Effect<void>;
   }
 >()("houston/houston/nightShift/Host/NightShiftBacklog") {}
 
@@ -233,6 +262,8 @@ export const layerBacklog = Layer.effect(
         tasks: Effect.fn("NightShiftBacklog.noTasks")(() => Effect.succeed(none)),
         text: Effect.fn("NightShiftBacklog.noText")(() => Effect.succeed("")),
         doneSince: Effect.fn("NightShiftBacklog.notDone")(() => Effect.succeed(false)),
+        status: Effect.fn("NightShiftBacklog.noStatus")(() => Effect.succeed(null)),
+        comment: Effect.fn("NightShiftBacklog.noComment")(() => Effect.void),
       });
     }
     const tasks = service.value;
@@ -273,6 +304,20 @@ export const layerBacklog = Layer.effect(
           );
         },
         Effect.orElseSucceed(() => false),
+      ),
+      status: Effect.fn("NightShiftBacklog.status")(
+        function* (key) {
+          return (yield* tasks.get({ id: key })).task.status as string;
+        },
+        Effect.orElseSucceed(() => null),
+      ),
+      comment: Effect.fn("NightShiftBacklog.comment")((key, body, author) =>
+        tasks.comment({ id: key, body }, author).pipe(
+          Effect.asVoid,
+          Effect.catch((error) =>
+            Effect.logWarning("Night shift could not comment on a task", { key, error }),
+          ),
+        ),
       ),
     });
   }),

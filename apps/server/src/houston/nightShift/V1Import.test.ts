@@ -258,8 +258,10 @@ describe("night shift v1 import", () => {
           const stored = (yield* store.settings(projectId))!;
           assert.equal(stored.settings.v, 3);
           assert.isFalse(stored.settings.enabled);
-          assert.deepEqual(stored.settings.workers, [{ instanceId: "claudeAgent", model: "opus" }]);
-          assert.deepEqual(stored.settings.orchestrator, {
+          assert.deepEqual(stored.settings.workers as unknown, [
+            { instanceId: "claudeAgent", model: "opus" },
+          ]);
+          assert.deepEqual(stored.settings.orchestrator as unknown, {
             instanceId: "claudeAgent",
             model: "opus",
           });
