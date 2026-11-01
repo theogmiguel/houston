@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Branch, tag or SHA to build'
+        description: 'Branch, tag or SHA to build; empty builds the ref this workflow was dispatched from'
         type: string
-        default: 'main'
+        default: ''
         required: true
       platform:
         description: 'Installer platforms to validate; windows also builds the Linux bundles'
@@ -42,7 +42,7 @@ jobs:
 
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || github.ref }}
       - id: check
         run: |
           set -euo pipefail
