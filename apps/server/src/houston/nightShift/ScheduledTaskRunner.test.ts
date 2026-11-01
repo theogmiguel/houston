@@ -335,6 +335,18 @@ describe("startup", () => {
       const nightLayer = source("./layer.ts");
       assert.equal(count(nightLayer, "CrewGate.layer"), 1, "the server's layer provides the gate");
       assert.include(kitSource, "CrewGate.layer");
+      // The runtime that builds the runner gets the services its fate reads and picks ask for.
+      const runtimeLayer = server.slice(
+        server.indexOf("const layerOrchestrationV2Runtime"),
+        server.indexOf("const layerOrchestrationApplication"),
+      );
+      // At the pipe's top level: the one nested in RunFinalizationService reaches only that layer.
+      assert.include(runtimeLayer, "\n  Layer.provide(layerPullRequestService),\n");
+      assert.isBelow(
+        server.indexOf("Layer.provideMerge(layerOrchestrationApplication)"),
+        server.indexOf("Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer"),
+        "the Tasks service is provided below the runtime",
+      );
       // Upstream's orchestrator MCP tests run with the default gate, which admits everything.
       assert.notInclude(source("../../mcp/OrchestratorMcpService.test.ts"), "HoustonCrewGate");
       assert.strictEqual(
