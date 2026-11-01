@@ -55,11 +55,15 @@ function member(
   };
 }
 
-function group(projectKey: string, members: readonly SidebarProjectGroupMember[]) {
+function group(
+  projectKey: string,
+  members: readonly SidebarProjectGroupMember[],
+  displayName = projectKey,
+) {
   return {
     ...members[0]!,
     projectKey,
-    displayName: projectKey,
+    displayName,
     memberProjects: members,
     memberProjectRefs: members.map((project) => ({
       environmentId: project.environmentId,
@@ -143,6 +147,11 @@ describe("settings scope sentence", () => {
     await userEvent.click(projectTrigger());
     await expect.element(choice(/^All projects/)).toBeVisible();
     await expect.element(choice(/^Houston/)).toBeVisible();
+    expect(
+      choice(/^Houston/)
+        .element()
+        .querySelector(".font-mono"),
+    ).toBeNull();
     await userEvent.click(choice(/^Houston/));
 
     expect(scope.selectScope).toHaveBeenCalledWith({ project: "Houston" });
@@ -197,6 +206,27 @@ describe("settings scope sentence", () => {
     await expect.element(choice(/^Houston/)).not.toBeInTheDocument();
   });
 
+  it("shows the path in mono only when two projects share a name", async () => {
+    setup({
+      groups: [
+        group("houston-alpha", [member("houston-alpha", laptopId, "/repos/alpha")], "Houston"),
+        group("houston-beta", [member("houston-beta", laptopId, "/repos/beta")], "Houston"),
+      ],
+      environments: [
+        environment(laptopId, "theo-Latitude-3550", "http://localhost:3773", "connected"),
+      ],
+    });
+    await using _screen = await render(<SettingsScopeSentence />, {
+      router: "/settings/providers",
+    });
+
+    await userEvent.click(projectTrigger());
+    const alphaRow = page.getByRole("menuitemradio", { name: /\/repos\/alpha/ });
+    await expect.element(alphaRow).toBeVisible();
+    const path = alphaRow.element().querySelector(".font-mono");
+    expect(path?.textContent).toContain("/repos/alpha");
+  });
+
   it("states that a device-only page ignores the project scope", async () => {
     setup();
     await using screen = await render(<SettingsScopeSentence />, {
@@ -244,6 +274,10 @@ describe("settings scope sentence", () => {
     await userEvent.keyboard("{Enter}");
     await expect.element(choice(/^Houston/)).toBeVisible();
     await userEvent.keyboard("{ArrowDown}");
+    await expect.element(choice(/^Houston/)).toHaveFocus();
+    await userEvent.keyboard("{Home}");
+    await expect.element(choice(/^All projects/)).toHaveFocus();
+    await userEvent.keyboard("{End}");
     await expect.element(choice(/^Houston/)).toHaveFocus();
   });
 });
