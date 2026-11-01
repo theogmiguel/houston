@@ -1062,10 +1062,14 @@ export const withoutCloseKeywords = (text: string) => text.replaceAll(CLOSE_KEYW
 const MENTIONS_AND_REFERENCES =
   /(?<![\w`/.@-])(?:@[A-Za-z0-9][A-Za-z0-9-]*(?:\/[A-Za-z0-9][\w.-]*)?|(?:[A-Za-z0-9][\w.-]*\/[\w.-]+)?#[0-9]+)(?![\w`])/g;
 
+/** Mentions and references wrapped in inline code, so the text neither notifies nor links anything;
+ * a close keyword before a wrapped reference closes nothing either. Idempotent. */
+export const withoutLinks = (text: string) =>
+  text.replaceAll(MENTIONS_AND_REFERENCES, (match) => `\`${match}\``);
+
 /** Text copied from a task to GitHub: close keywords dropped, and mentions and references wrapped
  * in inline code, so the copy neither notifies, links nor closes anything. */
-export const neutralise = (text: string) =>
-  withoutCloseKeywords(text).replaceAll(MENTIONS_AND_REFERENCES, (match) => `\`${match}\``);
+export const neutralise = (text: string) => withoutLinks(withoutCloseKeywords(text));
 
 /** `https://github.com/<repository>/pull/<n>` of the same repository, or null. */
 export const githubPullRequestUrl = (url: string, repository: string): string | null => {

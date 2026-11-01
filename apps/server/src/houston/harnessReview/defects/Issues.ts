@@ -27,6 +27,7 @@ import * as Schema from "effect/Schema";
 import * as ProjectStore from "../../../orchestration-v2/ProjectStore.ts";
 import * as NightShiftGit from "../../nightShift/Git.ts";
 import { describeGitHubError } from "../../taskSources/GitHubSource.ts";
+import { withoutLinks } from "../../taskSources/rules.ts";
 import { HoustonHarnessStore } from "../Store.ts";
 import { HoustonDefects } from "./Defects.ts";
 import { redact } from "./redact.ts";
@@ -137,8 +138,17 @@ const make = Effect.gen(function* () {
       const operation = "defects.draft";
       const { defect, root, repository } = yield* target(operation, input.projectId, input.key);
       const clean = (text: string) => redact(text, root, NodeOS.homedir());
-      const title = issueTitle(clean(defect.title), defect.detector ?? "harness");
-      const body = clean(issueBody(defect));
+      // Agent text can neither mention, reference nor close anything on GitHub.
+      const escaped = (text: string) => withoutLinks(clean(text));
+      const title = issueTitle(escaped(defect.title), defect.detector ?? "harness");
+      const body = clean(
+        issueBody({
+          ...defect,
+          title: escaped(defect.title),
+          description: escaped(defect.description),
+          evidence: defect.evidence.map(escaped),
+        }),
+      );
       const words = searchWords(clean(defect.title));
       const held = yield* credential;
       const query = `repo:${repository} is:issue is:open ${words}`;
@@ -247,7 +257,7 @@ const make = Effect.gen(function* () {
           `repository "${repository}" is not this defect's repository "${expected}"; refusing to file the issue`,
         );
       }
-      const clean = (text: string) => redact(text.trim(), root, NodeOS.homedir());
+      const clean = (text: string) => withoutLinks(redact(text.trim(), root, NodeOS.homedir()));
       const title = clean(input.title);
       const body = clean(input.body);
       const bound = (what: string, text: string, max: number) => {

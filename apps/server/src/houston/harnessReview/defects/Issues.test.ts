@@ -398,6 +398,54 @@ describe("filing", () => {
   );
 
   it.effect(
+    "issue text cannot mention, reference or close anything",
+    () =>
+      withIssues("issue-escaped", (kit) =>
+        Effect.gen(function* () {
+          const { projectId } = yield* repositoryProject("issue-escaped");
+          const service = yield* issues;
+          const { key } = yield* report(projectId, "cc @octocat about #4", "houston", {
+            description: "cc @octocat; Fixes theogmiguel/houston#1 and closes #2",
+            evidence: ["see @github/security"],
+          });
+          const draft = yield* service.draft({ projectId, key });
+          const linked = (text: string) => [
+            /(?<!`)@octocat/.test(text),
+            /(?<!`)@github\/security/.test(text),
+            /(?<!`)theogmiguel\/houston#1(?!`)/.test(text),
+            /(?<![`\w/])#[124](?!`)/.test(text),
+          ];
+          assert.deepEqual(linked(draft.title), [false, false, false, false], draft.title);
+          assert.deepEqual(linked(draft.body), [false, false, false, false], draft.body);
+          assert.include(
+            draft.body,
+            "cc `@octocat`; Fixes `theogmiguel/houston#1` and closes `#2`",
+          );
+          assert.include(draft.body, "- see `@github/security`");
+
+          // The user's edited text is escaped again on file.
+          kit.github.respond = () =>
+            json({ number: 9, html_url: "https://github.com/theogmiguel/houston/issues/9" }, 201);
+          yield* service.file({
+            projectId,
+            key,
+            title: "fix(harness): cc @octocat about #4",
+            body: `${draft.body}\nFixes #1, cc @github/security and theogmiguel/houston#1`,
+            repository: "theogmiguel/houston",
+          });
+          const sent = kit.github.requests.at(-1)!.body as {
+            readonly title: string;
+            readonly body: string;
+          };
+          assert.deepEqual(linked(sent.title), [false, false, false, false], sent.title);
+          assert.deepEqual(linked(sent.body), [false, false, false, false], sent.body);
+          assert.strictEqual(sent.title, "fix(harness): cc `@octocat` about `#4`");
+        }),
+      ),
+    TIMEOUT,
+  );
+
+  it.effect(
     "nothing reaches github but the search and the explicit file",
     () =>
       withIssues("issue-nothing-else", (kit) =>
