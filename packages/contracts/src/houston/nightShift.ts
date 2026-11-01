@@ -362,6 +362,200 @@ export class HoustonNightShiftError extends Schema.TaggedError<HoustonNightShift
   },
 ) {}
 
+/** A ledger entry as the morning's methods answer it. */
+export const NightEntry = Schema.Struct({
+  id: PositiveInt,
+  runId: PositiveInt,
+  kind: NightEntryKind,
+  title: Schema.String,
+  theme: Schema.NullOr(Schema.String),
+  status: Schema.NullOr(Schema.String),
+  prNumber: Schema.NullOr(PositiveInt),
+  taskNumber: Schema.NullOr(PositiveInt),
+  headSha: Schema.NullOr(Schema.String),
+  branch: Schema.NullOr(Schema.String),
+  visible: Schema.Boolean,
+  qaPassed: Schema.Boolean,
+  body: Schema.String,
+  choice: Schema.NullOr(Schema.String),
+  decidedAt: Schema.NullOr(IsoDateTime),
+  createdAt: IsoDateTime,
+});
+export type NightEntry = typeof NightEntry.Type;
+
+export const NightRemoteChange = Schema.Struct({
+  ref: Schema.String,
+  oldSha: Schema.NullOr(Schema.String),
+  newSha: Schema.NullOr(Schema.String),
+});
+export type NightRemoteChange = typeof NightRemoteChange.Type;
+
+export const NightCost = Schema.Struct({
+  members: Schema.Array(
+    Schema.Struct({
+      threadId: Schema.String,
+      providerInstanceId: Schema.String,
+      hours: Schema.Number,
+    }),
+  ),
+  instances: Schema.Record(Schema.String, Schema.Number),
+  tokens: Schema.Record(
+    Schema.String,
+    Schema.Union([Schema.Number, Schema.Literal("not tracked")]),
+  ),
+});
+export type NightCost = typeof NightCost.Type;
+
+export const NightReportClaim = Schema.Struct({
+  plan: PositiveInt,
+  /** The claim's index in its plan, from 0. */
+  index: NonNegativeInt,
+  claim: Schema.String,
+  verdict: Schema.NullOr(Schema.Literals(["passed", "failed"])),
+  evidence: Schema.NullOr(Schema.String),
+  fault: Schema.NullOr(Schema.String),
+});
+export type NightReportClaim = typeof NightReportClaim.Type;
+
+export const NightReportPullRequest = Schema.Struct({
+  entryId: PositiveInt,
+  number: PositiveInt,
+  url: Schema.NullOr(Schema.String),
+  title: Schema.String,
+  branch: Schema.NullOr(Schema.String),
+  headSha: Schema.NullOr(Schema.String),
+  /** merged, closed, open, or null while unknown. */
+  fate: Schema.NullOr(Schema.String),
+  visible: Schema.Boolean,
+  held: Schema.Boolean,
+  qaPassed: Schema.Boolean,
+  gates: NightGates,
+  failedChecks: Schema.Array(
+    Schema.Struct({ name: Schema.String, url: Schema.NullOr(Schema.String) }),
+  ),
+  claims: Schema.Array(NightReportClaim),
+});
+export type NightReportPullRequest = typeof NightReportPullRequest.Type;
+
+export const NightReportDecision = Schema.Struct({
+  entryId: PositiveInt,
+  title: Schema.String,
+  question: Schema.String,
+  options: Schema.Array(Schema.String),
+  recommendation: Schema.NullOr(Schema.String),
+  choice: Schema.NullOr(Schema.String),
+  decidedAt: Schema.NullOr(IsoDateTime),
+});
+export type NightReportDecision = typeof NightReportDecision.Type;
+
+export const NightReportEventKind = Schema.Literals([
+  "remoteChange",
+  "audit",
+  "interruption",
+  "limit",
+  "substitution",
+  "gate",
+  "ci",
+]);
+export type NightReportEventKind = typeof NightReportEventKind.Type;
+
+export const HoustonNightReport = Schema.Struct({
+  runId: PositiveInt,
+  headline: Schema.String,
+  summary: Schema.NullOr(Schema.String),
+  decisions: Schema.Struct({
+    open: Schema.Array(NightReportDecision),
+    answered: Schema.Array(NightReportDecision),
+  }),
+  pullRequests: Schema.Array(
+    Schema.Struct({ theme: Schema.String, pullRequests: Schema.Array(NightReportPullRequest) }),
+  ),
+  mergeOrder: Schema.Array(PositiveInt),
+  picks: Schema.Array(
+    Schema.Struct({
+      taskNumber: PositiveInt,
+      title: Schema.String,
+      status: Schema.NullOr(Schema.String),
+    }),
+  ),
+  /** Remote changes outside Houston first. */
+  events: Schema.Array(
+    Schema.Struct({
+      kind: NightReportEventKind,
+      at: Schema.NullOr(Schema.String),
+      text: Schema.String,
+    }),
+  ),
+  remoteChanges: Schema.Array(NightRemoteChange),
+  cost: Schema.NullOr(NightCost),
+  /** `report.md`, at most `reportReadBytes`. */
+  markdown: Schema.String,
+  truncated: Schema.Boolean,
+});
+export type HoustonNightReport = typeof HoustonNightReport.Type;
+
+/** The most of `report.md` the report method answers. */
+export const HOUSTON_NIGHT_REPORT_READ_BYTES = 1024 * 1024;
+
+export const HoustonNightShiftDecideInput = Schema.Struct({
+  entryId: PositiveInt,
+  choice: Schema.String.check(Schema.isMaxLength(500)),
+});
+export type HoustonNightShiftDecideInput = typeof HoustonNightShiftDecideInput.Type;
+
+export const HoustonNightShiftEntryInput = Schema.Struct({ entryId: PositiveInt });
+export type HoustonNightShiftEntryInput = typeof HoustonNightShiftEntryInput.Type;
+
+/** Pull requests one Close may name. */
+export const HOUSTON_NIGHT_CLOSE_MAX = 50;
+
+export const HoustonNightShiftCloseInput = Schema.Struct({
+  runId: PositiveInt,
+  numbers: Schema.Array(PositiveInt).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(HOUSTON_NIGHT_CLOSE_MAX),
+  ),
+});
+export type HoustonNightShiftCloseInput = typeof HoustonNightShiftCloseInput.Type;
+
+export const HoustonNightShiftCloseResult = Schema.Struct({
+  closed: Schema.Array(PositiveInt),
+  skipped: Schema.Array(Schema.Struct({ number: PositiveInt, reason: Schema.String })),
+});
+export type HoustonNightShiftCloseResult = typeof HoustonNightShiftCloseResult.Type;
+
+export const NightImportCounts = Schema.Struct({
+  settings: NonNegativeInt,
+  runs: NonNegativeInt,
+  entries: NonNegativeInt,
+});
+export type NightImportCounts = typeof NightImportCounts.Type;
+
+export const HoustonNightShiftImportStatus = Schema.Union([
+  Schema.Struct({
+    state: Schema.Literal("available"),
+    source: Schema.String,
+    workspaces: Schema.Array(
+      Schema.Struct({
+        path: Schema.String,
+        projectId: Schema.NullOr(ProjectId),
+        runs: NonNegativeInt,
+      }),
+    ),
+    runs: NonNegativeInt,
+  }),
+  Schema.Struct({ state: Schema.Literal("imported"), at: IsoDateTime, counts: NightImportCounts }),
+  Schema.Struct({ state: Schema.Literal("blocked"), reason: Schema.String }),
+  Schema.Struct({ state: Schema.Literal("unavailable") }),
+]);
+export type HoustonNightShiftImportStatus = typeof HoustonNightShiftImportStatus.Type;
+
+export const HoustonNightShiftImportResult = Schema.Struct({
+  imported: NightImportCounts,
+  notes: Schema.Array(Schema.String),
+});
+export type HoustonNightShiftImportResult = typeof HoustonNightShiftImportResult.Type;
+
 /** The bounds of what a run's crew records through the `houston_night_*` tools. */
 export const HOUSTON_NIGHT_LEDGER_LIMITS = {
   entriesPerRun: 200,

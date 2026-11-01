@@ -15,6 +15,7 @@ import { Tool, Toolkit } from "effect/ai";
 import * as ServerConfig from "../../../config.ts";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
+import { HoustonNightLanding } from "../landing/Landing.ts";
 import { HoustonNightShiftRunner } from "../Runner.ts";
 import { HoustonNightShiftStore } from "../Store.ts";
 
@@ -30,6 +31,7 @@ const shared = {
     ThreadManagementService.ThreadManagementService,
     HoustonNightShiftStore,
     HoustonNightShiftRunner,
+    HoustonNightLanding,
     ServerConfig.ServerConfig,
     FileSystem.FileSystem,
     Path.Path,
@@ -62,6 +64,8 @@ const PlanTool = Tool.make("houston_night_plan", {
     claims: Schema.Array(Schema.Struct({ claim: Text, proof: Text })),
     status: Schema.Literals(["planned", "deferred", "rejected"]),
     reason: Schema.optional(Text),
+    /** Plan entries this one builds on; their pull requests merge first. */
+    dependsOn: Schema.optional(Schema.Array(PositiveInt)),
   }),
   success: EntryResult,
 }).annotate(Tool.Destructive, false);
@@ -69,7 +73,7 @@ const PlanTool = Tool.make("houston_night_plan", {
 const PrTool = Tool.make("houston_night_pr", {
   ...shared,
   description:
-    "Orchestrator only. Record a pull request: Houston pushes the head and opens it as a draft. Never push or open one yourself.",
+    "Orchestrator only. Record a pull request: Houston pushes the head of a run branch with a lease, opens or updates the draft, and runs the checks. Never push or open one yourself.",
   parameters: Schema.Struct({
     head: Schema.String,
     branch: Short,
@@ -80,8 +84,19 @@ const PrTool = Tool.make("houston_night_pr", {
     builtBy: Schema.Array(ThreadId),
     visible: Schema.Boolean,
     task: Schema.optional(Short),
+    // Named so a value is refused by name instead of dropped: Houston sets both gates.
+    checks: Schema.optional(Schema.Unknown),
+    ci: Schema.optional(Schema.Unknown),
   }),
-  success: EntryResult,
+  success: Schema.Struct({
+    entry: HoustonNightEntry,
+    pullRequest: Schema.Struct({ number: PositiveInt, url: Schema.String }),
+    push: Schema.Struct({
+      branch: Schema.String,
+      oldSha: Schema.NullOr(Schema.String),
+      newSha: Schema.String,
+    }),
+  }),
 }).annotate(Tool.Destructive, false);
 
 const LessonTool = Tool.make("houston_night_lesson", {

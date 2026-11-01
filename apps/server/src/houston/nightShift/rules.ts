@@ -326,28 +326,65 @@ export const fallbackReport = (input: {
   return `${lines.join("\n")}\n`;
 };
 
-/** Thread-hours per crew member and per provider instance, from start to end or now. */
-export const threadHours = (
-  crew: ReadonlyArray<{
+/** Milliseconds of `[from, to)` that no downtime interval covers. */
+const chargedMs = (
+  from: number,
+  to: number,
+  downtime: ReadonlyArray<{ readonly fromMs: number; readonly toMs: number }>,
+) => {
+  let charged = Math.max(0, to - from);
+  for (const gap of downtime) {
+    charged -= Math.max(0, Math.min(to, gap.toMs) - Math.max(from, gap.fromMs));
+  }
+  return Math.max(0, charged);
+};
+
+/** Thread-hours per crew member and instance while the server ran, and tokens per instance where
+ * the provider reported them; figures only, so cost never ends a run. */
+export const runCost = (input: {
+  readonly crew: ReadonlyArray<{
     readonly threadId: string;
     readonly providerInstanceId: string;
     readonly startedAtMs: number;
     readonly endedAtMs: number | null;
-  }>,
-  nowMs: number,
-) => {
-  const hours = (member: (typeof crew)[number]) =>
-    Math.max(0, (member.endedAtMs ?? nowMs) - member.startedAtMs) / 3_600_000;
-  const perInstance: Record<string, number> = {};
-  for (const member of crew) {
-    perInstance[member.providerInstanceId] =
-      (perInstance[member.providerInstanceId] ?? 0) + hours(member);
+  }>;
+  /** When the server was not running, so nothing ran. */
+  readonly downtime: ReadonlyArray<{ readonly fromMs: number; readonly toMs: number }>;
+  /** One row per recorded run usage; null where the provider reported none. */
+  readonly usage: ReadonlyArray<{
+    readonly providerInstanceId: string;
+    readonly tokens: number | null;
+  }>;
+  readonly nowMs: number;
+  /** Nothing runs past the hard stop, so a settle after a long server stop charges up to it only. */
+  readonly hardStopMs?: number | null;
+}) => {
+  const members = input.crew.map((member) => ({
+    threadId: member.threadId,
+    providerInstanceId: member.providerInstanceId,
+    hours:
+      chargedMs(
+        member.startedAtMs,
+        Math.min(member.endedAtMs ?? input.nowMs, input.hardStopMs ?? Number.POSITIVE_INFINITY),
+        input.downtime,
+      ) / 3_600_000,
+  }));
+  const instances: Record<string, number> = {};
+  for (const member of members) {
+    instances[member.providerInstanceId] =
+      (instances[member.providerInstanceId] ?? 0) + member.hours;
   }
-  return {
-    members: crew.map((member) => ({ threadId: member.threadId, hours: hours(member) })),
-    instances: perInstance,
-    tokens: "not tracked" as const,
-  };
+  const tokens: Record<string, number | "not tracked"> = {};
+  for (const instance of [
+    ...new Set([...Object.keys(instances), ...input.usage.map((row) => row.providerInstanceId)]),
+  ]) {
+    const reported = input.usage.filter(
+      (row) => row.providerInstanceId === instance && row.tokens !== null,
+    );
+    tokens[instance] =
+      reported.length === 0 ? "not tracked" : reported.reduce((sum, row) => sum + row.tokens!, 0);
+  }
+  return { members, instances, tokens };
 };
 
 /** Roles that count against live workers; review and test each have one slot of their own. */

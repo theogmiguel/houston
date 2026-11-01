@@ -27,9 +27,13 @@ import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ThreadLaunchService from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
 import {
+  commitIn,
   createProject,
   fireDue,
   kindOf,
+  Landing,
+  landingInput,
+  seedLandingRun,
   makeKit,
   makeRepository,
   messageOf,
@@ -931,6 +935,51 @@ describe("night shift run life", () => {
       );
     }),
   );
+
+  it.effect("a settle after a long server stop charges at most up to the hard stop", () =>
+    Effect.gen(function* () {
+      const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "night-cost-"));
+      const kit = yield* makeKit("restart-cost", {
+        databaseFile: NodePath.join(directory, "state.sqlite"),
+        serverRunner: true,
+      });
+      const ids = { runId: 0, hardStopAt: "" };
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const p = yield* setUp("restart-cost");
+          const started = yield* start(p.projectId, 60);
+          yield* addCrew(started.runId, "cost-worker", started.threadId, NOW);
+          ids.runId = started.runId;
+          ids.hardStopAt = (yield* getRun(started.runId)).hardStopAt!;
+        }),
+      );
+
+      // The server comes back three days later, long past the 60-minute run's hard stop.
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const run = yield* getRun(ids.runId);
+          assert.equal(run.phase, "settled");
+          assert.equal(run.stopReason, "serverRestart");
+          const cost = run.cost as {
+            readonly members: ReadonlyArray<{ readonly threadId: string; readonly hours: number }>;
+            readonly instances: Record<string, number>;
+          };
+          const limit = (Date.parse(ids.hardStopAt) - Date.parse(NOW)) / 3_600_000;
+          assert.isAtMost(limit, 1.01);
+          assert.lengthOf(cost.members, 2);
+          for (const member of cost.members) {
+            assert.isAtMost(member.hours, limit, member.threadId);
+          }
+          const worker = cost.members.find((member) => member.threadId === "cost-worker");
+          assert.closeTo(worker!.hours, limit, 1e-9);
+          assert.isAtMost(cost.instances.claudeAgent!, 2 * limit);
+        }),
+        Date.parse(NOW) + 3 * 24 * 60 * 60_000,
+      );
+    }),
+  );
 });
 
 describe("houston's messages to the orchestrator", () => {
@@ -1326,7 +1375,6 @@ describe("night shift crew limits, picks and the ledger at start", () => {
 
   it.effect("a picked task is claimed by its worker and told about its pull request", () =>
     Effect.gen(function* () {
-      // The comment half moves to PR 3 with landing; this proves the claim half.
       const harness = yield* makeRunsHarness("night-claim");
       yield* runWith(harness, (context) =>
         Effect.gen(function* () {
@@ -1357,7 +1405,35 @@ describe("night shift crew limits, picks and the ledger at start", () => {
           const detail = yield* context.tasks.get({ id: task.key });
           assert.equal(detail.task.status, "in_progress");
           assert.equal(detail.runs[0]?.threadId, worker);
+
+          // The backlog's comment reaches the task as Houston's Night shift.
+          yield* backlog.comment(
+            task.key,
+            "Night shift run 1 opened draft pull request #7.",
+            "houston:night-shift",
+          );
+          const commented = yield* context.tasks.get({ id: task.key });
+          const last = commented.comments.at(-1);
+          assert.equal(last?.author, "houston:night-shift");
+          assert.equal(last?.body, "Night shift run 1 opened draft pull request #7.");
         }).pipe(Effect.provide(layerBacklog)),
+      );
+
+      // Recording the pull request with `task: HOU-7` comments once; a re-record adds none.
+      const kit = yield* makeKit("night-claim-comment");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const seeded = yield* seedLandingRun(kit, "night-claim-comment");
+          const landing = yield* Landing.HoustonNightLanding;
+          const first = yield* landing.record(landingInput(seeded, { task: "HOU-7" }));
+          assert.deepEqual(kit.state.taskComments, [
+            `HOU-7|houston:night-shift|Night shift run ${seeded.runId} opened draft pull request #${first.pullRequest.number}.`,
+          ]);
+          const next = commitIn(seeded.worktree.path, "second head");
+          yield* landing.record(landingInput(seeded, { task: "HOU-7", head: next }));
+          assert.equal(kit.state.taskComments.length, 1);
+        }),
       );
     }),
   );

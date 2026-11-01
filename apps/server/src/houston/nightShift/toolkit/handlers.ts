@@ -19,12 +19,10 @@ import * as Schema from "effect/Schema";
 import * as ServerConfig from "../../../config.ts";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../../mcp/McpToolAccess.ts";
+import { HoustonNightLanding } from "../landing/Landing.ts";
 import { HoustonNightShiftRunner } from "../Runner.ts";
 import { HoustonNightShiftStore, type LedgerEntry, runFolder, type StoredRun } from "../Store.ts";
 import { type HoustonNightEntry, HoustonNightToolkit } from "./tools.ts";
-
-export const LANDING_PENDING =
-  "Night shift: houston_night_pr opens pull requests once landing ships";
 
 const fail = (
   kind: HoustonNightToolErrorKind,
@@ -159,7 +157,7 @@ export const layer = McpToolAccess.toLayer(HoustonNightToolkit, {
           title: input.title,
           theme: input.theme,
           status: "planned",
-          detail: { claims: input.claims },
+          detail: { claims: input.claims, dependsOn: input.dependsOn ?? [] },
         });
       }
       if (!nonEmpty(input.reason)) {
@@ -178,12 +176,31 @@ export const layer = McpToolAccess.toLayer(HoustonNightToolkit, {
   houston_night_pr: McpToolAccess.writesWithCapability((input) =>
     Effect.gen(function* () {
       const tool = "houston_night_pr";
-      yield* orchestratorOf(tool);
+      const caller = yield* orchestratorOf(tool);
       if (!HEAD.test(input.head)) {
         return yield* fail("invalid", tool, `head ${input.head} is not a 40-character hex SHA`);
       }
       if (!nonEmpty(input.title)) return yield* fail("invalid", tool, "the title is empty");
-      return yield* fail("unsupported", tool, LANDING_PENDING);
+      const recorded = yield* (yield* HoustonNightLanding).record({
+        runId: caller.run.id,
+        callerThreadId: caller.threadId,
+        head: input.head,
+        branch: input.branch,
+        title: input.title,
+        body: input.body,
+        theme: input.theme,
+        plans: input.plans,
+        builtBy: input.builtBy,
+        visible: input.visible,
+        task: input.task,
+        checks: input.checks,
+        ci: input.ci,
+      });
+      return {
+        entry: toEntry(recorded.entry),
+        pullRequest: recorded.pullRequest,
+        push: recorded.push,
+      };
     }),
   ),
   houston_night_lesson: McpToolAccess.writesWithCapability((input) =>
@@ -308,7 +325,7 @@ export const layer = McpToolAccess.toLayer(HoustonNightToolkit, {
           "verification is standard: a passing verdict names the fault it injected and saw caught",
         );
       }
-      return yield* record(tool, caller, {
+      const verdict = yield* record(tool, caller, {
         kind: "verdict",
         title: `#${input.pullRequest} plan ${input.plan} claim ${input.claim}`,
         status: input.passed ? "passed" : "failed",
@@ -322,6 +339,9 @@ export const layer = McpToolAccess.toLayer(HoustonNightToolkit, {
           ...(input.fault === undefined ? {} : { fault: input.fault }),
         },
       });
+      // A verdict moves the Verify and Review gates, so the merge queue output may enqueue now.
+      yield* (yield* HoustonNightLanding).evaluateNumber(caller.run.id, input.pullRequest);
+      return verdict;
     }),
   ),
   houston_night_report: McpToolAccess.writesWithCapability((input) =>

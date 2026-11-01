@@ -25,7 +25,7 @@ import {
   substituteInstance,
   type InstanceState,
 } from "./rules.ts";
-import { HoustonNightShiftStore, type StoredRun } from "./Store.ts";
+import { HoustonNightShiftStore, type NightGateRefusal, type StoredRun } from "./Store.ts";
 import { messageId, NightShiftThreads } from "./Threads.ts";
 
 export type GatedOperation =
@@ -149,6 +149,10 @@ const make = Effect.gen(function* () {
   const reservations = yield* Ref.make<ReadonlyMap<number, ReadonlyArray<Reservation>>>(new Map());
   let nextReservation = 0;
 
+  /** Fails with `message` after counting the refusal on the run, for the morning report. */
+  const refuse = (runId: number, reason: NightGateRefusal, message: string) =>
+    store.countRefusal(runId, reason).pipe(Effect.andThen(Effect.fail(message)));
+
   const unreserve = (runId: number, id: number) =>
     Ref.update(reservations, (current) => {
       const next = new Map(current);
@@ -227,14 +231,14 @@ const make = Effect.gen(function* () {
       isolation: delegation.isolation,
       environmentId: delegation.target?.environmentId,
     });
-    if (isolation !== null) return yield* Effect.fail(isolation);
+    if (isolation !== null) return yield* refuse(run.id, "isolation", isolation);
 
     const cap = crewCapRefusal({
       live: yield* slots(run.id),
       role,
       liveWorkers: run.settings.liveWorkers,
     });
-    if (cap !== null) return yield* Effect.fail(cap);
+    if (cap !== null) return yield* refuse(run.id, "crewCap", cap);
 
     const { listed, states } = yield* instanceStates(run);
     const target = delegation.target;
@@ -247,12 +251,16 @@ const make = Effect.gen(function* () {
     const chain = run.settings.workers.map((worker) => worker.instanceId as string);
     // Crew work stays on the providers the user listed, so it leaves the machine only to them.
     if (!chain.includes(requested)) {
-      return yield* Effect.fail(
+      return yield* refuse(
+        run.id,
+        "workersChain",
         `${requested} is not in the workers chain (${chain.join(", ")}); target one of those instances`,
       );
     }
     const chosen = substituteInstance({ requested, chain, states });
-    if ("refusal" in chosen) return yield* Effect.fail(chosen.refusal);
+    if ("refusal" in chosen) {
+      return yield* refuse(run.id, "noReadyInstance", chosen.refusal);
+    }
 
     let admittedTarget = target;
     if (chosen.instanceId !== requested) {
@@ -307,12 +315,16 @@ const make = Effect.gen(function* () {
       (candidate) => candidate.threadId === target && candidate.role !== "orchestrator",
     );
     if (member === undefined) {
-      return yield* Effect.fail(
+      return yield* refuse(
+        run.id,
+        "threadSend",
         `t3_thread_send to ${target} is refused: it is not a live crew thread of run ${run.id}; send only to threads this run delegated`,
       );
     }
     if (member.endedAt !== null) {
-      return yield* Effect.fail(
+      return yield* refuse(
+        run.id,
+        "threadSend",
         `t3_thread_send to ${target} is refused: its task has ended; start new work with delegate_task`,
       );
     }
@@ -331,7 +343,11 @@ const make = Effect.gen(function* () {
           liveWorkers: run.settings.liveWorkers,
         });
         if (cap !== null) {
-          return yield* Effect.fail(`the automatic review of a handback is refused: ${cap}`);
+          return yield* refuse(
+            run.id,
+            "reviewCap",
+            `the automatic review of a handback is refused: ${cap}`,
+          );
         }
         const release = yield* reserve(run.id, "review");
         const record = Effect.fn("HoustonCrewGate.recordReview")(function* (threadId: ThreadId) {
@@ -365,10 +381,18 @@ const make = Effect.gen(function* () {
       input.operation === "houston_merge_queue_enqueue" ||
       input.operation === "houston_merge_queue_dequeue"
     ) {
-      return yield* Effect.fail(`${input.operation} is refused: ${NIGHT_SHIFT_ENQUEUES}`);
+      return yield* refuse(
+        membership.run.id,
+        "mergeQueue",
+        `${input.operation} is refused: ${NIGHT_SHIFT_ENQUEUES}`,
+      );
     }
     if (input.operation !== "delegate_task") {
-      return yield* Effect.fail(`${input.operation} is refused: ${STARTS_ONLY_THROUGH_DELEGATION}`);
+      return yield* refuse(
+        membership.run.id,
+        "operation",
+        `${input.operation} is refused: ${STARTS_ONLY_THROUGH_DELEGATION}`,
+      );
     }
     const delegation = input.delegation ?? {
       role: undefined,
