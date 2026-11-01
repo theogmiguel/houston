@@ -46,6 +46,8 @@ function GridRoute() {
   const addThread = useGridStore((store) => store.addThread);
   const focusThread = useGridStore((store) => store.focusThread);
   const closeGridCell = useGridStore((store) => store.closeGridCell);
+  const reorderGridThreads = useGridStore((store) => store.reorderGridThreads);
+  const moveThreadToCell = useGridStore((store) => store.moveThreadToCell);
   const openDraft = useOpenGridDraft();
   const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -197,6 +199,11 @@ function GridRoute() {
     .filter((thread) => !visibleThreadIds.has(thread.id))
     .map((thread) => ({ threadId: thread.id, title: thread.title }));
   const soloLeaves = grid.tree === null ? [] : preorderThreads(grid.tree);
+  const gridCells = soloLeaves.map((leaf) => ({
+    threadId: leaf.threadId,
+    title:
+      workspaceThreads.find((thread) => thread.id === leaf.threadId)?.title ?? "Untitled thread",
+  }));
   const soloThread =
     soloLeaves.length === 1
       ? (workspaceThreads.find((thread) => thread.id === soloLeaves[0]!.threadId) ?? null)
@@ -290,7 +297,26 @@ function GridRoute() {
             onTreeChange={(tree) => setTree(grid.id, tree)}
             onFocusThread={(threadId) => focusThread(grid.id, threadId)}
             onCloseThread={(threadId) => closeGridCell(grid.id, threadId)}
-            renderThread={({ node, focused, maximized, onClose, onArchiveClose, onSplit }) => (
+            onDropThread={(source, targetThreadId, side) => {
+              moveThreadToCell({
+                threadId: source.threadId,
+                targetGridId: grid.id,
+                targetThreadId,
+                side,
+              });
+            }}
+            renderThread={({
+              node,
+              focused,
+              maximized,
+              onClose,
+              onArchiveClose,
+              onSplit,
+              dragging,
+              dropIndicator,
+              dragHandleProps,
+              dropTargetProps,
+            }) => (
               <GridThreadCell
                 key={node.id}
                 node={node}
@@ -312,6 +338,14 @@ function GridRoute() {
                   setMaximizedThreadId(effectiveMaximized === node.threadId ? null : node.threadId);
                 }}
                 onSplit={onSplit}
+                dragging={dragging}
+                dropIndicator={dropIndicator}
+                dragHandleProps={dragHandleProps}
+                dropTargetProps={dropTargetProps}
+                swapTargets={gridCells.filter((cell) => cell.threadId !== node.threadId)}
+                onSwapWith={(targetThreadId) =>
+                  reorderGridThreads(grid.id, node.threadId, targetThreadId)
+                }
                 onNewThread={(side) => createThread(side, node.threadId)}
                 onOpenThread={(ref) => openThread(ref.environmentId, ref.threadId)}
               />

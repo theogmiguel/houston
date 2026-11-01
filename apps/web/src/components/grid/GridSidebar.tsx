@@ -45,6 +45,13 @@ import {
   workspaceKeyOf,
 } from "../../grid/gridStore";
 import {
+  beginThreadDrag,
+  endThreadDrag,
+  readThreadDrag,
+  THREAD_DRAG_TYPE,
+  type ThreadDragSource,
+} from "../../grid/threadDrag";
+import {
   attentionCardsForGrids,
   attentionNavigationDirection,
   clearThreadSelection,
@@ -134,12 +141,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
-const THREAD_DRAG_TYPE = "application/x-houston-thread";
-
-interface DraggedThread {
-  readonly gridId: string;
-  readonly threadId: string;
-}
+type DraggedThread = ThreadDragSource;
 
 function reportFailure(title: string, result: AtomCommandResult<unknown, unknown>): boolean {
   if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return false;
@@ -439,21 +441,17 @@ export function GridSidebar() {
         );
 
   const handleDragStart = (gridId: string, thread: EnvironmentThreadShell) => {
-    setDragging({ gridId, threadId: thread.id });
+    const source = { gridId, threadId: thread.id };
+    beginThreadDrag(source);
+    setDragging(source);
   };
   const handleDragEnd = () => {
+    endThreadDrag();
     setDragging(null);
     setDropTarget(null);
   };
-  const readDragged = (event: ReactDragEvent): DraggedThread | null => {
-    const raw = event.dataTransfer.getData(THREAD_DRAG_TYPE);
-    if (raw.length === 0) return null;
-    try {
-      return JSON.parse(raw) as DraggedThread;
-    } catch {
-      return null;
-    }
-  };
+  const readDragged = (event: ReactDragEvent): DraggedThread | null =>
+    readThreadDrag(event.dataTransfer);
   const moveThreadToGrid = (source: DraggedThread, targetGridId: string) => {
     if (source.gridId === targetGridId) return;
     useGridStore.getState().removeThreadFromGrid(source.gridId, source.threadId);

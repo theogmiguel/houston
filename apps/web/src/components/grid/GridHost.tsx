@@ -1,18 +1,39 @@
 import { LayoutGridIcon } from "lucide-react";
-import { useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DragEvent,
+  type ReactNode,
+} from "react";
 
-import { type GridRecord } from "../../grid/gridStore";
+import { MAX_GRID_THREADS, type GridRecord } from "../../grid/gridStore";
+import {
+  beginThreadDrag,
+  endThreadDrag,
+  hasThreadDrag,
+  useThreadDragSource,
+  writeThreadDrag,
+  type ThreadDragHandleProps,
+  type ThreadDragSource,
+  type ThreadDropTargetProps,
+} from "../../grid/threadDrag";
 import {
   type LayoutNode,
+  type Side,
   type SplitNode,
   type SplitSide,
   type ThreadNode,
   clampSplitRatio,
   findThread,
   insertBeside,
+  moveThread,
   preorderThreads,
+  quadrant,
   removeThread,
   setRatio,
+  swapThread,
   threadLeaf,
 } from "../../grid/tree";
 import { cn } from "../../lib/utils";
@@ -26,6 +47,12 @@ export interface GridCellRenderProps {
   /** Removes the cell without offering a reopen, for a thread archived elsewhere. */
   onArchiveClose: () => void;
   onSplit: (side: SplitSide, threadId: string) => void;
+  /** This cell is the thread being dragged; it dims until the drop. */
+  dragging: boolean;
+  /** Where a thread dropped on this cell would land, for the drop indicator. */
+  dropIndicator: Side | null;
+  dragHandleProps: ThreadDragHandleProps;
+  dropTargetProps: ThreadDropTargetProps;
 }
 
 const GUTTER_PX = 0;
@@ -38,6 +65,8 @@ export interface GridHostProps {
   onCloseThread?: (threadId: string) => void;
   /** Shows one cell alone without changing the tree or its sizes. */
   maximizedThreadId?: string | null;
+  /** Moves a thread from outside this grid onto one of its cells. */
+  onDropThread?: (source: ThreadDragSource, targetThreadId: string, side: Side) => void;
   renderThread: (cell: GridCellRenderProps) => ReactNode;
   renderEmpty?: () => ReactNode;
 }
@@ -49,10 +78,119 @@ export function GridHost(props: GridHostProps) {
     onFocusThread,
     onCloseThread,
     maximizedThreadId,
+    onDropThread,
     renderThread,
     renderEmpty,
   } = props;
   const tree = grid.tree;
+  const dragSource = useThreadDragSource();
+  const [hover, setHover] = useState<{ threadId: string; side: Side } | null>(null);
+
+  const threadCount = tree === null ? 0 : preorderThreads(tree).length;
+  const atCap = threadCount >= MAX_GRID_THREADS;
+  const sourceInTree =
+    dragSource !== null &&
+    dragSource.gridId === grid.id &&
+    tree !== null &&
+    findThread(tree, dragSource.threadId) !== null;
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Escape must cancel a drag whose source cell the pointer left
+  useEffect(() => {
+    if (dragSource === null) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      endThreadDrag();
+      setHover(null);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [dragSource]);
+
+  const sideForDrop = (threadId: string, event: DragEvent<HTMLElement>): Side | null => {
+    if (dragSource === null || dragSource.threadId === threadId) return null;
+    const side = quadrant(
+      event.currentTarget.getBoundingClientRect(),
+      event.clientX,
+      event.clientY,
+    );
+    // Edges add a cell; a grid at the cap only accepts a centre drop, which replaces.
+    if (side !== "center" && !sourceInTree && atCap) return null;
+    return side;
+  };
+
+  const handleDragStart =
+    (threadId: string) =>
+    (event: DragEvent<HTMLElement>): void => {
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest("button, [role='button'], a, input, textarea, [contenteditable='true']") !==
+          null
+      ) {
+        event.preventDefault();
+        return;
+      }
+      const source = { gridId: grid.id, threadId };
+      writeThreadDrag(event.dataTransfer, source);
+      beginThreadDrag(source);
+    };
+
+  const handleDragEnd = (): void => {
+    endThreadDrag();
+    setHover(null);
+  };
+
+  const handleDragOver =
+    (threadId: string) =>
+    (event: DragEvent<HTMLElement>): void => {
+      if (dragSource === null && !hasThreadDrag(event.dataTransfer)) return;
+      const side = sideForDrop(threadId, event);
+      if (side === null) {
+        event.dataTransfer.dropEffect = "none";
+        setHover(null);
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      setHover((current) =>
+        current?.threadId === threadId && current.side === side ? current : { threadId, side },
+      );
+    };
+
+  const handleDragLeave =
+    (threadId: string) =>
+    (event: DragEvent<HTMLElement>): void => {
+      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+      setHover((current) => (current?.threadId === threadId ? null : current));
+    };
+
+  const handleDrop =
+    (threadId: string) =>
+    (event: DragEvent<HTMLElement>): void => {
+      if (dragSource === null && !hasThreadDrag(event.dataTransfer)) return;
+      const side = sideForDrop(threadId, event);
+      const source = dragSource;
+      setHover(null);
+      endThreadDrag();
+      if (source === null || side === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (
+        source.gridId === grid.id &&
+        tree !== null &&
+        findThread(tree, source.threadId) !== null
+      ) {
+        onTreeChange(
+          side === "center"
+            ? swapThread(tree, source.threadId, threadId)
+            : moveThread(tree, source.threadId, threadId, side),
+        );
+        onFocusThread(source.threadId);
+        return;
+      }
+      onDropThread?.(source, threadId, side);
+    };
 
   if (tree === null) {
     if (renderEmpty !== undefined) return <>{renderEmpty()}</>;
@@ -91,6 +229,18 @@ export function GridHost(props: GridHostProps) {
       onClose: () => closeThread(node.threadId),
       onArchiveClose: () => onTreeChange(removeThread(tree, node.threadId)),
       onSplit: (side, threadId) => splitThread(node.threadId, side, threadId),
+      dragging: dragSource?.threadId === node.threadId,
+      dropIndicator: dragSource !== null && hover?.threadId === node.threadId ? hover.side : null,
+      dragHandleProps: {
+        draggable: threadCount > 1 && maximizedThreadId == null,
+        onDragStart: handleDragStart(node.threadId),
+        onDragEnd: handleDragEnd,
+      },
+      dropTargetProps: {
+        onDragOver: handleDragOver(node.threadId),
+        onDragLeave: handleDragLeave(node.threadId),
+        onDrop: handleDrop(node.threadId),
+      },
     });
 
   const maximizedLeaf =

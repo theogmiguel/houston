@@ -19,6 +19,7 @@ import {
   quadrant,
   reconcileThreads,
   removeThread,
+  replaceThread,
   setRatio,
   swapThread,
   threadLeaf,
@@ -101,6 +102,23 @@ describe("moveThread / swapThread", () => {
     const next = swapThread(tree, "a", "b") as SplitNode;
     expect(preorderLeaves(next)).toEqual(["b", "a"]);
     expect(next.weights).toEqual([70, 30]);
+  });
+
+  it("replaceThread puts another thread in a cell and keeps the layout and sizes", () => {
+    const tree: SplitNode = {
+      kind: "split",
+      dir: "row",
+      children: [leaf("a"), leaf("b"), leaf("c")],
+      weights: [20, 30, 50],
+    };
+    const next = replaceThread(tree, "b", threadLeaf("d", "p-d")) as SplitNode;
+    expect(preorderLeaves(next)).toEqual(["a", "d", "c"]);
+    expect(next.weights).toEqual([20, 30, 50]);
+  });
+
+  it("replaceThread is a no-op when the target is gone", () => {
+    const tree = row(leaf("a"), leaf("b"));
+    expect(replaceThread(tree, "gone", leaf("c"))).toEqual(tree);
   });
 });
 
