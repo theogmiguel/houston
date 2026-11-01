@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   type LayoutNode,
   type SplitNode,
+  adjacentThreadKey,
   appendThread,
   clampSplitRatio,
   computeRects,
@@ -263,5 +264,21 @@ describe("quadrant", () => {
     expect(quadrant(rect, 50, 10)).toBe("top");
     expect(quadrant(rect, 50, 90)).toBe("bottom");
     expect(quadrant(rect, 50, 50)).toBe("center");
+  });
+});
+
+describe("adjacentThreadKey", () => {
+  it("walks preorder leaves and wraps at both ends", () => {
+    const tree = row(leaf("a"), row(leaf("b"), leaf("c")));
+    expect(adjacentThreadKey(tree, "a", 1)).toBe("b");
+    expect(adjacentThreadKey(tree, "c", 1)).toBe("a");
+    expect(adjacentThreadKey(tree, "a", -1)).toBe("c");
+    expect(adjacentThreadKey(tree, "b", -1)).toBe("a");
+  });
+
+  it("returns null for a single cell or an unknown thread", () => {
+    expect(adjacentThreadKey(leaf("a"), "a", 1)).toBeNull();
+    expect(adjacentThreadKey(row(leaf("a"), leaf("b")), "gone", 1)).toBeNull();
+    expect(adjacentThreadKey(null, "a", 1)).toBeNull();
   });
 });

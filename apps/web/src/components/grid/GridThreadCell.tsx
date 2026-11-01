@@ -1,6 +1,6 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
-import { ArchiveIcon, ArrowDownIcon, ArrowRightIcon, XIcon } from "lucide-react";
+import { ArchiveIcon, ArrowDownIcon, ArrowRightIcon, Maximize2Icon, XIcon } from "lucide-react";
 import { useEffect, useState, type CSSProperties, type RefObject } from "react";
 
 import ChatView, { type RightPanelPortalTarget } from "../ChatView";
@@ -26,10 +26,13 @@ export function GridThreadCell({
   node,
   grid,
   focused,
+  maximized = false,
   availableThreads,
   providerEntries,
   onFocus,
   onClose,
+  onArchiveClose,
+  onMaximize,
   onSplit,
   onNewThread,
   onOpenThread,
@@ -39,10 +42,15 @@ export function GridThreadCell({
   node: ThreadNode;
   grid: GridRecord;
   focused: boolean;
+  /** This cell is shown alone; the grid tree keeps every other cell. */
+  maximized?: boolean;
   availableThreads: ReadonlyArray<{ threadId: string; title: string }>;
   providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
   onFocus: () => void;
   onClose: () => void;
+  /** Removes the cell without adding it to the reopen stack. */
+  onArchiveClose?: (() => void) | undefined;
+  onMaximize?: (() => void) | undefined;
   onSplit: (side: SplitSide, threadId: string) => void;
   onNewThread?: ((side: SplitSide) => void) | undefined;
   onOpenThread: (ref: ScopedThreadRef) => void;
@@ -79,13 +87,17 @@ export function GridThreadCell({
   const title = draftId !== undefined ? "New thread" : (shell?.title ?? "Untitled thread");
   const showDraft = draftId !== undefined && draftSession !== null;
   const threadCount = grid.tree === null ? 0 : preorderThreads(grid.tree).length;
-  const { ref, density, width } = usePaneDensity(threadCount);
+  // A maximized cell is a solo thread: one thread, the widest measure.
+  const measuredThreadCount = maximized ? 1 : threadCount;
+  const { ref, density, width } = usePaneDensity(measuredThreadCount);
   const layout = paneDensityLayout(density, width);
+  const showLabel = draftId !== undefined || (threadCount > 1 && !maximized);
+  const closeArchivedCell = onArchiveClose ?? onClose;
   // A grid holds six threads; the sixth cell still offers "New thread", whose
   // handler asks before moving the new thread to its own grid.
   const availableForSplit = threadCount >= MAX_GRID_THREADS ? [] : availableThreads;
   const archived = useArchivedThreadSnapshots([environmentId]);
-  const closeCellStable = useStableCallback(onClose);
+  const closeCellStable = useStableCallback(closeArchivedCell);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drops a cell whose thread was archived elsewhere (the sidebar or another window)
   useEffect(() => {
     if (draftId !== undefined) return;
@@ -157,7 +169,7 @@ export function GridThreadCell({
               ? "100%"
               : `${layout.composerMaxWidth ?? layout.timelineMaxWidth}px`,
           ...(density === "solo" ? { "--text-prose--line-height": "1.3125rem" } : {}),
-          ...(threadCount > 1 || draftId !== undefined ? { "--pane-label-inset": "2.625rem" } : {}),
+          ...(showLabel ? { "--pane-label-inset": "2.625rem" } : {}),
         } as CSSProperties
       }
       className={cn(
@@ -169,7 +181,7 @@ export function GridThreadCell({
           "[&_[data-chat-composer-resting-row]]:hidden [&_[data-thread-find-text]]:line-clamp-3 [&_[data-changed-files-state=tree]]:hidden [&_[data-changed-files-bar]]:hidden",
       )}
     >
-      {threadCount > 1 || draftId !== undefined ? (
+      {showLabel ? (
         <div
           data-pane-label=""
           className="group/label absolute top-2 left-2 z-20 flex h-[26px] max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-(--r-ctl) border border-(--divider) bg-(--pane) ps-2 pe-1 shadow-[var(--shadow-1)]"
@@ -212,11 +224,21 @@ export function GridThreadCell({
                 variant="ghost-muted"
                 size="icon-sm"
                 aria-label="Archive thread"
-                onClick={() => void archiveThread(threadRef, { onArchived: onClose })}
+                onClick={() => void archiveThread(threadRef, { onArchived: closeArchivedCell })}
               >
                 <ArchiveIcon />
               </Button>
             ) : null}
+            {onMaximize === undefined ? null : (
+              <Button
+                variant="ghost-muted"
+                size="icon-sm"
+                aria-label={maximized ? "Restore cell" : "Maximize cell"}
+                onClick={onMaximize}
+              >
+                <Maximize2Icon />
+              </Button>
+            )}
             <Button
               variant="ghost-muted"
               size="icon-sm"

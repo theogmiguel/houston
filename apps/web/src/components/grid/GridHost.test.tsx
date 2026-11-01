@@ -81,6 +81,51 @@ describe("GridHost", () => {
     expect(html).toContain('aria-orientation="vertical"');
   });
 
+  it("closes the last cell instead of keeping an empty tree behind", () => {
+    const onTreeChange = vi.fn();
+    let cell: GridCellRenderProps | undefined;
+    renderToStaticMarkup(
+      <GridHost
+        grid={gridWith(threadLeaf("thread-a", "p1"))}
+        onTreeChange={onTreeChange}
+        onFocusThread={noop}
+        renderThread={(props) => {
+          cell = props;
+          return null;
+        }}
+      />,
+    );
+    cell?.onClose();
+    expect(onTreeChange).toHaveBeenCalledWith(null);
+  });
+
+  it("shows one cell alone when maximized and leaves the tree to the store", () => {
+    const tree: LayoutNode = {
+      kind: "split",
+      dir: "row",
+      children: [threadLeaf("thread-a", "p1"), threadLeaf("thread-b", "p2")],
+      weights: [60, 40],
+    };
+    const html = renderToStaticMarkup(
+      <GridHost
+        grid={gridWith(tree)}
+        maximizedThreadId="thread-b"
+        onTreeChange={noop}
+        onFocusThread={noop}
+        renderThread={({ node, focused, maximized }) => (
+          <div data-testid="cell" data-thread-id={node.threadId} data-focused={focused}>
+            {maximized ? "maximized" : "grid"}
+          </div>
+        )}
+      />,
+    );
+    expect(html.match(/data-testid="cell"/g)).toHaveLength(1);
+    expect(html).toContain('data-thread-id="thread-b"');
+    expect(html).toContain('data-focused="true"');
+    expect(html).toContain("maximized");
+    expect(html).not.toContain("thread-a");
+  });
+
   it("hands each cell its thread id and close/split callbacks", () => {
     const spy = vi.fn((_cell: GridCellRenderProps) => null);
     renderToStaticMarkup(

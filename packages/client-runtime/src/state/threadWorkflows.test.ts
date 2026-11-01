@@ -5,6 +5,7 @@ import {
   canForkProjectedAssistantItem,
   deriveThreadQueueWorkflowState,
   resolveLatestMergeBackRun,
+  threadSupportsActiveSteering,
   threadSupportsProviderHandoff,
 } from "./threadWorkflows.ts";
 
@@ -63,6 +64,45 @@ describe("thread workflows", () => {
         providerThreads: [{ ...projection.providerThreads[0]!, nativeThreadRef: null }],
       }),
     ).toBe(false);
+  });
+
+  it("only treats native active steering as redirecting a running turn", () => {
+    const projection = {
+      thread: { id: "thread", activeProviderThreadId: "provider-thread" },
+      runs: [
+        {
+          id: "active",
+          status: "running",
+          providerThreadId: "provider-thread",
+          activeAttemptId: "attempt-active",
+          ordinal: 1,
+        },
+      ],
+      providerThreads: [
+        { id: "provider-thread", appThreadId: "thread", providerSessionId: "provider-session" },
+      ],
+      providerSessions: [
+        {
+          id: "provider-session",
+          status: "running",
+          capabilities: capabilities({ queued: true, steer: false, restartSteer: true }),
+        },
+      ],
+    } as unknown as OrchestrationV2ThreadProjection;
+
+    expect(threadSupportsActiveSteering(projection)).toBe(false);
+    expect(
+      threadSupportsActiveSteering({
+        ...projection,
+        providerSessions: [
+          {
+            ...projection.providerSessions[0]!,
+            capabilities: capabilities({ steer: true }),
+          },
+        ],
+      }),
+    ).toBe(true);
+    expect(threadSupportsActiveSteering(null)).toBe(false);
   });
 
   it("sorts queued messages and gates promotion from capabilities", () => {

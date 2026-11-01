@@ -91,6 +91,7 @@ import {
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import {
   getUserQueuedThreadRuns,
+  threadSupportsActiveSteering,
   threadSupportsProviderHandoff,
 } from "@t3tools/client-runtime/state/thread-workflows";
 import { resolvePendingHandoff } from "@t3tools/client-runtime/handoff";
@@ -867,6 +868,7 @@ export default function ChatView(props: ChatViewProps) {
   const isProviderSubagent =
     serverThread !== null && isProviderNativeSubagentThread(serverThread.source);
   const supportsProviderSwitchingViaHandoff = threadSupportsProviderHandoff(serverProjection);
+  const canSteerActiveRun = threadSupportsActiveSteering(serverProjection);
   const activeLatestRun = isServerThread ? serverLatestRun : (activeThread?.latestRun ?? null);
   const activeActivityRun = isServerThread ? serverActivityRun : (activeThread?.latestRun ?? null);
   const activeRuntime = isServerThread ? serverRuntime : (activeThread?.runtime ?? null);
@@ -3760,6 +3762,7 @@ export default function ChatView(props: ChatViewProps) {
                                 isLocalDraftThread && activeProject === null
                               }
                               phase={phase}
+                              canSteerActiveRun={canSteerActiveRun}
                               isCompacting={isCompacting}
                               canInterrupt={canInterruptRunningThread}
                               isSendBusy={

@@ -294,6 +294,11 @@ function treeShape(node: LayoutNode | null): string {
   return `${node.dir}(${node.children.map(treeShape).join("|")};${weights})`;
 }
 
+/** True when two trees have the same shape, thread order and weights. */
+export function sameLayout(a: LayoutNode | null, b: LayoutNode | null): boolean {
+  return treeShape(a) === treeShape(b);
+}
+
 /** True when the tree is still the automatic arrangement for these threads. */
 export function isGridPreset(tree: LayoutNode | null, ids: readonly string[]): boolean {
   const expected = gridPreset(ids);

@@ -96,7 +96,10 @@ async function renderCell(
   tree?: GridRecord["tree"],
   options?: {
     availableThreads?: ReadonlyArray<{ threadId: string; title: string }>;
+    maximized?: boolean;
     onClose?: () => void;
+    onArchiveClose?: () => void;
+    onMaximize?: () => void;
   },
 ) {
   return render(
@@ -104,10 +107,13 @@ async function renderCell(
       node={node}
       grid={grid(tree)}
       focused
+      maximized={options?.maximized ?? false}
       availableThreads={options?.availableThreads ?? []}
       providerEntries={new Map()}
       onFocus={() => {}}
       onClose={options?.onClose ?? (() => {})}
+      onArchiveClose={options?.onArchiveClose}
+      onMaximize={options?.onMaximize}
       onSplit={() => {}}
       onOpenThread={() => {}}
     />,
@@ -256,5 +262,56 @@ describe("GridThreadCell surfaces", () => {
     );
     expect(items).not.toContain("Seventh thread");
     expect(items).toContain("This grid holds six threads");
+  });
+});
+
+describe("GridThreadCell maximize", () => {
+  it("maximizes from the pane label", async () => {
+    state.draftSession = null;
+    const onMaximize = vi.fn();
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      { onMaximize },
+    );
+
+    await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
+    await userEvent.click(screen.getByRole("button", { name: "Maximize cell" }));
+    expect(onMaximize).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops the label when the cell is shown alone", async () => {
+    state.draftSession = null;
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      { maximized: true, onMaximize: () => {} },
+    );
+
+    expect(screen.container.querySelector("[data-pane-label]")).toBeNull();
+  });
+});
+
+describe("GridThreadCell archive", () => {
+  it("closes an archived cell without offering it for reopen", async () => {
+    state.draftSession = null;
+    state.archiveThread.mockImplementation(
+      (_ref: unknown, options?: { onArchived?: () => void }) => {
+        options?.onArchived?.();
+        return Promise.resolve({ _tag: "Success" });
+      },
+    );
+    const onClose = vi.fn();
+    const onArchiveClose = vi.fn();
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      { onClose, onArchiveClose },
+    );
+
+    await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
+    await userEvent.click(screen.getByRole("button", { name: "Archive thread" }));
+    expect(onArchiveClose).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

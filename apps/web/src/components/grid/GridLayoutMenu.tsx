@@ -3,7 +3,7 @@ import { CheckIcon, ChevronDownIcon, LayoutGridIcon } from "lucide-react";
 import { arrangeThreads, preorderThreads } from "../../grid/tree";
 import { type GridRecord, useGridStore } from "../../grid/gridStore";
 import { Button } from "../ui/button";
-import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
+import { Menu, MenuItem, MenuItemHint, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 const PRESET_COUNTS = [1, 2, 3, 4, 5, 6] as const;
@@ -57,7 +57,13 @@ export function GridLayoutMenu({ grid }: { grid: GridRecord | null }) {
               onClick={() => apply(arrangeThreads(grid?.tree ?? null))}
             >
               {preset} {preset === 1 ? "thread" : "threads"}
-              {selected ? <CheckIcon className="ml-auto size-3" /> : null}
+              {selected ? (
+                <CheckIcon className="ml-auto size-3" />
+              ) : (
+                <MenuItemHint>
+                  Needs {preset} · grid has {count}
+                </MenuItemHint>
+              )}
             </MenuItem>
           );
         })}
