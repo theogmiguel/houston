@@ -1040,6 +1040,7 @@
     "packages/client-runtime/src/state/threadInbox.test.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)",
     "packages/client-runtime/src/state/threadInbox.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)",
     "packages/client-runtime/src/state/threadSettled.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)",
+    "packages/client-runtime/src/state/threadWorkflows.test.ts": "adds coverage for the active-steering capability the composer fallback reads",
     "packages/client-runtime/src/state/threadWorkflows.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services); exposes active steering for the composer fallback",
     "packages/client-runtime/src/userMessage.test.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)",
     "packages/client-runtime/src/userMessage.ts": "T3 Connect, cloud routes, managed tunnels, relay and guest links are removed (Houston has no hosted services)",

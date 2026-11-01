@@ -66,10 +66,15 @@ const encodeUnknownJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unkno
 const encodeUnknownJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const decodeUnknownJsonString = Schema.decodeSync(Schema.fromJsonString(Schema.Unknown));
 
-function claudeLine(id: number, outputTokens: number, model = "claude-fable-5"): string {
+function claudeLine(
+  id: number,
+  outputTokens: number,
+  model = "claude-fable-5",
+  timestamp = "2026-08-01T10:00:00Z",
+): string {
   return `${JSON.stringify({
     type: "assistant",
-    timestamp: "2026-08-01T10:00:00Z",
+    timestamp,
     requestId: `req_${id}`,
     sessionId: "session-1",
     message: {
@@ -2541,27 +2546,41 @@ describe("UsageService", () => {
   it.live("reports saved usage of a removed directory only for windows it reaches", () =>
     Effect.gen(function* () {
       const { transcript, settings, home } = yield* setup;
+      // The saved-usage cache keeps 92 days counted from the real clock, so the
+      // transcript date must move with it instead of being a fixed calendar day.
+      const dayMs = 24 * 60 * 60 * 1000;
+      const writtenAtMs = Date.now() - 10 * dayMs;
+      const usageDay = (offsetDays: number) =>
+        UsageDay.make(new Date(writtenAtMs + offsetDays * dayMs).toISOString().slice(0, 10));
+      const window: UsageSummaryInput = {
+        timeZone: "UTC",
+        sinceDay: usageDay(-1),
+        untilDay: usageDay(1),
+      };
       yield* Effect.promise(async () => {
-        await NodeFSP.writeFile(transcript, claudeLine(1, 5));
-        const lastWrite = Date.parse("2026-08-01T10:00:00Z") / 1000;
+        await NodeFSP.writeFile(
+          transcript,
+          claudeLine(1, 5, undefined, new Date(writtenAtMs).toISOString()),
+        );
+        const lastWrite = writtenAtMs / 1000;
         await NodeFSP.utimes(transcript, lastWrite, lastWrite);
       });
       const service = yield* UsageService.make.pipe(
         Effect.provide(layerService({ prefix: "usage-service-saved-window-test", home, settings })),
       );
-      const first = yield* service.readSummary(WINDOW);
+      const first = yield* service.readSummary(window);
       yield* Effect.promise(() =>
         NodeFSP.rm(NodePath.join(home, "claude", "projects"), { recursive: true }),
       );
 
-      const reached = yield* service.readSummary(WINDOW);
+      const reached = yield* service.readSummary(window);
       assert.deepStrictEqual(reached.buckets, first.buckets);
       assert.strictEqual(reached.sources[0]?.status, "ok");
 
       const later = yield* service.readSummary({
         timeZone: "UTC",
-        sinceDay: UsageDay.make("2026-08-10"),
-        untilDay: UsageDay.make("2026-08-12"),
+        sinceDay: usageDay(9),
+        untilDay: usageDay(11),
       });
       assert.deepStrictEqual(later.buckets, []);
       assert.strictEqual(later.sources[0]?.status, "missing");
