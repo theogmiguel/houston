@@ -574,7 +574,7 @@
     "apps/server/src/mcp/McpHttpServer.ts": "user-visible product name: Houston instead of T3 Code; CLI binary renamed from t3 to houston; tasks backlog: a houston-task-submit credential may call only the two task submit tools; tasks backlog: registers the houston_task_* toolkit; merge queue: registers the houston_merge_queue_* toolkit; night shift: registers the houston_night_* toolkit",
     "apps/server/src/mcp/McpInvocationContext.ts": "user-visible product name: Houston instead of T3 Code; CLI binary renamed from t3 to houston; tasks backlog: the houston-task-submit capability",
     "apps/server/src/mcp/OrchestratorMcpService.test.ts": "user-visible product name: Houston instead of T3 Code",
-    "apps/server/src/mcp/OrchestratorMcpService.ts": "user-visible product name: Houston instead of T3 Code; CLI binary renamed from t3 to houston; night shift: delegate_task, create_threads, schedule_task and delete_scheduled_task ask the Houston crew gate first, and a delegation records its child in the run's crew after dispatch (AD-086)",
+    "apps/server/src/mcp/OrchestratorMcpService.ts": "user-visible product name: Houston instead of T3 Code; CLI binary renamed from t3 to houston; night shift: delegate_task, create_threads, schedule_task and delete_scheduled_task ask the Houston crew gate first, and a delegation records its child in the run's crew after dispatch, uninterruptibly; t3_thread_send from a live run's thread reaches only its live crew children (AD-086, AD-112)",
     "apps/server/src/mcp/ThreadMetadataMcpService.ts": "user-visible product name: Houston instead of T3 Code; CLI binary renamed from t3 to houston",
     "apps/server/src/mcp/WorktreeMcpService.ts": "user-visible product name: Houston instead of T3 Code; CLI binary renamed from t3 to houston",
     "apps/server/src/mcp/threadAccess.ts": "user-visible product name: Houston instead of T3 Code",
@@ -1112,6 +1112,7 @@
     "apps/web/src/components/settings/ConnectionsSettings.logic.test.ts": "pair-device QR visibility coverage",
     "apps/web/src/components/settings/AuthorizedClientsSettings.tsx": "pair-device card only for shareable URLs",
     "apps/server/src/mcp/toolkits/project/handlers.ts": "night shift: t3_thread_launch asks the Houston crew gate first, which refuses it for a thread of a live run (AD-086)",
-    "apps/server/src/mcp/toolkits/orchestrator/handlers.ts": "night shift: t3_environment_link asks the Houston crew gate first, which refuses it for a thread of a live run (AD-086)"
+    "apps/server/src/mcp/toolkits/orchestrator/handlers.ts": "night shift: t3_environment_link asks the Houston crew gate first, which refuses it for a thread of a live run (AD-086)",
+    "apps/server/src/mcp/toolkits/thread/handlers.ts": "night shift: run_scheduled_task_now asks the Houston crew gate first, which refuses it for a thread of a live run (AD-112)"
   }
 }

@@ -2970,6 +2970,16 @@ const make = Effect.gen(function* () {
       } satisfies OrchestratorMcpThreadReadResult;
     }),
     sendToThread: Effect.fn("OrchestratorMcpService.sendToThread")(function* (scope, input) {
+      // Houston: a live Night shift run's threads send only to its live crew children.
+      if (scope.thread !== undefined) {
+        yield* crewGate
+          .admit({
+            callerThreadId: scope.thread.threadId,
+            operation: "t3_thread_send",
+            targetThreadId: input.threadId,
+          })
+          .pipe(Effect.mapError(crewGateFailure));
+      }
       const { parent, limits, target } = yield* loadScopedThread(scope, input.threadId);
       yield* assertLiveCallerForOtherThread(scope, parent, target);
       yield* resolveRuntimeMode(limits.runtimeMode, target.thread.runtimeMode);

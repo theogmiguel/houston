@@ -44,6 +44,7 @@ import {
   Store,
   type Kit,
 } from "./nightShift.testkit.ts";
+import * as CrewGate from "./CrewGate.ts";
 import * as Threads from "./Threads.ts";
 import { makeRunsHarness, runWith } from "../tasks/taskRuns.testkit.ts";
 import { layerBacklog, NightShiftBacklog, type UpNextTask } from "./Host.ts";
@@ -542,6 +543,49 @@ describe("night shift run life", () => {
           assert.isAtLeast(stoppedAfter!, 58);
           assert.isAtMost(stoppedAfter!, 61);
           assert.equal((yield* getRun(d.runId)).stopReason, "stopped");
+        }),
+      );
+    }),
+  );
+
+  it.effect("the hard stop cancels the review a crew handback started", () =>
+    Effect.gen(function* () {
+      const kit = yield* makeKit("hard-stop-review");
+      yield* runKit(
+        kit,
+        Effect.gen(function* () {
+          const store = yield* Store.HoustonNightShiftStore;
+          const gate = yield* CrewGate.HoustonCrewGate;
+          const { projectId } = yield* setUp("hard-stop-review");
+          const started = yield* start(projectId, 60);
+          const run = yield* getRun(started.runId);
+          yield* addCrew(started.runId, "worker-1", started.threadId, run.startedAt);
+          busy(kit, "worker-1");
+
+          // The worker's handback starts a review: Tasks asks the gate and records its thread.
+          const admission = yield* gate.review({
+            callerThreadId: ThreadId.make("worker-1"),
+            providerInstanceId: "codex",
+          });
+          yield* admission.record(ThreadId.make("task-review-1"));
+          busy(kit, "task-review-1");
+          const refused = yield* Effect.flip(
+            gate.review({ callerThreadId: ThreadId.make("worker-1"), providerInstanceId: "codex" }),
+          );
+          assert.include(refused, "1 of 1 live review");
+
+          yield* TestClock.adjust("61 minutes");
+          yield* tick;
+          assert.equal((yield* getRun(started.runId)).stopReason, "hardStop");
+          const ops = stopOps(kit);
+          assert.sameMembers(ops.slice(0, 2), ["cancel:worker-1", "cancel:task-review-1"]);
+          assert.deepEqual(ops.slice(2), [`stop:${started.threadId}`]);
+          assert.isFalse(kit.state.states.get("task-review-1")!.activeRun);
+          const review = (yield* store.crew(started.runId)).find(
+            (member) => member.threadId === "task-review-1",
+          );
+          assert.equal(review?.role, "review");
+          assert.isNotNull(review?.endedAt);
         }),
       );
     }),

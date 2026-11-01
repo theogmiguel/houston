@@ -24,6 +24,7 @@ import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAda
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import type * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -91,6 +92,15 @@ interface World {
   readonly callers: Map<string, string>;
   readonly notes: Array<{ readonly messageId: string; readonly text: string }>;
   readonly taskStatuses: Map<string, string>;
+  /** Thread states the gate reads for a crew row without a delegated task; absent is busy. */
+  readonly threadStates: Map<
+    string,
+    {
+      readonly present: boolean;
+      readonly activeRun: boolean;
+      readonly lastRunStatus: string | null;
+    }
+  >;
   readonly workspaces: Map<string, { readonly worktreePath: string; readonly branch: string }>;
   readonly readiness: Map<string, ProviderReadiness>;
   /** A dispatch that never answers, so a test can interrupt a delegation mid-flight. */
@@ -114,6 +124,7 @@ const freshWorld = (): World => ({
   ]),
   notes: [],
   taskStatuses: new Map(),
+  threadStates: new Map(),
   workspaces: new Map([
     [ORCHESTRATOR, { worktreePath: "/worktrees/night-1", branch: "houston/night/1" }],
   ]),
@@ -301,6 +312,15 @@ const layerNightPorts = (world: World) =>
         }),
       taskStatus: (parent, task) =>
         Effect.sync(() => world.taskStatuses.get(`${parent}|${task}`) ?? null),
+      state: (threadId) =>
+        Effect.sync(
+          () =>
+            world.threadStates.get(threadId) ?? {
+              present: true,
+              activeRun: true,
+              lastRunStatus: "running",
+            },
+        ),
       workspace: (threadId) =>
         Effect.sync(() => {
           const known = world.workspaces.get(threadId);
@@ -436,6 +456,74 @@ const worker = (overrides: Partial<OrchestratorMcpDelegateTaskInput> = {}) => ({
   isolation: "worktree" as const,
   ...overrides,
 });
+
+/** Houston's task and merge queue toolkits over MCP, with the gate; each call answers its text. */
+const houstonTools = (world: World) => {
+  const layer = Layer.mergeAll(
+    McpHttpServer.layerHoustonTaskToolkit,
+    McpHttpServer.layerHoustonMergeQueueToolkit,
+  ).pipe(
+    Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provide(
+      Layer.mergeAll(
+        layerThreadManagement(world),
+        Layer.mock(HoustonTaskRuns)({
+          agentWriteRefusal: () => Effect.void as never,
+          execute: () =>
+            Effect.sync(() => world.calls.push("houston_task_execute")).pipe(
+              Effect.andThen(Effect.die("no execute")),
+            ),
+          taskOfRun: () =>
+            Effect.sync(() => world.calls.push("houston_task_review")).pipe(
+              Effect.andThen(Effect.die("no review")),
+            ),
+        }),
+        Layer.mock(HoustonTaskService)({
+          getSettings: () => Effect.succeed({ access: "write" } as never),
+          get: () => Effect.succeed({ task: { projectId, key: "HOU-7" } } as never),
+        }),
+        Layer.mock(HoustonMergeQueueService)({
+          enqueue: () =>
+            Effect.sync(() => world.calls.push("houston_merge_queue_enqueue")).pipe(
+              Effect.andThen(Effect.die("no enqueue")),
+            ),
+          dequeue: () =>
+            Effect.sync(() => world.calls.push("houston_merge_queue_dequeue")).pipe(
+              Effect.andThen(Effect.die("no dequeue")),
+            ),
+        }),
+        Layer.mock(HoustonMergeQueueProject)({}),
+        NodeServices.layer,
+      ),
+    ),
+    Layer.provideMerge(layerGate(world)),
+  );
+  const client = McpSchema.McpServerClient.of({
+    clientId: 1,
+    clientCapabilities: {},
+    clientInfo: { name: "night-crew", version: "1.0.0" },
+    protocolVersion: "2025-06-18",
+    initializePayload: {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "night-crew", version: "1.0.0" },
+    },
+    getClient: Effect.die("unused"),
+  });
+  const call = (threadId: ThreadId, name: string, args: Record<string, unknown>) =>
+    Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      const result = (yield* server.callTool({ name, arguments: args }).pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, scopeOf(world, threadId)),
+        Effect.provideService(McpSchema.McpServerClient, client),
+        Effect.catchCause(() => Effect.succeed({ isError: true, content: [] })),
+      )) as McpSchema.CallToolResult;
+      return (result.content ?? [])
+        .map((part) => (part.type === "text" ? part.text : ""))
+        .join("\n");
+    });
+  return { layer, call };
+};
 
 describe("the crew gate", () => {
   it.effect("the crew is recorded when a delegation returns", () => {
@@ -728,68 +816,7 @@ describe("the crew gate", () => {
 
   it.effect("houston's task and merge queue tools refuse a crew thread", () => {
     const world = freshWorld();
-    const layer = Layer.mergeAll(
-      McpHttpServer.layerHoustonTaskToolkit,
-      McpHttpServer.layerHoustonMergeQueueToolkit,
-    ).pipe(
-      Layer.provideMerge(McpServer.McpServer.layer),
-      Layer.provide(
-        Layer.mergeAll(
-          layerThreadManagement(world),
-          Layer.mock(HoustonTaskRuns)({
-            agentWriteRefusal: () => Effect.void as never,
-            execute: () =>
-              Effect.sync(() => world.calls.push("houston_task_execute")).pipe(
-                Effect.andThen(Effect.die("no execute")),
-              ),
-          }),
-          Layer.mock(HoustonTaskService)({
-            getSettings: () => Effect.succeed({ access: "write" } as never),
-            get: () => Effect.succeed({ task: { projectId, key: "HOU-7" } } as never),
-          }),
-          Layer.mock(HoustonMergeQueueService)({
-            enqueue: () =>
-              Effect.sync(() => world.calls.push("houston_merge_queue_enqueue")).pipe(
-                Effect.andThen(Effect.die("no enqueue")),
-              ),
-            dequeue: () =>
-              Effect.sync(() => world.calls.push("houston_merge_queue_dequeue")).pipe(
-                Effect.andThen(Effect.die("no dequeue")),
-              ),
-          }),
-          Layer.mock(HoustonMergeQueueProject)({}),
-          NodeServices.layer,
-        ),
-      ),
-      Layer.provideMerge(layerGate(world)),
-    );
-    const client = McpSchema.McpServerClient.of({
-      clientId: 1,
-      clientCapabilities: {},
-      clientInfo: { name: "night-crew", version: "1.0.0" },
-      protocolVersion: "2025-06-18",
-      initializePayload: {
-        protocolVersion: "2025-06-18",
-        capabilities: {},
-        clientInfo: { name: "night-crew", version: "1.0.0" },
-      },
-      getClient: Effect.die("unused"),
-    });
-    const call = (threadId: ThreadId, name: string, args: Record<string, unknown>) =>
-      Effect.gen(function* () {
-        const server = yield* McpServer.McpServer;
-        const result = (yield* server.callTool({ name, arguments: args }).pipe(
-          Effect.provideService(
-            McpInvocationContext.McpInvocationContext,
-            scopeOf(world, threadId),
-          ),
-          Effect.provideService(McpSchema.McpServerClient, client),
-          Effect.catchCause(() => Effect.succeed({ isError: true, content: [] })),
-        )) as McpSchema.CallToolResult;
-        return (result.content ?? [])
-          .map((part) => (part.type === "text" ? part.text : ""))
-          .join("\n");
-      });
+    const { layer, call } = houstonTools(world);
     return Effect.gen(function* () {
       yield* seedRun(settingsWith());
       const tools = [
@@ -813,6 +840,169 @@ describe("the crew gate", () => {
         tools.map(([name]) => name),
       );
     }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("a crew thread sends only to the run's live crew children", () => {
+    const world = freshWorld();
+    return Effect.gen(function* () {
+      yield* seedRun(settingsWith());
+      const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+      const send = (caller: ThreadId, threadId: string) =>
+        Effect.exit(
+          service.sendToThread(scopeOf(world, caller), {
+            threadId: ThreadId.make(threadId),
+            message: "Carry on.",
+          } as never),
+        );
+      const passedGate = (exit: Exit.Exit<unknown, unknown>) =>
+        exit._tag === "Success" || !Cause.pretty(exit.cause).includes("Night shift");
+
+      const live = yield* delegate(world, ORCHESTRATOR, worker());
+      const finished = yield* delegate(world, ORCHESTRATOR, worker());
+      world.taskStatuses.set(`${ORCHESTRATOR}|${finished.taskId}`, "completed");
+
+      // A live crew child: the send passes the gate into upstream's handler.
+      assert.isTrue(passedGate(yield* send(ORCHESTRATOR, live.childThreadId!)));
+      // A thread outside the run, a finished child and the orchestrator itself: refused by name.
+      yield* refusedWith(
+        service.sendToThread(scopeOf(world, ORCHESTRATOR), {
+          threadId: OUTSIDER,
+          message: "Start something.",
+        } as never),
+        "t3_thread_send",
+        OUTSIDER,
+        "not a live crew thread",
+      );
+      yield* refusedWith(
+        service.sendToThread(scopeOf(world, ORCHESTRATOR), {
+          threadId: ThreadId.make(finished.childThreadId!),
+          message: "One more thing.",
+        } as never),
+        "t3_thread_send",
+        finished.childThreadId!,
+        "ended",
+        "delegate_task",
+      );
+      yield* refusedWith(
+        service.sendToThread(scopeOf(world, ThreadId.make(live.childThreadId!)), {
+          threadId: ORCHESTRATOR,
+          message: "Report.",
+        } as never),
+        "t3_thread_send",
+        ORCHESTRATOR,
+      );
+      // Outside every live run a send is not gated.
+      assert.isTrue(passedGate(yield* send(OUTSIDER, ORCHESTRATOR)));
+    }).pipe(Effect.provide(layerService(world)));
+  });
+
+  it.effect("run_scheduled_task_now and houston_task_review are refused by name in a run", () => {
+    const world = freshWorld();
+    const { layer, call } = houstonTools(world);
+    return Effect.gen(function* () {
+      yield* seedRun(settingsWith());
+      const gate = yield* CrewGate.HoustonCrewGate;
+      const store = yield* Store.HoustonNightShiftStore;
+      for (const operation of ["run_scheduled_task_now", "houston_task_review"] as const) {
+        for (const caller of [ORCHESTRATOR, ThreadId.make("night-worker")]) {
+          if (caller !== ORCHESTRATOR) {
+            const runId = (yield* store.liveCrewOf(ORCHESTRATOR))!.run.id;
+            yield* store
+              .addCrew({
+                runId,
+                threadId: caller,
+                taskId: "task-worker",
+                parentThreadId: ORCHESTRATOR,
+                role: "implementation",
+                providerInstanceId: "codex",
+                requestedInstanceId: "codex",
+                worktreePath: null,
+                branch: null,
+                startedAt: NOW,
+                endedAt: null,
+              })
+              .pipe(Effect.ignore);
+          }
+          const refusal = yield* Effect.flip(gate.admit({ callerThreadId: caller, operation }));
+          assert.include(refusal, operation);
+          assert.include(refusal, CrewGate.STARTS_ONLY_THROUGH_DELEGATION);
+        }
+        assert.isUndefined((yield* gate.admit({ callerThreadId: OUTSIDER, operation })).target);
+      }
+
+      // Over MCP, houston_task_review from the crew reaches nothing; an outsider's reaches Tasks.
+      const text = yield* call(ORCHESTRATOR, "houston_task_review", { runId: 3 });
+      assert.include(text, "Night shift: ");
+      assert.include(text, CrewGate.STARTS_ONLY_THROUGH_DELEGATION);
+      assert.deepEqual(world.calls, []);
+      assert.notInclude(yield* call(OUTSIDER, "houston_task_review", { runId: 3 }), "Night shift");
+      assert.deepEqual(world.calls, ["houston_task_review"]);
+
+      // Upstream's run_scheduled_task_now asks the gate before it reads or runs any task.
+      const source = NodeFS.readFileSync(
+        new URL("../../mcp/toolkits/thread/handlers.ts", import.meta.url),
+        "utf8",
+      );
+      const handler = source.slice(source.indexOf("run_scheduled_task_now: McpToolAccess"));
+      const gateCall = handler.indexOf(`admitOperation(scope, "run_scheduled_task_now")`);
+      assert.isAbove(gateCall, 0);
+      assert.isBelow(gateCall, handler.indexOf("scheduler.list()"));
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("the review a crew thread's handback starts is a capped crew row", () => {
+    const world = freshWorld();
+    return Effect.gen(function* () {
+      const runId = yield* seedRun(settingsWith());
+      const gate = yield* CrewGate.HoustonCrewGate;
+      const implementer = yield* delegate(world, ORCHESTRATOR, worker());
+      const caller = ThreadId.make(implementer.childThreadId!);
+      world.workspaces.set("task-review-1", {
+        worktreePath: "/worktrees/review-1",
+        branch: "t3/review",
+      });
+
+      const first = yield* gate.review({ callerThreadId: caller, providerInstanceId: "codex" });
+      // The slot is held from admission: a second review waits while the first is starting.
+      yield* Effect.flip(gate.review({ callerThreadId: caller, providerInstanceId: "codex" })).pipe(
+        Effect.map((refusal) => assert.include(refusal, "1 of 1 live review")),
+      );
+      yield* first.record(ThreadId.make("task-review-1"));
+      const row = (yield* crewOf(runId)).find((member) => member.threadId === "task-review-1");
+      assert.deepInclude(row, {
+        runId,
+        taskId: null,
+        parentThreadId: caller,
+        role: "review",
+        providerInstanceId: "codex",
+        worktreePath: "/worktrees/review-1",
+        endedAt: null,
+      });
+      // It shares the review slot with delegated reviews.
+      yield* refusedWith(
+        delegate(world, ORCHESTRATOR, { role: "review", isolation: "shared" }),
+        "1 of 1 live review",
+      );
+
+      // Its thread's run ends: the row ends and the slot frees.
+      world.threadStates.set("task-review-1", {
+        present: true,
+        activeRun: false,
+        lastRunStatus: "completed",
+      });
+      yield* gate.refresh(runId);
+      assert.isNotNull(
+        (yield* crewOf(runId)).find((member) => member.threadId === "task-review-1")!.endedAt,
+      );
+      yield* delegate(world, ORCHESTRATOR, { role: "review", isolation: "shared" });
+
+      // Outside every live run nothing is recorded.
+      const outside = yield* gate.review({ callerThreadId: OUTSIDER, providerInstanceId: "codex" });
+      yield* outside.record(ThreadId.make("task-review-outside"));
+      assert.isUndefined(
+        (yield* crewOf(runId)).find((member) => member.threadId === "task-review-outside"),
+      );
+    }).pipe(Effect.provide(layerService(world)));
   });
 
   it.effect("a limited worker instance is replaced by the next ready one", () => {

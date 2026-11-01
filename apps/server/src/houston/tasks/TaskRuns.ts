@@ -52,6 +52,7 @@ import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
+import { HoustonCrewGate } from "../nightShift/CrewGate.ts";
 import {
   HoustonReadOnlyThreads,
   hasReadOnlyRun,
@@ -275,6 +276,7 @@ const make = Effect.gen(function* () {
   const adapters = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
   const readOnlyThreads = readOnlyThreadsOf(sql);
   const fs = yield* FileSystem.FileSystem;
+  const crewGate = yield* HoustonCrewGate;
 
   const newThreadId = (prefix: string) =>
     Effect.map(randomUuidV4, (uuid) => ThreadId.make(`${prefix}-${uuid}`));
@@ -923,19 +925,47 @@ const make = Effect.gen(function* () {
               reviewedHeads: [],
             }))
         ) {
-          yield* startReview(operation, handed, {
-            automatic: true,
-            settings,
-            model: reviewer,
-          }).pipe(
-            Effect.catch((error) =>
-              noteOnce(
-                row.id,
-                `handback:${open.id}`,
-                `Automatic review not started: ${error.message}`,
+          // A Night shift crew run's review counts in the run's review slot and stops with it.
+          const admission =
+            open.thread_id === null
+              ? undefined
+              : yield* crewGate
+                  .review({
+                    callerThreadId: ThreadId.make(open.thread_id),
+                    providerInstanceId: reviewer.instanceId,
+                  })
+                  .pipe(Effect.result);
+          if (admission?._tag === "Failure") {
+            yield* noteOnce(
+              row.id,
+              `handback:${open.id}`,
+              `Automatic review not started: Night shift: ${admission.failure}`,
+            );
+          } else {
+            yield* startReview(operation, handed, {
+              automatic: true,
+              settings,
+              model: reviewer,
+            }).pipe(
+              Effect.tap((detail) => {
+                const threadId = detail.runs.find(
+                  (candidate) => candidate.kind === "review",
+                )?.threadId;
+                if (admission === undefined || threadId === undefined || threadId === null) {
+                  return Effect.void;
+                }
+                return admission.success.record(threadId);
+              }),
+              Effect.ensuring(admission?.success.release ?? Effect.void),
+              Effect.catch((error) =>
+                noteOnce(
+                  row.id,
+                  `handback:${open.id}`,
+                  `Automatic review not started: ${error.message}`,
+                ),
               ),
-            ),
-          );
+            );
+          }
         }
       }
       return toRun((yield* runById(open.id)) as RunRow);

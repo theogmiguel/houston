@@ -347,6 +347,14 @@ describe("startup", () => {
         server.indexOf("Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer"),
         "the Tasks service is provided below the runtime",
       );
+      // Task runs are built over the runtime that exports the gate, so a crew handback's
+      // automatic review asks the server's gate, not the default.
+      assert.isBelow(
+        server.indexOf("HoustonTaskRuns.layer.pipe("),
+        server.indexOf("Layer.provideMerge(layerOrchestrationApplication)"),
+        "task runs are built over the runtime",
+      );
+      assert.include(source("../tasks/TaskRuns.ts"), "const crewGate = yield* HoustonCrewGate;");
       // Upstream's orchestrator MCP tests run with the default gate, which admits everything.
       assert.notInclude(source("../../mcp/OrchestratorMcpService.test.ts"), "HoustonCrewGate");
       assert.strictEqual(
