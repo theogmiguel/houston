@@ -404,6 +404,121 @@ const HarnessReview = Effect.gen(function* () {
   `;
 });
 
+// Night shift: settings, runs, crew, ledger, pushes and the v1 import, keyed by upstream ProjectId
+// without a foreign key; a deleted project's rows go with its deletion hook.
+const NightShift = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_shift_settings (
+      project_id TEXT PRIMARY KEY,
+      scheduled_task_id TEXT,
+      settings_json TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id TEXT NOT NULL,
+      trigger TEXT NOT NULL CHECK (trigger IN ('scheduled', 'catchUp', 'manual', 'imported')),
+      scheduled_task_id TEXT,
+      phase TEXT NOT NULL
+        CHECK (phase IN ('preflight', 'refused', 'running', 'wrappingUp', 'settled')),
+      stop_reason TEXT CHECK (stop_reason IS NULL OR stop_reason IN ('report', 'hardStop',
+        'stopped', 'idle', 'orchestratorEnded', 'orchestratorLimited', 'serverRestart',
+        'launchFailed', 'imported')),
+      stop_detail TEXT,
+      orchestrator_thread_id TEXT,
+      worktree_path TEXT,
+      branch TEXT,
+      settings_json TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      wrap_up_at TEXT,
+      hard_stop_at TEXT,
+      wrap_up_sent INTEGER NOT NULL DEFAULT 0,
+      nudged_at TEXT,
+      ended_at TEXT,
+      preflight_json TEXT NOT NULL DEFAULT '[]',
+      limited_json TEXT NOT NULL DEFAULT '[]',
+      remote_heads_json TEXT,
+      remote_changes_json TEXT,
+      interruptions_json TEXT NOT NULL DEFAULT '[]',
+      cost_json TEXT,
+      summary TEXT,
+      report_path TEXT,
+      keep_awake TEXT,
+      notice_sent INTEGER NOT NULL DEFAULT 0
+    )
+  `;
+  // A restart or a second server process must not start a second crew in the same project.
+  yield* sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_houston_night_runs_live
+    ON houston_night_runs(project_id) WHERE phase IN ('preflight', 'running', 'wrappingUp')
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_night_runs_project ON houston_night_runs(project_id, id DESC)`;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_crew (
+      run_id INTEGER NOT NULL,
+      thread_id TEXT NOT NULL,
+      task_id TEXT,
+      parent_thread_id TEXT,
+      role TEXT NOT NULL CHECK (role IN ('orchestrator', 'implementation', 'research', 'review',
+        'design', 'test', 'general')),
+      provider_instance_id TEXT NOT NULL,
+      requested_instance_id TEXT,
+      worktree_path TEXT,
+      branch TEXT,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      PRIMARY KEY (run_id, thread_id)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id INTEGER NOT NULL,
+      project_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('plan', 'pr', 'lesson', 'flaky', 'decision', 'deferred',
+        'studied', 'pick', 'verdict')),
+      title TEXT NOT NULL,
+      theme TEXT,
+      status TEXT,
+      pr_number INTEGER,
+      task_number INTEGER,
+      head_sha TEXT,
+      branch TEXT,
+      visible INTEGER NOT NULL DEFAULT 0,
+      qa_passed INTEGER NOT NULL DEFAULT 0,
+      body TEXT NOT NULL DEFAULT '',
+      detail_json TEXT NOT NULL DEFAULT '{}',
+      author_thread_id TEXT,
+      created_at TEXT NOT NULL,
+      decided_at TEXT,
+      choice TEXT
+    )
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_night_entries_project ON houston_night_entries(project_id, kind, id DESC)`;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_pushes (
+      run_id INTEGER NOT NULL,
+      branch TEXT NOT NULL,
+      old_sha TEXT,
+      new_sha TEXT NOT NULL,
+      pr_number INTEGER,
+      at TEXT NOT NULL,
+      PRIMARY KEY (run_id, branch, new_sha)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_night_import (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      imported_at TEXT NOT NULL,
+      counts_json TEXT NOT NULL
+    )
+  `;
+});
+
 // Task runs: the last thread event they applied, so a restart replays what a crash left unapplied.
 const TaskRunsCursor = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -411,6 +526,117 @@ const TaskRunsCursor = Effect.gen(function* () {
     CREATE TABLE IF NOT EXISTS houston_task_runs_cursor (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       sequence INTEGER NOT NULL
+    )
+  `;
+});
+
+// Slack intake: one settings row, the channel map with catch-up cursors, the filed requests and
+// what each owes Slack. Both tokens live in the OS keychain; no column holds one.
+const SlackIntake = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_slack_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      enabled INTEGER NOT NULL,
+      owner_user_id TEXT,
+      language TEXT NOT NULL CHECK (language IN ('en', 'pt-BR')),
+      credential_set_at TEXT,
+      team_id TEXT,
+      team TEXT,
+      bot_user_id TEXT,
+      revision INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_slack_channels (
+      channel_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      cursor_ts TEXT NOT NULL,
+      mapped_at TEXT NOT NULL
+    )
+  `;
+  // awaiting_reply marks a mention refused for its text, whose requester's next reply is filed.
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_slack_requests (
+      id INTEGER PRIMARY KEY,
+      channel_id TEXT NOT NULL,
+      ts TEXT NOT NULL,
+      author TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      task_id INTEGER,
+      state TEXT NOT NULL CHECK (state IN ('pending', 'queued', 'started', 'refused', 'closed')),
+      status_reaction TEXT,
+      permalink TEXT,
+      queued_at TEXT,
+      created_at TEXT NOT NULL,
+      awaiting_reply INTEGER NOT NULL DEFAULT 0,
+      attachments_json TEXT,
+      UNIQUE (channel_id, ts)
+    )
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_slack_requests_task ON houston_slack_requests(task_id)`;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_slack_questions (
+      id INTEGER PRIMARY KEY,
+      request_id INTEGER NOT NULL,
+      task_run_id INTEGER NOT NULL,
+      thread_id TEXT NOT NULL,
+      form_json TEXT NOT NULL,
+      answer TEXT,
+      answered_by TEXT,
+      answer_ts TEXT,
+      created_at TEXT NOT NULL,
+      answered_at TEXT,
+      delivered_at TEXT
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_slack_results (
+      task_run_id INTEGER PRIMARY KEY,
+      request_id INTEGER NOT NULL,
+      form_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_slack_adjustments (
+      id INTEGER PRIMARY KEY,
+      request_id INTEGER NOT NULL,
+      task_run_id INTEGER NOT NULL,
+      ts TEXT NOT NULL,
+      text TEXT NOT NULL,
+      state TEXT NOT NULL CHECK (state IN ('pending', 'accepted', 'refused')),
+      created_at TEXT NOT NULL,
+      UNIQUE (request_id, ts)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_slack_outbox (
+      id INTEGER PRIMARY KEY,
+      request_id INTEGER NOT NULL,
+      dedupe_key TEXT NOT NULL UNIQUE,
+      target TEXT NOT NULL CHECK (target IN ('thread', 'dm', 'update', 'react', 'ephemeral')),
+      text TEXT NOT NULL,
+      blocks_json TEXT,
+      reaction TEXT,
+      remove_reaction TEXT,
+      message_ts TEXT,
+      update_of TEXT,
+      user_id TEXT,
+      posted_channel TEXT,
+      posted_ts TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      sent_at TEXT
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_slack_import (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      imported_at TEXT NOT NULL,
+      counts_json TEXT NOT NULL
     )
   `;
 });
@@ -497,6 +723,8 @@ const houstonMigrationEntries = [
   [5, "MergeQueue", MergeQueue],
   [6, "TaskSourceMarkerKey", TaskSourceMarkerKey],
   [7, "HarnessReview", HarnessReview],
+  [8, "SlackIntake", SlackIntake],
+  [9, "NightShift", NightShift],
 ] as const;
 
 const run = Migrator.make({});

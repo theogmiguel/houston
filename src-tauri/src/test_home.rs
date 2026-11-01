@@ -37,31 +37,10 @@ pub fn config_outside_home(
         .collect()
 }
 
-pub fn run_isolated_test(test: &str) -> bool {
-    if std::env::var("HOUSTON_ISOLATED_TEST").as_deref() == Ok(test) {
-        return false;
-    }
-    let home = tempfile::tempdir().expect("throwaway home");
-    let mut command = houston_core::spawn::command(std::env::current_exe().expect("test binary"));
-    isolate(&mut command, home.path());
-    let output = command
-        .env("HOUSTON_ISOLATED_TEST", test)
-        .args(["--exact", test, "--nocapture"])
-        .output()
-        .expect("run isolated test");
-    assert!(
-        output.status.success() && String::from_utf8_lossy(&output.stdout).contains("1 passed"),
-        "isolated test {test} failed: {}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    true
-}
-
 #[test]
 fn daemon_command_overrides_inherited_config_homes() {
     let home = tempfile::tempdir().expect("throwaway home");
-    let mut command = houston_core::spawn::command("unused-daemon");
+    let mut command = crate::sys::spawn::command("unused-daemon");
     for key in [
         "HOME",
         "USERPROFILE",

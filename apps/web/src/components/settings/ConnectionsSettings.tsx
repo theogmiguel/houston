@@ -1364,19 +1364,9 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
         {...searchableSetting("remote-environments")}
         title="Environments"
         headerAction={
-          <div className="flex items-center gap-1">
-            {savedServerUpdateTargets.length > 0 ? (
-              <ServerUpdatesAction targets={savedServerUpdateTargets} variant="ghost-muted" />
-            ) : null}
-            <AddEnvironmentDialog
-              open={addBackendDialogOpen}
-              routeTarget={routeTarget}
-              error={savedBackendError}
-              savedEnvironments={savedEnvironments}
-              onOpenChange={handleAddBackendDialogOpenChange}
-              onErrorChange={setSavedBackendError}
-            />
-          </div>
+          savedServerUpdateTargets.length > 0 ? (
+            <ServerUpdatesAction targets={savedServerUpdateTargets} variant="ghost-muted" />
+          ) : null
         }
       >
         {listedEnvironments.map((environment) => (
@@ -1394,6 +1384,16 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
           />
         ))}
       </SettingsSection>
+      <div className="flex justify-center px-1">
+        <AddEnvironmentDialog
+          open={addBackendDialogOpen}
+          routeTarget={routeTarget}
+          error={savedBackendError}
+          savedEnvironments={savedEnvironments}
+          onOpenChange={handleAddBackendDialogOpenChange}
+          onErrorChange={setSavedBackendError}
+        />
+      </div>
       {peerLinkHosts.map((environment, index) => (
         <LinkedEnvironmentsSettings
           key={environment.environmentId}

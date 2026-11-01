@@ -1,7 +1,6 @@
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
 import {
   useLayoutEffect,
-  useRef,
   useState,
   type MouseEventHandler,
   type ReactNode,
@@ -71,7 +70,9 @@ export function ThreadDetailsCard({
   const [contentElement, setContentElement] = useState<HTMLDivElement | null>(null);
   // A grid cell renders its own pane head and omits the route header that owns the
   // details button, so the popover anchors to the cell's top right instead of the viewport.
-  const fallbackAnchorRef = useRef<HTMLSpanElement | null>(null);
+  // State, not a ref: the popover anchor is derived during render, and reading a ref
+  // there makes the React Compiler skip the component.
+  const [fallbackAnchorElement, setFallbackAnchorElement] = useState<HTMLSpanElement | null>(null);
   const { environmentId, threadId } = threadRef;
   // Re-measures when the density or measurement key changes, so each density's
   // height is measured once it renders.
@@ -82,10 +83,10 @@ export function ThreadDetailsCard({
     const measure = () => {
       const frame = element.closest<HTMLElement>("[data-thread-details-card]");
       const next = element.offsetHeight + (frame ? frame.offsetHeight - frame.clientHeight : 0);
-      // PR lists and lineage scroll as they expand. Counting them toward density would hide
-      // the section and workspace controls when the user asks to see more rows.
+      // PR lists, lineage and side chats scroll as they expand. Counting them toward density
+      // would hide the section and workspace controls when the user asks to see more rows.
       const lists = element.querySelectorAll<HTMLElement>(
-        "[data-thread-relationships-panel], [data-thread-details-pr-list]",
+        "[data-thread-relationships-panel], [data-thread-side-chats-panel], [data-thread-details-pr-list]",
       );
       const fittingHeight =
         next - Array.from(lists).reduce((sum, list) => sum + list.offsetHeight, 0);
@@ -116,7 +117,6 @@ export function ThreadDetailsCard({
     environmentId,
     threadId,
   ]);
-  const fallbackAnchorElement = fallbackAnchorRef.current;
   const popoverAnchor =
     anchor.current ??
     (fallbackAnchorElement
@@ -146,7 +146,7 @@ export function ThreadDetailsCard({
   );
   return (
     <>
-      <span ref={fallbackAnchorRef} aria-hidden className="hidden" />
+      <span ref={setFallbackAnchorElement} aria-hidden className="hidden" />
       <Popover
         handle={handle}
         open={mode === "popover" && popoverOpen}

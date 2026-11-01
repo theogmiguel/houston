@@ -203,21 +203,25 @@ describe("remote editor links", () => {
 });
 
 describe("open in editor announcement", () => {
+  const regions = () => [...document.querySelectorAll('body > [aria-live="polite"]')];
+  const spoken = async () => {
+    // A previous test in this file may have left a flushed message or a real timer that
+    // lands late, so each assertion starts from empty and flushes only its own press.
+    for (const region of regions()) region.textContent = "";
+    await act(async () => vi.runAllTimers());
+    return regions()
+      .map((region) => region.textContent)
+      .join("");
+  };
+  const refuse = () =>
+    state.run.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("No editor"))));
+
   it("speaks only after the shortcut opened the editor, from the picker or the fallback", async () => {
     await using fixture = await setup();
     const { screen, renderPicker, pressOpenFavorite, FavoriteEditorFallback } = fixture;
     state.allowed.add(selected);
     await renderPicker();
     using _timers = fakeTimers();
-    const regions = () => [...document.querySelectorAll('body > [aria-live="polite"]')];
-    const spoken = async () => {
-      await act(async () => vi.runAllTimers());
-      return regions()
-        .map((region) => region.textContent)
-        .join("");
-    };
-    const refuse = () =>
-      state.run.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("No editor"))));
 
     refuse();
     await pressOpenFavorite();
@@ -225,12 +229,25 @@ describe("open in editor announcement", () => {
     await pressOpenFavorite();
     expect(await spoken()).toBe("Opened in VS Code");
 
-    for (const region of regions()) region.textContent = "";
     await act(async () => screen.rerender(<FavoriteEditorFallback />));
     refuse();
     await pressOpenFavorite();
     expect(await spoken()).toBe("");
     await pressOpenFavorite();
     expect(await spoken()).toBe("Opened in VS Code");
+  });
+
+  it("does not speak a success that a later refused attempt superseded", async () => {
+    await using fixture = await setup();
+    const { renderPicker, pressOpenFavorite } = fixture;
+    state.allowed.add(selected);
+    await renderPicker();
+    using _timers = fakeTimers();
+
+    // The success is still inside the announce module's settle delay when the refusal lands.
+    await pressOpenFavorite();
+    refuse();
+    await pressOpenFavorite();
+    expect(await spoken()).toBe("");
   });
 });

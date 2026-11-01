@@ -218,6 +218,16 @@ import {
   HoustonTaskSourceSyncResult,
 } from "./houston/taskSources.ts";
 import {
+  HoustonSlackConfigureInput,
+  HoustonSlackConnectInput,
+  HoustonSlackEmptyInput,
+  HoustonSlackError,
+  HoustonSlackInfo,
+  HoustonSlackRequest,
+  HoustonSlackRequestsListInput,
+  HoustonSlackStreamEvent,
+} from "./houston/slack.ts";
+import {
   HoustonHarnessCreateTaskInput,
   HoustonHarnessCreateTaskResult,
   HoustonHarnessDecideInput,
@@ -236,11 +246,29 @@ import {
   HoustonHarnessSnapshot,
 } from "./houston/harnessReview.ts";
 import {
+  HoustonNightShiftEmptyResult,
+  HoustonNightShiftError,
+  HoustonNightShiftOverviewEvent,
+  HoustonNightShiftOverviewInput,
+  HoustonNightShiftPreflightInput,
+  HoustonNightShiftPreflightResult,
+  HoustonNightShiftProjectInput,
+  HoustonNightShiftRunInput,
+  HoustonNightShiftRunNowInput,
+  HoustonNightShiftRunNowResult,
+  HoustonNightShiftSnapshot,
+  HoustonNightShiftStopResult,
+  HoustonNightShiftUpdateInput,
+  HoustonNightShiftWrapUpResult,
+} from "./houston/nightShift.ts";
+import {
   HoustonMergeQueueEmptyResult,
   HoustonMergeQueueEnqueueInput,
   HoustonMergeQueueEntry,
   HoustonMergeQueueEntryInput,
   HoustonMergeQueueError,
+  HoustonMergeQueueHandToThreadInput,
+  HoustonMergeQueueHandToThreadResult,
   HoustonMergeQueueMergeHeadInput,
   HoustonMergeQueueMergeHeadResult,
   HoustonMergeQueueMessageResult,
@@ -580,6 +608,12 @@ export const WS_METHODS = {
   houstonTaskSourcesSubscribe: "houston.taskSources.subscribe",
   houstonTaskSourcesImportV1Status: "houston.taskSources.importV1.status",
   houstonTaskSourcesImportV1Run: "houston.taskSources.importV1.run",
+  houstonSlackGet: "houston.slack.get",
+  houstonSlackConnect: "houston.slack.connect",
+  houstonSlackDisconnect: "houston.slack.disconnect",
+  houstonSlackConfigure: "houston.slack.configure",
+  houstonSlackRequestsList: "houston.slack.requests.list",
+  houstonSlackSubscribe: "houston.slack.subscribe",
   houstonHarnessGet: "houston.harness.get",
   houstonHarnessSubscribe: "houston.harness.subscribe",
   houstonHarnessOverview: "houston.harness.overview",
@@ -590,6 +624,16 @@ export const WS_METHODS = {
   houstonHarnessDecide: "houston.harness.decide",
   houstonHarnessMarkSeen: "houston.harness.markSeen",
   houstonHarnessCreateTask: "houston.harness.createTask",
+  houstonNightShiftGet: "houston.nightShift.get",
+  houstonNightShiftSubscribe: "houston.nightShift.subscribe",
+  houstonNightShiftSubscribeOverview: "houston.nightShift.subscribeOverview",
+  houstonNightShiftCreate: "houston.nightShift.create",
+  houstonNightShiftUpdate: "houston.nightShift.update",
+  houstonNightShiftDelete: "houston.nightShift.delete",
+  houstonNightShiftPreflight: "houston.nightShift.preflight",
+  houstonNightShiftRunNow: "houston.nightShift.runNow",
+  houstonNightShiftWrapUp: "houston.nightShift.wrapUp",
+  houstonNightShiftStop: "houston.nightShift.stop",
   houstonMergeQueueGet: "houston.mergeQueue.get",
   houstonMergeQueueSubscribe: "houston.mergeQueue.subscribe",
   houstonMergeQueueSubscribeSummary: "houston.mergeQueue.subscribeSummary",
@@ -598,6 +642,10 @@ export const WS_METHODS = {
   houstonMergeQueueMergeHead: "houston.mergeQueue.mergeHead",
   houstonMergeQueueSettingsSet: "houston.mergeQueue.settings.set",
   houstonMergeQueuePause: "houston.mergeQueue.pause",
+  houstonMergeQueueRetry: "houston.mergeQueue.retry",
+  houstonMergeQueueHandToThread: "houston.mergeQueue.handToThread",
+  houstonMergeQueueRevert: "houston.mergeQueue.revert",
+  houstonMergeQueueAcknowledge: "houston.mergeQueue.acknowledge",
 
   terminalOpen: "terminal.open",
   terminalAttach: "terminal.attach",
@@ -1873,6 +1921,45 @@ const WsHoustonTaskSourcesImportV1RunRpc = Rpc.make(WS_METHODS.houstonTaskSource
   error: HoustonTaskSourceRpcError,
 });
 
+const HoustonSlackRpcError = Schema.Union([HoustonSlackError, EnvironmentAuthorizationError]);
+
+const WsHoustonSlackGetRpc = Rpc.make(WS_METHODS.houstonSlackGet, {
+  payload: HoustonSlackEmptyInput,
+  success: HoustonSlackInfo,
+  error: HoustonSlackRpcError,
+});
+
+const WsHoustonSlackConnectRpc = Rpc.make(WS_METHODS.houstonSlackConnect, {
+  payload: HoustonSlackConnectInput,
+  success: HoustonSlackInfo,
+  error: HoustonSlackRpcError,
+});
+
+const WsHoustonSlackDisconnectRpc = Rpc.make(WS_METHODS.houstonSlackDisconnect, {
+  payload: HoustonSlackEmptyInput,
+  success: HoustonSlackInfo,
+  error: HoustonSlackRpcError,
+});
+
+const WsHoustonSlackConfigureRpc = Rpc.make(WS_METHODS.houstonSlackConfigure, {
+  payload: HoustonSlackConfigureInput,
+  success: HoustonSlackInfo,
+  error: HoustonSlackRpcError,
+});
+
+const WsHoustonSlackRequestsListRpc = Rpc.make(WS_METHODS.houstonSlackRequestsList, {
+  payload: HoustonSlackRequestsListInput,
+  success: Schema.Array(HoustonSlackRequest),
+  error: HoustonSlackRpcError,
+});
+
+const WsHoustonSlackSubscribeRpc = Rpc.make(WS_METHODS.houstonSlackSubscribe, {
+  payload: HoustonSlackEmptyInput,
+  success: HoustonSlackStreamEvent,
+  error: HoustonSlackRpcError,
+  stream: true,
+});
+
 const HoustonHarnessRpcError = Schema.Union([HoustonHarnessError, EnvironmentAuthorizationError]);
 
 const WsHoustonHarnessGetRpc = Rpc.make(WS_METHODS.houstonHarnessGet, {
@@ -1937,6 +2024,34 @@ const WsHoustonHarnessCreateTaskRpc = Rpc.make(WS_METHODS.houstonHarnessCreateTa
   error: HoustonHarnessRpcError,
 });
 
+const HoustonNightShiftRpcError = Schema.Union([
+  HoustonNightShiftError,
+  EnvironmentAuthorizationError,
+]);
+
+const WsHoustonNightShiftGetRpc = Rpc.make(WS_METHODS.houstonNightShiftGet, {
+  payload: HoustonNightShiftProjectInput,
+  success: HoustonNightShiftSnapshot,
+  error: HoustonNightShiftRpcError,
+});
+
+const WsHoustonNightShiftSubscribeRpc = Rpc.make(WS_METHODS.houstonNightShiftSubscribe, {
+  payload: HoustonNightShiftProjectInput,
+  success: HoustonNightShiftSnapshot,
+  error: HoustonNightShiftRpcError,
+  stream: true,
+});
+
+const WsHoustonNightShiftSubscribeOverviewRpc = Rpc.make(
+  WS_METHODS.houstonNightShiftSubscribeOverview,
+  {
+    payload: HoustonNightShiftOverviewInput,
+    success: HoustonNightShiftOverviewEvent,
+    error: HoustonNightShiftRpcError,
+    stream: true,
+  },
+);
+
 const HoustonMergeQueueRpcError = Schema.Union([
   HoustonMergeQueueError,
   EnvironmentAuthorizationError,
@@ -1965,6 +2080,48 @@ const WsHoustonMergeQueueSubscribeSummaryRpc = Rpc.make(
   },
 );
 
+const WsHoustonNightShiftCreateRpc = Rpc.make(WS_METHODS.houstonNightShiftCreate, {
+  payload: HoustonNightShiftProjectInput,
+  success: HoustonNightShiftSnapshot,
+  error: HoustonNightShiftRpcError,
+});
+
+const WsHoustonNightShiftUpdateRpc = Rpc.make(WS_METHODS.houstonNightShiftUpdate, {
+  payload: HoustonNightShiftUpdateInput,
+  success: HoustonNightShiftSnapshot,
+  error: HoustonNightShiftRpcError,
+});
+
+const WsHoustonNightShiftDeleteRpc = Rpc.make(WS_METHODS.houstonNightShiftDelete, {
+  payload: HoustonNightShiftProjectInput,
+  success: HoustonNightShiftEmptyResult,
+  error: HoustonNightShiftRpcError,
+});
+
+const WsHoustonNightShiftPreflightRpc = Rpc.make(WS_METHODS.houstonNightShiftPreflight, {
+  payload: HoustonNightShiftPreflightInput,
+  success: HoustonNightShiftPreflightResult,
+  error: HoustonNightShiftRpcError,
+});
+
+const WsHoustonNightShiftRunNowRpc = Rpc.make(WS_METHODS.houstonNightShiftRunNow, {
+  payload: HoustonNightShiftRunNowInput,
+  success: HoustonNightShiftRunNowResult,
+  error: HoustonNightShiftRpcError,
+});
+
+const WsHoustonNightShiftWrapUpRpc = Rpc.make(WS_METHODS.houstonNightShiftWrapUp, {
+  payload: HoustonNightShiftRunInput,
+  success: HoustonNightShiftWrapUpResult,
+  error: HoustonNightShiftRpcError,
+});
+
+const WsHoustonNightShiftStopRpc = Rpc.make(WS_METHODS.houstonNightShiftStop, {
+  payload: HoustonNightShiftRunInput,
+  success: HoustonNightShiftStopResult,
+  error: HoustonNightShiftRpcError,
+});
+
 const WsHoustonMergeQueueEnqueueRpc = Rpc.make(WS_METHODS.houstonMergeQueueEnqueue, {
   payload: HoustonMergeQueueEnqueueInput,
   success: HoustonMergeQueueEntry,
@@ -1992,6 +2149,30 @@ const WsHoustonMergeQueueSettingsSetRpc = Rpc.make(WS_METHODS.houstonMergeQueueS
 const WsHoustonMergeQueuePauseRpc = Rpc.make(WS_METHODS.houstonMergeQueuePause, {
   payload: HoustonMergeQueuePauseInput,
   success: HoustonMergeQueueMessageResult,
+  error: HoustonMergeQueueRpcError,
+});
+
+const WsHoustonMergeQueueRetryRpc = Rpc.make(WS_METHODS.houstonMergeQueueRetry, {
+  payload: HoustonMergeQueueEntryInput,
+  success: HoustonMergeQueueMessageResult,
+  error: HoustonMergeQueueRpcError,
+});
+
+const WsHoustonMergeQueueHandToThreadRpc = Rpc.make(WS_METHODS.houstonMergeQueueHandToThread, {
+  payload: HoustonMergeQueueHandToThreadInput,
+  success: HoustonMergeQueueHandToThreadResult,
+  error: HoustonMergeQueueRpcError,
+});
+
+const WsHoustonMergeQueueRevertRpc = Rpc.make(WS_METHODS.houstonMergeQueueRevert, {
+  payload: HoustonMergeQueueEntryInput,
+  success: HoustonMergeQueueMessageResult,
+  error: HoustonMergeQueueRpcError,
+});
+
+const WsHoustonMergeQueueAcknowledgeRpc = Rpc.make(WS_METHODS.houstonMergeQueueAcknowledge, {
+  payload: HoustonMergeQueueProjectInput,
+  success: HoustonMergeQueueEmptyResult,
   error: HoustonMergeQueueRpcError,
 });
 
@@ -2604,6 +2785,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTaskSourcesSubscribeRpc,
   WsHoustonTaskSourcesImportV1StatusRpc,
   WsHoustonTaskSourcesImportV1RunRpc,
+  WsHoustonSlackGetRpc,
+  WsHoustonSlackConnectRpc,
+  WsHoustonSlackDisconnectRpc,
+  WsHoustonSlackConfigureRpc,
+  WsHoustonSlackRequestsListRpc,
+  WsHoustonSlackSubscribeRpc,
   WsHoustonHarnessGetRpc,
   WsHoustonHarnessSubscribeRpc,
   WsHoustonHarnessOverviewRpc,
@@ -2614,6 +2801,16 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonHarnessDecideRpc,
   WsHoustonHarnessMarkSeenRpc,
   WsHoustonHarnessCreateTaskRpc,
+  WsHoustonNightShiftGetRpc,
+  WsHoustonNightShiftSubscribeRpc,
+  WsHoustonNightShiftSubscribeOverviewRpc,
+  WsHoustonNightShiftCreateRpc,
+  WsHoustonNightShiftUpdateRpc,
+  WsHoustonNightShiftDeleteRpc,
+  WsHoustonNightShiftPreflightRpc,
+  WsHoustonNightShiftRunNowRpc,
+  WsHoustonNightShiftWrapUpRpc,
+  WsHoustonNightShiftStopRpc,
   WsHoustonMergeQueueGetRpc,
   WsHoustonMergeQueueSubscribeRpc,
   WsHoustonMergeQueueSubscribeSummaryRpc,
@@ -2622,6 +2819,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonMergeQueueMergeHeadRpc,
   WsHoustonMergeQueueSettingsSetRpc,
   WsHoustonMergeQueuePauseRpc,
+  WsHoustonMergeQueueRetryRpc,
+  WsHoustonMergeQueueHandToThreadRpc,
+  WsHoustonMergeQueueRevertRpc,
+  WsHoustonMergeQueueAcknowledgeRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
   WsTerminalObserveRpc,

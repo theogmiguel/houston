@@ -38,6 +38,14 @@ const licenseManifestAtom = Atom.make(
         message: `The license manifest request failed with status ${String(response.status)}.`,
       });
     }
+    // Browsers can answer a missing asset with the app shell, which is HTML.
+    const contentType = response.headers["content-type"] ?? "";
+    if (!contentType.includes("json")) {
+      return yield* new LicenseManifestLoadError({
+        message:
+          "This build does not include the license manifest. Open the desktop app to read third-party notices.",
+      });
+    }
     const body = yield* response.json;
     return yield* Effect.try({
       try: () => decodeThirdPartyLicenseManifest(body),

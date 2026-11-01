@@ -5,7 +5,6 @@ import { MorphIcon } from "~/components/MorphIcon";
 import { formatContextWindowTokens } from "~/lib/contextWindow";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { useShortcutModifierState } from "../../shortcutModifierState";
-import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -70,12 +69,74 @@ const formatPendingPrimaryActionLabel = (input: {
   return input.questionIndex > 0 ? "Submit answers" : "Submit answer";
 };
 
-const messageActionPillClassName =
-  "inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-message-action font-medium text-base text-message-action-foreground shadow-xs shadow-message-action/24 outline-none hover:bg-message-action-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 disabled:shadow-none sm:text-sm";
+const boardFocusRing =
+  "outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background";
+
+const messageActionPillClassName = cn(
+  "inline-flex h-7 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-(--t1) px-3 font-medium text-(--pane) text-xs transition-colors hover:bg-(--t1)/90 disabled:pointer-events-none disabled:opacity-64",
+  boardFocusRing,
+);
+
+const messageActionGhostPillClassName = cn(
+  "inline-flex h-7 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-(--line-strong) bg-transparent px-3 font-medium text-(--t2) text-xs transition-colors hover:bg-(--hover) disabled:pointer-events-none disabled:opacity-64",
+  boardFocusRing,
+);
 
 const preventPointerFocus: PointerEventHandler<HTMLElement> = (event) => {
   event.preventDefault();
 };
+
+export function ComposerCompactBeforeSendChip({
+  tokens,
+  keepFullHistory,
+  onToggleKeepFullHistory,
+  disabled,
+  preserveComposerFocusOnPointerDown = false,
+}: {
+  tokens: number;
+  keepFullHistory: boolean;
+  onToggleKeepFullHistory: () => void;
+  disabled: boolean;
+  preserveComposerFocusOnPointerDown?: boolean;
+}) {
+  const pointerFocusProps = preserveComposerFocusOnPointerDown
+    ? { onPointerDown: preventPointerFocus }
+    : undefined;
+  const compactTokens = formatContextWindowTokens(tokens);
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            data-chat-composer-compact-send="true"
+            className={cn(
+              "flex h-5.5 shrink-0 cursor-pointer items-center gap-1 rounded-md bg-(--sel) px-1.75 font-medium text-(--t2) text-xs tabular-nums transition-colors hover:bg-(--hover) aria-pressed:text-(--t1) disabled:pointer-events-none disabled:opacity-64 [&_svg]:pointer-events-none [&_svg]:size-3 [&_svg]:text-(--t3)",
+              boardFocusRing,
+            )}
+            {...pointerFocusProps}
+            aria-pressed={!keepFullHistory}
+            aria-label={`Compact ${compactTokens} tokens of history before sending`}
+            disabled={disabled}
+            onClick={onToggleKeepFullHistory}
+          />
+        }
+      >
+        <Minimize2Icon aria-hidden="true" />
+        {keepFullHistory ? "Keep" : "Compact"}
+        <span className="text-muted-foreground">{compactTokens}</span>
+      </TooltipTrigger>
+      <TooltipPopup>
+        <div>
+          {keepFullHistory
+            ? `Next send keeps all ${compactTokens} tokens.`
+            : `Next send compacts ${compactTokens} tokens first.`}
+        </div>
+        <div>{keepFullHistory ? "Click to compact first" : "Click to keep full history"}</div>
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
 
 export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   compact,
@@ -103,7 +164,6 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   onImplementPlanInNewThread,
   compactBeforeSendTokens = null,
   keepFullHistory = false,
-  onToggleKeepFullHistory,
 }: ComposerPrimaryActionsProps) {
   const pointerFocusProps = preserveComposerFocusOnPointerDown
     ? { onPointerDown: preventPointerFocus }
@@ -127,8 +187,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           <button
             type="button"
             className={cn(
-              "flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-foreground text-(--pane) shadow-xs shadow-foreground/24 inset-shadow-control-highlight transition-colors duration-150 hover:bg-foreground/90 active:inset-shadow-control-pressed active:shadow-none [&_svg]:pointer-events-none",
-              "size-8 sm:size-7",
+              "flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full bg-(--t1) text-(--pane) transition-colors duration-150 hover:bg-(--t1)/90 disabled:pointer-events-none disabled:opacity-64 [&_svg]:pointer-events-none [&_svg]:size-3.5",
+              boardFocusRing,
             )}
             {...pointerFocusProps}
             disabled={!canOperateThread}
@@ -149,35 +209,35 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
 
   if (pendingAction) {
     return (
-      <div className={cn("flex items-center justify-end", compact ? "gap-1.5" : "gap-2")}>
+      <div className="flex items-center justify-end gap-0.5">
         {canInterrupt ? renderStopGenerationButton() : null}
         {pendingAction.questionIndex > 0 ? (
           compact ? (
-            <Button
-              size="icon-sm"
-              variant="outline"
+            <button
+              type="button"
+              className={cn(messageActionGhostPillClassName, "w-7 px-0")}
               {...pointerFocusProps}
               onClick={onPreviousPendingQuestion}
               disabled={pendingAction.isResponding}
               aria-label="Previous question"
             >
-              <ChevronLeftIcon className="size-3.5" />
-            </Button>
+              <ChevronLeftIcon className="size-3.5" aria-hidden="true" />
+            </button>
           ) : (
-            <Button
-              size="sm"
-              variant="outline"
+            <button
+              type="button"
+              className={messageActionGhostPillClassName}
               {...pointerFocusProps}
               onClick={onPreviousPendingQuestion}
               disabled={pendingAction.isResponding}
             >
               Previous
-            </Button>
+            </button>
           )
         ) : null}
         <button
           type="submit"
-          className={cn(messageActionPillClassName, "h-8 sm:h-7", compact ? "px-3" : "px-4")}
+          className={messageActionPillClassName}
           {...pointerFocusProps}
           disabled={
             !canOperateThread ||
@@ -202,7 +262,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       return (
         <button
           type="submit"
-          className={cn(messageActionPillClassName, "h-9 sm:h-8", compact ? "px-3" : "px-4")}
+          className={messageActionPillClassName}
           {...pointerFocusProps}
           disabled={isSendBusy || isSendDisabled || isEnvironmentUnavailable}
         >
@@ -215,7 +275,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       <div data-chat-composer-implement-actions="true" className="flex items-center justify-end">
         <button
           type="submit"
-          className={cn(messageActionPillClassName, "h-9 rounded-r-none px-4 sm:h-8")}
+          className={cn(messageActionPillClassName, "rounded-r-none pr-3 pl-3.5")}
           {...pointerFocusProps}
           disabled={isSendBusy || isSendDisabled || isEnvironmentUnavailable}
         >
@@ -228,7 +288,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
                 type="button"
                 className={cn(
                   messageActionPillClassName,
-                  "h-9 rounded-l-none border-l border-message-action-foreground/20 px-2 sm:h-8",
+                  "rounded-l-none border-(--pane)/25 border-l bg-(--t1) px-2",
                 )}
                 aria-label="Implementation actions"
                 onMouseDown={
@@ -300,10 +360,11 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     <button
       type={showResume ? "button" : "submit"}
       className={cn(
-        "relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-control-highlight hover:scale-105 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:shadow-none disabled:hover:scale-100 sm:h-7 sm:w-7 [&_svg]:pointer-events-none",
+        "relative isolate flex size-7 items-center justify-center overflow-hidden rounded-full transition-colors duration-150 enabled:cursor-pointer disabled:pointer-events-none [&_svg]:size-3.5 [&_svg]:pointer-events-none",
+        boardFocusRing,
         hasSendableContent
-          ? "bg-foreground text-(--pane) enabled:shadow-foreground/24 hover:bg-foreground/90 disabled:bg-foreground/12 disabled:text-muted-foreground"
-          : "bg-(--sel) text-muted-foreground disabled:bg-foreground/12 disabled:text-muted-foreground",
+          ? "bg-(--t1) text-(--pane) enabled:hover:bg-(--t1)/90 disabled:bg-(--sel) disabled:text-(--t3)"
+          : "bg-(--sel) text-(--t3)",
       )}
       {...pointerFocusProps}
       onClick={showResume ? onResume : onSubmitMessage}
@@ -343,38 +404,5 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       <TooltipPopup>{submitTooltip}</TooltipPopup>
     </Tooltip>
   );
-  if (compactTokens === null) return submit;
-
-  return (
-    <div data-chat-composer-compact-send="true" className="flex items-center gap-2">
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-(--control-radius) px-2 font-medium text-base text-foreground/80 tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 sm:text-sm aria-pressed:bg-accent/60 aria-pressed:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:text-muted-foreground"
-              {...pointerFocusProps}
-              aria-pressed={!keepFullHistory}
-              aria-label={`Compact ${compactTokens} tokens of history before sending`}
-              disabled={!canOperateThread}
-              onClick={onToggleKeepFullHistory}
-            />
-          }
-        >
-          <Minimize2Icon aria-hidden="true" />
-          {keepFullHistory ? "Keep" : "Compact"}
-          <span className="text-muted-foreground">{compactTokens}</span>
-        </TooltipTrigger>
-        <TooltipPopup>
-          <div>
-            {keepFullHistory
-              ? `Next send keeps all ${compactTokens} tokens.`
-              : `Next send compacts ${compactTokens} tokens first.`}
-          </div>
-          <div>{keepFullHistory ? "Click to compact first" : "Click to keep full history"}</div>
-        </TooltipPopup>
-      </Tooltip>
-      {submit}
-    </div>
-  );
+  return submit;
 });

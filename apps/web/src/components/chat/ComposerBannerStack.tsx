@@ -54,11 +54,16 @@ export function ComposerBannerStack({
       </div>
     ));
   }
-  return ordered.map((item) => (
-    <ComposerBanner.Attachment key={item.id} data-composer-banner-stack="true" className={FADE_IN}>
-      <NoticeCard item={item} />
-    </ComposerBanner.Attachment>
-  ));
+  if (ordered.length === 0) return null;
+  return (
+    <div data-composer-banner-shelf="true" className="flex flex-col">
+      {ordered.map((item) => (
+        <div key={item.id} data-composer-banner-stack="true" className={FADE_IN}>
+          <NoticeCard item={item} inCard />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function NoticeText({
@@ -140,15 +145,18 @@ export function NoticeText({
 function NoticeCard({
   item,
   detached = false,
+  inCard = false,
 }: {
   readonly item: ComposerBannerStackItem;
   readonly detached?: boolean;
+  readonly inCard?: boolean;
 }) {
   return (
     <ComposerBanner.Root
       role={item.variant === "error" || item.variant === "warning" ? "alert" : undefined}
       variant={item.variant}
       detached={detached}
+      {...(inCard ? { inCard: "notice" as const } : {})}
       density="comfortable"
       data-chat-composer-collapsed-controls="true"
     >

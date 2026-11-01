@@ -66,6 +66,10 @@ import {
 } from "./toolkits/device/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
+import * as HoustonMergeQueueHandlers from "../houston/mergeQueue/toolkit/handlers.ts";
+import { HoustonMergeQueueToolkit } from "../houston/mergeQueue/toolkit/tools.ts";
+import * as HoustonTaskHandlers from "../houston/tasks/toolkit/handlers.ts";
+import { HoustonTaskToolkit } from "../houston/tasks/toolkit/tools.ts";
 
 const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
   HttpServerRequest.toURL(request).pipe(
@@ -1017,6 +1021,18 @@ export const layerDeviceToolkit = Layer.mergeAll(
   layerDeviceScreenshotRegistration,
 );
 
+// Houston: the merge queue for agents; enqueue, dequeue and status in the caller's project only.
+export const layerHoustonMergeQueueToolkit = toolkitRegistration(
+  HoustonMergeQueueToolkit,
+  HoustonMergeQueueHandlers.layer,
+);
+
+// Houston: the Tasks backlog for agents; each call checks the caller's project access.
+export const layerHoustonTaskToolkit = toolkitRegistration(
+  HoustonTaskToolkit,
+  HoustonTaskHandlers.layer,
+);
+
 export const layerMcpTransport = McpServer.layerHttp({
   name: "Houston",
   version: packageJson.version,
@@ -1038,6 +1054,8 @@ export const layerTools = Layer.mergeAll(
   layerPullRequestsToolkit,
   layerDeviceToolkit,
   layerHtmlToolkit,
+  layerHoustonMergeQueueToolkit,
+  layerHoustonTaskToolkit,
 );
 
 export const layer = layerTools.pipe(Layer.provideMerge(layerMcpTransport));

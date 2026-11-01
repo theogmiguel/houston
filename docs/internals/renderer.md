@@ -26,7 +26,7 @@ ui/src/renderer/src/
     client.ts          HoustonClient — the control link, frame codecs, every request method
     host.ts            getHostConfig() — port + token from the Tauri command
     transport/         ws.ts, tauri.ts, types.ts — two terminal transports, one interface
-    generated/         ts-rs output, committed; PROTOCOL_VERSION.ts and DEFAULTS.ts
+    generated/         wire types and constants, committed
     browser*.ts        native browser-pane geometry, focus, picker, confirm
   ghostty/             the terminal engine: vendored WASM → Canvas 2D (14 files)
     vendor/            ghostty-vt.wasm, ghostty-write-pty.wasm
@@ -45,8 +45,8 @@ terminal package in `package.json`.
 
 `HoustonClient.connect()` (`houston/client.ts`) asks the Tauri command `host_config` for
 `{ port, token }`, opens `ws://127.0.0.1:<port>/ws` with `binaryType = 'arraybuffer'`, and
-sends `{ type: 'hello', token, protocol: PROTOCOL_VERSION }` as its first frame. The token
-never comes from `daemon.json`.
+sends a `hello` frame carrying the token and the protocol version first. The token comes
+only from `host_config`.
 
 Two message shapes on the socket: **text frames are JSON control messages** (`ServerMsg`),
 dispatched to the app; **binary frames are PTY bytes**. Frame kind 1 is output
@@ -179,8 +179,8 @@ narrow during a split would keep a narrow pane's history after it widens.
 Output in unfocused panes repaints on one shared tick (`BACKGROUND_OUTPUT_PAINT_MS`, about
 15 Hz). The focused pane, input, scrolling, selection and resizes repaint on the next frame.
 
-Both engines are built from the pinned source with `core/houston-core/ghostty-patches/`
-applied in order; `build.rs` and `scripts/build-ghostty-vt-wasm.sh` stamp the extracted tree
+Both engines are built from the pinned source with Houston's Ghostty patch series
+applied in order; the build stamps the extracted tree
 with the series' text and re-extract it when the series changes. Besides the snapshot
 exports, one patch changes behaviour: a full erase-line (`ESC [ 2 K`) ends the soft-wrap
 link from the row above into the erased row; upstream already ends the erased row's link
@@ -531,7 +531,7 @@ no file under `src/watchdog/` except `clocks.rs` may read `SystemTime`.
 
 Only what it is handed. It **reads no environment variables at all** — no `import.meta.env`,
 no `process.env` anywhere under `ui/src`. Port and token come from `host_config`, the wire
-constants come from the generated `PROTOCOL_VERSION.ts` and `DEFAULTS.ts`, and the only
+constants come from the generated constants files, and the only
 state it keeps for itself is the `localStorage` set above.
 
 ## Native file saves and notifications

@@ -67,6 +67,10 @@ describe("loadOpenCode2Catalog", () => {
           ["opencode/step-5-preview-free", "OpenCode Zen"],
         ],
       );
+      assert.deepStrictEqual(
+        models.map((model) => model.contextWindowTokens),
+        [1_000_000, 1_000_000],
+      );
     }),
   );
 

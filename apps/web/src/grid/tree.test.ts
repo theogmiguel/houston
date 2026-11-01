@@ -9,6 +9,7 @@ import {
   evenGrid,
   findThread,
   gridPreset,
+  insertBeside,
   isGridPreset,
   MIN_PANE_PX,
   moveThread,
@@ -99,6 +100,43 @@ describe("moveThread / swapThread", () => {
     const next = swapThread(tree, "a", "b") as SplitNode;
     expect(preorderLeaves(next)).toEqual(["b", "a"]);
     expect(next.weights).toEqual([70, 30]);
+  });
+});
+
+describe("insertBeside", () => {
+  it("adds the new cell as a sibling on the split axis instead of nesting", () => {
+    const tree = insertBeside(row(leaf("a"), leaf("b")), "b", leaf("c"), "right") as SplitNode;
+    expect(tree.dir).toBe("row");
+    expect(preorderLeaves(tree)).toEqual(["a", "b", "c"]);
+    expect(tree.children).toHaveLength(3);
+    expect(tree.weights[0]).toBeCloseTo(100 / 3);
+    expect(tree.weights[1]).toBeCloseTo(100 / 3);
+    expect(tree.weights[2]).toBeCloseTo(100 / 3);
+  });
+
+  it("keeps every cell readable through repeated splits up to the grid maximum", () => {
+    let tree: LayoutNode = leaf("a");
+    for (const threadId of ["b", "c", "d", "e", "f"]) {
+      const focused = preorderLeaves(tree).at(-1)!;
+      tree = insertBeside(tree, focused, leaf(threadId), "right");
+    }
+    expect(preorderLeaves(tree)).toEqual(["a", "b", "c", "d", "e", "f"]);
+    const { leaves } = computeRects(tree);
+    expect(leaves).toHaveLength(6);
+    // A nested split produced 25%, 12.5%, ... cells; the grid keeps every cell at
+    // least a third wide and half tall once an axis fills up.
+    for (const { rect } of leaves) {
+      expect(rect.w).toBeGreaterThan(30);
+      expect(rect.h).toBeGreaterThan(40);
+    }
+  });
+
+  it("scales the split it joins while preserving the cells' existing ratio", () => {
+    const custom: SplitNode = { ...row(leaf("a"), leaf("b")), weights: [70, 30] };
+    const tree = insertBeside(custom, "b", leaf("c"), "right") as SplitNode;
+    expect(tree.children).toHaveLength(3);
+    expect(tree.weights[0]! / tree.weights[1]!).toBeCloseTo(70 / 30);
+    expect(tree.weights[2]).toBeCloseTo(100 / 3);
   });
 });
 

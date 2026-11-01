@@ -169,20 +169,6 @@ function collectNpmClosure(seeds, boundary) {
   return out;
 }
 
-// npm: the renderer's production closure. devDependencies build the renderer; they are not
-// in the bundle Vite emits, so they are not in what ships.
-function npmPackages() {
-  const uiRoot = join(ROOT, "ui");
-  const modules = join(uiRoot, "node_modules");
-  const seeds = Object.keys(
-    JSON.parse(readFileSync(join(uiRoot, "package.json"), "utf8")).dependencies ?? {},
-  ).map((name) => ({ name, from: uiRoot }));
-
-  const out = collectNpmClosure(seeds, uiRoot);
-  if (!out.length) throw new Error(`no npm packages found under ${modules} — run \`cd ui && bun install\` first`);
-  return out;
-}
-
 // A bare directory ("scripts") or a one-level glob ("packages/*"): the only shapes
 // workspaceNpmPackages can resolve. Anything else would silently drop members.
 const SUPPORTED_MEMBER = /^[\w.@-]+(?:\/[\w.@-]+)*(?:\/\*)?$/;
@@ -288,9 +274,7 @@ function assetPackages() {
 function main() {
   const packages = [
     ...assetPackages(),
-    ...cargoPackages(join(ROOT, "core", "Cargo.toml")),
     ...cargoPackages(join(ROOT, "src-tauri", "Cargo.toml")),
-    ...npmPackages(),
     ...workspaceNpmPackages(),
   ];
 
