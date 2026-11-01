@@ -12,7 +12,14 @@ import { PanelLayoutControls } from "../chat/PanelLayoutControls";
 import { GridLayoutMenu } from "./GridLayoutMenu";
 
 /** The grid route's titlebar controls follow the focused pane's thread. */
-export function GridTopBarControls({ grid }: { grid: GridRecord }) {
+export function GridTopBarControls({
+  grid,
+  emptyDraftThreadId = null,
+}: {
+  grid: GridRecord;
+  /** The centred composer of an empty grid has no tree leaf yet. */
+  emptyDraftThreadId?: string | null;
+}) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const focusedLeaf =
     grid.focusedThreadId === null ? null : findThread(grid.tree, grid.focusedThreadId);
@@ -20,6 +27,11 @@ export function GridTopBarControls({ grid }: { grid: GridRecord }) {
     focusedLeaf === null
       ? null
       : scopeThreadRef(grid.environmentId as EnvironmentId, focusedLeaf.threadId as ThreadId);
+  const threadPanelRef =
+    focusedRef ??
+    (emptyDraftThreadId === null
+      ? null
+      : scopeThreadRef(grid.environmentId as EnvironmentId, emptyDraftThreadId as ThreadId));
   const terminalOpen = useTerminalUiStateStore((state) =>
     focusedRef === null
       ? false
@@ -30,8 +42,8 @@ export function GridTopBarControls({ grid }: { grid: GridRecord }) {
       focusedRef !== null && state.byThreadKey[scopedThreadKey(focusedRef)]?.isOpen === true,
   );
   const threadPanelOpen = useRightPanelStore((state) => {
-    if (focusedRef === null) return false;
-    const visibility = state.threadPanelVisibilityByThreadKey[scopedThreadKey(focusedRef)];
+    if (threadPanelRef === null) return false;
+    const visibility = state.threadPanelVisibilityByThreadKey[scopedThreadKey(threadPanelRef)];
     return visibility?.inlineOpen === true || visibility?.popoverOpen === true;
   });
 
@@ -56,11 +68,11 @@ export function GridTopBarControls({ grid }: { grid: GridRecord }) {
         }
       }}
       onToggleThreadPanel={() => {
-        if (focusedRef === null) return;
+        if (threadPanelRef === null) return;
         const store = useRightPanelStore.getState();
         const open = !threadPanelOpen;
-        store.setThreadPanelOpen(focusedRef, "inline", open);
-        store.setThreadPanelOpen(focusedRef, "popover", open);
+        store.setThreadPanelOpen(threadPanelRef, "inline", open);
+        store.setThreadPanelOpen(threadPanelRef, "popover", open);
       }}
       onToggleRightPanel={() => {
         if (focusedRef === null) return;

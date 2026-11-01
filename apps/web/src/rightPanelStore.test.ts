@@ -11,6 +11,7 @@ import {
   pullRequestSurfaceId,
   selectActiveRightPanel,
   selectActiveRightPanelSurface,
+  selectThreadPanelOpen,
   selectThreadPanelVisibility,
   selectThreadRightPanelState,
   useRightPanelStore,
@@ -703,6 +704,22 @@ describe("rightPanelStore", () => {
         "env-1:thread-A": { inlineOpen: false, popoverOpen: false },
       },
     });
+  });
+
+  it("keeps an explicit inline card open after the card closes its popover flag", () => {
+    const store = useRightPanelStore.getState();
+    store.setThreadPanelOpen(refA, "inline", true);
+    store.setThreadPanelOpen(refA, "popover", true);
+    store.setThreadPanelOpen(refA, "popover", false);
+
+    expect(
+      selectThreadPanelOpen(
+        useRightPanelStore.getState().threadPanelVisibilityByThreadKey,
+        refA,
+        "inline",
+        false,
+      ),
+    ).toBe(true);
   });
 
   it("closes the popover atomically when the real right panel opens", () => {

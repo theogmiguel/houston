@@ -48,6 +48,7 @@ function GridRoute() {
   const prefersSheetPanel = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const [gridRow, setGridRow] = useState<HTMLDivElement | null>(null);
   const [rightPanelHost, setRightPanelHost] = useState<HTMLDivElement | null>(null);
+  const [emptyDraftThreadId, setEmptyDraftThreadId] = useState<string | null>(null);
   const focusedThreadId = grid?.focusedThreadId ?? null;
   const focusedRef =
     grid === null || focusedThreadId === null
@@ -229,7 +230,7 @@ function GridRoute() {
               )}
             </span>
             <span className="flex-1" />
-            <GridTopBarControls grid={grid} />
+            <GridTopBarControls grid={grid} emptyDraftThreadId={emptyDraftThreadId} />
           </WorkspacePageHeader>
           <GridHost
             grid={grid}
@@ -255,7 +256,13 @@ function GridRoute() {
                 onOpenThread={(ref) => openThread(ref.environmentId, ref.threadId)}
               />
             )}
-            renderEmpty={() => <GridEmptyDraft key={grid.id} grid={grid} />}
+            renderEmpty={() => (
+              <GridEmptyDraft
+                key={grid.id}
+                grid={grid}
+                onDraftChange={(draft) => setEmptyDraftThreadId(draft?.threadId ?? null)}
+              />
+            )}
           />
         </div>
         <div ref={setRightPanelHost} className="contents" data-grid-right-panel-host="" />

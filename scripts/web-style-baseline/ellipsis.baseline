@@ -19,7 +19,7 @@
 1 apps/web/src/components/files/AudioPreview.tsx
 1 apps/web/src/components/files/FilePreviewPanel.tsx
 2 apps/web/src/components/GitActionsControl.logic.ts
-4 apps/web/src/components/GitActionsControl.tsx
+3 apps/web/src/components/GitActionsControl.tsx
 3 apps/web/src/components/onboarding/WelcomeWizard.tsx
 2 apps/web/src/components/promptLinks/NewThreadLinkView.tsx
 1 apps/web/src/components/pullRequest/guide/GuideExcerpt.tsx

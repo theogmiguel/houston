@@ -1,5 +1,4 @@
 import { pipe } from "effect/Function";
-import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import type { EnvironmentId, ScopedThreadRef, ThreadPullRequestLink } from "@t3tools/contracts";
 import {
   pullRequestListLines,
@@ -7,7 +6,8 @@ import {
   threadPullRequestKeyOf,
   visibleThreadPullRequests,
 } from "@t3tools/client-runtime/thread-pull-requests";
-import { ChevronDown, ChevronUp } from "lucide";
+import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import { ThreadDetailsRowButton, ThreadDetailsRowContent } from "../ui/thread-details-row";
 import { useState, type ComponentProps, type MouseEvent as ReactMouseEvent } from "react";
 
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -17,7 +17,6 @@ import { useProjects } from "~/state/entities";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 
-import { MorphIcon } from "~/components/MorphIcon";
 import { linkedPullRequestSnapshotStatus, prStatusIndicator } from "../ThreadStatusIndicators";
 
 import { ThreadDetailsPrRow } from "./ThreadDetailsPrRow";
@@ -117,22 +116,18 @@ export function ThreadDetailsPrRows({
           ))}
         </div>
       ) : null}
-      <ThreadDetailsControl
-        variant="ghost"
-        size="sm"
-        onClick={() => setExpanded(!expanded)}
-        part="row"
-        tone="muted"
-        className="w-full active:scale-100"
-      >
-        <MorphIcon
-          aria-hidden
-          className="size-4 shrink-0"
-          // Chevrons, not plus and minus: the plus already means "add" in this card.
-          icon={expanded ? ChevronUp : ChevronDown}
+      <ThreadDetailsRowButton onClick={() => setExpanded(!expanded)}>
+        <ThreadDetailsRowContent
+          label={expanded ? "Show less" : `Show ${rest.length} more`}
+          right={
+            expanded ? (
+              <ChevronUpIcon aria-hidden className="size-4" />
+            ) : (
+              <ChevronDownIcon aria-hidden className="size-4" />
+            )
+          }
         />
-        {expanded ? "Show less" : `Show ${rest.length} more`}
-      </ThreadDetailsControl>
+      </ThreadDetailsRowButton>
     </>
   );
 }
