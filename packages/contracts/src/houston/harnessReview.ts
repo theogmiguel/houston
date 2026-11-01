@@ -279,6 +279,123 @@ export type HoustonHarnessCreateTaskInput = typeof HoustonHarnessCreateTaskInput
 export const HoustonHarnessCreateTaskResult = Schema.Struct({ task: HoustonTaskSummary });
 export type HoustonHarnessCreateTaskResult = typeof HoustonHarnessCreateTaskResult.Type;
 
+/** The bounds a defect report and its issue are checked against; a refusal names the bound. */
+export const HOUSTON_DEFECT_LIMITS = {
+  titleChars: 120,
+  evidence: 10,
+  evidenceChars: 500,
+  /** Defects a project holds; a new one replaces the oldest decided one. */
+  perProject: 200,
+  issueTitleChars: 256,
+  issueBodyChars: 60_000,
+  duplicates: 10,
+  searchWords: 6,
+} as const;
+
+/** Where a `houston` defect is filed. */
+export const HOUSTON_DEFECT_REPOSITORY = "theogmiguel/houston";
+
+export const HoustonDefectReportResult = Schema.Struct({
+  recorded: Schema.Literal(true),
+  key: Schema.String,
+  count: PositiveInt,
+  note: Schema.String,
+});
+export type HoustonDefectReportResult = typeof HoustonDefectReportResult.Type;
+
+export const HoustonDefectDecideInput = Schema.Struct({
+  projectId: ProjectId,
+  key: Schema.String.check(Schema.isMaxLength(200)),
+  decision: HoustonHarnessDefectDecision,
+});
+export type HoustonDefectDecideInput = typeof HoustonDefectDecideInput.Type;
+
+export const HoustonDefectDraftInput = Schema.Struct({
+  projectId: ProjectId,
+  key: Schema.String.check(Schema.isMaxLength(200)),
+});
+export type HoustonDefectDraftInput = typeof HoustonDefectDraftInput.Type;
+
+export const HoustonDefectIssueMatch = Schema.Struct({
+  number: PositiveInt,
+  title: Schema.String,
+  url: Schema.String,
+});
+export type HoustonDefectIssueMatch = typeof HoustonDefectIssueMatch.Type;
+
+/** Which GitHub credential a file would use: `settings`, `app`, `env` or `gh`. */
+export const HoustonDefectCredential = Schema.Struct({
+  source: Schema.String,
+  account: Schema.NullOr(Schema.String),
+});
+export type HoustonDefectCredential = typeof HoustonDefectCredential.Type;
+
+export const HoustonDefectIssueDraft = Schema.Struct({
+  destination: HoustonHarnessDefectDestination,
+  repository: Schema.String,
+  /** Null when no GitHub credential resolves; filing would then fail. */
+  credential: Schema.NullOr(HoustonDefectCredential),
+  title: Schema.String,
+  body: Schema.String,
+  /** What filing sends, to which repository, as which account. */
+  transmits: Schema.String,
+  duplicates: Schema.Array(HoustonDefectIssueMatch),
+  note: Schema.NullOr(Schema.String),
+});
+export type HoustonDefectIssueDraft = typeof HoustonDefectIssueDraft.Type;
+
+export const HoustonDefectFileInput = Schema.Struct({
+  projectId: ProjectId,
+  key: Schema.String.check(Schema.isMaxLength(200)),
+  // Bounded loosely here; the service refuses outside 1-256 and 1-60,000 naming the bound.
+  title: Schema.String.check(Schema.isMaxLength(1_000_000)),
+  body: Schema.String.check(Schema.isMaxLength(1_000_000)),
+  repository: Schema.String.check(Schema.isMaxLength(200)),
+  commentOn: Schema.optionalKey(PositiveInt),
+});
+export type HoustonDefectFileInput = typeof HoustonDefectFileInput.Type;
+
+export const HoustonDefectFileResult = Schema.Struct({
+  number: PositiveInt,
+  url: Schema.String,
+  note: Schema.NullOr(Schema.String),
+});
+export type HoustonDefectFileResult = typeof HoustonDefectFileResult.Type;
+
+export const HoustonHarnessImportCounts = Schema.Struct({
+  reviews: NonNegativeInt,
+  findings: NonNegativeInt,
+  decisions: NonNegativeInt,
+  links: NonNegativeInt,
+  verifications: NonNegativeInt,
+  defects: NonNegativeInt,
+});
+export type HoustonHarnessImportCounts = typeof HoustonHarnessImportCounts.Type;
+
+export const HoustonHarnessImportStatus = Schema.Union([
+  Schema.Struct({
+    state: Schema.Literal("available"),
+    source: Schema.String,
+    reviews: NonNegativeInt,
+    defects: NonNegativeInt,
+  }),
+  Schema.Struct({
+    state: Schema.Literal("imported"),
+    at: IsoDateTime,
+    counts: HoustonHarnessImportCounts,
+  }),
+  Schema.Struct({ state: Schema.Literal("blocked"), reason: Schema.String }),
+  Schema.Struct({ state: Schema.Literal("unavailable") }),
+]);
+export type HoustonHarnessImportStatus = typeof HoustonHarnessImportStatus.Type;
+
+export const HoustonHarnessImportResult = Schema.Struct({
+  imported: HoustonHarnessImportCounts,
+  /** One line per v1 row the import could not keep. */
+  notes: Schema.Array(Schema.String),
+});
+export type HoustonHarnessImportResult = typeof HoustonHarnessImportResult.Type;
+
 export const HoustonHarnessEmptyResult = Schema.Struct({});
 export type HoustonHarnessEmptyResult = typeof HoustonHarnessEmptyResult.Type;
 

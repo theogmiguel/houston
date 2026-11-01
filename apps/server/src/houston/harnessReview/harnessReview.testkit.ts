@@ -12,11 +12,18 @@ import {
   type ScheduledTask,
 } from "@t3tools/contracts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
+import * as GitHubAppSignIn from "@t3tools/source-control-github/server/GitHubAppSignIn";
+import * as GitHubCredentials from "@t3tools/source-control-github/server/GitHubCredentials";
+import * as GitHubQuota from "@t3tools/source-control-github/server/GitHubQuota";
+import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import * as SqlClient from "effect/sql/SqlClient";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import { TestClock } from "effect/testing";
 
 import * as ServerConfig from "../../config.ts";
@@ -55,6 +62,8 @@ import {
   layerWorkspacePaths,
 } from "../tasks/tasks.testkit.ts";
 import { ClaudeProviderCapabilitiesV2 } from "../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
+import * as HoustonDefectIssues from "./defects/Issues.ts";
+import * as HoustonDefects from "./defects/Defects.ts";
 import { layerHarnessReview, layerHarnessScheduledTaskRunner } from "./layer.ts";
 import * as HarnessReviewReactor from "./Reactor.ts";
 import * as HoustonHarnessRunner from "./Runner.ts";
@@ -96,6 +105,67 @@ export interface Launched {
   readonly threadId: ThreadId;
 }
 
+export interface GithubRequest {
+  readonly method: string;
+  readonly url: string;
+  /** The JSON body of a write. */
+  readonly body: unknown;
+}
+
+/** Answers every request to api.github.com in process and records it. */
+export interface GithubFake {
+  readonly requests: Array<GithubRequest>;
+  respond: (url: URL, request: GithubRequest) => Response;
+}
+
+/** Upstream's GitHub client with a Settings credential, answered by `fake`. */
+const layerGitHubFake = (fake: GithubFake) => {
+  const credentials = Layer.succeed(
+    GitHubCredentials.GitHubCredentials,
+    GitHubCredentials.GitHubCredentials.of({
+      get: (host) =>
+        Effect.succeed({
+          host,
+          token: Redacted.make("ghp_settings_token_for_harness_tests"),
+          source: "settings" as const,
+          fingerprint: `${host}:settings`,
+        }),
+      saved: () => Effect.succeedNone,
+      fingerprint: (host, token) => Effect.succeed(`${host}:${token.length}`),
+      invalidate: () => Effect.void,
+    }),
+  );
+  const http = Layer.succeed(
+    HttpClient.HttpClient,
+    HttpClient.make((request) => {
+      const entry: GithubRequest = {
+        method: request.method,
+        url: request.url,
+        body:
+          request.body._tag === "Uint8Array"
+            ? (JSON.parse(new TextDecoder().decode(request.body.body)) as unknown)
+            : undefined,
+      };
+      fake.requests.push(entry);
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(request, fake.respond(new URL(request.url), entry)),
+      );
+    }),
+  );
+  const appSignedOut = Layer.mock(GitHubAppSignIn.GitHubAppSignIn)({
+    enabled: false,
+    token: () => Effect.succeedNone,
+    invalidate: () => Effect.void,
+  });
+  // Only the client and its credential leave the layer; nothing else reaches the fake.
+  return GitHubRest.layer.pipe(
+    Layer.provide(Layer.mergeAll(http, appSignedOut)),
+    Layer.provideMerge(credentials),
+    Layer.provideMerge(GitHubQuota.layer),
+    Layer.provideMerge(SourceControlRateLimit.layer),
+  );
+};
+
 export interface KitOptions {
   /** A database file that outlives the layer; in memory when absent. */
   readonly databaseFile?: string;
@@ -132,6 +202,11 @@ export const makeKit = Effect.fn("HarnessReviewKit.make")(function* (
     git: false,
   });
   const launches: Array<Launched> = [];
+  // Any request a test does not answer gets an empty search result.
+  const github: GithubFake = {
+    requests: [],
+    respond: () => new Response(JSON.stringify({ total_count: 0, items: [] }), { status: 200 }),
+  };
   // One layer value per kit: every consumer in a build shares the one database it memoizes.
   const database =
     options.databaseFile === undefined
@@ -139,7 +214,7 @@ export const makeKit = Effect.fn("HarnessReviewKit.make")(function* (
       : SqlitePersistence.layerFromPath(options.databaseFile).pipe(
           Layer.provide(NodeServices.layer),
         );
-  return { name, harness, launches, database, options };
+  return { name, harness, launches, github, database, options };
 });
 
 export type Kit = Effect.Success<ReturnType<typeof makeKit>>;
@@ -223,6 +298,8 @@ export const layerKit = (kit: Kit) => {
           }),
         ).pipe(Layer.provide(HoustonTaskService.layer));
   return harnessReview.pipe(
+    // Issue drafts and filing reach only the kit's GitHub fake.
+    Layer.provideMerge(layerGitHubFake(kit.github)),
     // Fix tasks and verdict comments go through the real Tasks service, as in the server.
     Layer.provideMerge(taskService),
     Layer.provideMerge(Layer.mergeAll(RuntimeLayer.layerProjectService, ProjectStore.layer)),
@@ -415,6 +492,8 @@ export const runKit = <A, E>(
   }).pipe(Effect.scoped);
 
 export {
+  HoustonDefectIssues,
+  HoustonDefects,
   HarnessReviewReactor,
   HoustonHarnessRunner,
   HoustonHarnessService,

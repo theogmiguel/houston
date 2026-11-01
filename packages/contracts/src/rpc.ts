@@ -230,9 +230,16 @@ import {
   HoustonSlackStreamEvent,
 } from "./houston/slack.ts";
 import {
+  HoustonDefectDecideInput,
+  HoustonDefectDraftInput,
+  HoustonDefectFileInput,
+  HoustonDefectFileResult,
+  HoustonDefectIssueDraft,
   HoustonHarnessCreateTaskInput,
   HoustonHarnessCreateTaskResult,
   HoustonHarnessDecideInput,
+  HoustonHarnessImportResult,
+  HoustonHarnessImportStatus,
   HoustonHarnessEmptyResult,
   HoustonHarnessError,
   HoustonHarnessMarkSeenInput,
@@ -636,6 +643,11 @@ export const WS_METHODS = {
   houstonHarnessDecide: "houston.harness.decide",
   houstonHarnessMarkSeen: "houston.harness.markSeen",
   houstonHarnessCreateTask: "houston.harness.createTask",
+  houstonDefectsDecide: "houston.defects.decide",
+  houstonDefectsDraft: "houston.defects.draft",
+  houstonDefectsFile: "houston.defects.file",
+  houstonHarnessImportV1Status: "houston.harness.importV1.status",
+  houstonHarnessImportV1Run: "houston.harness.importV1.run",
   houstonNightShiftGet: "houston.nightShift.get",
   houstonNightShiftSubscribe: "houston.nightShift.subscribe",
   houstonNightShiftSubscribeOverview: "houston.nightShift.subscribeOverview",
@@ -2054,6 +2066,36 @@ const WsHoustonHarnessCreateTaskRpc = Rpc.make(WS_METHODS.houstonHarnessCreateTa
   error: HoustonHarnessRpcError,
 });
 
+const WsHoustonDefectsDecideRpc = Rpc.make(WS_METHODS.houstonDefectsDecide, {
+  payload: HoustonDefectDecideInput,
+  success: HoustonHarnessEmptyResult,
+  error: HoustonHarnessRpcError,
+});
+
+const WsHoustonDefectsDraftRpc = Rpc.make(WS_METHODS.houstonDefectsDraft, {
+  payload: HoustonDefectDraftInput,
+  success: HoustonDefectIssueDraft,
+  error: HoustonHarnessRpcError,
+});
+
+const WsHoustonDefectsFileRpc = Rpc.make(WS_METHODS.houstonDefectsFile, {
+  payload: HoustonDefectFileInput,
+  success: HoustonDefectFileResult,
+  error: HoustonHarnessRpcError,
+});
+
+const WsHoustonHarnessImportV1StatusRpc = Rpc.make(WS_METHODS.houstonHarnessImportV1Status, {
+  payload: HoustonHarnessOverviewInput,
+  success: HoustonHarnessImportStatus,
+  error: HoustonHarnessRpcError,
+});
+
+const WsHoustonHarnessImportV1RunRpc = Rpc.make(WS_METHODS.houstonHarnessImportV1Run, {
+  payload: HoustonHarnessOverviewInput,
+  success: HoustonHarnessImportResult,
+  error: HoustonHarnessRpcError,
+});
+
 const HoustonNightShiftRpcError = Schema.Union([
   HoustonNightShiftError,
   EnvironmentAuthorizationError,
@@ -2872,6 +2914,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonHarnessDecideRpc,
   WsHoustonHarnessMarkSeenRpc,
   WsHoustonHarnessCreateTaskRpc,
+  WsHoustonDefectsDecideRpc,
+  WsHoustonDefectsDraftRpc,
+  WsHoustonDefectsFileRpc,
+  WsHoustonHarnessImportV1StatusRpc,
+  WsHoustonHarnessImportV1RunRpc,
   WsHoustonNightShiftGetRpc,
   WsHoustonNightShiftSubscribeRpc,
   WsHoustonNightShiftSubscribeOverviewRpc,

@@ -525,3 +525,26 @@ export const v1PathMatches = (v1Path: string, root: string, platform: NodeJS.Pla
   }
   return withoutTrailingSeparators(v1Path, /\//) === withoutTrailingSeparators(root, /\//);
 };
+
+/** `v1Path` relative to `root` with `/` separators when it lies strictly inside it, compared as
+ * `v1PathMatches` does; null for the root itself, a relative path or a path elsewhere. */
+export const v1PathUnder = (
+  v1Path: string,
+  root: string,
+  platform: NodeJS.Platform,
+): string | null => {
+  const windows = platform === "win32";
+  const separator = windows ? /[\\/]/ : /\//;
+  const fold = (path: string) => (windows ? path.replaceAll("/", "\\").toLowerCase() : path);
+  const base = fold(withoutTrailingSeparators(root, separator));
+  const path = withoutTrailingSeparators(v1Path, separator);
+  const prefix = base.endsWith(windows ? "\\" : "/") ? base : `${base}${windows ? "\\" : "/"}`;
+  if (!fold(path).startsWith(prefix)) return null;
+  const inside = path
+    .slice(prefix.length)
+    .split(windows ? /[\\/]+/ : /\/+/)
+    .filter(Boolean);
+  return inside.length === 0 || inside.some((segment) => segment === "..")
+    ? null
+    : inside.join("/");
+};

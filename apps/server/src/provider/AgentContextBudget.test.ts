@@ -11,6 +11,7 @@ import { ServerConfig } from "../config.ts";
 import { DeviceService } from "../device/DeviceService.ts";
 import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
+import { HoustonDefects } from "../houston/harnessReview/defects/Defects.ts";
 import { HoustonMergeQueueProject } from "../houston/mergeQueue/Project.ts";
 import { HoustonMergeQueueService } from "../houston/mergeQueue/Service.ts";
 import { HoustonNightLanding } from "../houston/nightShift/landing/Landing.ts";
@@ -91,6 +92,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(HoustonNightShiftRunner)({}),
   Layer.mock(HoustonTaskRuns)({}),
   Layer.mock(HoustonTaskService)({}),
+  Layer.mock(HoustonDefects)({}),
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 const utf8Bytes = (text: string) => Buffer.byteLength(text, "utf8");

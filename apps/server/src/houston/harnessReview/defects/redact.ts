@@ -1,5 +1,5 @@
 // Masks secrets in text an agent or a thread wrote before it leaves the server. Ordinary sentences
-// and numbers stay as they are; the path replacements of a defect report come with defects.
+// and numbers stay as they are; a defect's text also loses the project root and the home path.
 import { applyCredentialRules, credentialRules } from "../../redact.ts";
 
 const REDACTED = "<redacted>";
@@ -37,4 +37,41 @@ export function maskSecrets(text: string): string {
     masked = masked.replace(pattern, replace as (substring: string, ...args: unknown[]) => string);
   }
   return applyCredentialRules(masked, CREDENTIALS);
+}
+
+// v1's shorter token prefixes: a defect title quoting a truncated token still loses it.
+const SHORT_TOKENS = /\b(?:ghp_|gho_|ghs_|github_pat_|sk-)[A-Za-z0-9_-]{8,}/g;
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const SEPARATOR = "[\\\\/]+";
+const joined = (segments: ReadonlyArray<string>) => segments.map(escapeRegExp).join(SEPARATOR);
+
+/** `path` in any case and separator spelling, plus the Git Bash `/c/…` and WSL `/mnt/c/…` forms
+ * of a drive path, as whole path segments: `/home/me` does not match inside `/home/meg`. */
+const pathPattern = (path: string) => {
+  const segments = path.split(/[\\/]+/).filter(Boolean);
+  const drive = /^([A-Za-z]):$/.exec(segments[0] ?? "");
+  const forms = [`${/^[\\/]/.test(path) ? SEPARATOR : ""}${joined(segments)}`];
+  if (drive !== null && segments.length > 1) {
+    forms.push(`/(?:mnt/)?${escapeRegExp(drive[1]!)}${SEPARATOR}${joined(segments.slice(1))}`);
+  }
+  // A full stop ends a path only when no name character follows it, as at the end of a sentence.
+  return new RegExp(
+    `(?<![\\p{L}\\p{N}_.-])(?:${forms.join("|")})(?![\\p{L}\\p{N}_-]|\\.[\\p{L}\\p{N}_-])`,
+    "giu",
+  );
+};
+
+/** A defect's text: the project root as `<project>`, the home directory as `~`, secrets masked. */
+export function redact(text: string, projectRoot: string | null, home: string | null): string {
+  let out = text;
+  // The project usually sits under home, so it is replaced first.
+  for (const [path, placeholder] of [
+    [projectRoot, "<project>"],
+    [home, "~"],
+  ] as const) {
+    if (path === null || path.replace(/[\\/\s]+/g, "") === "") continue;
+    out = out.replace(pathPattern(path.trim()), placeholder);
+  }
+  return maskSecrets(out).replace(SHORT_TOKENS, REDACTED);
 }
