@@ -203,15 +203,23 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     setExpanded(next);
   };
   const failureItem = workEntry.projectedItem?.item;
+  const activity = use(TimelineRowActivityCtx);
   const pendingApproval =
     failureItem?.type === "approval_request"
       ? ctx.pendingApprovals.get(failureItem.requestId)
       : undefined;
   if (pendingApproval) return <TimelinePendingApprovalRow approval={pendingApproval} />;
   if (failureItem?.type === "todo_list") {
+    const planRunIsLatest =
+      failureItem.runId === null ||
+      activity.latestRunId === null ||
+      failureItem.runId === activity.latestRunId;
     return (
       <div className="px-1 py-0.5">
-        <TimelinePlanCard steps={failureItem.steps} />
+        <TimelinePlanCard
+          steps={failureItem.steps}
+          active={activity.isWorking && planRunIsLatest}
+        />
       </div>
     );
   }
