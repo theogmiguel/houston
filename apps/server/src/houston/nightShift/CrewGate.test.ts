@@ -97,6 +97,8 @@ interface World {
   hang: boolean;
   /** Completed when a hanging dispatch has been reached. */
   hung: Deferred.Deferred<void> | null;
+  /** Completing it lets a hanging dispatch answer; null hangs forever. */
+  release: Deferred.Deferred<void> | null;
   /** A dispatch that fails, so a test sees the slot released on failure. */
   failDispatch: boolean;
   children: number;
@@ -118,6 +120,7 @@ const freshWorld = (): World => ({
   readiness: new Map(["codex", "claudeAgent", "opencode"].map((id) => [id, { state: "ready" }])),
   hang: false,
   hung: null,
+  release: null,
   failDispatch: false,
   children: 0,
 });
@@ -223,50 +226,56 @@ const layerThreadManagement = (world: World) =>
           instanceId,
           workspaceStrategy: command.workspaceStrategy,
         });
+        const answer = Effect.sync(() => {
+          world.callers.set(childThreadId, instanceId);
+          if (command.workspaceStrategy !== undefined) {
+            world.workspaces.set(childThreadId, {
+              worktreePath: `/worktrees/${childThreadId}`,
+              branch: `t3/${childThreadId}`,
+            });
+          }
+          const task = {
+            id: NodeId.make(taskId),
+            threadId: command.parentThreadId,
+            runId: RunId.make(`run:${command.parentThreadId}`),
+            parentNodeId: NodeId.make(`node:${command.parentThreadId}`),
+            origin: "app_owned",
+            createdBy: "agent",
+            driver: ProviderDriverKind.make(
+              instanceId === "claudeAgent" ? "claudeAgent" : instanceId,
+            ),
+            providerInstanceId: instanceId,
+            providerThreadId: null,
+            childThreadId: ThreadId.make(childThreadId),
+            nativeTaskRef: null,
+            prompt: command.task,
+            title: null,
+            model: "m",
+            status: "running",
+            result: null,
+            startedAt: null,
+            completedAt: null,
+          };
+          world.subagents.set(command.parentThreadId, [
+            ...(world.subagents.get(command.parentThreadId) ?? []),
+            task,
+          ]);
+          return {
+            sequence: 1,
+            storedEvents: [
+              { sequence: 1, commandId: null, event: { type: "subagent.updated", payload: task } },
+            ],
+          } as never;
+        });
         if (world.hang) {
+          // The command is accepted; its answer waits until the test releases it.
+          const release = world.release;
           return (world.hung === null ? Effect.void : Deferred.succeed(world.hung, undefined)).pipe(
-            Effect.andThen(Effect.never),
+            Effect.andThen(release === null ? Effect.never : Deferred.await(release)),
+            Effect.andThen(answer),
           );
         }
-        world.callers.set(childThreadId, instanceId);
-        if (command.workspaceStrategy !== undefined) {
-          world.workspaces.set(childThreadId, {
-            worktreePath: `/worktrees/${childThreadId}`,
-            branch: `t3/${childThreadId}`,
-          });
-        }
-        const task = {
-          id: NodeId.make(taskId),
-          threadId: command.parentThreadId,
-          runId: RunId.make(`run:${command.parentThreadId}`),
-          parentNodeId: NodeId.make(`node:${command.parentThreadId}`),
-          origin: "app_owned",
-          createdBy: "agent",
-          driver: ProviderDriverKind.make(
-            instanceId === "claudeAgent" ? "claudeAgent" : instanceId,
-          ),
-          providerInstanceId: instanceId,
-          providerThreadId: null,
-          childThreadId: ThreadId.make(childThreadId),
-          nativeTaskRef: null,
-          prompt: command.task,
-          title: null,
-          model: "m",
-          status: "running",
-          result: null,
-          startedAt: null,
-          completedAt: null,
-        };
-        world.subagents.set(command.parentThreadId, [
-          ...(world.subagents.get(command.parentThreadId) ?? []),
-          task,
-        ]);
-        return Effect.succeed({
-          sequence: 1,
-          storedEvents: [
-            { sequence: 1, commandId: null, event: { type: "subagent.updated", payload: task } },
-          ],
-        } as never);
+        return answer;
       }),
   });
 
@@ -529,7 +538,7 @@ describe("the crew gate", () => {
   it.effect("a held slot is released on every exit, interruption included", () => {
     const world = freshWorld();
     return Effect.gen(function* () {
-      yield* seedRun(settingsWith({ liveWorkers: 1 }));
+      const runId = yield* seedRun(settingsWith({ liveWorkers: 1 }));
       // Two delegations at once for the last slot: exactly one starts a child.
       const both = yield* Effect.forEach(
         [1, 2],
@@ -540,16 +549,32 @@ describe("the crew gate", () => {
       assert.lengthOf(world.dispatched, 1);
       world.taskStatuses.set(`${ORCHESTRATOR}|${world.dispatched[0]!.taskId}`, "completed");
 
-      // A delegation in flight holds the slot; interrupting it frees the slot.
+      // A delegation in flight holds the slot, so a third is refused while it waits.
       world.hang = true;
       world.hung = yield* Deferred.make<void>();
+      world.release = yield* Deferred.make<void>();
       const hung = yield* delegate(world, ORCHESTRATOR, worker()).pipe(Effect.forkChild);
       yield* Deferred.await(world.hung);
       world.hang = false;
       yield* refusedWith(delegate(world, ORCHESTRATOR, worker()), "1 of 1 live workers");
-      yield* Fiber.interrupt(hung);
 
-      // A delegation that fails frees the slot too.
+      // Interrupted once its dispatch is accepted, the child is still recorded: it is gated,
+      // counted and stopped with the run.
+      const interrupting = yield* Fiber.interrupt(hung).pipe(Effect.forkChild);
+      // Let the interrupt reach the delegation before its dispatch answers.
+      for (let turn = 0; turn < 10; turn += 1) yield* Effect.yieldNow;
+      yield* Deferred.succeed(world.release, undefined);
+      yield* Fiber.join(interrupting);
+      const child = world.dispatched.at(-1)!;
+      const member = (yield* crewOf(runId)).find(
+        (candidate) => candidate.threadId === child.childThreadId,
+      );
+      assert.isDefined(member, "the interrupted delegation's child is in the crew");
+      assert.isNull(member!.endedAt);
+      yield* refusedWith(delegate(world, ORCHESTRATOR, worker()), "1 of 1 live workers");
+      world.taskStatuses.set(`${ORCHESTRATOR}|${child.taskId}`, "completed");
+
+      // A delegation that fails frees the slot.
       world.failDispatch = true;
       assert.equal((yield* Effect.exit(delegate(world, ORCHESTRATOR, worker())))._tag, "Failure");
       world.failDispatch = false;
