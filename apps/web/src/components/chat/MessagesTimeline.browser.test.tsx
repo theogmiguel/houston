@@ -38,6 +38,7 @@ import {
   decodeComposerContextFragment,
 } from "@t3tools/shared/composerContextClipboard";
 import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import type { ThreadStatusPill } from "../Sidebar.logic";
 
 const environmentQuery = vi.hoisted(() => ({
   error: "Pull request not found",
@@ -1249,6 +1250,72 @@ function paneBackground(): string {
   probe.remove();
   return color;
 }
+
+describe("MessagesTimeline live status", () => {
+  it("shows the needs mark while the turn waits for the user and Running once answered", async () => {
+    const fixture = makeStreamingTimelineFixture();
+    const timelineEntries = deriveTimelineEntriesFromVisibleTurnItems({
+      visibleTurnItems: fixture.visibleTurnItems,
+      optimisticMessages: [],
+    });
+    const props = baseProps();
+    const ui = (threadStatusPill: ThreadStatusPill | null) => (
+      <MessagesTimeline
+        {...props}
+        timelineEntries={timelineEntries}
+        isWorking
+        activeTurnStartedAt={fixture.time(5)}
+        latestRun={{
+          runId: fixture.runId,
+          status: "running",
+          startedAt: fixture.time(5),
+          completedAt: null,
+        }}
+        threadStatusPill={threadStatusPill}
+      />
+    );
+    const workingRow = (container: HTMLElement) => {
+      const row = container.querySelector<HTMLElement>('[data-timeline-row-kind="working"]');
+      expect(row).not.toBeNull();
+      return row!;
+    };
+
+    await using screen = await renderElement(ui({ label: "Needs you", state: "needs" }));
+    expect(workingRow(screen.container).textContent).toContain("Needs you");
+    expect(workingRow(screen.container).textContent).not.toContain("Running");
+    expect(workingRow(screen.container).querySelector("[data-streaming-glyph]")).toBeNull();
+
+    await screen.rerender(ui({ label: "Running", state: "running" }));
+    expect(workingRow(screen.container).textContent).toContain("Running");
+    expect(workingRow(screen.container).querySelector("[data-streaming-glyph]")).not.toBeNull();
+  });
+
+  it("shows the needs mark for a pending approval", async () => {
+    const fixture = makeStreamingTimelineFixture();
+    const timelineEntries = deriveTimelineEntriesFromVisibleTurnItems({
+      visibleTurnItems: fixture.visibleTurnItems,
+      optimisticMessages: [],
+    });
+    await using screen = await renderElement(
+      <MessagesTimeline
+        {...baseProps()}
+        timelineEntries={timelineEntries}
+        isWorking
+        activeTurnStartedAt={fixture.time(5)}
+        latestRun={{
+          runId: fixture.runId,
+          status: "running",
+          startedAt: fixture.time(5),
+          completedAt: null,
+        }}
+        threadStatusPill={{ label: "Pending Approval", state: "needs" }}
+      />,
+    );
+    const row = screen.container.querySelector<HTMLElement>('[data-timeline-row-kind="working"]')!;
+    expect(row.textContent).toContain("Pending Approval");
+    expect(row.querySelector("[data-streaming-glyph]")).toBeNull();
+  });
+});
 
 describe("MessagesTimeline empty surface", () => {
   it("paints the hidden empty state on the pane surface in both themes", async () => {

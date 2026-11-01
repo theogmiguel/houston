@@ -269,6 +269,7 @@ import {
 } from "../state/entities";
 import { useEnvironmentShellHasSnapshot } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import { resolveThreadStatusPill } from "./Sidebar.logic";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialogHost, openExpandedImagePreview } from "./chat/ExpandedImageDialog";
 import {
@@ -1065,6 +1066,9 @@ export default function ChatView(props: ChatViewProps) {
   );
   const browserAvailable = isPreviewSupportedInRuntime() || activeEnvironmentServerBrowser;
   const activeThreadShell = serverThread;
+  // One status vocabulary for the sidebar, the grid and this thread's timeline row.
+  const activeThreadStatusPill =
+    activeThreadShell === null ? null : resolveThreadStatusPill({ thread: activeThreadShell });
   const timelineThreadError =
     serverRuntime?.status === "failed" &&
     serverRuntime.lastErrorClass === "usage_limit" &&
@@ -3530,6 +3534,7 @@ export default function ChatView(props: ChatViewProps) {
                 awaitingRequestId={
                   activePendingApproval?.requestId ?? activePendingUserInput?.requestId ?? null
                 }
+                threadStatusPill={activeThreadStatusPill}
                 activeTurnStartedAt={activeWorkStartedAt}
                 worktreeSetup={worktreeSetup}
                 onCancelWorktreeSetup={onCancelWorktreeSetupStable}
@@ -3767,6 +3772,7 @@ export default function ChatView(props: ChatViewProps) {
                               activeThreadId={activeThreadId}
                               activeThread={activeThread}
                               activeThreadShell={activeThreadShell}
+                              threadStatusPill={activeThreadStatusPill}
                               promptHistoryMessages={timelineMessages}
                               paneDensity={paneDensity}
                               activeTurnStartedAt={activeWorkStartedAt}
