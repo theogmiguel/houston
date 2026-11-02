@@ -122,7 +122,7 @@ export class HoustonNightShiftRunner extends Context.Service<
     /** What the server does on start: refuses, settles or resumes each live run. */
     readonly recover: Effect.Effect<void>;
   }
->()("houston/houston/nightShift/Runner/HoustonNightShiftRunner") {}
+>()("@houston-app/cli/houston/nightShift/Runner/HoustonNightShiftRunner") {}
 
 const refuse = (
   kind: HoustonNightShiftError["kind"],

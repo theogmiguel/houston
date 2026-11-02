@@ -33,10 +33,7 @@ const builtExecutable = join(
   `houston${isWindows ? ".exe" : ""}`,
 );
 
-const externalPatches = [
-  "@ff-labs__fff-node@0.11.0.patch",
-  "node-pty@1.2.0-beta.15.patch",
-];
+const externalPatches = ["@ff-labs__fff-node@0.11.0.patch", "node-pty@1.2.0-beta.15.patch"];
 
 const platformKey =
   process.platform === "win32"
@@ -78,7 +75,7 @@ function directorySize(dir) {
 
 if (!existsSync(builtExecutable)) {
   fail(
-    `${builtExecutable} is missing. Run \`pnpm --filter houston build:exe\` with the Node version pinned in package.json engines.node first.`,
+    `${builtExecutable} is missing. Run \`pnpm --filter @houston-app/cli build:exe\` with the Node version pinned in package.json engines.node first.`,
   );
 }
 
@@ -93,7 +90,7 @@ for (const entry of readdirSync(outputDir)) {
 // the SEA leaves external at runtime.
 const listed = spawnSync(
   "pnpm",
-  ["--filter", "houston", "list", "--depth", "0", "--prod", "--json"],
+  ["--filter", "@houston-app/cli", "list", "--depth", "0", "--prod", "--json"],
   { cwd: repoRoot, encoding: "utf8", shell: isWindows },
 );
 if (listed.status !== 0) {
@@ -101,10 +98,7 @@ if (listed.status !== 0) {
 }
 const [serverPackage] = JSON.parse(listed.stdout);
 const resolvedDependencies = Object.fromEntries(
-  Object.entries(serverPackage?.dependencies ?? {}).map(([name, info]) => [
-    name,
-    info.version,
-  ]),
+  Object.entries(serverPackage?.dependencies ?? {}).map(([name, info]) => [name, info.version]),
 );
 const runtimeDependencies = selectCliRuntimeExternalDependencies(resolvedDependencies);
 const runtimeNames = Object.keys(runtimeDependencies);

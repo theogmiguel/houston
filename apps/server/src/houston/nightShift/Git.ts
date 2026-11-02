@@ -27,7 +27,7 @@ export class NightShiftGit extends Context.Service<
       root: string,
     ) => Effect.Effect<Readonly<Record<string, string>>, string>;
   }
->()("houston/houston/nightShift/Git/NightShiftGit") {}
+>()("@houston-app/cli/houston/nightShift/Git/NightShiftGit") {}
 
 const run = (
   environment: NodeJS.ProcessEnv,

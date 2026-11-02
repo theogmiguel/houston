@@ -54,7 +54,9 @@ export class OrchestrationCommandReceiptRepository extends Context.Service<
       OrchestrationCommandReceiptRepositoryError
     >;
   }
->()("houston/persistence/OrchestrationCommandReceipts/OrchestrationCommandReceiptRepository") {}
+>()(
+  "@houston-app/cli/persistence/OrchestrationCommandReceipts/OrchestrationCommandReceiptRepository",
+) {}
 
 const makeOrchestrationCommandReceiptRepository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

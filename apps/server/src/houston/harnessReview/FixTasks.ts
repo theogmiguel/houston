@@ -56,7 +56,7 @@ export class HoustonHarnessFixTasks extends Context.Service<
       until?: string,
     ) => Effect.Effect<ReadonlyArray<FixTaskLink>>;
   }
->()("houston/houston/harnessReview/FixTasks/HoustonHarnessFixTasks") {}
+>()("@houston-app/cli/houston/harnessReview/FixTasks/HoustonHarnessFixTasks") {}
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

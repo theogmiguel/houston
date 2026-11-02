@@ -109,7 +109,7 @@ export class WorkspaceEntries extends Context.Service<
     ) => Effect.Effect<ProjectSearchContentsResult, WorkspaceEntriesError>;
     readonly refresh: (cwd: string) => Effect.Effect<void>;
   }
->()("houston/workspace/WorkspaceEntries") {}
+>()("@houston-app/cli/workspace/WorkspaceEntries") {}
 
 /** Ignored files offered for copying; more than this is a build folder, not config. */
 const IGNORED_FILES_LIMIT = 200;

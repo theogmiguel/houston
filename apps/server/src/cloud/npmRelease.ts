@@ -3,6 +3,10 @@ import {
   ServerNpmReleaseInput,
   type ServerNpmRelease,
 } from "@houston-app/contracts";
+import {
+  SERVER_PACKAGE_NAME,
+  SERVER_RELEASE_MANIFEST_FIELD,
+} from "@houston-app/shared/serverPackage";
 import { resolveCommandPath } from "@houston-app/shared/shell";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
@@ -17,8 +21,11 @@ import { FetchHttpClient, HttpClient } from "effect/http";
 import * as ProcessRunner from "../processRunner.ts";
 
 const Version = Schema.String.check(Schema.isPattern(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/));
-const Manifest = Schema.Struct({ version: Version, t3code: Schema.optionalKey(Schema.Unknown) });
-// npm prints a bare version string when the release has no `t3code` field.
+const Manifest = Schema.Struct({
+  version: Version,
+  [SERVER_RELEASE_MANIFEST_FIELD]: Schema.optionalKey(Schema.Unknown),
+});
+// npm prints a bare version string when the release has no `houston` manifest field.
 const decodeManifest = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Union([Manifest, Schema.Tuple([Manifest]), Version])),
 );
@@ -29,7 +36,7 @@ const decodeInput = Schema.decodeUnknownEffect(ServerNpmReleaseInput);
 // The release manifest names the highest server migration that release knows. Houston reads it
 // from the manifest rather than the upstream npm helper the shared CLI package no longer ships.
 const ReleaseDatabaseMigration = Schema.Struct({
-  t3code: Schema.Struct({ databaseMigration: Schema.Int }),
+  [SERVER_RELEASE_MANIFEST_FIELD]: Schema.Struct({ databaseMigration: Schema.Int }),
 });
 const decodeReleaseDatabaseMigration = Schema.decodeUnknownOption(ReleaseDatabaseMigration);
 
@@ -40,7 +47,7 @@ export class NpmRelease extends Context.Service<
       input: ServerNpmReleaseInput,
     ) => Effect.Effect<ServerNpmRelease | null, ServerNpmReleaseError>;
   }
->()("houston/cloud/npmRelease") {}
+>()("@houston-app/cli/cloud/npmRelease") {}
 
 function toRelease(spec: string, json: string) {
   const decoded = Option.getOrUndefined(decodeManifest(json));
@@ -53,8 +60,9 @@ function toRelease(spec: string, json: string) {
       new ServerNpmReleaseError({ reason: "npm returned invalid release metadata." }),
     );
   }
-  const databaseMigration = Option.getOrUndefined(decodeReleaseDatabaseMigration(manifest))?.t3code
-    .databaseMigration;
+  const databaseMigration = Option.getOrUndefined(decodeReleaseDatabaseMigration(manifest))?.[
+    SERVER_RELEASE_MANIFEST_FIELD
+  ].databaseMigration;
   return Effect.succeed({
     version: manifest.version,
     ...(databaseMigration === undefined ? {} : { databaseMigration }),
@@ -69,7 +77,9 @@ export const make = Effect.fn("NpmRelease.make")(function* () {
       reason: "npm is not installed and the public npm registry could not be reached.",
     });
     const json = yield* Effect.gen(function* () {
-      const response = yield* http.get(`https://registry.npmjs.org/t3/${spec}`);
+      const response = yield* http.get(
+        `https://registry.npmjs.org/${encodeURIComponent(SERVER_PACKAGE_NAME)}/${spec}`,
+      );
       if (response.status === 404) return Option.none<string>();
       if (response.status < 200 || response.status >= 300) return yield* unreachable;
       return Option.some(yield* response.text);
@@ -93,7 +103,14 @@ export const make = Effect.fn("NpmRelease.make")(function* () {
           runner.run({
             command: npmPath,
             // Named fields keep the output small; the full package document grows with every release.
-            args: ["view", "--global", "--json", `t3@${spec}`, "version", "t3code"],
+            args: [
+              "view",
+              "--global",
+              "--json",
+              `${SERVER_PACKAGE_NAME}@${spec}`,
+              "version",
+              SERVER_RELEASE_MANIFEST_FIELD,
+            ],
             timeout: Duration.seconds(15),
             maxOutputBytes: 256 * 1024,
           }),

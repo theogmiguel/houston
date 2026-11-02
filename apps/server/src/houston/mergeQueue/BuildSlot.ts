@@ -27,7 +27,7 @@ export class HoustonBuildSlot extends Context.Service<
     readonly holder: Effect.Effect<string | null>;
     readonly current: Effect.Effect<SlotHolder | null>;
   }
->()("houston/houston/mergeQueue/BuildSlot/HoustonBuildSlot") {}
+>()("@houston-app/cli/houston/mergeQueue/BuildSlot/HoustonBuildSlot") {}
 
 const make = Effect.gen(function* () {
   const state = yield* Ref.make<SlotHolder | null>(null);

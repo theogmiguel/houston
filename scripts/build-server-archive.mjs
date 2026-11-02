@@ -44,7 +44,7 @@ const serverDir = join(ROOT, "apps/server");
 const executable = join(serverDir, "dist-exe", "houston");
 const client = join(serverDir, "dist", "client");
 for (const [path, hint] of [
-  [executable, "run `pnpm --filter houston run build:exe` first"],
+  [executable, "run `pnpm --filter @houston-app/cli run build:exe` first"],
   [
     join(client, "index.html"),
     "run `pnpm --filter @houston-app/web build` and the server build first",

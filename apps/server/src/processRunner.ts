@@ -140,7 +140,7 @@ export class ProcessRunner extends Context.Service<
   {
     readonly run: (input: ProcessRunInput) => Effect.Effect<ProcessRunOutput, ProcessRunError>;
   }
->()("houston/processRunner") {}
+>()("@houston-app/cli/processRunner") {}
 
 const DEFAULT_TIMEOUT = "60 seconds";
 // Keep SIGTERM-ignoring helpers from blocking timeouts or graceful shutdown.

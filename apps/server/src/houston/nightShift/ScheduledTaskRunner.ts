@@ -41,7 +41,7 @@ export class HoustonNightShiftClaim extends Context.Service<
     /** Forgets the task's last refusal, so a run that never reaches the claim reports none. */
     readonly clearRefusal: (taskId: ScheduledTaskId) => Effect.Effect<void>;
   }
->()("houston/houston/nightShift/ScheduledTaskRunner/HoustonNightShiftClaim") {}
+>()("@houston-app/cli/houston/nightShift/ScheduledTaskRunner/HoustonNightShiftClaim") {}
 
 const without = <K, V>(map: ReadonlyMap<K, V>, key: K) => {
   const next = new Map(map);

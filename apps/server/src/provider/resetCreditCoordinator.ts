@@ -23,7 +23,7 @@ export class ResetCreditCoordinator extends Context.Service<
       isSettled?: (error: E) => boolean,
     ) => Effect.Effect<ProviderConsumeResetCreditOutcome, E | PlatformError.PlatformError, R>;
   }
->()("houston/provider/resetCreditCoordinator") {}
+>()("@houston-app/cli/provider/resetCreditCoordinator") {}
 
 /** @public */
 export const make = Effect.gen(function* () {

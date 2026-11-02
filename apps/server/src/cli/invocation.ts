@@ -6,6 +6,7 @@ import * as Schema from "effect/Schema";
 
 import type { ServerInstallation } from "@houston-app/contracts";
 import * as HostProcess from "@houston-app/shared/HostProcess";
+import { SERVER_PACKAGE_NAME } from "@houston-app/shared/serverPackage";
 import { resolveCommandPath } from "@houston-app/shared/shell";
 
 import packageJson from "../../package.json" with { type: "json" };
@@ -52,7 +53,7 @@ export const resolveEntryPath = Effect.gen(function* () {
       .pipe(Effect.flatMap(decodeInstallManifest), Effect.option);
     if (
       Option.isSome(manifest) &&
-      manifest.value.name === "houston" &&
+      manifest.value.name === SERVER_PACKAGE_NAME &&
       manifest.value.version === packageJson.version
     ) {
       return npmLauncher;
@@ -67,9 +68,10 @@ export const resolveServerInstallation = Effect.gen(function* () {
   const path = yield* Path.Path;
   const platform = yield* HostProcess.Platform;
   const entry = yield* fs.realPath(yield* resolveEntryPath);
-  const match = /^(.*)\/lib\/node_modules\/houston\/(?:dist\/bin\.mjs|bin\/houston\.mjs)$/.exec(
-    entry,
-  );
+  const match =
+    /^(.*)\/lib\/node_modules\/@houston-app\/cli\/(?:dist\/bin\.mjs|bin\/houston\.mjs)$/.exec(
+      entry,
+    );
   if (!match) {
     const runner = detectCliRunner(entry);
     return runner === null
@@ -85,11 +87,11 @@ export const resolveServerInstallation = Effect.gen(function* () {
   )
     return null;
 
-  const packageRoot = path.join(prefix, "lib/node_modules/houston");
+  const packageRoot = path.join(prefix, "lib/node_modules", SERVER_PACKAGE_NAME);
   const manifest = yield* fs
     .readFileString(path.join(packageRoot, "package.json"))
     .pipe(Effect.flatMap(decodeInstallManifest));
-  if (manifest.name !== "houston" || !manifest.bin) return null;
+  if (manifest.name !== SERVER_PACKAGE_NAME || !manifest.bin) return null;
   const bin = yield* fs.realPath(path.join(packageRoot, manifest.bin.houston));
   const globalBin = yield* fs.realPath(path.join(prefix, "bin/houston"));
   if (globalBin !== bin || bin !== entry) return null;
@@ -99,7 +101,7 @@ export const resolveServerInstallation = Effect.gen(function* () {
 /** The original package spec is unavailable at startup; infer its channel from the version. */
 function suggestedPackageSpec(version: string): string {
   const channel = /^[^-+]+-(nightly|preview)\./.exec(version)?.[1];
-  return channel === undefined ? "houston" : `houston@${channel}`;
+  return channel === undefined ? SERVER_PACKAGE_NAME : `${SERVER_PACKAGE_NAME}@${channel}`;
 }
 
 function formatCliCommand(input: {

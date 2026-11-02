@@ -234,7 +234,7 @@ const lines = (server: Server) => server.output.join("").split(/\r?\n/);
 
 async function environmentStatus(port: number): Promise<number | undefined> {
   try {
-    const response = await fetch(`http://127.0.0.1:${port}/.well-known/t3/environment`, {
+    const response = await fetch(`http://127.0.0.1:${port}/.well-known/houston/environment`, {
       signal: AbortSignal.timeout(3_000),
     });
     await response.arrayBuffer();

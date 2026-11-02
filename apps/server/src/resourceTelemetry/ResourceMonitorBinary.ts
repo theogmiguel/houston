@@ -56,7 +56,7 @@ export class ResourceMonitorBinary extends Context.Service<
   {
     readonly resolve: Effect.Effect<string, ResourceMonitorBinaryError>;
   }
->()("houston/resourceTelemetry/ResourceMonitorBinary") {}
+>()("@houston-app/cli/resourceTelemetry/ResourceMonitorBinary") {}
 
 function binaryName(platform: NodeJS.Platform): string {
   return platform === "win32" ? "houston-resource-monitor.exe" : "houston-resource-monitor";

@@ -98,7 +98,7 @@ export class PeerLinks extends Context.Service<
       outcome: { readonly error: string | null },
     ) => Effect.Effect<void>;
   }
->()("houston/peer/PeerLinks") {}
+>()("@houston-app/cli/peer/PeerLinks") {}
 
 interface PeerLinkRow {
   readonly environment_id: string;

@@ -56,12 +56,12 @@ const makeService = Effect.fnUntraced(function* (
 it.effect.each([
   {
     spec: version,
-    stdout: JSON.stringify({ version, t3code: { databaseMigration: 42 } }),
+    stdout: JSON.stringify({ version, houston: { databaseMigration: 42 } }),
     migration: 42,
   },
   {
     spec: "nightly",
-    stdout: JSON.stringify([{ version, t3code: { databaseMigration: 42 } }]),
+    stdout: JSON.stringify([{ version, houston: { databaseMigration: 42 } }]),
     migration: 42,
   },
   { spec: "latest", stdout: JSON.stringify(version), migration: undefined },
@@ -81,7 +81,14 @@ it.effect.each([
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({
       command: expect.stringMatching(/[/\\]npm(?:\.cmd)?$/i),
-      args: ["view", "--global", "--json", `t3@${fixture.spec}`, "version", "t3code"],
+      args: [
+        "view",
+        "--global",
+        "--json",
+        `@houston-app/cli@${fixture.spec}`,
+        "version",
+        "houston",
+      ],
       maxOutputBytes: 256 * 1024,
     });
     yield* TestClock.adjust("1 minute");
@@ -139,7 +146,7 @@ it.effect("falls back to public npm only when npm is not installed", () =>
       HttpClient.make((request) => {
         urls.push(request.url);
         const response = request.url.endsWith("/nightly")
-          ? new Response(JSON.stringify({ version, t3code: { databaseMigration: 42 } }))
+          ? new Response(JSON.stringify({ version, houston: { databaseMigration: 42 } }))
           : request.url.endsWith("/latest")
             ? new Response(new ReadableStream())
             : new Response("{}", { status: 404 });
@@ -153,9 +160,9 @@ it.effect("falls back to public npm only when npm is not installed", () =>
     yield* TestClock.adjust("15 seconds");
     expect(Result.isFailure(yield* Fiber.join(stalled))).toBe(true);
     expect(urls).toEqual([
-      "https://registry.npmjs.org/t3/nightly",
-      "https://registry.npmjs.org/t3/9.9.9",
-      "https://registry.npmjs.org/t3/latest",
+      "https://registry.npmjs.org/%40houston-app%2Fcli/nightly",
+      "https://registry.npmjs.org/%40houston-app%2Fcli/9.9.9",
+      "https://registry.npmjs.org/%40houston-app%2Fcli/latest",
     ]);
   }),
 );

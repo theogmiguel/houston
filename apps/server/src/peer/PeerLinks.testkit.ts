@@ -88,7 +88,7 @@ export const servePeer = <E, R>(
       (httpEffect) =>
         Effect.gen(function* () {
           const request = yield* HttpServerRequest.HttpServerRequest;
-          if (request.url.startsWith("/.well-known/t3/environment")) {
+          if (request.url.startsWith("/.well-known/houston/environment")) {
             yield* Ref.update(probes, (count) => count + 1);
           }
           const authorization = request.headers.authorization;

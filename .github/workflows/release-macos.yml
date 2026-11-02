@@ -196,7 +196,7 @@ jobs:
       - name: Build and stage the bundled v2 server
         run: |
           set -euo pipefail
-          pnpm --filter houston build:exe
+          pnpm --filter @houston-app/cli build:exe
           node scripts/stage-v2-server.mjs
 
       - name: Build the bundles (renderer + app,dmg)

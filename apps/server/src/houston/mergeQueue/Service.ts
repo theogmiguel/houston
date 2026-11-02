@@ -97,7 +97,7 @@ export class HoustonMergeQueueService extends Context.Service<
       input: HoustonMergeQueueProjectInput,
     ) => Effect.Effect<HoustonMergeQueueEmptyResult, HoustonMergeQueueError>;
   }
->()("houston/houston/mergeQueue/Service/HoustonMergeQueueService") {}
+>()("@houston-app/cli/houston/mergeQueue/Service/HoustonMergeQueueService") {}
 
 const make = Effect.gen(function* () {
   const store = yield* HoustonMergeQueueStore;

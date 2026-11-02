@@ -285,7 +285,7 @@ export class PullRequestService extends Context.Service<
       options?: { readonly notifyReaders?: boolean },
     ) => Effect.Effect<void>;
   }
->()("houston/pullRequest/PullRequestService") {}
+>()("@houston-app/cli/pullRequest/PullRequestService") {}
 
 const VERDICT_LABELS: Record<PullRequestReviewVerdict, string> = {
   comment: "review",

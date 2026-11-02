@@ -72,10 +72,10 @@ jobs:
         run: |
           set -euo pipefail
           pnpm --filter @houston-app/web build
-          pnpm --filter houston exec node scripts/cli.ts build
+          pnpm --filter @houston-app/cli exec node scripts/cli.ts build
 
       - name: Build the server single-executable
-        run: pnpm --filter houston run build:exe
+        run: pnpm --filter @houston-app/cli run build:exe
 
       - name: Build the server archive
         run: |

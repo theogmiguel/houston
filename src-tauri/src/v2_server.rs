@@ -37,7 +37,7 @@ const BOOTSTRAP_TOKEN_TYPE: &str = "urn:t3:params:oauth:token-type:environment-b
 const ACCESS_TOKEN_TYPE: &str = "urn:ietf:params:oauth:token-type:access_token";
 
 /// Readiness endpoint upstream's desktop shell polls before showing the app.
-pub const READINESS_PATH: &str = "/.well-known/t3/environment";
+pub const READINESS_PATH: &str = "/.well-known/houston/environment";
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[allow(dead_code)] // optional upstream fields are decoded for completeness, not read yet
@@ -440,7 +440,7 @@ fn resolve_server_entry_with(
         "cannot find the v2 server: HOUSTON_V2_SERVER_ENTRY is unset, the bundled executable \
          {bundled_location} is missing, and the dev checkout entry {} is missing. Set \
          HOUSTON_V2_SERVER_ENTRY to a server entry (with HOUSTON_NODE pointing at its Node \
-         runtime), or build the dev checkout with `pnpm --filter houston build:bundle`.",
+         runtime), or build the dev checkout with `pnpm --filter @houston-app/cli build:bundle`.",
         dev.display()
     ))
 }

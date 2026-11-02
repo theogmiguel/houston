@@ -185,7 +185,7 @@ export class HoustonMergeQueueGitHub extends Context.Service<
     /** Upstream's revert action, which opens a revert pull request. */
     readonly revert: (target: ProjectTarget, number: number) => Effect.Effect<void, string>;
   }
->()("houston/houston/mergeQueue/GitHubQueueClient/HoustonMergeQueueGitHub") {}
+>()("@houston-app/cli/houston/mergeQueue/GitHubQueueClient/HoustonMergeQueueGitHub") {}
 
 const make = Effect.gen(function* () {
   const pullRequests = yield* PullRequestService.PullRequestService;

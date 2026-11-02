@@ -60,7 +60,7 @@ export interface CommandOutputHubShape {
 }
 
 export class CommandOutputHub extends Context.Service<CommandOutputHub, CommandOutputHubShape>()(
-  "houston/orchestration-v2/CommandOutputHub",
+  "@houston-app/cli/orchestration-v2/CommandOutputHub",
 ) {}
 
 const isCommandOutputError = Schema.is(OrchestrationV2CommandOutputError);

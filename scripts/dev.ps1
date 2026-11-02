@@ -132,7 +132,7 @@ Write-Host '[dev] building the v2 web renderer...'
 Invoke-BuildStep -WorkingDirectory $Root -FilePath 'npx' -ArgumentList @('-y', 'pnpm@12.14.0', '--filter', '@houston-app/web', 'build')
 
 Write-Host '[dev] building the v2 server...'
-Invoke-BuildStep -WorkingDirectory $Root -FilePath 'npx' -ArgumentList @('-y', 'pnpm@12.14.0', '--filter', 'houston', 'build:bundle')
+Invoke-BuildStep -WorkingDirectory $Root -FilePath 'npx' -ArgumentList @('-y', 'pnpm@12.14.0', '--filter', '@houston-app/cli', 'build:bundle')
 
 Write-Host '[dev] building the app (debug)...'
 Invoke-BuildStep -WorkingDirectory (Join-Path $Root 'src-tauri') -FilePath 'cargo' -ArgumentList @('build')

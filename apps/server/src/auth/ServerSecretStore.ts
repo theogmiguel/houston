@@ -148,7 +148,7 @@ export class ServerSecretStore extends Context.Service<
     ) => Effect.Effect<Uint8Array, SecretStoreError>;
     readonly remove: (name: string) => Effect.Effect<void, SecretStoreError>;
   }
->()("houston/auth/ServerSecretStore") {}
+>()("@houston-app/cli/auth/ServerSecretStore") {}
 
 /** @public */
 export const make = Effect.gen(function* () {

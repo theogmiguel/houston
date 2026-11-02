@@ -215,7 +215,7 @@ export class HoustonMergeVerifier extends Context.Service<
     /** Night shift: runs each command on the pushed head as it is, in the scratch worktree. */
     readonly checkHead: (request: CheckHeadRequest) => Effect.Effect<CheckHeadOutcome>;
   }
->()("houston/houston/mergeQueue/Verifier/HoustonMergeVerifier") {}
+>()("@houston-app/cli/houston/mergeQueue/Verifier/HoustonMergeVerifier") {}
 
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;

@@ -79,7 +79,7 @@ export class PeerLinkRequests extends Context.Service<
       input: PeerLinkRequestAnswerInput,
     ) => Effect.Effect<void, PeerLinkRequestError>;
   }
->()("houston/peer/PeerLinkRequests") {}
+>()("@houston-app/cli/peer/PeerLinkRequests") {}
 
 const make = Effect.gen(function* () {
   const threadManagement = yield* ThreadManagementService.ThreadManagementService;

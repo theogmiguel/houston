@@ -85,7 +85,7 @@ export class HoustonSlackConversation extends Context.Service<
     /** Sends each answer not yet delivered to its run's thread. */
     readonly deliverAnswers: Effect.Effect<void>;
   }
->()("houston/houston/slack/Conversation/HoustonSlackConversation") {}
+>()("@houston-app/cli/houston/slack/Conversation/HoustonSlackConversation") {}
 
 interface QuestionRow {
   readonly id: number;

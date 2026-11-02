@@ -183,7 +183,7 @@ export class HoustonNightShiftService extends Context.Service<
       input: HoustonNightShiftOverviewInput,
     ) => Effect.Effect<HoustonNightShiftImportResult, HoustonNightShiftError>;
   }
->()("houston/houston/nightShift/Service/HoustonNightShiftService") {}
+>()("@houston-app/cli/houston/nightShift/Service/HoustonNightShiftService") {}
 
 const make = Effect.gen(function* () {
   const store = yield* HoustonNightShiftStore;

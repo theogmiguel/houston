@@ -139,7 +139,7 @@ export class HoustonSlackStore extends Context.Service<
     /** Unmaps a deleted project's channels; its requests stay. */
     readonly projectRemoved: (projectId: ProjectId) => Effect.Effect<void>;
   }
->()("houston/houston/slack/Store/HoustonSlackStore") {}
+>()("@houston-app/cli/houston/slack/Store/HoustonSlackStore") {}
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

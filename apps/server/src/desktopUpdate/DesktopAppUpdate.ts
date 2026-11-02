@@ -52,7 +52,7 @@ export class DesktopAppUpdate extends Context.Service<
       onHandoffAccepted?: () => Effect.Effect<void>,
     ) => Effect.Effect<never, ServerSelfUpdateError>;
   }
->()("houston/desktopUpdate/DesktopAppUpdate") {}
+>()("@houston-app/cli/desktopUpdate/DesktopAppUpdate") {}
 
 export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* () {
   const config = yield* ServerConfig.ServerConfig;

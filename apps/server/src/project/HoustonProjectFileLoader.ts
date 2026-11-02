@@ -31,7 +31,7 @@ export class HoustonProjectFileLoader extends Context.Service<
     /** Never fails; missing/unreadable/invalid files return none, with warnings for invalid files. */
     readonly load: (workspaceRoot: string) => Effect.Effect<Option.Option<T3ProjectFile>>;
   }
->()("houston/project/HoustonProjectFileLoader") {}
+>()("@houston-app/cli/project/HoustonProjectFileLoader") {}
 
 const logHoustonProjectFileLoadError = (error: HoustonProjectFileLoadError) =>
   Effect.logWarning(error).pipe(

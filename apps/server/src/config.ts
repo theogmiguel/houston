@@ -110,7 +110,7 @@ export class ServerConfig extends Context.Service<
     readonly tailscaleServeEnabled: boolean;
     readonly tailscaleServePort: number;
   }
->()("houston/config/ServerConfig") {
+>()("@houston-app/cli/config/ServerConfig") {
   static readonly layerTest = (
     cwd: string,
     baseDirOrPrefix: string | { readonly prefix: string },

@@ -438,7 +438,7 @@ export function installFakeEnvironment(fixtures: ReadonlyArray<FakeThread>): Dis
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
     if (url.origin !== window.location.origin) return realFetch(input, init);
-    if (url.pathname === "/.well-known/t3/environment") return json(encodedDescriptor);
+    if (url.pathname === "/.well-known/houston/environment") return json(encodedDescriptor);
     if (url.pathname === "/api/auth/session") {
       return json({
         authenticated: true,

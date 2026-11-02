@@ -119,7 +119,7 @@ export class WorkspaceSearchIndex extends Context.Service<
     ) => Effect.Effect<ProjectSearchContentsResult, WorkspaceSearchIndexSearchFailed>;
     readonly refresh: () => Effect.Effect<void, WorkspaceSearchIndexRefreshFailed>;
   }
->()("houston/workspace/WorkspaceSearchIndex") {}
+>()("@houston-app/cli/workspace/WorkspaceSearchIndex") {}
 
 function toPosixPath(input: string): string {
   return input.replaceAll("\\", "/");

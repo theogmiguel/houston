@@ -148,7 +148,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          pnpm --filter houston build:exe
+          pnpm --filter @houston-app/cli build:exe
           if ($LASTEXITCODE) { throw "build:exe failed with exit code $LASTEXITCODE" }
           node scripts/stage-v2-server.mjs
           if ($LASTEXITCODE) { throw "stage-v2-server.mjs failed with exit code $LASTEXITCODE" }

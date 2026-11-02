@@ -423,7 +423,7 @@ export class HoustonNightShiftStore extends Context.Service<
     readonly changes: PubSub.PubSub<ProjectId>;
     readonly notices: PubSub.PubSub<Notice>;
   }
->()("houston/houston/nightShift/Store/HoustonNightShiftStore") {}
+>()("@houston-app/cli/houston/nightShift/Store/HoustonNightShiftStore") {}
 
 /** `<baseDir>/houston/night-shift/<run id>`: the run's brief and report, outside every checkout. */
 export const runFolder = (baseDir: string, runId: number) =>

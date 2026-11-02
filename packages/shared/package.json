@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./serverPackage": {
+      "types": "./src/serverPackage.ts",
+      "import": "./src/serverPackage.ts"
+    },
     "./changedFileKind": {
       "types": "./src/changedFileKind.ts",
       "import": "./src/changedFileKind.ts"

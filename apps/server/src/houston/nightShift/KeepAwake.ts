@@ -88,7 +88,7 @@ export class NightShiftKeepAwake extends Context.Service<
     /** Closes the child's stdin and kills it if it is still alive after 5 seconds. */
     readonly release: (runId: number) => Effect.Effect<void>;
   }
->()("houston/houston/nightShift/KeepAwake/NightShiftKeepAwake") {}
+>()("@houston-app/cli/houston/nightShift/KeepAwake/NightShiftKeepAwake") {}
 
 export const layer = Layer.effect(
   NightShiftKeepAwake,

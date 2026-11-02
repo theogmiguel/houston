@@ -41,7 +41,7 @@ Then:
 ```
 
 The development script builds the renderer (`pnpm --filter @houston-app/web build`), the
-server bundle (`pnpm --filter houston build:bundle`) and the debug host (`cargo build` in
+server bundle (`pnpm --filter @houston-app/cli build:bundle`) and the debug host (`cargo build` in
 `src-tauri`), then `exec`s `src-tauri/target/debug/houston-tauri --channel <target>`. The
 host attaches to the channel's running server or spawns one detached. Close the existing
 window for that channel before relaunching: a second launch focuses the running instance
@@ -159,7 +159,7 @@ Every checkout and worktree has its own `target/`, which only grows. Agent workt
 - `src-tauri`: `cargo fmt`, `cargo clippy --all-targets -- -D warnings` and the touched
   tests (`cargo test <module>::`).
 - `apps/` and `packages/`: the package's `typecheck` and the touched tests; for the server,
-  `pnpm --filter houston exec vp test run <files>`.
+  `pnpm --filter @houston-app/cli exec vp test run <files>`.
 
 **Before every push** — the full suites, Cargo inside `scripts/oom-shield.sh` on Linux and
 with three jobs on Windows.
@@ -173,7 +173,7 @@ with three jobs on Windows.
 pnpm -r typecheck
 pnpm --filter @houston-app/web build
 pnpm --filter @houston-app/contracts --filter @houston-app/shared test
-pnpm --filter houston exec vp test run src/houston
+pnpm --filter @houston-app/cli exec vp test run src/houston
 ```
 
 **`src-tauri/`**:
@@ -247,7 +247,7 @@ missing or incorrect metadata upstream to LiteLLM.
 ```
 
 Build the renderer and stage the server first (`pnpm --filter @houston-app/web build`,
-`pnpm --filter houston build:exe`, `node scripts/stage-v2-server.mjs`). `build-app.sh`
+`pnpm --filter @houston-app/cli build:exe`, `node scripts/stage-v2-server.mjs`). `build-app.sh`
 re-execs itself under `scripts/oom-shield.sh` (`-j 3`) unless already shielded, then runs
 `CARGO_BUILD_JOBS=3 cargo tauri build --bundles <targets>`. Output lands at
 `src-tauri/target/release/bundle/{appimage,deb}/*.{AppImage,deb}`. Use `build-app.sh`

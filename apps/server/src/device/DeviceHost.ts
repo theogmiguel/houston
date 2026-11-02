@@ -203,4 +203,4 @@ export class DeviceHost extends Context.Service<
     /** Stops helpers. Devices themselves keep running; the user owns those. */
     readonly stop: Effect.Effect<void>;
   }
->()("houston/device/DeviceHost") {}
+>()("@houston-app/cli/device/DeviceHost") {}

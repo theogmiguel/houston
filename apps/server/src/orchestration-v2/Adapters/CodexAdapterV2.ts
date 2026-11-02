@@ -1329,7 +1329,7 @@ export interface CodexAppServerClientFactoryShape {
 export class CodexAppServerClientFactory extends Context.Service<
   CodexAppServerClientFactory,
   CodexAppServerClientFactoryShape
->()("houston/orchestration-v2/Adapters/CodexAdapterV2/CodexAppServerClientFactory") {}
+>()("@houston-app/cli/orchestration-v2/Adapters/CodexAdapterV2/CodexAppServerClientFactory") {}
 
 /** MCP startup grace in milliseconds; the 1 s default excludes cold npx/uvx servers from the first model request. */
 export const CODEX_THREAD_CONFIG = {

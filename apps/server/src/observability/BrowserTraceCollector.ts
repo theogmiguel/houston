@@ -8,7 +8,7 @@ export class BrowserTraceCollector extends Context.Service<
   {
     readonly record: (records: ReadonlyArray<TraceRecord>) => Effect.Effect<void>;
   }
->()("houston/observability/BrowserTraceCollector") {}
+>()("@houston-app/cli/observability/BrowserTraceCollector") {}
 
 /** @public */
 export const make = (sink: TraceSink): BrowserTraceCollector["Service"] =>

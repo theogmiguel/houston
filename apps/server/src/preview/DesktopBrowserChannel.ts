@@ -52,7 +52,7 @@ export class DesktopBrowserChannel extends Context.Service<
     /** Never fails. A failed write means a broken channel; the next backend starts with no turns. */
     readonly turn: (threadId: string, active: boolean) => Effect.Effect<void>;
   }
->()("houston/preview/DesktopBrowserChannel") {}
+>()("@houston-app/cli/preview/DesktopBrowserChannel") {}
 
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;

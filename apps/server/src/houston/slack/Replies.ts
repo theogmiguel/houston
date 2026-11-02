@@ -37,7 +37,7 @@ const TICK = Duration.seconds(5);
 export class HoustonSlackReplies extends Context.Service<
   HoustonSlackReplies,
   { readonly tick: Effect.Effect<void> }
->()("houston/houston/slack/Replies/HoustonSlackReplies") {}
+>()("@houston-app/cli/houston/slack/Replies/HoustonSlackReplies") {}
 
 interface OwedRow extends RequestRow {
   readonly status: string | null;

@@ -316,7 +316,8 @@ export function resolveLinuxCgroupTargetCommand(
   return undefined;
 }
 
-const STALE_ACP_CGROUP_SIBLING = /^houston-acp-(\d+)-/;
+// Leases created before the `houston-acp-` prefix carry `t3-acp-`; a crash can leave either behind.
+const STALE_ACP_CGROUP_SIBLING = /^(?:houston|t3)-acp-(\d+)-/;
 
 export interface SweepStaleLinuxCgroupSiblingsOptions {
   readonly currentPid?: number;

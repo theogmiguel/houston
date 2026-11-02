@@ -231,7 +231,7 @@ export class HoustonTaskSourceOutbox extends Context.Service<
       provider: HoustonTaskSourceProvider,
     ) => Effect.Effect<void>;
   }
->()("houston/houston/taskSources/Outbox/HoustonTaskSourceOutbox") {}
+>()("@houston-app/cli/houston/taskSources/Outbox/HoustonTaskSourceOutbox") {}
 
 const PULL_REQUEST_ACTIONS = ["pr_reference", "pull_request_url"];
 
@@ -385,7 +385,7 @@ export class HoustonTaskSourceOutboxDrain extends Context.Service<
     /** One cycle: up to 25 due rows. */
     readonly drain: Effect.Effect<number>;
   }
->()("houston/houston/taskSources/Outbox/HoustonTaskSourceOutboxDrain") {}
+>()("@houston-app/cli/houston/taskSources/Outbox/HoustonTaskSourceOutboxDrain") {}
 
 const makeDrain = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

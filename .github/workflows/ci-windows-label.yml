@@ -1,0 +1,23 @@
+# Runs the Windows server suites on a pull request when it carries the `ci:windows` label.
+# They never run on a plain pull request so a review is not held by the slowest platform.
+name: CI (Windows label)
+
+on:
+  pull_request:
+    branches: [v2, main]
+    types: [labeled, synchronize]
+
+concurrency:
+  group: ci-windows-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  server-windows:
+    # `synchronize` re-runs a PR that already has the label; `labeled` reacts only to this label.
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'ci:windows') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'ci:windows')
+    uses: ./.github/workflows/server-windows.yml

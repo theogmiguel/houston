@@ -20,7 +20,7 @@ const BLOCKS_REFUSED = new Set(["invalid_blocks", "invalid_blocks_format"]);
 export class HoustonSlackOutbox extends Context.Service<
   HoustonSlackOutbox,
   { readonly tick: Effect.Effect<void> }
->()("houston/houston/slack/Outbox/HoustonSlackOutbox") {}
+>()("@houston-app/cli/houston/slack/Outbox/HoustonSlackOutbox") {}
 
 interface OutboxRow {
   readonly id: number;

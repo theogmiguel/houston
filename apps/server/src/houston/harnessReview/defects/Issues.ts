@@ -71,7 +71,7 @@ export class HoustonDefectIssues extends Context.Service<
       input: HoustonDefectFileInput,
     ) => Effect.Effect<HoustonDefectFileResult, HoustonHarnessError>;
   }
->()("houston/houston/harnessReview/defects/Issues/HoustonDefectIssues") {}
+>()("@houston-app/cli/houston/harnessReview/defects/Issues/HoustonDefectIssues") {}
 
 const refuse = (kind: HoustonHarnessError["kind"], operation: string, message: string) =>
   new HoustonHarnessError({ kind, operation, message });

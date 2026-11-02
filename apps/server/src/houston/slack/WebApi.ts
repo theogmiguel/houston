@@ -46,7 +46,7 @@ export class SlackWebApi extends Context.Service<
       maxBytes: number,
     ) => Effect.Effect<{ readonly bytes: Uint8Array; readonly truncated: boolean }, SlackApiError>;
   }
->()("houston/houston/slack/WebApi/SlackWebApi") {}
+>()("@houston-app/cli/houston/slack/WebApi/SlackWebApi") {}
 
 /** Null when a client may use `origin`: Slack's API over HTTPS, or loopback when allowed. */
 export const checkOrigin = (origin: string, allowLoopback: boolean): string | null => {

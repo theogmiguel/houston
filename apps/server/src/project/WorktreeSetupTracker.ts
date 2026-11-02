@@ -62,7 +62,7 @@ export class WorktreeSetupTracker extends Context.Service<
     readonly get: (threadId: ThreadId) => Effect.Effect<WorktreeSetupSnapshot | null>;
     readonly stream: (threadId: ThreadId) => Stream.Stream<WorktreeSetupSnapshot | null>;
   }
->()("houston/project/WorktreeSetupTracker") {}
+>()("@houston-app/cli/project/WorktreeSetupTracker") {}
 
 const TAIL_LINE_LIMIT = 4;
 

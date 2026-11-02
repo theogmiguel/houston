@@ -200,7 +200,7 @@ export class HoustonNightLanding extends Context.Service<
       HoustonNightShiftError
     >;
   }
->()("houston/houston/nightShift/landing/Landing/HoustonNightLanding") {}
+>()("@houston-app/cli/houston/nightShift/landing/Landing/HoustonNightLanding") {}
 
 const toolFail = (
   kind: HoustonNightToolError["kind"],

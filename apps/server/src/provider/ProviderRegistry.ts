@@ -96,7 +96,7 @@ export class ProviderRegistry extends Context.Service<
 
     readonly streamChanges: Stream.Stream<ReadonlyArray<ServerProvider>>;
   }
->()("houston/provider/ProviderRegistry") {}
+>()("@houston-app/cli/provider/ProviderRegistry") {}
 
 const loadProviders = (
   providerSources: ReadonlyArray<ProviderSnapshotSource>,

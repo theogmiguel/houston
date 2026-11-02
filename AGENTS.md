@@ -129,7 +129,7 @@ Before completing a change, identify which of these checks apply:
 The [development runbook](docs/operations/development.md) contains exact commands.
 
 - The server package is `houston`: run its tests with
-  `pnpm --filter houston exec vp test run <files>`. A filter that matches no package exits 0 without
+  `pnpm --filter @houston-app/cli exec vp test run <files>`. A filter that matches no package exits 0 without
   running anything, and so does a `-t` pattern that matches no test, so confirm with
   `--reporter=verbose` that a proof ran.
 - Tests come before code, and a bug fix has a regression test that fails before the fix. Fixtures

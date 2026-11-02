@@ -50,7 +50,7 @@ export class HoustonSlackService extends Context.Service<
     ) => Effect.Effect<ReadonlyArray<HoustonSlackRequest>, HoustonSlackError>;
     readonly subscribe: Stream.Stream<HoustonSlackStreamEvent, HoustonSlackError>;
   }
->()("houston/houston/slack/Service/HoustonSlackService") {}
+>()("@houston-app/cli/houston/slack/Service/HoustonSlackService") {}
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

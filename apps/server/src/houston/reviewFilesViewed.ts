@@ -44,7 +44,7 @@ export class HoustonReviewFilesViewed extends Context.Service<
     ) => Effect.Effect<ReviewFilesViewedPage, PersistenceSqlError>;
     readonly set: (input: SetReviewFilesViewedInput) => Effect.Effect<void, PersistenceSqlError>;
   }
->()("houston/houston/reviewFilesViewed/HoustonReviewFilesViewed") {}
+>()("@houston-app/cli/houston/reviewFilesViewed/HoustonReviewFilesViewed") {}
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

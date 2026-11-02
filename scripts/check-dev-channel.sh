@@ -200,7 +200,7 @@ for fails in (False, True):
     else:
         assert calls == [
             "npx -y pnpm@12.14.0 --filter @houston-app/web build",
-            "npx -y pnpm@12.14.0 --filter houston build:bundle",
+            "npx -y pnpm@12.14.0 --filter @houston-app/cli build:bundle",
             "cargo build",
             "houston-tauri --channel dev",
         ], calls

@@ -108,7 +108,7 @@ export class ManagedProjectFolders extends Context.Service<
       NamedProjectError
     >;
   }
->()("houston/project/ManagedProjectFolders") {}
+>()("@houston-app/cli/project/ManagedProjectFolders") {}
 
 const folderWords = (text: string) =>
   text

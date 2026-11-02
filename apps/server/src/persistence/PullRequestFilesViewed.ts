@@ -52,7 +52,7 @@ export class PullRequestFilesViewedRepository extends Context.Service<
       input: SetPullRequestFilesViewedInput,
     ) => Effect.Effect<void, PullRequestFilesViewedRepositoryError>;
   }
->()("houston/persistence/PullRequestFilesViewed/PullRequestFilesViewedRepository") {}
+>()("@houston-app/cli/persistence/PullRequestFilesViewed/PullRequestFilesViewedRepository") {}
 
 function toSqlOrDecodeError(sqlOperation: string, decodeOperation: string) {
   return (cause: unknown): PullRequestFilesViewedRepositoryError =>

@@ -43,7 +43,7 @@ export class NightShiftMachine extends Context.Service<
     readonly onPath: (program: string) => Effect.Effect<boolean>;
     readonly timeZone: Effect.Effect<string>;
   }
->()("houston/houston/nightShift/Host/NightShiftMachine") {}
+>()("@houston-app/cli/houston/nightShift/Host/NightShiftMachine") {}
 
 export interface ProviderState {
   readonly instanceId: string;
@@ -54,7 +54,7 @@ export interface ProviderState {
 export class NightShiftProviders extends Context.Service<
   NightShiftProviders,
   { readonly list: Effect.Effect<ReadonlyArray<ProviderState>> }
->()("houston/houston/nightShift/Host/NightShiftProviders") {}
+>()("@houston-app/cli/houston/nightShift/Host/NightShiftProviders") {}
 
 /** A merge queue log row the settle audit reads: a push or a merge into `refName`. */
 export interface QueueLogRow {
@@ -73,7 +73,7 @@ export class NightShiftMergeQueue extends Context.Service<
     /** Log rows at or after `since`. */
     readonly log: (projectId: string, since: string) => Effect.Effect<ReadonlyArray<QueueLogRow>>;
   }
->()("houston/houston/nightShift/Host/NightShiftMergeQueue") {}
+>()("@houston-app/cli/houston/nightShift/Host/NightShiftMergeQueue") {}
 
 /** Log rows the audit reads at most; a run's window holds far fewer. */
 const QUEUE_LOG_READ = 1_000;
@@ -240,7 +240,7 @@ export class NightShiftBacklog extends Context.Service<
     /** Adds a comment as `author`; a refusal is logged, not raised. */
     readonly comment: (key: string, body: string, author: string) => Effect.Effect<void>;
   }
->()("houston/houston/nightShift/Host/NightShiftBacklog") {}
+>()("@houston-app/cli/houston/nightShift/Host/NightShiftBacklog") {}
 
 const statusChangedToDone = (changes: string) => {
   try {
@@ -333,7 +333,7 @@ export class NightShiftPullRequests extends Context.Service<
       number: number,
     ) => Effect.Effect<"open" | "closed" | "merged", string>;
   }
->()("houston/houston/nightShift/Host/NightShiftPullRequests") {}
+>()("@houston-app/cli/houston/nightShift/Host/NightShiftPullRequests") {}
 
 /** `owner/repo` of a github.com remote URL in the https, ssh or scp form; null otherwise. */
 export const githubRepository = (url: string): string | null => {

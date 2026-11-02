@@ -41,7 +41,7 @@ export class ManagedPolicy extends Context.Service<
     /** What clients are told; absent when no policy applies. */
     readonly summary: ManagedPolicySummary | undefined;
   }
->()("houston/policy/ManagedPolicy") {}
+>()("@houston-app/cli/policy/ManagedPolicy") {}
 
 type LimitsSummary = NonNullable<ManagedPolicySummary["limits"]>;
 

@@ -48,7 +48,7 @@ export class HoustonMergeQueueOutcomes extends Context.Service<
       merged: Merged,
     ) => Effect.Effect<void>;
   }
->()("houston/houston/mergeQueue/Outcomes/HoustonMergeQueueOutcomes") {}
+>()("@houston-app/cli/houston/mergeQueue/Outcomes/HoustonMergeQueueOutcomes") {}
 
 const make = Effect.gen(function* () {
   const store = yield* HoustonMergeQueueStore;

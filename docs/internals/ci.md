@@ -58,9 +58,12 @@ runners because they prove the host compiles on those platforms.
 ## Drafts, nightly work and Windows
 
 Heavy jobs skip draft pull requests; `ready_for_review` starts them, and `static` and `changes`
-still run so a draft gets fast feedback. `server-windows` never runs on a pull request, so a
-Windows-only failure cannot hold a review; its nightly failures are real failures and require
-a fix before the next release.
+still run so a draft gets fast feedback. `server-windows` never runs in the `CI` workflow on a pull
+request, so a Windows-only failure cannot hold a review; its nightly failures are real failures
+and require a fix before the next release. To check Windows on a pull request, add the
+`ci:windows` label: `.github/workflows/ci-windows-label.yml` then runs the same
+`.github/workflows/server-windows.yml` shards as a separate check that `ci-gate` does not wait
+on, and re-runs them on each push while the label stays.
 
 ## Caches
 

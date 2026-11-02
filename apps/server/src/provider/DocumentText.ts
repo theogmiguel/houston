@@ -40,7 +40,7 @@ export class DocumentText extends Context.Service<
   {
     readonly ensure: (path: string) => Effect.Effect<string | undefined>;
   }
->()("houston/provider/DocumentText") {}
+>()("@houston-app/cli/provider/DocumentText") {}
 
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
