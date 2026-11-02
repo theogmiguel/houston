@@ -28,15 +28,12 @@ export interface SignalExport {
 
 /**
  * `process.runtime.*` resource attributes for a Node process, matching the
- * OpenTelemetry Node process detector. Electron embeds Node, so an Electron
- * process reports Node and names Electron in the description.
+ * OpenTelemetry Node process detector.
  */
 export const nodeProcessRuntimeAttributes = (): Record<string, string> => ({
   "process.runtime.name": "nodejs",
   "process.runtime.version": process.versions.node,
-  "process.runtime.description": process.versions.electron
-    ? `Electron ${process.versions.electron}`
-    : "Node.js",
+  "process.runtime.description": "Node.js",
 });
 let generatedServiceInstanceId: string | undefined;
 

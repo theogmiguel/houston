@@ -110,7 +110,7 @@ function setup() {
 async function renderShortcut() {
   await using stack = new AsyncDisposableStack();
   stack.use(vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64"));
-  window.desktopBridge = {
+  window.hostBridge = {
     preview: { setForwardedShortcuts: state.setShortcuts },
     onMenuAction: (listener: (action: string) => void) => {
       menuAction = listener;
@@ -118,9 +118,9 @@ async function renderShortcut() {
         menuAction = undefined;
       };
     },
-  } as unknown as NonNullable<typeof window.desktopBridge>;
+  } as unknown as NonNullable<typeof window.hostBridge>;
   stack.defer(() => {
-    delete window.desktopBridge;
+    delete window.hostBridge;
   });
   stack.use(await render(<ReopenClosedViewShortcut />));
   const environment = stack.move();

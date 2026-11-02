@@ -1111,7 +1111,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const target: EventTarget | null = backgroundThread ? composerFormRef.current : window;
     if (target === null) return;
     const armPasteAsTextShortcut = () => {
-      // Electron's menu action can precede paste; browsers deliver keydown first.
+      // The desktop host's menu action can precede paste; browsers deliver keydown first.
       pasteAsTextShortcutUntilRef.current = Date.now() + 1_000;
     };
     const onKeyDown = (event: Event) => {
@@ -2610,7 +2610,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return;
     }
     for (const folder of folders) {
-      const path = resolveDroppedFolderPath(folder, window.desktopBridge?.getPathForFile);
+      const path = resolveDroppedFolderPath(folder, window.hostBridge?.getPathForFile);
       if (path === null) {
         toastManager.add({
           type: "error",

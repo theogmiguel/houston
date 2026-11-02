@@ -259,7 +259,7 @@ export const layerBrowserApiCors = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
     const devOrigin = config.devUrl?.origin;
-    // Credentialed dev requests need explicit Vite/Electron origins; packaged desktop uses the default wildcard.
+    // Credentialed dev requests need explicit Vite and desktop origins; packaged desktop uses the default wildcard.
     return HttpRouter.cors({
       ...(devOrigin
         ? {
@@ -547,7 +547,7 @@ const openStaticFile = Effect.fn("openStaticFile")(function* (filePath: string) 
         error.reason._tag === "NotFound" ? Effect.succeed(null) : Effect.fail(error),
     }),
   );
-  // Electron asar can stat and read files even when opening a handle returns NotFound.
+  // Some virtual filesystems can stat and read a file even when opening a handle returns NotFound.
   // Refresh path metadata because the file may have been replaced since the first stat.
   const info = yield* file === null ? fileSystem.stat(filePath) : file.stat;
   return info.type === "File" ? { file, info } : null;

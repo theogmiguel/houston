@@ -6,21 +6,15 @@ describe("desktop host detection", () => {
     vi.resetModules();
   });
 
-  it("accepts an Electron preload as a native browser host", async () => {
-    vi.stubGlobal("window", { desktopBridge: { preview: {} } });
+  it("detects the desktop host bridge", async () => {
+    vi.stubGlobal("window", { hostBridge: { preview: {} } });
     const env = await import("./env");
-    expect(env.isElectron).toBe(true);
-    expect(env.hasNativeBrowserHost).toBe(true);
+    expect(env.isDesktopHost).toBe(true);
   });
 
-  it("does not treat the Tauri bridge shim as a native browser host", async () => {
-    // Tauri installs the same desktopBridge surface, but its preview members are no-ops.
-    vi.stubGlobal("window", {
-      desktopBridge: { preview: {} },
-      __TAURI__: { core: { invoke: () => Promise.resolve() } },
-    });
+  it("treats a plain browser without the bridge as a web client", async () => {
+    vi.stubGlobal("window", {});
     const env = await import("./env");
-    expect(env.isElectron).toBe(true);
-    expect(env.hasNativeBrowserHost).toBe(false);
+    expect(env.isDesktopHost).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import type { DesktopBridge, DesktopUpdateState } from "@houston-app/contracts";
+import type { HostBridge, DesktopUpdateState } from "@houston-app/contracts";
 import { ExternalLinkIcon } from "lucide-react";
 
 import {
@@ -9,7 +9,7 @@ import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { openDesktopUpdateReleaseNotes } from "../desktopUpdate.toast";
 import { Button } from "../ui/button";
 
-type DesktopUpdateShell = Pick<DesktopBridge, "openExternal">;
+type DesktopUpdateShell = Pick<HostBridge, "openExternal">;
 
 function keyReleaseNoteItems(items: ReadonlyArray<string>) {
   const occurrences = new Map<string, number>();

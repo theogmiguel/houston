@@ -1,4 +1,4 @@
-import type { DesktopBridge, DesktopUpdateState } from "@houston-app/contracts";
+import type { HostBridge, DesktopUpdateState } from "@houston-app/contracts";
 
 const FALLBACK_TRIAGE_COMMAND = "houston triage";
 const DOWNLOAD_URL = "https://github.com/theogmiguel/houston/releases/latest";
@@ -25,7 +25,7 @@ function launcherCommand(launcherPath: string) {
 }
 
 /** Desktop can run its bundled launcher without Node; everything else falls back to an installed houston. */
-export async function resolveTriageCommand(bridge: DesktopBridge | undefined) {
+export async function resolveTriageCommand(bridge: HostBridge | undefined) {
   try {
     const state = await bridge?.cliCommand.getState();
     // Windows reports onPath from its PATH entry alone; only an existing launcher proves it runs.
@@ -120,7 +120,7 @@ export function buildErrorReport(error: unknown, environment: BootErrorEnvironme
   ].join("\n");
 }
 
-function clientPlatform(bridge: DesktopBridge | undefined) {
+function clientPlatform(bridge: HostBridge | undefined) {
   try {
     return bridge?.getClientPlatform() ?? navigator.platform;
   } catch {
@@ -128,7 +128,7 @@ function clientPlatform(bridge: DesktopBridge | undefined) {
   }
 }
 
-function readEnvironment(bridge: DesktopBridge | undefined): BootErrorEnvironment {
+function readEnvironment(bridge: HostBridge | undefined): BootErrorEnvironment {
   const version = import.meta.env.APP_VERSION;
   return {
     version,
@@ -200,7 +200,7 @@ function copyText(target: HTMLElement, onCopied: () => void, onBlocked: (hint: s
 }
 
 function mountUpdateButton(
-  bridge: DesktopBridge,
+  bridge: HostBridge,
   button: HTMLButtonElement,
   note: HTMLParagraphElement,
   announce: (text: string) => void,
@@ -260,7 +260,7 @@ export function showBootError(error: unknown) {
   const bootShell = document.getElementById("boot-shell");
   if (!bootShell) return;
 
-  const bridge = window.desktopBridge;
+  const bridge = window.hostBridge;
   const environment = readEnvironment(bridge);
   const offline = !bridge && navigator.onLine === false;
 

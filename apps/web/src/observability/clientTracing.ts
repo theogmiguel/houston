@@ -14,7 +14,7 @@ import { resolvePrimaryEnvironmentHttpUrl } from "../environments/primary";
 import { releaseChannelOf, releaseResourceAttributes } from "@houston-app/shared/releaseResource";
 import * as ClientTracer from "./clientTracer";
 import * as PrimaryEnvironmentHttpLayer from "../environments/primary/httpLayer";
-import { isElectron } from "../env";
+import { isDesktopHost } from "../env";
 import { APP_VERSION } from "~/branding";
 
 const DEFAULT_EXPORT_INTERVAL_MS = 1_000;
@@ -58,7 +58,7 @@ const CLIENT_TRACING_RESOURCE = {
     "service.instance.id": ClientTracer.serviceInstanceId,
     ...releaseResourceAttributes(RELEASE_CHANNEL),
     "service.runtime": "t3-web",
-    "t3code.client.surface": isElectron ? "desktop" : "web",
+    "t3code.client.surface": isDesktopHost ? "desktop" : "web",
     "service.version": APP_VERSION,
     ...browserResourceAttributes(),
   },

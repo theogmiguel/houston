@@ -6,7 +6,7 @@ import { SshPasswordPromptDialog, startSshPasswordPromptQueue } from "./SshPassw
 
 it("shows a prompt that arrived before the dialog mounted", async () => {
   const listeners: Array<(request: DesktopSshPasswordPromptRequest) => void> = [];
-  using _bridge = stubGlobal("desktopBridge", {
+  using _bridge = stubGlobal("hostBridge", {
     onSshPasswordPrompt: (listener: (request: DesktopSshPasswordPromptRequest) => void) => {
       listeners.push(listener);
       return () => listeners.splice(listeners.indexOf(listener), 1);

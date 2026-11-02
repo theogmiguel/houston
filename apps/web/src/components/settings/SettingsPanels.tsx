@@ -42,7 +42,7 @@ import {
 } from "../../components/desktopUpdate.logic";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
-import { isElectron } from "../../env";
+import { isDesktopHost } from "../../env";
 import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
 import {
   readAppearanceModePreference,
@@ -198,16 +198,16 @@ function AboutVersionSection() {
   // A second run would replace the first run's progress and local download.
   const updateRun = useUpdateEverythingRun();
 
-  const hasDesktopBridge = typeof window !== "undefined" && Boolean(window.desktopBridge);
+  const hasHostBridge = typeof window !== "undefined" && Boolean(window.hostBridge);
   const selectedUpdateChannel = updateState?.channel ?? "latest";
   // The desktop updates this machine, whose policy the primary environment reports.
   const primaryPolicy = usePrimaryManagedPolicy();
-  const updatesDenial = hasDesktopBridge ? managedUpdatesDenial(primaryPolicy) : undefined;
+  const updatesDenial = hasHostBridge ? managedUpdatesDenial(primaryPolicy) : undefined;
   const nightlyDeniedBy =
-    hasDesktopBridge && primaryPolicy?.limits?.updates?.allowNightly === false
+    hasHostBridge && primaryPolicy?.limits?.updates?.allowNightly === false
       ? primaryPolicy.organization
       : undefined;
-  const selectedHostedAppChannel = hasDesktopBridge ? null : HOSTED_APP_CHANNEL;
+  const selectedHostedAppChannel = hasHostBridge ? null : HOSTED_APP_CHANNEL;
   // A switch that failed part way leaves this app or a server on the other track.
   // With its updater off, a switch cannot move this app, so it is not counted.
   const appOffTrack =
@@ -228,7 +228,7 @@ function AboutVersionSection() {
     ).length;
 
   const handleButtonClick = async () => {
-    const bridge = window.desktopBridge;
+    const bridge = window.hostBridge;
     if (!bridge) return;
 
     const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
@@ -349,10 +349,10 @@ function AboutVersionSection() {
             <Button
               size="sm"
               variant="ghost"
-              disabled={!hasDesktopBridge || releaseNotesUrl === null}
+              disabled={!hasHostBridge || releaseNotesUrl === null}
               onClick={() => {
                 if (releaseNotesUrl === null) return;
-                void openDesktopUpdateReleaseNotes(window.desktopBridge, releaseNotesUrl);
+                void openDesktopUpdateReleaseNotes(window.hostBridge, releaseNotesUrl);
               }}
             >
               Release notes
@@ -375,7 +375,7 @@ function AboutVersionSection() {
           </div>
         }
       />
-      {hasDesktopBridge ? (
+      {hasHostBridge ? (
         <SettingsRow
           {...searchableSetting("update-track")}
           description={
@@ -468,7 +468,7 @@ function AboutVersionSection() {
           }
         />
       ) : null}
-      {hasDesktopBridge ? <CliCommandSettingsRow /> : null}
+      {hasHostBridge ? <CliCommandSettingsRow /> : null}
       {switchChannel === null ? null : (
         <UpdateTrackSwitchDialog channel={switchChannel} onClose={() => setSwitchChannel(null)} />
       )}
@@ -1055,7 +1055,7 @@ export function GeneralSettingsPanel() {
             />
           }
         />
-        {isElectron ? (
+        {isDesktopHost ? (
           <SettingsRow
             {...searchableSetting("quit-confirmation")}
             description="Hold mode also quits on two quick presses."
@@ -2046,7 +2046,7 @@ export function AboutSettingsPanel() {
             }
           />
         ) : null}
-        {isElectron || HOSTED_APP_CHANNEL ? (
+        {isDesktopHost || HOSTED_APP_CHANNEL ? (
           <AboutVersionSection />
         ) : (
           <>

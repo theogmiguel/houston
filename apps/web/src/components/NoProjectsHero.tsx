@@ -11,7 +11,7 @@ import { useNavigate } from "@tanstack/react-router";
 
 import { APP_DISPLAY_NAME } from "../branding";
 import { openCommandPalette } from "../commandPaletteBus";
-import { isElectron } from "../env";
+import { isDesktopHost } from "../env";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import {
@@ -109,7 +109,7 @@ export function NoProjectsHero() {
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
         {/* The board's window titlebar names the product above the empty state. */}
-        <WorkspacePageHeader electron={isElectron}>
+        <WorkspacePageHeader desktop={isDesktopHost}>
           <span className="text-sm font-medium text-foreground md:text-muted-foreground/60">
             {APP_DISPLAY_NAME}
           </span>

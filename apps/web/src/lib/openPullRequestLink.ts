@@ -196,7 +196,7 @@ export function useOpenChangeRequestLink(
           if (onCommitUnavailable) return onCommitUnavailable();
           // A popup opened after the lookup has lost the click's activation, so browsers block it.
           if (
-            window.desktopBridge === undefined &&
+            window.hostBridge === undefined &&
             (browserLinkTarget !== "app" || !canOpenLinksInApp(resolvedThreadRef))
           ) {
             const toastId = toastManager.add(

@@ -1,5 +1,5 @@
 import {
-  type DesktopBridge,
+  type HostBridge,
   type DesktopPendingSnapShot,
   type DesktopSnapShotEvent,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
@@ -152,7 +152,7 @@ async function afterNextPaint(): Promise<void> {
 }
 
 export async function deliverSnapShot(
-  bridge: DesktopBridge,
+  bridge: HostBridge,
   item: DesktopPendingSnapShot,
   resolveTarget: () => CaptureTarget,
 ): Promise<void> {
@@ -402,73 +402,67 @@ export function SnapShotCoordinator() {
   };
 
   const drainPending = useEffectEvent(() => drain());
-  const handleSnapShotEvent = useEffectEvent(
-    (bridge: DesktopBridge, event: DesktopSnapShotEvent) => {
-      if (!getClientSettings().snapShotEnabled) return;
-      switch (event.type) {
-        case "requested": {
-          const current = readSettledTarget(readLastRouteTarget());
-          const target = current ? resolveExistingSnapShotTarget(current, routeThreadRef) : null;
-          // Creating a new draft would navigate the renderer before a self-capture finishes.
-          if (target) {
-            resolveSnapShotAttachmentTarget(questionPinsRef.current, event.id, target);
-            void resolveSnapShotDeliveryTarget(captureTargetsRef.current, event.id, () =>
-              Promise.resolve(target),
-            );
-          } else if (!questionPinsRef.current.has(event.id)) {
-            questionPinsRef.current.set(event.id, null);
-          }
-          return;
-        }
-        case "started": {
-          playCaptureSound(event.id);
-          const target = resolveSnapShotDeliveryTarget(
-            captureTargetsRef.current,
-            event.id,
-            resolveCaptureTarget,
-          ).then(
-            (target) =>
-              target && resolveSnapShotAttachmentTarget(questionPinsRef.current, event.id, target),
+  const handleSnapShotEvent = useEffectEvent((bridge: HostBridge, event: DesktopSnapShotEvent) => {
+    if (!getClientSettings().snapShotEnabled) return;
+    switch (event.type) {
+      case "requested": {
+        const current = readSettledTarget(readLastRouteTarget());
+        const target = current ? resolveExistingSnapShotTarget(current, routeThreadRef) : null;
+        // Creating a new draft would navigate the renderer before a self-capture finishes.
+        if (target) {
+          resolveSnapShotAttachmentTarget(questionPinsRef.current, event.id, target);
+          void resolveSnapShotDeliveryTarget(captureTargetsRef.current, event.id, () =>
+            Promise.resolve(target),
           );
-          if (animateCaptures && !reducedMotion) {
-            void beginSnapShotAnimationWhenReady(
-              event.id,
-              target,
-              pendingAnimationStartsRef.current,
-            );
-          }
-          return;
+        } else if (!questionPinsRef.current.has(event.id)) {
+          questionPinsRef.current.set(event.id, null);
         }
-        case "ready":
-          void drain();
-          return;
-        case "failed": {
-          if (event.id) {
-            captureTargetsRef.current.delete(event.id);
-            questionPinsRef.current.delete(event.id);
-          }
-          dismissFailedSnapShot(
-            event.id,
-            soundedCaptureIdsRef.current,
-            pendingAnimationStartsRef.current,
-          );
-          void bridge.getSnapShotState().then((state) => {
-            if (!getClientSettings().snapShotEnabled) return;
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Snapshot failed",
-                description: state.message ?? "Try the capture again.",
-              }),
-            );
-          });
-          return;
-        }
-        case "shortcut-changed":
-          return;
+        return;
       }
-    },
-  );
+      case "started": {
+        playCaptureSound(event.id);
+        const target = resolveSnapShotDeliveryTarget(
+          captureTargetsRef.current,
+          event.id,
+          resolveCaptureTarget,
+        ).then(
+          (target) =>
+            target && resolveSnapShotAttachmentTarget(questionPinsRef.current, event.id, target),
+        );
+        if (animateCaptures && !reducedMotion) {
+          void beginSnapShotAnimationWhenReady(event.id, target, pendingAnimationStartsRef.current);
+        }
+        return;
+      }
+      case "ready":
+        void drain();
+        return;
+      case "failed": {
+        if (event.id) {
+          captureTargetsRef.current.delete(event.id);
+          questionPinsRef.current.delete(event.id);
+        }
+        dismissFailedSnapShot(
+          event.id,
+          soundedCaptureIdsRef.current,
+          pendingAnimationStartsRef.current,
+        );
+        void bridge.getSnapShotState().then((state) => {
+          if (!getClientSettings().snapShotEnabled) return;
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Snapshot failed",
+              description: state.message ?? "Try the capture again.",
+            }),
+          );
+        });
+        return;
+      }
+      case "shortcut-changed":
+        return;
+    }
+  });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to SnapShot events from the desktop bridge and drains pending ones while enabled
   useEffect(() => {
     const bridge = getDesktopSnapShotBridge();

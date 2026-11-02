@@ -1,6 +1,6 @@
 import type {
   AdvertisedEndpoint,
-  DesktopBridge,
+  HostBridge,
   DesktopServerExposureState,
 } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
@@ -12,7 +12,7 @@ import { appAtomRegistry } from "~/rpc/atomRegistry";
 const DESKTOP_NETWORK_ACCESS_STALE_TIME_MS = 30_000;
 
 type DesktopNetworkAccessBridge = Pick<
-  DesktopBridge,
+  HostBridge,
   "getAdvertisedEndpoints" | "getServerExposureState"
 >;
 
@@ -49,7 +49,7 @@ class DesktopAdvertisedEndpointsLoadError extends Schema.TaggedError<DesktopAdve
 }
 
 function getDesktopNetworkAccessBridge(): DesktopNetworkAccessBridge | undefined {
-  return typeof window === "undefined" ? undefined : window.desktopBridge;
+  return typeof window === "undefined" ? undefined : window.hostBridge;
 }
 
 function createDesktopNetworkAccessStateAtom(

@@ -2,7 +2,7 @@ import type {
   AuthClientMetadataDeviceType,
   AuthClientPresentationMetadata,
   ClientOs,
-  DesktopBridge,
+  HostBridge,
 } from "@houston-app/contracts";
 
 interface BrowserIdentity {
@@ -73,13 +73,13 @@ export function clientPresentationMetadata(input: {
   readonly appVersion: string;
   readonly hosted: boolean;
   readonly identity: BrowserIdentity;
-  readonly desktopBridge: Pick<DesktopBridge, "getClientPlatform"> | undefined;
+  readonly hostBridge: Pick<HostBridge, "getClientPlatform"> | undefined;
 }): AuthClientPresentationMetadata {
-  if (input.desktopBridge !== undefined) {
+  if (input.hostBridge !== undefined) {
     return {
       label: "Houston Desktop",
       deviceType: "desktop",
-      os: clientOsFromElectronPlatform(input.desktopBridge.getClientPlatform()),
+      os: clientOsFromElectronPlatform(input.hostBridge.getClientPlatform()),
       surface: "desktop",
       ...(input.appVersion === "0.0.0" ? {} : { appVersion: input.appVersion }),
     };

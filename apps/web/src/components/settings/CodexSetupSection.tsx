@@ -60,7 +60,7 @@ const isLoopbackUrl = (url: string | null) => url !== null && isLoopbackHost(new
 
 // A loopback server can receive the provider's callback itself, unless the
 // desktop shell offers to catch it on the client.
-const prefersClientCallback = (local: boolean) => !local || window.desktopBridge !== undefined;
+const prefersClientCallback = (local: boolean) => !local || window.hostBridge !== undefined;
 
 /**
  * How a sign-in started now reaches the provider. Read at use time, because a
@@ -77,12 +77,12 @@ function readSignInRouting(environmentId: EnvironmentId) {
     appAtomRegistry.get(environmentPresentations.presentationAtom(primaryEnvironmentId))?.connection
       .phase === "connected" &&
     isLoopbackUrl(readPreparedConnection(primaryEnvironmentId)?.httpBaseUrl ?? null) &&
-    (window.desktopBridge !== undefined || isLoopbackHost(window.location.hostname))
+    (window.hostBridge !== undefined || isLoopbackHost(window.location.hostname))
       ? primaryEnvironmentId
       : null;
   return {
     clientCallback,
-    remoteWeb: clientCallback && !window.desktopBridge,
+    remoteWeb: clientCallback && !window.hostBridge,
     primaryAuthEnvironmentId,
   };
 }
@@ -298,7 +298,7 @@ function ManagedCodexSetup({
   const reconnectProfile = useAtomCommand(serverEnvironment.chatGptReconnectProfile, options);
   const importProfile = useAtomCommand(serverEnvironment.chatGptImportProfile, options);
   const clientCallback = !handoff && prefersClientCallback(local);
-  const remoteWeb = clientCallback && !window.desktopBridge;
+  const remoteWeb = clientCallback && !window.hostBridge;
   const returnUrl = new URL(window.location.href);
   if (returnUrl.pathname === "/welcome") returnUrl.hash = `agents:${environmentId}`;
   if (returnUrl.pathname === "/settings/providers")
@@ -453,7 +453,7 @@ function ManagedCodexSetup({
     viaClientCallback: boolean,
   ) => {
     try {
-      const receive = window.desktopBridge?.receiveProviderAuthCallback;
+      const receive = window.hostBridge?.receiveProviderAuthCallback;
       if (receive && viaClientCallback && flowId) {
         if (receivingCallback.current === authorizationUrl) {
           await ensureLocalApi().shell.openExternal(authorizationUrl);
@@ -591,10 +591,10 @@ function ManagedCodexSetup({
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels the desktop bridge provider auth callback when the URL changes or the card unmounts
   useEffect(() => {
-    if (!clientCallback || !url || !window.desktopBridge) return;
+    if (!clientCallback || !url || !window.hostBridge) return;
     return () => {
       if (receivingCallback.current === url) receivingCallback.current = null;
-      void window.desktopBridge?.cancelProviderAuthCallback(url).catch(() => undefined);
+      void window.hostBridge?.cancelProviderAuthCallback(url).catch(() => undefined);
     };
   }, [clientCallback, url]);
 

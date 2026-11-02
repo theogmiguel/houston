@@ -119,7 +119,7 @@ const remoteOpenResolutionAtom = Atom.family((environmentId: EnvironmentId) =>
         sshTarget:
           profile !== null && profile._tag === "SshConnectionProfile" ? profile.target : null,
         remoteOpenTargets: presentation?.serverConfig?.remoteOpenTargets,
-        isDesktopRenderer: window.desktopBridge !== undefined,
+        isDesktopRenderer: window.hostBridge !== undefined,
       }),
       isResolved: true,
     };
@@ -148,7 +148,7 @@ const REMOTE_FALLBACK_EDITORS: ReadonlyArray<EditorId> = ["vscode"];
 
 // Probed once per page: installed editors rarely change, and the probe spawns processes.
 const remoteCapableEditorsAtom = Atom.make((get): ReadonlyArray<EditorId> => {
-  const probe = window.desktopBridge?.probeRemoteEditors;
+  const probe = window.hostBridge?.probeRemoteEditors;
   probe?.().then(
     (ids) => {
       const remoteCapable = ids.filter((id) => REMOTE_CAPABLE_EDITOR_IDS.includes(id));
@@ -165,7 +165,7 @@ export function useRemoteCapableEditors(): ReadonlyArray<EditorId> {
 
 /** Resolves false when the desktop refuses the URL, including unsupported editor schemes. */
 export async function openRemoteEditorUrl(url: string): Promise<boolean> {
-  const bridge = window.desktopBridge;
+  const bridge = window.hostBridge;
   if (bridge !== undefined) {
     try {
       return await bridge.openExternal(url);

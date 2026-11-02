@@ -3,7 +3,7 @@
 
 @custom-variant dark (&:is(.dark, .dark *));
 @custom-variant light (&:not(.dark, .dark *));
-/* Window Controls Overlay: active when Electron exposes native titlebar control geometry. */
+/* Window Controls Overlay: active when the desktop host exposes native titlebar control geometry. */
 @custom-variant wco (&:is(.wco, .wco *));
 /* Tauri frameless window: Houston draws the title bar and its window controls. */
 @custom-variant tauri (&:is(.tauri, .tauri *));

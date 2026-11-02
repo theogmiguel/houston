@@ -11,7 +11,7 @@ import { useLocation, useRouter, type AnyRouter } from "@tanstack/react-router";
 
 import { moveWorkspaceFocus, workspaceAreaProps } from "../lib/workspaceFocus";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
-import { isElectron } from "../env";
+import { isDesktopHost } from "../env";
 import {
   releaseThreadUndoShortcut,
   threadUndoClaimsShortcut,
@@ -77,13 +77,13 @@ function readViewportWidth(): number {
 // Cache the synchronous fullscreen IPC read until subscription.
 let windowFullscreenSnapshot: boolean | null = null;
 
-function macosDesktopBridge() {
-  if (!isElectron || !isMacPlatform(navigator.platform)) return null;
-  return window.desktopBridge ?? null;
+function macosHostBridge() {
+  if (!isDesktopHost || !isMacPlatform(navigator.platform)) return null;
+  return window.hostBridge ?? null;
 }
 
 function subscribeToWindowFullscreen(onChange: () => void): () => void {
-  const bridge = macosDesktopBridge();
+  const bridge = macosHostBridge();
   if (
     typeof bridge?.getWindowFullscreenState !== "function" ||
     typeof bridge.onWindowFullscreenStateChange !== "function"
@@ -104,7 +104,7 @@ function subscribeToWindowFullscreen(onChange: () => void): () => void {
 
 function readWindowFullscreen(): boolean {
   if (windowFullscreenSnapshot === null) {
-    const getWindowFullscreenState = macosDesktopBridge()?.getWindowFullscreenState;
+    const getWindowFullscreenState = macosHostBridge()?.getWindowFullscreenState;
     windowFullscreenSnapshot =
       typeof getWindowFullscreenState === "function" ? getWindowFullscreenState() : false;
   }
@@ -353,7 +353,7 @@ function SidebarControl() {
     };
 
     window.addEventListener("keydown", onKeyDown, true);
-    const unsubscribe = window.desktopBridge?.onMenuAction((action) => {
+    const unsubscribe = window.hostBridge?.onMenuAction((action) => {
       if (action === "sidebar.toggle") toggleSidebar();
     });
     return () => {
@@ -409,7 +409,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const pathname = useLocation({ select: (location) => location.pathname });
   const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
-  const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
+  const isMacosDesktop = isDesktopHost && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // A clamped drag may not change width, so viewport changes need a separate subscription.
   const viewportWidth = useSyncExternalStore(subscribeToViewportWidth, readViewportWidth);

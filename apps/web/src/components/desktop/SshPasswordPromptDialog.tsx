@@ -48,7 +48,7 @@ function setPromptQueue(next: readonly DesktopSshPasswordPromptRequest[]) {
  */
 export function startSshPasswordPromptQueue(): () => void {
   return (
-    window.desktopBridge?.onSshPasswordPrompt((request) => {
+    window.hostBridge?.onSshPasswordPrompt((request) => {
       setPromptQueue([...promptQueue, request]);
     }) ?? (() => undefined)
   );
@@ -120,7 +120,7 @@ function ActiveSshPasswordPrompt({
     setIsResponding(true);
     setResponseError(null);
     const result = await settlePromise(async () =>
-      window.desktopBridge?.resolveSshPasswordPrompt(requestId, nextPassword),
+      window.hostBridge?.resolveSshPasswordPrompt(requestId, nextPassword),
     );
     if (AsyncResult.isSuccess(result) || nextPassword === null) {
       removeSshPasswordPrompt(requestId);

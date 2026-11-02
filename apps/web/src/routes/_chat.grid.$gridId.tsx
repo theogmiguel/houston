@@ -18,7 +18,7 @@ import { GridTopBarControls } from "../components/grid/GridTopBarControls";
 import { Button } from "../components/ui/button";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
-import { isElectron } from "../env";
+import { isDesktopHost } from "../env";
 import { isTauriHost } from "../lib/desktopWindow";
 import { useGrid, useGridStore } from "../grid/gridStore";
 import { useOpenGridDraft } from "../grid/useOpenGridDraft";
@@ -322,8 +322,8 @@ function GridRoute() {
           )}
         >
           <WorkspacePageHeader
-            electron={isElectron}
-            reserveNativeControls={!panelBesideGrid && (isElectron || isTauriHost())}
+            desktop={isDesktopHost}
+            reserveNativeControls={!panelBesideGrid && (isDesktopHost || isTauriHost())}
             className={cn("border-b border-(--divider)", panelBesideGrid && "pr-0")}
           >
             <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">

@@ -222,7 +222,7 @@ export const ChatHeader = memo(function ChatHeader({
     if (isTrailingDoubleClick(event.detail)) return;
     const clickedChevron =
       (event.target as HTMLElement).closest("[data-thread-title-chevron]") !== null;
-    if (event.detail === 0 || clickedChevron || window.desktopBridge === undefined) {
+    if (event.detail === 0 || clickedChevron || window.hostBridge === undefined) {
       openTitleMenuNow();
       return;
     }

@@ -1,9 +1,9 @@
-import type { DesktopBridge, DesktopDiscoveredSshHost } from "@houston-app/contracts";
+import type { HostBridge, DesktopDiscoveredSshHost } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 
-type DesktopSshDiscoveryBridge = Pick<DesktopBridge, "discoverSshHosts">;
+type DesktopSshDiscoveryBridge = Pick<HostBridge, "discoverSshHosts">;
 
 export function filterDiscoveredSshHosts(
   hosts: ReadonlyArray<DesktopDiscoveredSshHost>,
@@ -48,7 +48,7 @@ class DesktopSshDiscoveryError extends Schema.TaggedError<DesktopSshDiscoveryErr
 }
 
 function getDesktopSshDiscoveryBridge(): DesktopSshDiscoveryBridge | undefined {
-  return typeof window === "undefined" ? undefined : window.desktopBridge;
+  return typeof window === "undefined" ? undefined : window.hostBridge;
 }
 
 function createDesktopSshHostsStateAtom(getBridge: () => DesktopSshDiscoveryBridge | undefined) {

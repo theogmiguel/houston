@@ -6,7 +6,7 @@ function readInjectedDesktopAppBranding(): DesktopAppBranding | null {
     return null;
   }
 
-  return window.desktopBridge?.getAppBranding() ?? null;
+  return window.hostBridge?.getAppBranding() ?? null;
 }
 
 const injectedDesktopAppBranding = readInjectedDesktopAppBranding();

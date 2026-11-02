@@ -383,7 +383,7 @@ export interface CatalogBackend {
 }
 
 export function makeCatalogBackend(database: DatabaseHandle): CatalogBackend {
-  const bridge = window.desktopBridge;
+  const bridge = window.hostBridge;
   if (bridge !== undefined) {
     return {
       read: Effect.tryPromise({
