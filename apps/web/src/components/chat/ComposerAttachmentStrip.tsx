@@ -79,7 +79,7 @@ function AttachmentUploadRing(props: { progress: number; overImage?: boolean }) 
       </svg>
       <span
         className={cn(
-          "pointer-events-none absolute top-[5px] right-[5px] text-4xs font-semibold text-(--accent-ink) leading-2.5 tabular-nums",
+          "pointer-events-none absolute top-[5px] right-[5px] text-3xs font-semibold text-(--accent-ink) leading-none tabular-nums",
           props.overImage && "rounded-(--r-badge) bg-black/50 px-1 py-px text-white",
         )}
       >
@@ -103,11 +103,12 @@ function AttachmentTileRemoveButton(props: {
         props.onRemove();
       }}
       className={cn(
-        "absolute top-1 right-1 z-10 grid size-4 place-items-center rounded-full opacity-0 transition-opacity group-hover/tile:opacity-100 group-focus-within/tile:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
+        "absolute top-1 right-1 z-10 grid size-4 place-items-center rounded-full",
         props.overImage
           ? "bg-black/50 text-white hover:bg-black/70"
           : "text-(--t3) hover:bg-(--hover) hover:text-(--t1)",
       )}
+      data-attachment-tile-action="remove"
     >
       <XIcon aria-hidden="true" className="size-[11px]" />
     </button>
@@ -133,12 +134,82 @@ function AttachmentTileRetryButton(props: {
               props.onRetry();
             }}
             className="grid size-[18px] place-items-center text-(--warn) outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-default disabled:opacity-60"
+            data-attachment-tile-action="retry"
           />
         }
       >
         <CircleAlertIcon aria-hidden="true" className="size-[18px]" />
       </TooltipTrigger>
       <TooltipPopup side="top">{props.reason}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function filePickerAccept(name: string): string | undefined {
+  const extension = name.match(/(\.[^./\\]+)$/)?.[1];
+  return extension;
+}
+
+/** A hydrated marker keeps its name but lost its file handle; the tile reopens the picker. */
+function AttachmentTileReattachButton(props: {
+  name: string;
+  disabled: boolean;
+  onFiles: (files: File[]) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        className="hidden"
+        accept={filePickerAccept(props.name)}
+        onChange={(event) => {
+          const files = Array.from(event.currentTarget.files ?? []);
+          event.currentTarget.value = "";
+          if (files.length > 0) props.onFiles(files);
+        }}
+      />
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label={`Attach ${props.name} again`}
+              disabled={props.disabled}
+              onClick={(event) => {
+                event.stopPropagation();
+                inputRef.current?.click();
+              }}
+              className="grid size-[18px] place-items-center text-(--warn) outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-default disabled:opacity-60"
+              data-attachment-tile-action="reattach"
+            />
+          }
+        >
+          <CircleAlertIcon aria-hidden="true" className="size-[18px]" />
+        </TooltipTrigger>
+        <TooltipPopup side="top">Attach again</TooltipPopup>
+      </Tooltip>
+    </>
+  );
+}
+
+function AttachmentTileRemoveToSendIcon(props: { name: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            role="img"
+            aria-label={`${props.name} was not saved with this draft; remove it to send`}
+            className="grid size-[18px] place-items-center text-(--warn)"
+            data-attachment-tile-action="remove-to-send"
+          />
+        }
+      >
+        <CircleAlertIcon aria-hidden="true" className="size-[18px]" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">Remove to send</TooltipPopup>
     </Tooltip>
   );
 }
@@ -247,15 +318,7 @@ export function ComposerAttachmentMediaRow({
   const pendingSnapShotIdSet = new Set(pendingSnapShotIds);
   const nonPersistedImageIdSet = new Set(nonPersistedImageIds);
   return (
-    <div
-      className={cn(
-        "mb-2 flex max-w-full gap-1.5",
-        pendingSnapShotIds.length > 0 ||
-          expandedImages.some((image) => image.source?.kind === "snap-shot")
-          ? "snap-x snap-proximity overflow-x-auto overscroll-x-contain pb-1 scrollbar-thumb-foreground/18 scrollbar-track-transparent [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-3 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-foreground/18 [&::-webkit-scrollbar-thumb]:bg-clip-content [&::-webkit-scrollbar-thumb:hover]:bg-foreground/28 [&::-webkit-scrollbar-track]:mx-1 [&::-webkit-scrollbar-track]:bg-transparent"
-          : "flex-wrap",
-      )}
-    >
+    <div className="mb-2 flex max-w-full flex-wrap gap-1.5">
       {/* A preparing image renders through the same tile, keyed by the id its compressed image
           takes, so the thumbnail element survives the swap. */}
       {[
@@ -270,6 +333,7 @@ export function ComposerAttachmentMediaRow({
           const snapShotAnimationPending = isSnapShot && pendingSnapShotIdSet.has(image.id);
           const snapShotArrival = isSnapShot && shouldAnimateSnapShotArrival(source.capturedAt);
           const uploadFailed = ready !== null && upload?.status === "failed";
+          const uploadQueued = upload?.status === "queued";
           return (
             <SnapShotAttachmentFrame
               key={image.id}
@@ -285,9 +349,14 @@ export function ComposerAttachmentMediaRow({
                 isSnapShot
                   ? SNAP_SHOT_ATTACHMENT_FRAME_CLASS
                   : "relative size-14 overflow-hidden rounded-lg border border-transparent",
+                uploadQueued && "border-dashed opacity-60",
                 uploadFailed && "border-(--warn-line)",
                 snapShotAnimationPending && "invisible",
               )}
+              data-attachment-tile="image"
+              data-attachment-tile-state={
+                uploadQueued ? "queued" : uploadFailed ? "failed" : (upload?.status ?? "ready")
+              }
             >
               {!ready || ready.previewUrl ? (
                 <button
@@ -373,11 +442,13 @@ export function ComposerAttachmentMediaRow({
                   />
                 </span>
               )}
-              <AttachmentTileRemoveButton
-                name={image.name}
-                overImage
-                onRemove={() => onRemoveImage(image.id)}
-              />
+              {upload?.status !== "uploading" && upload?.status !== "queued" && (
+                <AttachmentTileRemoveButton
+                  name={image.name}
+                  overImage
+                  onRemove={() => onRemoveImage(image.id)}
+                />
+              )}
             </SnapShotAttachmentFrame>
           );
         })
@@ -404,14 +475,20 @@ export function ComposerAttachmentMediaRow({
           file.sizeBytes <= maxFileAttachmentBytes;
         const upload = fileCanUpload ? uploadsByImageId[file.id] : undefined;
         const uploadFailed = upload?.status === "failed";
+        const uploadQueued = upload?.status === "queued";
         return (
           <div
             key={file.id}
             className={cn(
               ATTACHMENT_TILE_CLASS,
               "border border-transparent bg-black",
+              uploadQueued && "border-dashed opacity-60",
               uploadFailed && "border-(--warn-line)",
             )}
+            data-attachment-tile="video"
+            data-attachment-tile-state={
+              uploadQueued ? "queued" : uploadFailed ? "failed" : (upload?.status ?? "ready")
+            }
           >
             <button
               type="button"
@@ -454,11 +531,13 @@ export function ComposerAttachmentMediaRow({
                 />
               </span>
             )}
-            <AttachmentTileRemoveButton
-              name={file.name}
-              overImage
-              onRemove={() => onRemoveFile(file.id)}
-            />
+            {upload?.status !== "uploading" && upload?.status !== "queued" && (
+              <AttachmentTileRemoveButton
+                name={file.name}
+                overImage
+                onRemove={() => onRemoveFile(file.id)}
+              />
+            )}
           </div>
         );
       })}
@@ -478,6 +557,7 @@ export function ComposerAttachmentFileList({
   canOperateThread,
   onPreviewFile,
   onRemoveFile,
+  onReattachFiles,
 }: {
   readonly files: ReadonlyArray<ComposerFileAttachment>;
   readonly resolvedTheme: "light" | "dark";
@@ -489,6 +569,7 @@ export function ComposerAttachmentFileList({
   readonly canOperateThread: boolean;
   readonly onPreviewFile: (fileId: string) => void;
   readonly onRemoveFile: (fileId: string) => void;
+  readonly onReattachFiles: (files: File[]) => void;
 }) {
   const uploadsByImageId = useAttachmentUploadStore((state) => state.uploadsByImageId);
   return (
@@ -502,6 +583,12 @@ export function ComposerAttachmentFileList({
         const needsReattach = composerFileNeedsReattach(file);
         const canReattachFile = fileStagingLimit !== null && file.sizeBytes <= fileStagingLimit;
         const uploadFailed = !needsReattach && upload?.status === "failed";
+        const uploadQueued = !needsReattach && upload?.status === "queued";
+        const tileState = needsReattach
+          ? "failed"
+          : uploadQueued
+            ? "queued"
+            : (upload?.status ?? "ready");
         const tooltip = needsReattach
           ? canReattachFile
             ? `${file.name} was not saved with this draft. Attach it again to send it.`
@@ -515,9 +602,12 @@ export function ComposerAttachmentFileList({
             className={cn(
               ATTACHMENT_TILE_CLASS,
               "border border-(--border) bg-(--field)",
-              needsReattach && "border-dashed opacity-60",
+              needsReattach && "border-(--warn-line)",
+              uploadQueued && "border-dashed opacity-60",
               uploadFailed && "border-(--warn-line)",
             )}
+            data-attachment-tile="file"
+            data-attachment-tile-state={tileState}
           >
             <Tooltip>
               <TooltipTrigger
@@ -533,12 +623,16 @@ export function ComposerAttachmentFileList({
                     }
                     onClick={() => onPreviewFile(file.id)}
                   >
-                    <PierreEntryIcon
-                      pathValue={file.name}
-                      kind="file"
-                      theme={resolvedTheme}
-                      className="size-[18px]"
-                    />
+                    {needsReattach || uploadFailed ? (
+                      <span aria-hidden="true" className="size-[18px]" />
+                    ) : (
+                      <PierreEntryIcon
+                        pathValue={file.name}
+                        kind="file"
+                        theme={resolvedTheme}
+                        className="size-[18px]"
+                      />
+                    )}
                     <span className="w-full truncate text-3xs text-(--t3) leading-3">
                       {file.name}
                     </span>
@@ -550,6 +644,19 @@ export function ComposerAttachmentFileList({
               </TooltipPopup>
             </Tooltip>
             {upload?.status === "uploading" && <AttachmentUploadRing progress={upload.progress} />}
+            {needsReattach ? (
+              <span className="absolute top-[6px] left-[5px] z-10 inline-flex">
+                {canReattachFile ? (
+                  <AttachmentTileReattachButton
+                    name={file.name}
+                    disabled={!canOperateThread}
+                    onFiles={onReattachFiles}
+                  />
+                ) : (
+                  <AttachmentTileRemoveToSendIcon name={file.name} />
+                )}
+              </span>
+            ) : null}
             {uploadFailed && (
               <span className="absolute top-[6px] left-[5px] z-10 inline-flex">
                 <AttachmentTileRetryButton
@@ -566,7 +673,9 @@ export function ComposerAttachmentFileList({
                 />
               </span>
             )}
-            <AttachmentTileRemoveButton name={file.name} onRemove={() => onRemoveFile(file.id)} />
+            {upload?.status !== "uploading" && upload?.status !== "queued" && (
+              <AttachmentTileRemoveButton name={file.name} onRemove={() => onRemoveFile(file.id)} />
+            )}
           </div>
         );
       })}
@@ -721,10 +830,8 @@ export function ComposerQueuedAttachmentRow({
         return (
           <div
             key={attachment.id}
-            className={cn(
-              ATTACHMENT_TILE_CLASS,
-              "border border-(--border) border-dashed bg-(--field) opacity-60",
-            )}
+            className={cn(ATTACHMENT_TILE_CLASS, "border border-(--border) bg-(--field)")}
+            data-attachment-tile="queued-edit"
           >
             {isImage ? (
               <img src={url} alt={attachment.name} className="h-full w-full object-cover" />

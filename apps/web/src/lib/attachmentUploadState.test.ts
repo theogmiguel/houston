@@ -21,4 +21,16 @@ describe("attachmentUploadBlockReason", () => {
       }),
     ).toBe("Attachment still uploading");
   });
+
+  it("blocks a send while an upload waits in the queue", () => {
+    expect(
+      attachmentUploadBlockReason({
+        imageIds: ["image-1"],
+        environmentId,
+        uploadsByImageId: {
+          "image-1": { status: "queued", environmentId },
+        },
+      }),
+    ).toBe("Attachment still uploading");
+  });
 });
