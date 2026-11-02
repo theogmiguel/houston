@@ -7,14 +7,14 @@ on:
   workflow_call:
     inputs:
       version:
-        description: 'Manifest version; names the archives and must match the checked-out tree'
+        description: "Manifest version; names the archives and must match the checked-out tree"
         type: string
         required: true
       ref:
-        description: 'Commit to build; a cut passes its tag'
+        description: "Commit to build; a cut passes its tag"
         type: string
         required: false
-        default: ''
+        default: ""
 
 permissions:
   contents: read

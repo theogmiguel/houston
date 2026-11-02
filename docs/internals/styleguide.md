@@ -1,1069 +1,512 @@
-# Houston UI Style Guide
+# Houston renderer style guide
 
-This is the **UI/visual** doc for Houston — color roles, typography, layout
-anatomy, component selection, and the rules that keep them coherent. Token *values*
-live in code (`ui/src/renderer/src/theme.css`); this file documents the *roles and
-rules* for using them.
+Visual rules for the renderer in `apps/web`. Token values live in
+`apps/web/src/index.css`; this page documents the roles and the rules for using them.
 
 ## Overview & identity
 
-Houston is a desktop shell for Linux and Windows that hosts other people's tools — agent
-CLIs in PTY terminals, a browser pane, an editor, a diff viewer. Its own chrome
-should recede and frame; the panes are the product. The identity in one line:
-**quiet monochrome chrome, three ground colours, accent spent only on focus and the
-one affirmative action.**
+Houston is a desktop shell for coding agents on Linux and Windows. Its chrome frames the
+work and stays quiet: neutral surfaces, one brand accent, and status colour used only for
+status. The panes are the product.
 
-- **Two chrome themes**, each redeclaring the full token set: `graphite` (dark
-  neutral, the default a fresh install paints) and `paper` (light). Selected by
-  a `[data-theme]` attribute on the root, never by a media query — a "System"
-  preference resolves to one of the two *before* the attribute is written. A
-  stored pick for a retired theme remaps on read (`RETIRED_CHROME_THEMES` in
-  `theme.ts`) rather than falling through to the default, so a light pick never
-  flips to dark.
-- **Elevation is deliberately non-flat, and inverted from the usual card model.**
-  The rail is *lighter* than the app canvas, and the terminal canvas is the darkest
-  surface of all. Each pane reads as a lit screen recessed into the shell.
-- **Surfaces are materials, not colours**, and materials come as a ladder — base,
-  shell, inset, raised, overlay. Ask for a step, not a hex. Each rung carries its
-  own ground, border, shadow and quiet ink, and its own measured receipt.
-- **Selection and hover are achromatic** — the `--sel` and `--hover` overlays, never an
-  accent tint. `--accent` is the fill; `--accent-ink` is the readable accent used by
-  links, focus rings and the working status glyph.
-- **Status is one glyph vocabulary** — `working`, `needs`, `finished`, `error`, `idle`,
-  all rendered by `StatusGlyph`. Status colour stays inside that primitive.
-- **Every page shares one column** — `--page-w` (960px), centred the same way. Do not
-  set a per-page max width.
-- **The background is one field** — in Custom mode, a single dithered image behind
-  the whole window. The canvas and gutters let it through raw; the chrome (rail,
-  titlebar) and the terminal panes stand on it under a scrim of their own. Solid
-  stays the default.
+- **Two appearance modes.** `paper` is the light palette and `graphite` is the dark one.
+  `useTheme` writes `.dark` on `<html>` and the chosen theme id to `data-theme-id`; a
+  "System" preference resolves to one of the two before either is applied. Named themes
+  (T3 Chat, Grove, Ocean, Ember, Iris) and user-defined themes override the role variables
+  under `html[data-theme-id]`.
+- **Neutral grounds in a small ladder.** The rail is one tonal step off the content canvas,
+  cards lift above it, and the terminal is the darkest surface. Borders and dividers separate
+  them; elevation is a ladder, not a stack of cards.
+- **One accent.** `--accent` is a brand fill; `--accent-ink` is the readable version for
+  text, icons and focus. Selection, running state, focus and primary actions are where the
+  brand hue appears.
+- **The shell is square.** Grid panes have no radius and no card border. One 1px
+  `--divider` separates the sidebar, top bar, grid cells and right panel. A grid of two or
+  more threads carries a floating pane label instead of a pane header.
+- **Controls come from primitives.** `apps/web/src/components/ui/` owns the visual recipes;
+  feature code composes them with layout utilities.
 
-When in doubt:
+When in doubt: use a neutral surface and a border before a colour, a token before a value,
+and an existing primitive before a one-off class.
 
-- Reach for a **neutral surface + border** before reaching for colour.
-- Reach for a **CSS variable** before hardcoding a hex.
-- Reach for a **rung on the material ladder** (`material.ts`) before writing a
-  ground, a border and a shadow.
-- Reach for an **existing chrome constant** (`buttonChrome.ts`, `overlayChrome.ts`)
-  before writing a new class string.
-- Reach for the **28px control floor** before inventing a height.
+![Houston home in the light theme](styleguide/home--light.webp)
+![Houston home in the dark theme](styleguide/home--dark.webp)
 
 ## Source of truth
 
-| Concern | Canonical location |
-|---|---|
-| All colour, radius, spacing, type-scale, motion and metric tokens | `ui/src/renderer/src/theme.css` |
-| Tailwind `--color-*` bindings (what makes `bg-surface` compile at all) | `ui/src/renderer/src/tailwind.css`, `@theme { … }` block |
-| Keyframe catalog (`menu-in`, `panel-in`, `backdrop-*`, notice entrances…) | `ui/src/renderer/src/keyframes.css` |
-| Element-level base rules (focus ring, disabled, `.btn` box) | `ui/src/renderer/src/base.css` |
-| Button chrome | `ui/src/renderer/src/components/ui/buttonChrome.ts` |
-| The material ladder (rungs and their recipes) | `ui/src/renderer/src/components/ui/material.ts` |
-| Overlay/elevation chrome | `ui/src/renderer/src/components/ui/overlayChrome.ts` |
-| Select trigger chrome | `ui/src/renderer/src/components/ui/selectChrome.ts` |
-| The only import surfaces for icons, dropdowns and hover labels | `components/{icons,ui/Select,ui/Tooltip}.tsx` |
-| Terminal palettes (separate axis from chrome) | `ui/src/renderer/src/theme.ts` |
-| Enforcement | `bun run check:css`, `scripts/check-icon-imports.sh`, `scripts/check-icon-metrics.sh`, `scripts/check-title-tooltip-guard.sh`, `scripts/check-native-select.sh`, `scripts/check-status-glyph.sh`, `scripts/check-page-width.sh` |
+| Concern                                                     | Canonical location                                                                                                |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Colour, radius, type, motion, control metrics and utilities | `apps/web/src/index.css`                                                                                          |
+| Tailwind bindings (`@theme`, `@theme inline`, `@utility`)   | `apps/web/src/index.css`                                                                                          |
+| Appearance resolution, theme ids and custom themes          | `apps/web/src/hooks/useTheme.ts`, `apps/web/src/themePalette.ts`                                                  |
+| Primitives and their variants                               | `apps/web/src/components/ui/*.tsx`                                                                                |
+| Shell, sidebar, grid and thread layout                      | `apps/web/src/components/AppSidebarLayout.tsx`, `grid/GridSidebar.tsx`, `grid/GridThreadCell.tsx`, `ChatView.tsx` |
+| Terminal colours and ANSI palette                           | `apps/web/src/components/ThreadTerminalDrawer.tsx`, `packages/shared/src/terminalOutput.ts`                       |
+| Style rules and pinned violations                           | `scripts/check-web-style.mjs`, `scripts/web-style-baseline/`                                                      |
+| Approved design boards (interim)                            | `handoff/design/README.md`                                                                                        |
 
-`theme.css` is **unlayered on purpose**, so its `:root` beats Tailwind's `@theme`
-defaults. That is why Houston's own scales are prefixed (`--tr-radius-*`, `--tr-text-*`):
-the unprefixed names *are* Tailwind's, and redefining them silently resizes every
-`text-*` / `rounded-*` utility in the app. Never add an unprefixed `--radius-*`,
-`--text-*`, `--leading-*` or `--tracking-*`. Never hardcode a hex when a token covers
-the role; a new token goes into **both** theme blocks, then into
-`tailwind.css`'s `@theme` block if it needs a utility.
+`handoff/` is removed before `v2` merges, so the durable v2 conventions are the ones on this
+page and the rules in `scripts/check-web-style.mjs`.
 
 ## Color roles
 
-Tokens come in surface/foreground pairs. Use them together.
+Tokens come in surface/foreground pairs. Use the role, not the value.
 
-### Surfaces
+### Grounds
 
-| Token | Role | Don't use it for |
-|---|---|---|
-| `--content-bg` (`--background`) | App canvas, the ground everything sits on | Panels, popovers |
-| `--rail-bg` (`--panel`) | The rail and the topbar — *lighter* than the canvas | Content panes |
-| `--card-bg` (`--surface`) | Panels, pane chrome, cards lifted off the canvas | The canvas itself |
-| `--card-hover` (`--raised`) | The RAISED/OVERLAY floating tier, and card hover | Inline UI |
-| `--tool-code-bg` | Terminal canvas, code blocks, diff bodies, URL inputs — the darkest surface | App chrome |
-| `--elevated-surface` | A card that must read above its own parent card | A replacement for `--raised` |
-| `--overlay` | Modal scrim only | Any painted surface |
+| Token         | Role                                                    |
+| ------------- | ------------------------------------------------------- |
+| `--rail`      | The sidebar and app chrome. One step off the canvas.    |
+| `--content`   | The main canvas. Also exposed as `--background`.        |
+| `--card`      | Cards and panels lifted off the canvas.                 |
+| `--raised`    | The floating tier: menus, popovers, dialogs.            |
+| `--pane`      | A thread or grid cell surface.                          |
+| `--pane-head` | The grid label and pane header fill.                    |
+| `--composer`  | The composer and its attached banners.                  |
+| `--term`      | The terminal surface. Also `--terminal-background`.     |
+| `--code-bg`   | Code blocks and diff bodies. Also `--code-background`.  |
+| `--field`     | Inputs, selects and other filled controls.              |
+| `--hover`     | The neutral hover overlay. Exposed as `bg-hover`.       |
+| `--sel`       | The neutral selected overlay. Exposed as `bg-selected`. |
 
-### Text tiers
+The semantic aliases used by copied feature components resolve to those values:
+`--background` → `--content`, `--app-chrome-background` → `--rail`, `--popover` → `--raised`,
+`--sidebar` → `--rail`, and `--foreground` → `--t1`.
 
-| Token | Use it for |
-|---|---|
-| `--t1` (`--text-primary`) | Titles, active rows, values the user is reading |
-| `--t2` (`--text-secondary`) | Sub-labels, descriptions, supporting copy |
-| `--t3` (`--text-muted`) | De-emphasized chrome, placeholders, icon-button rest colour, disabled captions |
+### Text
 
-Three tiers only. `--text-faint` is decorative (rules, tracks, non-text marks), never
-body copy or a readable label. Contrast: t1/t2/t3 clear 4.5:1 on every ground they sit on.
+| Token  | Use it for                                                                |
+| ------ | ------------------------------------------------------------------------- |
+| `--t1` | Titles, active rows, values the user is reading. Also `--foreground`.     |
+| `--t2` | Supporting text and secondary labels.                                     |
+| `--t3` | Muted chrome, placeholders, inactive metadata. Also `--muted-foreground`. |
 
-### Selection and hover
+Three readable tiers. Icons use `--icon-muted` (an alias of `--muted-foreground`) when they
+should sit quieter than their label.
 
-`--hover` is a 5% white/black overlay and `--sel` a 9% one, exposed as `--hover-fill` and
-`--selected-fill`. They are achromatic: no accent tint, no left bar. A selected row keeps
-the same fill under hover; it does not get a second colour.
+### Borders and dividers
 
-### Borders
-
-| Token | Use it for |
-|---|---|
-| `--border` | Every ordinary hairline: card edges, input outlines, control borders |
-| `--border-hover` | The same hairline under hover |
-| `--border-control` | Controls read by their edge: number fields, segmented tracks, off switches, the branch chip. One step above `--border-hover`, not a bright frame |
-| `--divider` | Row separators *inside* a container — deliberately fainter than `--border` |
-| `--hairline` | The divider equivalent on a custom surface |
-| `--border-focus` | The active-pane ring. A luminance step, no hue |
-| `--border-active` | An accent-mixed border for a control that is genuinely "on" |
+| Token            | Use it for                                                                         |
+| ---------------- | ---------------------------------------------------------------------------------- |
+| `--border`       | Ordinary hairlines: inputs, cards, control edges.                                  |
+| `--divider`      | One-pixel seams between shell surfaces: sidebar, top bar, grid cells, right panel. |
+| `--border-hover` | The hover state of an ordinary hairline.                                           |
+| `--line-strong`  | The interactive edge of a field or a selected control.                             |
 
 ### Accent
 
-`--accent` is the fill: a solid plate that carries white `--on-accent` ink at ≥4.5:1
-(`#2f6fe8` on Graphite, `#0a63e0` on Paper). `--accent-ink` is the readable accent for
-links, focus rings and the working status glyph (`#64a0ff` / `#0a5cd1`). A filled
-affirmative action uses `--accent`; a link, focus ring or working arc uses `--accent-ink`.
-`--accent-hover` and `--accent-muted` derive from the fill, not a new hex.
+| Token              | Use it for                                                       |
+| ------------------ | ---------------------------------------------------------------- |
+| `--accent`         | The solid brand fill: primary actions, focus and running state.  |
+| `--accent-hover`   | The hover fill for a brand action.                               |
+| `--accent-ink`     | Brand text and icons: links, the running glyph, focus rings.     |
+| `--accent-muted`   | A faint brand wash.                                              |
+| `--accent-surface` | The color behind hover text; it is `--hover`, not a brand plate. |
+
+`--primary` aliases `--accent`, and `bg-primary` / `text-primary-foreground` are the
+primitive fill pair. Brand text uses `text-(--accent-ink)`. `text-primary` is a fill role and
+fails contrast, so the guard rejects it as text.
 
 ### Status
 
-`--ok` / `--warn` / `--stop` are the canonical trio; `--online` / `--warning` /
-`--danger` are aliases kept for existing consumers — prefer the trio in new code.
-`--info` is the fourth, non-alarming member (a blue/cyan), used for "settled,
-nothing wrong."
+| Token                      | Meaning                         |
+| -------------------------- | ------------------------------- |
+| `--ok`, `--ok-ink`         | Succeeded, ready, verified.     |
+| `--warn`, `--warn-ink`     | Needs attention or input.       |
+| `--stop`, `--stop-ink`     | Failed, blocked, destructive.   |
+| `--info`, `--info-ink`     | Settled or neutral information. |
+| `--merged`, `--merged-ink` | A merged pull request.          |
 
-`--status-{doing,todo,blocked,done}-{bg,text}` are the pill pairs: doing→info hue,
-todo→warn, blocked→stop, done→ok, background at a 14% mix.
+`--danger-fill`, `--danger-wash`, `--warn-wash`, `--warn-line`, `--add-bg` and `--del-bg` are
+the fill and wash variants. Text uses the `-ink` token; fills use the base token.
 
-AgentStatus maps as:
+### Known drift
 
-| Status | Token | Motion |
-|---|---|---|
-| `spawning` | `--accent` | pulses |
-| `working` | `--info` | pulses |
-| `idle` | `--text-muted` | static |
-| `needs-input` | `--warn` | static |
-| `unavailable` | transparent with a `--text-faint` outline | static |
+The design boards call the brand colour "accent". In the code, `bg-accent` and
+`text-accent-foreground` do not exist: the neutral hover fill is `bg-hover`, and the brand
+fill is `bg-primary` or `bg-(--accent)`. `--accent-foreground` is `--t1`, the ink over the
+neutral hover surface, not white text for a brand plate.
 
-`needs-input` is static on purpose: it is settled-until-addressed, not transient.
-Only the two genuinely indeterminate states move.
-
-Action glyphs are keyed by verb in `components/verbGlyphs.ts`. Notifications and
-About, file-tree visibility and line wrapping, file-manager reveal, memory measurement
-and overview each have a distinct glyph. The verb identifies the action rather than
-the page containing it; use the same mapping across related surfaces. Related surfaces use `GLYPH_FOR_VERB` and
-choose the size through the shared `Icon` role.
-
-### Provider brand marks, diff and tool colors
-
-Every provider Houston can spawn has a brand token, in two tiers. **Chromatic** marks
-carry a colour as part of the trademark — `--claude`, `--antigravity`
-hold the same hex in both themes, because a brand mark is not a themed
-surface. **Monochrome** marks are black-on-light / white-on-dark by design, so
-`--codex`, `--opencode`, `--zcode` resolve to `var(--text-primary)`:
-following the theme *is* brand fidelity for them, and freezing a hex instead is
-how `--codex` spent releases near-invisible on Paper. Tokens are opt-in via the
-`brand` prop on an icon; everything else stays `currentColor`. `--text-muted` is
-reserved for the non-provider kinds (shell, ssh, the ACP long tail) — it reads as
-"generic engine" and must never be a provider's tint.
-
-Resolve a provider mark by looking at it, never by filename: icon sets file the
-**Gemini crypto exchange's** "G" under `gemini.svg` and Google's four-point spark
-under a former product name. Houston shipped the exchange's logo for several releases
-on exactly that mistake; `icons.agentMarks.test.tsx` now pins the shape.
-
-`--tool-add-bg` / `--tool-add-text` (ok-tinted) and `--tool-remove-bg` /
-`--tool-remove-text` (stop-tinted) carry diff and tool add/remove semantics, and
-nothing else.
-
-### Custom background
-
-**The background is a field, not a sheet.** In Custom mode (`[data-custom='on']`,
-Settings ▸ Appearance ▸ Background) one image — the user's own, or a preset — is
-ordered-dithered and painted as a single field behind the whole window: the rail,
-the topbar, the gutters and the terminal panes all stand on it. There is no
-window-spanning glass sheet any more and no `backdrop-filter` in the chrome. The
-tint a sheet used to carry now lives on the rung that wears it: under
-`[data-custom='on']`, `--material-shell-bg` becomes `--custom-chrome-scrim`,
-`--material-base-bg` goes transparent, and the two quiet ink steps are re-scoped
-to the cuts each theme made for the field's ground. `--pane-gutter` widens to
-16px and `--divider` becomes `--hairline` — a custom surface draws no opaque gash
-over the field's bright end.
-
-**Only the window chrome left glass.** The overlay tier — `raised-glass` and
-`overlay-glass`, the popovers, menus, modals and command palette — is untouched
-and keeps its `backdrop-filter` and its `--glass-blur` / `--glass-saturate` /
-`--glass-bg` / `--glass-brd` tokens. Translucency did not go away; it stopped
-being a window mode. Adding a second blurred layer anywhere is still a design
-change, for the reason it always was: `backdrop-filter` clamps its sample to its
-own element's box, so two adjacent glass boxes blur different slices and meet at
-a visible step.
-
-**The field is bounded, so chrome legibility stays provable.** The dither clamps
-its output into a luminance band (dark themes cap the bright end, paper lifts the
-dark end), and because blur, tint and scrim are monotone, a flat field at the
-band's edge brackets every legal image — so the gate proves chrome ink against a
-picture it has never seen, at the band, rather than against a shipped `.webp`.
-The two quiet inks and the `-custom-worst` receipts follow the field's own
-ground, measured per rung the way the sheet's used to be.
-
-**Chrome ink is proven; terminal ink is shown, not proven.** Chrome ink can be
-re-scoped when its ground moves and the gate holds the number. Terminal ink is the
-agent's own ANSI palette — repainting it would make the terminal stop being a
-terminal — so the terminal scrim dial renders its live contrast ratio beside
-itself, next to the opaque ratio it is spending, instead of clamping it. The limit
-a user can hit is a limit they must see.
-
-**The content corner is a hole, so it is masked, not rounded.** `border-radius`
-rounds a box's own outside, and the corner where the rail and the topbar meet the
-content region is the hole those two surfaces leave. It is painted chrome into a
-corner square with a quarter-circle masked back out (`.grid-region::before`,
-`.agents-region::before`). The radius is concentric with the pane inside it —
-outer = inner radius + the gap, written as the `calc()` — so the curve stays
-parallel to the pane's instead of cutting across it. It paints `--material-shell-bg`,
-which is why it needs no mode branch: in Solid that token is the rail's own fill
-and the corner is invisible, and a mode that redeclares the token gets the corner
-for free.
-
-### Mixing
-
-Need a tint? `color-mix` against an existing token, never a new hex —
-`color-mix(in srgb, var(--danger) 14%, transparent)`.
+![Appearance settings in the light theme](styleguide/settings-appearance--light.webp)
+![Appearance settings in the dark theme](styleguide/settings-appearance--dark.webp)
 
 ## Typography
 
-| Family | Token | Use |
-|---|---|---|
-| Inter Variable | `--font-sans` | Every chrome and body surface. Imported with optical sizing (`@fontsource-variable/inter/opsz.css`); `base.css` sets `font-optical-sizing: auto`. |
-| Source Serif 4 | `--tr-text-display-family` / `--f-serif` | Display moments only: empty states, first run, About. Never chrome, menus, chips, tables or pane headers, and never below 20px. Ships 400/500/600. |
-| JetBrains Mono | `--font-mono` | Machine values only: paths, fingerprints, IDs, branches, code and terminal-adjacent UI. Never prose and never emphasis. |
+| Family         | Token          | Use                                                                                            |
+| -------------- | -------------- | ---------------------------------------------------------------------------------------------- |
+| Inter Variable | `--font-sans`  | All interface and body text. Bundled through `@fontsource-variable/inter`.                     |
+| JetBrains Mono | `--font-mono`  | Paths, IDs, branches, code, terminal-adjacent values. System fallback when the face is absent. |
+| Source Serif 4 | `--font-serif` | Display moments only: welcome screens and empty states. System serif fallback.                 |
 
-All three are self-hosted; nothing is fetched at runtime. The UI no longer ships Plus
-Jakarta Sans.
+Body text is 13px / 18px, set on `<body>`. Hierarchy comes from weight and ink before size.
 
-A wrapped line never holds a single word. `base.css` sets `text-wrap: pretty` on the body
-and `balance` on headings; copy is shortened so a short label fits one line rather than
-wrapping.
+| Step               | Size / leading | Use                                                  |
+| ------------------ | -------------- | ---------------------------------------------------- |
+| `text-display`     | 34 / 40        | Window-level display moments.                        |
+| `text-stat`        | 22 / 28        | Large figures in usage and summary surfaces.         |
+| `text-large-title` | 26 / 32        | Destination page titles.                             |
+| `text-title`       | 20 / 26        | Dialog and section titles.                           |
+| `text-headline`    | 13 / 18        | Headings at body size.                               |
+| `text-body`        | 13 / 18        | Default body, controls and rows.                     |
+| `text-prose`       | 14 / 20        | Long-form reading: chat markdown, pull-request text. |
+| `text-callout`     | 12 / 16        | Secondary lines and compact captions.                |
+| `text-caption`     | 11 / 14        | Dense labels and metadata.                           |
+| `text-mono`        | 12 / 18        | Code-adjacent labels inside the timeline.            |
 
-### The semantic scale
-
-Sizes are declared as tokens, so shell zoom moves them together. Use the step, not a
-pixel value.
-
-| Step | Size / leading | Weight | Use |
-|---|---|---|---|
-| `largeTitle` | 26 / 32 | 700 | Every destination page title, including Settings |
-| `title` | 20 / 26 | 650 | Large panel and dialog titles |
-| `headline` | 13 / 18 | 600 | Section and group headings |
-| `body` | 13 / 18 | 400 | Default body and control copy |
-| `callout` | 12 / 16 | 400 | Secondary lines and captions |
-| `caption` | 11 / 14 | 600 | Dense labels and metadata |
-| prose | 14 / 20 | 400 | Long-form reading: Markdown, pull-request bodies, empty-state sentences |
-| label | 11 / 14 | 600 | Table heads and section labels; tracking is 0.01em, not uppercase by default |
-
-The `ui` step remains the 13px workhorse for list rows, table cells, menu items and
-buttons (400 weight). `small` is 12px for chips and secondary metadata. Tokens are
-`--tr-text-<step>-{size,weight,tracking,leading,family,transform}` in `theme.css`; the
-parallel numeric scale `--tr-text-{xs…3xl}` exists for older sites and new work uses the
-semantic steps.
-
-`check-type-scale.sh` rejects legacy `text-[Nunit]`, raw scale utilities, CSS
-`font-size` declarations and `[font-size:Nunit]` in `components/ui/` and the four
-foundation stylesheets. The floor is the 11px label/caption step.
-
-**Label rule:** uppercase is an explicit `uppercase` transform and always pairs with the
-tracking token; never type the capitals yourself, and never apply either to title-case
-copy. `scripts/check-label-tracking.sh` enforces the pairing. Digits that must line up get
-`tabular-nums`; numeric table columns right-align.
-
-Body base is **13px / weight 400**, set on `<body>` (not `<html>`); long-form prose is
-14/20 through the prose step.
+`text-2xs` (11/14), `text-3xs` (10/14), `text-4xs` (8/8) and `text-5xs` (7/7) are the dense
+steps for counts, keyboard hints and provider-icon overlays. Interface copy does not go below
+11px; the smaller steps are for badges and icon overlays.
 
 ## Spacing & control metrics
 
-A 4pt scale, nine steps, in `ui/src/renderer/src/theme.css`:
+Spacing uses Tailwind's 0.25rem scale (`p-*`, `gap-*`, `m-*`) and arbitrary lengths are
+rejected by the `spacing` rule. There is no `--space-*` token set.
 
-```
---space-1: 4px    --space-1-5: 6px    --space-2: 8px
---space-2-5: 10px --space-3: 12px     --space-4: 16px
---space-4-5: 20px --space-5: 24px     --space-6: 32px
-```
+| Token                | Value | What it measures                                    |
+| -------------------- | ----- | --------------------------------------------------- |
+| `--h-top`            | 40px  | The app top bar (`--workspace-topbar-height`).      |
+| `--h-pane-head`      | 30px  | A pane header and the diff panel's toolbar.         |
+| `--h-ctl`            | 28px  | Buttons, selects and toggles at their default size. |
+| `--h-row`            | 28px  | Sidebar and rail rows.                              |
+| `--h-pill`           | 26px  | Selection and floating-label pills.                 |
+| `--w-window-control` | 30px  | One window-control button.                          |
+| `--settings-w`       | 720px | The Settings content column.                        |
 
-The half-integer steps have specific jobs: `--space-1-5` is the icon↔label gap inside
-a chip, `--space-2-5` the gap between chips in a cluster, `--space-4-5` fills the
-16→24 jump.
+Primitive heights are part of their recipe:
 
-**Row recipe:** rail rows are 28px (`--h-row`); list rows are 36px. A group heading sits
-8px above its group and groups are separated by `--space-5` (24px). Page content uses one
-column, `--page-w` (960px), centred on the content region; Settings, Tasks, Routines,
-Pull requests and Usage all read the same token.
+| Primitive  | Heights                                                                                                  |
+| ---------- | -------------------------------------------------------------------------------------------------------- |
+| `Button`   | 28px default/compact, 26px `selection`, 24px `xs`, 22px `sm`, 20px `micro`; icon sizes 28/28/22/20/16px. |
+| `Input`    | 26px default, 22px `compact`, 30px `lg`.                                                                 |
+| `Textarea` | 70px minimum by default; `sm` and `lg` adjust the minimum and padding.                                   |
+| `Select`   | 28px `default`/`compact`, 24px `sm`/`xs`.                                                                |
+| `Badge`    | 24px `control`, 20px `default`, 16px `sm`.                                                               |
+| `Kbd`      | 18px.                                                                                                    |
+| `Switch`   | 20px, or 18px in `sm`.                                                                                   |
+| `Checkbox` | 18px, or 16px below the `sm` breakpoint.                                                                 |
 
-| Token | Value | What it measures |
-|---|---|---|
-| `--h-titlebar` | 28px | OS-frame titlebar, pre-boot screen only |
-| `--h-top` | 38px | Live app topbar |
-| `--h-railhead` | 38px | Rail brand-mark row — equal to `--h-top` so both land on the same pixel row |
-| `--h-pane-head` | 28px | Every pane header, everywhere |
-| `--h-ctl` | 28px | Buttons, selects, inputs |
-| `--h-row` | 28px | Rail rows |
-| `--h-pill` | 26px | Chips |
-| `--page-w` | 960px | The one page column |
+`pointer-coarse` adds a 44px hit area to buttons and badges on touch devices. A smaller
+visible box is acceptable only when the hit target reaches the same floor.
 
-List-detail rows and Settings list rows use the 36px list recipe; Settings group headings
-are 13/600 in `--text-primary`, above the group rather than inside its card.
-
-**Every interactive target stays ≥28px tall**, regardless of its visible box — a 22px
-icon button is fine only inside a 28px hit area. `--shell-zoom` mirrors the live zoom
-factor; chrome that must stay OS-constant (window controls) divides by it.
-
-**A stack's rhythm belongs to its container.** Put `gap-*` on the flex or grid parent;
-never a `mt-`/`mr-`/`mb-`/`ml-` on the children, at any value. `ml-auto` is alignment,
-a `-0` is a reset of somebody else's margin, and a negative margin is a pull into
-overlap — those three stay legal. Every other directional margin is one element
-deciding a number its parent should own, which is how a row of badges drifts out of
-step with the row it sits in. `check-spacing-tokens.sh` holds the original
-directional-margin rule and rejects CSS padding, margin and gap literals plus
-arbitrary-property classes in `components/ui/` and the foundation stylesheets.
-Token definition files are exempt; prose rhythm inside a `[&_…]:` variant is
-exempt because markdown output has no JSX parent to carry a gap and its steps
-are deliberately uneven.
+**Known drift.** `--h-ctl` is 28px, but the `Input` primitive is 26px by default and the
+grid label is a 26px pill (`--h-pill`). Treat the table above as the per-primitive contract,
+not as a single universal control height.
 
 ## Radius
 
-Four roles, each with a legacy alias so feature code does not change:
+| Token           | Value | Meaning                                                     |
+| --------------- | ----- | ----------------------------------------------------------- |
+| `--r-badge`     | 4px   | Badges, small value plates, inline code.                    |
+| `--r-ctl`       | 6px   | Buttons, inputs, selects, menu rows and chips.              |
+| `--r-selection` | 7px   | Grid labels and selection buttons.                          |
+| `--r-group`     | 10px  | Cards, panes, popovers, menus and dialogs. Also `--radius`. |
+| `--r-dialog`    | 14px  | Top-level dialogs.                                          |
+| `--r-pill`      | 999px | Switches, avatars and capsule chips.                        |
 
-| Token | Value | Meaning |
-|---|---|---|
-| `--r-badge` | 4px | Badges, swatches, small value plates |
-| `--r-ctl` | 6px | Controls: buttons, inputs, selects, menu option rows, chips, banners |
-| `--r-group` | 10px | Groups: cards, panes, popovers, menus, overlays |
-| `--r-dialog` | 14px | Dialogs and other top-level floating surfaces |
-
-Legacy names map to a role (`--tr-radius-sm` → `--r-ctl`, `--tr-radius-md` and
-`--tr-radius-card` → `--r-group`, `--tr-radius-dialog` → `--r-dialog`, and so on).
-`--tr-radius-pill` stays the full capsule.
-
-**The rule: rounded = a value, capsule = pressable.** A status, tag or count is a value
-and uses `--r-ctl`. A choice, filter, copy or removable chip is pressable and uses the
-capsule. Fields, menus, ordinary buttons and segmented controls keep their role's rung.
-
-Status dots and chart markers remain circular; repair marks are square at small sizes.
-
-**One source, and a guard that keeps it that way.** A call site names the role —
-`rounded-[var(--tr-radius-button)]`, `border-radius: var(--r-group)` — never the number.
-`.btn` and the icon-button chrome constants read the tokens too.
-`check-radius-tokens.sh` refuses a `rounded-[Npx]` literal, a `border-radius: Npx` in
-CSS, the framework's own `rounded-sm`/`md`/`lg`/`xl` (unmapped in `tailwind.css`'s
-`@theme`), and `[border-radius:Nunit]` classes in `components/ui/` and the foundation
-stylesheets. `rounded-full` and `rounded-none` stay legal: a circle and a zero are shapes,
-not rungs.
+Name the role (`rounded-(--r-ctl)`, `rounded-[var(--r-group)]`) rather than a number; the
+`radius` rule rejects numeric arbitrary radii and CSS radius literals. `rounded-full` and
+`rounded-none` are shapes, not rungs. The `control` Badge size uses `--control-radius`, a
+6px alias used by that recipe.
 
 ## Materials
 
-Surfaces are materials, not colours. Materials come as a **ladder**, so "one step
-more separated" is a step on an axis rather than a new hex. Five rungs, in
-`ui/src/renderer/src/components/ui/material.ts`:
+A surface is a token, not a hand-built recipe. The ladder is:
 
-| Rung | Ground | Border | Shadow | For |
-|---|---|---|---|---|
-| **base** | `--content-bg` (Custom: nothing — the field) | — | — | The canvas: the Agents gutter, a pane column's ground |
-| **shell** | `--rail-bg` (Custom: `--custom-chrome-scrim`) | — | — | The app's own frame: rail, titlebar, the grid container |
-| **inset** | `--card-bg` | `--border` | — | A box cut into what it sits on: cards, panels, list surfaces |
-| **raised** | `--raised` | `--border` | `--shadow-1` | Menus, dropdowns, popovers, tooltips, hover previews, toasts |
-| **overlay** | `--raised` | `--border` | `--shadow-2` + a sibling scrim | Modals, confirm sheets, the command palette |
+| Rung     | Token       | For                                    |
+| -------- | ----------- | -------------------------------------- |
+| Chrome   | `--rail`    | Sidebar and window chrome.             |
+| Canvas   | `--content` | The main ground.                       |
+| Card     | `--card`    | Panels and rows lifted off the canvas. |
+| Floating | `--raised`  | Menus, popovers, dialogs and tooltips. |
+| Pane     | `--pane`    | A thread or grid cell.                 |
 
-`raised` and `overlay` each have a translucent twin — `raised-glass` and
-`overlay-glass` — which is the same step with a 90% film instead of an opaque
-fill. That film is the overlay tier's own, chosen per call site; it is not a window
-mode. **The ladder adds tint rungs, never blur rungs**: those two
-carry the only `backdrop-filter` in the set, it is the same one the overlay tier
-carried before the ladder, and the number of simultaneously live blurred layers
-is not allowed to rise. A rung wanting its own blur is a design change.
+Floating surfaces use one of the shared utilities:
 
-`shell` carries no border and no shadow because the rail's edge is a tonal step,
-not a line — the divider is gone in every mode, and the step between `--rail-bg`
-and the grid is what divides — and its cast shadow is a per-surface, per-theme
-call (`--glass-rail-shadow` / `--glass-topbar-shadow`, none in every theme) —
-geometry drawn where the surface is drawn, not a property of the material. `base`
-is the ground and has nothing to be separated from. If something needs more
-emphasis than `overlay`, it needs a focus ring, not a shadow. Panes never get drop
-shadows.
+| Utility                | Result                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------ |
+| `dropdown-glass`       | `--popover` fill, 1px `--border`, `--shadow-1`. Used by menus, popovers and tooltips.      |
+| `dialog-glass`         | `--popover` fill, 1px `--border`, `--shadow-2`. Used by dialogs.                           |
+| `dialog-backdrop`      | A 45% black scrim. The media variant uses 75% black.                                       |
+| `surface-glass`        | `--background` mixed with `--glass-opacity`, plus `--glass-blur` and `--glass-saturation`. |
+| `alert-glass`          | The glass recipe tinted by the alert variant.                                              |
+| `warning-wash-surface` | An opaque composer surface under a warning wash.                                           |
+| `surface-grain`        | The app's noise texture, for chrome that floats over the body.                             |
 
-**Wearing the rung is half the contract.** `data-material` is what scopes the
-rung's ink (below), so the attribute travels with the class —
-call sites spread `materialAttrs()` (`material.ts`) alongside `MATERIAL_CLS`,
-and `overlayChrome.ts` ships an `…_ATTRS` object beside each `…_CLS`.
-
-`--shadow-1` = `--shadow-md`, `--shadow-2` = `--shadow-lg`, both per theme (light
-themes use shorter, softer throws). `overlayChrome.ts` composes the four overlay
-tiers on top of the ladder — use a constant, don't hand-roll a shadow:
-
-| Constant | Rung |
-|---|---|
-| `OVERLAY_RAISED_CLS` + `OVERLAY_RAISED_ATTRS` | `raised` |
-| `OVERLAY_OVERLAY_CLS` + `OVERLAY_OVERLAY_ATTRS` | `overlay` |
-| `OVERLAY_GLASS_RAISED_CLS` + `OVERLAY_GLASS_RAISED_ATTRS` | `raised-glass` |
-| `OVERLAY_GLASS_OVERLAY_CLS` + `OVERLAY_GLASS_OVERLAY_ATTRS` | `overlay-glass` |
-
-Smaller recipes (status glows, selected-tile rings, the badge gap ring) are complete literal
-`*_CLS` classes in `shadowChrome.ts`. Tailwind generates no CSS for `shadow-[${CONSTANT}]`, so a
-recipe is never stored as a bare value and interpolated at the call site.
-
-All four add the shared structure the ladder does not carry: `--tr-radius-md`,
-`no-drag` and `select-text`. Floating menus and popovers appear immediately.
-The scrim under the `overlay` rung is a sibling element at the call site, not part of the class.
-
-### A rung's own ink, and its receipt
-
-Every rung stands on a different ground, so **each rung's two quiet inks are cut
-against that ground rather than painted on it**. `theme.css`'s `[data-material]`
-rules re-scope `--text-muted` and `--text-faint` per rung; the two louder inks
-clear on every rung in both themes unlifted and are deliberately not redeclared.
-
-The bar is one sentence: **a surface must not cost legibility.** Every rung's ink
-clears `min(4.5, R)`, where R is the same ink's ratio on the ground that material
-*replaces* — `base` for an opaque rung, the rung's own Solid form for a
-translucent one. A step up the ladder never costs what the canvas gives, and
-translucency never costs what the Solid form gives. `base` in Solid is the floor
-and is what the others answer to.
-
-That bar bit the first time it was applied: on Graphite the ladder climbs toward
-its light ink, so `--text-muted` fell from 4.66:1 on the canvas to 4.37 on a card
-and 4.00 on a menu — held by nothing until every rung had a receipt. On Paper the
-ladder climbs away from its dark ink and every opaque step buys contrast instead,
-so Paper cuts nothing opaque.
-
-`--material-<rung>-worst` is that receipt: the worst ground the rung leaves under
-ink. An opaque rung's is its own fill; the translucent ones are measurements.
-None of them is a note — `check:css` renders **every** rung's shipped recipe over
-the shipped backdrop at three window sizes, at the geometry the app gives it, and
-fails the build on any receipt more optimistic than the pixels. It reads the rung
-list out of `material.ts`, so a rung added there is measured and held with nothing
-in the script edited.
+`--shadow-1` is the floating shadow, `--shadow-2` the dialog shadow, and `--shadow-seg` the
+pressed-segment shadow. The composer has its own `--shadow-composer` and
+`--shadow-composer-dark`. Grid panes are flat: separation comes from `--divider`, never a
+drop shadow or a card border.
 
 ## Layout anatomy
 
-The shell is an **L-shaped CSS grid** — pure geometry, no state:
+![The grid in the light theme](styleguide/grid--light.webp)
+![The grid in the dark theme](styleguide/grid--dark.webp)
 
-```
-grid-template-columns: auto minmax(0, 1fr)
-grid-template-rows:    var(--h-top) 1fr
-grid-template-areas:   "rail topbar" "rail grid"
-```
+- **Shell.** `AppSidebarLayout` composes `SidebarProvider` with a left `Sidebar` and the
+  route content. The thread sidebar is resizable between 240px and 440px, defaults to
+  340px, and collapses off-canvas. Its rows are `--h-row` on `--sidebar` (the rail).
+- **Top bar.** 40px (`--h-top`, `--workspace-topbar-height`), a drag region with no native
+  title bar. Controls opt out with `no-drag`. On the desktop host the three window controls
+  occupy `--w-window-control` each at the right end.
+- **Thread route.** A thread fills the content area flush: no card radius, no gutter, no
+  pane header when it is the only thread. The chat lane is 760px
+  (`--chat-content-max-width`), while the timeline narrows to 720px; the thread-details
+  card is 340px (`--thread-details-panel-width`). The composer sits at the bottom of the
+  lane.
+- **Grid.** Cells are divided by 1px `--divider`. A grid with two or more threads has no
+  pane header; each cell carries a floating label at `top-2 left-2`: provider mark,
+  truncated title, status glyph, and the pane actions on hover. The label is a 26px
+  (`--h-pill`), 7px (`--r-selection`) pill on `--pane-head` with a 1px `--divider` border.
+  A single thread has no label.
+- **Right panel.** Docked to the right edge, flush and divided by `--divider`. It opens on
+  an "Open a surface" launcher and gains tiled surfaces (Files, Diff, Browser, Terminal,
+  Pull request) through the launcher or the "Add panel surface" menu. Its top row holds the
+  panel controls, and the window controls return to the main top bar when it closes.
+- **Bottom terminal.** The `ThreadTerminalDrawer` is a bottom sheet over the thread and is
+  dismissed without closing the agent session.
+- **Settings.** `/settings/<section>` is a full-window route with its own left navigation
+  and a 720px (`--settings-w`) content column. The page header is the 40px top bar.
+- **Content pages.** `WorkspacePageContainer` owns the column: `readable` is 896px
+  (`max-w-4xl`), `wide` is 1040px, and `expanded` is 1152px (`max-w-6xl`). There is no
+  `--page-w` token; `page-width` rejects a per-page pixel width.
 
-The rail spans both rows (full height); the topbar spans the content column only.
-There is no status bar row — diagnostics live in Settings.
+### Stacking
 
-| Region | Metric / rule |
-|---|---|
-| **Rail** | 38px head, 28px rows. Hiding it leaves a Show sidebar control in the topbar. Status rolls up per grid: needs-input, exited, working, starting, unavailable, done, idle, with ties broken by the older `status_since_ms`; a parent with `children_waiting > 0` reads needs-input. The tree is documented with the sidebar migration. |
-| **Topbar** | 38px. Two-column grid: left = sidebar toggle, right = voice chip → Tidy-panes → Source control → window controls. The Agents/Code mode `Segmented` floats at the window's centre, a child of the shell root. Drag region; interactive children opt out with `no-drag`. |
-| **Window controls** | Ordered from the desktop's own button-layout setting, not a hardcoded cluster. Monochrome, no hue-coded discs, no reserved gutter. Sized in `calc(… / var(--shell-zoom))`. |
-| **Terminal grid** | Panes are absolutely positioned inside one container; geometry is computed as percentages then converted to pixel-gutter `calc()`. Outer margin **8px**, **4px** per shared interior edge. Splitters are 8px hit strips centred on the seam; keyboard nudge is 4% of the span. Expand-to-full hides siblings by `visibility`, it does not unmount them. |
-| **Pane headers** | 28px, every pane kind — session, editor, files, browser, skills. |
-| **Stack tabs** | 26px strip on `--card-bg` with a `--divider` bottom border. Each tab: status dot + truncated label (110px cap) + optional 6px `--warn` needs-input badge + a hover/focus-revealed close button. Active tab drops to `--content-bg`; inactive is muted with a neutral hover wash. A `n/cap` indicator appears at the stack's cap. |
-| **Source control** | A workspace panel beside the grid, with Changes and Pull request tabs. Preferred width 480px, compact minimum 340px; expansion is bounded by the main content width, reserving 360px for terminals when space permits. Smaller windows clamp the rendered width without replacing the remembered preference. Its divider uses the terminal splitter's hit area and neutral drag line. |
-| **Changes tab** | Responds to **container queries, not viewport breakpoints**. Wide (`@container (min-width: 720px)`): file list beside the diff. Narrow: stacked, tree capped at 45% height. It has no pane header, drag affordance or independent grid cell. |
-| **Settings** | One scrollable column in the shared `--page-w` (960px). Section nav lives **in the rail**, not inside the view. Group headings sit above their group, 8px clear of it; groups are 24px apart. Row titles are 13/500, descriptions 12 in t3, and descriptions take the row's remaining width beside the control. |
-| **Notices** | Two anchors. `workspace-top`: centred, `min(560px, 100% - 24px)`, **no enter or exit animation**. `pane-corner`: bottom-right, `max-w-[min(300px, 100% - 24px)]`, enters from its own corner and exits by unmounting. Rows are ≥30px with a kind glyph, title, optional mono body, and one action or a dismiss. |
-| **Command palette** | Mounted only while open. Full-viewport scrim, panel `min(560px, 86vw)` at `max-h-[70vh]`, overlay glass, `--tr-radius-md`. 46px search header; `role="listbox"` with 32px option rows grouped under uppercase 11px headers. |
+The app's layer order, as the primitives use it:
 
-Source control belongs to the workspace, not to the split tree. Closing it must
-not close or remount terminal panes. Settings and navigation surfaces cover the
-same content region, including the panel. The panel's tabs use neutral selection;
-accent remains reserved for focus and the affirmative action.
+| Layer                 | Value             | What sits there                                     |
+| --------------------- | ----------------- | --------------------------------------------------- |
+| Terminal drawer       | 45                | The bottom terminal over the timeline.              |
+| Sheet                 | `--z-sheet` (46)  | Docked sheets.                                      |
+| Dialog                | 50                | Dialogs and their scrim.                            |
+| Media dialog          | 60                | A media dialog opened from inside another overlay.  |
+| Window                | `--z-window` (70) | Frameless window chrome. `--z-window-resize` is 69. |
+| Toast                 | 100               | Transient status banners.                           |
+| Menu, select, popover | 130               | Anchored floating surfaces.                         |
+| Tooltip               | 140               | Hover labels.                                       |
+
+**Known drift.** The layer comment in `index.css` stops at the dialog range and does not list
+the menu (130), tooltip (140) or theme editor (110/120) layers. The table above is the ladder
+the primitives actually use.
+
+![The Files surface in the light theme](styleguide/panel-files--light.webp)
+![The Files surface in the dark theme](styleguide/panel-files--dark.webp)
 
 ## Components
 
-### Buttons
+Compose from `apps/web/src/components/ui/`. Add a variant to a primitive instead of writing a
+new visual recipe in a feature file. The `ui-boundary` rule scans feature class strings; its
+baseline records copied feature components until a slice adapts them.
 
-New buttons use `components/ui/Button`. Its `md` and `sm` sizes use `--h-ctl`
-(28px) and `--h-ctl-mini` (22px). Keep `className` for layout; add visual
-differences as a variant in the registry.
+| Primitive                          | Use                                                                                                                                                                                                                                                                              |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Button`                           | Every action. Variants: `default` (primary fill), `primary` (brand fill), `destructive`, `destructive-outline`, `outline`, `secondary`, `ghost`, `ghost-muted`, `ghost-destructive`, `link`, `glass`, `raised`, `overlay`, `warning-outline`, `media-close`, `media-navigation`. |
+| `InlineButton`                     | A link-shaped action inside prose or a row; tones `default`, `muted`, `destructive`, `picker`.                                                                                                                                                                                   |
+| `Input`, `Textarea`, `Label`       | Form controls. `Input` sizes `compact`, `default`, `lg`; `Textarea` sizes `sm`, `default`, `lg`.                                                                                                                                                                                 |
+| `Select`                           | Every dropdown. Native `<select>` is rejected by the `native-select` rule. Size `compact`, `default`, `sm`, `xs`; variants `default` and `ghost`.                                                                                                                                |
+| `Menu`                             | Context menus, submenus, checkbox and radio menu items, and searchable menus.                                                                                                                                                                                                    |
+| `Popover`                          | Anchored rich content. `variant` is `default`, `panel` or `dialog`; `width` is `auto`, `sm`, `md` or `lg`.                                                                                                                                                                       |
+| `Dialog`, `Sheet`                  | Modal dialogs and edge sheets. Dialog variants are `default` and `media`; sheets take a side.                                                                                                                                                                                    |
+| `Tooltip`                          | Every hover label. Native `title=` is rejected by `title-tooltip`.                                                                                                                                                                                                               |
+| `Toggle`, `ToggleGroup`            | Pressed toggles and segmented groups. `ToggleGroup` defaults to the `segmented` variant over `--field`.                                                                                                                                                                          |
+| `Switch`, `Checkbox`, `RadioGroup` | Form state. Native checkbox/radio inputs are rejected by `native-input`.                                                                                                                                                                                                         |
+| `Badge`                            | Counts and status words. Variants: `default`, `outline`, `secondary`, `info`, `success`, `warning`, `destructive`, `error`, `label`; sizes `control`, `default`, `sm`.                                                                                                           |
+| `Table`                            | Tabular content: `TableHeader`, `TableBody`, `TableRow`, `TableHead`, `TableCell`.                                                                                                                                                                                               |
+| `Empty`                            | Empty states: `EmptyHeader`, `EmptyMedia`, `EmptyTitle`, `EmptyDescription`, `EmptyContent`; sizes `compact`, `default`, `welcome`.                                                                                                                                              |
+| `Alert`                            | Inline information: variants `default`, `sidebar`, `error`, `info`, `success`, `warning`, `stateError`, `stateWarning`; surface `default` or `glass`.                                                                                                                            |
+| `Toast`                            | Transient results. Toasts stack at layer 100 and use the same status variants.                                                                                                                                                                                                   |
+| `Kbd`                              | Key hints; `KbdGroup` joins a sequence.                                                                                                                                                                                                                                          |
+| `Skeleton`, `Spinner`              | Loading states. Both animate only when motion is allowed.                                                                                                                                                                                                                        |
+| `ScrollArea`                       | The clipped scroll surface with the shared scrollbar and fade treatment.                                                                                                                                                                                                         |
+| `ThreadStateGlyph`                 | The one thread-status vocabulary: `running`, `ready`, `needs`, `failed`, `back`.                                                                                                                                                                                                 |
+| `CopyButton`                       | Copy with the shared copied-state feedback.                                                                                                                                                                                                                                      |
 
-| Role | Hover |
-|---|---|
-| `primary` | `--accent-hover` |
-| `secondary` | `--card-hover` and `--border-hover` |
-| `ghost` | `btn-ghost` owns the existing `--hover-fill` and `--text-primary` hover |
-| `danger` | Ghost with the danger tint on hover; `armed` adds its standing danger cue |
-| `danger-solid` | `BTN_DANGER_SOLID`; always paired with a warning icon |
-| `icon` | `BTN_ICO`'s box and hover |
-| `text` | A title link inside an interactive content row; no control box or padding |
+The thread state tokens are the readable ones:
+`running` → `text-(--accent-ink)`, `ready` → `text-success-foreground`, `needs` →
+`text-(--warn-ink)`, `failed` → `text-error-foreground`, `back` →
+`text-secondary-foreground`. The glyph shapes differ as well, so colour is never the only
+signal.
 
-Existing call sites keep using `BTN_*` and the `PRIMARY_BUTTON` /
-`SECONDARY_BUTTON` recipes during migration. `BTN_PRIMARY`, `PRIMARY_BUTTON` and the
-`primary` button variants share the same fill and white label.
-`SECONDARY_BUTTON` is the selected secondary look: it has broader current use
-(55 references versus 47) and its neutral label and fill pass contrast in both
-themes. Neither secondary recipe has a direct test, and both date to the initial
-release. `BTN_SECONDARY` is flagged for removal during migration.
-
-| Constant | Use |
-|---|---|
-| `BTN_PRIMARY` | The single affirmative action in a flow |
-| `BTN_SECONDARY` | A neutral, bordered action alongside the primary |
-| `BTN_DANGER_SOLID` | The irreversible action — same *rank* as primary, differing only in consequence. Always paired with a warning icon; colour alone is not a signal |
-| `BTN_GHOST` | The ordinary case: transparent fill, muted label, no border. Hover fills with `--hover-fill` and lifts the label to `--text-primary` |
-| `BTN_GHOST_BG` | Ghost's background half only, for sites that must inherit their text colour |
-| `BTN_GHOST_DANGER_HOVER` | Hover-only danger cue: a destructive click with no standing risk before it |
-| `BTN_GHOST_DANGER_ARM` | Standing danger cue: an armed, click-again-to-confirm control |
-| `BTN_ICO` | Full icon-button chrome (24×22 box, `--tr-radius-sm`, muted→primary on hover) |
-| `BTN_ICO_STRUCTURE` | Bare structure only, for sites that bring their own size and colour |
-
-`BTN_GHOST` is a component-layer class (`btn-ghost` in `base.css`), so any utility a
-site adds — its own text colour, `BTN_GHOST_DANGER_HOVER`, `BTN_GHOST_DANGER_ARM` —
-wins over it by layer, not by class order. Ghost's `border: none` is a real
-border-*style* reset, so a later `border-color` utility paints nothing — danger cues
-signal through fill + text, never a border.
-**Cancel, Dismiss, Close and Discard are not destructive.** They back the user out
-and stay quiet: `BTN_GHOST`, no colour. Save the weight for the
-affirmative action.
-
-Use `ActionMenu` as the single trailing control when a row has secondary actions.
-Keep destructive removal in its menu; choose one contextual trigger label or the
-ellipsis trigger rather than placing every row action beside one another.
-
-### Component boundary
-
-Renderer UI composes from `ui/src/renderer/src/components/ui/`. Outside that directory, class
-strings contain layout utilities only:
-`flex`, `inline-flex`, `grid`, `col-*`, `row-*`, `gap-[var(--space-*)]`, `items-*`, `justify-*`,
-`self-*`, `place-*`, `min-w-0`, `min-h-0`, `flex-1`, `flex-none`, `shrink-*`, `grow`, `truncate`,
-`hidden`, `relative`, `absolute`, `inset-*`, `w-full`, `h-full` and `overflow-*`. Responsive and
-state prefixes may qualify these utilities. Colour, borders, radius, typography, padding, margin,
-shadows, literal sizes, arbitrary properties and button recipes belong in `components/ui/` as a
-primitive or variant, with a specimen case in the `ui-primitives` story.
-
-Four stylesheet foundations are allowed outside `components/ui/`: `theme.css` defines tokens and
-re-scopes them under `[data-*]`; `tailwind.css` binds Tailwind imports and theme values;
-`keyframes.css` catalogs animation frames; `base.css` contains element, pseudo-element and
-attribute resets plus document-state classes on `html` or `body`. Other stylesheets and component
-class selectors in `base.css` fail the boundary guard.
-
-`scripts/check-ui-boundary.sh` rejects every non-layout token it recognizes in class strings, in
-every feature file; it has no allowlist or pinned counts. It reads literal JSX `className` values, every string literal in a
-`className` expression up to its balanced closing brace, and same-file `*_CLS` declarations.
-Template literals contribute their text and the literals inside their `${…}` interpolations.
-Imported constants are covered where they are declared. Class-list-shaped strings hidden in helper
-returns or constants without the `_CLS` suffix remain a documented scan gap; review them at the
-source. The scanner does not infer classes from computed values.
-
-### Select
-
-Every dropdown is `components/ui/Select.tsx`. **Native `<select>` is banned** — its
-open popup is a separate OS window that the desktop toolkit draws with its own font
-and its own selection fill, so none of our tokens reach it.
-
-The trigger is `SELECT_CLS` (28px, `--tr-radius-input`, `ui` type size). The menu
-uses `OVERLAY_RAISED_CLS`, caps at 320px with a 4px gap and an 8px viewport margin,
-and flips/clamps to stay on screen. Option rows are `--h-ctl` tall at
-`--tr-radius-sm`; the selected row's checkmark sits in a fixed gutter so labels never
-shift. Type-ahead, Home/End, arrows, Enter/Space, Tab-commits and Escape-restores are
-all implemented — extend it rather than rolling a listbox.
-
-### Tooltip vs `title`
-
-`components/ui/Tooltip.tsx` is the only hover label. It portals to `document.body` so no
-`overflow: hidden` ancestor clips it; 300ms hover delay, bypassed by keyboard focus;
-6px offset, 8px viewport margin; flips vertically, clamps horizontally; dismisses on
-Escape, pointerdown, scroll, resize and blur.
-
-- **Use one when** an icon-only button or a truncated label needs a name, or to explain
-  a field: `InfoTip` (an info button whose tooltip also opens on click) holds a
-  self-sufficient explanation, so the field carries no inline hint line. Inline text
-  next to a control is for its state, a consequence or an action needed, on the same line.
-- **Don't** when the control already has a visible label, or when the message is
-  critical — errors and blocking warnings go inline.
-- **Never pass both `label` and a native `title`** on the same child; they double
-  up. Converting a call site means deleting its `title`.
-- A `title=` prop on a capitalized component is only legitimate when it is *visible
-  heading text*. The guard script keeps the allowlist.
-
-### Modals
-
-`ConfirmModal`, `SaveDiscardModal`, `HostKeyModal`, `SshConnectModal` and
-`UpdateInstallModal` share one scrim + `.pop` panel shell; **only the width differs**
-(380 / 380 / 460 / 420 / 460px,
-always `max-w-[92vw]`). The scrim is `--overlay` + a light backdrop blur and cancels
-on mouse-down; the panel is `--raised` + `--shadow-2` + `--tr-radius-md` with a
-`panel-in` entrance. Footer grammar: ghost Cancel left of the affirmative action; a
-three-way choice reads Cancel (ghost) · Discard (ghost + standing danger) · Save
-(primary). Focus starts on the safe choice, Escape backs out, and more than two
-controls means a full focus trap.
-
-### Chips, badges and tiles
-
-`Chip` has six variants (`state`, `provider`, `count`, `compound`, `removable`, `choice`) and
-five tones: neutral plus the four status tones. Shell: 26px, `--space-2` padding,
-`small` type. Radius follows the meaning rule — `removable` or clickable → capsule,
-everything else → `--tr-radius-sm`. Choice controls are 28px; other chips are 26px.
-Selected pressable chips use the shared neutral row fill and a `--border-hover`
-border cue. A `count` chip distinguishes "no value yet" from a known zero —
-render an empty-set label, never a bare `0`, for the latter. `IconTile` comes in
-24/32/40px with six tones, including accent; its interactive variant adds a hover
-surface and a small active scale. A selected tile may also use `--accent-muted` and
-an accent border.
-
-### Segmented control
-
-A 28px track at `--tr-radius-button` over a 4%-mixed background; 22px items, 54px
-minimum width, 12px label. Selection **cross-fades colour and background; it does not
-slide a thumb.** A count may follow the label in muted ink. The track sizes to its
-options unless its parent deliberately gives it a wider layout.
-
-### Tables
-
-Use `Table` for content tables. Define columns with row keys, mark numeric columns
-`numeric`, and render model-specific content through a column renderer. Numeric cells
-and their headings right-align with tabular figures. Rows are separated by `--divider`
-hairlines with `--space-2-5` vertical padding. Cell ink defaults to primary; set a
-column's `tone` to `muted` for secondary figures or `faint` for ranks. `plain` tables sit
-directly on the page; `framed` tables sit inside a hairline frame when they share a
-panel with other content. Rows highlight on hover. Row actions remain in their own trailing column. A clickable row supports
-Enter and Space and ignores events from nested controls. Empty results use
-`EmptyState`; failures use `Notice` with an optional retry action. `DataTable` remains
-for existing callers that need its loading state, sticky head and bounded body scroll;
-its clickable rows support Enter/Space and Up/Down navigation. The `dense` variant
-uses fixed columns and control-height rows for compact libraries. Expanded details
-occupy a separate row spanning every column; keep actions inside that detail so they
-remain independent of the row toggle.
-
-`DefinitionTable` is a lookup surface, not a form: a 160px label column on `--panel`
-with a small muted icon tile, a mono value column with optional middle-truncation, and
-masked rows for secrets — the masked value never touches the DOM in full and there is
-no reveal control.
-
-### Menus
-
-Context/submenu panels are `fixed`-positioned (host menus clip with
-`overflow: hidden`), `min-w-[170px]`, `--raised` + `--shadow-1` +
-`--tr-radius-md`. **In menus, disabled beats hidden** — an empty submenu renders one
-disabled row rather than vanishing.
-
-**A menu item's description line wraps or truncates on purpose.** Use
-`whitespace-normal`/`line-clamp-N`, or `truncate` paired with an explicit
-`max-w-*`; never `whitespace-nowrap` or `truncate` with no bound, and never a
-description with no wrapping class at all — that reads fine on the string
-tested against and overflows the panel on the next one.
-`scripts/check-menu-descriptions.sh` enforces it.
-
-### Icons
-
-`components/icons.tsx` is a **hand-drawn SVG library** — 126 `Icon*`
-components that reproduce Lucide's geometry (each citing the glyph it copies), with
-no runtime dependency on any icon package. `lucide-react` is never imported.
-
-- Shared wrapper: `viewBox="0 0 24 24"`, `fill="none"`, `stroke="currentColor"`,
-  round caps and joins, default `size={14}`, `strokeWidth={2.5}`, and automatic
-  `aria-hidden` unless the caller supplies an aria/role prop.
-- **No call site passes `size` or `strokeWidth`.** Both come from the icon rung
-  matching the TEXT the glyph sits beside — eight rungs, the same eight names as
-  the type ladder, resolved in CSS from `--tr-icon-<rung>-size` (as the svg's own
-  `font-size`, with a `1em` box) and `--tr-icon-<rung>-stroke`. Render
-  `<Icon glyph={IconFoo} role="ui" />`; where wrapping would break the DOM — a
-  glyph held in a `Record`, passed as a prop, or carrying its own `className` —
-  resolve it through `resolveTightGlyph(Glyph, role)` (Icon.tsx) before
-  rendering it bare with `ICON_ROLE_CLS[role]` as its class, or the tight cut
-  below never reaches it. Inside a control, ask
-  `CONTROL_SIZE_ICON_ROLE` (regular→`ui`, small→`small`, mini→`label`) rather than
-  re-deciding. `scripts/check-icon-metrics.sh` refuses either prop, everywhere.
-- The ladder runs 26/1.4 at `display` down to 11/2.8 at `label`: stroke moves
-  OPPOSITE to size, because a small glyph needs a heavier line to read at all.
-  Retuning a rung in `theme.css` moves every glyph on it.
-- Colour inherits from surrounding text; brand colour is opt-in via the `brand`
-  prop, and only for provider marks.
-- Need a glyph that doesn't exist? Add it in the house geometry — don't import one.
-- A glyph that fails at 11px gets a real second drawing in `TIGHT_ICON_MAP` (icons.tsx) plus the rung tokens above — not a hardcoded per-element `strokeWidth` pair like the pre-existing `IconHouston`/`IconHoustonSmall`.
-
-### Drop indicators
-
-Every drop target in the app wears the same clothes: a **2px dashed
-`--accent` stroke over a 10% accent wash**, at `--tr-radius-md`, entering on
-`term-enter`. Two of them exist — the terminal's file dropzone
-(`pane/TerminalPane.tsx`) and the pane-drag zones (`LayoutView.tsx`) — and a
-third must match rather than invent a look.
-
-**A drop zone names its action.** Where a target has more than one outcome, the
-band carries a chip saying which — `Split left`, `Split down`, `Swap`, `Stack`
-— in the same words the pane header's menu uses. The chip is an accent fill
-with `text-white` (BTN_PRIMARY's fixed contrast pair) because it sits over live
-terminal output, where accent ink on a 10% wash cannot be read. It reads the
-drop target itself, never a pre-resolved string, so it cannot promise one thing
-and do another: a held modifier that changes the outcome changes the chip.
-
-**The band does not slide between zones.** Discrete zones cross-fade or cut, for
-the reason the segmented control does not slide a thumb — animating
-`inset`/`width` is neither transform nor opacity (Motion rule 1).
-
-**The dragged element dims behind a scrim, not with `opacity`.** `bg-overlay`
-above the pane's own chrome. Fading the element itself fades its text and
-borders along with it, and a pane you are placing is one you still want to
-recognise.
+![A replayed thread with a plan and an approval in the light theme](styleguide/thread-showcase--light.webp)
+![A replayed thread with a plan and an approval in the dark theme](styleguide/thread-showcase--dark.webp)
+![A completed plan in the light theme](styleguide/thread-plan--light.webp)
+![A completed plan in the dark theme](styleguide/thread-plan--dark.webp)
 
 ## Patterns
 
-### Page header
+### Empty states
 
-Every destination page uses `PageFrame width="page"`: the single `--page-w` (960px)
-column, centred the same way in the content region. Compose its heading with `PageHeader`,
-which renders the `largeTitle` step (26/32, 700) and a one-line description in t2.
-Settings pages that own their header use the same largeTitle through `SectionHead`. Place
-page actions at the end of the title row, and use the rail label verbatim as the page
-title. `PrPageContent` reads the same token. Do not add a per-page max width;
-`check-page-width.sh` rejects one.
-
-### Section heading and count
-
-Use `SectionHead` with `Count` immediately after its label on the same line, with
-a 6px gap, tabular
-numerals, the label's size and one softer ink step. Do not use parentheses, a
-middle dot, monospace numerals or right alignment; the right end of a heading is
-for its action. Use its inset option when a group heading sits beside a colored rail.
-Omit zero in tabs and headings; disable an action instead of
-showing `(0)`. Put phrases such as “1 routine” in descriptions. Keep `Chip` counts
-for metrics.
-
-### Primary action
-
-Show one primary action per view in the page header, using `Button` with the
-`primary` variant. Use “New <noun>” when Houston creates the item and “Add <noun>”
-when Houston registers an existing item. Repeat the action in an empty state only
-when the page header does not show it.
-
-### Field
-
-Use `Field` with a sentence-case label in the `small` text step, weight 600 and
-secondary ink, 6px above a 28px control. A hint is optional; an error replaces it.
-`Field` supplies labelling and feedback; its input or Select supplies the shared control
-chrome. Launch slots reuse that field chrome for model, effort and checkout values,
-including typed custom model IDs.
-Use `Segmented`
-for two to four exclusive options and `Select` for more than four. Use pressed
-chips only for multi-select filters.
+Use `Empty` with an icon (`EmptyMedia variant="icon"`), a title, one sentence and at most one
+action. The `empty-state-action` rule requires the control when the copy names an action;
+a statement of fact ("No results.") is enough when there is nothing to do.
 
 ### Status
 
-Two primitives, two jobs.
+Use `ThreadStateGlyph` anywhere a thread's state is shown: sidebar rows, grid labels, the
+right panel and the timeline. Use the word alongside the glyph when the row does not already
+identify the state. Keep the status words separate from chrome copy.
 
-`StatusGlyph` is the one lifecycle mark: a 14px slot whose 9px arc (`working`), 8px warn
-dot with ring (`needs`), 6px accent-ink dot (`finished`), 11px stop circle with `!`
-(`error`) or nothing (`idle`). It takes `state` or maps a reported source through
-`statusGlyphState`; `label` becomes the accessible name. Never paint a rounded status
-fill outside `StatusGlyph` — `check-status-glyph.sh` fails a rounded element that paints a
-status fill and presents as a status image.
+### Settings
 
-`StatusLabel` remains the word-plus-dot label for enumerated domain states (pull-request
-checks, routines, tasks). Choose one word from this vocabulary: Working, Needs input,
-Waiting for a slot, Idle, Done, Ended, Failed, Stalled, Starting, Result staged,
-Pending delivery, Paused, In sync, Differs, Off, Connected, Reconnecting, Missing, Open,
-Fixing, Not seen, Ready, Stale, Kept, Watching, Verified, Blocked, Merged, Verifying and
-Parked. The dot variant keeps an accessible status name when a row already identifies its
-state elsewhere. Do not rely on colour alone.
+Settings pages are sections of the same full-window shell. A setting is a row with a title,
+a description and one control; switches are for booleans, `Select` for short enumerated
+choices, and `Input` for free values. Keep one primary action per page, and name a limit,
+its current value and the requested operation in the error.
 
-**Roll-up:** a grid takes the highest-ranked pane status, with ties broken by the older
-`status_since_ms`: needs-input, exited, working, starting, unavailable, done, idle.
-`gridStatus` in `components/ui/railRows.ts` owns that order; a parent with
-`children_waiting > 0` rolls up to needs-input. A collapsed workspace shows one status
-glyph for all its sessions, ranked needs, error, working, finished; `rollupStatus` owns
-that order, and a workspace with only idle sessions shows none.
+### Thread composer
 
-### Empty state
+The composer is the primary surface. The context strip sits above the card, the controls
+inside keep their own focus rings, and the footer ends in one primary action whose icon
+names what Enter does. The timeline is 14/20 prose in a 720px lane with a 0.75rem block gap.
 
-Use `EmptyState`: a 32px icon tile with the surface's own glyph, a `ui`-step title,
-one sentence and at most one action, centred in its region. Use a magnifier only
-when a search has no results. Reserve the serif display step for whole-window
-states such as first run or no workspace. `NavEmpty`, `WorkspaceEmpty` and
-`BrowserPane.tsx`'s empty state are absorbed during their later screen migrations.
+### Pull requests and usage
 
-### Grouped rows
+Destination pages use `WorkspacePageContainer` and the 40px page header. Pull requests uses
+the `expanded` column and usage the `wide` one; their tables and charts use the status tokens
+above rather than the Tailwind palette.
 
-Use `Card` for a bordered, rounded group with divider-separated rows. `Card.Row`
-places its title and metadata on the left and status or action on the right. Its
-`compact` variant keeps history rows on one line. `Card.Group` spans its heading and
-rows with a New, Still there or Gone warn, stop or ok rule. Keep the rule to this
-primitive; feature files supply the group content. Use `Card.Content` for a
-padded, vertically grouped set of section rows.
-
-`ReviewFinding` rows sit in a `ReviewFindingList`, which queries its own width: from
-600px the status, the affirmative action and the quiet action hold fixed columns so rows
-align; below it they move under the title. The title stays on one line and expands the
-row's detail. Review history uses the same rows, and `ReviewOutcome` marks each finding
-in a review with the status dot and word the findings use. Generated reports render
-through the `report` markdown variant: the first heading is the title, the paragraph
-under it the summary, and each section is divided.
-
-`BarSparkline` shows a short sequence of comparable values with an accessible text
-summary. `Caption` carries supporting information in the small, secondary text step.
-Use the `accent` Count source for attention totals in navigation. Use the `link` Button
-variant for inline actions that open related content, such as a linked task key.
-
-### List and detail
-
-Compose `ListDetail` inside `PageFrame width="page"`. The list column uses the
-existing 280px split at the 720px container threshold; on narrow containers it shows
-one side at a time with a back button. Pass `selectedId` and `onSelect` when selection
-must follow a deep link. Arrow Up and Arrow Down move through the list and focus the
-new selection.
-
-Use `RoutineDetail` for the selected routine's schedule, unattended provider and run history;
-Edit and Delete live in its trailing action menu beside Run now and the enabled switch.
-`ConnectionCell` keeps an MCP destination's state and any failure reason together inside its
-matrix cell; the cell action updates that server's destination and syncs the matching CLI.
-
-### Drawer
-
-Use `Drawer` for a detail panel over the current page. It has a right-aligned 720px
-maximum width, a labelled title row and a close button. It traps Tab focus, closes on
-Escape or a backdrop press, and returns focus to the opener. Entry uses the panel and
-scrim motion tokens and is disabled by reduced-motion preferences.
-
-Task details keep a page gutter around the header, execution card, acceptance section
-and origin chip. Use `TaskProgress` for the four task lifecycle stages. Its current
-stage follows the task status; the component owns the line, ink and spacing.
-
-### Inline notice
-
-Use `Notice` for a single inline info, warn or danger sentence, with an optional
-`Button` action. Set `indicator="dot"` when it represents an event, such as a newly
-published Harness review. A concurrency limit names the limit, current value and settings path,
-for example: “3 of 3 running. Routines run 3 at a time (Settings › Routines)”.
-
-### Pane header actions
-
-Use `PaneHeaderButton` for pane-header icon actions. Its `aria-label` is required;
-the shared recipe preserves the 28px hit target inside the 28px pane header.
+![Settings in the light theme](styleguide/settings-general--light.webp)
+![Settings in the dark theme](styleguide/settings-general--dark.webp)
+![Pull requests in the light theme](styleguide/pull-requests--light.webp)
+![Pull requests in the dark theme](styleguide/pull-requests--dark.webp)
 
 ## Voice and copy
 
-Use sentence case for buttons, headings, field labels, menu items and tooltips. The copy guard
-checks these contexts and the `title`, `label`, `placeholder` and `aria-label` string props; its proper-noun allowlist covers product/provider names and common
-acronyms.
-Render uppercase section labels through the `label` text role; do not type their
-copy in capitals. Counts follow [Section heading and count](#section-heading-and-count).
-Use “New” for creation and “Add” for registering an existing item. Cancel,
-Dismiss, Close and Discard are quiet ghost actions. A limit error names the limit,
-the actual value and the requested operation. Keep the existing ellipsis and label
-tracking guards (`scripts/check-ellipsis.sh` and `scripts/check-label-tracking.sh`).
+- Sentence case for buttons, headings, field labels, menu items and tooltips. The `copy`
+  rule rejects title case in `title`, `label` and `aria-label` props, with an allowlist for
+  product and provider names.
+- Counts sit beside a label without parentheses or a middle dot; the `copy` rule rejects
+  `(N)` and `· N` in those props.
+- Use the ellipsis character (`…`), never three ASCII dots; `ellipsis` rejects the ASCII
+  form in source strings and JSX text.
+- Uppercase labels use `uppercase` plus a tracking utility; `label-tracking` rejects
+  `tracking-wide`, `tracking-wider` and `tracking-widest` outside uppercase text.
+- A limit error names the limit, its actual value and the requested operation. An error
+  includes the offending value and the expected shape.
 
 ## States
 
-| State | Treatment |
-|---|---|
-| **Focus (keyboard)** | Element-level, applied once for `button`, `select` and `input`: `outline: 2px solid var(--accent-ink); outline-offset: 2px` — so no site can forget it. A site with its own ring still wins by utility order. |
-| **Focus (halo)** | Import `FOCUS_HALO_CLS` from `shadowChrome.ts` for chips, tiles and segmented options. Its composite ring is: `0 0 0 2px var(--background), 0 0 0 3px var(--focus-ring)`. `--focus-ring` is its **own token**, deliberately not `--accent`, because that hue already means "primary action." The other shared focus recipes (`FOCUS_RING_ACCENT_ICON_CLS`, `FOCUS_RING_ACCENT_INSET_45_CLS`, `FOCUS_HAIRLINE_INSET_CLS`) follow the same rule: a complete literal class, because Tailwind generates no CSS for `focus-visible:shadow-[${CONSTANT}]`. |
-| **Hover** | `ROW_STATE.rest` adds `--hover-fill` to an otherwise transparent row or rail item. Bordered buttons use `--border-hover` / `--card-hover`. Ghost buttons use `--hover-fill` with a `--text-primary` label; ghost-danger buttons replace both with a danger tint and danger label. |
-| **Disabled** | Element-level `opacity: 0.45; cursor: not-allowed`. Controls repeat `opacity-45` locally where they need it. Disabled controls still carry a reason where one exists. |
-| **Selected** | `ROW_STATE.selected` uses `--selected-fill` and primary ink, with the stronger `--selected-hover-fill` on hover. Full-row fill, no left bar or accent tint. Pressable chips use the neutral recipe; an explicitly selected `IconTile` retains its primitive accent treatment. |
-| **Active pane** | `--border-focus` — a plain luminance-step ring, a header lift to `--raised`, and the pane's own name held at `--text-primary` while every other pane's name steps to `--text-secondary`. **No hue** in any of the three: a coloured stroke or ink would clash with whichever terminal palette the agent underneath is using. The pane body — the terminal itself — never changes on focus. |
+| State    | Treatment                                                                                                                                                        |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Focus    | `focus-visible:outline-2 focus-visible:outline-ring` on the interactive primitive, with the app's `outline-offset: -2px` so the ring stays inside clipped edges. |
+| Hover    | The neutral `bg-hover` fill; icon buttons also raise their ink to `text-foreground`.                                                                             |
+| Selected | `bg-selected` (`--sel`) for rows and tiles. Selection is achromatic.                                                                                             |
+| Pressed  | `data-pressed` shares the hover fill; segmented controls and toggles keep the pressed segment on `--shadow-seg`.                                                 |
+| Disabled | `Button` uses `opacity-[0.45]`; `Input`, `Select`, `Badge`, `Switch` and `Checkbox` use `opacity-64`. Disabled controls still carry a reason when one exists.    |
+| Invalid  | `aria-invalid` paints a destructive border; do not hand-paint a red border.                                                                                      |
+| Loading  | `Skeleton` for placeholders and `Spinner` for a known wait; both hold a settled frame under reduced motion.                                                      |
+| Running  | `ThreadStateGlyph state="running"` pulses only while the run is genuinely indeterminate.                                                                         |
 
-Shared row treatments come from `components/ui/rowState.ts`, not independently chosen
-fills in feature components. `ROW_STATE` includes rest hover and selected hover; the
-selected row stays distinct while hovered. `ROW_HIGHLIGHT` omits CSS hover for searchable
-lists whose pointer and keyboard share one active index. This prevents the pointer from
-painting a second row while the keyboard highlight remains elsewhere.
+![An approval request in the light theme](styleguide/thread-approval--light.webp)
+![An approval request in the dark theme](styleguide/thread-approval--dark.webp)
+![A question in the light theme](styleguide/thread-question--light.webp)
+![A question in the dark theme](styleguide/thread-question--dark.webp)
 
 ## Motion
 
-Four named curves, `--motion-{fast,menu,panel,scrim}-{t,ease}` in `theme.css`. Nothing
-should introduce a separate duration for new chrome. Pages, cards and ordinary rows
-appear without decorative entrance effects; origin-aware transitions belong to the
-shared overlay and panel primitives.
+- Named easing: `--ease-drawer` (`cubic-bezier(0.32, 0.72, 0, 1)`) for surfaces that slide
+  or pop in. Everything else uses Tailwind's `duration-*` and `ease-*` utilities at 120–200ms.
+- Named animations: `--animate-skeleton`, `--animate-status-pulse`, `--animate-status-ping`,
+  the stash-pulse set, `live-tool-shine` and `live-activity-focus`.
+- Animate transform and opacity. The status pulse and skeleton step their opacity so the
+  compositor draws discrete frames instead of one update per vsync.
+- `Spinner` runs through `visible-animate-spin`, which pauses while hidden.
+- Reduced motion: `motion-reduce` variants and the `prefers-reduced-motion` blocks in
+  `index.css` stop transitions and animations. Loading and status indicators keep their
+  settled, visible state.
+- A theme switch uses a View Transition reveal from the clicked control
+  (`data-theme-reveal`); without a click, without View Transition support, or under reduced
+  motion it is instant.
+- No general-purpose animation library. Motion is CSS transitions plus the View Transition
+  API for the theme reveal.
 
-| Curve | Duration | Easing | For |
-|---|---|---|---|
-| Fast | 120ms | `cubic-bezier(.2, 0, .38, 1)` | Micro-transitions, hovers |
-| Menu | 160ms (`--motion-menu-t`) | `cubic-bezier(.16, 1, .3, 1)` | Menu content and popover view changes; floating containers appear immediately |
-| Panel | 240ms (`--motion-panel-t`) | `cubic-bezier(.32, .72, 0, 1)` | Panel transitions using the panel curve |
-| Scrim | 90ms | `linear` | Backdrops — always the fastest thing on screen |
-| Reveal | 400ms | Panel easing | Chrome theme changes revealed from the clicked control with a View Transition snapshot and a WAAPI `clip-path` circle. This is the named exception to rule 1. Changes without a click, under reduced motion, or without runtime `startViewTransition` support are instant. The native browser pane is a separate webview and switches instantly. |
+## Accessibility
 
-The `--animate-*` names provide shared animation settings. Drawer uses
-`--animate-t-panel`, which resolves to `--motion-menu-t` (160ms), with
-`--animate-ease-panel`; `--animate-t-enter` is 200ms. Keep call sites on their shared
-tokens instead of adding a duration. Use the actual animation token when checking a
-primitive's timing; its name alone does not imply the Panel curve.
-
-The rules:
-
-1. **Transform and opacity only.** Animating `box-shadow` is forbidden — express the
-   same visual as `transform: scale()` + `opacity` on a pseudo-element.
-2. **Exits are faster than entrances.** Enforced at the call site: enter at Menu,
-   exit at Fast.
-3. **Motion communicates origin.** Corner toasts enter from their anchor in Fast;
-   top-centred notices, the command palette and rail sections appear immediately.
-4. **Nothing loops but a genuine indeterminate.** Only `working` and `spawning`
-   pulse; a running process has no known end time. `needs-input` is static.
-   The optional mascot companion is a scoped exception: its reference idle and
-   play loops pause while hidden or unfocused unless background animation is enabled,
-   and show stable poses under reduced motion. Its motion uses transform and opacity;
-   the reference one-shot glow and disco hue rotation may animate filter on mascot
-   elements and, during disco, the rail footer only. Panes and terminal surfaces
-   never inherit these effects. Mascot motion durations preserve the reference.
-   Mascot speech and introduction chrome preserve reference geometry and shadows
-   through dedicated `--mascot-*` tokens. These tokens and literal artwork colours
-   are confined to mascot primitives; ordinary app controls keep the shared recipes.
-5. **Reduced motion shows a settled frame, not a broken one.** Under
-   `prefers-reduced-motion: reduce`, loading and status indicators remain visible
-   without movement. One global rule in `base.css` disables animations, transitions
-   and smooth scrolling, including pseudo-elements. Primitives supply visible static
-   states; JavaScript exit handling removes overlays immediately under reduced motion.
-6. **Everything is `motion-safe:`-gated.**
-7. **No animation library.** Interruptible springs, layout tracking and gesture
-   physics are exactly what rules 1–4 forbid; there is no Framer/Motion dependency.
-8. **Panes get no drop shadow, no per-pane accent hue, and no animated entry.**
-
-Popover anchors use the trigger's start edge and clamp only to the viewport; a trigger label
-changing width never recentres an open menu. Houston does not use RTL. A popover with multiple
-views keeps the largest view's bounds and crossfades the outgoing view in Fast (120ms) before
-the incoming view in Menu (160ms). Its container appears immediately. The complete
-popover exits once with `menu-out` in Fast.
-Reduced motion removes the stagger and view crossfade and shows each settled state immediately.
-
-Keyframes live in `keyframes.css` — global and unlayered by necessity, since Tailwind
-utilities name them directly.
-
-## Accessibility conventions
-
-- Every icon-only control carries an `aria-label` or a `Tooltip`, and usually both.
-- Custom widgets carry real roles: `combobox` + `listbox`/`option` +
-  `aria-expanded` / `aria-controls` / `aria-activedescendant` for Select, `dialog`
-  for modals, `alertdialog` for destructive confirms, `menu`/`menuitem` for menus.
-- **Escape closes.** Every overlay, menu, popover and modal handles it, each with its
-  own local handler — there is no shared priority list, and the one place a
-  coordinated chain exists (`App.tsx`'s global keydown handler) only runs while no
-  pane is focused. See renderer.md's [Tab order](renderer.md#tab-order)
-  section for the exact chain and its one exception (a focused terminal pane, where
-  Escape passes straight through to the PTY).
-- **Arrow keys navigate** anywhere a list is selectable: the rail, Select, the
-  palette, the changes list. Not yet the pane grid or `StackTabs`' tab strip — both
-  are still plain sequential Tab stops (`StackTabs` gives every tab its own
-  `tabIndex={0}` rather than a roving one), unlike `FilesPane`, `ChangesPane` and
-  `Segmented`, which do implement real roving tabindex.
-- **Focus restores on close.** Capture `document.activeElement` on open, `.focus()`
-  it back on dismiss. True of every hand-built modal in the codebase (`ConfirmModal`,
-  `SaveDiscardModal`, `HostKeyModal`, `SshConnectModal`, `CommandPalette`,
-  `BrowserActConfirm(Modal)`, `HandoffOverlay`'s modal variant) — each implements
-  this itself; there is no shared `Modal`/`Dialog` primitive that provides it for
-  free, so a new dialog needs the same capture/restore added by hand.
-- Errors surface via `aria-invalid` on the control, not a hand-painted red border.
-- Colour is never the only signal — the destructive button carries an icon, status
-  dots carry tooltips, needs-input carries a badge as well as a hue.
-- Contrast floors are gated: `--text-primary` on `--background` ≥4.5:1 in every
-  theme, `--focus-ring` ≥3:1 against both `--surface` and `--raised`.
+- Every icon-only control carries an `aria-label`, usually with a `Tooltip`. Native
+  `title=` does not count as a label; the `title-tooltip` rule rejects it.
+- Real roles come from Base UI: `menu`/`menuitem`, `dialog`, `combobox`/`listbox`/`option`,
+  and `switch`/`checkbox`/`radio`.
+- `native-select` and `native-input` keep native dropdowns and checkbox/radio controls out
+  of the renderer. Use `Select`, `Checkbox`, `RadioGroup` or `Switch`.
+- Focus is always visible: primitives paint a `focus-visible` ring, and `focus-visible`
+  rejects `outline-none` without a replacement paint.
+- Do not rely on colour alone. Status glyphs differ in shape, destructive actions carry an
+  icon, and an invalid field carries `aria-invalid`.
+- `pointer-coarse` expands small controls to a 44px hit area.
+- `text-primary` and `text-(--accent)` are fills; use `text-(--accent-ink)` for readable
+  brand text. The `accent-ink` rule enforces it.
 
 ## Terminal palettes
 
-Terminal colour is a **separate axis** from chrome. There are 24 named presets, each
-a flat object (background, foreground, cursor, cursor accent, selection background,
-plus 16 ANSI colours), applied directly to the terminal engine — never through chrome
-CSS variables, never scoped by `[data-theme]`. Each is classified light or dark for
-auto-pairing, and each chrome theme has a default pairing chosen so the pane plate
-never seams against its canvas:
+Terminal colour is a separate axis from chrome. `ThreadTerminalDrawer.tsx` owns the 16-entry
+ANSI arrays for the light and dark appearances, and `terminalThemeFromApp` reads the chrome
+tokens around the mounted terminal:
 
-| Chrome theme | Default terminal palette |
-|---|---|
-| `graphite` | `black` |
-| `paper` | `marble` |
+- `--terminal-background`
+- `--terminal-foreground`
+- `--terminal-cursor`
+- `--terminal-selection-background`
 
-Any palette pairs with any chrome theme, so never assume the terminal background
-matches a chrome token — that is why the active-pane ring is achromatic.
-The shipped foreground and twelve chromatic ANSI colours in every palette keep at
-least 3:1 contrast against that palette's own background. This is a property of the
-definitions. Runtime palette changes update indexed colors without applying a
-per-cell contrast adjustment.
+Those tokens are declared in `index.css` and can be overridden by a theme. The terminal
+surface is `--term` (its own ground, not `--content`). Command output rendered in chat uses
+the palettes in `packages/shared/src/terminalOutput.ts`, so an ANSI-styled line matches the
+terminal without importing chrome CSS.
+
+The ANSI palette is fixed per appearance; it is not a user-selectable preset list in v2.
+Never assume the terminal background equals a chrome token: the terminal is free to be the
+darkest surface while the surrounding pane is a card.
 
 ## Guards
 
-Checks enforce this guide mechanically. The idiom is hermetic, sub-second checks
-wired into CI; `check:complexity` is the one exception, and it earns it by measuring
-something no text search can count (see "A closure is not a fix").
+`scripts/check-web-style.mjs` scans `apps/web/src` against the rules below and pins current
+violations in `scripts/web-style-baseline/`. A change may lower a pin, never raise one.
 
-| Check | What it enforces |
-|---|---|
-| `bun run check:css` | Runs a headless browser against the **built** stylesheet (`@theme`/`@layer` only resolve after a build). Re-derives the theme list and the `--color-*` → `--X` mapping from source rather than hardcoding them, then asserts every `--color-*` re-resolves under each `[data-theme]` scope. Also asserts the contrast floors above. |
-| `scripts/check-icon-imports.sh` | Bans `lucide-react` imports outside `components/icons.tsx`. Its allowlist is currently empty — the rule holds with zero live exceptions. |
-| `scripts/check-title-tooltip-guard.sh` | Flags any capitalized JSX component receiving `title=` that isn't on the visible-heading allowlist. A `title` that means "tooltip" fails. |
-| `scripts/check-native-select.sh` | Bans `<select` anywhere under `ui/src` outside `components/ui/Select.tsx`. Strips comments first, so prose mentions don't false-positive. |
-| `scripts/check-native-input.sh` | Bans `<input type="checkbox">`/`<input type="radio">` anywhere under `ui/src`. No exemptions — `Toggle` and `Segmented` (`components/ui/settingsPrimitives.tsx`) cover both shapes. |
-| `scripts/check-menu-descriptions.sh` | A menu item's description line (the `<span>`/`<small>`/`<p>` after its `<strong>` label inside a `role="menuitem"` block) must wrap or truncate on purpose — never `whitespace-nowrap`/`truncate` with no `max-w-*` bound, never no wrapping class at all. |
-| `scripts/check-icon-metrics.sh` | Bans a `size=` or `strokeWidth=` prop on any glyph under `ui/src`, and props objects that spell one. No baseline and no allowlist: `components/icons.tsx` (whose defaults define the drawn set) and `IconTile` (a container with a named tile scale, not a glyph) are the only exemptions. |
-| `scripts/check-ellipsis.sh` | Bans ASCII `...` in user-facing text (`.ts`/`.tsx` string literals and JSX text, plus `index.html`) — the real ellipsis character (`…`) is the only spelling. Comments and test files are stripped first; spread/rest (`...args`, `[...arr]`) is excluded by what follows the `...`. No baseline. |
-| `scripts/check-focus-visible.sh` | Bans a class string that turns `outline-none` on without repainting a `focus-visible:` state of its own (`shadow-`/`ring-`/`border`/`bg-`/a real `outline`), and any utility whose arbitrary value is interpolated. No exemptions. |
-| `scripts/check-type-scale.sh` | Rejects legacy text-size utilities, raw scale classes, CSS font-size literals and arbitrary font-size literals under `components/ui/` and the four foundations. Any hit fails. |
-| `scripts/check-status-glyph.sh` | Rejects a rounded element that paints a status fill (warn/danger/stop/ok/success/accent/info) and presents as a status image outside `components/ui/StatusGlyph.tsx`. The unread pip is read state and keeps its own accent dot. |
-| `scripts/check-page-width.sh` | Every page root uses the one `--page-w` column; a per-page arbitrary `max-w-[...]` or CSS `max-width` in the page surfaces fails. |
-| `scripts/check-control-metrics.sh` | Rejects hand-typed interactive/chrome heights and control-ladder values under `components/ui/` and the four foundations; rule A remains absolute. |
-| `scripts/check-radius-tokens.sh` | Rejects numeric radius classes, unmapped framework radius steps and CSS radius literals under `components/ui/` and the four foundations. Any hit fails. |
-| `scripts/check-spacing-tokens.sh` | Rejects directional child margins and raw spacing values under `components/ui/` and the four foundations, preserving alignment/reset and prose-rhythm exemptions. Any hit fails. |
-| `scripts/check-shadow-recipes.sh` | Rejects hand-typed shadow recipes under `components/ui/` and the four foundations. Any hit fails. |
-| `scripts/check-button-recipes.sh` | Requires shared button recipes and the `.btn` base for overlay constants. No allowlists. |
-| `scripts/check-empty-state-action.sh` | An empty state must contain the control its copy names. Copy pointing at a button that lives elsewhere fails; a bare statement of fact ("No results.") passes. Three reasoned testid exemptions. |
-| `scripts/check-ui-boundary.sh` | Outside `components/ui/`, class strings may use layout utilities only; only four named stylesheet foundations are allowed. Any hit fails. Computed class strings remain a documented gap. |
-| `scripts/check-copy.sh` | Checks Title Case in user-facing labels, headings, buttons, menu items and tooltips; `(N)`/`· N` counts beside labels; and exact banned status values outside `StatusLabel`. Every hit fails. |
-| `bun run check:complexity` | Ratchets each component's cyclomatic complexity against `ui/complexity-baseline.json` (`worst` and `over`; `total` recorded beside them). Needs `bun install` — it shells out to a pinned `oxlint`, so it is not one of the hermetic scripts. See "A closure is not a fix" below. |
+```sh
+bash scripts/check-web-style.sh              # every rule against its baseline
+bash scripts/check-web-style.sh --all        # print every failure
+bash scripts/check-web-style.sh --list       # list the rules
+bash scripts/check-web-style.sh --print copy # print hits for one rule
+bash scripts/check-web-style.sh --update copy # lower one pin to today's count
+bash scripts/check-web-style.sh --self-test  # prove each rule fires on its fixtures
+```
 
-`check:css` needs a `bun run build` first; the rest are standalone and instant.
+| Rule                 | Policy                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------------- |
+| `native-select`      | Use `Select`, never a native `<select>`.                                                                |
+| `native-input`       | Use `Checkbox`, `RadioGroup` or `Switch`, never a native checkbox/radio.                                |
+| `ellipsis`           | The `…` character, never three ASCII dots.                                                              |
+| `title-tooltip`      | `Tooltip`, never a native `title=` hover label.                                                         |
+| `focus-visible`      | `outline-none` must pair with a visible focus paint; no interpolated arbitrary values.                  |
+| `radius`             | Role radii (`--r-*`), never numeric arbitrary radii or CSS radius literals.                             |
+| `shadow`             | Token shadows or complete literal recipes, never a hand-typed shadow.                                   |
+| `type-scale`         | `--text-*` steps, never a literal font size.                                                            |
+| `spacing`            | Tailwind spacing, never a hand-typed length.                                                            |
+| `control-metrics`    | `h-(--h-ctl)`, `h-(--h-row)`, `h-(--h-pane-head)` or `h-(--h-pill)`, never a hand-typed control height. |
+| `icon-metrics`       | Icon size and stroke from the class or a shared role, never numeric props.                              |
+| `icon-imports`       | Named `lucide-react` imports; namespaces only in `lib/lucideIconByName.ts`.                             |
+| `copy`               | Sentence case, counts without parentheses or a middle dot, approved status words.                       |
+| `ui-boundary`        | Layout utilities only outside `components/ui`; visual recipes belong in primitives.                     |
+| `page-width`         | `WorkspacePageContainer` widths, never a per-page pixel column.                                         |
+| `raw-palette`        | Semantic status roles, never raw Tailwind palette shades in components.                                 |
+| `accent-utility`     | `bg-hover` / `text-hover-foreground`, never `bg-accent` / `text-accent-foreground`.                     |
+| `accent-ink`         | `text-(--accent-ink)` for brand text, never `text-primary` or `text-(--accent)`.                        |
+| `label-tracking`     | Tracking only on uppercase label text.                                                                  |
+| `empty-state-action` | An empty state that names an action must offer the control, or state a fact.                            |
 
-### A closure is not a fix
+Baselines are per file, not per total: moving a violation between files still needs
+`--update`. `--update` records what the scanner finds, so fix a false positive in the scanner
+and its fixture rather than pinning it.
 
-`check:complexity` measures cyclomatic complexity **per function**, and every
-closure is its own function. So wrapping a block of JSX in a zero-arg arrow —
-`const header = (): React.JSX.Element => (…)`, called as `{header()}` — moves
-its branches off the component's score without changing a single thing that
-executes. Three separate agents found that door unprompted in one afternoon; on
-one file, nine such wrappers moved the reported worst score from 55 to 17 while
-the file's total moved only 121 to 111.
+Complementary checks: `scripts/check-upstream.mjs` byte-compares vendored `apps/web` files
+against `upstream.json`; `knip` owns module-level reachability (it exempts unused exports
+under `components/ui/*.tsx`, because `cva` variants are selected dynamically); and
+`bash scripts/check-comment-hygiene.sh` keeps comments free of session history.
 
-That is not a refactor, and a review should refuse it. The test is the shape of
-what comes out, not whether the number falls:
+## When this is silent
 
-- **A fix** is a top-level function taking explicit arguments — a real sibling
-  component with props, or a pure helper like `copyButtonChrome(state)`
-  returning `{ label, icon, warn }`. It is callable and unit-testable without
-  mounting anything, which is what makes the extraction worth having.
-- **Not a fix** is a zero-arg closure capturing local state. Nothing became
-  testable, nothing became reusable, and the only thing that changed is which
-  function the linter charges.
-
-The gate cannot tell these apart — a genuine sibling component moves branches
-into a new function in the same file exactly as a sham closure does, and the
-`total` it prints is the only tell. Reading that number is a person's job.
-Extracting a hook is a third case again: worth doing for the seam it names, but
-worth **zero** points, because a `useCallback`/`useEffect` body was never
-charged to the component to begin with.
-
-## Stacking
-
-Fourteen tiers in `theme.css`. Every `z-index` in the app names one; a raw number
-at a call site is a layer nobody can see from anywhere else, which is how 25
-distinct values accumulated across 69 sites. Within a tier, `+1`..`+3` is a real
-order between things that share a stacking context (a submenu over its menu); a
-larger offset means the site wants its own tier.
-
-| Token | Value | Layer |
-|---|---|---|
-| `--z-backdrop` | 0 | the custom field, under everything |
-| `--z-base` | 1 | in-flow content that must beat its own siblings |
-| `--z-pane` | 5 | grid splitter; `+1` dropzone, `+2` drop target, `+3` pane chrome |
-| `--z-leaf` | 10 | a whole pane over its neighbours; `+1` notice, `+2` pane cover |
-| `--z-sticky` | 20 | chrome floating over a scroll region |
-| `--z-overlay` | 40 | a menu anchored to its trigger; `+1` its submenu |
-| `--z-popover` | 45 | a popover panel |
-| `--z-dropdown` | 46 | a select's list, which can open inside a popover |
-| `--z-context` | 60 | a context menu, portalled, clears every panel below a dialog |
-| `--z-modal` | 70 | a dialog and its scrim, and a menu opened from inside one |
-| `--z-palette` | 80 | the command palette, above any dialog |
-| `--z-window` | 100 | window furniture: the resize grips |
-| `--z-toast` | 300 | a transient status banner over the whole window |
-| `--z-tooltip` | 1000 | the hover label, and the browser's fullscreen cover |
-
-## When this guide is silent
-
-1. Use `components/ui`. If the role is missing, add it there as a variant with a specimen
-   case in `ui-primitives`; never write a visual class in a feature file.
-2. Copy a sibling for behaviour, never for chrome.
-3. For tokens, `theme.css` is canonical.
-4. When patterns contradict, prefer the tested one, then the more recent one, and flag
+1. Reach for a primitive in `components/ui/`; add a variant there rather than a visual class
+   in a feature file.
+2. Copy a sibling for behaviour, not for chrome.
+3. Use the role token (`--r-ctl`, `--t2`, `--divider`) rather than the value.
+4. When two patterns contradict, prefer the tested one, then the more recent one, and flag
    the other.
-5. Ask before inventing.
