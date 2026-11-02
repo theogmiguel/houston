@@ -779,12 +779,14 @@ describe("user MCP servers", () => {
 
       // Codex: every thread start, resume and fork replaces the configured servers with none.
       const params = codexThreadRuntimeParams({
+        threadId,
         mcpSession: undefined,
         runtimePolicy: READ_ONLY_POLICY,
       });
       assert.deepEqual(params.config.mcp_servers, {});
       assert.isFalse(Object.keys(params.config).some((key) => key.startsWith("mcp_servers.")));
       const plainParams = codexThreadRuntimeParams({
+        threadId,
         mcpSession: undefined,
         runtimePolicy: { runtimeMode: "full-access", interactionMode: "default", cwd: "/work" },
       });

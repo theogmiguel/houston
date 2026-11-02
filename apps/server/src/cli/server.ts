@@ -82,12 +82,14 @@ export const runDefaultServerCommand = Effect.fn("server.runDefaultServerCommand
 
 export const startCommand = Command.make("start", { ...sharedServerCommandFlags }).pipe(
   Command.withDescription("Run the Houston server."),
+  Command.unlisted,
   Command.withHandler((flags) => runServerCommand(flags, { rejectRunningServer: true })),
 );
 
 export const serveCommand = Command.make("serve", { ...sharedServerCommandFlags }).pipe(
+  Command.withShortDescription("Run Houston in this terminal, with no browser."),
   Command.withDescription(
-    "Run the Houston server without opening a browser and print headless pairing details.",
+    "Run the Houston server in this terminal without opening a browser, and print headless pairing details.",
   ),
   Command.withHandler((flags) =>
     runServerCommand(flags, {

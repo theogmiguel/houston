@@ -12,6 +12,7 @@ import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
 import { hashTelemetryId } from "@t3tools/shared/telemetryId";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
 import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import {
@@ -51,9 +52,9 @@ export interface ClientOwnerParams {
  */
 export const readClientOwnerParams = Effect.gen(function* () {
   const device = yield* (yield* ClientCapabilities.AnalyticsDevice).id;
-  return (Option.isSome(device)
-    ? { device: hashTelemetryId(device.value) }
-    : {}) satisfies ClientOwnerParams;
+  return (
+    Option.isSome(device) ? { device: hashTelemetryId(device.value) } : {}
+  ) satisfies ClientOwnerParams;
 });
 
 export const appendClientConnectionParams = (
@@ -225,7 +226,7 @@ export const resolveRemoteWebSocketConnectionUrl = Effect.fn(
   });
 
   const url = rpcSocketUrl(input.wsBaseUrl);
-  url.searchParams.set("wsTicket", issued.ticket);
+  url.searchParams.set("wsTicket", Redacted.value(issued.ticket));
   appendClientConnectionParams(
     url,
     input.clientMetadata,

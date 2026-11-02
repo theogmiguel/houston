@@ -320,7 +320,9 @@ function ProjectScopeMenu({ value, groups, environments, onChange }: SettingsSco
         return {
           value: group.projectKey,
           label: group.displayName,
-          secondary,
+          secondary: group.archived
+            ? ["Archived", secondary].filter(Boolean).join(" · ")
+            : secondary,
           secondaryMono: secondary?.includes(group.workspaceRoot) ?? false,
         };
       })}

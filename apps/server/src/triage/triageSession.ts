@@ -80,6 +80,8 @@ export const writeTriageSession = Effect.fn("triage.writeTriageSession")(functio
         logsDir: paths.logsDir,
         serviceLogPath: path.join(paths.logsDir, BootService.BOOT_SERVICE_LOG_FILE),
         desktopBackendLogGlob: path.join(paths.logsDir, "server-child*.log*"),
+        // Houston has no relay client; keep the upstream prompt field pointed at its log path.
+        relayClientLogPath: path.join(paths.logsDir, "relay-client.ndjson"),
         serverTracePath: paths.serverTracePath,
         providerEventLogPath: paths.providerEventLogPath,
         terminalLogsDir: paths.terminalLogsDir,

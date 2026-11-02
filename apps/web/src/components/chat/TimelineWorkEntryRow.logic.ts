@@ -1,3 +1,4 @@
+import type { PluggableList } from "unified";
 import type { Root, RootContent } from "mdast";
 import {
   resolveWorkEntryToolPresentation,
@@ -325,3 +326,5 @@ export function workEntryToolParts(
     ...(counted.deletions !== undefined ? { deletions: counted.deletions } : {}),
   };
 }
+export const THOUGHT_PREVIEW_PLUGINS: PluggableList = [[remarkThoughtPreview, "Thought"]];
+export const THINKING_PREVIEW_PLUGINS: PluggableList = [[remarkThoughtPreview, "Thinking"]];

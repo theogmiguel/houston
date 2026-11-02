@@ -1,9 +1,5 @@
 import { SessionPermissions } from "./SessionPermissions";
-import {
-  ChevronRightIcon,
-  EllipsisIcon,
-  RouteIcon,
-} from "lucide-react";
+import { ChevronRightIcon, EllipsisIcon, RouteIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
 import { type EnvironmentId, resolveEnvironmentMachineKind } from "@t3tools/contracts";
@@ -38,6 +34,7 @@ import {
 import { environmentCatalog } from "~/connection/catalog";
 import { type EnvironmentPresentation } from "~/state/environments";
 import { APP_VERSION } from "~/branding";
+import { usePrimaryManagedPolicy } from "~/state/managedPolicy";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { serverEnvironment } from "~/state/server";
 import {

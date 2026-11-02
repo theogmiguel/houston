@@ -38,6 +38,8 @@ import type {
 import {
   EnvironmentRequestInvalidError,
   AuthOrchestrationOperateScope,
+  clampManagedRuntimeMode,
+  managedRuntimeModeDenial,
   ProviderDriverKind,
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
@@ -81,7 +83,6 @@ import { DEFAULT_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 import {
   deriveComposerSendState,
   getAntigravitySendBlockReason,
-  readFileAsDataUrl,
   resolveComposerInteractionMode,
   threadShellHasStarted,
 } from "../ChatView.logic";
@@ -89,16 +90,17 @@ import {
   dataTransferHasComposerMention,
   makeComposerMentionDragHandlers,
 } from "./composerMentionDrag";
+import { serializeComposerImages } from "./composerImagePersistence";
 import {
   isInsideCollapsedComposerControls,
   isInsideRestingComposerControlScope,
+  markOpenToEffort,
   markOpenToPermissions,
 } from "./composerEventScope";
 import {
   type ComposerFileAttachment,
   type ComposerImageAttachment,
   type DraftId,
-  type PersistedComposerImageAttachment,
   composerFileNeedsReattach,
   composerDraftHasUserContent,
   composerTargetKey,
@@ -236,20 +238,16 @@ import { observeResize } from "~/lib/observeResize";
 
 const isEnvironmentRequestInvalidError = Schema.is(EnvironmentRequestInvalidError);
 import { stackedThreadToast, toastManager } from "../ui/toast";
-import { ArrowUpIcon, PlayIcon } from "lucide-react";
+import { ArrowUpIcon, BuildingIcon, PlayIcon } from "lucide-react";
+import { Button } from "../ui/button";
+import { useManagedPolicy } from "../../state/managedPolicy";
 import { proposedPlanTitle } from "@t3tools/shared/proposedPlanText";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import { tickTextContent } from "~/lib/tickTextContent";
 import { hasProviderSetup } from "./ProviderStatusBanner";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
-import {
-  isVideoAttachment,
-  type ChatMessage,
-  type SessionPhase,
-  type Thread,
-  type ThreadShell,
-} from "../../types";
+import { isVideoAttachment, type SessionPhase, type Thread, type ThreadShell } from "../../types";
 import type { PaneDensity } from "../../grid/density";
 import { type ComposerPromptHistoryPosition } from "./composerPromptHistory";
 import type { PendingUserInputDraftAnswer } from "@t3tools/client-runtime/state/pending-user-input";
@@ -260,12 +258,13 @@ import type {
   LatestProposedPlanState,
   PendingApproval,
   PendingUserInput,
+  TimelineEntry,
 } from "../../session-logic";
 import {
   resolveFollowUpDispatch,
   type ComposerDispatchMode,
 } from "@t3tools/client-runtime/state/composer-dispatch";
-import type { ContextWindowSnapshot } from "../../lib/contextWindow";
+import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow";
 import {
   resolveProviderSkillsForCwd,
   resolveProviderSlashCommandsForCwd,
@@ -383,7 +382,7 @@ export interface ChatComposerProps {
   activeThreadShell: ThreadShell | null;
   /** The thread's status as the sidebar derives it; the footer names a blocked turn. */
   threadStatusPill?: ThreadStatusPill | null;
-  promptHistoryMessages: ReadonlyArray<ChatMessage>;
+  promptHistoryEntries: ReadonlyArray<TimelineEntry>;
   forceExpandedOnMobile: boolean;
   /** A grid pane's density; glance keeps the composer on one line until focused. */
   paneDensity?: PaneDensity | undefined;
@@ -451,7 +450,9 @@ export interface ChatComposerProps {
   reportedModelSelection?: ModelSelection | null;
   activeProjectId: ProjectId | null;
 
-  activeContextWindow: ContextWindowSnapshot | null;
+  contextWindowEntries: Parameters<typeof deriveLatestContextWindowSnapshot>[0];
+  contextWindowLiveUsage: Parameters<typeof deriveLatestContextWindowSnapshot>[1];
+  contextWindowProviderThread: Parameters<typeof deriveLatestContextWindowSnapshot>[2];
   compactThreadUnavailable: boolean;
   compactDisabled: boolean;
   compactDisabledReason: string | null;
@@ -543,7 +544,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThreadId,
     activeThread,
     threadStatusPill = null,
-    promptHistoryMessages,
+    promptHistoryEntries,
     forceExpandedOnMobile,
     paneDensity,
     activeTurnStartedAt,
@@ -579,7 +580,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThreadModelSelection,
     reportedModelSelection,
     activeProjectId,
-    activeContextWindow,
+    contextWindowEntries,
+    contextWindowLiveUsage,
+    contextWindowProviderThread,
     compactThreadUnavailable,
     compactDisabled,
     compactDisabledReason,
@@ -624,6 +627,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     editingQueuedAttachments,
     onRemoveEditingQueuedAttachment,
   } = props;
+  const activeContextWindow = deriveLatestContextWindowSnapshot(
+    contextWindowEntries,
+    contextWindowLiveUsage,
+    contextWindowProviderThread,
+  );
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const composerDraftTargetKey = composerTargetKey(composerDraftTarget);
   const {
@@ -943,9 +951,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       runtimeMode,
       selectedProviderEntry?.snapshot.supportedRuntimeModes,
     );
-  const compatibleRuntimeModeOptions = runtimeModeOptions.filter((option) =>
-    compatibleRuntimeModes.includes(option.mode),
-  );
+  // Modes above an administrator's ceiling stay listed, disabled with the reason.
+  const managedPolicy = useManagedPolicy(environmentId);
+  const compatibleRuntimeModeOptions = runtimeModeOptions
+    .filter((option) => compatibleRuntimeModes.includes(option.mode))
+    .map((option) => {
+      const disabledReason = managedRuntimeModeDenial(managedPolicy, option.mode);
+      return disabledReason === undefined ? option : { ...option, disabledReason };
+    });
+  // A thread or draft already above the ceiling would be refused; offer the broadest mode left.
+  const runtimeModeCeilingDenial = managedRuntimeModeDenial(managedPolicy, compatibleRuntimeMode);
+  const runtimeModeCeilingFallback =
+    runtimeModeCeilingDenial === undefined
+      ? undefined
+      : clampManagedRuntimeMode(managedPolicy, compatibleRuntimeMode, compatibleRuntimeModes);
 
   const providerSendBlockReason = getAntigravitySendBlockReason(
     selectedProviderEntry?.snapshot,
@@ -957,6 +976,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (activePendingProgress
       ? attachmentBlockReason
       : (attachmentBlockReason ??
+        runtimeModeCeilingDenial ??
         (multipleModelSelections === null ? providerSendBlockReason : null)));
   const isSendDisabled = sendDisabledReason !== null;
   const selectedProviderStatus = selectedProviderEntry?.snapshot ?? null;
@@ -967,11 +987,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const selectedProviderSlashCommands = selectedProviderStatus
     ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
     : NO_PROVIDER_SLASH_COMMANDS;
-  const refreshWorkspaceSnapshotOnTyping = useProviderWorkspaceSnapshotRefresh({
-    environmentId,
-    gitCwd,
-    instanceId: selectedProviderEntry?.instanceId,
-  });
+  const { refresh: refreshWorkspaceSnapshotOnTyping, scanning: workspaceSkillsScanning } =
+    useProviderWorkspaceSnapshotRefresh({
+      environmentId,
+      gitCwd,
+      instanceId: selectedProviderEntry?.instanceId,
+    });
 
   const selectedPromptEffort = composerProviderState.promptEffort;
   const selectedModelOptionsForDispatch = composerProviderState.modelOptionsForDispatch;
@@ -1135,6 +1156,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerSendState = deriveComposerSendState({
     prompt,
     imageCount: composerImages.length + composerFiles.length,
+    existingAttachmentCount: editingQueuedAttachments?.length ?? 0,
     terminalContexts: composerTerminalContexts,
     elementContextCount: composerPreviewAnnotations.length + composerReviewComments.length,
   });
@@ -1171,6 +1193,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedProviderSkills,
     selectedProviderSlashCommands,
     showSkillsInSlashMenu: settings.showSkillsInSlashMenu,
+    workspaceSkillsScanning,
     questionAttachmentTarget,
   });
 
@@ -1426,6 +1449,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerContextRecords,
     composerImages,
     composerFilesRef,
+    promptRef,
     pendingThreadImportsRef,
     addComposerFilesToDraft,
   });
@@ -1591,31 +1615,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         getComposerDraft(attachmentDraftTarget)?.persistedAttachments ?? [];
       try {
         const currentPersistedAttachments = getPersistedAttachmentsForThread();
-        const existingPersistedById = new Map(
-          currentPersistedAttachments.map((attachment) => [attachment.id, attachment]),
+        const serialized = await serializeComposerImages(
+          composerImages,
+          currentPersistedAttachments,
         );
-        const stagedAttachmentById = new Map<string, PersistedComposerImageAttachment>();
-        await Promise.all(
-          composerImages.map(async (image) => {
-            try {
-              const dataUrl = await readFileAsDataUrl(image.file);
-              stagedAttachmentById.set(image.id, {
-                id: image.id,
-                name: image.name,
-                mimeType: image.mimeType,
-                sizeBytes: image.sizeBytes,
-                dataUrl,
-                ...(image.source ? { source: image.source } : {}),
-              });
-            } catch {
-              const existingPersisted = existingPersistedById.get(image.id);
-              if (existingPersisted) {
-                stagedAttachmentById.set(image.id, existingPersisted);
-              }
-            }
-          }),
-        );
-        const serialized = Array.from(stagedAttachmentById.values());
         if (cancelled) return;
         syncComposerDraftPersistedAttachments(attachmentDraftTarget, serialized);
       } catch {
@@ -2275,7 +2278,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       planModeUiEnabled,
       isLiteralPendingAnswer,
       pendingUserInputs,
-      promptHistoryMessages,
+      promptHistoryEntries,
       promptHistoryPositionRef,
       composerDraftTarget,
       promptRef,
@@ -2445,12 +2448,37 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   // An open question owns the space above the composer. Only a machine problem,
   // which is why an answer could not go through, stays beside it.
+  const bannerItems: readonly ComposerBannerStackItem[] =
+    runtimeModeCeilingDenial === undefined || activePendingProgress
+      ? props.bannerItems
+      : [
+          ...props.bannerItems,
+          {
+            id: "managed-runtime-mode",
+            variant: "warning",
+            icon: <BuildingIcon />,
+            title: runtimeModeCeilingDenial,
+            ...(runtimeModeCeilingFallback === undefined
+              ? {}
+              : {
+                  actions: (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => handleRuntimeModeChange(runtimeModeCeilingFallback)}
+                    >
+                      Switch to {runtimeModeConfig[runtimeModeCeilingFallback].label}
+                    </Button>
+                  ),
+                }),
+          },
+        ];
   const shelfItems = hasBlockingComposerTopDrawer
-    ? props.bannerItems.filter(
+    ? bannerItems.filter(
         (item) =>
           item.group === "environment" && (item.variant === "error" || item.variant === "warning"),
       )
-    : props.bannerItems;
+    : bannerItems;
 
   const insertComposerText = (
     text: string,
@@ -2933,15 +2961,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           direction,
         });
         if (!change) return;
-        if (change.modelOptions) {
-          useComposerDraftStore
-            .getState()
-            .setProviderModelOptions(composerDraftTarget, selectedProvider, change.modelOptions, {
-              instanceId: selectedInstanceId,
-              model: selectedModel,
-              persistSticky: true,
-            });
-        }
+        useComposerDraftStore
+          .getState()
+          .setProviderModelOptions(composerDraftTarget, selectedProvider, change.modelOptions, {
+            instanceId: selectedInstanceId,
+            model: selectedModel,
+            persistSticky: true,
+          });
         if (change.prompt !== promptRef.current) {
           applyPromptReplacementStable(0, promptRef.current.length, change.prompt, {
             expandedCursorAfterReplace: change.cursor,
@@ -2973,6 +2999,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         if (!trigger) return;
         trigger.focus({ preventScroll: true });
         if (command === "composer.mode") markOpenToPermissions(trigger);
+        if (command === "composer.effort") markOpenToEffort(trigger);
         trigger.click();
       },
       compactContext: compactThreadContextStable,
@@ -3384,7 +3411,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   ? isComposerMenuLoading
                     ? composerTriggerKind === "pull-request"
                       ? "Finding pull request…"
-                      : "Searching workspace files…"
+                      : composerTriggerKind === "skill" || composerTriggerKind === "slash-command"
+                        ? "Searching workspace skills…"
+                        : "Searching workspace files…"
                     : composerMenuEmptyState
                   : ""}
               </div>

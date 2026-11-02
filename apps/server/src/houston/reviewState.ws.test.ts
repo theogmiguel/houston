@@ -14,6 +14,7 @@ import type { ReviewLineAnchor } from "@t3tools/contracts/houston/reviewState";
 import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
+import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -46,6 +47,8 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as HostResources from "../resourceTelemetry/HostResources.ts";
 import * as Keybindings from "../keybindings.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
+import * as NpmRelease from "../cloud/npmRelease.ts";
 import * as KnownWorkspaces from "../workspace/KnownWorkspaces.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as McpAppRequests from "../mcpApps/McpAppRequests.ts";
@@ -183,9 +186,11 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonHarnessService.HoustonHarnessService)({}),
   Layer.mock(HoustonNightShiftService.HoustonNightShiftService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
+  Layer.mock(SecretResolver.SecretResolver)({}),
   Layer.mock(ServerLifecycleEvents.ServerLifecycleEvents)({}),
   Layer.mock(ServerRuntimeStartup.ServerRuntimeStartup)({}),
   Layer.mock(ServerSelfUpdate.ServerSelfUpdate)({}),
+  Layer.mock(NpmRelease.NpmRelease)({}),
   Layer.mock(SessionStore.SessionStore)({
     cookieName: "review-state-test",
     legacyCookieName: undefined,
@@ -270,7 +275,9 @@ const layerReview = (input: {
     Layer.provideMerge(
       Layer.mergeAll(
         Keybindings.layer,
-        ServerSettings.layer.pipe(Layer.provide(ServerSecretStore.layer)),
+        ServerSettings.layer.pipe(
+          Layer.provide(Layer.merge(ServerSecretStore.layer, ManagedPolicy.layerTest())),
+        ),
         ServerSecretStore.layer,
       ),
     ),
@@ -318,6 +325,7 @@ const makeWsClient = Effect.fn("makeWsClient")(function* (
           },
           {},
           browser,
+          () => Effect.void,
         ),
         RpcAuthorization.layer(scopes),
       ),

@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { managedCapabilityDenial } from "@t3tools/contracts";
 
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
@@ -6,6 +7,8 @@ import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsL
 import { searchableSetting } from "./settingsSearch";
 import { LegacyFeaturesSection } from "./SettingsPanels";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
+import { useOptionalSettingsScope } from "./SettingsScopeContext";
+import { firstManagedDenial, usePrimaryManagedPolicy } from "~/state/managedPolicy";
 
 /** Features still settling in, and legacy behavior kept for people who rely on it. */
 export function LabsSettingsPanel() {

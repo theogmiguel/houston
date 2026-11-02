@@ -1,4 +1,5 @@
 import type {
+  EnvironmentId,
   OrchestrationV2PendingBackgroundTask,
   OrchestrationV2ProviderGoal,
   ThreadId,
@@ -33,7 +34,8 @@ import type { ThreadNowItem } from "./ThreadNow";
 export function childInputNowItem(input: {
   readonly childThreadInputs: ReadonlyArray<EnvironmentThreadShell>;
   readonly parentAwaitingUser: boolean;
-  readonly onOpenThread: (threadId: ThreadId) => void;
+  // A task delegated to a linked environment lives there, not where the parent runs.
+  readonly onOpenThread: (threadId: ThreadId, environmentId: EnvironmentId) => void;
 }): (ThreadNowItem & { readonly waitingLabel: string }) | null {
   const { childThreadInputs, onOpenThread } = input;
   const first = childThreadInputs[0];
@@ -50,7 +52,7 @@ export function childInputNowItem(input: {
       <Fragment key={child.id}>
         {index > 0 ? " " : null}
         <span className="whitespace-nowrap">
-          <InlineButton tone="muted" onClick={() => onOpenThread(child.id)}>
+          <InlineButton tone="muted" onClick={() => onOpenThread(child.id, child.environmentId)}>
             {child.title}
           </InlineButton>
           {index < childThreadInputs.length - 1 ? "," : null}
@@ -58,7 +60,7 @@ export function childInputNowItem(input: {
       </Fragment>
     )),
     actions: (
-      <InlineButton onClick={() => onOpenThread(first.id)}>
+      <InlineButton onClick={() => onOpenThread(first.id, first.environmentId)}>
         {first.hasPendingApprovals ? "Open approval" : "Open question"}
       </InlineButton>
     ),
@@ -187,7 +189,13 @@ export function backgroundWorkNowItem(input: {
     title: only ? (
       <>
         <span className="text-(--accent-ink)">{verb}</span>{" "}
-        <span className={cn(isCommand(only) && "font-mono")}>{only.task.label}</span>
+        <span
+          className={cn(
+            isCommand(only) && "font-mono in-data-[slot=popover-popup]:whitespace-pre-wrap",
+          )}
+        >
+          {only.task.label}
+        </span>
       </>
     ) : (
       presentation.title

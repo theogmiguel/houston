@@ -18,6 +18,7 @@ import { InfoIcon, Trash2Icon } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
+import { useProjectGroupUpdate, type ProjectGroupUpdate } from "../../hooks/useProjectGroupUpdate";
 import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
 import { readLocalApi } from "../../localApi";
 import {
@@ -30,12 +31,18 @@ import { projectEnvironment } from "../../state/projects";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import {
+  SettingResetButton,
+  SettingsPageContainer,
+  SettingsRow,
+  SettingsSection,
+} from "./settingsLayout";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
-import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
+import { projectGroupTitleNeedsUpdate, SCRATCH_PROJECT_TITLE } from "./ProjectSettingsPanel.logic";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 import { readUnloadedThreadCount } from "../../state/olderSettledShelf";
 import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
@@ -147,6 +154,7 @@ export function ProjectSettingsPanel({
     <ProjectDetail
       key={`${selected.projectKey}:${environmentId ?? "all"}:${checkoutKey ?? "all"}`}
       group={scopedGroup}
+      allMembers={selected.memberProjects}
       hasOtherMembers={members.length < selected.memberProjects.length}
     />
   );
@@ -154,9 +162,12 @@ export function ProjectSettingsPanel({
 
 function ProjectDetail({
   group,
+  allMembers,
   hasOtherMembers,
 }: {
   group: SidebarProjectSnapshot;
+  /** Pin and archive belong to the whole project, even when one machine is picked. */
+  allMembers: ReadonlyArray<SidebarProjectGroupMember>;
   hasOtherMembers: boolean;
 }) {
   const navigate = useNavigate({ from: "/settings" });
@@ -164,7 +175,7 @@ function ProjectDetail({
   const environmentById = new Map(
     environments.map((environment) => [environment.environmentId, environment]),
   );
-  const editableIds = useEnvironmentsWithScope(group.memberProjects, AuthOrchestrationOperateScope);
+  const editableIds = useEnvironmentsWithScope(allMembers, AuthOrchestrationOperateScope);
   const canEditGroup = group.memberProjects.every((member) =>
     editableIds.has(member.environmentId),
   );
@@ -176,6 +187,16 @@ function ProjectDetail({
     reportFailure: false,
   });
   const projectNameEditedRef = useRef(false);
+  const { updateProjectGroup, canOrganizeProjectGroup } = useProjectGroupUpdate();
+  const [isOrganizing, setIsOrganizing] = useState(false);
+  const canOrganize =
+    allMembers.every((member) => editableIds.has(member.environmentId)) &&
+    canOrganizeProjectGroup(allMembers);
+  const organize = async (input: ProjectGroupUpdate, failureTitle: string) => {
+    setIsOrganizing(true);
+    await updateProjectGroup(allMembers, input, failureTitle);
+    setIsOrganizing(false);
+  };
 
   const reportFailure = (title: string, result: AtomCommandResult<void, unknown>) => {
     if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
@@ -209,7 +230,7 @@ function ProjectDetail({
   };
 
   const updateAllMembers = async (
-    input: { title: string },
+    input: ProjectGroupUpdate,
     failureTitle: string,
   ): Promise<AtomCommandResult<void, unknown>> => {
     const denied = checkProjectAccess(group.memberProjects, failureTitle);
@@ -268,6 +289,9 @@ function ProjectDetail({
   };
 
   const hasMultipleCheckouts = group.memberProjects.length > 1;
+  const canResetScratchTitle =
+    group.memberProjects.every((member) => member.isScratch) &&
+    group.memberProjects.some((member) => member.title !== SCRATCH_PROJECT_TITLE);
 
   const removeMembers = async (members: ReadonlyArray<SidebarProjectGroupMember>) => {
     if (checkProjectAccess(members, "Failed to remove project")) return;
@@ -435,6 +459,20 @@ function ProjectDetail({
           <SettingsRow
             title="Name"
             description="The shared name for this project group in the sidebar and thread lists."
+            resetAction={
+              canResetScratchTitle ? (
+                <SettingResetButton
+                  label="project name"
+                  disabled={!canEditGroup}
+                  onClick={() =>
+                    void updateAllMembers(
+                      { title: SCRATCH_PROJECT_TITLE },
+                      "Failed to rename project",
+                    )
+                  }
+                />
+              ) : null
+            }
             control={
               <Input
                 key={`${group.projectKey}:${group.displayName}`}
@@ -452,11 +490,58 @@ function ProjectDetail({
                   void renameGroup(event.currentTarget.value, wasEdited);
                 }}
                 onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                   if (event.key === "Enter") event.currentTarget.blur();
                 }}
               />
             }
           />
+          {canOrganize ? (
+            <>
+              <SettingsRow
+                title="Pin"
+                description="Pinned projects come first in project pickers."
+                control={
+                  <Switch
+                    checked={group.pinned}
+                    disabled={isOrganizing}
+                    onCheckedChange={(checked) =>
+                      void organize(
+                        { pinned: Boolean(checked) },
+                        checked ? "Failed to pin project" : "Failed to unpin project",
+                      )
+                    }
+                    aria-label="Pin project"
+                  />
+                }
+              />
+              <SettingsRow
+                title="Archive"
+                description={
+                  group.archived
+                    ? "Hidden from project pickers. Threads and files are kept."
+                    : "Hides the project from project pickers. Threads and files are kept."
+                }
+                control={
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={isOrganizing}
+                    onClick={() =>
+                      void organize(
+                        { archived: !group.archived },
+                        group.archived
+                          ? "Failed to unarchive project"
+                          : "Failed to archive project",
+                      )
+                    }
+                  >
+                    {group.archived ? "Unarchive" : "Archive"}
+                  </Button>
+                }
+              />
+            </>
+          ) : null}
         </SettingsSection>
         <ProjectDefaultsSettings category="project" />
         <ProjectActionsSettings />

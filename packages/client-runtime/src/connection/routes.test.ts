@@ -16,6 +16,7 @@ import {
   insertRoute,
   entryWithRoutes,
   mergeLearnedRoutes,
+  pendingRouteOrder,
   routesAfterRemoving,
   sendsTokenInClear,
   upsertRoute,
@@ -88,6 +89,25 @@ describe("connection routes", () => {
     const repaired = direct("lan", "http://192.168.1.11:3773/");
     expect(upsertRoute([PUBLIC, LAN], repaired)).toEqual([PUBLIC, repaired]);
   });
+
+  it("puts a newly paired route ahead of saved routes of the same kind", () => {
+    const pasted = direct("lan-2", "http://192.168.1.11:3773/");
+    expect(upsertRoute([LAN, TAILNET], pasted)).toEqual([pasted, LAN, TAILNET]);
+  });
+
+  it("keeps a newly paired route behind a different kind of the same rank", () => {
+    const vpn = direct("vpn", "http://100.101.102.103:3773/");
+    const pasted = direct("ts-2", "http://[fd7a:115c:a1e0::2]:3773/");
+    expect(upsertRoute([vpn, TAILNET], pasted)).toEqual([vpn, pasted, TAILNET]);
+  });
+
+  it("shows a dragged order only until the saved routes catch up or change", () => {
+    const dragged = ["tailnet", "lan"];
+    expect(pendingRouteOrder(dragged, ["lan", "tailnet"])).toBe(dragged);
+    expect(pendingRouteOrder(dragged, ["tailnet", "lan"])).toBeNull();
+    expect(pendingRouteOrder(dragged, ["lan", "public"])).toBeNull();
+    expect(pendingRouteOrder(dragged, ["lan", "tailnet", "public"])).toBeNull();
+  });
 });
 
 describe("learned routes", () => {
@@ -103,10 +123,7 @@ describe("learned routes", () => {
       reported: [{ httpBaseUrl: "http://192.168.1.20:3773/" }],
       allowInsecure: true,
     });
-    expect(ids(routes)).toEqual([
-      "lan",
-      `learned:${ENVIRONMENT_ID}:http://192.168.1.20:3773@lan`,
-    ]);
+    expect(ids(routes)).toEqual(["lan", `learned:${ENVIRONMENT_ID}:http://192.168.1.20:3773@lan`]);
     expect(profileOf(routes![1]!)).toMatchObject({
       learned: true,
       wsBaseUrl: "ws://192.168.1.20:3773/",

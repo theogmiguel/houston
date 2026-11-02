@@ -1,5 +1,6 @@
 import { ASSISTANT_CITATION_MAX_COMMENT_LENGTH, type AssistantCitation } from "@t3tools/contracts";
 import { useState, type Ref } from "react";
+import { textDirection } from "~/textDirection";
 
 import { Button } from "../ui/button";
 
@@ -55,6 +56,7 @@ export function AssistantCitationCommentEditor({
         aria-invalid={commentTooLong || undefined}
         placeholder="Add an optional comment..."
         rows={2}
+        dir={textDirection(comment)}
         className="field-sizing-content block max-h-40 min-h-9 w-full resize-none rounded-(--r-ctl) bg-(--field) px-2.25 py-1.75 text-headline outline-none placeholder:text-(--t3) focus-visible:ring-1 focus-visible:ring-(--accent-ink) focus-visible:ring-inset"
         value={comment}
         onChange={(event) => {

@@ -4,6 +4,7 @@ import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
 import {
   buildCommandPaletteProjectMetadata,
   buildProjectActionItems,
+  type CommandPaletteItemPin,
   type CommandPaletteProject,
 } from "./CommandPalette.logic";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
@@ -26,6 +27,7 @@ interface ProjectItemsInput {
   readonly projectGroupByTargetKey: ReadonlyMap<string, SidebarProjectSnapshot>;
   readonly locationByEnvironmentId: ReadonlyMap<EnvironmentId, CommandPaletteProjectLocation>;
   readonly runProject: (project: CommandPaletteProject) => Promise<void>;
+  readonly pin?: (project: CommandPaletteProject) => CommandPaletteItemPin | null;
 }
 
 /** Projects as root search results; a grouped project matches on every member. */
@@ -58,6 +60,7 @@ export function buildProjectSearchItems(input: ProjectItemsInput) {
       );
     },
     runProject: input.runProject,
+    ...(input.pin ? { pin: input.pin } : {}),
   });
 }
 
@@ -81,6 +84,7 @@ export function buildNewThreadInProjectItems(input: ProjectItemsInput) {
       />
     ),
     runProject: input.runProject,
+    ...(input.pin ? { pin: input.pin } : {}),
   });
 }
 

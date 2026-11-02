@@ -356,6 +356,11 @@ export function ThemeEditorPanel({
   const [position, setPosition] = useState<{ x: number; y: number; width: number } | null>(null);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const colorEditSnapshotRef = useRef<{
+    colorsByAppearance: ThemeEditorColorsByAppearance;
+    simpleColorsDirtyByAppearance: Record<ThemeAppearance, boolean>;
+    shouldRegenerateGuidedColors: boolean;
+  } | null>(null);
   const dragOffsetRef = useRef<{ dx: number; dy: number; width: number } | null>(null);
   const resizeStartRef = useRef<{
     pointerX: number;
@@ -472,6 +477,25 @@ export function ThemeEditorPanel({
       }));
     }
     if (isAdvanced) setShouldRegenerateGuidedColors(true);
+  };
+
+  // A color edit also rewrites derived roles, so cancelling restores the whole snapshot rather than
+  // replaying the previous value through updateColor.
+  const startColorEdit = () => {
+    colorEditSnapshotRef.current = {
+      colorsByAppearance,
+      simpleColorsDirtyByAppearance,
+      shouldRegenerateGuidedColors,
+    };
+  };
+
+  const cancelColorEdit = () => {
+    const snapshot = colorEditSnapshotRef.current;
+    colorEditSnapshotRef.current = null;
+    if (!snapshot) return;
+    setColorsByAppearance(snapshot.colorsByAppearance);
+    setSimpleColorsDirtyByAppearance(snapshot.simpleColorsDirtyByAppearance);
+    setShouldRegenerateGuidedColors(snapshot.shouldRegenerateGuidedColors);
   };
 
   const selectThemeRole = (role: ThemeColorRole, reveal = false) => {
@@ -949,6 +973,8 @@ export function ThemeEditorPanel({
           key={family.id}
           label={family.label}
           onChange={updateColor}
+          onEditCancel={cancelColorEdit}
+          onEditStart={startColorEdit}
           onSelect={selectThemeRole}
           onToggleSelected={toggleThemeRole}
           role={family.role}
@@ -988,6 +1014,8 @@ export function ThemeEditorPanel({
           <ThemeColorField
             key={role}
             onChange={updateColor}
+            onEditCancel={cancelColorEdit}
+            onEditStart={startColorEdit}
             onSelect={selectThemeRole}
             onToggleSelected={toggleThemeRole}
             role={role}

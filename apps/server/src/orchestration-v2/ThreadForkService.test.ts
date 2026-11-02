@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import {
+  CommandId,
   ContextTransferId,
   EnvironmentId,
   MessageId,
@@ -133,14 +134,40 @@ const planFork = (
     });
   }).pipe(Effect.provide(ThreadForkService.layer));
 
-it.effect("keeps a fork awake when its source thread is snoozed", () =>
+it.effect("resets a fork's pin, snooze, settle and delegation state but keeps its origin", () =>
   Effect.gen(function* () {
-    const sourceThread = makeSourceThread();
+    const linkOrigin = { sessionId: "mcp-session:fork-source", label: "Linked laptop" };
+    const sourceThread: OrchestrationV2AppThread = {
+      ...makeSourceThread(),
+      lastSnoozeWakeAt: snoozedAt,
+      pinnedAt: snoozedAt,
+      pinOrderKey: "a0",
+      activeOrderKey: "a1",
+      autoSettleDisabledAt: snoozedAt,
+      delegatedFrom: {
+        environmentId: EnvironmentId.make("linked-environment"),
+        threadId: ThreadId.make("linked-parent"),
+        title: "Linked parent",
+      },
+      historyOrigin: "v1_import",
+      linkOrigin,
+    };
     const sourceRun = makeSourceRun("completed");
-    const result = yield* planFork(sourceRun);
+    const result = yield* planFork(sourceRun, {
+      ...makeSourceProjection(sourceRun),
+      thread: sourceThread,
+    });
 
     assert.isNull(result.targetThread.snoozedUntil);
     assert.isNull(result.targetThread.snoozedAt);
+    assert.isNull(result.targetThread.lastSnoozeWakeAt);
+    assert.isNull(result.targetThread.pinnedAt);
+    assert.isNull(result.targetThread.pinOrderKey);
+    assert.isNull(result.targetThread.activeOrderKey);
+    assert.isNull(result.targetThread.autoSettleDisabledAt);
+    assert.isUndefined(result.targetThread.delegatedFrom);
+    assert.equal(result.targetThread.historyOrigin, "v1_import");
+    assert.deepEqual(result.targetThread.linkOrigin, linkOrigin);
     assert.equal(result.targetThread.projectId, sourceThread.projectId);
     assert.equal(result.targetThread.providerInstanceId, sourceThread.providerInstanceId);
     assert.deepEqual(result.targetThread.modelSelection, sourceThread.modelSelection);
@@ -159,6 +186,24 @@ it.effect("keeps a fork awake when its source thread is snoozed", () =>
       threadId: sourceThreadId,
       runId: sourceRunId,
     });
+  }),
+);
+
+it.effect("starts a fork without the source thread's pending title regeneration", () =>
+  Effect.gen(function* () {
+    const sourceRun = makeSourceRun("completed");
+    const titleRegeneration = {
+      requestId: CommandId.make("command:fork-source-title"),
+      startedAt: snoozedAt,
+    };
+    const sourceProjection = {
+      ...makeSourceProjection(sourceRun),
+      thread: { ...makeSourceThread(), titleRegeneration },
+    };
+    const result = yield* planFork(sourceRun, sourceProjection);
+
+    assert.isNull(result.targetThread.titleRegeneration);
+    assert.deepEqual(sourceProjection.thread.titleRegeneration, titleRegeneration);
   }),
 );
 

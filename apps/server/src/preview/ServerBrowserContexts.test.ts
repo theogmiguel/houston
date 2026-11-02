@@ -127,10 +127,9 @@ describe("ServerBrowserContexts", () => {
       expect.objectContaining({ chromiumSandbox: true, executablePath: "/test/chromium-launcher" }),
     );
     expect(release).toHaveBeenCalledTimes(2);
-    expect(launches.mkdir).toHaveBeenCalledWith(
-      NodePath.join("/test/profiles", "work%2Fteam"),
-      { recursive: true },
-    );
+    expect(launches.mkdir).toHaveBeenCalledWith(NodePath.join("/test/profiles", "work%2Fteam"), {
+      recursive: true,
+    });
     await pool.close();
     expect(human.close).toHaveBeenCalledTimes(1);
   });
@@ -181,10 +180,33 @@ describe("ServerBrowserContexts", () => {
     launches.persistent.mockResolvedValue(makeContext() as unknown as BrowserContext);
     expect(await pool.contextFor("work/team")).not.toBe(persistent);
     await pool.clearProfile("never-opened");
-    expect(launches.rm).toHaveBeenLastCalledWith(
-      NodePath.join("/test/profiles", "never-opened"),
-      { recursive: true, force: true },
-    );
+    expect(launches.rm).toHaveBeenLastCalledWith(NodePath.join("/test/profiles", "never-opened"), {
+      recursive: true,
+      force: true,
+    });
+    await pool.close();
+  });
+
+  it("waits for the context to close when the same profile is cleared concurrently", async () => {
+    const human = makeContext();
+    const closed = Promise.withResolvers<void>();
+    human.close.mockImplementation(async () => closed.promise);
+    launches.persistent.mockResolvedValue(human as unknown as BrowserContext);
+    const pool = new ServerBrowserContexts(options());
+    await pool.contextFor("work/team");
+
+    const first = pool.clearProfile("work/team");
+    const second = pool.clearProfile("work/team");
+    const deletionsBeforeClose = launches.rm.mock.calls.length;
+    closed.resolve();
+    await Promise.all([first, second]);
+
+    expect(deletionsBeforeClose).toBe(0);
+    expect(human.close).toHaveBeenCalledTimes(1);
+    expect(launches.rm).toHaveBeenCalledExactlyOnceWith("/test/profiles/work%2Fteam", {
+      recursive: true,
+      force: true,
+    });
     await pool.close();
   });
 

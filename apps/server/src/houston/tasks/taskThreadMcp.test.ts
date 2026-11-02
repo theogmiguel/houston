@@ -330,6 +330,7 @@ const SESSION = {
 describe("a planner's run loads no user MCP server", () => {
   it("Codex: the configured servers are replaced by Houston's server alone", () => {
     const params = codexThreadRuntimeParams({
+      threadId: planner,
       mcpSession: SESSION,
       runtimePolicy: READ_ONLY_POLICY,
     });

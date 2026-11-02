@@ -3,6 +3,7 @@ import type {
   StorageCleanupSettings,
   WorktreeCleanupRules,
 } from "@t3tools/contracts";
+import { resolvePastedPath } from "@t3tools/shared/path";
 import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 import { useRef, useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -16,6 +17,8 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { useNowMinute } from "../../hooks/useNowMinute";
+import { useDebouncedValue } from "../../state/queries";
+import { AnimatedHeight } from "../AnimatedHeight";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
 
@@ -53,6 +56,7 @@ export function WorktreesDirectoryRow() {
   const mixed = useScopedSettingsMixed(["worktreesDirectory"]);
   const edited = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const draft = useRef("");
   if (
     connectedEnvironments.some(
       (environment) =>
@@ -89,8 +93,13 @@ export function WorktreesDirectoryRow() {
             spellCheck={false}
             placeholder={mixed ? "Mixed" : ".houston/worktrees"}
             defaultValue={mixed ? "" : settings.worktreesDirectory}
-            onChange={() => {
+            onFocus={(event) => {
+              draft.current = event.target.value;
+            }}
+            onChange={(event) => {
               edited.current = true;
+              draft.current = resolvePastedPath(draft.current, event.target.value);
+              event.target.value = draft.current;
             }}
             onBlur={(event) => {
               const value = event.target.value.trim();
@@ -150,8 +159,8 @@ function RetentionControl({
             <NumberFieldDecrement aria-label={`Decrease ${label}`} />
             <NumberFieldInput
               aria-label={`${label} in days`}
-              size={new Intl.NumberFormat().format(draft ?? value).length}
-              className="field-sizing-content w-auto min-w-[1ch] grow-0 text-right"
+              size={5}
+              className="w-auto grow-0 text-right"
             />
             <span aria-hidden="true" className="self-center pr-2 text-xs">
               days
@@ -482,6 +491,9 @@ export function WorktreeCleanupSection() {
     )
       ? "Mixed across selected machines"
       : undefined;
+  // A policy locks these through worktreeCleanup, which also reaches each project's own rules.
+  const lockablePath = (key: keyof WorktreeCleanupRules) =>
+    isProjectScope ? ["worktreeCleanup"] : ["worktreeCleanup", `storageCleanup.${key}`];
   const update = (patch: Partial<StorageCleanupSettings>) =>
     updateSettings({ storageCleanup: patch });
   const updateWorktree = (patch: Partial<WorktreeCleanupRules>) =>
@@ -642,6 +654,7 @@ export function WorktreeCleanupSection() {
           <SettingsRow
             title="Delete worktrees with deleted threads"
             status={ruleStatus("worktreeOnDelete")}
+            managedPaths={lockablePath("worktreeOnDelete")}
             description="Remove unused worktrees when active or archived threads are deleted. Worktrees with local changes are kept."
             serverScoped={!isProjectScope}
             control={
@@ -655,6 +668,7 @@ export function WorktreeCleanupSection() {
           <SettingsRow
             title="Delete merged worktrees"
             status={ruleStatus("worktreeOnMerge")}
+            managedPaths={lockablePath("worktreeOnMerge")}
             description="Remove worktrees whose pull request is merged and whose commits are included in the default branch."
             serverScoped={!isProjectScope}
             control={
@@ -668,6 +682,7 @@ export function WorktreeCleanupSection() {
           <SettingsRow
             title="Delete inactive worktrees"
             status={ruleStatus("worktreeAfterDays")}
+            managedPaths={lockablePath("worktreeAfterDays")}
             description="Remove worktrees after their threads have been inactive for this many days. Branches and thread history are kept."
             serverScoped={!isProjectScope}
             control={
@@ -685,6 +700,7 @@ export function WorktreeCleanupSection() {
             ) && (
               <SettingsRow
                 title="Delete closed worktrees"
+                managedPaths={lockablePath("worktreeSettledAfterDays")}
                 status={[
                   ruleStatus("worktreeSettledAfterDays"),
                   environments.length > connectedEnvironments.length
@@ -710,6 +726,7 @@ export function WorktreeCleanupSection() {
           <SettingsRow
             title="Delete unchanged worktrees"
             status={ruleStatus("worktreeUnchanged")}
+            managedPaths={lockablePath("worktreeUnchanged")}
             description="Remove worktrees with no commits beyond the default branch."
             serverScoped={!isProjectScope}
             control={
@@ -727,6 +744,7 @@ export function WorktreeCleanupSection() {
             <SettingsRow
               {...searchableSetting("storage-worktree-keep-when")}
               status={ruleStatus("worktreeKeepWhen")}
+              managedPaths={lockablePath("worktreeKeepWhen")}
               description={
                 settings.worktreeKeepWhen === "any-local-files"
                   ? "Includes ignored files, except node_modules."
@@ -774,12 +792,31 @@ export function StorageCleanupSections({ extraRows }: { readonly extraRows?: Rea
   const { scope, connectedEnvironments, targets } = useSettingsScope();
   const scopedSettings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
-  if (scope.kind === "project" || scope.kind === "checkout") return null;
   const settings = scopedSettings.storageCleanup;
-  const ruleStatus = (key: "browserArtifactsAfterDays" | "logsAfterDays") =>
-    targets.some((target) => target.settings.storageCleanup[key] !== settings[key])
+  const targetIdsKey = environmentIdsKey(targets.map((target) => target.environmentId).sort());
+  const artifactsMixed =
+    targets.length > 1 &&
+    targets.some(
+      (target) =>
+        target.settings.storageCleanup.browserArtifactsAfterDays !==
+        settings.browserArtifactsAfterDays,
+    );
+  const logsMixed =
+    targets.length > 1 &&
+    targets.some(
+      (target) => target.settings.storageCleanup.logsAfterDays !== settings.logsAfterDays,
+    );
+  const settledArtifactsStatus = useDebouncedValue(`${targetIdsKey}:${artifactsMixed}`, 300);
+  const settledLogsStatus = useDebouncedValue(`${targetIdsKey}:${logsMixed}`, 300);
+  const artifactsStatus =
+    targets.length > 1 && settledArtifactsStatus === `${targetIdsKey}:true`
       ? "Mixed across selected machines"
       : undefined;
+  const logsStatus =
+    targets.length > 1 && settledLogsStatus === `${targetIdsKey}:true`
+      ? "Mixed across selected machines"
+      : undefined;
+  if (scope.kind === "project" || scope.kind === "checkout") return null;
   const update = (patch: Partial<StorageCleanupSettings>) =>
     updateSettings({ storageCleanup: patch });
   const databaseStorageNotice = (
@@ -805,32 +842,38 @@ export function StorageCleanupSections({ extraRows }: { readonly extraRows?: Rea
     <>
       {databaseStorageNotice}
       <SettingsSection id="storage-artifacts" title="Storage">
-        <SettingsRow
-          title="Delete old browser artifacts"
-          status={ruleStatus("browserArtifactsAfterDays")}
-          description="Delete saved browser captures after this many days. Older capture links will no longer open."
-          serverScoped
-          control={
-            <RetentionControl
-              label="Delete old browser artifacts"
-              value={settings.browserArtifactsAfterDays}
-              onChange={(browserArtifactsAfterDays) => update({ browserArtifactsAfterDays })}
-            />
-          }
-        />
-        <SettingsRow
-          title="Delete old rotated logs"
-          status={ruleStatus("logsAfterDays")}
-          description="Delete inactive rotated log files after this many days. Current logs are kept."
-          serverScoped
-          control={
-            <RetentionControl
-              label="Delete old rotated logs"
-              value={settings.logsAfterDays}
-              onChange={(logsAfterDays) => update({ logsAfterDays })}
-            />
-          }
-        />
+        <AnimatedHeight>
+          <SettingsRow
+            title="Delete old browser artifacts"
+            status={artifactsStatus}
+            managedPaths={["storageCleanup.browserArtifactsAfterDays"]}
+            description="Delete saved browser captures after this many days. Older capture links will no longer open."
+            serverScoped
+            control={
+              <RetentionControl
+                label="Delete old browser artifacts"
+                value={settings.browserArtifactsAfterDays}
+                onChange={(browserArtifactsAfterDays) => update({ browserArtifactsAfterDays })}
+              />
+            }
+          />
+        </AnimatedHeight>
+        <AnimatedHeight>
+          <SettingsRow
+            title="Delete old rotated logs"
+            status={logsStatus}
+            managedPaths={["storageCleanup.logsAfterDays"]}
+            description="Delete inactive rotated log files after this many days. Current logs are kept."
+            serverScoped
+            control={
+              <RetentionControl
+                label="Delete old rotated logs"
+                value={settings.logsAfterDays}
+                onChange={(logsAfterDays) => update({ logsAfterDays })}
+              />
+            }
+          />
+        </AnimatedHeight>
         {extraRows}
       </SettingsSection>
       <CleanupSection />

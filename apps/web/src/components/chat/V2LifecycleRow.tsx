@@ -52,6 +52,7 @@ import {
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import {
   applyProviderInstanceSettings,
+  brandProviderInstanceEntries,
   deriveProviderInstanceEntries,
   shouldShowInstanceBadge,
   type ProviderInstanceEntry,
@@ -78,7 +79,12 @@ export function V2LifecycleRow(props: {
   const { item } = props;
   if (item.type === "run_interrupt_result") {
     return (
-      <TimelineSystemDivider label="Run interrupted" detail={item.message} icon={CircleStopIcon} />
+      <TimelineSystemDivider
+        label="Run interrupted"
+        detail={item.message}
+        icon={CircleStopIcon}
+        wrapDetail
+      />
     );
   }
   if (item.type === "handoff") {
@@ -194,6 +200,8 @@ function SubagentAvatar({
   driver,
   displayName,
   iconUrl,
+  accentColor,
+  showBadge,
   status,
   plain = false,
   className,
@@ -201,6 +209,8 @@ function SubagentAvatar({
   driver?: ProviderDriverKind | undefined;
   displayName?: string | undefined;
   iconUrl?: string | undefined;
+  accentColor?: string | undefined;
+  showBadge: boolean;
   status?: OrchestrationV2TurnItem["status"] | undefined;
   plain?: boolean | undefined;
   className?: string;
@@ -221,7 +231,10 @@ function SubagentAvatar({
         <ProviderInstanceIcon
           driverKind={driver}
           displayName={displayName ?? driver}
+          accentColor={accentColor}
           acpRegistryIconUrl={iconUrl}
+          showBadge={showBadge}
+          size="compact"
           className={cn("z-auto", plain && color.className)}
           iconClassName="size-3.5"
         />
@@ -231,7 +244,8 @@ function SubagentAvatar({
       {status && !plain ? (
         <span
           className={cn(
-            "absolute -right-px -bottom-px size-2 rounded-full ring-2 ring-background",
+            "absolute size-2 rounded-full ring-2 ring-background",
+            showBadge ? "-left-px -top-px" : "-right-px -bottom-px",
             subagentStatusVisual(status).dotClass,
           )}
         />
@@ -256,9 +270,13 @@ export function EnvironmentSubagentAvatar({
   status?: OrchestrationV2TurnItem["status"] | undefined;
   plain?: boolean | undefined;
 }) {
-  const providersAtom = serverEnvironment.providersValueAtom(
-    remote?.environmentId ?? environmentId,
-  );
+  const providerEnvironmentId = remote?.environmentId ?? environmentId;
+  const providersAtom = serverEnvironment.providersValueAtom(providerEnvironmentId);
+  const settings = useAtomValue(serverEnvironment.settingsValueAtom(providerEnvironmentId));
+  const entries = (providers: ReadonlyArray<ServerProvider> | null | undefined) => {
+    const derived = deriveProviderInstanceEntries(providers ?? []);
+    return settings ? brandProviderInstanceEntries(derived, settings) : derived;
+  };
   const providerDriver = useAtomValue(
     providersAtom,
     (providers) =>
@@ -267,8 +285,18 @@ export function EnvironmentSubagentAvatar({
   const displayName = useAtomValue(
     providersAtom,
     (providers) =>
-      providers?.find((provider) => provider.instanceId === providerInstanceId)?.displayName,
+      entries(providers).find((entry) => entry.instanceId === providerInstanceId)?.displayName,
   );
+  const accentColor = useAtomValue(
+    providersAtom,
+    (providers) =>
+      entries(providers).find((entry) => entry.instanceId === providerInstanceId)?.accentColor,
+  );
+  const showBadge = useAtomValue(providersAtom, (providers) => {
+    const all = entries(providers);
+    const entry = all.find((candidate) => candidate.instanceId === providerInstanceId);
+    return entry !== undefined && shouldShowInstanceBadge(entry, all);
+  });
   const iconUrl = useAtomValue(
     providersAtom,
     (providers) =>
@@ -280,6 +308,8 @@ export function EnvironmentSubagentAvatar({
       driver={providerDriver ?? (remote === undefined ? driver : undefined)}
       displayName={displayName}
       iconUrl={iconUrl}
+      accentColor={accentColor}
+      showBadge={showBadge}
     />
   );
 }
@@ -320,17 +350,22 @@ const NOTIFICATION_OUTCOME_LABEL: Record<OrchestrationV2Notification["outcome"],
 export function SubagentNotificationLink(props: {
   readonly parentRef: ScopedThreadRef;
   readonly childThreadId: ThreadId;
+  readonly taskIds?: ReadonlyArray<NodeId> | undefined;
   readonly outcome: OrchestrationV2Notification["outcome"];
   readonly createdAt: string;
   readonly timestampFormat: TimestampFormat;
   readonly onOpenThread: (threadId: ThreadId) => void;
   readonly fallback: ReactNode;
 }) {
+  // Follow-up tasks share a child conversation; this notice reports a particular task result.
   const agent = useAtomValue(
     environmentThreadDetails.threadAtom(props.parentRef),
     (thread) =>
-      thread?.projection.subagents.find((agent) => agent.childThreadId === props.childThreadId) ??
-      null,
+      thread?.projection.subagents.find((agent) =>
+        props.taskIds === undefined
+          ? agent.childThreadId === props.childThreadId
+          : props.taskIds.includes(agent.id),
+      ) ?? null,
   );
   if (agent === null) return props.fallback;
   const resumed =

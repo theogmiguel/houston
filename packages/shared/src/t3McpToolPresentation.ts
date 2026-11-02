@@ -94,8 +94,18 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     "link-pr",
     "pull-request",
   ),
+  link_pull_requests: tool(
+    ["Link", "Linking", "Linked", "pull requests"],
+    "link-pr",
+    "pull-request",
+  ),
   unlink_pull_request: tool(
     ["Unlink", "Unlinking", "Unlinked", "a pull request"],
+    "unlink-pr",
+    "pull-request",
+  ),
+  unlink_pull_requests: tool(
+    ["Unlink", "Unlinking", "Unlinked", "pull requests by state"],
     "unlink-pr",
     "pull-request",
   ),
@@ -134,10 +144,7 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     ["Cancel", "Canceling", "Requested cancellation of", "a delegated task"],
     "task-cancel",
   ),
-  schedule_task: tool(
-    ["Schedule", "Scheduling", "Scheduled", "a recurring task"],
-    "schedule-create",
-  ),
+  schedule_task: tool(["Schedule", "Scheduling", "Scheduled", "a task"], "schedule-create"),
   list_scheduled_tasks: tool(["List", "Listing", "Listed", "scheduled tasks"], "schedule-list"),
   update_scheduled_task: tool(
     ["Update", "Updating", "Updated", "a scheduled task"],
@@ -316,7 +323,10 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   t3_thread_search: tool(["Search", "Searching", "Searched", "thread content"], "thread-search"),
   t3_thread_transfers: tool(["Read", "Reading", "Read", "thread transfers"], "thread-transfers"),
   t3_thread_organize: tool(["Organize", "Organizing", "Organized", "a thread"], "thread-organize"),
-  t3_thread_update: tool(["Update", "Updating", "Updated", "Houston thread metadata"], "thread-update"),
+  t3_thread_update: tool(
+    ["Update", "Updating", "Updated", "Houston thread metadata"],
+    "thread-update",
+  ),
   t3_worktree_list: tool(["List", "Listing", "Listed", "workspace branches"], "worktree-list"),
   t3_preview_list: tool(["List", "Listing", "Listed", "preview tabs"], "browser", "browser"),
   t3_preview_close: tool(["Close", "Closing", "Closed", "a preview tab"], "browser", "browser"),

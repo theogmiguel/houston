@@ -85,11 +85,11 @@ import {
   EmptyTitle,
 } from "../ui/empty";
 import { ScrollArea } from "../ui/scroll-area";
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
+import { useManagedPolicy } from "~/state/managedPolicy";
 import { ExpandableText } from "./ExpandableText";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { useSecretSources } from "./SecretSourceInput";
@@ -101,11 +101,12 @@ import { readCodexSetupMode } from "./CodexSetupSection.logic";
 import { providerClients } from "./providerDriverMeta";
 import { searchableSetting } from "./settingsSearch";
 import { CompactIdleThreadsRow } from "./SettingsPanels";
+import { IntervalSecondsField } from "./IntervalSecondsField";
 import {
   backgroundActivityOverrideSettings,
   buildProviderInstanceUpdatePatch,
   durationToSeconds,
-  normalizeIntervalSeconds,
+  PROVIDER_HEALTH_INTERVAL_STEP_SECONDS,
 } from "./SettingsPanels.logic";
 import {
   PolicyTooltip,
@@ -540,6 +541,10 @@ export function EnvironmentProviderSettings({
   readonly readOnly?: boolean;
 }) {
   const settings = useEnvironmentSettings(environmentId);
+  const managedPolicy = useManagedPolicy(environmentId);
+  // A policy that allows no provider leaves nothing to add.
+  const canAddProvider =
+    !readOnly && managedPolicy?.limits?.providers?.allowedDrivers?.length !== 0;
   const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
   const canRefreshProviders = useEnvironmentScope(environmentId, AuthOrchestrationReadScope);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
@@ -952,7 +957,7 @@ export function EnvironmentProviderSettings({
         {...searchableSetting("providers")}
         variant="plain"
         titleAction={
-          !readOnly ? (
+          canAddProvider ? (
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -1035,7 +1040,7 @@ export function EnvironmentProviderSettings({
             >
               <div className="divide-y divide-border/50">
                 {rows.map((row) => renderProviderInstance(row, "list"))}
-                {!readOnly ? (
+                {canAddProvider ? (
                   <button
                     type="button"
                     className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-left text-sm text-muted-foreground transition-colors outline-none hover:bg-muted/25 hover:text-foreground focus-visible:bg-muted/25 focus-visible:text-foreground sm:px-4"
@@ -1066,7 +1071,70 @@ export function EnvironmentProviderSettings({
         </SettingsGroup>
       </SettingsSection>
 
-      <SettingsSection title="Idle threads">
+      <SettingsSection title="Advanced">
+        <SettingsRow
+          id={searchableSetting("provider-health-check-interval").id}
+          title={
+            <span className="inline-flex items-center gap-1.5">
+              {searchableSetting("provider-health-check-interval").title}
+              <PolicyTooltip>
+                This interval is configured here, then the shared Background activity policy decides
+                whether provider probes may run when the timer fires. Custom intervals appear as
+                Advanced in Maintenance settings.
+              </PolicyTooltip>
+            </span>
+          }
+          description="Refresh provider status, versions, and models in the background. Set to 0 to disable."
+          resetAction={
+            providerHealthRefreshIntervalSeconds !== defaultProviderHealthRefreshIntervalSeconds ? (
+              <span
+                inert={!canWriteSettings}
+                className={!canWriteSettings ? "opacity-50" : undefined}
+              >
+                <SettingResetButton
+                  label="provider health check interval"
+                  onClick={() =>
+                    updateSettings(
+                      backgroundActivityOverrideSettings(
+                        settings.backgroundActivity,
+                        resolvedBackgroundActivity,
+                        { providerHealthRefreshInterval: undefined },
+                      ),
+                    )
+                  }
+                />
+              </span>
+            ) : null
+          }
+          control={
+            <div
+              inert={!canWriteSettings}
+              aria-disabled={!canWriteSettings || undefined}
+              className={cn(
+                "flex shrink-0 items-center gap-2",
+                !canWriteSettings && "opacity-50 select-none",
+              )}
+            >
+              <IntervalSecondsField
+                label="provider health check interval"
+                value={providerHealthRefreshIntervalSeconds}
+                min={0}
+                step={PROVIDER_HEALTH_INTERVAL_STEP_SECONDS}
+                onCommit={(seconds, options) =>
+                  updateSettings(
+                    backgroundActivityOverrideSettings(
+                      settings.backgroundActivity,
+                      resolvedBackgroundActivity,
+                      { providerHealthRefreshInterval: Duration.seconds(seconds) },
+                    ),
+                    options,
+                  )
+                }
+              />
+              <span className="text-xs text-muted-foreground">seconds</span>
+            </div>
+          }
+        />
         <CompactIdleThreadsRow />
       </SettingsSection>
 
@@ -1077,99 +1145,6 @@ export function EnvironmentProviderSettings({
         sources={settings.usageLimitSources}
         cursorKeychainUsageEnabled={settings.cursorKeychainUsageEnabled}
         readOnly={readOnly}
-        extraRows={
-          <>
-            <SettingsRow
-              id={searchableSetting("provider-health-check-interval").id}
-              title={
-                <span className="inline-flex items-center gap-1.5">
-                  {searchableSetting("provider-health-check-interval").title}
-                  <PolicyTooltip>
-                    This interval is configured here, then the shared Background activity policy
-                    decides whether provider probes may run when the timer fires. Custom intervals
-                    appear as Advanced in Maintenance settings.
-                  </PolicyTooltip>
-                </span>
-              }
-              description="Refresh provider status, versions, and models in the background. Set to 0 to disable."
-              resetAction={
-                providerHealthRefreshIntervalSeconds !==
-                defaultProviderHealthRefreshIntervalSeconds ? (
-                  <span
-                    inert={!canWriteSettings}
-                    className={!canWriteSettings ? "opacity-50" : undefined}
-                  >
-                    <SettingResetButton
-                      label="provider health check interval"
-                      onClick={() =>
-                        updateSettings(
-                          backgroundActivityOverrideSettings(
-                            settings.backgroundActivity,
-                            resolvedBackgroundActivity,
-                            { providerHealthRefreshInterval: undefined },
-                          ),
-                        )
-                      }
-                    />
-                  </span>
-                ) : null
-              }
-              control={
-                <div
-                  inert={!canWriteSettings}
-                  aria-disabled={!canWriteSettings || undefined}
-                  className={cn(
-                    "flex shrink-0 items-center gap-2",
-                    !canWriteSettings && "opacity-50 select-none",
-                  )}
-                >
-                  <Select
-                    value={String(providerHealthRefreshIntervalSeconds)}
-                    onValueChange={(value) => {
-                      const seconds = Number(value);
-                      if (!Number.isInteger(seconds) || seconds < 0) return;
-                      updateSettings(
-                        backgroundActivityOverrideSettings(
-                          settings.backgroundActivity,
-                          resolvedBackgroundActivity,
-                          {
-                            providerHealthRefreshInterval: Duration.seconds(
-                              normalizeIntervalSeconds(seconds),
-                            ),
-                          },
-                        ),
-                      );
-                    }}
-                  >
-                    <SelectTrigger
-                      size="sm"
-                      className="w-full sm:w-40"
-                      aria-label="Provider health check interval"
-                    >
-                      <SelectValue>
-                        {providerHealthRefreshIntervalSeconds === 0
-                          ? "Off"
-                          : `Every ${providerHealthRefreshIntervalSeconds / 60} ${
-                              providerHealthRefreshIntervalSeconds / 60 === 1 ? "minute" : "minutes"
-                            }`}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectPopup align="end" alignItemWithTrigger={false}>
-                      <SelectItem hideIndicator value="0">
-                        Off
-                      </SelectItem>
-                      {[5, 15, 30, 60].map((minutes) => (
-                        <SelectItem hideIndicator key={minutes} value={String(minutes * 60)}>
-                          Every {minutes} {minutes === 1 ? "minute" : "minutes"}
-                        </SelectItem>
-                      ))}
-                    </SelectPopup>
-                  </Select>
-                </div>
-              }
-            />
-          </>
-        }
       />
 
       {isAddInstanceDialogOpen && !readOnly ? (

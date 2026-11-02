@@ -182,9 +182,20 @@ function PreviewPanelShellFrame(
           }}
         />
       ) : null}
-      <div className={cn("h-full min-h-0 w-full", collapsible && "overflow-clip")}>
+      {/* Content stays pinned to the right edge, so closing uncovers the chat
+          instead of sliding the tab bar under the title bar controls. */}
+      <div
+        className={cn(
+          "h-full min-h-0 w-full",
+          collapsible && "overflow-clip",
+          collapsible && !maximized && "flex justify-end",
+        )}
+      >
         <div
-          className="flex h-full min-h-0 min-w-0 flex-col"
+          className={cn(
+            "flex h-full min-h-0 min-w-0 flex-col",
+            collapsible && !maximized && "shrink-0",
+          )}
           style={
             collapsible && !maximized
               ? { width: `calc(var(${RESIZABLE_WIDTH_PROPERTY}) - 1px)` }

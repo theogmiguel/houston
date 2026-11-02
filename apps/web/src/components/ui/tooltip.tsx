@@ -104,7 +104,7 @@ function TooltipPositioner(props: TooltipPrimitive.Positioner.Props) {
   const titlebarHeight = useNativeTitlebarHeight();
   return (
     <TooltipPrimitive.Positioner
-      className="pointer-events-none z-[140] h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] data-instant:transition-none"
+      className="pointer-events-none z-[140] max-w-(--available-width) transition-[top,left,right,bottom,transform] data-instant:transition-none"
       collisionPadding={{
         top: COLLISION_PADDING + titlebarHeight,
         right: COLLISION_PADDING,
@@ -138,7 +138,7 @@ function TooltipPopup({
       <TooltipPositioner align={align} anchor={anchor} side={side} sideOffset={sideOffset}>
         <TooltipPrimitive.Popup
           className={cn(
-            "relative flex h-(--popup-height,auto) w-(--popup-width,auto) origin-(--transform-origin) text-balance rounded-[var(--r-ctl)] text-popover-foreground text-xs transition-[width,height,scale,opacity] motion-reduce:transition-none data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 data-instant:duration-0",
+            "relative flex origin-(--transform-origin) text-balance rounded-[var(--r-ctl)] text-popover-foreground text-xs transition-[scale,opacity] motion-reduce:transition-none data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 data-instant:duration-0",
             variant === "glass" ? "dropdown-glass" : "border bg-popover shadow-[var(--shadow-1)]",
             variant === "code"
               ? "max-w-120 wrap-anywhere text-left font-mono text-[11px] leading-relaxed"
@@ -148,12 +148,9 @@ function TooltipPopup({
           data-slot="tooltip-popup"
           {...props}
         >
-          <TooltipPrimitive.Viewport
-            className="relative size-full overflow-clip px-(--viewport-inline-padding) py-1 [--viewport-inline-padding:--spacing(2)] data-instant:transition-none **:data-current:data-ending-style:opacity-0 **:data-current:data-starting-style:opacity-0 **:data-previous:data-ending-style:opacity-0 **:data-previous:data-starting-style:opacity-0 **:data-current:w-[calc(var(--popup-width)-2*var(--viewport-inline-padding)-2px)] **:data-previous:w-[calc(var(--popup-width)-2*var(--viewport-inline-padding)-2px)] **:data-previous:truncate **:data-current:opacity-100 **:data-previous:opacity-100 **:data-current:transition-opacity **:data-previous:transition-opacity"
-            data-slot="tooltip-viewport"
-          >
+          <div className="min-w-0 px-2 py-1" data-slot="tooltip-viewport">
             {children}
-          </TooltipPrimitive.Viewport>
+          </div>
         </TooltipPrimitive.Popup>
       </TooltipPositioner>
     </TooltipPrimitive.Portal>

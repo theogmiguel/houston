@@ -8,7 +8,6 @@ import {
   type ScopedThreadRef,
   type ServerProviderModel,
 } from "@t3tools/contracts";
-import type { EffortDisplay } from "@t3tools/contracts/settings";
 import {
   buildExplicitProviderOptionSelectionsFromDescriptors,
   getProviderOptionCurrentValue,
@@ -16,6 +15,8 @@ import {
   isClaudeUltrathinkPrompt,
   normalizeModelSlug,
 } from "@t3tools/shared/model";
+
+import type { EffortDisplay } from "@t3tools/contracts/settings";
 import type { ReactNode } from "react";
 
 import type { DraftId } from "../../composerDraftStore";
@@ -23,10 +24,10 @@ import { getProviderModelCapabilities } from "../../providerModels";
 import type { ComposerControlSize } from "./ComposerControl";
 import {
   getReasoningTraitStep,
+  type PromptUltrathink,
   shouldRenderTraitsControls,
   TraitsMenuContent,
   TraitsPicker,
-  type PromptUltrathink,
 } from "./TraitsPicker";
 
 type ComposerProviderStateInput = {
@@ -51,9 +52,9 @@ type ComposerProviderState = {
 
 type TraitsRenderInput = {
   provider: ProviderDriverKind;
-  instanceId?: ProviderInstanceId;
-  threadRef?: ScopedThreadRef;
-  draftId?: DraftId;
+  instanceId: ProviderInstanceId;
+  threadRef?: ScopedThreadRef | undefined;
+  draftId?: DraftId | undefined;
   model: string;
   models: ReadonlyArray<ServerProviderModel>;
   modelOptions: ReadonlyArray<ProviderOptionSelection> | undefined;
@@ -167,7 +168,7 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
   };
 }
 
-/** Expanded caret positions stay on the same character across Ultrathink prefix changes. */
+/** The caret stays on the same character when stepping strips a typed Ultrathink prefix. */
 export function getComposerReasoningStep(input: {
   provider: ProviderDriverKind;
   instanceId: ProviderInstanceId;
@@ -182,7 +183,7 @@ export function getComposerReasoningStep(input: {
 }): {
   prompt: string;
   cursor: number;
-  modelOptions?: ReadonlyArray<ProviderOptionSelection>;
+  modelOptions: ReadonlyArray<ProviderOptionSelection>;
 } | null {
   const { prompt, cursor } = input;
   const { selections } = resolveComposerOptionSelections(
@@ -204,18 +205,10 @@ export function getComposerReasoningStep(input: {
     direction: input.direction,
   });
   if (!step) return null;
-  const modelOptions = "modelOptions" in step ? { modelOptions: step.modelOptions } : {};
-  if (step.prompt === prompt) return { prompt, cursor, ...modelOptions };
-  // Adding the prefix also trims the prompt.
-  const keptStart = "modelOptions" in step ? 0 : step.prompt.length - prompt.trim().length;
-  const offset =
-    "modelOptions" in step
-      ? step.prompt.length - prompt.length
-      : keptStart - (prompt.length - prompt.trimStart().length);
   return {
     prompt: step.prompt,
-    cursor: Math.min(step.prompt.length, Math.max(keptStart, cursor + offset)),
-    ...modelOptions,
+    cursor: Math.max(0, cursor + step.prompt.length - prompt.length),
+    modelOptions: step.modelOptions,
   };
 }
 

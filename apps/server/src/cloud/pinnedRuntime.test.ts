@@ -52,7 +52,9 @@ const extractingRunner = (fs: FileSystem.FileSystem, path: Path.Path, commands: 
         if (input.command !== "tar" || stagingDir === undefined) {
           return yield* Effect.die(`unexpected command ${input.command}`);
         }
-        yield* fs.writeFileString(path.join(stagingDir, "houston"), "#!/bin/sh\n").pipe(Effect.orDie);
+        yield* fs
+          .writeFileString(path.join(stagingDir, "houston"), "#!/bin/sh\n")
+          .pipe(Effect.orDie);
         return {
           stdout: "",
           stderr: "",
@@ -106,7 +108,9 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-pinned-progress-failed-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "houston-pinned-progress-failed-",
+      });
       const checksums = yield* validChecksums;
       const progress: PinnedRuntimeProgress[] = [];
       let cancelled = false;
@@ -245,7 +249,9 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-pinned-runtime-repair-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "houston-pinned-runtime-repair-",
+      });
       const finalPaths = pinnedRuntimePaths(path, baseDir, version, "linux");
       yield* fs.makeDirectory(finalPaths.versionDir, { recursive: true });
       yield* fs.writeFileString(path.join(finalPaths.versionDir, "partial"), "incomplete\n");
@@ -271,7 +277,9 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-pinned-runtime-repair-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "houston-pinned-runtime-repair-",
+      });
       const finalPaths = pinnedRuntimePaths(path, baseDir, version, "linux");
       yield* fs.makeDirectory(path.dirname(finalPaths.entryPath), { recursive: true });
       yield* fs.writeFileString(finalPaths.entryPath, "broken\n");
@@ -375,7 +383,10 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
       // Chained: the launcher reaches its runtime through a second link.
       yield* fs.symlink(path.join(versionsDir, "1.2.0", "houston"), path.join(baseDir, "alias-t3"));
       yield* fs.symlink(path.join(baseDir, "alias-t3"), path.join(binDir, "houston"));
-      yield* fs.symlink(path.join(versionsDir, "1.2.5", "houston"), path.join(customBinDir, "houston"));
+      yield* fs.symlink(
+        path.join(versionsDir, "1.2.5", "houston"),
+        path.join(customBinDir, "houston"),
+      );
       yield* fs.writeFileString(
         path.join(baseDir, "runtime", "launchers"),
         `${path.join(customBinDir, "houston")}\n`,
@@ -409,7 +420,7 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
       // The launcher found on PATH is remembered for a service that cannot see it.
       assert.equal(
         yield* fs.readFileString(path.join(baseDir, "runtime", "launchers")),
-        `${path.join(customBinDir, "houston")}\n${path.join(binDir, "houston")}\n`,
+        `${path.join(customBinDir, "houston")}\n\n${path.join(binDir, "houston")}\n`,
       );
       assert.deepEqual((yield* fs.readDirectory(versionsDir)).toSorted(), [
         ".staging-abc",
@@ -425,6 +436,52 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
         "2.0.0",
         "other",
       ]);
+    }),
+  );
+
+  it.effect.each([
+    // An interrupted append cut this record short.
+    { name: "an unterminated launcher record", recorded: "/opt/hou", cut: "" },
+    // Another process's append is cut short after prune reads the records.
+    { name: "a record cut short after the read", recorded: "/opt/houston\n", cut: "/opt/hou" },
+  ])("remembers a launcher found on PATH after $name", ({ recorded, cut }) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const { baseDir, versionsDir } = yield* setup(["1.0.0", "1.1.0"]);
+      const binDir = path.join(baseDir, "custom-bin");
+      yield* fs.makeDirectory(binDir);
+      yield* fs.symlink(path.join(versionsDir, "1.0.0", "houston"), path.join(binDir, "houston"));
+      const launchersFile = path.join(baseDir, "runtime", "launchers");
+      yield* fs.writeFileString(launchersFile, recorded);
+      const prune = (environment: Record<string, string>) =>
+        prunePinnedRuntimes({ baseDir, keep: [] }).pipe(
+          Effect.provideService(ProcessRunner.ProcessRunner, lsofRunner("p1\nftxt\nn/bin/sh\n")),
+          Effect.provideService(HostProcess.Platform, "darwin"),
+          Effect.provideService(HostProcess.Environment, environment),
+          Effect.provideService(HostProcess.HomeDirectory, baseDir),
+        );
+
+      yield* prune({ PATH: binDir }).pipe(
+        Effect.provideService(FileSystem.FileSystem, {
+          ...fs,
+          readFileString: (file, encoding) =>
+            fs
+              .readFileString(file, encoding)
+              .pipe(
+                Effect.tap(() =>
+                  file === launchersFile
+                    ? fs.writeFileString(file, cut, { flag: "a" })
+                    : Effect.void,
+                ),
+              ),
+        }),
+      );
+      // A service that cannot see the interactive PATH.
+      const removed = yield* prune({});
+
+      assert.deepEqual(removed, []);
+      assert.isTrue(yield* fs.exists(path.join(versionsDir, "1.0.0", "houston")));
     }),
   );
 

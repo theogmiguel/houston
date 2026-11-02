@@ -140,6 +140,9 @@ export function SidebarUpdateReleaseNotes({
                 <p className="break-words text-headline leading-5 text-secondary-foreground">
                   {releaseNote.intro}
                 </p>
+                {releaseNote.footer ? (
+                  <p className="mt-1 text-headline leading-4 font-semibold">{releaseNote.footer}</p>
+                ) : null}
                 {releaseUrl ? (
                   <div className="mt-1">
                     <ReleaseLink releaseUrl={releaseUrl} shell={shell}>
@@ -157,12 +160,24 @@ export function SidebarUpdateReleaseNotes({
                 {index === 0 ? "What's new" : `Changes in ${releaseNote.version}`}
               </h3>
               <ul className="mt-1 grid gap-1 pl-4.5 text-headline leading-5 text-secondary-foreground">
-                {keyReleaseNoteItems(releaseNote.items).map(({ item, key }) => (
-                  <li className="list-disc break-words" key={key}>
-                    {item}
-                  </li>
-                ))}
+                {keyReleaseNoteItems(releaseNote.items).map(({ item, key }) => {
+                  const highlight = /^\*\*([^*]+)\*\* (.+)$/.exec(item);
+                  return (
+                    <li className="list-disc break-words" key={key}>
+                      {highlight ? (
+                        <>
+                          <strong>{highlight[1]}</strong> {highlight[2]}
+                        </>
+                      ) : (
+                        item
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
+              {releaseNote.footer ? (
+                <p className="mt-1.5 text-headline leading-4 font-semibold">{releaseNote.footer}</p>
+              ) : null}
               {releaseUrl ? (
                 <div className="mt-1.5">
                   <ReleaseLink releaseUrl={releaseUrl} shell={shell}>
@@ -194,4 +209,3 @@ export function SidebarUpdateReleaseNotes({
     </div>
   );
 }
-

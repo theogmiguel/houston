@@ -44,6 +44,7 @@ function Card({
   fixture,
   rows = 1,
   defaultOpen = true,
+  automationRows = 0,
 }: {
   threadRef: ScopedThreadRef;
   inline: boolean;
@@ -51,6 +52,8 @@ function Card({
   /** Rows of 100px shown at full density. Compact always takes 50px. */
   rows?: number;
   defaultOpen?: boolean;
+  /** Rows of 100px in an automations list shown at full density. */
+  automationRows?: number;
 }) {
   return (
     // The web root renders in StrictMode, which re-runs ref callbacks on every mount.
@@ -76,9 +79,14 @@ function Card({
           defaultOpen={defaultOpen}
         >
           {(density) => (
-            <p style={{ height: density === "full" ? rows * 100 : 50 }}>
-              Details for {threadRef.threadId}
-            </p>
+            <>
+              <p style={{ height: density === "full" ? rows * 100 : 50 }}>
+                Details for {threadRef.threadId}
+              </p>
+              {density === "full" && automationRows > 0 ? (
+                <section data-thread-automations-panel style={{ height: automationRows * 100 }} />
+              ) : null}
+            </>
           )}
         </ThreadDetailsCard>
       </ChatCanvasContext>
@@ -185,4 +193,15 @@ it("stays closed in a grid cell until the top bar toggle opens it", async () => 
     useRightPanelStore.getState().setThreadPanelOpen(threadB, "popover", false);
   });
   await expect.element(page.getByText("Details for thread-b")).not.toBeInTheDocument();
+});
+
+it("keeps full density when many automations make the content tall", async () => {
+  using fixture = setup();
+  await using _screen = await render(
+    <Card threadRef={threadB} inline fixture={fixture} rows={2} automationRows={6} />,
+  );
+  await expect.element(page.getByText("Details for thread-b")).toBeVisible();
+  await expect
+    .element(page.getByRole("region", { name: "Thread details" }))
+    .toHaveAttribute("data-density", "full");
 });

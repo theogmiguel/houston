@@ -28,6 +28,7 @@ const webFlags = (baseDir: Option.Option<string>): CliServerFlags => ({
   logWebSocketEvents: Option.none(),
   tailscaleServeEnabled: Option.none(),
   tailscaleServePort: Option.none(),
+  lan: Option.none(),
 });
 
 const withEnv = (env: Record<string, string>) =>

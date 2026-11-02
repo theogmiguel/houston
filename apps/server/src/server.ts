@@ -58,6 +58,7 @@ import * as SourceControlBuiltInDrivers from "./sourceControl/builtInDrivers.ts"
 import * as SourceControlSignIn from "./sourceControl/SourceControlSignIn.ts";
 import { BUILT_IN_SOURCE_CONTROL_DRIVER_LIST } from "./sourceControl/sourceControlDefinitions.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
+import * as SecretResolver from "./secrets/SecretResolver.ts";
 import * as ProviderInstanceRegistryHydration from "./provider/ProviderInstanceRegistryHydration.ts";
 import * as ProjectSettingsOverrideSweep from "./provider/ProjectSettingsOverrideSweep.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
@@ -85,6 +86,8 @@ import * as Keybindings from "./keybindings.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerOwnership from "./serverOwnership.ts";
 import * as ServerSettings from "./serverSettings.ts";
+import * as ManagedLimits from "./policy/managedLimits.ts";
+import * as ManagedPolicy from "./policy/ManagedPolicy.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as NativeAppIconResolver from "./assets/NativeAppIconResolver.ts";
 import * as AntigravityInstallation from "./provider/AntigravityInstallation.ts";
@@ -154,6 +157,7 @@ import * as WebhookRoute from "./scheduledTasks/webhookRoute.ts";
 import * as McpOAuth from "./auth/McpOAuth.ts";
 import * as McpOAuthHttp from "./auth/mcpOAuthHttp.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
+import * as EnvironmentAuthPolicy from "./auth/EnvironmentAuthPolicy.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as DesktopAppUpdate from "./desktopUpdate/DesktopAppUpdate.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
@@ -190,7 +194,12 @@ import { acceptsPrivateNetworkConnection, loopbackUrlHostForAddress } from "./st
 import * as OrchestrationHttp from "./orchestration-v2/http.ts";
 import * as ProjectHttp from "./project/http.ts";
 import * as NetService from "@t3tools/shared/Net";
-import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";
+import {
+  disableTailscaleServe,
+  ensureTailscaleServe,
+  readTailscaleServeRoutesTo,
+  readTailscaleStatus,
+} from "@t3tools/tailscale";
 import * as ServerActivation from "./serverActivation.ts";
 
 // Escaped MCP handoff provenance can exceed find-my-way's 100-character segment default.
@@ -232,6 +241,7 @@ const layerPtyAdapter = NodePtyAdapter.layer;
 
 const layerServerSettings = ServerSettings.layer.pipe(
   Layer.provide(ServerSecretStore.layer),
+  Layer.provideMerge(ManagedPolicy.layer),
   Layer.provideMerge(SqlitePersistence.layerConfig),
 );
 
@@ -286,6 +296,15 @@ const layerResourceDiagnostics = Layer.mergeAll(
 const layerHttpServer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
+    // Before binding: a host the policy does not allow must never listen, not even briefly.
+    const policy = yield* ManagedPolicy.ManagedPolicy;
+    const bindHost = yield* ManagedLimits.checkServerReachability(policy, {
+      authPolicy: EnvironmentAuthPolicy.resolveServerAuthPolicy(config),
+      host: config.host,
+      tailscaleServeEnabled: config.tailscaleServeEnabled,
+      privateNetworkOnly: config.privateNetworkOnly,
+    });
+    yield* ManagedLimits.closeTailscaleServeTo(policy, { host: bindHost, port: config.port });
     return NodeHttpServer.layer(
       () => {
         const server = rejectRequestsUntilServing(
@@ -301,7 +320,7 @@ const layerHttpServer = Layer.unwrap(
         return server;
       },
       {
-        host: config.host ?? "127.0.0.1",
+        host: bindHost,
         port: config.port,
         gracefulShutdownTimeout: HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS,
         // Context takeover stays enabled (ws default) so the compression
@@ -312,7 +331,7 @@ const layerHttpServer = Layer.unwrap(
       },
     );
   }),
-);
+).pipe(Layer.provide(ManagedPolicy.layer));
 
 const layerPlatformServices = DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer));
 
@@ -589,11 +608,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(HoustonSlackStore.sweep),
   // Slack accepts requests through the same task runs the server offers.
   layerSlack(
-    Layer.mergeAll(
-      SlackWebApi.layer,
-      SlackConnection.layerSocketTransport,
-      SlackRunMessages.layer,
-    ),
+    Layer.mergeAll(SlackWebApi.layer, SlackConnection.layerSocketTransport, SlackRunMessages.layer),
   ).pipe(
     Layer.provideMerge(
       HoustonTaskRuns.layer.pipe(
@@ -616,52 +631,57 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ),
   // The Night shift service over the runner and claim the orchestration runtime below exports.
   layerNightShift,
-).pipe(
-  // The merge queue reads through the PR page's own service and GitHub client.
-  Layer.provideMerge(
-    layerMergeQueue(
-      Layer.mergeAll(GitHubRest.layerWithDependencies, layerPullRequestService).pipe(
-        Layer.merge(HoustonMergeQueueThreads.layer),
+)
+  .pipe(
+    // The merge queue reads through the PR page's own service and GitHub client.
+    Layer.provideMerge(
+      layerMergeQueue(
+        Layer.mergeAll(GitHubRest.layerWithDependencies, layerPullRequestService).pipe(
+          Layer.merge(HoustonMergeQueueThreads.layer),
+        ),
       ),
     ),
-  ),
-  Layer.provideMerge(layerOrchestrationApplication),
-  Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer, HoustonTaskV1Import.layer)),
-  // The task source poller reads GitHub through its own client and the token from the OS keychain.
-  Layer.provideMerge(
-    layerTaskSources(
-      Layer.mergeAll(GitHubRest.layerWithDependencies, HoustonTaskSourceNotion.layer),
+    Layer.provideMerge(layerOrchestrationApplication),
+    Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer, HoustonTaskV1Import.layer)),
+    // The task source poller reads GitHub through its own client and the token from the OS keychain.
+    Layer.provideMerge(
+      layerTaskSources(
+        Layer.mergeAll(GitHubRest.layerWithDependencies, HoustonTaskSourceNotion.layer),
+      ),
     ),
-  ),
-  Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
-  Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
-  Layer.provideMerge(layerServerSettings),
-  Layer.provideMerge(layerSourceControlProviderRegistry),
-  Layer.provideMerge(layerGit),
-  Layer.provideMerge(layerVcs),
-  Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
-  // Below the orchestration runtime so its ProjectService sees the store on project deletion.
-  Layer.provideMerge(
-    Layer.mergeAll(
-      HoustonTaskSourceStore.layer,
-      HoustonMergeQueueStore.layer,
-      HoustonHarnessStore.layer,
-      HoustonNightShiftStore.layer,
+    Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
+    Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
+    Layer.provideMerge(SecretResolver.layer),
+    Layer.provideMerge(layerServerSettings),
+    Layer.provideMerge(layerSourceControlProviderRegistry),
+    Layer.provideMerge(layerGit),
+    Layer.provideMerge(layerVcs),
+  )
+  .pipe(
+    // Split from the chain above: Effect's `pipe` overloads accept at most 20 stages.
+    Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
+    // Below the orchestration runtime so its ProjectService sees the store on project deletion.
+    Layer.provideMerge(
+      Layer.mergeAll(
+        HoustonTaskSourceStore.layer,
+        HoustonMergeQueueStore.layer,
+        HoustonHarnessStore.layer,
+        HoustonNightShiftStore.layer,
+      ),
     ),
-  ),
-  Layer.provideMerge(HoustonSlackStore.layer),
-  Layer.provideMerge(HoustonKeychain.layerLive),
-  Layer.provideMerge(layerHoustonTaskPersistence),
-  Layer.provideMerge(layerPersistence),
-  Layer.provideMerge(
-    Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),
-  ),
-  Layer.provideMerge(ProviderRegistry.layer),
-  Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
-  // Provider hydration builds the Claude runner, which reports agents to the same scanner the
-  // terminal and preview layers share.
-  Layer.provideMerge(layerPortScanner),
-);
+    Layer.provideMerge(HoustonSlackStore.layer),
+    Layer.provideMerge(HoustonKeychain.layerLive),
+    Layer.provideMerge(layerHoustonTaskPersistence),
+    Layer.provideMerge(layerPersistence),
+    Layer.provideMerge(
+      Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),
+    ),
+    Layer.provideMerge(ProviderRegistry.layer),
+    Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
+    // Provider hydration builds the Claude runner, which reports agents to the same scanner the
+    // terminal and preview layers share.
+    Layer.provideMerge(layerPortScanner),
+  );
 
 const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(
@@ -821,6 +841,7 @@ const layerMakeServer = Layer.unwrap(
           config,
           port: address.port,
           serviceManaged: launcher.managed,
+          managedPolicy: yield* ManagedPolicy.loadedPolicy(yield* ManagedPolicy.ManagedPolicy),
         });
         yield* ownership
           .publish(state)
@@ -844,12 +865,17 @@ const layerMakeServer = Layer.unwrap(
               }
 
               const localPort = address.port;
+              const localHost = loopbackUrlHostForAddress(address);
               return yield* ensureTailscaleServe({
                 localPort,
                 servePort: config.tailscaleServePort,
-                localHost: loopbackUrlHostForAddress(address),
+                localHost,
               }).pipe(
-                Effect.as({ localPort, servePort: config.tailscaleServePort }),
+                Effect.as({
+                  localPort,
+                  localHost: localHost.replace(/^\[|\]$/gu, ""),
+                  servePort: config.tailscaleServePort,
+                }),
                 Effect.tap(() =>
                   Effect.logInfo("Tailscale Serve configured", {
                     localPort,
@@ -867,11 +893,44 @@ const layerMakeServer = Layer.unwrap(
             }),
             (configured) =>
               configured
-                ? disableTailscaleServe({ servePort: configured.servePort }).pipe(
-                    Effect.tap(() =>
-                      Effect.logInfo("Tailscale Serve disabled", {
-                        servePort: configured.servePort,
+                ? Effect.all(
+                    [
+                      readTailscaleServeRoutesTo({
+                        host: configured.localHost,
+                        port: configured.localPort,
                       }),
+                      readTailscaleStatus,
+                    ],
+                    { concurrency: 2 },
+                  ).pipe(
+                    // Another service may hold the root route by now, or it may sit under a
+                    // former name, where `off` would act on the current one; only ours goes.
+                    Effect.map(([routes, status]) =>
+                      routes.some(
+                        (route) =>
+                          route.servePort === configured.servePort &&
+                          route.mount === "/" &&
+                          route.owner === undefined &&
+                          route.ambiguous === undefined &&
+                          route.host?.toLowerCase() === status.magicDnsName?.toLowerCase(),
+                      ),
+                    ),
+                    Effect.orElseSucceed(() => false),
+                    Effect.flatMap((ours) =>
+                      ours
+                        ? disableTailscaleServe({ servePort: configured.servePort }).pipe(
+                            Effect.tap(() =>
+                              Effect.logInfo("Tailscale Serve disabled", {
+                                servePort: configured.servePort,
+                              }),
+                            ),
+                          )
+                        : Effect.logInfo(
+                            "Tailscale Serve left on; its root route is not known to be ours",
+                            {
+                              servePort: configured.servePort,
+                            },
+                          ),
                     ),
                     Effect.catch((cause) =>
                       Effect.logWarning("Failed to disable Tailscale Serve", {
