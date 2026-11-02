@@ -50,11 +50,11 @@ const fullscreenSupported =
   typeof HTMLElement !== "undefined" && "popover" in HTMLElement.prototype;
 
 const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
-// Exclude activation left by input elsewhere in T3.
+// Exclude activation left by input elsewhere in Houston.
 const PAGE_ACTIVATION_MS = 5_000;
 
 // Frame input does not bubble here. An app can refocus itself, so focus
-// alone cannot exclude activation from input elsewhere in T3.
+// alone cannot exclude activation from input elsewhere in Houston.
 let lastPageInputAt = Number.NEGATIVE_INFINITY;
 if (typeof window !== "undefined") {
   const note = () => {
@@ -242,7 +242,7 @@ export function McpAppFrame(props: {
         platform: isElectron ? "desktop" : "web",
         locale: navigator.language,
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        userAgent: `t3-code/${APP_VERSION}`,
+        userAgent: `houston/${APP_VERSION}`,
         deviceCapabilities: {
           touch: current.pointerCoarse,
           hover: current.hoverCapable,
@@ -396,13 +396,13 @@ export function McpAppFrame(props: {
     };
   };
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes theme, width, display mode and tool definition to the MCP app host in the iframe
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- pushes theme, width, display mode and tool definition to the MCP app host in the iframe
   useEffect(() => {
     hostRef.current?.updateHostContext();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Context changes trigger a resend.
   }, [theme, width, displayMode, toolDefinition]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- sends the current tool call to the MCP app host, again for each new iframe document
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- sends the current tool call to the MCP app host, again for each new iframe document
   useEffect(() => {
     if (toolCall !== undefined) hostRef.current?.setToolCall(toolCall);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Each new document needs the call.

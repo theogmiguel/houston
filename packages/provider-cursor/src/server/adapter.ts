@@ -206,7 +206,7 @@ export function cursorMcpServers(
     return undefined;
   }
   return {
-    "t3-code": {
+    houston: {
       type: "http",
       url: session.endpoint,
       headers: {

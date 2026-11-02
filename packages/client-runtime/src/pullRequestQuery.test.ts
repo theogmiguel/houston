@@ -99,9 +99,9 @@ describe("colon-namespaced labels typed as a search", () => {
   });
 
   it("leaves a pasted link alone rather than naming a label after its scheme", () => {
-    const parsed = parsePullRequestQuery("https://github.com/pingdotgg/t3code/pull/1");
+    const parsed = parsePullRequestQuery("https://github.com/pingdotgg/houston/pull/1");
     expect(parsed.filters.labels).toBeUndefined();
-    expect(parsed.text).toBe("https://github.com/pingdotgg/t3code/pull/1");
+    expect(parsed.text).toBe("https://github.com/pingdotgg/houston/pull/1");
   });
 
   it("mixes with the keys it does know, and with plain words", () => {

@@ -52,13 +52,13 @@ const RELEASE_CHANNEL =
       ? "preview"
       : releaseChannelOf(APP_VERSION);
 const CLIENT_TRACING_RESOURCE = {
-  serviceName: "t3code-web",
+  serviceName: "houston-web",
   attributes: {
-    "service.namespace": "t3code",
+    "service.namespace": "houston",
     "service.instance.id": ClientTracer.serviceInstanceId,
     ...releaseResourceAttributes(RELEASE_CHANNEL),
     "service.runtime": "t3-web",
-    "t3code.client.surface": isElectron ? "desktop" : "web",
+    "houston.client.surface": isElectron ? "desktop" : "web",
     "service.version": APP_VERSION,
     ...browserResourceAttributes(),
   },

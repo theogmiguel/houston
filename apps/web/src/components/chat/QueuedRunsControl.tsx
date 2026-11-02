@@ -431,7 +431,7 @@ function QueuedMessage(props: {
 
   return (
     <>
-      {attribution === "t3code" ? (
+      {attribution === "houston" ? (
         <p className="me-1 text-2xs text-muted-foreground/70">Sent by Houston</p>
       ) : null}
       {/* Dashed and unfilled: a turn that has not been sent yet. */}

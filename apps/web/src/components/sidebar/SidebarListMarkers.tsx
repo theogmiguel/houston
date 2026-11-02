@@ -23,7 +23,7 @@ function SortableSidebarMarker(props: {
     disabled: SIDEBAR_SORTABLE_DRAG_DISABLED,
     animateLayoutChanges: animateSidebarLayoutChanges,
   });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the projected drop box inside the scroll viewport as drag transforms move it
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- keeps the projected drop box inside the scroll viewport as drag transforms move it
   useLayoutEffect(() => {
     if (props.revealOverflow && transform?.y !== undefined) {
       node.current?.firstElementChild?.scrollIntoView({ block: "nearest", inline: "nearest" });

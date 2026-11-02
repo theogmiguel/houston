@@ -4,11 +4,11 @@ import { resolveDesktopAppControlAddress } from "./desktopAppControl.ts";
 
 describe("resolveDesktopAppControlAddress", () => {
   it.each([
-    ["linux", "/tmp", "/tmp/t3code-1000", 107],
-    ["linux", "/var/tmp/custom", "/var/tmp/custom/t3code-1000", 107],
-    ["linux", `/tmp/${"x".repeat(120)}`, "/tmp/t3code-1000", 107],
-    ["darwin", `/tmp/${"é".repeat(30)}`, "/tmp/t3code-1000", 103],
-    ["darwin", `/tmp/${"x".repeat(56)}`, `/tmp/${"x".repeat(56)}/t3code-1000`, 103],
+    ["linux", "/tmp", "/tmp/houston-1000", 107],
+    ["linux", "/var/tmp/custom", "/var/tmp/custom/houston-1000", 107],
+    ["linux", `/tmp/${"x".repeat(120)}`, "/tmp/houston-1000", 107],
+    ["darwin", `/tmp/${"é".repeat(30)}`, "/tmp/houston-1000", 103],
+    ["darwin", `/tmp/${"x".repeat(55)}`, `/tmp/${"x".repeat(55)}/houston-1000`, 103],
   ] as const)("keeps %s sockets short under %s", (platform, tempDir, directory, maxBytes) => {
     const first = resolveDesktopAppControlAddress({
       stateDir: `/home/user/${"long/".repeat(40)}userdata`,
@@ -40,6 +40,6 @@ describe("resolveDesktopAppControlAddress", () => {
     });
 
     expect(result.directory).toBeNull();
-    expect(result.address).toMatch(/^\\\\\.\\pipe\\t3code-app-[a-f0-9]{24}$/);
+    expect(result.address).toMatch(/^\\\\\.\\pipe\\houston-app-[a-f0-9]{24}$/);
   });
 });

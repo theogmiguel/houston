@@ -87,14 +87,14 @@ it("does not expose arbitrary cause messages and preserves explicit messages", (
   }
 });
 
-it("preserves actionable T3 errors wrapped by turn startup", () => {
+it("preserves actionable Houston errors wrapped by turn startup", () => {
   for (const error of [
     new ContextHandoffBudgetError(),
     new ContextHandoffBackgroundWorkError(),
     new ProviderSetupError({
       instanceId: ProviderInstanceId.make("codex"),
       operation: "runtime",
-      detail: "Codex 0.144.3 does not work with this T3 Code release.",
+      detail: "Codex 0.144.3 does not work with this Houston release.",
     }),
   ]) {
     const cause = new ProviderAdapter.ProviderAdapterTurnStartError({

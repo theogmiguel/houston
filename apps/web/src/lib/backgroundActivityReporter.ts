@@ -21,7 +21,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { randomUUID } from "./utils";
 
-const CLIENT_ID_STORAGE_KEY = "t3.backgroundActivity.clientId";
+const CLIENT_ID_STORAGE_KEY = "houston.backgroundActivity.clientId";
 const REPORT_INTERVAL_MS = 25_000;
 // Shorter than the interval, so a report that never settles cannot hold up the next one.
 const REPORT_TIMEOUT_MS = 15_000;

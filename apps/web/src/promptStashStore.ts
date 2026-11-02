@@ -8,8 +8,8 @@ import {
 } from "./composerDraftStore";
 import { createMemoryStorage, type StateStorage } from "./lib/storage";
 
-export const PROMPT_STASH_STORAGE_KEY = "t3code:prompt-stash:v2";
-const LEGACY_PROMPT_STASH_STORAGE_KEY = "t3code:prompt-stash:v1";
+export const PROMPT_STASH_STORAGE_KEY = "houston:prompt-stash:v2";
+const LEGACY_PROMPT_STASH_STORAGE_KEY = "houston:prompt-stash:v1";
 const PROMPT_STASH_STORAGE_VERSION = 2;
 
 export const MAX_STASH_ENTRIES = 20;

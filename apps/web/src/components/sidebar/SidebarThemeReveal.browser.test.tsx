@@ -11,7 +11,7 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
   useAtomValue: (() => null) as never,
 }));
 
-const APPEARANCE_MODE_KEY = "t3code:theme-appearance-mode";
+const APPEARANCE_MODE_KEY = "houston:theme-appearance-mode";
 
 afterEach(() => {
   delete document.documentElement.dataset.themeReveal;

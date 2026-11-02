@@ -230,8 +230,8 @@ function snapshotStorage(): Storage | undefined {
 
 type ListAnswerStorage = Pick<Storage, "getItem" | "setItem" | "removeItem" | "key" | "length">;
 
-const LIST_SCOPE_INDEX_KEY = "t3.pullRequests.listScopes";
-const LIST_SCOPE_KEY_PREFIX = "t3.pullRequests.listScope:";
+const LIST_SCOPE_INDEX_KEY = "houston.pullRequests.listScopes";
+const LIST_SCOPE_KEY_PREFIX = "houston.pullRequests.listScope:";
 const LEGACY_SNAPSHOT_KEY_PREFIX = "t3.pullRequests.list:";
 const LIST_ANSWER_MAX_ENTRIES = 99;
 /**

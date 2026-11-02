@@ -10,17 +10,17 @@ import {
 
 describe("fileBreadcrumbs", () => {
   it("starts host paths outside the workspace at the filesystem root", () => {
-    expect(fileBreadcrumbs("t3code", "/tmp/t3-cleanup/report.md")).toEqual([
+    expect(fileBreadcrumbs("houston", "/tmp/t3-cleanup/report.md")).toEqual([
       { label: "tmp", path: "/tmp", kind: "directory" },
       { label: "t3-cleanup", path: "/tmp/t3-cleanup", kind: "directory" },
       { label: "report.md", path: "/tmp/t3-cleanup/report.md", kind: "file" },
     ]);
-    expect(fileBreadcrumbs("t3code", "C:\\Temp\\report.md")).toEqual([
+    expect(fileBreadcrumbs("houston", "C:\\Temp\\report.md")).toEqual([
       { label: "C:", path: "C:\\", kind: "directory" },
       { label: "Temp", path: "C:\\Temp", kind: "directory" },
       { label: "report.md", path: "C:\\Temp\\report.md", kind: "file" },
     ]);
-    expect(fileBreadcrumbs("t3code", "\\\\server\\share\\report.md").map((c) => c.path)).toEqual([
+    expect(fileBreadcrumbs("houston", "\\\\server\\share\\report.md").map((c) => c.path)).toEqual([
       "\\\\server",
       "\\\\server\\share",
       "\\\\server\\share\\report.md",
@@ -28,7 +28,7 @@ describe("fileBreadcrumbs", () => {
   });
 
   it("builds home-relative breadcrumbs with navigable folders", () => {
-    expect(fileBreadcrumbs("t3code", "~/.claude/CLAUDE.md")).toEqual([
+    expect(fileBreadcrumbs("houston", "~/.claude/CLAUDE.md")).toEqual([
       { label: "~", path: "~/", kind: "directory" },
       { label: ".claude", path: "~/.claude", kind: "directory" },
       { label: "CLAUDE.md", path: "~/.claude/CLAUDE.md", kind: "file" },
@@ -38,7 +38,7 @@ describe("fileBreadcrumbs", () => {
   });
 
   it("keeps a project folder named ~ inside the project", () => {
-    expect(fileBreadcrumbs("t3code", "~").map((crumb) => crumb.path)).toEqual(["", "~"]);
+    expect(fileBreadcrumbs("houston", "~").map((crumb) => crumb.path)).toEqual(["", "~"]);
   });
 });
 

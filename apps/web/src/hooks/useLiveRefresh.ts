@@ -99,7 +99,7 @@ export function useLiveRefresh(
   const fallbackViewId = useId();
   const viewId = key ?? fallbackViewId;
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refresh interval tied to page visibility and user interaction listeners
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- refresh interval tied to page visibility and user interaction listeners
   useEffect(() => {
     if (!enabled) return;
     const read = (now: number) => runRefresh(viewId, now);

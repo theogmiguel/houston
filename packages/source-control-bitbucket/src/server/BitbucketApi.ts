@@ -45,16 +45,16 @@ const BITBUCKET_API_REQUEST_TIMEOUT = "30 seconds";
 const CONCURRENCY = 4;
 
 const BitbucketApiEnvConfig = Config.all({
-  baseUrl: Config.String("T3CODE_BITBUCKET_API_BASE_URL").pipe(
+  baseUrl: Config.String("HOUSTON_BITBUCKET_API_BASE_URL").pipe(
     Config.withDefault(DEFAULT_API_BASE_URL),
   ),
-  accessToken: Config.String("T3CODE_BITBUCKET_ACCESS_TOKEN").pipe(Config.option),
-  email: Config.String("T3CODE_BITBUCKET_EMAIL").pipe(Config.option),
-  apiToken: Config.String("T3CODE_BITBUCKET_API_TOKEN").pipe(Config.option),
+  accessToken: Config.String("HOUSTON_BITBUCKET_ACCESS_TOKEN").pipe(Config.option),
+  email: Config.String("HOUSTON_BITBUCKET_EMAIL").pipe(Config.option),
+  apiToken: Config.String("HOUSTON_BITBUCKET_API_TOKEN").pipe(Config.option),
 });
 
 // Server and Data Center use a different API; a custom Cloud endpoint must be explicit.
-export const BitbucketServesHost = Config.String("T3CODE_BITBUCKET_API_BASE_URL").pipe(
+export const BitbucketServesHost = Config.String("HOUSTON_BITBUCKET_API_BASE_URL").pipe(
   Config.option,
   Config.map(
     (baseUrl) => (host: string) =>
@@ -528,7 +528,7 @@ function checkoutBranchName(input: {
     return input.headBranch;
   }
 
-  return `t3code/pr-${input.pullRequestId}/${sanitizeBranchFragment(input.headBranch)}`;
+  return `houston/pr-${input.pullRequestId}/${sanitizeBranchFragment(input.headBranch)}`;
 }
 
 function repositoryNameWithOwner(
@@ -605,7 +605,7 @@ function authFromCredential(credential: BitbucketCredential | null): SourceContr
     account: Option.none(),
     host: Option.some("bitbucket.org"),
     detail: Option.some(
-      "Add a Bitbucket token in Settings → Source Control, or set the T3CODE_BITBUCKET_* environment variables on the server.",
+      "Add a Bitbucket token in Settings → Source Control, or set the HOUSTON_BITBUCKET_* environment variables on the server.",
     ),
   };
 }

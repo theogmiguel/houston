@@ -52,13 +52,13 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
   cwd: Schema.NullOr(Schema.String),
   approvalPolicy: Schema.optional(Schema.Unknown),
   sandboxPolicy: Schema.optional(Schema.Unknown),
-  /** Houston: the one T3 tool a read-only task planner or reviewer may call. */
+  /** Houston: the one Houston tool a read-only task planner or reviewer may call. */
   houstonTaskSubmitTool: Schema.optional(
     Schema.Literals(["houston_task_plan_submit", "houston_task_review_submit"]),
   ),
   /**
    * The administrator's ceiling, when a managed policy sets one. `runtimeMode` is already under
-   * it; adapters use it to refuse native mode choices a user makes beside T3 Code's own.
+   * it; adapters use it to refuse native mode choices a user makes beside Houston's own.
    */
   maxRuntimeMode: Schema.optional(RuntimeMode),
 });

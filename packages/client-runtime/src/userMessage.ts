@@ -6,7 +6,7 @@ import {
 } from "@houston-app/contracts";
 import { isAttachmentOnlyBootstrapPrompt } from "@houston-app/shared/composerContextReferences";
 
-/** The working row while T3 Code's own compaction runs. */
+/** The working row while Houston's own compaction runs. */
 export const IDLE_COMPACTING_LABELS = {
   beforeCacheExpires: "Compacting before the cache expires…",
   onReturn: "Compacting…",
@@ -30,7 +30,7 @@ export function resolveUserMessagePresentation(message: {
   readonly scheduledTaskId?: ScheduledTaskId | undefined;
 }): {
   readonly text: string;
-  readonly attribution: "automation" | "agent" | "t3code" | null;
+  readonly attribution: "automation" | "agent" | "houston" | null;
   readonly scheduledTaskId: ScheduledTaskId | undefined;
 } {
   if (message.role !== "user") {
@@ -61,7 +61,7 @@ export function resolveUserMessagePresentation(message: {
       message.createdBy !== "agent"
         ? null
         : message.creationSource === "server"
-          ? "t3code"
+          ? "houston"
           : "agent",
     scheduledTaskId: undefined,
   };

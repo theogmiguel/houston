@@ -94,7 +94,7 @@ export function GridHost(props: GridHostProps) {
     tree !== null &&
     findThread(tree, dragSource.threadId) !== null;
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Escape must cancel a drag whose source cell the pointer left
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Escape must cancel a drag whose source cell the pointer left
   useEffect(() => {
     if (dragSource === null) return;
     const onKeyDown = (event: KeyboardEvent) => {

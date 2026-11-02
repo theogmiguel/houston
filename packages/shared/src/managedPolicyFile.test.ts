@@ -157,7 +157,7 @@ describe("readManagedPolicy", () => {
             "the registry cannot be read (Windows error 5)",
           );
         }
-        assert.include(yield* win32({}, {}), "cannot load its registry reader; reinstall T3 Code");
+        assert.include(yield* win32({}, {}), "cannot load its registry reader; reinstall Houston");
         assert.include(
           yield* win32({}, { code: 1630 }),
           "its Policy value is not a string (REG_SZ)",
@@ -173,9 +173,9 @@ describe("readManagedPolicy", () => {
         const registry = yield* WindowsRegistry;
         const version = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
         assert.match((yield* registry.readMachineString(version, "ProductName")) ?? "", /Windows/);
-        assert.isUndefined(yield* registry.readMachineString(version, "T3CodeNoSuchValue"));
+        assert.isUndefined(yield* registry.readMachineString(version, "HoustonNoSuchValue"));
         assert.isUndefined(
-          yield* registry.readMachineString("SOFTWARE\\T3CodeNoSuchKey", "Policy"),
+          yield* registry.readMachineString("SOFTWARE\\HoustonNoSuchKey", "Policy"),
         );
         // REG_DWORD, and REG_EXPAND_SZ, which would otherwise expand the user's variables.
         for (const [key, value] of [

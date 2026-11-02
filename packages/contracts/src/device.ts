@@ -70,7 +70,7 @@ export type EasDeviceHostConfig = typeof EasDeviceHostConfig.Type;
 
 /**
  * Alpha: devices leased from a Simlock gateway (https://incubator.callstack.com/simlock).
- * T3 never installs Simlock; the gateway and its workers are the user's own.
+ * Houston never installs Simlock; the gateway and its workers are the user's own.
  */
 export const SimlockDeviceHostConfig = Schema.Struct({
   kind: Schema.Literal("simlock"),

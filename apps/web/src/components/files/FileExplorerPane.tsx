@@ -16,7 +16,7 @@ const FILE_CONTENT_MIN_WIDTH = 256;
 export function FileExplorerPane({
   resizable,
   children,
-  storageKey = "t3code.fileExplorerWidth",
+  storageKey = "houston.fileExplorerWidth",
   defaultWidth = 232,
   defaultWidthFraction,
   minWidth = MIN_WIDTH,

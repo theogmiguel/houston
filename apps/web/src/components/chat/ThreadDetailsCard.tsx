@@ -100,14 +100,14 @@ export function ThreadDetailsCard({
   // inline flag, which live in three stores, so no single write site sees the
   // card leave popover mode. A flag left set would reopen the popover unasked
   // when the card returns to popover mode.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the popover flag in the right panel store when the derived mode turns inline
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- closes the popover flag in the right panel store when the derived mode turns inline
   useLayoutEffect(() => {
     if (!controlled && mode === "inline" && popoverOpen)
       useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", false);
   }, [controlled, mode, popoverOpen, threadRef]);
   // The grid moves an open inline card to the cell that gains focus; it reads
   // this instead of guessing from the two open flags.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the presentation this card actually renders to the right panel store
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- publishes the presentation this card actually renders to the right panel store
   useLayoutEffect(() => {
     useRightPanelStore.getState().setThreadPanelPresentation(threadRef, mode);
   }, [mode, threadRef]);
@@ -115,7 +115,7 @@ export function ThreadDetailsCard({
   const threadKey = scopedThreadKey(threadRef);
   // The grid hands the card's rect from the cell that lost focus to the cell that gained
   // it; the new card slides in from that side. A fresh opening has no handoff.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records the inline card's rect and animates it when a grid cell gains focus
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- records the inline card's rect and animates it when a grid cell gains focus
   useLayoutEffect(() => {
     if (!animateFollow) return;
     const element = asideRef.current;
@@ -150,7 +150,7 @@ export function ThreadDetailsCard({
   const { environmentId, threadId } = threadRef;
   // Re-measures when the density or measurement key changes, so each density's
   // height is measured once it renders.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the card's DOM height via ResizeObserver and reports it to the canvas
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- measures the card's DOM height via ResizeObserver and reports it to the canvas
   useLayoutEffect(() => {
     const element = contentElement;
     if (!element || density === "essential") return;

@@ -13,7 +13,7 @@ export interface PreviewPanelInlineSize {
   readonly observeRow: (host: HTMLElement) => () => void;
 }
 
-const PREVIEW_PANEL_WIDTH_STORAGE_KEY = "t3code:preview-panel-width";
+const PREVIEW_PANEL_WIDTH_STORAGE_KEY = "houston:preview-panel-width";
 const PREVIEW_PANEL_MIN_WIDTH = 360;
 const PREVIEW_PANEL_MAX_WIDTH_FRACTION = 0.7;
 /** Below this, the sibling chat column's composer overflows. */

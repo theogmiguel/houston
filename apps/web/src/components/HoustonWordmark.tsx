@@ -10,7 +10,7 @@ export function HoustonMark({ className }: { readonly className?: string }) {
 
 /**
  * Houston's product lockup: the app mark and its name. Replaces the upstream
- * T3 wordmark so every surface (sidebar, welcome, lifecycle rows, standalone
+ * Houston wordmark so every surface (sidebar, welcome, lifecycle rows, standalone
  * pages) carries one brand.
  */
 export function HoustonWordmark({

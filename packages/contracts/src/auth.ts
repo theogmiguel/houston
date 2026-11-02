@@ -438,11 +438,11 @@ export const AuthMcpAuthorizationServerMetadata = Schema.Struct({
 export type AuthMcpAuthorizationServerMetadata = typeof AuthMcpAuthorizationServerMetadata.Type;
 
 /**
- * The `software_id` another T3 Code environment registers with when it links
+ * The `software_id` another Houston environment registers with when it links
  * to this one. Its session is then a peer link: the work it starts here stays
  * within that link. Claiming it only ever adds limits.
  */
-export const MCP_PEER_LINK_SOFTWARE_ID = "t3code-peer-link";
+export const MCP_PEER_LINK_SOFTWARE_ID = "houston-peer-link";
 
 export const AuthMcpClientRegistration = Schema.Struct({
   client_name: Schema.optionalKey(Schema.String),

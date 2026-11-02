@@ -659,7 +659,7 @@ export function filterCommandPaletteGroups(input: {
     : [...groups, { value: "threads-messages", label: "In messages", items: messageItems }];
 }
 
-/** Every option inside a submenu as one row, e.g. "New thread in t3code" or "Change theme: Dracula". */
+/** Every option inside a submenu as one row, e.g. "New thread in houston" or "Change theme: Dracula". */
 export function buildNestedSearchItems(
   items: ReadonlyArray<CommandPaletteActionItem | CommandPaletteSubmenuItem>,
   query: string,

@@ -42,24 +42,24 @@ describe("clientPersistenceStorage", () => {
     "does not treat invalid saved settings as absent: %s",
     async (value) => {
       const testWindow = getTestWindow();
-      testWindow.localStorage.setItem("t3code:client-settings:v1", value);
+      testWindow.localStorage.setItem("houston:client-settings:v1", value);
       const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
 
       expect(() => readBrowserClientSettings()).toThrow(
         expect.objectContaining({
           _tag: "LocalStorageOperationError",
           operation: "decode",
-          storageKey: "t3code:client-settings:v1",
+          storageKey: "houston:client-settings:v1",
         }),
       );
-      expect(testWindow.localStorage.getItem("t3code:client-settings:v1")).toBe(value);
+      expect(testWindow.localStorage.getItem("houston:client-settings:v1")).toBe(value);
     },
   );
 
   it("preserves saved settings across a transient read failure", async () => {
     const testWindow = getTestWindow();
     const settings = { ...DEFAULT_CLIENT_SETTINGS, timestampFormat: "12-hour" as const };
-    testWindow.localStorage.setItem("t3code:client-settings:v1", JSON.stringify(settings));
+    testWindow.localStorage.setItem("houston:client-settings:v1", JSON.stringify(settings));
     const write = vi.spyOn(testWindow.localStorage, "setItem");
     const failure = new Error("storage unavailable");
     vi.spyOn(testWindow.localStorage, "getItem").mockImplementationOnce(() => {
@@ -71,7 +71,7 @@ describe("clientPersistenceStorage", () => {
       expect.objectContaining({
         _tag: "LocalStorageOperationError",
         operation: "read",
-        storageKey: "t3code:client-settings:v1",
+        storageKey: "houston:client-settings:v1",
         cause: failure,
       }),
     );

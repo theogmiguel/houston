@@ -19,7 +19,7 @@ export const MarkdownMath = memo(function MarkdownMath(props: {
   const viewportRef = useRef<HTMLSpanElement>(null);
   const contentRef = useRef<HTMLSpanElement>(null);
   const [overflows, setOverflows] = useState(false);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes formula DOM width to make overflowing equations keyboard scrollable
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- observes formula DOM width to make overflowing equations keyboard scrollable
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
     const content = contentRef.current;

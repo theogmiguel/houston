@@ -4,8 +4,8 @@ import { parseFileUrlHref, splitFilePathPosition, resolvePathLinkTarget } from "
 describe("parseFileUrlHref", () => {
   it.each([
     [
-      "file:///D:/Programme/t3code/OpenInPicker.tsx#L69",
-      "D:/Programme/t3code/OpenInPicker.tsx",
+      "file:///D:/Programme/houston/OpenInPicker.tsx#L69",
+      "D:/Programme/houston/OpenInPicker.tsx",
       "#L69",
     ],
     ["file://server/share/workspace-image.svg", "\\\\server\\share\\workspace-image.svg", ""],

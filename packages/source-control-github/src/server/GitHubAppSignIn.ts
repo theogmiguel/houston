@@ -24,10 +24,10 @@ import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as GitHubClient from "../shared/definition.ts";
 
 /**
- * The public client ID of the T3 Code for GitHub app, which the device flow needs (no secret).
+ * The public client ID of the Houston for GitHub app, which the device flow needs (no secret).
  * Unset turns the app sign-in off: no app tokens, no sign-in, nothing for clients to show.
  */
-export const CLIENT_ID_VARIABLE = "T3CODE_GITHUB_APP_CLIENT_ID";
+export const CLIENT_ID_VARIABLE = "HOUSTON_GITHUB_APP_CLIENT_ID";
 
 const KIND = SourceControlProviderKind.make("github");
 const REQUEST_TIMEOUT = Duration.seconds(15);
@@ -167,7 +167,7 @@ export const make = Effect.gen(function* () {
     httpClient
       .execute(
         HttpClientRequest.post(`https://${host}${path}`).pipe(
-          HttpClientRequest.setHeaders({ accept: "application/json", "user-agent": "t3code" }),
+          HttpClientRequest.setHeaders({ accept: "application/json", "user-agent": "houston" }),
           HttpClientRequest.bodyUrlParams(body),
         ),
       )

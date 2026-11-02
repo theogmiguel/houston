@@ -23,7 +23,7 @@ export function usePaneDensity(threadCount: number) {
   const currentRef = useRef<PaneMeasurement>(INITIAL);
   const [measurement, setMeasurement] = useState<PaneMeasurement>(INITIAL);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the pane tier in step with the measured DOM size while mounted
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- keeps the pane tier in step with the measured DOM size while mounted
   useLayoutEffect(() => {
     const element = ref.current;
     if (element === null) return;

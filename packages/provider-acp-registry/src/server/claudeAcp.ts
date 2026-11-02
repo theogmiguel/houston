@@ -81,7 +81,7 @@ export function extractClaudeSubagentSessionEvent(
   notification: AcpSchema.SessionNotification,
 ): AcpSubagentSessionEvent | undefined {
   const update = notification.update;
-  if (update.sessionUpdate !== "_t3_unknown") return;
+  if (update.sessionUpdate !== "_houston_unknown") return;
   if (update.originalSessionUpdate === "subagent_update") {
     const child = decodeChildState(update.raw);
     if (Option.isNone(child)) return;

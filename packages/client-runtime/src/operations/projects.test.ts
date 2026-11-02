@@ -25,11 +25,11 @@ describe("add project shared logic", () => {
     );
 
     for (const input of [
-      "pingdotgg/t3code",
+      "pingdotgg/houston",
       "mona-cat_octo/repo",
       "pingdotgg",
-      "https://github.com/pingdotgg/t3code.git",
-      "git@github.com:pingdotgg/t3code.git",
+      "https://github.com/pingdotgg/houston.git",
+      "git@github.com:pingdotgg/houston.git",
     ]) {
       expect(githubIncompleteOwnerRepositoryMessage(github, input)).toBeNull();
     }
@@ -46,8 +46,8 @@ describe("add project shared logic", () => {
     expect(normalizePastedCloneUrl("imputnet/helium")).toBe(
       "https://github.com/imputnet/helium.git",
     );
-    expect(normalizePastedCloneUrl("  pingdotgg/t3code  ")).toBe(
-      "https://github.com/pingdotgg/t3code.git",
+    expect(normalizePastedCloneUrl("  pingdotgg/houston  ")).toBe(
+      "https://github.com/pingdotgg/houston.git",
     );
   });
 

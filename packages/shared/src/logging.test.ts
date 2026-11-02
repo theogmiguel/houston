@@ -13,7 +13,7 @@ import { RotatingFileSink, makeAsyncRotatingFileSink } from "./logging.ts";
 const tempDirectories: string[] = [];
 
 const makeTempDirectory = (): string => {
-  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3code-logging-"));
+  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-logging-"));
   tempDirectories.push(directory);
   return directory;
 };
