@@ -216,20 +216,112 @@ fn v2_emit_state(app: &AppHandle, state: &V2UpdateState) {
     }
 }
 
+/// The popover leads with this many highlights; the rest stay a count behind
+/// the release link on GitHub.
+const MAX_RELEASE_NOTE_ITEMS: usize = 7;
+const MAX_RELEASE_NOTE_ITEM_LENGTH: usize = 220;
+
+/// `[label](url)` becomes `label`; anything that is not a link is kept as-is.
+fn strip_markdown_links(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    loop {
+        let Some(start) = rest.find('[') else {
+            out.push_str(rest);
+            break;
+        };
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        let Some(end_label) = after.find(']') else {
+            out.push_str(&rest[start..]);
+            break;
+        };
+        let label = &after[..end_label];
+        let tail = &after[end_label + 1..];
+        match tail
+            .strip_prefix('(')
+            .and_then(|url| url.find(')').map(|end| (url, end)))
+        {
+            Some((url, end)) => {
+                out.push_str(label);
+                rest = &url[end + 1..];
+            }
+            None => {
+                out.push('[');
+                out.push_str(label);
+                out.push(']');
+                rest = tail;
+            }
+        }
+    }
+    out
+}
+
+fn strip_bullet(line: &str) -> &str {
+    let Some((marker, rest)) = line.split_once(' ') else {
+        return line;
+    };
+    let numbered = marker
+        .strip_suffix('.')
+        .or_else(|| marker.strip_suffix(')'))
+        .is_some_and(|digits| {
+            !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
+        });
+    if marker == "-" || marker == "*" || marker == "+" || numbered {
+        rest.trim_start()
+    } else {
+        line
+    }
+}
+
+fn is_full_changelog(line: &str) -> bool {
+    let lower = line.to_lowercase();
+    lower.contains("full changelog")
+        || lower.starts_with("compare: ")
+        || lower.contains("/compare/")
+}
+
+fn truncate_release_note_item(item: &str) -> String {
+    if item.len() <= MAX_RELEASE_NOTE_ITEM_LENGTH {
+        return item.to_string();
+    }
+    let mut cut = MAX_RELEASE_NOTE_ITEM_LENGTH - 3;
+    while !item.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    format!("{}...", item[..cut].trim_end())
+}
+
+/// The release body is the reviewed Markdown notes: headings and the changelog
+/// link are structure, not changes. The first `MAX_RELEASE_NOTE_ITEMS` bullets
+/// are the highlights; `totalItems` keeps counting the rest.
+fn parse_release_notes(body: &str) -> (Vec<String>, usize) {
+    let mut items = Vec::new();
+    let mut total = 0;
+    for raw in body.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let line = strip_bullet(line);
+        let line = strip_markdown_links(line);
+        let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
+        if line.is_empty() || is_full_changelog(&line) {
+            continue;
+        }
+        total += 1;
+        if items.len() < MAX_RELEASE_NOTE_ITEMS {
+            items.push(truncate_release_note_item(&line));
+        }
+    }
+    (items, total)
+}
+
 fn release_notes(update: &tauri_plugin_updater::Update) -> Vec<V2ReleaseNote> {
-    let items: Vec<String> = update
-        .body
-        .as_deref()
-        .unwrap_or("")
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(str::to_string)
-        .collect();
-    if items.is_empty() {
+    let (items, total_items) = parse_release_notes(update.body.as_deref().unwrap_or(""));
+    if total_items == 0 {
         return Vec::new();
     }
-    let total_items = items.len();
     vec![V2ReleaseNote {
         version: update.version.clone(),
         items,
@@ -590,6 +682,48 @@ mod tests {
         assert!(validate_update_channel("nightly").is_ok());
         let error = validate_update_channel("stable").unwrap_err();
         assert!(error.contains("stable"), "{error}");
+    }
+
+    #[test]
+    fn release_notes_lead_with_seven_highlights_and_drop_the_changelog_link() {
+        let mut body = String::from("## v0.2.0\n\n### Fixes\n\n");
+        for number in 1..=9 {
+            body.push_str(&format!(
+                "- Change {number} ([#{number}](https://example.test/{number}))\n"
+            ));
+        }
+        body.push_str("\n**Full changelog:** [View changes](https://example.test/compare/a...b)\n");
+
+        let (items, total_items) = parse_release_notes(&body);
+
+        assert_eq!(
+            total_items, 9,
+            "the changelog line and headings are not changes"
+        );
+        assert_eq!(
+            items,
+            vec![
+                "Change 1 (#1)",
+                "Change 2 (#2)",
+                "Change 3 (#3)",
+                "Change 4 (#4)",
+                "Change 5 (#5)",
+                "Change 6 (#6)",
+                "Change 7 (#7)",
+            ]
+        );
+    }
+
+    #[test]
+    fn release_notes_keep_prose_and_bound_long_items() {
+        let long = "x".repeat(MAX_RELEASE_NOTE_ITEM_LENGTH + 40);
+        let (items, total_items) =
+            parse_release_notes(&format!("No user-facing changes.\n- {long}\n"));
+
+        assert_eq!(total_items, 2);
+        assert_eq!(items[0], "No user-facing changes.");
+        assert_eq!(items[1].len(), MAX_RELEASE_NOTE_ITEM_LENGTH);
+        assert!(items[1].ends_with("..."));
     }
 
     #[test]
