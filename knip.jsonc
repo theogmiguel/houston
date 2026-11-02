@@ -92,8 +92,13 @@
       "entry": ["scripts/warm-dep-cache.ts", "test/fixtures/**/*.mjs"],
       // UI component modules are copied and adapted as cohesive sets. Keep their
       // named subcomponents even before they have callers; the file audit still
-      // reports an entire component module when nothing imports it.
-      "ignoreIssues": { "src/components/ui/*.tsx": ["exports", "nsExports", "duplicates"] },
+      // reports an entire component module when nothing imports it. Only the
+      // export issue is exempt: a dead namespace or duplicate export under ui/
+      // is reported. Variant keys are object properties inside cva, not exports,
+      // and dynamic dispatch (`variant={presentation.badgeVariant}`) makes a
+      // static dead-variant rule unreliable; variant pruning stays a review
+      // concern, and the style guard owns class-level token rules.
+      "ignoreIssues": { "src/components/ui/*.tsx": ["exports"] },
     },
     "apps/marketing": {
       // `astro check` runs from the typecheck task in vite.config.ts, which knip does not read.

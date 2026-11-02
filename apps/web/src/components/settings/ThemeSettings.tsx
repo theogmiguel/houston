@@ -130,8 +130,8 @@ function ThemeLibraryCard({
 }: {
   theme: ThemeCardDefinition;
   isActive: boolean;
-  onUse: () => void;
-  onUseMode: (mode: ThemeMode) => void;
+  onUse: (source?: Element) => void;
+  onUseMode: (mode: ThemeMode, source?: Element) => void;
   activeModes: ReadonlyArray<ThemeMode>;
   onEdit?: () => void;
   onDuplicate?: () => void;
@@ -145,7 +145,7 @@ function ThemeLibraryCard({
       activeModes: ReadonlyArray<ThemeMode>;
       preview: ThemeCardDefinition["previews"][number];
     }>;
-    onSelectAndUse: (themeIndex: number, mode: ThemeAppearance) => void;
+    onSelectAndUse: (themeIndex: number, mode: ThemeAppearance, source?: Element) => void;
   };
 }) {
   const cardModes = theme.previews.map((preview) => preview.mode);
@@ -172,7 +172,7 @@ function ThemeLibraryCard({
               isActive && "bg-hover/30",
             )}
             data-theme-library-card={theme.id}
-            onClick={onUse}
+            onClick={(event) => onUse(event.currentTarget)}
             style={isActive ? { boxShadow: "inset 0 0 0 1px var(--ring)" } : undefined}
           >
             <div className="relative">
@@ -218,7 +218,11 @@ function ThemeLibraryCard({
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation();
-                              variantNavigation.onSelectAndUse(selected.option.themeIndex, mode);
+                              variantNavigation.onSelectAndUse(
+                                selected.option.themeIndex,
+                                mode,
+                                event.currentTarget,
+                              );
                             }}
                             onFocus={() => setRadialModeOpen(mode)}
                             onMouseEnter={() => setRadialModeOpen(mode)}
@@ -284,7 +288,11 @@ function ThemeLibraryCard({
                                     type="button"
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      variantNavigation.onSelectAndUse(option.themeIndex, mode);
+                                      variantNavigation.onSelectAndUse(
+                                        option.themeIndex,
+                                        mode,
+                                        event.currentTarget,
+                                      );
                                     }}
                                     onFocus={() => setRadialModeOpen(mode)}
                                     onMouseEnter={() => setRadialModeOpen(mode)}
@@ -323,7 +331,7 @@ function ThemeLibraryCard({
                     type="button"
                     onClick={(event) => {
                       event.stopPropagation();
-                      onUse();
+                      onUse(event.currentTarget);
                     }}
                   >
                     {variantNavigation?.collectionLabel ?? theme.label}
@@ -447,8 +455,8 @@ function CustomThemeCollectionCard({
 }: {
   themes: ReadonlyArray<ThemeDefinition>;
   activeModesFor: (themeId: string) => ReadonlyArray<ThemeMode>;
-  onUse: (theme: ThemeDefinition) => void;
-  onUseMode: (theme: ThemeDefinition, mode: ThemeMode) => void;
+  onUse: (theme: ThemeDefinition, source?: Element) => void;
+  onUseMode: (theme: ThemeDefinition, mode: ThemeMode, source?: Element) => void;
   onDuplicate: (theme: ThemeDefinition) => void;
   onEdit: (theme: ThemeDefinition) => void;
   onDownload: (theme: ThemeDefinition) => void;
@@ -468,13 +476,13 @@ function CustomThemeCollectionCard({
   const variantLabels = collectionVariantLabels(themes);
   const defaultLightTheme = themes.find((candidate) => getThemeModes(candidate).includes("light"));
   const defaultDarkTheme = themes.find((candidate) => getThemeModes(candidate).includes("dark"));
-  const selectCollectionDefaults = () => {
+  const selectCollectionDefaults = (source?: Element) => {
     if (themes.length === 1) {
-      onUse(theme);
+      onUse(theme, source);
       return;
     }
-    if (defaultLightTheme) onUseMode(defaultLightTheme, "light");
-    if (defaultDarkTheme) onUseMode(defaultDarkTheme, "dark");
+    if (defaultLightTheme) onUseMode(defaultLightTheme, "light", source);
+    if (defaultDarkTheme) onUseMode(defaultDarkTheme, "dark", source);
     setVariantIndex(0);
   };
 
@@ -487,7 +495,7 @@ function CustomThemeCollectionCard({
       onEdit={() => onEdit(theme)}
       onRemove={() => onRemove(theme)}
       onUse={selectCollectionDefaults}
-      onUseMode={(mode) => onUseMode(theme, mode)}
+      onUseMode={(mode, source) => onUseMode(theme, mode, source)}
       theme={getThemeCardDefinition(theme)}
       {...(themes.length > 1
         ? {
@@ -501,11 +509,11 @@ function CustomThemeCollectionCard({
                   preview,
                 })),
               ),
-              onSelectAndUse: (themeIndex, mode) => {
+              onSelectAndUse: (themeIndex, mode, source) => {
                 const selectedTheme = themes[themeIndex];
                 if (!selectedTheme) return;
                 setVariantIndex(themeIndex);
-                onUseMode(selectedTheme, mode);
+                onUseMode(selectedTheme, mode, source);
               },
             },
           }
@@ -529,16 +537,20 @@ export function ThemeLibrary({
   view = "full",
 }: {
   theme: string;
-  setTheme: (theme: string) => boolean;
+  setTheme: (theme: string, source?: Element | null) => boolean;
   appearanceMode: ThemeMode;
-  setAppearanceMode: (mode: ThemeMode) => boolean;
+  setAppearanceMode: (mode: ThemeMode, source?: Element | null) => boolean;
   customThemes: ReadonlyArray<ThemeDefinition>;
   initialAppearance: ThemeAppearance;
   refreshTheme: () => void;
   isImportOpen: boolean;
   onImportOpenChange: (open: boolean) => void;
   themeHalves: ThemeHalves | null;
-  setThemeHalf: (appearance: ThemeAppearance, themeId: string | null) => boolean;
+  setThemeHalf: (
+    appearance: ThemeAppearance,
+    themeId: string | null,
+    source?: Element | null,
+  ) => boolean;
   view?: "full" | "tiles" | "library";
 }) {
   const openThemeEditor = useThemeEditorStore((store) => store.openThemeEditor);
@@ -576,8 +588,8 @@ export function ThemeLibrary({
     );
   };
 
-  const persistTheme = (nextTheme: string) => {
-    const didSave = setTheme(nextTheme);
+  const persistTheme = (nextTheme: string, source?: Element) => {
+    const didSave = setTheme(nextTheme, source ?? null);
     if (!didSave) notifyThemeSaveFailure();
     return didSave;
   };
@@ -624,21 +636,21 @@ export function ThemeLibrary({
   const lightOwner = themeHalves?.light ?? baseCardId;
   const darkOwner = themeHalves?.dark ?? baseCardId;
 
-  const assignHalf = (appearance: ThemeAppearance, cardId: string | null) => {
+  const assignHalf = (appearance: ThemeAppearance, cardId: string | null, source?: Element) => {
     const otherAppearance = appearance === "light" ? "dark" : "light";
     // To restore one default appearance, move the themed base to the opposite explicit half.
     if (cardId === null && baseCardId !== null) {
       // Read raw before persistTheme clears the mix; unstreamed published halves must not fall back to the
       // base.
       const otherOwner = readThemeHalvesRaw()[otherAppearance] ?? baseCardId;
-      if (!persistTheme(appearanceMode === "system" ? "system" : appearanceMode)) return;
-      if (!setThemeHalf(otherAppearance, otherOwner)) {
-        setTheme(theme);
+      if (!persistTheme(appearanceMode === "system" ? "system" : appearanceMode, source)) return;
+      if (!setThemeHalf(otherAppearance, otherOwner, source ?? null)) {
+        setTheme(theme, source ?? null);
         notifyThemeSaveFailure();
       }
       return;
     }
-    if (!setThemeHalf(appearance, cardId)) {
+    if (!setThemeHalf(appearance, cardId, source ?? null)) {
       notifyThemeSaveFailure();
     }
   };
@@ -657,13 +669,13 @@ export function ThemeLibrary({
     return previewColorsOf(card, appearance) ?? card.previews[0]!.colors;
   };
 
-  const setMode = (mode: ThemeMode) => {
-    if (!setAppearanceMode(mode)) notifyThemeSaveFailure();
+  const setMode = (mode: ThemeMode, source?: Element) => {
+    if (!setAppearanceMode(mode, source ?? null)) notifyThemeSaveFailure();
   };
 
-  const handlePairPick = (cardId: string | null) => (mode: ThemeMode) => {
+  const handlePairPick = (cardId: string | null) => (mode: ThemeMode, source?: Element) => {
     if (mode === "system") return;
-    assignHalf(mode, cardId);
+    assignHalf(mode, cardId, source);
   };
 
   const pickedModesFor = (cardId: string | null): ThemeMode[] => {
@@ -700,7 +712,7 @@ export function ThemeLibrary({
             aria-pressed={isActive}
             className="flex cursor-pointer flex-col items-stretch gap-1.5 p-0 text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             key={mode}
-            onClick={() => setMode(mode)}
+            onClick={(event) => setMode(mode, event.currentTarget)}
             type="button"
           >
             {renderWireframe(mode, isActive)}
@@ -751,7 +763,9 @@ export function ThemeLibrary({
                 initialAppearance,
               })
             }
-            onUse={() => persistTheme(appearanceMode === "system" ? "system" : appearanceMode)}
+            onUse={(source) =>
+              persistTheme(appearanceMode === "system" ? "system" : appearanceMode, source)
+            }
             onUseMode={handlePairPick(null)}
             theme={standardTheme}
           />
@@ -771,7 +785,7 @@ export function ThemeLibrary({
                   initialAppearance,
                 })
               }
-              onUse={() => persistTheme(maintainerTheme.id)}
+              onUse={(source) => persistTheme(maintainerTheme.id, source)}
               onUseMode={handlePairPick(maintainerTheme.id)}
               theme={card}
             />
@@ -795,10 +809,10 @@ export function ThemeLibrary({
                   initialAppearance,
                 })
               }
-              onUse={() => {
+              onUse={(source) => {
                 const half = singleAppearanceOf(environmentTheme);
-                if (half === null) persistTheme(environmentTheme.id);
-                else assignHalf(half, environmentTheme.id);
+                if (half === null) persistTheme(environmentTheme.id, source);
+                else assignHalf(half, environmentTheme.id, source);
               }}
               onUseMode={handlePairPick(environmentTheme.id)}
               theme={getThemeCardDefinition(environmentTheme)}
@@ -828,12 +842,12 @@ export function ThemeLibrary({
               })
             }
             onRemove={(customTheme) => handleRemoveTheme(customTheme, themes)}
-            onUse={(customTheme) => {
+            onUse={(customTheme, source) => {
               const modes = getThemeModes(customTheme);
-              if (modes.length === 1) assignHalf(modes[0]!, customTheme.id);
-              else persistTheme(customTheme.id);
+              if (modes.length === 1) assignHalf(modes[0]!, customTheme.id, source);
+              else persistTheme(customTheme.id, source);
             }}
-            onUseMode={(customTheme, mode) => handlePairPick(customTheme.id)(mode)}
+            onUseMode={(customTheme, mode, source) => handlePairPick(customTheme.id)(mode, source)}
             themes={themes}
           />
         ))}

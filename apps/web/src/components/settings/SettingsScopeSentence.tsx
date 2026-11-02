@@ -1,29 +1,22 @@
-import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import { useLocation } from "@tanstack/react-router";
-import { CheckIcon, ChevronDownIcon, LayersIcon } from "lucide-react";
-import { Fragment, useState, type ReactNode } from "react";
+import { ChevronDownIcon, FolderIcon, LaptopIcon, LayersIcon, ServerIcon } from "lucide-react";
+import { useState, type ReactNode } from "react";
 
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
-import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
-import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
-import { ProjectFavicon } from "../ProjectFavicon";
+import {
+  useEnvironments,
+  usePrimaryEnvironmentId,
+  type EnvironmentPresentation,
+} from "../../state/environments";
 import { Button } from "../ui/button";
 import {
-  Combobox,
-  ComboboxEmpty,
-  ComboboxItem,
-  ComboboxList,
-  ComboboxPopup,
-  ComboboxSearchInput,
-  ComboboxTrigger,
-} from "../ui/combobox";
-import {
   Menu,
+  MenuItem,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
   MenuRadioItemIndicator,
-  MenuSeparator,
+  MenuSearchInput,
   MenuTrigger,
 } from "../ui/menu";
 import { useOptionalSettingsScope } from "./SettingsScopeContext";
@@ -54,6 +47,13 @@ export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
   "/settings/about",
 ]);
 
+const SCOPE_TRIGGER_CLS =
+  "h-auto min-h-0 min-w-0 max-w-72 justify-start gap-1 px-1 py-0 text-[15px] leading-[22px] font-semibold text-foreground hover:bg-hover sm:text-[15px]";
+const SCOPE_TRIGGER_ICON_CLS = "size-3.5 shrink-0 text-muted-foreground";
+const SCOPE_SECONDARY_CLS = "text-xs text-muted-foreground";
+const SCOPE_PATH_CLS = `${SCOPE_SECONDARY_CLS} font-mono`;
+const SCOPE_OFFLINE_CLS = SCOPE_SECONDARY_CLS;
+
 interface SettingsScopeMenuProps {
   readonly value: SettingsScopeSearch;
   readonly groups: readonly SidebarProjectSnapshot[];
@@ -66,7 +66,15 @@ export function SettingsScopeSentence() {
   const scope = useOptionalSettingsScope();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { environments } = useEnvironments();
-  if (scope === null || SETTINGS_DEVICE_ONLY_PATHS.has(pathname)) return null;
+  if (scope === null) return null;
+  if (SETTINGS_DEVICE_ONLY_PATHS.has(pathname)) {
+    return (
+      <p className="text-muted-foreground">
+        <span className="font-semibold text-foreground">App-wide.</span> These settings apply to the
+        app on this machine, not to a project.
+      </p>
+    );
+  }
   const props: SettingsScopeMenuProps = {
     value: scope.search,
     singleEnvironment: scope.singleEnvironment,
@@ -93,25 +101,46 @@ export function SettingsScopeSentence() {
 interface ScopeOption {
   value: string;
   label: string;
-  secondary?: string;
-  icon?: ReactNode;
-  offline?: boolean;
+  secondary?: string | undefined;
+  secondaryMono?: boolean | undefined;
+  offline?: boolean | undefined;
+}
+
+function ScopeTrigger({
+  ariaLabel,
+  label,
+  icon,
+  offline,
+}: {
+  ariaLabel: string;
+  label: string;
+  icon: ReactNode;
+  offline?: boolean | undefined;
+}) {
+  return (
+    <MenuTrigger
+      aria-label={`${ariaLabel}: ${label}`}
+      render={<Button variant="ghost" size="sm" />}
+      className={SCOPE_TRIGGER_CLS}
+    >
+      {icon}
+      <span className="min-w-0 truncate">{label}</span>
+      {offline ? <span className={SCOPE_OFFLINE_CLS}>Offline</span> : null}
+      <ChevronDownIcon aria-hidden className={SCOPE_TRIGGER_ICON_CLS} />
+    </MenuTrigger>
+  );
 }
 
 function ScopeOptionLabel({ option }: { option: ScopeOption }) {
   return (
-    <>
-      {option.icon}
-      <span className="min-w-0 flex-1">
-        <span className="block truncate">{option.label}</span>
-        {option.secondary ? (
-          <span className="block truncate text-xs text-muted-foreground">{option.secondary}</span>
-        ) : null}
-      </span>
-      {option.offline ? (
-        <span className="shrink-0 text-xs text-muted-foreground">Offline</span>
+    <span className="min-w-0 flex-1">
+      <span className="block truncate">{option.label}</span>
+      {option.secondary ? (
+        <span className={option.secondaryMono ? SCOPE_PATH_CLS : SCOPE_SECONDARY_CLS}>
+          {option.secondary}
+        </span>
       ) : null}
-    </>
+    </span>
   );
 }
 
@@ -124,6 +153,7 @@ function ScopeMenu({
   allOption,
   searchLabel,
   onChange,
+  offline,
 }: {
   ariaLabel: string;
   icon: ReactNode;
@@ -133,90 +163,50 @@ function ScopeMenu({
   allOption: ScopeOption | null;
   searchLabel: string;
   onChange: (next: string) => void;
+  offline?: boolean | undefined;
 }) {
   const [query, setQuery] = useState("");
-  const Trigger = options.length > 6 ? ComboboxTrigger : MenuTrigger;
-  const trigger = (
-    <Trigger
-      aria-label={`${ariaLabel}: ${label}`}
-      render={<Button variant="ghost" size="sm" />}
-      className="h-auto min-h-0 min-w-0 max-w-72 gap-1 rounded-sm px-1 py-0 text-[15px] leading-[22px] font-semibold text-foreground hover:bg-hover sm:text-[15px]"
-    >
-      {icon}
-      <span className="min-w-0 truncate">{label}</span>
-      <ChevronDownIcon
-        aria-hidden
-        strokeWidth={1.75}
-        className="-me-0.5 size-3.5 shrink-0 text-muted-foreground opacity-70"
-      />
-    </Trigger>
-  );
   const choices = allOption ? [allOption, ...options] : options;
-  if (options.length > 6) {
-    const needle = query.trim().toLowerCase();
-    const filteredItems = choices.filter((option) =>
-      `${option.label} ${option.secondary ?? ""} ${option.value}`.toLowerCase().includes(needle),
-    );
-    return (
-      <Combobox
-        items={choices}
-        filteredItems={filteredItems}
-        filter={null}
-        autoHighlight
-        itemToStringLabel={(option) => option.label}
-        isItemEqualToValue={(a, b) => a.value === b.value}
-        value={choices.find((option) => option.value === value) ?? null}
-        onOpenChange={(open) => {
-          if (!open) setQuery("");
-        }}
-        onValueChange={(option) => {
-          if (option) onChange(option.value);
-        }}
-      >
-        {trigger}
-        <ComboboxPopup align="start" className="w-80">
-          <ComboboxSearchInput
-            aria-label={searchLabel}
-            placeholder={searchLabel}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <ComboboxEmpty>No matches found.</ComboboxEmpty>
-          <ComboboxList>
-            {(option: ScopeOption) => (
-              <ComboboxItem key={option.value} value={option}>
-                <ScopeOptionLabel option={option} />
-                {option.value === value ? (
-                  <CheckIcon aria-hidden className="size-3.5 shrink-0" />
-                ) : null}
-              </ComboboxItem>
-            )}
-          </ComboboxList>
-        </ComboboxPopup>
-      </Combobox>
-    );
-  }
+  const searchable = choices.length > 8;
+  const needle = query.trim().toLowerCase();
+  const visible = searchable
+    ? choices.filter((option) =>
+        `${option.label} ${option.secondary ?? ""} ${option.value}`.toLowerCase().includes(needle),
+      )
+    : choices;
   return (
-    <Menu>
-      {trigger}
-      <MenuPopup align="start">
+    <Menu
+      onOpenChange={(open) => {
+        if (!open) setQuery("");
+      }}
+    >
+      <ScopeTrigger ariaLabel={ariaLabel} label={label} icon={icon} offline={offline} />
+      <MenuPopup align="start" className={searchable ? "w-80" : undefined}>
         <div className="w-72 max-w-full">
+          {searchable ? (
+            <MenuSearchInput
+              autoFocus
+              aria-label={searchLabel}
+              placeholder={searchLabel}
+              value={query}
+              onChange={(event) => setQuery(event.currentTarget.value)}
+            />
+          ) : null}
           <MenuRadioGroup
             value={value}
             onValueChange={(next) => {
               if (typeof next === "string") onChange(next);
             }}
           >
-            {choices.map((option, index) => (
-              <Fragment key={option.value}>
-                <MenuRadioItem value={option.value} closeOnClick>
-                  <span className="flex min-w-0 items-center gap-2">
-                    <ScopeOptionLabel option={option} />
-                    <MenuRadioItemIndicator />
-                  </span>
-                </MenuRadioItem>
-                {index === 0 && allOption ? <MenuSeparator /> : null}
-              </Fragment>
+            {visible.length === 0 ? <MenuItem disabled>No matches found.</MenuItem> : null}
+            {visible.map((option) => (
+              <MenuRadioItem key={option.value} value={option.value} closeOnClick>
+                <span className="flex min-w-0 items-center gap-2">
+                  <ScopeOptionLabel option={option} />
+                  {option.offline ? <span className={SCOPE_OFFLINE_CLS}>Offline</span> : null}
+                  <MenuRadioItemIndicator />
+                </span>
+              </MenuRadioItem>
             ))}
           </MenuRadioGroup>
         </div>
@@ -232,6 +222,7 @@ function EnvironmentScopeMenu({
   onChange,
   singleEnvironment,
 }: SettingsScopeMenuProps) {
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const resolved = resolveSettingsScope(value, groups, environments);
   const environmentValue = environmentAxisValue(
     value,
@@ -240,6 +231,7 @@ function EnvironmentScopeMenu({
   const selected = environments.find(
     (environment) => environment.environmentId === environmentValue,
   );
+  const primary = selected?.environmentId === primaryEnvironmentId;
   const project = groups.find((group) => group.projectKey === value.project);
   const memberEnvironmentIds = project
     ? new Set(project.memberProjects.map((member) => member.environmentId))
@@ -251,13 +243,13 @@ function EnvironmentScopeMenu({
     <ScopeMenu
       ariaLabel="Environment scope"
       icon={
-        selected ? (
-          <EnvironmentMachineIcon
-            aria-hidden
-            kind={resolveEnvironmentMachineKind(selected.serverConfig)}
-            className="size-3.5 shrink-0"
-          />
-        ) : null
+        selected === undefined ? (
+          <LayersIcon aria-hidden className={SCOPE_TRIGGER_ICON_CLS} />
+        ) : primary ? (
+          <LaptopIcon aria-hidden className={SCOPE_TRIGGER_ICON_CLS} />
+        ) : (
+          <ServerIcon aria-hidden className={SCOPE_TRIGGER_ICON_CLS} />
+        )
       }
       label={
         selected
@@ -271,31 +263,26 @@ function EnvironmentScopeMenu({
       value={environmentValue}
       onChange={(next) => onChange(selectEnvironmentAxis(value, next))}
       searchLabel="Search environments"
+      offline={selected !== undefined && selected.connection.phase !== "connected"}
       allOption={
         singleEnvironment
           ? null
           : {
               value: ALL_ENVIRONMENTS_VALUE,
               label: "All environments",
-              icon: <LayersIcon aria-hidden className="size-3.5 shrink-0" />,
+              secondary: "Every connected machine",
             }
       }
       options={options.map((environment) => {
-        const { primary, secondary } = settingsScopeEnvironmentLabels(environment, environments);
+        const { primary: label } = settingsScopeEnvironmentLabels(environment, environments);
+        const isPrimary = environment.environmentId === primaryEnvironmentId;
         return {
           value: environment.environmentId,
-          label: primary,
-          secondary:
-            environments.length <= 1
-              ? ""
-              : secondary || settingsScopeEnvironmentAddress(environment),
-          icon: (
-            <EnvironmentMachineIcon
-              aria-hidden
-              kind={resolveEnvironmentMachineKind(environment.serverConfig)}
-              className="size-3.5 shrink-0"
-            />
-          ),
+          label,
+          secondary: isPrimary
+            ? "This machine"
+            : settingsScopeEnvironmentLabels(environment, environments).secondary ||
+              settingsScopeEnvironmentAddress(environment),
           offline: environment.connection.phase !== "connected",
         };
       })}
@@ -312,7 +299,7 @@ function ProjectScopeMenu({ value, groups, environments, onChange }: SettingsSco
   return (
     <ScopeMenu
       ariaLabel="Project scope"
-      icon={selected ? <ProjectFavicon project={selected} className="size-3.5 shrink-0" /> : null}
+      icon={<FolderIcon aria-hidden className={SCOPE_TRIGGER_ICON_CLS} />}
       label={selected?.displayName ?? (value.project ? "Unavailable project" : "All projects")}
       value={projectAxisValue(value)}
       onChange={(next) => onChange(selectProjectAxis(value, next))}
@@ -324,18 +311,17 @@ function ProjectScopeMenu({ value, groups, environments, onChange }: SettingsSco
             other.group.projectKey !== group.projectKey &&
             other.group.displayName === group.displayName,
         );
+        const secondary =
+          sameName.length === 0
+            ? undefined
+            : sameName.some((other) => other.machines === machines)
+              ? `${machines} · ${group.workspaceRoot}`
+              : machines;
         return {
           value: group.projectKey,
           label: group.displayName,
-          secondary:
-            sameName.length === 0
-              ? environments.length > 1
-                ? group.workspaceRoot
-                : ""
-              : sameName.some((other) => other.machines === machines)
-                ? `${machines} · ${group.workspaceRoot}`
-                : machines,
-          icon: <ProjectFavicon project={group} className="size-3.5 shrink-0" />,
+          secondary,
+          secondaryMono: secondary?.includes(group.workspaceRoot) ?? false,
         };
       })}
     />

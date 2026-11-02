@@ -44,6 +44,8 @@ get wrong without it.
 - [Glossary](internals/glossary.md) — the words that collide
 - [Testing](internals/testing.md) — where tests live, how to read a failure
 - [Style guide](internals/styleguide.md) — tokens, typography, layout, components, motion
+- [Style guard](internals/style-guard.md) — how the renderer rules and baselines work, and
+  how to lower the ratchet
 - [CSS conversion patterns](internals/css-conversion-patterns.md) — cookbook for large
   styling sweeps
 

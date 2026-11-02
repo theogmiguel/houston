@@ -7,7 +7,6 @@ import { cn } from "../../lib/utils";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
-import { ProjectFavicon } from "../ProjectFavicon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ITEM_ROW_CLASSNAME } from "./itemRows";
 import { SettingsGroup } from "./SettingsGroup";
@@ -92,7 +91,7 @@ export function SettingsScopeNotice({
                 : []),
               group.workspaceRoot,
             ].join(" · "),
-            icon: <ProjectFavicon project={group} className="size-4 shrink-0" />,
+            icon: null,
             search: { project: group.projectKey },
           }))
         : target === "environment"
