@@ -119,12 +119,7 @@ function packageFor(file: string): string | null {
 }
 
 function typecheckPlan(files: string[]): { full: boolean; packages: string[] } {
-  if (
-    files.some(
-      (file) =>
-        TYPECHECK_CONFIG.test(file) || file === "vite.config.ts" || file === "upstream.json",
-    )
-  ) {
+  if (files.some((file) => TYPECHECK_CONFIG.test(file) || file === "vite.config.ts")) {
     return { full: true, packages: [] };
   }
   const packages = new Set<string>();

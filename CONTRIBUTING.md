@@ -73,7 +73,6 @@ pnpm -r typecheck
 pnpm --filter @t3tools/web build
 pnpm --filter @t3tools/contracts --filter @t3tools/shared test
 pnpm --filter houston exec vp test run src/houston
-node scripts/check-upstream.mjs <upstream clone> --skip apps/web
 ```
 
 **`src-tauri/`**:

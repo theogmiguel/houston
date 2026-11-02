@@ -31,7 +31,6 @@ const SERVER_PATHS = [
   /^packages\//,
   /^scripts\//,
   /^oxlint-plugin-t3code\//,
-  /^upstream\.json$/,
   /^vite\.config\.ts$/,
 ];
 const WEB_PATHS = [

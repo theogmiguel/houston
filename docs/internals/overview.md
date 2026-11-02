@@ -8,6 +8,9 @@ Vite bundle. The renderer talks to the server over one authenticated loopback We
 to the host through a small desktop bridge. Agents run as provider sessions owned by the
 server; quitting Houston closes the window and the connection, not the server or its runs.
 
+Houston began as a port of T3 Code (MIT, see NOTICE) and is maintained as an independent
+codebase.
+
 ```
 ┌──────────────────────────────┐   WebSocket RPC    ┌─────────────────────────────────────┐
 │ houston (Tauri host)         │ (loopback, token)  │ server (apps/server, detached)       │
@@ -23,13 +26,13 @@ server; quitting Houston closes the window and the connection, not the server or
 
 ## Contents
 
-| Doc | Covers |
-|---|---|
-| this file | process model, boundaries, repository map, data |
-| [invariants.md](invariants.md) | the rules, what enforces them, and why |
-| [renderer.md](renderer.md) | the renderer |
-| [testing.md](testing.md) | where tests live, how to read a failure |
-| [glossary.md](glossary.md) | the words that collide |
+| Doc                            | Covers                                          |
+| ------------------------------ | ----------------------------------------------- |
+| this file                      | process model, boundaries, repository map, data |
+| [invariants.md](invariants.md) | the rules, what enforces them, and why          |
+| [renderer.md](renderer.md)     | the renderer                                    |
+| [testing.md](testing.md)       | where tests live, how to read a failure         |
+| [glossary.md](glossary.md)     | the words that collide                          |
 
 ## Process model
 
@@ -72,9 +75,8 @@ server uses the PID that file names.
 
 - **Status comes from adapters.** Agent status is what a provider adapter's structured stream
   reports; nothing reads terminal output for it.
-- **Houston code lives under `houston/`.** Upstream files are copied and changed only where
-  Houston differs, each change listed in `upstream.json` `adapted`;
-  `scripts/check-upstream.mjs` reports drift from the pinned commit.
+- **Houston code lives under `houston/`.** Houston-owned code sits in `houston/` directories
+  beside the ported files it extends.
 - **Contracts are the only wire.** A server ↔ renderer message that is not in
   `packages/contracts` does not exist; a new WebSocket method is also listed in
   `RpcInstrumentation.ts` and given a scope in `RpcAuthorization.ts`.
@@ -83,16 +85,15 @@ server uses the PID that file names.
 
 ## Repository map
 
-| Path | Holds |
-|---|---|
-| `apps/server` | the server; Houston's additions under `src/houston/` |
-| `apps/web` | the renderer |
-| `packages/contracts` | the server ↔ renderer schema; Houston's under `src/houston/` |
-| `packages/*` | upstream's provider, source-control, client and shared packages |
+| Path                   | Holds                                                                |
+| ---------------------- | -------------------------------------------------------------------- |
+| `apps/server`          | the server; Houston's additions under `src/houston/`                 |
+| `apps/web`             | the renderer                                                         |
+| `packages/contracts`   | the server ↔ renderer schema; Houston's under `src/houston/`         |
+| `packages/*`           | the provider, source-control, client and shared packages             |
 | `native/libghostty-vt` | the pinned terminal-emulation library the renderer's WASM build uses |
-| `src-tauri` | the desktop host |
-| `scripts/` | development, build, installation and safety checks |
-| `upstream.json` | the pinned upstream commit, the imported paths and every adapted file |
+| `src-tauri`            | the desktop host                                                     |
+| `scripts/`             | development, build, installation and safety checks                   |
 
 ## Data
 
