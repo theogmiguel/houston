@@ -41,7 +41,7 @@ hit date    '\b20[0-9]{2}-[0-9]{2}-[0-9]{2}\b' "$ledgers" 'no dates in docs; des
 hit phase   '\b(phase|wave|charter|batch|round) *[0-9]|\bstep [0-9]+[a-z]?\b|\bitem [0-9]+\b' "$ledgers" 'no plan/phase/step numbering'
 hit diary   '\bparity (pass|work|doctrine|sweep)\b|\bexit report\b|\bdecision diary\b|\breverdict\b|\bruling *[0-9]' "$ledgers" 'no session narrative'
 # overview.md carries the one sanctioned attribution to the project Houston began from.
-hit product '\b(bridgemind|bridge-mind|bm1|houston ?code|orca|herdr|overclock)\b' '^docs/internals/overview\.md$' 'no other app names; keep the finding, drop the provenance'
+hit product '\b(bridgemind|bridge-mind|bm1|t3 ?code|orca|herdr|overclock)\b' '^docs/internals/overview\.md$' 'no other app names; keep the finding, drop the provenance'
 # A bare `.research/` counts, including a prose mention that ends at the slash.
 hit pointer '\.research/|IMPLEMENTATION-NOTES-|docs/plans/reverdict|\bthe donor\b' '' 'no pointers into vendored references or deleted plans'
 

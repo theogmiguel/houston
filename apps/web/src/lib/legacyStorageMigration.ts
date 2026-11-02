@@ -56,11 +56,11 @@ export const LEGACY_STORAGE_KEY_PAIRS: ReadonlyArray<readonly [current: string, 
   ["houston.renderMarkdown", "t3code.renderMarkdown"],
   ["houston.renderMermaid", "t3code.renderMermaid"],
   ["houston.renderTable", "t3code.renderTable"],
-  ["houston.pullRequests.listScopes", "houston.pullRequests.listScopes"],
-  ["houston.pullRequests.preferences", "houston.pullRequests.preferences"],
-  ["houston.pullRequests.recentDetails", "houston.pullRequests.recentDetails"],
-  ["houston.backgroundActivity.clientId", "houston.backgroundActivity.clientId"],
-  ["houston:chatgpt-sharing-welcome:v1", "houston:chatgpt-sharing-welcome:v1"],
+  ["houston.pullRequests.listScopes", "t3.pullRequests.listScopes"],
+  ["houston.pullRequests.preferences", "t3.pullRequests.preferences"],
+  ["houston.pullRequests.recentDetails", "t3.pullRequests.recentDetails"],
+  ["houston.backgroundActivity.clientId", "t3.backgroundActivity.clientId"],
+  ["houston:chatgpt-sharing-welcome:v1", "t3:chatgpt-sharing-welcome:v1"],
 ];
 
 export const LEGACY_STORAGE_KEY_PREFIX_PAIRS: ReadonlyArray<
@@ -73,8 +73,8 @@ export const LEGACY_STORAGE_KEY_PREFIX_PAIRS: ReadonlyArray<
   ["houston:permission-update:v1:", "t3code:permission-update:v1:"],
   ["houston:preview-panel-width:", "t3code:preview-panel-width:"],
   ["houston:resume-compaction-dismissed:", "t3code:resume-compaction-dismissed:"],
-  ["houston.pullRequests.detail:", "houston.pullRequests.detail:"],
-  ["houston.pullRequests.listScope:", "houston.pullRequests.listScope:"],
+  ["houston.pullRequests.detail:", "t3.pullRequests.detail:"],
+  ["houston.pullRequests.listScope:", "t3.pullRequests.listScope:"],
 ];
 
 export const LEGACY_CONNECTION_DATABASE_NAME = "t3code:connection-runtime";
