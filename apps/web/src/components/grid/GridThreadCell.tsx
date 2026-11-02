@@ -1,6 +1,6 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@houston-app/contracts";
-import { EllipsisIcon, Maximize2Icon, SquareSplitHorizontalIcon, XIcon } from "lucide-react";
+import { EllipsisIcon, Maximize2Icon, XIcon } from "lucide-react";
 import { useEffect, useState, type CSSProperties, type RefObject } from "react";
 
 import ChatView, { type RightPanelPortalTarget } from "../ChatView";
@@ -130,8 +130,8 @@ export function GridThreadCell({
   const availableForSplit = threadCount >= MAX_GRID_THREADS ? [] : availableThreads;
   const moveTargets = onSwapWith === undefined ? [] : swapTargets;
   const canArchive = draftId === undefined;
-  const showOverflow = moveTargets.length > 0 || canArchive;
   const showSplit = availableThreads.length > 0 || onNewThread !== undefined;
+  const showOverflow = showSplit || moveTargets.length > 0 || canArchive;
   const archived = useArchivedThreadSnapshots([environmentId]);
   const closeCellStable = useStableCallback(closeArchivedCell);
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- drops a cell whose thread was archived elsewhere (the sidebar or another window)
@@ -212,7 +212,7 @@ export function GridThreadCell({
         } as CSSProperties
       }
       className={cn(
-        "group/pane relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-pane",
+        "group/pane relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden",
         density === "solo" && "[&_.chat-content-lane]:max-w-[45rem]",
         // A composer drawer keeps the stacked card: the compact row would squeeze the
         // question panel and textarea into zero-width flex columns.
@@ -227,7 +227,7 @@ export function GridThreadCell({
           data-pane-label=""
           {...dragHandleProps}
           style={dragHandleProps?.draggable === true ? { cursor: "grab" } : undefined}
-          className="group/label absolute top-2 left-2 z-20 flex h-(--h-pill) max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-(--r-selection) border border-(--divider) bg-(--pane-head) ps-2 pe-1 shadow-[var(--shadow-1)]"
+          className="group/label absolute top-2 left-2 z-20 flex h-(--h-pill) max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-(--r-selection) border border-(--divider) bg-(--pane-head) ps-2 pe-1"
         >
           <span className="grid size-3.5 shrink-0 place-items-center">
             {shell !== null ? (
@@ -244,12 +244,25 @@ export function GridThreadCell({
           </span>
           <SidebarThreadStatusGlyph status={status} label={status?.label} />
           <div className="flex max-w-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[max-width,opacity] duration-150 ease-out group-hover/pane:max-w-40 group-hover/pane:opacity-100 group-focus-within/label:max-w-40 group-focus-within/label:opacity-100 motion-reduce:transition-none">
-            {showSplit ? (
-              <SplitMenu
-                availableThreads={availableForSplit}
-                atCap={threadCount >= MAX_GRID_THREADS}
-                onPick={onSplit}
-                onNewThread={onNewThread}
+            {showOverflow ? (
+              <MoreCellMenu
+                split={
+                  showSplit
+                    ? {
+                        availableThreads: availableForSplit,
+                        atCap: threadCount >= MAX_GRID_THREADS,
+                        onPick: onSplit,
+                        onNewThread,
+                      }
+                    : null
+                }
+                targets={moveTargets}
+                onPick={onSwapWith}
+                onArchive={
+                  canArchive
+                    ? () => void archiveThread(threadRef, { onArchived: closeArchivedCell })
+                    : undefined
+                }
               />
             ) : null}
             {onMaximize === undefined ? null : (
@@ -271,17 +284,6 @@ export function GridThreadCell({
                 </TooltipPopup>
               </Tooltip>
             )}
-            {showOverflow ? (
-              <MoreCellMenu
-                targets={moveTargets}
-                onPick={onSwapWith}
-                onArchive={
-                  canArchive
-                    ? () => void archiveThread(threadRef, { onArchived: closeArchivedCell })
-                    : undefined
-                }
-              />
-            ) : null}
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -340,16 +342,32 @@ const SPLIT_CHOICES = [
   { side: "bottom", label: "Split down" },
 ] as const satisfies ReadonlyArray<{ side: SplitSide; label: string }>;
 
+interface SplitChoices {
+  availableThreads: ReadonlyArray<{ threadId: string; title: string }>;
+  atCap: boolean;
+  onPick: (side: SplitSide, threadId: string) => void;
+  onNewThread?: ((side: SplitSide) => void) | undefined;
+}
+
+/** The cell's one overflow menu: split, move, then archive, each group apart. */
 function MoreCellMenu({
+  split,
   targets,
   onPick,
   onArchive,
 }: {
+  split: SplitChoices | null;
   targets: ReadonlyArray<{ threadId: string; title: string }>;
   onPick?: ((threadId: string) => void) | undefined;
   onArchive?: (() => void) | undefined;
 }) {
   const [open, setOpen] = useState(false);
+  const groups = [
+    split === null ? null : "split",
+    targets.length === 0 ? null : "move",
+    onArchive === undefined ? null : "archive",
+  ].filter((group) => group !== null);
+  const separatorBefore = (group: string) => groups.indexOf(group) > 0;
   return (
     <Menu open={open} onOpenChange={setOpen}>
       <Tooltip>
@@ -366,28 +384,56 @@ function MoreCellMenu({
         </TooltipTrigger>
         <TooltipPopup side="bottom">More cell actions</TooltipPopup>
       </Tooltip>
-      <MenuPopup side="bottom" align="end">
+      <MenuPopup side="bottom" align="start">
+        {split === null
+          ? null
+          : SPLIT_CHOICES.map(({ side, label }) => (
+              <MenuSub key={side}>
+                <MenuSubTrigger>{label}</MenuSubTrigger>
+                <MenuSubPopup>
+                  <SplitTargetItems
+                    availableThreads={split.availableThreads}
+                    atCap={split.atCap}
+                    onPick={(threadId) => {
+                      setOpen(false);
+                      split.onPick(side, threadId);
+                    }}
+                    onNewThread={
+                      split.onNewThread === undefined
+                        ? undefined
+                        : () => {
+                            setOpen(false);
+                            split.onNewThread?.(side);
+                          }
+                    }
+                  />
+                </MenuSubPopup>
+              </MenuSub>
+            ))}
         {targets.length === 0 ? null : (
-          <MenuSub>
-            <MenuSubTrigger>Move to…</MenuSubTrigger>
-            <MenuSubPopup>
-              {targets.map((target) => (
-                <MenuItem
-                  key={target.threadId}
-                  onClick={() => {
-                    setOpen(false);
-                    onPick?.(target.threadId);
-                  }}
-                >
-                  Swap with {target.title}
-                </MenuItem>
-              ))}
-            </MenuSubPopup>
-          </MenuSub>
+          <>
+            {separatorBefore("move") ? <MenuSeparator /> : null}
+            <MenuSub>
+              <MenuSubTrigger>Move to…</MenuSubTrigger>
+              <MenuSubPopup>
+                {targets.map((target) => (
+                  <MenuItem
+                    key={target.threadId}
+                    onClick={() => {
+                      setOpen(false);
+                      onPick?.(target.threadId);
+                    }}
+                  >
+                    Swap with {target.title}
+                  </MenuItem>
+                ))}
+              </MenuSubPopup>
+            </MenuSub>
+          </>
         )}
         {onArchive === undefined ? null : (
           <>
-            {targets.length === 0 ? null : <MenuSeparator />}
+            {separatorBefore("archive") ? <MenuSeparator /> : null}
             <MenuItem
               onClick={() => {
                 setOpen(false);
@@ -398,61 +444,6 @@ function MoreCellMenu({
             </MenuItem>
           </>
         )}
-      </MenuPopup>
-    </Menu>
-  );
-}
-
-function SplitMenu({
-  availableThreads,
-  atCap,
-  onPick,
-  onNewThread,
-}: {
-  availableThreads: ReadonlyArray<{ threadId: string; title: string }>;
-  atCap: boolean;
-  onPick: (side: SplitSide, threadId: string) => void;
-  onNewThread?: ((side: SplitSide) => void) | undefined;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Menu open={open} onOpenChange={setOpen}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <MenuTrigger
-              render={<Button variant="ghost-muted" size="icon-sm" aria-label="Split cell" />}
-            />
-          }
-        >
-          <SquareSplitHorizontalIcon />
-        </TooltipTrigger>
-        <TooltipPopup side="bottom">Split cell</TooltipPopup>
-      </Tooltip>
-      <MenuPopup side="bottom" align="end">
-        {SPLIT_CHOICES.map(({ side, label }) => (
-          <MenuSub key={side}>
-            <MenuSubTrigger>{label}</MenuSubTrigger>
-            <MenuSubPopup>
-              <SplitTargetItems
-                availableThreads={availableThreads}
-                atCap={atCap}
-                onPick={(threadId) => {
-                  setOpen(false);
-                  onPick(side, threadId);
-                }}
-                onNewThread={
-                  onNewThread === undefined
-                    ? undefined
-                    : () => {
-                        setOpen(false);
-                        onNewThread(side);
-                      }
-                }
-              />
-            </MenuSubPopup>
-          </MenuSub>
-        ))}
       </MenuPopup>
     </Menu>
   );

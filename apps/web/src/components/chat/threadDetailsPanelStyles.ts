@@ -26,8 +26,9 @@ export const THREAD_DETAILS_PANEL_SELECT_LABEL_CLASS = `flex h-full min-w-0 flex
 
 export const THREAD_DETAILS_PANEL_SELECT_ICON_CLASS = `rounded-e-md ${THREAD_DETAILS_PANEL_HALF_HOVER_SURFACE_CLASS}`;
 
-// Rows carry their meaning in the label and value; the board shows no leading icons.
-export const THREAD_DETAILS_PANEL_ICON_CLASS = "hidden";
+export const THREAD_DETAILS_PANEL_LOCKED_ROW_CLASS = `${THREAD_DETAILS_PANEL_CONTROL_CLASS} w-full justify-start sm:h-7`;
+
+export const THREAD_DETAILS_PANEL_ICON_CLASS = "size-4 shrink-0 text-muted-foreground";
 
 export const THREAD_DETAILS_PANEL_CHEVRON_CLASS = "mx-0! size-4 shrink-0 text-muted-foreground";
 

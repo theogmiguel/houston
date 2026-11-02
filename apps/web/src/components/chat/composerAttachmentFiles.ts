@@ -112,8 +112,8 @@ export function isPreviewableComposerVideo(
 }
 
 /**
- * Files beside the composer. A file keeps its tile even while an inline reference names it:
- * the tile carries the upload and its actions, the reference says where it belongs in the prompt.
+ * Files beside the composer. Every file is one tile, which carries the upload and its actions;
+ * a file also gets an inline reference only when it replaces a range of the prompt.
  */
 export function composerOtherFilesForPresentation(
   files: ReadonlyArray<ComposerFileAttachment>,

@@ -102,6 +102,14 @@ html[data-theme-reveal]::view-transition-new(root) {
   mix-blend-mode: normal;
 }
 
+/* The reveal clips one root snapshot. A named element would get its own group drawn above
+   every layer, so a draft composer under the settings sheet would float over it. */
+html[data-theme-reveal] *,
+html[data-theme-reveal] *::before,
+html[data-theme-reveal] *::after {
+  view-transition-name: none !important;
+}
+
 :root {
   --app-scrollbar-width: 6px;
   --appearance-contrast-base: 100%;
@@ -117,7 +125,7 @@ html[data-theme-reveal]::view-transition-new(root) {
   /* Houston's control radius (`--r-ctl`). */
   --control-radius: 6px;
   /* Control metrics from the design's TypeLayout board. */
-  --h-top: 40px;
+  --h-top: 44px;
   --w-window-control: 30px;
   --h-pane-head: 30px;
   /* Reserved top lane for a grid pane's floating label; the thread itself sets it. */
@@ -158,7 +166,7 @@ html[data-theme-reveal]::view-transition-new(root) {
   --workspace-titlebar-scroll-fade-height: 1.5rem;
   /* The composer board draws its lane at 760px; the timeline overrides to 720px. */
   --chat-content-max-width: 47.5rem;
-  --thread-details-panel-width: 21.25rem;
+  --thread-details-panel-width: 17.5rem;
   /* The prompt on phones: iOS zooms into any input under 16px on focus. */
   --font-size-prompt-touch: max(var(--font-size-prompt, 1rem), 16px);
   /* Horizontal gutter shared by the page header and the chat column, clear of
@@ -182,7 +190,7 @@ html[data-theme-reveal]::view-transition-new(root) {
 
 .wco {
   --native-titlebar-height: env(titlebar-area-height, 0px);
-  --workspace-topbar-height: max(40px, env(titlebar-area-height, 40px));
+  --workspace-topbar-height: max(44px, env(titlebar-area-height, 44px));
   --workspace-controls-top: env(titlebar-area-y, 0px);
   --workspace-controls-left: calc(env(titlebar-area-x, 0px) + 0.75rem);
   --workspace-controls-right: calc(
@@ -506,7 +514,7 @@ html[data-theme-reveal]::view-transition-new(root) {
 }
 
 @utility dialog-backdrop {
-  background: color-mix(in srgb, #000 45%, transparent);
+  background: var(--dialog-scrim, color-mix(in srgb, #000 45%, transparent));
 }
 
 @utility dropdown-glass {
@@ -1218,6 +1226,18 @@ html[data-theme-reveal]::view-transition-new(root) {
   --pane: #ffffff;
   --pane-head: #f7f7f9;
   --composer: #ffffff;
+  /* The focused grid cell's frame: a neutral grey, never the accent. */
+  --focus-frame: rgba(0, 0, 0, 0.38);
+  /* The user's message bubble and the composer's send button; themes give them the message
+     roles. */
+  --bubble: var(--card);
+  --bubble-ink: var(--t1);
+  --send: var(--t1);
+  --send-ink: var(--pane);
+  /* Form control fill, the current sidebar row, and switch thumbs. */
+  --control-fill: var(--field);
+  --row-current: var(--accent-muted);
+  --thumb: #ffffff;
   --claude: #c25f3f;
   --codex: #1d1d1f;
 
@@ -1353,6 +1373,7 @@ html[data-theme-reveal]::view-transition-new(root) {
   --pane: #0f0f11;
   --pane-head: #18181b;
   --composer: #18181b;
+  --focus-frame: #6f6f7a;
   --claude: #d97757;
   --codex: rgba(255, 255, 255, 0.92);
   --message-surface: color-mix(in srgb, #ffffff 6%, var(--card));
@@ -1505,6 +1526,58 @@ html[data-theme-id]:not([data-theme-id=""]) {
   --terminal-foreground: var(--app-theme-terminal-foreground);
   --terminal-cursor: var(--app-theme-terminal-cursor);
   --terminal-selection-background: var(--app-theme-terminal-selection-background);
+}
+
+/* Houston's board roles (--rail, --pane, --t1, ...) are painted straight by components, so a
+   theme must reach them too, not only the semantic aliases above. Each role takes the theme role
+   upstream shows on the same surface: thread bodies sit on the canvas, the top strip and grid
+   gutter on the toolbar, the composer on the raised surface, hover and selection fills on the
+   accent surface. Neutral text overlays stay the theme's text at Houston's alphas. */
+html[data-theme-id]:not([data-theme-id=""]) {
+  --rail: var(--app-theme-sidebar);
+  --content: var(--app-theme-toolbar);
+  --raised: var(--app-theme-surface-raised);
+  --term: var(--app-theme-terminal-background);
+  --code-bg: var(--app-theme-code-background);
+  --pane: var(--app-theme-canvas);
+  --pane-head: var(--app-theme-canvas);
+  --composer: var(--app-theme-surface-raised);
+  --t1: var(--app-theme-text);
+  --t2: color-mix(in oklab, var(--app-theme-text) 35%, var(--app-theme-muted-foreground));
+  --houston: var(--app-theme-muted-foreground);
+  --accent-ink: var(--app-theme-focus);
+  --accent-hover: color-mix(in oklab, var(--app-theme-accent) 88%, black);
+  --accent-muted: color-mix(in srgb, var(--app-theme-accent) 12%, transparent);
+  --primary-hover: var(--app-theme-message-action-hover);
+  --hover: var(--app-theme-accent-surface);
+  --sel: var(--app-theme-accent-surface);
+  --field: color-mix(in srgb, var(--app-theme-text) 6%, transparent);
+  --line-strong: var(--app-theme-input);
+  --border-hover: var(--app-theme-input);
+  --divider: var(--app-theme-border);
+  --tog-off: var(--app-theme-input);
+  --focus-frame: color-mix(in oklab, var(--app-theme-text) 45%, var(--app-theme-canvas));
+  --warn: var(--app-theme-warning);
+  --warn-ink: var(--app-theme-warning-foreground);
+  --warn-wash: var(--app-theme-warning-surface);
+  --warn-line: color-mix(in srgb, var(--app-theme-warning) 30%, transparent);
+  --stop: var(--app-theme-error);
+  --stop-ink: var(--app-theme-error-foreground);
+  --danger-fill: var(--app-theme-error);
+  --danger-wash: var(--app-theme-error-surface);
+  --bubble: var(--app-theme-message-surface);
+  --bubble-ink: var(--app-theme-message-foreground);
+  --send: var(--app-theme-message-action);
+  --send-ink: var(--app-theme-message-action-foreground);
+  --dialog-scrim: color-mix(in srgb, var(--app-theme-canvas) 60%, transparent);
+  --control-fill: var(--app-theme-canvas);
+  --row-current: var(--app-theme-sidebar-row-selected);
+  --thumb: var(--app-theme-canvas);
+}
+
+/* Upstream's dark inputs show the input role through, at 32%. */
+html.dark[data-theme-id]:not([data-theme-id=""]) {
+  --control-fill: color-mix(in srgb, var(--app-theme-input) 32%, transparent);
 }
 
 /* Theme-token dependency probes are restored synchronously, before paint. Keep
@@ -1852,11 +1925,12 @@ body {
   font-variant-ligatures: none;
 }
 
-/* Lighter default icon stroke. In the base layer so stroke-* utilities still win; any
-   CSS beats lucide's stroke-width="2" attribute. */
+/* Default icon stroke. At the 14px chrome size 2.5 draws about 1.46px, the weight of the
+   desktop app's own icons; lucide's native 2 lands near 1px at 12-14px and antialiases
+   across two pixel rows on 1x displays. In the base layer so stroke-* utilities still win. */
 @layer base {
   :where(svg.lucide[stroke-width="2"]) {
-    stroke-width: 1.75;
+    stroke-width: 2.5;
   }
 }
 
@@ -2766,6 +2840,15 @@ code {
   margin-block: 0.75rem;
 }
 
+/* The gap sits between blocks only; at a message's edges it would add to the bubble's padding. */
+.messages-timeline-scroll .chat-markdown > :first-child {
+  margin-top: 0;
+}
+
+.messages-timeline-scroll .chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+
 /* Inline code is the board's chip: 12px mono on the field fill with its own
    hairline, not a tinted text run. */
 .messages-timeline-scroll .chat-markdown :not(pre) > code {
@@ -2777,4 +2860,144 @@ code {
   font-family: var(--font-mono);
   font-size: var(--text-mono);
   line-height: inherit;
+}
+
+/* Grid surface. One thread on screen reads as one surface with the top strip: no card, the
+   strip's colour, edge to edge. Two or more become cards on that colour with an 8px gutter.
+   The cell values are registered properties set on the persistent surface, so they animate
+   even though a cell remounts when the tree changes shape. */
+@property --grid-cell-surface {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --grid-cell-border {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --grid-cell-focus-border {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --grid-cell-radius {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+[data-grid-surface] {
+  /* One curve and duration for every property that changes, so the scene moves as one. */
+  --grid-morph-duration: 260ms;
+  --grid-morph-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --grid-cell-surface: var(--background);
+  --grid-cell-border: transparent;
+  --grid-cell-focus-border: transparent;
+  --grid-cell-radius: 0px;
+  padding: 0;
+  transition:
+    padding var(--grid-morph-duration) var(--grid-morph-ease),
+    --grid-cell-surface var(--grid-morph-duration) var(--grid-morph-ease),
+    --grid-cell-border var(--grid-morph-duration) var(--grid-morph-ease),
+    --grid-cell-focus-border var(--grid-morph-duration) var(--grid-morph-ease),
+    --grid-cell-radius var(--grid-morph-duration) var(--grid-morph-ease);
+}
+
+[data-grid-surface][data-multi] {
+  --grid-cell-surface: var(--pane);
+  --grid-cell-border: var(--border);
+  --grid-cell-focus-border: var(--focus-frame);
+  --grid-cell-radius: var(--r-group);
+  padding: 0 8px 8px;
+}
+
+[data-grid-surface] [data-grid-cell] {
+  --pane: var(--grid-cell-surface);
+  background-color: var(--grid-cell-surface);
+  border: 1px solid var(--grid-cell-border);
+  border-radius: var(--grid-cell-radius);
+}
+
+/* An empty grid's centred draft is its first thread, so it reads as one surface with the strip too. */
+[data-grid-empty-draft] {
+  --pane: var(--background);
+}
+
+/* The rule above On hold / Closed draws in the rail's divider colour, inset from both edges. */
+[data-shelves-rule] {
+  background-color: var(--divider);
+}
+
+/* A thread outside a grid (a new thread, an opened thread) is one thread on screen: it reads
+   as one surface with its top strip, as a one-thread grid does. */
+[data-standalone-thread] {
+  --pane: var(--background);
+}
+
+/* The reveal's new snapshot is live; let the grid's surface colours land at once inside it. */
+html[data-theme-reveal] [data-grid-surface] {
+  transition: none;
+}
+
+[data-grid-surface] [data-grid-cell][data-focused="true"] {
+  border-color: var(--grid-cell-focus-border);
+}
+
+[data-grid-surface] [data-pane-label] {
+  transition:
+    opacity var(--grid-morph-duration) var(--grid-morph-ease),
+    translate var(--grid-morph-duration) var(--grid-morph-ease);
+}
+
+[data-grid-surface]:not([data-multi]) [data-pane-label] {
+  opacity: 0;
+  translate: 0 -4px;
+}
+
+/* A cell that joins the grid grows from nothing and fades in; one that leaves does the reverse.
+   Only those slots transition, so dragging a resize handle stays immediate. */
+[data-grid-surface] [data-grid-slot][data-leaving],
+[data-grid-surface][data-morphing] [data-grid-slot][data-entering] {
+  transition:
+    flex-grow var(--grid-morph-duration) var(--grid-morph-ease),
+    opacity var(--grid-morph-duration) var(--grid-morph-ease);
+}
+
+[data-grid-surface] [data-grid-slot][data-leaving] {
+  flex-grow: 0 !important;
+  opacity: 0;
+}
+
+[data-grid-surface][data-morphing] [data-grid-slot][data-entering] {
+  @starting-style {
+    flex-grow: 0;
+    opacity: 0;
+  }
+}
+
+[data-grid-surface][data-morphing] [data-pane-label] {
+  @starting-style {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+}
+
+[data-grid-surface] [data-grid-gutter][data-leaving] {
+  flex-basis: 0 !important;
+  transition: flex-basis var(--grid-morph-duration) var(--grid-morph-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-grid-surface],
+  [data-grid-surface] [data-pane-label],
+  [data-grid-surface] [data-grid-slot],
+  [data-grid-surface] [data-grid-gutter] {
+    transition: none !important;
+  }
+}
+
+/* The docked right panel is the left sidebar's twin: the same rail colour and one divider. */
+[data-preview-panel-mode="inline"] {
+  background-color: var(--sidebar);
 }

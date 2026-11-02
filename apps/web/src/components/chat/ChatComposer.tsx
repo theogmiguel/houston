@@ -50,6 +50,7 @@ import * as Schema from "effect/Schema";
 import { isPasteAsTextShortcut } from "@houston-app/client-runtime/text-paste";
 import { serializeComposerFileLink } from "@houston-app/shared/composerTrigger";
 import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
+import { isEmptyPaste, readHostClipboardImageFile } from "./hostClipboardImage";
 import { splitTransferredFiles } from "./workspaceFileDrop";
 import { createModelSelection, normalizeModelSlug } from "@houston-app/shared/model";
 import { USAGE_LIMITS_COMMAND } from "@houston-app/shared/usageLimits";
@@ -823,8 +824,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (supportsAttachmentUploads
       ? needsReattachFileCount > 0
         ? needsReattachFileCount === 1
-          ? "Attach the interrupted file again or remove it"
-          : "Attach the interrupted files again or remove them"
+          ? `Attach ${composerFiles.find(composerFileNeedsReattach)?.name ?? "the file"} again or remove it to send`
+          : `Attach the ${needsReattachFileCount} interrupted files again or remove them to send`
         : attachmentUploadBlockReason({
             imageIds: [...composerImages, ...composerFiles].map((attachment) => attachment.id),
             uploadsByImageId,
@@ -1340,9 +1341,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     addComposerDraftImages(attachmentDraftTarget, images);
 
   const addComposerFilesToDraft = (files: ComposerFileAttachment[]) =>
-    addComposerDraftFiles(attachmentDraftTarget, files, {
-      appendReference: questionAttachmentTarget === null,
-    });
+    addComposerDraftFiles(attachmentDraftTarget, files, { appendReference: false });
 
   const removeComposerImageFromDraft = (imageId: string) => {
     if (questionAttachmentTarget && activePendingIsResponding) return;
@@ -2563,7 +2562,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       pendingUserInputs,
       supportsQuestionAttachments,
       isLiteralPendingAnswer,
-      projectSelectionRequired,
       questionAttachmentTarget,
       attachmentTargetKey,
       fileStagingLimit,
@@ -2651,6 +2649,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (files.length > 0) {
         void addComposerAttachments(files, { skipImageInlineChip: bypassAutoAttachment });
       }
+      return;
+    }
+
+    const readHostClipboardImage = window.hostBridge?.readClipboardImage;
+    if (activeThreadId && readHostClipboardImage && isEmptyPaste(event.clipboardData)) {
+      event.preventDefault();
+      event.stopPropagation();
+      void readHostClipboardImageFile(readHostClipboardImage)
+        .then((image) => {
+          if (image !== null)
+            return addComposerAttachments([image], { skipImageInlineChip: bypassAutoAttachment });
+        })
+        .catch((error: unknown) => {
+          toastManager.add({
+            type: "error",
+            title: "Couldn't paste the clipboard image",
+            description: error instanceof Error ? error.message : String(error),
+          });
+        });
       return;
     }
 
@@ -2913,6 +2930,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         composerEditorRef.current?.focusAt(cursor);
       },
       addDroppedFiles: (files: File[]) => {
+        // A collapsed glance composer shows no tiles, so the drop expands it.
+        if (isComposerCollapsedMobile) expandMobileComposer();
         void addComposerAttachments(files).then((inserted) => {
           if (!inserted) focusComposer();
         });
@@ -3213,6 +3232,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }}
       />
     ) : null;
+  const composerQueuedAttachmentRow =
+    !isComposerCollapsedMobile &&
+    pendingUserInputs.length === 0 &&
+    editingQueuedAttachments !== null &&
+    editingQueuedAttachments.length > 0 ? (
+      <ComposerQueuedAttachmentRow
+        attachments={editingQueuedAttachments}
+        onRemove={onRemoveEditingQueuedAttachment}
+      />
+    ) : null;
   const composerAttachButton =
     showComposerAttachAction && paneDensity !== "compact" ? (
       <ComposerAttachButton
@@ -3352,7 +3381,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   className={cn(
                     "flex size-8 shrink-0 items-center justify-center rounded-full disabled:opacity-64",
                     showResumeAction || prompt.trim() || composerSendState.hasSendableContent
-                      ? "bg-foreground text-(--pane) hover:bg-foreground/90"
+                      ? "bg-(--send) text-(--send-ink) hover:bg-(--send)/90"
                       : "bg-(--sel) text-muted-foreground",
                   )}
                   disabled={collapsedComposerPrimaryActionDisabled}
@@ -3433,21 +3462,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 </ComposerCommandMenuLayer>
               )}
 
-              {!isComposerCollapsedMobile &&
-                pendingUserInputs.length === 0 &&
-                editingQueuedAttachments !== null &&
-                editingQueuedAttachments.length > 0 && (
-                  <ComposerQueuedAttachmentRow
-                    attachments={editingQueuedAttachments}
-                    onRemove={onRemoveEditingQueuedAttachment}
-                  />
-                )}
-
-              {composerAttachmentMediaRow || composerAttachmentFileList ? (
+              {composerQueuedAttachmentRow ||
+              composerAttachmentMediaRow ||
+              composerAttachmentFileList ? (
                 <div
                   data-chat-composer-attachment-row="true"
                   className="mb-2 flex max-w-full flex-wrap gap-1.5 [&>div]:contents"
                 >
+                  {composerQueuedAttachmentRow}
                   {composerAttachmentMediaRow}
                   {composerAttachmentFileList}
                 </div>
@@ -3510,14 +3532,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         : activePendingProgress
                           ? isChoiceOnlyPendingQuestion
                             ? "Choose an option above"
-                            : "Type your own answer, or leave this blank to use the selected option"
+                            : "Type your own answer, or leave blank"
                           : showPlanFollowUpPrompt && activeProposedPlan
-                            ? "Add feedback to refine the plan, or leave this blank to implement it"
+                            ? "Feedback refines; blank implements"
                             : projectSelectionRequired
                               ? "Choose a project above to start a thread"
                               : showProviderUnavailable
                                 ? "Enable a provider in Settings to send a message"
-                                : DEFAULT_COMPOSER_PLACEHOLDER
+                                : showResumeAction
+                                  ? "Resume, or add a message first"
+                                  : DEFAULT_COMPOSER_PLACEHOLDER
                     }
                     disabled={
                       projectSelectionRequired ||

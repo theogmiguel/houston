@@ -41,7 +41,7 @@ export function shouldContinueDesktopUpdateCheckAnimation({
 }
 
 function DesktopUpdateAvailableIcon() {
-  return <ArrowUpIcon className="size-3.5" strokeWidth={1.7} />;
+  return <ArrowUpIcon className="size-3.5" />;
 }
 
 function DesktopUpdateDownloadingIcon({ percent }: { readonly percent: number | null }) {
@@ -93,7 +93,7 @@ export function DesktopUpdateStatusIcon({
     return <DesktopUpdateDownloadingIcon percent={downloadPercent ?? null} />;
   }
   if (status === "downloaded") return <DesktopUpdateDownloadedIcon />;
-  if (status === "everything") return <CircleArrowUpIcon className="size-3.5" strokeWidth={1.7} />;
+  if (status === "everything") return <CircleArrowUpIcon className="size-3.5" />;
 
   return (
     <RefreshIcon

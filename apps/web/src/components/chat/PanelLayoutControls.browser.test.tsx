@@ -29,10 +29,15 @@ function labels(container: HTMLElement): Array<string> {
   );
 }
 
-it("keeps the thread details toggle beside the grid control while the right panel is open", async () => {
+it("keeps the terminal and right panel toggles in the header while the right panel is open", async () => {
   await using screen = await render(<ChatHeaderPanelControls {...controls(true)} />);
 
-  expect(labels(screen.container)).toEqual(["Toggle thread details panel", "Grid layout"]);
+  expect(labels(screen.container)).toEqual([
+    "Toggle thread details panel",
+    "Grid layout",
+    "Toggle terminal drawer",
+    "Toggle right panel",
+  ]);
 });
 
 it("shows every panel toggle in the header while the right panel is closed", async () => {
@@ -40,8 +45,8 @@ it("shows every panel toggle in the header while the right panel is closed", asy
 
   expect(labels(screen.container)).toEqual([
     "Toggle thread details panel",
+    "Grid layout",
     "Toggle terminal drawer",
     "Toggle right panel",
-    "Grid layout",
   ]);
 });

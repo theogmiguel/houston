@@ -39,8 +39,8 @@ import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { vcsEnvironment } from "../state/vcs";
 import { cn } from "../lib/utils";
+import { THREAD_DETAILS_PANEL_ICON_CLASS } from "./chat/threadDetailsPanelStyles";
 import { ThreadDetailsPrRows } from "./chat/ThreadDetailsPrRows";
-import { ThreadDetailsRowContent, ThreadDetailsRowMono } from "./ui/thread-details-row";
 import { parsePullRequestReference } from "@houston-app/client-runtime/pull-request-link-input";
 import { getSourceControlPresentation } from "../sourceControlPresentation";
 import { useComposerMenuProps } from "./chat/composerEventScope";
@@ -224,7 +224,6 @@ export function BranchToolbarBranchSelector({
           input: { cwd: branchCwd },
         }),
   );
-  const panelBaseRef = branchStatusQuery.data?.branchChanges?.baseRef ?? null;
   const trimmedBranchQuery = branchQuery.trim();
   const branchRefState = usePaginatedBranches({
     environmentId,
@@ -709,7 +708,7 @@ export function BranchToolbarBranchSelector({
           <ComboboxTrigger
             render={
               displayMode === "panel" ? (
-                <ThreadDetailsControl part="row" />
+                <ThreadDetailsControl part="select" />
               ) : (
                 <ComposerControl size="xs" />
               )
@@ -717,33 +716,21 @@ export function BranchToolbarBranchSelector({
             className="min-w-0 flex-1 max-w-full active:scale-100"
             disabled={isInitialBranchesLoadPending || isBranchActionPending}
           >
-            {displayMode === "panel" ? (
-              <ThreadDetailsRowContent
-                label={
-                  <span className="font-mono">
-                    <MiddleTruncate value={triggerLabel} variant="cap-aligned" className="w-full" />
-                  </span>
-                }
-                {...(panelBaseRef
-                  ? {
-                      right: (
-                        <span>
-                          from <ThreadDetailsRowMono>{panelBaseRef}</ThreadDetailsRowMono>
-                        </span>
-                      ),
-                    }
-                  : {})}
-              />
-            ) : (
-              <>
-                <GitBranchIcon className="size-3 shrink-0" />
-                <ComposerContextLabel displayMode={displayMode}>
-                  <span className="font-mono">
-                    <MiddleTruncate value={triggerLabel} variant="default" className="w-full" />
-                  </span>
-                </ComposerContextLabel>
-              </>
-            )}
+            <GitBranchIcon
+              className={cn(
+                "size-3 shrink-0",
+                displayMode === "panel" && THREAD_DETAILS_PANEL_ICON_CLASS,
+              )}
+            />
+            <ComposerContextLabel displayMode={displayMode}>
+              <span className="font-mono">
+                <MiddleTruncate
+                  value={triggerLabel}
+                  variant={displayMode === "panel" ? "cap-aligned" : "default"}
+                  className="w-full"
+                />
+              </span>
+            </ComposerContextLabel>
           </ComboboxTrigger>
         </span>
         {displayMode === "panel" && prNumber !== undefined && prUrl !== undefined ? (

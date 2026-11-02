@@ -202,7 +202,7 @@ function MenuCheckboxItem({
             className="inline-flex h-5 w-9 shrink-0 items-center rounded-full p-[2px] outline-none transition-[background-color,box-shadow] duration-[120ms] [--thumb-size:1rem] [--thumb-travel:1rem] focus-visible:outline-2 focus-visible:outline-ring data-checked:bg-primary data-unchecked:bg-[var(--tog-off)] data-disabled:opacity-64"
             keepMounted
           >
-            <span className="pointer-events-none block size-[var(--thumb-size)] shrink-0 rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.3)] in-[[data-slot=menu-checkbox-item][data-checked]]:origin-[var(--thumb-size)_50%] origin-left in-[[data-slot=menu-checkbox-item][data-checked]]:translate-x-[var(--thumb-travel)] in-[[data-slot=menu-checkbox-item]:active]:not-data-disabled:scale-x-110 in-[[data-slot=menu-checkbox-item]:active]:rounded-[var(--thumb-size)/calc(var(--thumb-size)*1.10)] [transition:translate_.15s,border-radius_.15s,scale_.1s_.1s,transform-origin_.15s]" />
+            <span className="pointer-events-none block size-[var(--thumb-size)] shrink-0 rounded-full bg-(--thumb) shadow-[0_1px_2px_rgba(0,0,0,0.3)] in-[[data-slot=menu-checkbox-item][data-checked]]:origin-[var(--thumb-size)_50%] origin-left in-[[data-slot=menu-checkbox-item][data-checked]]:translate-x-[var(--thumb-travel)] in-[[data-slot=menu-checkbox-item]:active]:not-data-disabled:scale-x-110 in-[[data-slot=menu-checkbox-item]:active]:rounded-[var(--thumb-size)/calc(var(--thumb-size)*1.10)] [transition:translate_.15s,border-radius_.15s,scale_.1s_.1s,transform-origin_.15s]" />
           </MenuPrimitive.CheckboxItemIndicator>
         </>
       ) : (
@@ -217,7 +217,7 @@ function MenuCheckboxItem({
               stroke="currentColor"
               strokeLinecap="round"
               strokeLinejoin="round"
-              strokeWidth="1.75"
+              strokeWidth="2.5"
               viewBox="0 0 24 24"
               width="24"
               xmlns="http://www.w3.org/2000/svg"

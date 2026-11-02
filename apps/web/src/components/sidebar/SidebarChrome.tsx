@@ -65,7 +65,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
       </div>
       <SidebarTrigger
         aria-label="Hide sidebar"
-        className="relative z-10 size-7! shrink-0 [-webkit-app-region:no-drag] [&_svg]:size-[15px]"
+        className="relative z-10 size-7! shrink-0 [-webkit-app-region:no-drag]"
       />
     </div>
   );
@@ -111,8 +111,8 @@ function SidebarBrandMark() {
   return (
     <HoustonWordmark
       aria-label="Houston"
-      className="min-w-0 gap-2 truncate text-sm text-foreground"
-      markClassName="size-[18px]"
+      className="min-w-0 gap-2 truncate text-base text-foreground"
+      markClassName="size-[22px]"
     />
   );
 }

@@ -18,7 +18,6 @@ import {
   type DiffLayout,
   MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
-  type QuitConfirmationMode,
   SidebarProjectSortOrder,
 } from "@houston-app/contracts/settings";
 import { desktopUpdateChannelOf } from "@houston-app/shared/cliRelease";
@@ -135,12 +134,6 @@ const TIMESTAMP_FORMAT_LABELS = {
 const DIFF_LAYOUT_LABELS: Record<DiffLayout, string> = {
   stacked: "Stacked",
   split: "Side by side",
-};
-
-const QUIT_CONFIRMATION_MODE_LABELS: Record<QuitConfirmationMode, string> = {
-  direct: "Direct",
-  hold: "Hold",
-  "double-click": "Double press",
 };
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
@@ -427,13 +420,6 @@ function AboutVersionSection() {
                 <SelectItem hideIndicator value="latest">
                   Stable
                 </SelectItem>
-                <SelectItem
-                  hideIndicator
-                  value="nightly"
-                  disabled={nightlyDeniedBy !== undefined && selectedUpdateChannel !== "nightly"}
-                >
-                  Nightly
-                </SelectItem>
               </SelectPopup>
             </Select>
           }
@@ -459,9 +445,6 @@ function AboutVersionSection() {
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 <SelectItem hideIndicator value="latest">
                   Latest
-                </SelectItem>
-                <SelectItem hideIndicator value="nightly">
-                  Nightly
                 </SelectItem>
               </SelectPopup>
             </Select>
@@ -534,9 +517,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       : []),
     ...(settings.sidebarProjectSortOrder !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder
       ? ["Project order"]
-      : []),
-    ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
-      ? ["Running section"]
       : []),
     ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
       ? ["Auto-close inactive threads"]
@@ -616,7 +596,6 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
       ? ["Delete confirmation"]
       : []),
-    ...(settings.confirmQuit !== DEFAULT_UNIFIED_SETTINGS.confirmQuit ? ["Quit shortcut"] : []),
     ...(isTextGenerationModelDirty ? ["Text generation model"] : []),
     ...(settings.threadTitleInstructions !== DEFAULT_UNIFIED_SETTINGS.threadTitleInstructions
       ? ["Thread title instructions"]
@@ -936,32 +915,6 @@ export function GeneralSettingsPanel() {
             </Select>
           }
         />
-        <SettingsRow
-          {...searchableSetting("working-shelf")}
-          description="Fold running and monitoring threads into a Running section. They return to the top of the sidebar when they need you. The boring sidebar in Labs has no Running section."
-          resetAction={
-            settings.sidebarWorkingShelfEnabled !==
-            DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled ? (
-              <SettingResetButton
-                label="working section"
-                onClick={() =>
-                  updateSettings({
-                    sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.sidebarWorkingShelfEnabled}
-              onCheckedChange={(checked) =>
-                updateSettings({ sidebarWorkingShelfEnabled: Boolean(checked) })
-              }
-              aria-label="Running section"
-            />
-          }
-        />
       </SettingsSection>
 
       <SettingsSection id="notifications" title="Notifications">
@@ -1055,47 +1008,6 @@ export function GeneralSettingsPanel() {
             />
           }
         />
-        {isDesktopHost ? (
-          <SettingsRow
-            {...searchableSetting("quit-confirmation")}
-            description="Hold mode also quits on two quick presses."
-            resetAction={
-              settings.confirmQuit !== DEFAULT_UNIFIED_SETTINGS.confirmQuit ? (
-                <SettingResetButton
-                  label="quit shortcut behavior"
-                  onClick={() =>
-                    updateSettings({ confirmQuit: DEFAULT_UNIFIED_SETTINGS.confirmQuit })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Select
-                value={settings.confirmQuit}
-                onValueChange={(value) => {
-                  if (value === "direct" || value === "hold" || value === "double-click") {
-                    updateSettings({ confirmQuit: value });
-                  }
-                }}
-              >
-                <SelectTrigger
-                  size="sm"
-                  className="w-full sm:w-40"
-                  aria-label="Quit shortcut behavior"
-                >
-                  <SelectValue>{QUIT_CONFIRMATION_MODE_LABELS[settings.confirmQuit]}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  {Object.entries(QUIT_CONFIRMATION_MODE_LABELS).map(([value, label]) => (
-                    <SelectItem hideIndicator key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            }
-          />
-        ) : null}
       </SettingsSection>
 
       <SettingsSection id="display" title="Display">

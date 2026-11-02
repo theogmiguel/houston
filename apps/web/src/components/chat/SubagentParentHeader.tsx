@@ -8,7 +8,10 @@ export function SubagentParentHeader(props: {
   readonly onOpen?: (() => void) | undefined;
 }) {
   return (
-    <div className="flex h-[34px] min-w-0 items-center gap-2 border-b border-border bg-(--pane-head) ps-3 pe-1.5 text-xs text-(--t2)">
+    <div
+      data-subagent-parent-header
+      className="flex h-[34px] min-w-0 items-center gap-2 border-b border-border bg-(--pane-head) ps-3 pe-1.5 text-xs text-(--t2)"
+    >
       <UsersIcon aria-hidden className="size-3.25 shrink-0 text-(--houston)" />
       <span className="min-w-0 truncate">
         Subagent of <b className="font-semibold text-(--t1)">{props.title}</b>

@@ -131,13 +131,13 @@ export function ThemePreviewCircle({
     <span
       aria-hidden
       className={cn(
-        "relative block size-14 shrink-0 overflow-hidden rounded-full border-2 border-background",
+        "relative block size-14 shrink-0 overflow-hidden rounded-md border-2 border-background",
         className,
       )}
       style={{ boxShadow: themePreviewEdgeShadow(mode) }}
     >
       <span
-        className="absolute inset-0 rounded-full"
+        className="absolute inset-0 rounded-md"
         style={{
           ...getThemePreviewStyle(colors, mode),
           filter: `blur(${THEME_PREVIEW_RENDER_SPECS[mode].blurAt56Px}px)`,
@@ -172,7 +172,7 @@ export function ThemePreviewCircles({
                   aria-label={`Use ${label} ${mode} mode`}
                   aria-pressed={isPicked}
                   className={cn(
-                    "relative flex size-[68px] shrink-0 transform-gpu cursor-pointer items-center justify-center rounded-full p-1.5 outline-none transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-5 focus-visible:outline-foreground/60",
+                    "relative flex size-[68px] shrink-0 transform-gpu cursor-pointer items-center justify-center rounded-(--r-dialog) p-1.5 outline-none transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-5 focus-visible:outline-foreground/60",
                     isPicked && "hover:scale-100",
                   )}
                   onClick={(event) => {
@@ -186,7 +186,7 @@ export function ThemePreviewCircles({
                     <>
                       <span
                         aria-hidden
-                        className="pointer-events-none absolute inset-0 rounded-full"
+                        className="pointer-events-none absolute inset-0 rounded-(--r-dialog)"
                         style={{ boxShadow: "inset 0 0 0 2px var(--ring)" }}
                       />
                       <span

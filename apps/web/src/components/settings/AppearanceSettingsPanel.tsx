@@ -248,8 +248,8 @@ export function AppearanceSettingsPanel() {
           {...searchableSetting("environment-identification")}
           description={
             environmentStageVariant
-              ? "Choose how Dev and Nightly environments are identified."
-              : "Show Dev or Nightly artwork in the sidebar header."
+              ? "Choose how the Dev environment is identified."
+              : "Show Dev artwork in the sidebar header."
           }
           resetAction={
             settings.environmentIdentificationMode !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (

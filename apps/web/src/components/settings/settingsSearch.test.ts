@@ -105,8 +105,8 @@ describe("searchSettings", () => {
   });
 
   it("hides desktop-only settings from browser search", () => {
-    expect(SETTINGS_SEARCH_ITEMS.some((item) => item.id === "quit-confirmation")).toBe(true);
-    expect(searchSettings("hold to quit")).toEqual([]);
+    expect(SETTINGS_SEARCH_ITEMS.some((item) => item.id === "cli-command")).toBe(true);
+    expect(searchSettings("houston command").map((item) => item.id)).not.toContain("cli-command");
     expect(searchSettings("wsl")).toEqual([]);
     expect(searchSettings("update track")).toEqual([]);
   });
@@ -235,7 +235,7 @@ describe("settings search targets", () => {
     const streaming = getSettingsSearchTargetScope("response-streaming")!;
     expect(streaming.scope).toBe("project-defaults");
     expect(isSettingsSearchScopeAvailable(streaming.scope, "project")).toBe(true);
-    for (const id of ["legacy-plan-mode", "legacy-context-window-indicator", "boring-sidebar"]) {
+    for (const id of ["legacy-plan-mode", "legacy-context-window-indicator"]) {
       expect(getSettingsSearchTargetScope(id)!.scope).toBeNull();
     }
   });

@@ -1,5 +1,7 @@
 import type { ComponentProps, ReactNode } from "react";
 
+import { formatDiffCount } from "@houston-app/client-runtime/diff-count";
+
 import { cn } from "~/lib/utils";
 
 const ROW_CLASS =
@@ -7,11 +9,14 @@ const ROW_CLASS =
 
 /** The label and its inline value share one left edge; the right slot holds chevrons, status or chips. */
 export function ThreadDetailsRowContent({
+  icon,
   label,
   value,
   mono = false,
   right,
 }: {
+  /** A leading 16px glyph, muted like the row's values. */
+  readonly icon?: ReactNode;
   readonly label: ReactNode;
   readonly value?: ReactNode;
   readonly mono?: boolean;
@@ -20,6 +25,9 @@ export function ThreadDetailsRowContent({
   return (
     <>
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        {icon ? (
+          <span className="me-0.5 flex shrink-0 text-muted-foreground [&_svg]:size-4">{icon}</span>
+        ) : null}
         <span className="min-w-0 truncate">{label}</span>
         {value === undefined || value === null ? null : (
           <span className={cn("min-w-0 truncate text-muted-foreground", mono && "font-mono")}>
@@ -68,6 +76,26 @@ export function ThreadDetailsRowMono({
   readonly className?: string;
 }) {
   return <span className={cn("min-w-0 truncate font-mono", className)}>{children}</span>;
+}
+
+/** Added and removed line counts, each coloured only when it is not zero. */
+export function ThreadDetailsRowDiffCount({
+  insertions,
+  deletions,
+}: {
+  readonly insertions: number;
+  readonly deletions: number;
+}) {
+  return (
+    <span className="flex gap-1.5 font-mono tabular-nums">
+      <span className={insertions ? "text-diff-addition-foreground" : "text-muted-foreground"}>
+        +{formatDiffCount(insertions)}
+      </span>
+      <span className={deletions ? "text-diff-deletion-foreground" : "text-muted-foreground"}>
+        -{formatDiffCount(deletions)}
+      </span>
+    </span>
+  );
 }
 
 /**

@@ -16,7 +16,7 @@
         "width": 1400,
         "height": 900,
         "resizable": true,
-        "dragDropEnabled": true,
+        "dragDropEnabled": false,
         "decorations": false,
         "shadow": true,
         "create": false

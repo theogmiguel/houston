@@ -1525,7 +1525,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     >
       <div
         className={cn(
-          "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 border-b border-(--divider) bg-pane-head pl-2",
+          "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pl-2",
           props.mode === "inline" && !props.layoutControls ? "pr-3" : "pr-1",
           ownsDesktopTitleBar && "drag-region",
           ownsDesktopTitleBar &&

@@ -4,10 +4,12 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
-import type { GridRecord } from "../../grid/gridStore";
+import { useGridStore, type GridRecord } from "../../grid/gridStore";
 import { clearThreadSelection } from "../../grid/sidebar";
 import { render, type Screen } from "../../../test/render";
-import { SidebarNewGridMenu } from "../ui/sidebar-grids";
+import { DEFAULT_CLIENT_SETTINGS } from "@houston-app/contracts/settings";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
+import { SidebarNewGridMenu, SidebarOptionsMenu } from "../ui/sidebar-grids";
 import { TooltipProvider } from "../ui/tooltip";
 import { GridGroup } from "./GridSidebar";
 
@@ -197,6 +199,37 @@ describe("grid sidebar", () => {
     expect(onOpenThread).toHaveBeenCalledWith("grid-c", "thread-c");
   });
 
+  it("renames a grid from its actions menu and keeps the input until Enter", async () => {
+    const value = grid({ id: "grid-r", name: "Grid 1" });
+    useGridStore.setState({ grids: [value] });
+    await using screen = await render(group(value, [thread({ id: "thread-r" })]));
+
+    await userEvent.click(page.getByRole("button", { name: "Grid actions for Grid 1" }).element());
+    await userEvent.click(page.getByRole("menuitem", { name: /Rename grid/ }).element());
+
+    const input = screen.getByRole("textbox");
+    await expect.element(input).toBeVisible();
+    await expect.element(input).toHaveFocus();
+
+    await userEvent.fill(input.element(), "Review");
+    await userEvent.keyboard("{Enter}");
+    expect(useGridStore.getState().grids[0]?.name).toBe("Review");
+  });
+
+  it("renames a grid with F2 on its heading", async () => {
+    const value = grid({ id: "grid-f", name: "Grid 1" });
+    useGridStore.setState({ grids: [value] });
+    await using screen = await render(group(value, []));
+
+    headingFor(screen, "grid-f").focus();
+    await userEvent.keyboard("{F2}");
+    const input = screen.getByRole("textbox");
+    await expect.element(input).toHaveFocus();
+    await userEvent.fill(input.element(), "Docs");
+    await userEvent.keyboard("{Enter}");
+    expect(useGridStore.getState().grids[0]?.name).toBe("Docs");
+  });
+
   it("keeps a one-thread grid's actions on the heading", async () => {
     await using _screen = await render(
       group(grid({ id: "grid-c", name: "Landing copy" }), [thread({ id: "thread-c" })]),
@@ -222,6 +255,31 @@ describe("grid sidebar", () => {
     const closed = screen.getByRole("button", { name: /^Review Houston$/ }).element();
     expect(open.className).toContain("bg-sidebar-row-selected");
     expect(closed.className).not.toContain("bg-sidebar-row-selected");
+  });
+
+  it("leaves the open grid's heading untinted while its focused thread row shows the selection", async () => {
+    const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
+    await using screen = await render(
+      group(grid({ id: "grid-a", name: "v2 port", focusedThreadId: "thread-a" }), threads, {
+        open: true,
+      }),
+    );
+
+    const heading = screen.getByRole("button", { name: /^v2 port Houston$/ }).element();
+    expect(heading.className).not.toContain("bg-sidebar-row-selected");
+  });
+
+  it("tints the open grid's heading when collapsing hides its focused thread", async () => {
+    const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
+    await using screen = await render(
+      group(grid({ id: "grid-a", name: "v2 port", focusedThreadId: "thread-a" }), threads, {
+        open: true,
+        collapsed: true,
+      }),
+    );
+
+    const heading = screen.getByRole("button", { name: /^v2 port Houston$/ }).element();
+    expect(heading.className).toContain("bg-sidebar-row-selected");
   });
 
   it("keeps the chevron and text still across collapse and thread counts", async () => {
@@ -380,6 +438,47 @@ describe("New grid menu", () => {
     expect(onSelect).toHaveBeenCalledWith("env-1:project-2");
   });
 
+  it("names the grid from the optional field with Enter", async () => {
+    const onSelect = vi.fn();
+    await using screen = await render(
+      <SidebarNewGridMenu
+        workspaces={workspaces}
+        selectedKey="env-1:project-2"
+        onSelect={onSelect}
+        onOpenFolder={() => {}}
+      />,
+    );
+
+    await userEvent.click(page.getByRole("button", { name: "New grid" }).element());
+    const field = screen.getByRole("textbox", { name: "Grid name" });
+    await userEvent.fill(field.element(), "  Review sprint ");
+    await expect.element(field).toHaveValue("  Review sprint ");
+    await userEvent.keyboard("{Enter}");
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith("env-1:project-2", "Review sprint");
+  });
+
+  it("names the grid in the workspace whose row is clicked, and a blank name keeps the default", async () => {
+    const onSelect = vi.fn();
+    await using screen = await render(
+      <SidebarNewGridMenu
+        workspaces={workspaces}
+        selectedKey="env-1:project-1"
+        onSelect={onSelect}
+        onOpenFolder={() => {}}
+      />,
+    );
+
+    await userEvent.click(page.getByRole("button", { name: "New grid" }).element());
+    await userEvent.fill(screen.getByRole("textbox", { name: "Grid name" }).element(), "Docs");
+    await userEvent.click(page.getByRole("menuitem", { name: "notes" }).element());
+    expect(onSelect).toHaveBeenLastCalledWith("env-1:project-3", "Docs");
+
+    await userEvent.click(page.getByRole("button", { name: "New grid" }).element());
+    await userEvent.fill(screen.getByRole("textbox", { name: "Grid name" }).element(), "   ");
+    await userEvent.click(page.getByRole("menuitem", { name: "notes" }).element());
+    expect(onSelect).toHaveBeenLastCalledWith("env-1:project-3");
+  });
+
   it("runs the add-workspace flow from Open folder", async () => {
     const onOpenFolder = vi.fn();
     await using _screen = await render(
@@ -394,5 +493,74 @@ describe("New grid menu", () => {
     await userEvent.click(page.getByRole("button", { name: "New grid" }).element());
     await userEvent.click(page.getByRole("menuitem", { name: /Open folder/ }).element());
     expect(onOpenFolder).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Sidebar options", () => {
+  const defaults = {
+    threadSort: "grid",
+    gridSort: "created_at",
+    showBranch: true,
+    showPullRequest: true,
+    showSubagents: true,
+  } as const;
+
+  it("offers sorts, row fields and a reset, and reports each pick", async () => {
+    const onChange = vi.fn();
+    const onReset = vi.fn();
+    await using screen = await render(
+      <SidebarOptionsMenu options={defaults} onChange={onChange} onReset={onReset} />,
+      { router: false },
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Sidebar options" }));
+    await expect.element(page.getByText("Sort threads")).toBeVisible();
+    await expect.element(page.getByText("Sort grids")).toBeVisible();
+    await expect.element(page.getByText("Rows show")).toBeVisible();
+    await expect
+      .element(page.getByRole("menuitemradio", { name: "Grid order" }))
+      .toHaveAttribute("aria-checked", "true");
+    await expect
+      .element(page.getByRole("menuitemcheckbox", { name: "Branch" }))
+      .toHaveAttribute("aria-checked", "true");
+    expect(page.getByRole("menuitemcheckbox", { name: "Working shelf" }).elements()).toHaveLength(
+      0,
+    );
+
+    await userEvent.click(page.getByRole("menuitemradio", { name: "Manual" }));
+    expect(onChange).toHaveBeenCalledWith({ gridSort: "manual" });
+    await userEvent.click(page.getByRole("menuitemcheckbox", { name: "Subagents" }));
+    expect(onChange).toHaveBeenCalledWith({ showSubagents: false });
+    await userEvent.click(page.getByRole("menuitem", { name: "Reset to defaults" }));
+    expect(onReset).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws New grid as a folder with a plus", async () => {
+    await using screen = await render(
+      <SidebarNewGridMenu
+        workspaces={[{ key: "env-1:project-1", label: "Houston" }]}
+        selectedKey="env-1:project-1"
+        onSelect={() => {}}
+        onOpenFolder={() => {}}
+      />,
+      { router: false },
+    );
+    const trigger = screen.getByRole("button", { name: "New grid" }).element();
+    expect(trigger.querySelector("svg.lucide-folder-plus")).not.toBeNull();
+  });
+
+  it("hides the branch line when Rows show leaves Branch off", async () => {
+    __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+    try {
+      {
+        await using shown = await render(group(grid(), [thread()]), { router: false });
+        expect(shown.container.textContent).toContain("houston/split-drawer-state");
+      }
+      __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, sidebarRowShowBranch: false });
+      await using hidden = await render(group(grid(), [thread()]), { router: false });
+      expect(hidden.container.textContent).not.toContain("houston/split-drawer-state");
+    } finally {
+      __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+    }
   });
 });

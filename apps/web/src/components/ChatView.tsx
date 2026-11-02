@@ -292,7 +292,6 @@ import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
 import { useOpenFavoriteEditorShortcut } from "./chat/OpenInPickerShortcut";
 import {
   ChatHeaderPanelControls,
-  PanelLayoutControls,
   type PanelLayoutControlsProps,
   RightPanelMaximizeControl,
 } from "./chat/PanelLayoutControls";
@@ -557,8 +556,19 @@ export default function ChatView(props: ChatViewProps) {
           lastVisitedAt: fallbackLastVisitedAt,
         });
   const promptRef = useRef("");
-  const localComposerRef = useRef<ChatComposerHandle | null>(null);
-  const composerRef = useComposerHandleContext() ?? localComposerRef;
+  // The shared handle serves app-wide commands, so several chat views (grid cells) overwrite
+  // each other's entry. A view acts on its own composer and only publishes the handle.
+  const composerRef = useRef<ChatComposerHandle | null>(null);
+  const sharedComposerRef = useComposerHandleContext();
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- keeps the app-wide composer registry entry in step with this view's handle, released on unmount
+  useEffect(() => {
+    if (sharedComposerRef === null) return;
+    const published = composerRef.current;
+    sharedComposerRef.current = published;
+    return () => {
+      if (sharedComposerRef.current === published) sharedComposerRef.current = null;
+    };
+  });
   const queuedRunEdit = useQueuedRunEdit({
     environmentId,
     routeThreadRef,
@@ -2843,9 +2853,11 @@ export default function ChatView(props: ChatViewProps) {
   // A delegated task is a remote thread's subagent.
   const isSubagentThread =
     activeThread?.lineage.relationshipToParent === "subagent" || delegatedFrom !== null;
-  // Side chats do not nest or start from subagents, and older servers would fork a listed thread.
+  // Side chats open in the right panel, so only the view that owns it offers them (a grid's
+  // focused cell, never a side chat's own view). They do not nest or start from subagents, and
+  // older servers would fork a listed thread.
   const sideChatsOffered =
-    !embedded &&
+    ownsRightPanel &&
     canOperateThread &&
     activeThread?.lineage.sideChat !== true &&
     !isSubagentThread &&
@@ -3361,9 +3373,6 @@ export default function ChatView(props: ChatViewProps) {
     onToggleThreadPanel: toggleThreadPanelStable,
     onToggleRightPanel: toggleRightPanelStable,
   } satisfies PanelLayoutControlsProps;
-  const panelOpenControls = (
-    <PanelLayoutControls {...panelToggleControlProps} showThreadPanelControl={false} />
-  );
   const workspaceFileDropHandlers = makeWorkspaceFileDropHandlers({
     setDragActive: setIsWorkspaceFileDragActive,
     addFiles: addDroppedFilesToComposer,
@@ -3389,6 +3398,7 @@ export default function ChatView(props: ChatViewProps) {
         )}
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
         data-chat-column
+        data-standalone-thread={embedded ? undefined : ""}
         inert={rightPanelMaximized}
       >
         {/* A grid cell carries its own title and actions, so the route header would
@@ -3399,7 +3409,7 @@ export default function ChatView(props: ChatViewProps) {
             data-chat-header
             data-tauri-drag-region="deep"
             className={cn(
-              "relative border-b border-(--divider) bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
+              "relative bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
               isDesktopHost
                 ? cn(
                     "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center",
@@ -4065,7 +4075,6 @@ export default function ChatView(props: ChatViewProps) {
                       maximized={rightPanelMaximized}
                       onToggle={toggleRightPanelMaximizedStable}
                     />
-                    {panelOpenControls}
                   </div>
                 ) : null
               }

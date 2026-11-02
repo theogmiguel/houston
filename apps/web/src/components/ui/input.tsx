@@ -60,7 +60,7 @@ function Input({
       className={
         cn(
           !unstyled &&
-            "relative inline-flex w-full rounded-[var(--r-ctl)] border border-border bg-[var(--field)] text-[13px] text-foreground transition-[border-color,box-shadow] has-focus-visible:has-aria-invalid:border-destructive has-aria-invalid:border-destructive has-focus-visible:outline-2 has-focus-visible:outline-ring has-disabled:opacity-64",
+            "relative inline-flex w-full rounded-[var(--r-ctl)] border border-border bg-(--control-fill) text-[13px] text-foreground transition-[border-color,box-shadow] has-focus-visible:has-aria-invalid:border-destructive has-aria-invalid:border-destructive has-focus-visible:outline-2 has-focus-visible:outline-ring has-disabled:opacity-64",
           !unstyled && size === "compact" && "rounded-[var(--r-ctl)]",
           font === "mono" && "font-mono tabular-nums",
           className,

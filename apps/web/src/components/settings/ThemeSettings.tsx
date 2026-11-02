@@ -211,7 +211,7 @@ function ThemeLibraryCard({
                                 : `Use ${mode} variant, currently ${selected.option.label}`
                             }
                             aria-pressed={isActive}
-                            className="absolute left-1/2 top-2 z-20 flex size-14 items-center justify-center rounded-full outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-5 focus-visible:outline-foreground/60"
+                            className="absolute left-1/2 top-2 z-20 flex size-14 items-center justify-center rounded-md outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-5 focus-visible:outline-foreground/60"
                             style={{
                               transform: `translateX(calc(-50% + ${rootOffsetX}px))`,
                             }}
@@ -234,7 +234,7 @@ function ThemeLibraryCard({
                             {isActive ? (
                               <span
                                 aria-hidden
-                                className="pointer-events-none absolute inset-0 rounded-full ring-2 ring-inset ring-ring"
+                                className="pointer-events-none absolute inset-0 rounded-md ring-2 ring-inset ring-ring"
                               />
                             ) : null}
                             {isActive ? (
@@ -274,7 +274,7 @@ function ThemeLibraryCard({
                                     aria-label={`Use ${option.label} for ${mode} mode${optionIsActive ? ", currently active" : ""}`}
                                     aria-pressed={optionIsActive}
                                     className={cn(
-                                      "absolute left-1/2 top-1 z-30 flex size-7 items-center justify-center rounded-full bg-background shadow-sm outline-none transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                                      "absolute left-1/2 top-1 z-30 flex size-7 items-center justify-center rounded-(--r-ctl) bg-background shadow-sm outline-none transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                                       optionIsActive
                                         ? "ring-2 ring-inset ring-ring"
                                         : "ring-1 ring-border/70",
@@ -722,7 +722,7 @@ export function ThemeLibrary({
                 isActive ? "text-foreground" : "text-muted-foreground",
               )}
             >
-              {mode === "system" ? "System" : mode === "dark" ? "Graphite" : "Paper"}
+              {mode === "system" ? "System" : mode === "dark" ? "Dark" : "Light"}
             </span>
           </button>
         );

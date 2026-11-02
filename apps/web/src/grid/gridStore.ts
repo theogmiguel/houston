@@ -7,8 +7,10 @@ import {
   type LayoutNode,
   type Side,
   type ThreadNode,
+  type TidyShape,
   appendThread,
   arrangeThreads,
+  equalize,
   findThread,
   gridPreset,
   insertBeside,
@@ -23,6 +25,7 @@ import {
   sameLayout,
   swapThread,
   threadLeaf,
+  tidy,
 } from "./tree";
 
 /** A thread that left a grid keeps the grid and pane slot it came from. */
@@ -93,6 +96,10 @@ export interface GridStoreState {
   addThread: (gridId: string, threadId: string, draftId?: string) => void;
   removeThreadFromGrid: (gridId: string, threadId: string) => void;
   setTree: (gridId: string, tree: LayoutNode | null) => void;
+  /** Rebuilds the grid as a balanced grid, one row or one column; a grid with fewer than two threads is unchanged. */
+  tidyGrid: (gridId: string, shape: TidyShape) => void;
+  /** Resets every split in the grid to an even share without moving a pane. */
+  equalizeGrid: (gridId: string) => void;
   focusThread: (gridId: string, threadId: string | null) => void;
   setGridPendingDraft: (
     gridId: string,
@@ -104,6 +111,8 @@ export interface GridStoreState {
   pinGrid: (gridId: string, now?: string) => void;
   unpinGrid: (gridId: string) => void;
   setGridHidden: (gridId: string, hidden: boolean) => void;
+  /** Swaps a grid with its visible neighbour in the same workspace and pin group, for the manual order. */
+  moveGridInWorkspace: (gridId: string, direction: -1 | 1) => void;
   /** Swaps two panes so the dragged thread takes the target's place. */
   reorderGridThreads: (gridId: string, draggedThreadId: string, targetThreadId: string) => void;
   /**
@@ -191,6 +200,31 @@ export function orderedGridsForWorkspace(
     if (pinOrder !== 0) return pinOrder;
     return left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id);
   });
+}
+
+/**
+ * The rail's order for a workspace's grids. Pinned grids lead in every order; "manual" keeps
+ * the stored order, which moveGridInWorkspace changes; "updated_at" reads each grid's latest
+ * thread activity from the caller, newest first.
+ */
+export function sidebarOrderedGrids(
+  grids: readonly GridRecord[],
+  workspaceKey: string,
+  order: "updated_at" | "created_at" | "manual",
+  activityAt: (grid: GridRecord) => number,
+): GridRecord[] {
+  if (order === "created_at") return orderedGridsForWorkspace(grids, workspaceKey);
+  const pinRank = (grid: GridRecord) => (grid.pinnedAt !== null ? 0 : 1);
+  const workspaceGrids = gridsForWorkspace(grids, workspaceKey);
+  if (order === "manual") {
+    return workspaceGrids.toSorted((left, right) => pinRank(left) - pinRank(right));
+  }
+  return workspaceGrids.toSorted(
+    (left, right) =>
+      pinRank(left) - pinRank(right) ||
+      activityAt(right) - activityAt(left) ||
+      left.createdAt.localeCompare(right.createdAt),
+  );
 }
 
 function nextGridName(grids: readonly GridRecord[], workspaceKey: string): string {
@@ -560,6 +594,22 @@ export const useGridStore = create<GridStoreState>()(
         set((state) => ({
           grids: updateGrid(state.grids, gridId, (grid) => withTree(grid, tree)),
         })),
+      tidyGrid: (gridId, shape) =>
+        set((state) => ({
+          grids: updateGrid(state.grids, gridId, (grid) =>
+            grid.tree === null || preorderThreads(grid.tree).length < 2
+              ? grid
+              : withTree(grid, tidy(grid.tree, shape)),
+          ),
+        })),
+      equalizeGrid: (gridId) =>
+        set((state) => ({
+          grids: updateGrid(state.grids, gridId, (grid) =>
+            grid.tree === null || preorderThreads(grid.tree).length < 2
+              ? grid
+              : withTree(grid, equalize(grid.tree)),
+          ),
+        })),
       focusThread: (gridId, threadId) =>
         set((state) => ({
           grids: updateGrid(state.grids, gridId, (grid) => ({
@@ -618,6 +668,8 @@ export const useGridStore = create<GridStoreState>()(
         set((state) => ({
           grids: updateGrid(state.grids, gridId, (grid) => ({ ...grid, hidden })),
         })),
+      moveGridInWorkspace: (gridId, direction) =>
+        set((state) => ({ grids: moveGridAmongSiblings(state.grids, gridId, direction) })),
       reorderGridThreads: (gridId, draggedThreadId, targetThreadId) =>
         set((state) => ({
           grids: updateGrid(state.grids, gridId, (grid) =>
@@ -771,6 +823,27 @@ export const useGridStore = create<GridStoreState>()(
     },
   ),
 );
+
+export function moveGridAmongSiblings(
+  grids: readonly GridRecord[],
+  gridId: string,
+  direction: -1 | 1,
+): GridRecord[] {
+  const grid = grids.find((entry) => entry.id === gridId);
+  if (grid === undefined) return [...grids];
+  const pinned = grid.pinnedAt !== null;
+  const siblings = sidebarOrderedGrids(grids, grid.workspaceKey, "manual", () => 0).filter(
+    (entry) => !entry.hidden && (entry.pinnedAt !== null) === pinned,
+  );
+  const neighbour = siblings[siblings.findIndex((entry) => entry.id === gridId) + direction];
+  if (neighbour === undefined) return [...grids];
+  const from = grids.indexOf(grid);
+  const to = grids.indexOf(neighbour);
+  const next = [...grids];
+  next[from] = neighbour;
+  next[to] = grid;
+  return next;
+}
 
 export function useGrid(gridId: string | null) {
   return useGridStore((state) => (gridId === null ? null : gridById(state.grids, gridId)));

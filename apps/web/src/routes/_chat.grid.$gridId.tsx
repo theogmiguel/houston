@@ -3,7 +3,7 @@ import { scopeThreadRef, scopedThreadKey } from "@houston-app/client-runtime/env
 import type { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { LayoutGridIcon } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { GridEmptyDraft } from "../components/grid/GridEmptyDraft";
 import { GridHost } from "../components/grid/GridHost";
@@ -23,6 +23,7 @@ import { isTauriHost } from "../lib/desktopWindow";
 import { useGrid, useGridStore } from "../grid/gridStore";
 import { useOpenGridDraft } from "../grid/useOpenGridDraft";
 import { useGridShortcuts } from "../grid/useGridShortcuts";
+import { resolveGridThreadOpen } from "../grid/gridThreadOpen";
 import { containsThread, preorderThreads } from "../grid/tree";
 import { isEditableFocused } from "../lib/editableFocus";
 import { cn } from "../lib/utils";
@@ -281,11 +282,16 @@ function GridRoute() {
       ? soloThread
       : (workspaceThreads.find((thread) => thread.id === effectiveMaximized) ?? null);
 
-  const openThread = (environmentId: string, threadId: string) => {
-    if (
-      environmentId !== grid.environmentId ||
-      !workspaceThreads.some((thread) => thread.id === threadId)
-    ) {
+  const openThread = (environmentId: string, threadId: string, fromThreadId: string | null) => {
+    const placement = resolveGridThreadOpen({
+      tree: grid.tree,
+      gridEnvironmentId: grid.environmentId,
+      environmentId,
+      threadId,
+      fromThreadId,
+      inWorkspace: workspaceThreads.some((thread) => thread.id === threadId),
+    });
+    if (placement.kind === "navigate") {
       void navigate({
         to: "/$environmentId/$threadId",
         params: buildThreadRouteParams(
@@ -294,8 +300,16 @@ function GridRoute() {
       });
       return;
     }
-    if (grid.tree === null || !containsThread(grid.tree, threadId)) {
-      addThread(grid.id, threadId);
+    if (placement.kind === "add") addThread(grid.id, threadId);
+    if (placement.kind === "replace") {
+      moveThreadToCell({
+        threadId,
+        targetGridId: grid.id,
+        targetThreadId: placement.cellThreadId,
+        side: "center",
+      });
+      // A maximized cell stays maximized with the thread that took its place.
+      if (effectiveMaximized === placement.cellThreadId) setMaximizedThreadId(threadId);
     }
     focusThread(grid.id, threadId);
     void navigate({ to: "/grid/$gridId", params: { gridId: grid.id } });
@@ -324,18 +338,32 @@ function GridRoute() {
           <WorkspacePageHeader
             desktop={isDesktopHost}
             reserveNativeControls={!panelBesideGrid && (isDesktopHost || isTauriHost())}
-            className={cn("border-b border-(--divider)", panelBesideGrid && "pr-0")}
+            className={cn(panelBesideGrid && "pr-0")}
           >
             <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
               <span className="shrink-0">Houston</span>
               <span aria-hidden>/</span>
-              <span className="truncate">{grid.name}</span>
+              {/* The last crumb is the current place: the grid, or the one thread on screen. */}
+              {[
+                { id: grid.id, label: grid.name },
+                ...(displayedSoloThread === null
+                  ? []
+                  : [{ id: displayedSoloThread.id, label: displayedSoloThread.title }]),
+              ].map((crumb, index, crumbs) => (
+                <Fragment key={crumb.id}>
+                  {index > 0 ? <span aria-hidden>/</span> : null}
+                  <span
+                    className={cn(
+                      "truncate",
+                      index === crumbs.length - 1 && "font-medium text-foreground",
+                    )}
+                  >
+                    {crumb.label}
+                  </span>
+                </Fragment>
+              ))}
               {displayedSoloThread === null ? null : (
                 <>
-                  <span aria-hidden>/</span>
-                  <span className="truncate font-medium text-foreground">
-                    {displayedSoloThread.title}
-                  </span>
                   {displayedSoloThread.branch ? (
                     <GridThreadBranch
                       branch={displayedSoloThread.branch}
@@ -361,6 +389,7 @@ function GridRoute() {
               grid={grid}
               emptyDraftThreadId={emptyDraftThreadId}
               threadPanelAnchorRef={threadDetailsAnchorRef}
+              onArrange={() => setMaximizedThreadId(null)}
               {...(grid.tree === null
                 ? {}
                 : { detailsOpen: gridDetailsOpen, onToggleDetails: toggleThreadDetails })}
@@ -425,7 +454,7 @@ function GridRoute() {
                   reorderGridThreads(grid.id, node.threadId, targetThreadId)
                 }
                 onNewThread={(side) => createThread(side, node.threadId)}
-                onOpenThread={(ref) => openThread(ref.environmentId, ref.threadId)}
+                onOpenThread={(ref) => openThread(ref.environmentId, ref.threadId, node.threadId)}
               />
             )}
             renderEmpty={() => (

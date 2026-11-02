@@ -38,9 +38,15 @@ import {
 import { isCommandPaletteOpen, openCommandPalette } from "../../commandPaletteBus";
 import { requestCustomSnooze } from "../CustomSnoozeDialog";
 import { isDesktopHost } from "../../env";
+import { getThreadSortTimestamp, sortThreads } from "@houston-app/client-runtime/state/thread-sort";
+import {
+  DEFAULT_SIDEBAR_GRID_SORT_ORDER,
+  DEFAULT_SIDEBAR_GRID_THREAD_SORT_ORDER,
+} from "@houston-app/contracts/settings";
 import {
   type GridRecord,
   orderedGridsForWorkspace,
+  sidebarOrderedGrids,
   useGridStore,
   workspaceKeyOf,
 } from "../../grid/gridStore";
@@ -86,7 +92,7 @@ import { isPreviewFocused } from "../../lib/previewFocus";
 import { isTerminalFocused } from "../../lib/terminalFocus";
 import { cn } from "../../lib/utils";
 import { isModelPickerOpen } from "../../modelPickerVisibility";
-import { useClientSettings } from "../../hooks/useSettings";
+import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { useNowSecond } from "../../hooks/useNowSecond";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
@@ -136,6 +142,8 @@ import {
   SIDEBAR_GRID_WORKSPACE_CLS,
   SIDEBAR_SECTION_ACTION_CLS,
   SidebarNewGridMenu,
+  SidebarOptionsMenu,
+  type SidebarGridOptions,
 } from "../ui/sidebar-grids";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -201,6 +209,18 @@ export function GridSidebar() {
   const createGrid = useGridStore((store) => store.createGrid);
   const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
+  const threadSort = useClientSettings((settings) => settings.sidebarGridThreadSortOrder);
+  const gridSort = useClientSettings((settings) => settings.sidebarGridSortOrder);
+  const showBranch = useClientSettings((settings) => settings.sidebarRowShowBranch);
+  const showPullRequest = useClientSettings((settings) => settings.sidebarRowShowPullRequest);
+  const showSubagents = useClientSettings((settings) => settings.sidebarRowShowSubagents);
+  const sidebarOptions: SidebarGridOptions = {
+    threadSort,
+    gridSort,
+    showBranch,
+    showPullRequest,
+    showSubagents,
+  };
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const searchShortcutLabel = shortcutLabelForCommand(keybindings, "commandPalette.toggle");
   const navigate = useNavigate();
@@ -231,7 +251,7 @@ export function GridSidebar() {
     void navigate({ to: "/grid/$gridId", params: { gridId } });
   };
 
-  const createGridInWorkspace = (workspaceKey: string) => {
+  const createGridInWorkspace = (workspaceKey: string, name?: string) => {
     const project = projects.find(
       (candidate) => workspaceKeyOf(candidate.environmentId, candidate.id) === workspaceKey,
     );
@@ -240,6 +260,7 @@ export function GridSidebar() {
       environmentId: project.environmentId,
       projectId: project.id,
       workspaceKey,
+      ...(name === undefined ? {} : { name }),
     });
     void navigate({ to: "/grid/$gridId", params: { gridId } });
   };
@@ -591,6 +612,11 @@ export function GridSidebar() {
                   onShowGrid={(gridId) => useGridStore.getState().setGridHidden(gridId, false)}
                 />
               ) : null}
+              <SidebarOptionsMenu
+                options={sidebarOptions}
+                onChange={(patch) => void updateClientSettings(sidebarOptionsPatch(patch))}
+                onReset={() => void updateClientSettings(SIDEBAR_OPTIONS_DEFAULTS)}
+              />
               <SidebarNewGridMenu
                 workspaces={orderedWorkspaceChoices.map(({ key, label }) => ({ key, label }))}
                 selectedKey={activeWorkspaceKey}
@@ -600,7 +626,7 @@ export function GridSidebar() {
             </>
           }
           search={
-            <label className="flex h-7 w-full shrink-0 items-center gap-2 rounded-(--control-radius) bg-(--field) px-2 text-sm text-secondary-foreground focus-within:ring-2 focus-within:ring-ring focus-within:ring-inset">
+            <label className="flex h-7 w-full shrink-0 items-center gap-2 rounded-(--control-radius) px-2 text-sm text-secondary-foreground hover:bg-sidebar-row-hover focus-within:ring-2 focus-within:ring-ring focus-within:ring-inset">
               <SearchIcon aria-hidden className="size-[15px] shrink-0 text-secondary-label" />
               <input
                 value={search}
@@ -651,7 +677,9 @@ export function GridSidebar() {
             ) : null}
             {projects.map((project) => {
               const workspaceKey = workspaceKeyOf(project.environmentId, project.id);
-              const workspaceGrids = orderedGridsForWorkspace(grids, workspaceKey);
+              const workspaceGrids = sidebarOrderedGrids(grids, workspaceKey, gridSort, (grid) =>
+                gridActivityAt(grid, threads, nowIso),
+              );
               const hiddenGrids = workspaceGrids.filter((grid) => grid.hidden);
               const workspaceMatches =
                 query.length > 0 &&
@@ -664,7 +692,11 @@ export function GridSidebar() {
                   const gridMatches =
                     query.length > 0 &&
                     grid.name.toLocaleLowerCase().includes(query.toLocaleLowerCase());
-                  const gridThreads = visibleGridThreads(grid, threads, nowIso);
+                  const paneOrderThreads = visibleGridThreads(grid, threads, nowIso);
+                  const gridThreads =
+                    threadSort === "grid"
+                      ? paneOrderThreads
+                      : sortThreads(paneOrderThreads, threadSort);
                   const matchedThreads =
                     query.length === 0 || workspaceMatches || gridMatches
                       ? gridThreads
@@ -730,11 +762,12 @@ export function GridSidebar() {
         </div>
       </SidebarContent>
       <div className="shrink-0 px-2 pt-1 pb-1" data-testid="grid-shelves-pin">
-        <Separator className="mb-1" />
+        <Separator className="mb-1" data-shelves-rule="" />
         <GridShelves
           held={shelves.held}
           closed={shelves.closed}
           closedDropTarget={dropTarget === "shelf:closed"}
+          closedDragActive={dragging !== null}
           onClosedDragOver={(event) => {
             if (readDragged(event) === null) return;
             event.preventDefault();
@@ -997,6 +1030,8 @@ export function GridGroup({
   const unpinGrid = useGridStore((store) => store.unpinGrid);
   const setGridHidden = useGridStore((store) => store.setGridHidden);
   const deleteGrid = useGridStore((store) => store.deleteGrid);
+  const moveGridInWorkspace = useGridStore((store) => store.moveGridInWorkspace);
+  const manualOrder = useClientSettings((settings) => settings.sidebarGridSortOrder === "manual");
   const isDropTarget = dropTarget === `grid:${grid.id}`;
   const readyThreads = threads.filter(
     (thread) => resolveGridThreadState(thread, nowIso) === "ready",
@@ -1024,6 +1059,12 @@ export function GridGroup({
       <MenuItem onClick={() => (grid.pinnedAt === null ? pinGrid(grid.id) : unpinGrid(grid.id))}>
         {grid.pinnedAt === null ? "Pin grid" : "Unpin grid"}
       </MenuItem>
+      {manualOrder ? (
+        <>
+          <MenuItem onClick={() => moveGridInWorkspace(grid.id, -1)}>Move grid up</MenuItem>
+          <MenuItem onClick={() => moveGridInWorkspace(grid.id, 1)}>Move grid down</MenuItem>
+        </>
+      ) : null}
       <MenuItem onClick={() => setGridHidden(grid.id, true)}>Hide grid</MenuItem>
       <MenuItem onClick={() => void deleteGridWithConfirm(grid, deleteGrid)}>Delete grid</MenuItem>
       <MenuSeparator />
@@ -1108,7 +1149,10 @@ export function GridGroup({
             aria-expanded={!collapsed}
             className={cn(
               SIDEBAR_GRID_HEADING_CLS,
-              open && SIDEBAR_GRID_HEADING_ACTIVE_CLS,
+              // One selection fill at a time: the focused thread row carries it while visible.
+              open &&
+                (collapsed || !threads.some((thread) => thread.id === grid.focusedThreadId)) &&
+                SIDEBAR_GRID_HEADING_ACTIVE_CLS,
               isDropTarget && SIDEBAR_GRID_HEADING_DROP_CLS,
             )}
           >
@@ -1296,6 +1340,9 @@ export function ThreadCard({
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const nowMinute = useNowMinute();
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
+  const showBranch = useClientSettings((settings) => settings.sidebarRowShowBranch);
+  const showPullRequest = useClientSettings((settings) => settings.sidebarRowShowPullRequest);
+  const showSubagents = useClientSettings((settings) => settings.sidebarRowShowSubagents);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const closeShortcut = shortcutLabelForCommand(keybindings, "thread.settle");
   const state = resolveGridThreadState(thread, nowIso);
@@ -1312,6 +1359,7 @@ export function ThreadCard({
   const modelLabel = thread.modelSelection?.model ?? null;
   const autoCloseEnabled = thread.autoSettleDisabledAt == null;
   const actionsVisible = actionsHovered || holdMenuOpen || actionsMenuOpen;
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const applyPreset = (preset: Pick<SnoozePreset, "snoozedUntil"> | undefined) => {
     if (preset !== undefined) onHold(preset);
@@ -1321,8 +1369,12 @@ export function ThreadCard({
     onClose();
   };
 
+  // Hidden, not disabled, while the actions are in use: a disabled tooltip ignores the pointer
+  // leaving the row, so a hover open still pending would land after the pointer was gone.
+  const previewSuppressed = actionsHovered || holdMenuOpen || actionsMenuOpen;
+
   return (
-    <Tooltip disabled={actionsHovered || holdMenuOpen || actionsMenuOpen}>
+    <Tooltip open={previewOpen && !previewSuppressed} onOpenChange={setPreviewOpen}>
       <TooltipTrigger
         render={
           <div
@@ -1353,7 +1405,7 @@ export function ThreadCard({
             onClick={(event) => {
               if (
                 event.target instanceof Element &&
-                event.target.closest("button, [role='button'], [role='menu']") !== null
+                event.target.closest("button, input, [role='button'], [role='menu']") !== null
               ) {
                 return;
               }
@@ -1367,7 +1419,11 @@ export function ThreadCard({
               `group/th relative flex w-full flex-col gap-0.75 rounded-lg py-1.75 pr-2.5 pl-7.5 text-left outline-none ${FOCUS_ROW_CLS}`,
               "cursor-pointer",
               dragging && "opacity-50",
-              selected ? "bg-(--accent-muted)" : focused ? "bg-(--sel)" : "hover:bg-(--hover)",
+              selected
+                ? "bg-(--row-current)"
+                : focused
+                  ? "bg-(--sidebar-row-active)"
+                  : "hover:bg-(--sidebar-row-hover)",
             )}
           />
         }
@@ -1567,11 +1623,17 @@ export function ThreadCard({
           </span>
         </div>
         <div className="flex min-w-0 items-center gap-2 text-caption leading-3.75 text-secondary-label">
-          <GitBranchIcon aria-hidden className="size-3 shrink-0" />
-          <span className="min-w-0 flex-1 truncate font-mono text-2xs">
-            {thread.branch ?? "no branch"}
-          </span>
-          {runningSubagents > 0 ? (
+          {showBranch ? (
+            <>
+              <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+              <span className="min-w-0 flex-1 truncate font-mono text-2xs">
+                {thread.branch ?? "no branch"}
+              </span>
+            </>
+          ) : (
+            <span className="flex-1" />
+          )}
+          {showSubagents && runningSubagents > 0 ? (
             <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
               <UsersIcon aria-hidden className="size-3 shrink-0" />
               {runningSubagents === 1
@@ -1579,7 +1641,7 @@ export function ThreadCard({
                 : `${runningSubagents} subagents running`}
             </span>
           ) : null}
-          {pullRequestNumber !== null ? (
+          {showPullRequest && pullRequestNumber !== null ? (
             <span className="inline-flex shrink-0 items-center gap-0.75 tabular-nums">
               <PullRequestGlyph.pullRequest aria-hidden className="size-3 shrink-0" />
               <span>#{pullRequestNumber}</span>
@@ -1648,5 +1710,38 @@ function HoldMenuItems({
         Pick a time…
       </MenuItem>
     </>
+  );
+}
+
+const SIDEBAR_OPTIONS_DEFAULTS = {
+  sidebarGridThreadSortOrder: DEFAULT_SIDEBAR_GRID_THREAD_SORT_ORDER,
+  sidebarGridSortOrder: DEFAULT_SIDEBAR_GRID_SORT_ORDER,
+  sidebarRowShowBranch: true,
+  sidebarRowShowPullRequest: true,
+  sidebarRowShowSubagents: true,
+} as const;
+
+function sidebarOptionsPatch(patch: Partial<SidebarGridOptions>) {
+  return {
+    ...(patch.threadSort === undefined ? {} : { sidebarGridThreadSortOrder: patch.threadSort }),
+    ...(patch.gridSort === undefined ? {} : { sidebarGridSortOrder: patch.gridSort }),
+    ...(patch.showBranch === undefined ? {} : { sidebarRowShowBranch: patch.showBranch }),
+    ...(patch.showPullRequest === undefined
+      ? {}
+      : { sidebarRowShowPullRequest: patch.showPullRequest }),
+    ...(patch.showSubagents === undefined ? {} : { sidebarRowShowSubagents: patch.showSubagents }),
+  };
+}
+
+/** A grid's last activity for the rail's "Last activity" order: its newest thread, else its creation. */
+function gridActivityAt(
+  grid: GridRecord,
+  threads: ReadonlyArray<EnvironmentThreadShell>,
+  nowIso: string,
+): number {
+  const created = Date.parse(grid.createdAt);
+  return visibleGridThreads(grid, threads, nowIso).reduce(
+    (latest, thread) => Math.max(latest, getThreadSortTimestamp(thread, "updated_at")),
+    Number.isNaN(created) ? Number.NEGATIVE_INFINITY : created,
   );
 }

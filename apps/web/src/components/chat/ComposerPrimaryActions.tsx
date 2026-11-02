@@ -81,7 +81,7 @@ const boardFocusRing =
   "outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background";
 
 const messageActionPillClassName = cn(
-  "inline-flex h-7 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-(--t1) px-3 font-medium text-(--pane) text-xs transition-colors hover:bg-(--t1)/90 disabled:pointer-events-none disabled:opacity-64",
+  "inline-flex h-7 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-(--send) px-3 font-medium text-(--send-ink) text-xs transition-colors hover:bg-(--send)/90 disabled:pointer-events-none disabled:opacity-64",
   boardFocusRing,
 );
 
@@ -195,7 +195,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           <button
             type="button"
             className={cn(
-              "flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full bg-(--t1) text-(--pane) transition-colors duration-150 hover:bg-(--t1)/90 disabled:pointer-events-none disabled:opacity-64 [&_svg]:pointer-events-none [&_svg]:size-3.5",
+              "flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full bg-(--send) text-(--send-ink) transition-colors duration-150 hover:bg-(--send)/90 disabled:pointer-events-none disabled:opacity-64 [&_svg]:pointer-events-none [&_svg]:size-3.5",
               boardFocusRing,
             )}
             {...pointerFocusProps}
@@ -294,7 +294,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
                 type="button"
                 className={cn(
                   messageActionPillClassName,
-                  "rounded-l-none border-(--pane)/25 border-l bg-(--t1) px-2",
+                  "rounded-l-none border-(--send-ink)/25 border-l bg-(--send) px-2",
                 )}
                 aria-label="Implementation actions"
                 onMouseDown={
@@ -369,7 +369,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         "relative isolate flex size-7 items-center justify-center overflow-hidden rounded-full transition-colors duration-150 enabled:cursor-pointer disabled:pointer-events-none [&_svg]:size-3.5 [&_svg]:pointer-events-none",
         boardFocusRing,
         hasSendableContent
-          ? "bg-(--t1) text-(--pane) enabled:hover:bg-(--t1)/90 disabled:bg-(--sel) disabled:text-(--houston)"
+          ? "bg-(--send) text-(--send-ink) enabled:hover:bg-(--send)/90 disabled:bg-(--sel) disabled:text-(--houston)"
           : "bg-(--sel) text-(--houston)",
       )}
       {...pointerFocusProps}

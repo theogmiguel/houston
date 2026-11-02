@@ -12,7 +12,8 @@ import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/te
 import "vite-plus/test/config";
 import { defineConfig, type Connect, type Plugin } from "vite-plus";
 import * as Hash from "effect/Hash";
-import pkg from "./package.json" with { type: "json" };
+// The app version releases stamp (scripts/set-version.sh); this package keeps upstream's own.
+import desktopConfig from "../../src-tauri/tauri.conf.json" with { type: "json" };
 import pdfjsPkg from "pdfjs-dist/package.json" with { type: "json" };
 
 import {
@@ -23,6 +24,7 @@ import {
 import { loadRepoEnv } from "../../scripts/lib/public-config";
 import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
 import { tailwindPlugins } from "./vite/tailwind";
+import { hostLicenseManifestPlugin } from "./vite/hostLicenseManifest";
 import { warmBundledDevPlugin } from "./vite/warmBundledDev";
 
 const repoEnv = loadRepoEnv();
@@ -46,7 +48,7 @@ const configuredRelayTracingToken = repoEnv.VITE_RELAY_OTLP_TRACES_TOKEN?.trim()
 const configuredHostedAppChannel = process.env.VITE_HOSTED_APP_CHANNEL?.trim() || "";
 const configuredReleaseChannel =
   process.env.HOUSTON_BUILT_DEV === "1" ? "dev" : process.env.VITE_RELEASE_CHANNEL?.trim() || "";
-const configuredAppVersion = process.env.APP_VERSION?.trim() || pkg.version;
+const configuredAppVersion = process.env.APP_VERSION?.trim() || desktopConfig.version;
 const configuredDesktopUpdateRepository =
   process.env.HOUSTON_DESKTOP_UPDATE_REPOSITORY?.trim() ||
   process.env.GITHUB_REPOSITORY?.trim() ||
@@ -254,7 +256,8 @@ function chunkCycleGuardPlugin(): Plugin {
 
 // The in-app licence manifest resolves SPDX templates from upstream's corpus,
 // which is excluded from the Houston import. Without it the Tauri app's own
-// inventory (src-tauri/resources/third-party-licenses.json) is authoritative.
+// inventory (src-tauri/resources/third-party-licenses.json) is authoritative,
+// and the renderer's manifest is built from it.
 function hasUpstreamLicenseCorpus(): boolean {
   return NodeFS.existsSync(new URL("../../third-party-licenses/spdx", import.meta.url));
 }
@@ -281,18 +284,22 @@ export default defineConfig(() => {
     plugins: [
       devCompressionPlugin(),
       chunkCycleGuardPlugin(),
-      builtDev || !hasUpstreamLicenseCorpus()
-        ? undefined
-        : thirdPartyLicensesPlugin({
-            bundleName: "web",
-            configFile: new URL("../../third-party-licenses.config.json", import.meta.url),
-            // Houston has no apps/desktop: the Tauri host replaces it, so its
-            // manifest is not a licence source here.
-            packageManifests: [
-              { bundle: "web", path: new URL("./package.json", import.meta.url) },
-              { bundle: "server", path: new URL("../server/package.json", import.meta.url) },
-            ],
-          }),
+      !hasUpstreamLicenseCorpus()
+        ? hostLicenseManifestPlugin(
+            new URL("../../src-tauri/resources/third-party-licenses.json", import.meta.url),
+          )
+        : builtDev
+          ? undefined
+          : thirdPartyLicensesPlugin({
+              bundleName: "web",
+              configFile: new URL("../../third-party-licenses.config.json", import.meta.url),
+              // Houston has no apps/desktop: the Tauri host replaces it, so its
+              // manifest is not a licence source here.
+              packageManifests: [
+                { bundle: "web", path: new URL("./package.json", import.meta.url) },
+                { bundle: "server", path: new URL("../server/package.json", import.meta.url) },
+              ],
+            }),
       tanstackRouter({ autoCodeSplitting: true }),
       react({ compiler: true }),
       tailwindPlugins(bundledDev),

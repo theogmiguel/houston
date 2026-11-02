@@ -337,7 +337,7 @@ export function useComposerStash(input: {
       }
       const restoredFiles = [...markerReplacements, ...filesToAppend];
       if (restoredFiles.length > 0) {
-        addComposerDraftFiles(composerDraftTarget, restoredFiles, { appendReference: true });
+        addComposerDraftFiles(composerDraftTarget, restoredFiles, { appendReference: false });
         const restoredFilePrompt = getComposerDraft(composerDraftTarget)?.prompt;
         if (restoredFilePrompt !== undefined && restoredFilePrompt !== promptRef.current) {
           promptRef.current = restoredFilePrompt;

@@ -5,7 +5,7 @@ import "~/index.css";
 import { render } from "../../../test/render";
 import { WindowControls } from "./window-control";
 
-const SQUARE_GLYPH_D = "M1 1v8h8V1H1zm7 7H2V2h6v6z";
+const SQUARE_GLYPH_D = "M2.5 2.5h7v7h-7z";
 
 function width(element: Element): number {
   return element.getBoundingClientRect().width;
@@ -64,7 +64,7 @@ describe("WindowControls", () => {
     expect(document.activeElement).toBe(button);
   });
 
-  it("draws a 30 x 40 hit area around a 20px rounded-square disc", async () => {
+  it("draws a 30 x 44 hit area, the top bar height, around a 20px rounded-square disc", async () => {
     await using screen = await render(
       <WindowControls layout={{ side: "right", buttons: ["minimize"] }} />,
       { router: false },
@@ -74,7 +74,7 @@ describe("WindowControls", () => {
     const disc = screen.getByTestId("window-control-disc").element();
 
     expect(width(button)).toBe(30);
-    expect(height(button)).toBe(40);
+    expect(height(button)).toBe(44);
     expect(width(disc)).toBe(20);
     expect(height(disc)).toBe(20);
     expect(getComputedStyle(disc).borderRadius).toBe("4px");
@@ -132,5 +132,21 @@ describe("WindowControls", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws every glyph at 12px with a 1.5px stroke, the weight of the icons beside it", async () => {
+    await using screen = await render(
+      <WindowControls layout={{ side: "right", buttons: ["minimize", "maximize", "close"] }} />,
+      { router: false },
+    );
+
+    const glyphs = Array.from(
+      screen.getByTestId("window-controls").element().querySelectorAll("svg"),
+    );
+    expect(glyphs).toHaveLength(3);
+    for (const glyph of glyphs) {
+      expect(width(glyph)).toBe(12);
+      expect(getComputedStyle(glyph.querySelector("path")!).strokeWidth).toBe("1.5px");
+    }
   });
 });

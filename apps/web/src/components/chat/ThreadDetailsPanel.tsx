@@ -161,6 +161,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 <ThreadDetailsSection
                   headingId="thread-details-workspace-heading"
                   title="Workspace"
+                  showHeading={false}
                   separated={false}
                 >
                   <div className="flex flex-col">
@@ -210,6 +211,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 <ThreadDetailsSection
                   headingId="thread-details-version-control-heading"
                   title="Version control"
+                  showHeading={false}
                 >
                   <div className="flex flex-col">
                     {show.branch ? (

@@ -37,14 +37,11 @@ function providerModelPickerNaturalWidth(picker: HTMLElement): number {
           ) - label.clientWidth,
         )
       : 0;
-  // In the icon-only form the label is out of flow; add its text width back, minus the
-  // provider icon the label form does not draw.
-  const iconOnly = picker.dataset.chatProviderModelPickerIconOnly === "true";
-  const icon = picker.querySelector<HTMLElement>("[data-chat-provider-model-picker-icon]");
-  const iconWidth = iconOnly && icon ? elementOuterWidth(icon) : 0;
+  // In the icon-only form the label is out of flow; add its text width back. Both forms draw
+  // the provider icon.
   const maxWidth = Number.parseFloat(style.maxWidth);
   const naturalWidth = Math.min(
-    renderedWidth + hiddenLabelWidth - iconWidth,
+    renderedWidth + hiddenLabelWidth,
     Number.isFinite(maxWidth) ? maxWidth : Number.POSITIVE_INFINITY,
   );
   return naturalWidth + elementInlineMarginWidth(picker);

@@ -75,3 +75,30 @@ it("toggles the focused cell's details card", async () => {
   await expect.element(toggle).toHaveAttribute("aria-pressed", "true");
   expect(visibility("thread-a")).toEqual({ inlineOpen: true, popoverOpen: true });
 });
+
+it("keeps details, grid layout, terminal and right panel in the strip, in that order, while the panel is open", async () => {
+  const ref = scopeThreadRef(environmentId, ThreadId.make("thread-a"));
+  useRightPanelStore.getState().toggleVisibility(ref);
+  expect(useRightPanelStore.getState().byThreadKey[scopedThreadKey(ref)]?.isOpen).toBe(true);
+  await using screen = await render(
+    <GridTopBarControls
+      grid={grid({ tree: threadLeaf("thread-a", "p1"), focusedThreadId: "thread-a" })}
+    />,
+    { router: false },
+  );
+
+  const controls = screen.container.querySelector("[data-panel-layout-controls]") as HTMLElement;
+  const labels = [...controls.querySelectorAll("button")]
+    .map((button) => button.getAttribute("aria-label"))
+    .filter((label) => label !== null);
+  expect(labels).toEqual([
+    "Toggle thread details panel",
+    "Tidy panes",
+    "Choose tidy layout",
+    "Toggle terminal drawer",
+    "Toggle right panel",
+  ]);
+  await expect
+    .element(screen.getByRole("button", { name: "Toggle right panel" }))
+    .toHaveAttribute("aria-pressed", "true");
+});

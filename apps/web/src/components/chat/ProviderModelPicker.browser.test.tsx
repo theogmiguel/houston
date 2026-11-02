@@ -75,3 +75,88 @@ it("draws the left half of the split control as the model name", async () => {
   await expect.element(trigger).toBeVisible();
   expect(trigger.element().className).toContain("rounded-e-none");
 });
+
+it("caps the composer's model trigger so a long model name truncates", async () => {
+  const longName = "Fusion (Claude Opus 5.5 Medium + SWE-2 High) Bypass Permissions";
+  const longProvider: ServerProvider = {
+    ...provider,
+    models: [{ ...provider.models[0]!, slug: "fusion", name: longName }],
+  };
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <div style={{ width: 760 }}>
+        <ProviderModelPicker
+          environmentId={null}
+          activeInstanceId={CLAUDE}
+          model="fusion"
+          lockedProvider={null}
+          instanceEntries={deriveProviderInstanceEntries([longProvider])}
+          keybindings={compileResolvedKeybindingsConfig([])}
+          modelOptionsByInstance={new Map([[CLAUDE, longProvider.models]])}
+          isComposerOwned
+          onInstanceModelChange={() => {}}
+        />
+      </div>
+    </TooltipProvider>,
+    { router: false },
+  );
+
+  const trigger = page.getByRole("button", { name: longName });
+  await expect.element(trigger).toBeVisible();
+  // 14rem: the trigger stops growing there and the label truncates.
+  expect(trigger.element().getBoundingClientRect().width).toBeLessThanOrEqual(224);
+});
+
+it("draws the provider's mark beside the model name", async () => {
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <ProviderModelPicker
+        environmentId={null}
+        activeInstanceId={CLAUDE}
+        model="opus"
+        lockedProvider={null}
+        instanceEntries={entries}
+        keybindings={compileResolvedKeybindingsConfig([])}
+        modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
+        isComposerOwned
+        onInstanceModelChange={() => {}}
+      />
+    </TooltipProvider>,
+    { router: false },
+  );
+
+  const trigger = page.getByRole("button", { name: /Opus 5\.5/ });
+  await expect.element(trigger).toBeVisible();
+  const icon = trigger.element().querySelector("[data-chat-provider-model-picker-icon] svg");
+  expect(icon).not.toBeNull();
+  expect(icon!.getBoundingClientRect().width).toBeGreaterThan(0);
+});
+
+it("opens the model menu at one fixed height however few models the provider lists", async () => {
+  const viewport = { width: window.innerWidth, height: window.innerHeight };
+  await page.viewport(1280, 800);
+  await using _viewport = {
+    [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height),
+  };
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <div style={{ paddingTop: 420 }}>
+        <ProviderModelPicker
+          environmentId={null}
+          activeInstanceId={CLAUDE}
+          model="opus"
+          lockedProvider={null}
+          instanceEntries={entries}
+          keybindings={compileResolvedKeybindingsConfig([])}
+          modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
+          onInstanceModelChange={() => {}}
+        />
+      </div>
+    </TooltipProvider>,
+    { router: false },
+  );
+
+  await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+  const content = () => document.querySelector<HTMLElement>('[data-model-picker-content="true"]');
+  await expect.poll(() => content()?.getBoundingClientRect().height).toBe(346);
+});

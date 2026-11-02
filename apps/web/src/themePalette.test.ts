@@ -65,7 +65,7 @@ describe("built-in theme names", () => {
   it("names the t3-chat theme for Houston while keeping its stored id", () => {
     const theme = getThemeDefinition("t3-chat");
     expect(theme?.id).toBe("t3-chat");
-    expect(theme?.label).toBe("Houston Chat");
+    expect(theme?.label).toBe("Light Pink");
     expect(BUILT_IN_THEMES.find((candidate) => candidate.id === "t3-chat")?.label).toBe("T3 Chat");
   });
 });

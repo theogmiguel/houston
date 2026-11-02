@@ -1104,13 +1104,10 @@ const ConversationTimeline = memo(function ConversationTimeline({
       detailBehind={detailBehindShell}
     />
   );
+  const listTopSpacer = topFadeEnabled ? TIMELINE_LIST_FADE_HEADER : TIMELINE_LIST_HEADER;
   const listHeaderLeadingContent =
     parentThreadLink === null ? (
-      topFadeEnabled ? (
-        TIMELINE_LIST_FADE_HEADER
-      ) : (
-        TIMELINE_LIST_HEADER
-      )
+      listTopSpacer
     ) : (
       <div className="messages-timeline-row-frame">
         <div
@@ -1144,6 +1141,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const listHeader = (
     <>
       {parentThreadLink === null ? listHeaderLeadingContent : null}
+      {/* The subagent banner keeps the timeline's top inset, as the first message would. */}
+      {parentThreadLink !== null && !parentThreadLink.sideChat ? listTopSpacer : null}
       {historyControls ? <TimelineHistoryControl {...historyControls} /> : null}
       {parentThreadLink !== null ? listHeaderLeadingContent : null}
     </>

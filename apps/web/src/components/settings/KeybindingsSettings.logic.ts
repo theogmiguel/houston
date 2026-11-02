@@ -383,6 +383,10 @@ export function commandLabel(command: KeybindingCommand): string {
   const usagePeriod = WINDOW_OPTIONS.find((option) => option.command === command);
   if (usagePeriod) return `Usage: Period: ${usagePeriod.label}`;
   if (command === "view.reopenClosed") return "Reopen Closed Tab";
+  if (command === "grid.tidy") return "Grid: Tidy Into Balanced Grid";
+  if (command === "grid.tidyRow") return "Grid: Tidy Into One Row";
+  if (command === "grid.tidyColumn") return "Grid: Tidy Into One Column";
+  if (command === "grid.equalize") return "Grid: Equalize Splits";
   if (command === "preview.focusUrl") return "Preview: Focus URL";
   const raw = String(command);
   if (raw.startsWith("script.") && raw.endsWith(".run")) {

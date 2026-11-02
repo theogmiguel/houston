@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { useReducedMotion } from "../../hooks/useReducedMotion";
 import { MAX_GRID_THREADS, type GridRecord } from "../../grid/gridStore";
 import {
   beginThreadDrag,
@@ -55,7 +56,11 @@ export interface GridCellRenderProps {
   dropTargetProps: ThreadDropTargetProps;
 }
 
-const GUTTER_PX = 0;
+/** The gap between cards; it is also each resize handle's width. */
+const GUTTER_PX = 8;
+
+/** Matches `--grid-morph-duration` in index.css; a closing cell is removed once it has shrunk away. */
+const GRID_MORPH_MS = 260;
 
 export interface GridHostProps {
   grid: GridRecord;
@@ -84,9 +89,31 @@ export function GridHost(props: GridHostProps) {
   } = props;
   const tree = grid.tree;
   const dragSource = useThreadDragSource();
+  const reducedMotion = useReducedMotion();
   const [hover, setHover] = useState<{ threadId: string; side: Side } | null>(null);
+  const [leavingThreadId, setLeavingThreadId] = useState<string | null>(null);
 
-  const threadCount = tree === null ? 0 : preorderThreads(tree).length;
+  const threadIds = tree === null ? [] : preorderThreads(tree).map((leaf) => leaf.threadId);
+  const threadCount = threadIds.length;
+  // Cells that joined since the last tree of this grid grow in; a grid switch is not a join.
+  const threadIdsKey = `${grid.id}\n${threadIds.join("\n")}`;
+  const [shownTree, setShownTree] = useState({ key: threadIdsKey, gridId: grid.id, threadIds });
+  const [enteringThreadIds, setEnteringThreadIds] = useState<ReadonlySet<string>>(EMPTY_IDS);
+  if (shownTree.key !== threadIdsKey) {
+    const before = new Set(shownTree.threadIds);
+    const joined =
+      shownTree.gridId === grid.id && before.size > 0
+        ? threadIds.filter((threadId) => !before.has(threadId))
+        : [];
+    setShownTree({ key: threadIdsKey, gridId: grid.id, threadIds });
+    setEnteringThreadIds(joined.length === 0 ? EMPTY_IDS : new Set(joined));
+  }
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- ends the join animation once its cells have grown in
+  useEffect(() => {
+    if (enteringThreadIds.size === 0) return;
+    const timer = window.setTimeout(() => setEnteringThreadIds(EMPTY_IDS), GRID_MORPH_MS);
+    return () => window.clearTimeout(timer);
+  }, [enteringThreadIds]);
   const atCap = threadCount >= MAX_GRID_THREADS;
   const sourceInTree =
     dragSource !== null &&
@@ -192,6 +219,24 @@ export function GridHost(props: GridHostProps) {
       onDropThread?.(source, threadId, side);
     };
 
+  const maximizedLeaf =
+    tree === null || maximizedThreadId === undefined || maximizedThreadId === null
+      ? null
+      : findThread(tree, maximizedThreadId);
+  const shownLeaving = leavingThreadId !== null && threadIds.includes(leavingThreadId);
+  // A leaving cell already counts as gone, so the survivor morphs while it shrinks.
+  const multi = maximizedLeaf === null && threadCount - (shownLeaving ? 1 : 0) > 1;
+  const surface = (children: ReactNode) => (
+    <div
+      data-grid-surface=""
+      data-multi={multi ? "" : undefined}
+      data-morphing={enteringThreadIds.size > 0 ? "" : undefined}
+      className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+    >
+      {children}
+    </div>
+  );
+
   if (tree === null) {
     if (renderEmpty !== undefined) return <>{renderEmpty()}</>;
     return (
@@ -213,12 +258,24 @@ export function GridHost(props: GridHostProps) {
     onFocusThread(threadId);
   };
 
-  const closeThread = (threadId: string) => {
+  const removeCell = (threadId: string) => {
     if (onCloseThread !== undefined) {
       onCloseThread(threadId);
       return;
     }
     onTreeChange(removeThread(tree, threadId));
+  };
+
+  const closeThread = (threadId: string) => {
+    if (reducedMotion || threadCount < 2 || maximizedLeaf !== null) {
+      removeCell(threadId);
+      return;
+    }
+    setLeavingThreadId(threadId);
+    window.setTimeout(() => {
+      setLeavingThreadId((current) => (current === threadId ? null : current));
+      removeCell(threadId);
+    }, GRID_MORPH_MS);
   };
 
   const renderLeaf = (node: ThreadNode, focused: boolean, maximized = false): ReactNode =>
@@ -243,39 +300,43 @@ export function GridHost(props: GridHostProps) {
       },
     });
 
-  const maximizedLeaf =
-    maximizedThreadId === undefined || maximizedThreadId === null
-      ? null
-      : findThread(tree, maximizedThreadId);
   if (maximizedLeaf !== null) {
-    return (
+    return surface(
       <div className="flex h-full min-h-0 w-full min-w-0 flex-1 overflow-hidden">
         {renderLeaf(maximizedLeaf, true, true)}
-      </div>
+      </div>,
     );
   }
 
-  return (
+  return surface(
     <GridBranch
       node={tree}
       path={[]}
       focusedThreadId={grid.focusedThreadId}
+      leavingThreadId={shownLeaving ? leavingThreadId : null}
+      enteringThreadIds={enteringThreadIds}
       renderLeaf={renderLeaf}
       onTreeChange={(next) => onTreeChange(next)}
-    />
+    />,
   );
 }
+
+const EMPTY_IDS: ReadonlySet<string> = new Set();
 
 function GridBranch({
   node,
   path,
   focusedThreadId,
+  leavingThreadId,
+  enteringThreadIds,
   renderLeaf,
   onTreeChange,
 }: {
   node: LayoutNode;
   path: number[];
   focusedThreadId: string | null;
+  leavingThreadId: string | null;
+  enteringThreadIds: ReadonlySet<string>;
   renderLeaf: (node: ThreadNode, focused: boolean) => ReactNode;
   onTreeChange: (tree: LayoutNode) => void;
 }) {
@@ -287,6 +348,8 @@ function GridBranch({
       node={node}
       path={path}
       focusedThreadId={focusedThreadId}
+      leavingThreadId={leavingThreadId}
+      enteringThreadIds={enteringThreadIds}
       renderLeaf={renderLeaf}
       onTreeChange={onTreeChange}
     />
@@ -297,12 +360,16 @@ function SplitView({
   node,
   path,
   focusedThreadId,
+  leavingThreadId,
+  enteringThreadIds,
   renderLeaf,
   onTreeChange,
 }: {
   node: SplitNode;
   path: number[];
   focusedThreadId: string | null;
+  leavingThreadId: string | null;
+  enteringThreadIds: ReadonlySet<string>;
   renderLeaf: (node: ThreadNode, focused: boolean) => ReactNode;
   onTreeChange: (tree: LayoutNode) => void;
 }) {
@@ -315,6 +382,13 @@ function SplitView({
     startWeight: number;
   } | null>(null);
   const [dragging, setDragging] = useState(false);
+  const isLeaving = (child: LayoutNode) =>
+    leavingThreadId !== null &&
+    preorderThreads(child).every((leaf) => leaf.threadId === leavingThreadId);
+  const isEntering = (child: LayoutNode) =>
+    enteringThreadIds.size > 0 &&
+    preorderThreads(child).every((leaf) => enteringThreadIds.has(leaf.threadId));
+  const leavingIndex = node.children.findIndex(isLeaving);
 
   const applyRatio = (index: number, clientCoord: number) => {
     const drag = dragRef.current;
@@ -345,6 +419,9 @@ function SplitView({
           className="contents"
         >
           <div
+            data-grid-slot=""
+            data-leaving={index === leavingIndex ? "" : undefined}
+            data-entering={isEntering(child) ? "" : undefined}
             className="relative flex min-h-0 min-w-0 overflow-hidden"
             style={
               {
@@ -359,6 +436,8 @@ function SplitView({
               node={child}
               path={[...path, index]}
               focusedThreadId={focusedThreadId}
+              leavingThreadId={leavingThreadId}
+              enteringThreadIds={enteringThreadIds}
               renderLeaf={renderLeaf}
               onTreeChange={onTreeChange}
             />
@@ -369,11 +448,19 @@ function SplitView({
               aria-orientation={node.dir === "row" ? "vertical" : "horizontal"}
               aria-label="Resize grid cells"
               tabIndex={0}
+              data-grid-gutter=""
+              // The gutter beside a leaving cell closes with it, so nothing jumps when it is removed.
+              data-leaving={
+                leavingIndex !== -1 && (index === leavingIndex || index === leavingIndex - 1)
+                  ? ""
+                  : undefined
+              }
+              style={{ flexBasis: GUTTER_PX }}
               className={cn(
-                "group relative z-10 shrink-0 bg-(--divider) outline-none transition-colors hover:bg-(--accent-ink) focus-visible:bg-(--accent-ink)",
+                "group relative z-10 shrink-0 outline-none after:absolute after:rounded-full after:bg-transparent after:transition-colors after:content-[''] hover:after:bg-(--accent-ink) focus-visible:after:bg-(--accent-ink)",
                 node.dir === "row"
-                  ? "w-px cursor-col-resize before:absolute before:inset-y-0 before:-inset-x-1.5 before:content-['']"
-                  : "h-px cursor-row-resize before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-['']",
+                  ? "cursor-col-resize after:inset-y-0 after:left-[3px] after:w-0.5"
+                  : "cursor-row-resize after:inset-x-0 after:top-[3px] after:h-0.5",
               )}
               onDoubleClick={() => onTreeChange(setRatio(node, path, index, 0.5))}
               onPointerDown={(event) => {
