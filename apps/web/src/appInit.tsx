@@ -6,6 +6,7 @@ import { applyAppearanceContrast } from "./appearanceContrast";
 import { applyAppearanceFontVariables } from "./appearanceFonts";
 import { startElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { startBrowserProfileReporting } from "./browser/BrowserProfileReporter";
+import { ensureThreadInGrid } from "./grid/ensureThreadInGrid";
 import { startPreviewTitleRecording } from "./browserHistoryStore";
 import { retainThreadOverlaysForThread } from "./components/chat/threadOverlayRetention";
 import { startBackgroundThreadAnnouncements } from "./components/BackgroundThreadAnnouncer";
@@ -22,7 +23,7 @@ import { startThreadNotifications } from "./components/ThreadNotificationCoordin
 import { startGuideRunNotifications } from "./components/pullRequest/guide/PullRequestGuideRunCoordinator";
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "./branding";
 import { resolveServerBackedAppDisplayName } from "./branding.logic";
-import { isElectron } from "./env";
+import { hasNativeBrowserHost, isElectron } from "./env";
 import {
   subscribeComposerDraftModelReconciliation,
   subscribeDraftThreadPromotion,
@@ -176,7 +177,7 @@ export function startAppServices(): AppRouter {
   startDefaultThemeAdoption();
   startModelPreferencesMigration();
   startAgentOpenedPreviews();
-  if (isElectron) startElectronBrowserHost();
+  if (hasNativeBrowserHost) startElectronBrowserHost();
   startPreviewTitleRecording();
   startBrowserProfileReporting();
   installChatRouteCommands(router);
@@ -188,6 +189,7 @@ export function startAppServices(): AppRouter {
     registry: appAtomRegistry,
     threadShellAtom: environmentThreadShells.quietThreadShellAtom,
     threadRefsAtom: environmentThreadShells.threadRefsAtom,
+    onThreadArrived: ensureThreadInGrid,
   });
   subscribeComposerDraftModelReconciliation({
     registry: appAtomRegistry,

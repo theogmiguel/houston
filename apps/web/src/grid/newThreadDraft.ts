@@ -151,6 +151,12 @@ export async function openGridDraft(
         store.focusThread(current.id, opened.threadId);
       }
     }
+  } else {
+    // An empty grid keeps its centred composer, so record where the draft's thread belongs.
+    store.setGridPendingDraft(current.id, {
+      draftId: opened.draftId,
+      threadId: opened.threadId,
+    });
   }
 
   return { gridId: current.id, ...opened };

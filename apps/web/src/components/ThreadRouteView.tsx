@@ -1,11 +1,14 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import { Navigate, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
+import { isSidebarHiddenThread } from "./Sidebar.logic";
 import { SidebarInset } from "./ui/sidebar";
 import { useComposerDraftStore } from "../composerDraftStore";
+import { ensureThreadInGrid } from "../grid/ensureThreadInGrid";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import { useEnvironmentThreadRefs, useQuietThreadShell } from "../state/entities";
 import { useEnvironmentShellStatus } from "../state/shell";
@@ -43,6 +46,33 @@ export function ThreadRouteView({
   const shellStatus = useEnvironmentShellStatus(serverThreadRef?.environmentId ?? null);
   const environmentThreadRefs = useEnvironmentThreadRefs(serverThreadRef?.environmentId ?? null);
   const bootstrapComplete = isThreadRouteSnapshotAuthoritative(shellStatus);
+  // A thread created outside a grid (a deep link, the CLI or the replay host) gets one here.
+  const threadNeedsGrid =
+    !background &&
+    serverThreadShell !== null &&
+    serverThreadShell.archivedAt === null &&
+    serverThreadShell.deletedAt === null &&
+    serverThreadShell.settledOverride !== "settled" &&
+    !effectiveSnoozed(serverThreadShell, { now: new Date().toISOString() }) &&
+    !isSidebarHiddenThread(serverThreadShell);
+  const serverThreadProjectId =
+    threadNeedsGrid && serverThreadShell !== null ? serverThreadShell.projectId : null;
+  const serverThreadEnvironmentId = serverThreadRef?.environmentId ?? null;
+  const serverThreadId = serverThreadRef?.threadId ?? null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a standalone thread joins its workspace's grid so the sidebar lists it
+  useEffect(() => {
+    if (
+      serverThreadProjectId === null ||
+      serverThreadEnvironmentId === null ||
+      serverThreadId === null
+    )
+      return;
+    ensureThreadInGrid({
+      environmentId: serverThreadEnvironmentId,
+      projectId: serverThreadProjectId,
+      threadId: serverThreadId,
+    });
+  }, [serverThreadEnvironmentId, serverThreadId, serverThreadProjectId]);
   const draftThread = useComposerDraftStore((store) =>
     serverThreadRef ? store.getDraftThreadByRef(serverThreadRef) : null,
   );

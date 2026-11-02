@@ -62,6 +62,11 @@ export interface GridRecord {
   workspaceKey: string;
   tree: LayoutNode | null;
   focusedThreadId: string | null;
+  /**
+   * The draft an empty grid is showing before its first send gives the grid a leaf.
+   * It records where that draft's thread belongs so the thread is not placed twice.
+   */
+  pendingDraft?: { draftId: string; threadId: string } | null;
   /** The grid's one thread-details flag; the focused cell shows its card while set. */
   detailsOpen?: boolean;
   /** Pinned grids sort above their workspace's other grids. */
@@ -89,6 +94,10 @@ export interface GridStoreState {
   removeThreadFromGrid: (gridId: string, threadId: string) => void;
   setTree: (gridId: string, tree: LayoutNode | null) => void;
   focusThread: (gridId: string, threadId: string | null) => void;
+  setGridPendingDraft: (
+    gridId: string,
+    pending: { draftId: string; threadId: string } | null,
+  ) => void;
   setGridDetailsOpen: (gridId: string, open: boolean) => void;
   setDraftId: (gridId: string, threadId: string, draftId: string | null) => void;
   reconcileGridThreads: (gridId: string, threadIds: string[]) => void;
@@ -234,6 +243,14 @@ function replaceThreadDraft(
   };
 }
 
+function parsePendingDraft(value: unknown): { draftId: string; threadId: string } | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Partial<{ draftId: string; threadId: string }>;
+  if (typeof raw.draftId !== "string" || raw.draftId.length === 0) return null;
+  if (typeof raw.threadId !== "string" || raw.threadId.length === 0) return null;
+  return { draftId: raw.draftId, threadId: raw.threadId };
+}
+
 function parseGrid(value: unknown): GridRecord | null {
   if (!value || typeof value !== "object") return null;
   const raw = value as Partial<GridRecord>;
@@ -248,6 +265,7 @@ function parseGrid(value: unknown): GridRecord | null {
   }
   if (raw.tree !== null && raw.tree !== undefined && !isLayoutNode(raw.tree)) return null;
   const tree = raw.tree ?? null;
+  const pendingDraft = parsePendingDraft(raw.pendingDraft);
   return {
     id: raw.id,
     name: raw.name,
@@ -259,6 +277,7 @@ function parseGrid(value: unknown): GridRecord | null {
       typeof raw.focusedThreadId === "string" && containsThreadId(tree, raw.focusedThreadId)
         ? raw.focusedThreadId
         : defaultFocus(tree),
+    ...(pendingDraft === null ? {} : { pendingDraft }),
     ...(raw.detailsOpen === true ? { detailsOpen: true as const } : {}),
     pinnedAt: typeof raw.pinnedAt === "string" ? raw.pinnedAt : null,
     hidden: raw.hidden === true,
@@ -490,12 +509,12 @@ export function addThreadToGrid(grid: GridRecord, threadId: string, draftId?: st
   if (existing.some((leaf) => leaf.threadId === threadId)) {
     const withDraft =
       draftId === undefined ? grid.tree : replaceThreadDraft(grid.tree, threadId, draftId);
-    return { ...withTree(grid, withDraft), focusedThreadId: threadId };
+    return { ...withTree(grid, withDraft), focusedThreadId: threadId, pendingDraft: null };
   }
   const previousIds = existing.map((leaf) => leaf.threadId);
   const tree = addThreadPreservingLayout(grid.tree, threadId, previousIds);
   const withDraft = draftId === undefined ? tree : replaceThreadDraft(tree, threadId, draftId);
-  return { ...withTree(grid, withDraft), focusedThreadId: threadId };
+  return { ...withTree(grid, withDraft), focusedThreadId: threadId, pendingDraft: null };
 }
 
 export const useGridStore = create<GridStoreState>()(
@@ -550,6 +569,17 @@ export const useGridStore = create<GridStoreState>()(
                 ? threadId
                 : grid.focusedThreadId,
           })),
+        })),
+      setGridPendingDraft: (gridId, pending) =>
+        set((state) => ({
+          grids: updateGrid(state.grids, gridId, (grid) => {
+            if (pending === null) {
+              if (grid.pendingDraft == null) return grid;
+              const { pendingDraft: _pending, ...rest } = grid;
+              return rest;
+            }
+            return { ...grid, pendingDraft: pending };
+          }),
         })),
       setGridDetailsOpen: (gridId, open) =>
         set((state) => ({
