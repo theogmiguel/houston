@@ -4,20 +4,20 @@ on:
   workflow_call:
     inputs:
       version:
-        description: 'Manifest version from the version-guard job: names the uploaded artifact and must match the checked-out tree'
+        description: "Manifest version from the version-guard job: names the uploaded artifact and must match the checked-out tree"
         type: string
         required: true
       ref:
-        description: 'Commit to build; a cut passes its tag and Build installers passes a resolved SHA'
+        description: "Commit to build; a cut passes its tag and Build installers passes a resolved SHA"
         type: string
         required: false
-        default: ''
+        default: ""
       tauri_cli_version:
-        description: 'Pinned Tauri CLI version, threaded through from the caller so the pin has one source of truth'
+        description: "Pinned Tauri CLI version, threaded through from the caller so the pin has one source of truth"
         type: string
         required: true
       require_signing:
-        description: 'Fail when the updater signing secrets are absent; a real release passes true, a dry run false'
+        description: "Fail when the updater signing secrets are absent; a real release passes true, a dry run false"
         type: boolean
         required: false
         default: true
@@ -25,10 +25,10 @@ on:
       # Declared so a caller can see the contract; both are optional because a
       # dry run passes no secrets. Callers use `secrets: inherit`.
       TAURI_SIGNING_PRIVATE_KEY:
-        description: 'Updater signing key. Set, the AppImage and the deb each ship a .sig beside them'
+        description: "Updater signing key. Set, the AppImage and the deb each ship a .sig beside them"
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
-        description: 'Passphrase for TAURI_SIGNING_PRIVATE_KEY; leave unset for an unencrypted key'
+        description: "Passphrase for TAURI_SIGNING_PRIVATE_KEY; leave unset for an unencrypted key"
         required: false
 
 permissions:

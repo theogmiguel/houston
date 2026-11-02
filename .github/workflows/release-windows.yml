@@ -8,20 +8,20 @@ on:
         type: string
         required: true
       version:
-        description: 'Manifest version from the caller, used to name the uploaded artifact'
+        description: "Manifest version from the caller, used to name the uploaded artifact"
         type: string
         required: true
       ref:
-        description: 'Commit to build; a cut passes its tag and Build installers passes a resolved SHA'
+        description: "Commit to build; a cut passes its tag and Build installers passes a resolved SHA"
         type: string
         required: false
-        default: ''
+        default: ""
       tauri_cli_version:
-        description: 'Pinned Tauri CLI version, threaded through from the caller so the pin has one source of truth'
+        description: "Pinned Tauri CLI version, threaded through from the caller so the pin has one source of truth"
         type: string
         required: true
       require_signing:
-        description: 'Fail when the updater signing secrets are absent; a real release passes true, a dry run false'
+        description: "Fail when the updater signing secrets are absent; a real release passes true, a dry run false"
         type: boolean
         required: false
         default: true
