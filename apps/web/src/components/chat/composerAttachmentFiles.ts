@@ -111,14 +111,15 @@ export function isPreviewableComposerVideo(
   );
 }
 
+/**
+ * Files beside the composer. A file keeps its tile even while an inline reference names it:
+ * the tile carries the upload and its actions, the reference says where it belongs in the prompt.
+ */
 export function composerOtherFilesForPresentation(
   files: ReadonlyArray<ComposerFileAttachment>,
   environmentId: EnvironmentId,
-  inlineFileIds: ReadonlySet<string>,
 ): ComposerFileAttachment[] {
-  return files.filter(
-    (file) => !isPreviewableComposerVideo(file, environmentId) && !inlineFileIds.has(file.id),
-  );
+  return files.filter((file) => !isPreviewableComposerVideo(file, environmentId));
 }
 
 export function fileAttachmentStagingLimit(input: FileAttachmentCapabilityState): number | null {

@@ -14,7 +14,6 @@ import {
   CircleSlashIcon,
   CircleXIcon,
   EyeOffIcon,
-  FolderGit2Icon,
   LayersIcon,
   ListFilterIcon,
   SearchIcon,
@@ -26,7 +25,6 @@ import { type ElementType, useState } from "react";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 import { useDebouncedValue } from "~/state/queries";
 import { type EnvironmentQueryTarget, usePullRequestFilterOptions } from "~/state/pullRequests";
-import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { Button } from "../ui/button";
 
@@ -61,8 +59,7 @@ import { PullRequestGlyph } from "./pullRequestIcons";
 export interface PullRequestFilterOption<Value extends string> {
   readonly value: Value;
   readonly label: string;
-  readonly Icon: ElementType<{ className?: string }>;
-  readonly project?: ProjectFaviconProject;
+  readonly Icon?: ElementType<{ className?: string }>;
   readonly unavailable?: string | undefined;
 }
 
@@ -71,11 +68,7 @@ export function PullRequestFilterOptionIcon<Value extends string>({
 }: {
   option: PullRequestFilterOption<Value>;
 }) {
-  return option.project ? (
-    <ProjectFavicon project={option.project} className="size-3.5" />
-  ) : (
-    <option.Icon aria-hidden className="size-3.5" />
-  );
+  return option.Icon ? <option.Icon aria-hidden className="size-3.5" /> : null;
 }
 
 export interface PullRequestExpectedHost {
@@ -509,7 +502,11 @@ export function PullRequestFiltersMenu({
   server: EnvironmentId | undefined;
   serverOptions: ReadonlyArray<PullRequestFilterOption<string>>;
   onServer: (server: EnvironmentId | undefined) => void;
-  projects: ReadonlyArray<ProjectFaviconProject & { readonly id: ProjectId }>;
+  projects: ReadonlyArray<{
+    readonly id: ProjectId;
+    readonly environmentId: EnvironmentId;
+    readonly title: string;
+  }>;
   projectId: ProjectId | undefined;
   projectEnvironmentId: EnvironmentId | undefined;
   unavailable: ReadonlyMap<string, string>;
@@ -553,8 +550,6 @@ export function PullRequestFiltersMenu({
       .map((project) => ({
         value: pullRequestProjectKey(project),
         label: project.title,
-        Icon: FolderGit2Icon,
-        project,
         ...(unavailable.has(pullRequestProjectKey(project))
           ? { unavailable: unavailable.get(pullRequestProjectKey(project)) }
           : {}),

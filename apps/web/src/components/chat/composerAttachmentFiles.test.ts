@@ -11,6 +11,7 @@ import {
   attachmentsToReleaseOnUploadCapabilityLoss,
   classifyComposerAttachmentFile,
   composerFileAttachmentMimeType,
+  composerOtherFilesForPresentation,
   fileAttachmentCapabilityBlockReason,
   fileAttachmentStagingLimit,
   normalizeComposerImageFileMimeType,
@@ -144,6 +145,30 @@ describe("composer attachment files", () => {
         maxFileAttachmentBytes: null,
       }),
     ).toBe("Waiting for the server before file attachments can send");
+  });
+
+  it("keeps every attached file in the tile strip, even one the prompt references", () => {
+    const environmentId = EnvironmentId.make("environment-1");
+    const pdf: ComposerFileAttachment = {
+      type: "file",
+      id: "file-pdf",
+      name: "spec.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 3,
+      file: new File([new Uint8Array([1, 2, 3])], "spec.pdf", { type: "application/pdf" }),
+    };
+    const video: ComposerFileAttachment = {
+      type: "file",
+      id: "file-video",
+      name: "clip.mp4",
+      mimeType: "video/mp4",
+      sizeBytes: 3,
+      file: new File([new Uint8Array([1, 2, 3])], "clip.mp4", { type: "video/mp4" }),
+    };
+
+    expect(
+      composerOtherFilesForPresentation([pdf, video], environmentId).map((file) => file.id),
+    ).toEqual(["file-pdf"]);
   });
 
   it("keeps draft-persisted file uploads when the upload capability flips off", () => {

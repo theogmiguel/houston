@@ -165,6 +165,12 @@ function uploadBytes(input: {
 }
 
 async function runUpload(job: UploadJob): Promise<void> {
+  setUploadState(job.image.id, {
+    status: "uploading",
+    environmentId: job.environmentId,
+    progress: 0,
+    ...(job.previous ? { previous: job.previous } : {}),
+  });
   if (!readEnvironmentScope(job.environmentId, AuthOrchestrationOperateScope)) {
     setUploadState(job.image.id, {
       status: "failed",
@@ -477,9 +483,8 @@ export function startAttachmentUpload(input: {
   });
   queue.push(job);
   setUploadState(input.image.id, {
-    status: "uploading",
+    status: "queued",
     environmentId: input.environmentId,
-    progress: 0,
     ...(previous ? { previous } : {}),
   });
   pumpUploads();

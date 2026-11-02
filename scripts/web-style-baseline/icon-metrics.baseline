@@ -3,7 +3,6 @@
 1 apps/web/src/components/files/FileBrowserPanel.tsx
 2 apps/web/src/components/files/ProjectFileTree.tsx
 8 apps/web/src/components/preview/PreviewChromeRow.tsx
-1 apps/web/src/components/settings/SettingsScopeSentence.tsx
 1 apps/web/src/components/settings/SourceControlAppSignInSettings.tsx
 2 apps/web/src/components/sidebar/DesktopUpdateStatusIcon.tsx
 1 apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx

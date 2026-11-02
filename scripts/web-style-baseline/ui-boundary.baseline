@@ -31,7 +31,7 @@
 8 apps/web/src/components/chat/CommandOutputPanel.tsx
 3 apps/web/src/components/chat/CompactComposerControlsMenu.tsx
 25 apps/web/src/components/chat/ComposerApprovalCard.tsx
-91 apps/web/src/components/chat/ComposerAttachmentStrip.tsx
+86 apps/web/src/components/chat/ComposerAttachmentStrip.tsx
 32 apps/web/src/components/chat/ComposerBanner.tsx
 10 apps/web/src/components/chat/ComposerBannerStack.tsx
 1 apps/web/src/components/chat/ComposerCodeBlockLanguagePicker.tsx
@@ -234,8 +234,6 @@
 17 apps/web/src/components/preview/ZoomIndicator.tsx
 2 apps/web/src/components/PreviousWorktreeItemContent.tsx
 1 apps/web/src/components/ProjectEnvironmentBadge.tsx
-7 apps/web/src/components/ProjectFavicon.tsx
-4 apps/web/src/components/ProjectMonogram.tsx
 27 apps/web/src/components/projectScriptEditor.tsx
 10 apps/web/src/components/ProjectScriptsControl.tsx
 10 apps/web/src/components/promptLinks/HostedPromptLinkLanding.tsx
@@ -346,8 +344,6 @@
 26 apps/web/src/components/settings/ProjectActionsList.tsx
 7 apps/web/src/components/settings/ProjectActionsSettings.tsx
 10 apps/web/src/components/settings/ProjectDefaultsSettings.tsx
-1 apps/web/src/components/settings/ProjectFaviconThumbnail.tsx
-32 apps/web/src/components/settings/ProjectIconPickerDialog.tsx
 8 apps/web/src/components/settings/ProjectSettingsPanel.tsx
 10 apps/web/src/components/settings/ProjectsSettings.tsx
 9 apps/web/src/components/settings/ProviderAccentColorPicker.tsx
@@ -405,7 +401,7 @@
 35 apps/web/src/components/sidebar/SidebarRailNav.tsx
 3 apps/web/src/components/sidebar/SidebarRowTime.tsx
 16 apps/web/src/components/sidebar/SidebarThreadHeader.tsx
-190 apps/web/src/components/sidebar/SidebarThreadRow.tsx
+183 apps/web/src/components/sidebar/SidebarThreadRow.tsx
 8 apps/web/src/components/sidebar/SidebarThreadUndoNotice.tsx
 29 apps/web/src/components/sidebar/SidebarUpdateCapsule.tsx
 21 apps/web/src/components/sidebar/SidebarUpdatePill.tsx

@@ -358,7 +358,6 @@ export function buildCommandPaletteProjectMetadata(input: {
 export function buildProjectActionItems(input: {
   projects: ReadonlyArray<CommandPaletteProject>;
   valuePrefix: string;
-  icon: (project: CommandPaletteProject) => ReactNode;
   runProject: (project: CommandPaletteProject) => Promise<void>;
   searchTerms?: (project: CommandPaletteProject) => ReadonlyArray<string>;
   renderDescription?: (project: CommandPaletteProject) => ReactNode;
@@ -375,7 +374,7 @@ export function buildProjectActionItems(input: {
     ],
     title: project.displayName,
     description: input.renderDescription?.(project) ?? project.workspaceRoot,
-    icon: input.icon(project),
+    icon: null,
     ...(input.shortcutCommand !== undefined ? { shortcutCommand: input.shortcutCommand } : {}),
     run: async () => {
       await input.runProject(project);

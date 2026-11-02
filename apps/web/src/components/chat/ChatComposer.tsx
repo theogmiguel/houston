@@ -709,23 +709,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const prompt = composerDraft.prompt;
   const composerImages = attachmentDraft.images;
   const composerFiles = attachmentDraft.files;
-  const inlineFileIdSet = (() => {
-    if (questionAttachmentTarget) return new Set<string>();
-    const contextIds = new Set(collectInlineContextIds(prompt));
-    return new Set(
-      composerFiles
-        .filter((file) => contextIds.has(toKindScopedComposerContextId("file", file.id)))
-        .map((file) => file.id),
-    );
-  })();
   const composerVideos = composerFiles.filter((file) =>
     isPreviewableComposerVideo(file, environmentId),
   );
-  const composerOtherFiles = composerOtherFilesForPresentation(
-    composerFiles,
-    environmentId,
-    inlineFileIdSet,
-  );
+  const composerOtherFiles = composerOtherFilesForPresentation(composerFiles, environmentId);
   const composerTerminalContexts = composerDraft.terminalContexts;
   const composerPreviewAnnotations = composerDraft.previewAnnotations;
   const composerReviewComments = composerDraft.reviewComments;
@@ -3194,6 +3181,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         canOperateThread={canOperateThread}
         onPreviewFile={setPreviewFileId}
         onRemoveFile={removeComposerFileFromDraft}
+        onReattachFiles={(files) => {
+          void addComposerAttachments(files);
+        }}
       />
     ) : null;
   const composerAttachButton =
