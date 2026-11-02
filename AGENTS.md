@@ -3,16 +3,14 @@
 Houston is a local-first desktop application for coding agents on Linux and Windows. A
 Tauri host starts, or attaches to, a detached TypeScript server for its channel; the
 renderer presents each agent conversation as a **thread**. Closing the application detaches
-the client; the server and its agent runs continue. The server is ported from the upstream
-project named in [NOTICE](NOTICE).
+the client; the server and its agent runs continue.
 
 ## Branch `v2`
 
 `v2` and its `v2-*` slice branches carry the rebuild. `handoff/` holds the decisions and the
 slice plan; read `handoff/HANDOFF.md` and `handoff/PLAN.md` before starting a slice.
 
-- **Tests first:** a slice ports its upstream tests before its code and lands only with
-  them green.
+- **Tests first:** a slice includes its tests and lands only with them green.
 - **Shared branch:** `v2` has two maintainers pushing from separate machines. Never
   rebase or force-push `v2`; slices enter through PRs `v2-<slice> → v2`. Regenerate lockfiles
   and the licence inventory instead of hand-merging them.
@@ -55,17 +53,16 @@ conflicts with the task, explain the conflict and obtain maintainer direction.
 - **Untrusted input**: text from outside (GitHub, Notion, Slack, imported files) is bounded,
   attributed and kept from acting as instructions before it reaches a prompt; text Houston sends
   out is escaped so it cannot mention, link or close anything it did not mean to.
-- **Copy, then adapt** (`apps/server/src/houston`): Houston code lives under `houston/`
-  directories. Upstream files are copied as they are and changed only where Houston differs; every
-  changed file is listed in `upstream.json` `adapted` with its reason, in the same PR. Ported code
-  is pushed only with the MIT notice in `NOTICE` and `third-party-licenses.config.json`.
+- **Houston additions** (`apps/server/src/houston`): Houston code lives under `houston/`
+  directories. Ported code is pushed only with the MIT notice in `NOTICE` and
+  `third-party-licenses.config.json`.
 
 <!-- Host and renderer invariants (Theo): the Tauri host, the desktop bridge, the renderer
      base and style guards, the terminal drawer. Until then the rule below stands. -->
 
-- **Renderer:** the upstream web app is the renderer base. Its primitives adopt Houston's
-  tokens and recipes and are bound by the style guards; copied feature components are exempt
-  from the feature-`className` rule until a slice adapts them.
+- **Renderer:** the web app under `apps/web`. Its primitives adopt Houston's tokens and
+  recipes and are bound by the style guards; feature components that still follow the original
+  port are exempt from the feature-`className` rule until a slice adapts them.
 
 ## Terms
 
@@ -74,8 +71,8 @@ Use the [glossary](docs/internals/glossary.md) consistently:
 - **Contributor agent:** the agent editing Houston. Contributor agents run in the installed
   release built from `main`; check `HOUSTON_SESSION` before operations that could affect the
   pane hosting it.
-- **Server:** the TypeScript server under `apps/server`, upstream's with Houston's additions, run
-  detached by the host for one **channel**. The installed `release` channel keeps its state in
+- **Server:** the TypeScript server under `apps/server`, run detached by the host for one
+  **channel**. The installed `release` channel keeps its state in
   `~/.houston/v2`; `dev` uses `~/.houston-dev/v2`.
 - **Thread:** a structured conversation with one agent. A **turn** is one request and its answer;
   a **run** is the provider session that serves a thread.
@@ -111,8 +108,6 @@ Use the [glossary](docs/internals/glossary.md) consistently:
 
 Before completing a change, identify which of these checks apply:
 
-- **Upstream drift:** `node scripts/check-upstream.mjs <upstream clone> --skip apps/web` exits 0.
-  The clone is checked out at `upstream.json`'s `commit`; CI reads the same commit.
 - **Migrations:** a Houston migration takes the next free id on the Houston track. The Houston
   runner applies every id a database has not recorded, in ascending order, so PRs that carry
   Houston migrations may merge in any order; an id never changes once it has merged.
@@ -141,7 +136,6 @@ The [development runbook](docs/operations/development.md) contains exact command
   represent states the system can produce; composed fixtures are labelled as composed.
 - Server code that reaches a provider, GitHub, Notion, Slack or the keychain is tested against
   replay fixtures, local fakes and the in-memory keychain, never the real service.
-- A change to an adapted upstream file is minimal: no unrelated reformatting.
 - For host changes, run `cargo fmt`, `cargo clippy --all-targets -- -D warnings` and
   `cargo test` in `src-tauri` (it embeds the `@t3tools/web` build, so build that first). On
   Linux, run heavy builds under `scripts/oom-shield.sh`, with `nice -n 19` and `-j 3`. On
@@ -200,7 +194,7 @@ The server owns threads and agent runs independently of connected clients. See t
 - `apps/server`: the server; Houston's additions under `src/houston/`.
 - `apps/web`: the renderer.
 - `packages/contracts`: the server ↔ renderer schema; Houston's under `src/houston/`.
-- `packages/*`: upstream's provider, source-control and shared packages.
+- `packages/*`: the provider, source-control and shared packages.
 - `src-tauri`: the desktop host, server supervision, desktop bridge and tray; host utilities
   under `src/sys/`.
 - `scripts/`: development, build, installation and safety checks.

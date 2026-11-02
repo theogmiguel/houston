@@ -174,10 +174,7 @@ pnpm -r typecheck
 pnpm --filter @t3tools/web build
 pnpm --filter @t3tools/contracts --filter @t3tools/shared test
 pnpm --filter houston exec vp test run src/houston
-node scripts/check-upstream.mjs <upstream clone> --skip apps/web
 ```
-
-The upstream clone is checked out at `upstream.json`'s `commit`.
 
 **`src-tauri/`**:
 
@@ -197,17 +194,17 @@ temporary directory. The bare `--unlock` recipe is only safe in CI and the testb
 
 Hermetic, sub-second text-search invariants, run in `ci.yml`'s `static` job.
 
-| Script                          | Enforces                                                                                                                                                                  |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `check-dev-channel.sh`          | `dev.sh`'s channel resolution: inherited env never wins, `--channel` validation, `--print-target` has no side effects                                                     |
-| `check-kill-guard.sh`           | `kill(2)` and the Win32 process calls only in `src-tauri/src/sys/pid.rs`                                                                                                  |
-| `check-case-collisions.sh`      | tracked paths stay unique on case-insensitive filesystems                                                                                                                 |
-| `check-spawn-window.sh`         | `src-tauri/clippy.toml` still disallows bare `Command::new`, and `src-tauri/src/sys/spawn.rs` applies `CREATE_NO_WINDOW`                                                  |
-| `check-env-ratchet.sh`          | direct process-environment reads under `src-tauri/src/sys` only go down (`scripts/env-ratchet.baseline`, `--update` after removing one)                                   |
-| `check-doc-hygiene.sh`          | Markdown only in the allowed tree, with no dates, phase numbers, other product names or dead pointers; `static` runs it without `handoff/` or the imported upstream paths |
-| `check-comment-hygiene.sh`      | a comment block is at most three lines and names no date, plan number, other app or person                                                                                |
-| `check-web-style.sh`            | the `apps/web` design-system guards; `--self-test` proves each fires on its bad fixture                                                                                   |
-| `check-third-party-licenses.sh` | the committed inventory matches `src-tauri`'s Cargo graph and the pnpm workspace; it runs in the `static` job                                                             |
+| Script                          | Enforces                                                                                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `check-dev-channel.sh`          | `dev.sh`'s channel resolution: inherited env never wins, `--channel` validation, `--print-target` has no side effects                      |
+| `check-kill-guard.sh`           | `kill(2)` and the Win32 process calls only in `src-tauri/src/sys/pid.rs`                                                                   |
+| `check-case-collisions.sh`      | tracked paths stay unique on case-insensitive filesystems                                                                                  |
+| `check-spawn-window.sh`         | `src-tauri/clippy.toml` still disallows bare `Command::new`, and `src-tauri/src/sys/spawn.rs` applies `CREATE_NO_WINDOW`                   |
+| `check-env-ratchet.sh`          | direct process-environment reads under `src-tauri/src/sys` only go down (`scripts/env-ratchet.baseline`, `--update` after removing one)    |
+| `check-doc-hygiene.sh`          | Markdown only in the allowed tree, with no dates, phase numbers, other product names or dead pointers; `static` runs it without `handoff/` |
+| `check-comment-hygiene.sh`      | a comment block is at most three lines and names no date, plan number, other app or person                                                 |
+| `check-web-style.sh`            | the `apps/web` design-system guards; `--self-test` proves each fires on its bad fixture                                                    |
+| `check-third-party-licenses.sh` | the committed inventory matches `src-tauri`'s Cargo graph and the pnpm workspace; it runs in the `static` job                              |
 
 The `apps/web` style rules keep a per-file count in `scripts/web-style-baseline/<rule>.baseline`.
 CI fails on a new file, a raised count or a stale entry; after removing a violation, lower
@@ -225,7 +222,7 @@ release binary older than `src-tauri`'s sources.
 | `changes`                                        | classifies the changed paths; an unclassified path runs every job                                                                                                                                              |
 | `static`                                         | the safety scripts, workflow syntax, the offline release-note and updater-signature regression tests, doc and comment hygiene, the web style guards, the upstream licence notice and the third-party inventory |
 | `typecheck`                                      | the cached workspace typecheck                                                                                                                                                                                 |
-| `test-packages`                                  | the workspace package suites, the script tests and the upstream drift check                                                                                                                                    |
+| `test-packages`                                  | the workspace package suites and the script tests                                                                                                                                                              |
 | `test-server`                                    | the server suites in six shards                                                                                                                                                                                |
 | `test-web`, `test-web-browser`                   | the renderer build and its unit and browser vitest projects                                                                                                                                                    |
 | `native-linux`, `native-macos`, `native-windows` | the web build, then host formatting, Clippy and tests; only native paths run them on PRs                                                                                                                       |

@@ -152,23 +152,13 @@ jobs:
           echo "static: upstream MIT notice present in NOTICE and the licence inventory"
       - name: check-third-party-licenses.sh (committed inventory matches the dependency graphs)
         run: ./scripts/check-third-party-licenses.sh
-      # Upstream's imported tree carries its own Markdown, and handoff/ is working
-      # material; both are dropped from the index and disk before the hygiene scan.
+      # handoff/ is working material, so it is dropped from the index and disk
+      # before the hygiene scan.
       - name: Drop handoff/ from the checked-out tree
         run: |
           if [ -d handoff ]; then
             git rm -r -q --cached handoff
             rm -rf handoff
-          fi
-      - name: Drop upstream's imported paths from the checked-out tree
-        run: |
-          if [ -f upstream.json ]; then
-            jq -r '.imported[]' upstream.json | while IFS= read -r imported; do
-              if [ -e "$imported" ]; then
-                git rm -r -q --cached -- "$imported"
-                rm -rf -- "$imported"
-              fi
-            done
           fi
       - name: check-doc-hygiene.sh (Markdown tree shape, no diary content)
         run: bash scripts/check-doc-hygiene.sh
@@ -216,15 +206,15 @@ jobs:
             echo "| ${{ github.job }} | $elapsed |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # Workspace package suites plus the scripts package's node:test suites and the
-  # upstream drift check; web and server have their own jobs.
+  # Workspace package suites plus the scripts package's node:test suites; web and
+  # server have their own jobs.
   test-packages:
     needs: changes
     if: >-
       needs.changes.outputs.packages == 'true' &&
       (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
     runs-on: ${{ vars.CI_RUNNER_LINUX_SMALL || 'ubuntu-24.04' }}
-    # Package suites plus a depth-1 upstream fetch; measured in a few minutes.
+    # Package suites plus the node:test script suites; measured in a few minutes.
     timeout-minutes: 30
     steps:
       - name: Record job start time
@@ -235,18 +225,8 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Workspace package tests (web, server and scripts excluded)
         run: pnpm -r --no-bail --no-sort --filter "!@t3tools/web" --filter "!houston" --filter "!@t3tools/scripts" test
-      - name: Script tests (check-upstream, the licence generator and the style guard)
-        run: node --test scripts/check-upstream.test.mjs scripts/gen-third-party-licenses.test.mjs scripts/check-web-style.test.mjs
-      - name: Fetch upstream at the pinned commit
-        run: |
-          git init "$RUNNER_TEMP/upstream"
-          git -C "$RUNNER_TEMP/upstream" remote add origin https://github.com/pingdotgg/t3code.git
-          pin="$(node -p "require('./upstream.json').commit")"
-          git -C "$RUNNER_TEMP/upstream" fetch --depth 1 origin "$pin"
-          git -C "$RUNNER_TEMP/upstream" checkout --detach FETCH_HEAD
-      # apps/web is the adapted renderer and has its own drift policy.
-      - name: check-upstream.mjs (copied files match the pinned commit)
-        run: node scripts/check-upstream.mjs "$RUNNER_TEMP/upstream" --skip apps/web
+      - name: Script tests (the licence generator and the style guard)
+        run: node --test scripts/gen-third-party-licenses.test.mjs scripts/check-web-style.test.mjs
       - name: Report job timing
         if: always()
         continue-on-error: true

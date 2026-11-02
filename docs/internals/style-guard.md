@@ -49,7 +49,7 @@ Fix the violation first, then tighten the pin:
 
 `--update` only records what the scanner finds; it cannot tell a genuine fix from a
 false positive. If a hit is a false positive, fix the scanner and add a unit test beside
-`scripts/check-upstream.test.mjs` rather than pinning it.
+`scripts/check-web-style.test.mjs` rather than pinning it.
 
 ## Current token policy
 

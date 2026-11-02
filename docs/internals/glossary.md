@@ -34,11 +34,9 @@ named.
 
 ## Engineering nouns
 
-| Term                 | Meaning                                                                                                                                 |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| **copy, then adapt** | Upstream files are copied as they are and changed only where Houston differs; each changed file is listed in `upstream.json` `adapted`. |
-| **upstream drift**   | Differences between a copied file and the pinned upstream commit; `scripts/check-upstream.mjs` reports them.                            |
-| **safety scripts**   | The hermetic `scripts/check-*.sh` steps the `static` CI job runs on every push.                                                         |
-| **oom-shield**       | `scripts/oom-shield.sh`: a memory-capped, niced, serialized scope for heavy builds.                                                     |
-| **gate**             | The verification set for a cadence: focused checks while iterating, full checks at integration boundaries and before a push.            |
-| **discriminator**    | The specific re-run that distinguishes a known flaky shape from a real failure.                                                         |
+| Term               | Meaning                                                                                                                      |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| **safety scripts** | The hermetic `scripts/check-*.sh` steps the `static` CI job runs on every push.                                              |
+| **oom-shield**     | `scripts/oom-shield.sh`: a memory-capped, niced, serialized scope for heavy builds.                                          |
+| **gate**           | The verification set for a cadence: focused checks while iterating, full checks at integration boundaries and before a push. |
+| **discriminator**  | The specific re-run that distinguishes a known flaky shape from a real failure.                                              |

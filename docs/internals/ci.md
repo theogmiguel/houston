@@ -12,7 +12,7 @@ per platform and never ran the renderer's own tests.
 | `changes`          | every run                              | classifies the changed paths; every other job waits on its outputs                                                                             |
 | `static`           | every run                              | workflow syntax, the safety scripts, changed-file format and lint, doc and comment hygiene, web style guards, the licence notice and inventory |
 | `typecheck`        | changed code                           | `pnpm -r --no-bail typecheck` for every workspace package                                                                                      |
-| `test-packages`    | workspace package changes              | package suites, the node:test script suites and zero drift from the pinned upstream commit                                                     |
+| `test-packages`    | workspace package changes              | package suites and the node:test script suites                                                                                                 |
 | `test-server`      | server changes                         | `apps/server` `src/` and `scripts/` tests in six vitest shards                                                                                 |
 | `test-web`         | web changes                            | the production renderer build and the `unit` vitest project                                                                                    |
 | `test-web-browser` | web changes                            | the `browser` vitest project in four shards                                                                                                    |
