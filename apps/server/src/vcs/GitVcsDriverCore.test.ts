@@ -2699,6 +2699,155 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       }),
     );
 
+    it.effect("resolves the branch base by merge-base instead of the repository default", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const remote = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        yield* git(cwd, ["branch", "-M", "main"]);
+        yield* git(remote, ["init", "--bare"]);
+        yield* git(cwd, ["remote", "add", "origin", remote]);
+        yield* git(cwd, ["push", "origin", "main"]);
+
+        // A long-lived v2 carries work main does not have.
+        yield* git(cwd, ["checkout", "-b", "v2", "main"]);
+        yield* writeTextFile(
+          cwd,
+          "v2-base.txt",
+          Array.from({ length: 300 }, (_, index) => `v2 line ${index}\n`).join(""),
+        );
+        yield* git(cwd, ["add", "."]);
+        yield* git(cwd, ["commit", "-m", "v2 base work"]);
+        yield* git(cwd, ["push", "origin", "v2"]);
+
+        // The feature branch has no upstream and no recorded base.
+        yield* git(cwd, ["checkout", "--no-track", "-b", "feature", "origin/v2"]);
+        yield* writeTextFile(cwd, "feature.txt", "feature one\n");
+        yield* git(cwd, ["add", "."]);
+        yield* git(cwd, ["commit", "-m", "feature one"]);
+        yield* writeTextFile(cwd, "README.md", "# test\nfeature two\n");
+        yield* git(cwd, ["commit", "-am", "feature two"]);
+
+        // v2 advances past the cut point, so its tip is no longer an ancestor.
+        yield* git(cwd, ["checkout", "v2"]);
+        yield* writeTextFile(cwd, "v2-later.txt", "later v2 work\n");
+        yield* git(cwd, ["add", "."]);
+        yield* git(cwd, ["commit", "-m", "v2 later work"]);
+        yield* git(cwd, ["push", "origin", "v2"]);
+        yield* git(cwd, ["checkout", "feature"]);
+
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const status = yield* driver.statusDetailsLocal(cwd, { includeBranchChanges: true });
+        assert.deepStrictEqual(status.branchChanges, {
+          baseRef: "origin/v2",
+          insertions: 2,
+          deletions: 0,
+        });
+        const preview = yield* driver.getReviewDiffPreview({ cwd });
+        const changes = preview.sources.find((source) => source.kind === "branch-range")!;
+        assert.strictEqual(changes.baseRef, "origin/v2");
+        assert.deepStrictEqual(changes.files, [
+          { path: "README.md", previousPath: null, additions: 1, deletions: 0 },
+          { path: "feature.txt", previousPath: null, additions: 1, deletions: 0 },
+        ]);
+      }),
+    );
+
+    it.effect("uses a differently named upstream as the branch base", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const remote = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        yield* git(cwd, ["branch", "-M", "main"]);
+        yield* git(remote, ["init", "--bare"]);
+        yield* git(cwd, ["remote", "add", "origin", remote]);
+        yield* git(cwd, ["push", "origin", "main"]);
+        yield* git(cwd, ["checkout", "-b", "v2", "main"]);
+        yield* writeTextFile(
+          cwd,
+          "v2-base.txt",
+          Array.from({ length: 300 }, (_, index) => `v2 line ${index}\n`).join(""),
+        );
+        yield* git(cwd, ["add", "."]);
+        yield* git(cwd, ["commit", "-m", "v2 base work"]);
+        yield* git(cwd, ["push", "origin", "v2"]);
+
+        yield* git(cwd, ["checkout", "-b", "feature", "origin/v2"]);
+        assert.strictEqual(
+          yield* git(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]),
+          "origin/v2",
+        );
+        yield* writeTextFile(cwd, "feature.txt", "feature one\n");
+        yield* git(cwd, ["add", "."]);
+        yield* git(cwd, ["commit", "-m", "feature one"]);
+        yield* writeTextFile(cwd, "README.md", "# test\nfeature two\n");
+        yield* git(cwd, ["commit", "-am", "feature two"]);
+
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const status = yield* driver.statusDetailsLocal(cwd, { includeBranchChanges: true });
+        assert.deepStrictEqual(status.branchChanges, {
+          baseRef: "origin/v2",
+          insertions: 2,
+          deletions: 0,
+        });
+      }),
+    );
+
+    it.effect("keeps the default branch as the base for a plain branch from main", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const remote = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        yield* git(cwd, ["branch", "-M", "main"]);
+        yield* git(remote, ["init", "--bare"]);
+        yield* git(cwd, ["remote", "add", "origin", remote]);
+        yield* git(cwd, ["push", "origin", "main"]);
+        yield* git(cwd, ["checkout", "-b", "feature", "main"]);
+        yield* writeTextFile(cwd, "feature.txt", "feature one\n");
+        yield* git(cwd, ["add", "."]);
+        yield* git(cwd, ["commit", "-m", "feature one"]);
+
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const status = yield* driver.statusDetailsLocal(cwd, { includeBranchChanges: true });
+        assert.deepStrictEqual(status.branchChanges, {
+          baseRef: "origin/main",
+          insertions: 1,
+          deletions: 0,
+        });
+      }),
+    );
+
+    it.effect(
+      "keeps a default branch compared with its remote copy, not another long-lived ref",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          const remote = yield* makeTmpDir();
+          yield* initRepoWithCommit(cwd);
+          yield* git(cwd, ["branch", "-M", "main"]);
+          yield* git(remote, ["init", "--bare"]);
+          yield* git(cwd, ["remote", "add", "origin", remote]);
+          yield* git(cwd, ["push", "origin", "main"]);
+          yield* git(cwd, ["checkout", "-b", "v2", "main"]);
+          yield* writeTextFile(cwd, "v2.txt", "v2 work\n");
+          yield* git(cwd, ["add", "."]);
+          yield* git(cwd, ["commit", "-m", "v2 work"]);
+          yield* git(cwd, ["push", "origin", "v2"]);
+          yield* git(cwd, ["checkout", "main"]);
+          yield* writeTextFile(cwd, "main.txt", "main work\n");
+          yield* git(cwd, ["add", "."]);
+          yield* git(cwd, ["commit", "-m", "main work"]);
+
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          const status = yield* driver.statusDetailsLocal(cwd, { includeBranchChanges: true });
+          assert.deepStrictEqual(status.branchChanges, {
+            baseRef: "origin/main",
+            insertions: 1,
+            deletions: 0,
+          });
+        }),
+    );
+
     it.effect(
       "counts many untracked files exactly while collapsing their directory in status",
       () =>

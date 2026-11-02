@@ -92,6 +92,26 @@ export interface GitLocalStatusOptions {
   readonly includeBranchChanges?: boolean;
 }
 
+export interface GitResolveBaseBranchOptions {
+  /** The primary remote's default branch, when already known, to avoid a second lookup. */
+  readonly knownOriginDefaultBranch?: string | null;
+  /** An open change request's base branch, when the caller already knows it. */
+  readonly knownChangeRequestBase?: string | null;
+  /** A cross-repository head's upstream belongs to its fork, not the base repository. */
+  readonly allowUpstream?: boolean;
+  /** The current branch may be compared against its own remote copy when it is the default. */
+  readonly allowRemoteOfCurrent?: boolean;
+}
+
+export interface GitResolvedBaseBranch {
+  /** The ref the diff is reported against, for display in the UI. */
+  readonly baseRef: string;
+  /** A fully qualified ref `git` resolves, used for merge-base and diff commands. */
+  readonly comparisonRef: string;
+  /** The branch name on the host, for a change request's target. */
+  readonly branchName: string;
+}
+
 export interface GitRemoteStatusDetails {
   isRepo: boolean;
   defaultBranch: string | null;
@@ -351,6 +371,16 @@ export class GitVcsDriver extends Context.Service<
       cwd: string,
       branch: string,
     ) => Effect.Effect<string | null, GitCommandError>;
+    /**
+     * The branch `refName` was cut from, resolved from its upstream, the base recorded when it
+     * was created, a known change request, the nearest remote long-lived branch by merge-base,
+     * or the default branch, in that order.
+     */
+    readonly resolveBaseBranch: (
+      cwd: string,
+      refName: string,
+      options?: GitResolveBaseBranchOptions,
+    ) => Effect.Effect<GitResolvedBaseBranch | null, GitCommandError>;
     readonly resolveBranchName: (
       cwd: string,
       refName: string,
