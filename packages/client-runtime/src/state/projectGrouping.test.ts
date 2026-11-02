@@ -79,11 +79,11 @@ describe("load balancing shared project machines", () => {
   });
 });
 const repositoryIdentity = {
-  canonicalKey: "github.com/t3tools/houston",
+  canonicalKey: "github.com/example/houston",
   locator: {
     source: "git-remote" as const,
     remoteName: "upstream",
-    remoteUrl: "https://github.com/t3tools/houston.git",
+    remoteUrl: "https://github.com/example/houston.git",
   },
   provider: SourceControlProviderKind.make("github"),
   owner: "t3tools",
@@ -282,7 +282,7 @@ describe("buildProjectGroups", () => {
 
     const groups = buildProjectGroups({ projects, settings: settings("repository") });
     expect(groups.map((group) => group.key)).toEqual([
-      "github.com/t3tools/houston",
+      "github.com/example/houston",
       "github.com/julius/houston-fork",
     ]);
     expect(groups[1]?.members.map((member) => member.project.id)).toEqual(["fork", "fork-2"]);

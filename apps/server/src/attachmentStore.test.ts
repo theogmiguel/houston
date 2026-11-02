@@ -183,7 +183,7 @@ describe("threadHtmlRenderAttachmentIds", () => {
         {
           toolName: "weather.get_weather",
           output: {
-            houstonMcpApp: {
+            t3McpApp: {
               attachmentId: app,
               server: "weather",
               tool: "get_weather",

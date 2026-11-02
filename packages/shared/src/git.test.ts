@@ -17,14 +17,14 @@ import {
 
 describe("normalizeGitRemoteUrl", () => {
   it("canonicalizes equivalent GitHub remotes across protocol variants", () => {
-    expect(normalizeGitRemoteUrl("git@github.com:T3Tools/Houston.git")).toBe(
-      "github.com/t3tools/houston",
+    expect(normalizeGitRemoteUrl("git@github.com:Example/Houston.git")).toBe(
+      "github.com/example/houston",
     );
-    expect(normalizeGitRemoteUrl("https://github.com/T3Tools/Houston.git")).toBe(
-      "github.com/t3tools/houston",
+    expect(normalizeGitRemoteUrl("https://github.com/Example/Houston.git")).toBe(
+      "github.com/example/houston",
     );
-    expect(normalizeGitRemoteUrl("ssh://git@github.com/T3Tools/Houston")).toBe(
-      "github.com/t3tools/houston",
+    expect(normalizeGitRemoteUrl("ssh://git@github.com/Example/Houston")).toBe(
+      "github.com/example/houston",
     );
   });
 

@@ -136,7 +136,7 @@ export interface McpInvocationScope {
 }
 
 /**
- * Houston renders `houston-thread://` links as thread chips. Other MCP clients cannot open them, so
+ * Houston renders `t3-thread://` links as thread chips. Other MCP clients cannot open them, so
  * they get a web URL on the origin they reached instead.
  */
 export const threadLinkFor = (

@@ -1099,7 +1099,7 @@ describe("pull request panel context beside a thread", () => {
 
   it("recognizes an unsynced manual link, and matches host and repository case-insensitively", () => {
     const thread = { projectId: "proj-a", pullRequests: [link(7, { host: "GitHub.com" })] };
-    expect(pullRequestPanelContext(thread, surface(7, { repository: "PingDotGG/Houston" }))).toBe(
+    expect(pullRequestPanelContext(thread, surface(7, { repository: "Example/Houston" }))).toBe(
       "thread",
     );
     expect(pullRequestPanelContext(thread, surface(7, { host: undefined }))).toBe("thread");

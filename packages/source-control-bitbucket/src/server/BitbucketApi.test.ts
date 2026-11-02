@@ -280,7 +280,7 @@ it.effect.each([false, true])(
                   baseUrl: "https://bitbucket.org",
                 },
                 remoteName: "upstream",
-                remoteUrl: "git@bitbucket.org:PingDotGG/Houston.git",
+                remoteUrl: "git@bitbucket.org:Example/Houston.git",
               },
             }
           : {}),

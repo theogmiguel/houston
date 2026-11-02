@@ -67,7 +67,7 @@ function makeProject(
     },
     provider: SourceControlProviderKind.make("github"),
     displayName: "Example/Houston",
-    owner: "T3Tools",
+    owner: "Example",
     name: "Houston",
   },
 ): OrchestrationProjectShell {
@@ -377,9 +377,9 @@ describe("pull request toolkit handlers", () => {
       for (const host of ["git.cafe", "staging.git.cafe"]) {
         for (const project of [makeProject(), makeProject(null)]) {
           for (const target of [
-            { host, repository: "PingDotGG/Houston", number: 21353 },
-            { url: `https://${host}/PingDotGG/Houston/pull/21353` },
-            { url: `https://${host}/PingDotGG/Houston/pulls/21353` },
+            { host, repository: "Example/Houston", number: 21353 },
+            { url: `https://${host}/Example/Houston/pull/21353` },
+            { url: `https://${host}/Example/Houston/pulls/21353` },
           ]) {
             const harness = yield* makeHarness({ project });
             const result = yield* harness.call("link_pull_request", target);
