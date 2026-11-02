@@ -1223,7 +1223,7 @@
     "apps/web/src/components/settings/ProjectSettingsPanel.tsx": "an Input uses the compact size; the duplicate sm size is removed",
     "apps/web/src/components/settings/ProviderModelsSection.tsx": "an Input uses the compact size; the duplicate sm size is removed",
     "apps/web/src/components/settings/SettingsScopeNotice.tsx": "the neutral hover fill utility is named hover; upstream calls it accent",
-    "apps/web/src/components/settings/SettingsScopeSentence.tsx": "the neutral hover fill utility is named hover; upstream calls it accent",
+    "apps/web/src/components/settings/SettingsScopeSentence.tsx": "the neutral hover fill utility is named hover; upstream calls it accent; the scope selector is a sentence of plain triggers with Menu rows and device-only copy",
     "apps/web/src/components/settings/SnoozePresetsSettings.tsx": "an Input uses the compact size; the duplicate sm size is removed",
     "apps/web/src/components/settings/SourceControlSettings.tsx": "the neutral hover fill utility is named hover; upstream calls it accent",
     "apps/web/src/components/settings/SourceControlTokenSettings.tsx": "an Input uses the compact size; the duplicate sm size is removed",
