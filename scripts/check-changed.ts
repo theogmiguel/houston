@@ -171,13 +171,7 @@ function main(): void {
     ]);
   }
   if (lintable.length > 0) {
-    run("lint", process.execPath, [
-      vpBin,
-      "lint",
-      "--report-unused-disable-directives",
-      "--no-error-on-unmatched-pattern",
-      ...lintable,
-    ]);
+    run("lint", process.execPath, ["scripts/ci/lint-ratchet.mjs", ...lintable]);
   }
   if (typecheck.full) {
     run("typecheck", pnpmCommand, ["-r", "--no-bail", "typecheck"], isWindows);
