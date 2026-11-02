@@ -10,12 +10,12 @@ import {
   ProviderInstanceId,
   type OrchestrationV2DomainEvent,
   type ProviderReplayTranscript,
-} from "@t3tools/contracts";
-import type { MessageDelivery } from "@t3tools/contracts/houston/messageDelivery";
-import { AcpProviderCapabilitiesV2 } from "@t3tools/provider-acp/server/adapter";
+} from "@houston-app/contracts";
+import type { MessageDelivery } from "@houston-app/contracts/houston/messageDelivery";
+import { AcpProviderCapabilitiesV2 } from "@houston-app/provider-acp/server/adapter";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { materializeReplayTranscriptWorkspace } from "@t3tools/provider-testing/replayTranscript";
+import { materializeReplayTranscriptWorkspace } from "@houston-app/provider-testing/replayTranscript";
 
 import { AcpRegistryOrchestratorReplayHarness } from "../orchestration-v2/Adapters/AcpRegistryAdapterV2.testkit.ts";
 import { ClaudeProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";

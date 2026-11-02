@@ -1,7 +1,7 @@
 import {
   FULL_ACCESS_OVERRIDE_QUESTION,
   fullAccessOverrideExplanation,
-} from "@t3tools/client-runtime/state/thread-requests";
+} from "@houston-app/client-runtime/state/thread-requests";
 import { ShieldIcon } from "lucide-react";
 import { memo, use } from "react";
 import { type PendingApproval } from "../../session-logic";

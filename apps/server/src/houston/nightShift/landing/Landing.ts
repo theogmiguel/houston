@@ -1,16 +1,16 @@
 // How a run's work reaches GitHub: Houston pushes a tip of the run's own branches under the merge
 // queue's guard with a lease, opens or updates a draft pull request, runs the checks on the head
 // in the build slot, reads CI every 2 minutes, and enqueues by the output setting.
-import type { ProjectId, ThreadId } from "@t3tools/contracts";
+import type { ProjectId, ThreadId } from "@houston-app/contracts";
 import {
   HoustonNightShiftError,
   HoustonNightToolError,
   HOUSTON_NIGHT_LEDGER_LIMITS as LEDGER,
   type NightGates,
   type NightGateState,
-} from "@t3tools/contracts/houston/nightShift";
-import { parseGitRemoteRepository } from "@t3tools/shared/git";
-import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
+} from "@houston-app/contracts/houston/nightShift";
+import { parseGitRemoteRepository } from "@houston-app/shared/git";
+import * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";

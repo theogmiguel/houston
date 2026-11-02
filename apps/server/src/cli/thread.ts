@@ -11,8 +11,8 @@ import {
   type OrchestratorMcpThreadListItem,
   type OrchestratorMcpThreadStatus,
   type OrchestratorMcpThreadTimelineItem,
-} from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@houston-app/contracts";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

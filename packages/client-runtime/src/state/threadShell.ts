@@ -5,12 +5,12 @@ import type {
   ScopedProjectRef,
   ScopedThreadRef,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   isListedThreadLineage,
   isProviderNativeSubagentThread,
   OrchestrationV2ThreadShell,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 

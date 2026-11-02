@@ -1,4 +1,4 @@
-import type { ServerProvider } from "@t3tools/contracts";
+import type { ServerProvider } from "@houston-app/contracts";
 
 const CHECKED_AT_ONLY_KEYS = new Set(["usageLimits", "versionAdvisory"]);
 

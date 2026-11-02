@@ -1,4 +1,4 @@
-import { ScheduledTaskId } from "@t3tools/contracts";
+import { ScheduledTaskId } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

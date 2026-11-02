@@ -1,4 +1,4 @@
-import { isWindowsCommandNotFound } from "@t3tools/provider-core/server/snapshotProbe";
+import { isWindowsCommandNotFound } from "@houston-app/provider-core/server/snapshotProbe";
 import { describe, expect, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -7,8 +7,8 @@ import * as PlatformError from "effect/PlatformError";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/process";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { SpawnExecutableResolution } from "@t3tools/shared/shell";
+import * as HostProcess from "@houston-app/shared/HostProcess";
+import { SpawnExecutableResolution } from "@houston-app/shared/shell";
 
 import * as ProcessRunner from "./processRunner.ts";
 

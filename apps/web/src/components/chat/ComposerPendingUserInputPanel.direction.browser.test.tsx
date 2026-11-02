@@ -1,4 +1,4 @@
-import { EnvironmentId, RuntimeRequestId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, RuntimeRequestId, ThreadId } from "@houston-app/contracts";
 import { expect, it, vi } from "vite-plus/test";
 
 vi.mock(import("../ChatMarkdown"), () => ({

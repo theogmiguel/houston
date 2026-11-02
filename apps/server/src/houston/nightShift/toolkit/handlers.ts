@@ -1,6 +1,6 @@
 // Every call first finds the caller in a live run's crew: outside every live run it is
 // `not_in_run`; the ledger tools are the orchestrator's and a verdict is another crew thread's.
-import type { ThreadId } from "@t3tools/contracts";
+import type { ThreadId } from "@houston-app/contracts";
 import {
   HOUSTON_NIGHT_LEDGER_LIMITS as LEDGER,
   HOUSTON_NIGHT_SHIFT_LIMITS,
@@ -8,7 +8,7 @@ import {
   type HoustonNightToolErrorKind,
   type NightCrewMember,
   type NightEntryKind,
-} from "@t3tools/contracts/houston/nightShift";
+} from "@houston-app/contracts/houston/nightShift";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

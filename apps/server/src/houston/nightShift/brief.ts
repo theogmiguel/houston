@@ -4,7 +4,7 @@ import {
   HOUSTON_NIGHT_SHIFT_LIMITS,
   type HoustonNightShiftSettings,
   type NightFocus,
-} from "@t3tools/contracts/houston/nightShift";
+} from "@houston-app/contracts/houston/nightShift";
 
 import { NIGHT_SHIFT_METHOD } from "./method.ts";
 

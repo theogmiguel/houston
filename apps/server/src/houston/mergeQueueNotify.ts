@@ -1,6 +1,6 @@
 // The merge queue's note to an owner thread (AD-061): one queued user message per id, which
 // waits behind an active run and starts a turn on an idle thread. The orchestrator applies it.
-import type { OrchestrationV2Command, OrchestrationV2Run } from "@t3tools/contracts";
+import type { OrchestrationV2Command, OrchestrationV2Run } from "@houston-app/contracts";
 
 export const MERGE_QUEUE_NOTE_ALREADY_SENT = "This merge queue note is already in the thread.";
 export const MERGE_QUEUE_NOTE_NEEDS_LIVE_THREAD =

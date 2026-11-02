@@ -12,7 +12,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthSessionId,
   LOCAL_DEVICE_HOST_ID,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as DeviceService from "./DeviceService.ts";
 import * as DeviceHubProxy from "./DeviceHubProxy.ts";

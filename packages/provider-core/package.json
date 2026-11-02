@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/provider-core",
+  "name": "@houston-app/provider-core",
   "private": true,
   "type": "module",
   "exports": {
@@ -193,8 +193,8 @@
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/shared": "workspace:*",
+    "@houston-app/contracts": "workspace:*",
+    "@houston-app/shared": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

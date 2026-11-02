@@ -1,11 +1,11 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@houston-app/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
+import * as SourceControlRateLimit from "@houston-app/source-control-core/server/SourceControlRateLimit";
 
 const RESERVE_RATIO = 0.1;
 
@@ -51,7 +51,7 @@ export class GitHubQuota extends Context.Service<
       headers: Readonly<Record<string, string | undefined>>,
     ) => Effect.Effect<void>;
   }
->()("@t3tools/source-control-github/server/GitHubQuota") {}
+>()("@houston-app/source-control-github/server/GitHubQuota") {}
 
 const make = Effect.gen(function* () {
   const snapshots = yield* Ref.make<ReadonlyMap<string, QuotaSnapshot>>(new Map());

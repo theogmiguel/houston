@@ -1,6 +1,6 @@
 // The houston.taskSources.* operations: settings checked by rules.ts (and, for Notion, against
 // the live schema), the Notion token kept in the OS keychain only, links, sync and subscription.
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId } from "@houston-app/contracts";
 import {
   HOUSTON_TASK_SOURCE_LIMITS,
   type HoustonTaskSourceConflictResolveInput,
@@ -15,7 +15,7 @@ import {
   type HoustonTaskSourceSettingsSetInput,
   type HoustonTaskSourceStreamEvent,
   type HoustonTaskSourceSyncResult,
-} from "@t3tools/contracts/houston/taskSources";
+} from "@houston-app/contracts/houston/taskSources";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

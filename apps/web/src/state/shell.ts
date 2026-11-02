@@ -1,19 +1,19 @@
 import {
   AVAILABLE_CONNECTION_STATE,
   connectionProjectionPhase,
-} from "@t3tools/client-runtime/connection";
+} from "@houston-app/client-runtime/connection";
 import {
   createEnvironmentShellAtoms,
   createEnvironmentSnapshotAtom,
   createShellEnvironmentAtoms,
   type EnvironmentShellState,
   type EnvironmentShellStatus,
-} from "@t3tools/client-runtime/state/shell";
+} from "@houston-app/client-runtime/state/shell";
 import {
   type EnvironmentCatalogState,
   enabledEnvironmentIds,
-} from "@t3tools/client-runtime/state/connections";
-import type { EnvironmentId } from "@t3tools/contracts";
+} from "@houston-app/client-runtime/state/connections";
+import type { EnvironmentId } from "@houston-app/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";

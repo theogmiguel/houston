@@ -14,17 +14,17 @@ import {
   WS_METHODS,
   WsRpcGroup,
   type AuthEnvironmentScope,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import type {
   HoustonTask,
   HoustonTaskDetail,
   HoustonTaskRun,
   HoustonTaskStreamEvent,
-} from "@t3tools/contracts/houston/tasks";
-import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
-import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
-import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
-import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
+} from "@houston-app/contracts/houston/tasks";
+import * as AcpRegistryRuntimeCoordinator from "@houston-app/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
+import * as AcpRegistrySupport from "@houston-app/provider-acp-registry/server/AcpRegistrySupport";
+import * as ProviderLatestVersions from "@houston-app/provider-core/server/ProviderLatestVersions";
+import * as SecretResolver from "@houston-app/secret-provider-core/server/SecretResolver";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

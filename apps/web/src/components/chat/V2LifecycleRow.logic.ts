@@ -1,4 +1,4 @@
-import type { OrchestrationV2Subagent } from "@t3tools/contracts";
+import type { OrchestrationV2Subagent } from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
 
 const ACTIVE_SUBAGENT_STATUSES = new Set<OrchestrationV2Subagent["status"]>([

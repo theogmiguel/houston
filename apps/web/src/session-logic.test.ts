@@ -16,8 +16,8 @@ import {
   type OrchestrationV2ExecutionNode,
   type OrchestrationV2RunAttempt,
   type OrchestrationV2TurnItem,
-} from "@t3tools/contracts";
-import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/shell";
+} from "@houston-app/contracts";
+import type { ThreadRuntimeSummary } from "@houston-app/client-runtime/state/shell";
 import { deriveMessagesTimelineRows } from "./components/chat/MessagesTimeline.logic";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";

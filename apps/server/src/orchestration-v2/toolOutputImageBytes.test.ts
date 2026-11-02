@@ -1,9 +1,9 @@
-import { NodeId, ThreadId, TurnItemId, type OrchestrationV2TurnItem } from "@t3tools/contracts";
+import { NodeId, ThreadId, TurnItemId, type OrchestrationV2TurnItem } from "@houston-app/contracts";
 import {
   MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH,
   MAX_TOOL_OUTPUT_IMAGES,
   toolOutputImages,
-} from "@t3tools/shared/toolOutput";
+} from "@houston-app/shared/toolOutput";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 

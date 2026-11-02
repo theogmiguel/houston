@@ -13,7 +13,7 @@ import {
   type ServerSettingsPatch,
   type SimlockDeviceHostConfig,
   type SshDeviceHostConfig,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { ChevronDownIcon, MoreVertical, PlusIcon } from "lucide-react";
 
 import { cn, randomUUID } from "../../lib/utils";

@@ -3,8 +3,8 @@ import {
   decodeFilePreviewText,
   filePreviewKind,
   hostPreviewMimeTypeFromExtension,
-} from "@t3tools/shared/filePreview";
-import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
+} from "@houston-app/shared/filePreview";
+import { formatAttachmentSize } from "@houston-app/client-runtime/state/attachments";
 import { ChevronLeftIcon, ChevronRightIcon, FileIcon, FolderIcon } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 

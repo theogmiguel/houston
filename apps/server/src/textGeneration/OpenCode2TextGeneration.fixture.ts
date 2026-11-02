@@ -1,5 +1,5 @@
 /** The free tier refuses deny-all sessions. */
-import type { ProviderReplayEntry } from "@t3tools/contracts";
+import type { ProviderReplayEntry } from "@houston-app/contracts";
 
 export const OPENCODE2_TITLE_GENERATION: ReadonlyArray<ProviderReplayEntry> = [
   { type: "expect_outbound", label: "event.subscribe", frame: { type: "event.subscribe" } },

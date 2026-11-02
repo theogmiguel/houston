@@ -1,4 +1,4 @@
-import type { ProviderOptionDescriptor } from "@t3tools/contracts";
+import type { ProviderOptionDescriptor } from "@houston-app/contracts";
 import { ZapIcon } from "lucide-react";
 
 import type { ComposerControlSize } from "./ComposerControl";

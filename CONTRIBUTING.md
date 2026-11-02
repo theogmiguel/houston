@@ -70,8 +70,8 @@ in PowerShell. Never run concurrent Cargo workloads.
 
 ```
 pnpm -r typecheck
-pnpm --filter @t3tools/web build
-pnpm --filter @t3tools/contracts --filter @t3tools/shared test
+pnpm --filter @houston-app/web build
+pnpm --filter @houston-app/contracts --filter @houston-app/shared test
 pnpm --filter houston exec vp test run src/houston
 ```
 

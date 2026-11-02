@@ -1,7 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no createHmac or timingSafeEqual.
 import * as NodeCrypto from "node:crypto";
 
-import type { ScheduledTaskWebhookSignature } from "@t3tools/contracts";
+import type { ScheduledTaskWebhookSignature } from "@houston-app/contracts";
 
 /** Constant-time string comparison that does not leak length through timing. */
 export function constantTimeEquals(a: string, b: string): boolean {

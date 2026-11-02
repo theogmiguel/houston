@@ -1,4 +1,4 @@
-import { EnvironmentId, type ServerSelfUpdateCapability } from "@t3tools/contracts";
+import { EnvironmentId, type ServerSelfUpdateCapability } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

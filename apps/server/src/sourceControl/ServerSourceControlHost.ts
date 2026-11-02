@@ -1,5 +1,5 @@
-import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
-import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
+import * as SecretResolver from "@houston-app/secret-provider-core/server/SecretResolver";
+import * as SourceControlHost from "@houston-app/source-control-core/server/SourceControlHost";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 

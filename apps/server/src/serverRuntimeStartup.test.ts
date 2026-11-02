@@ -8,9 +8,9 @@ import {
   CommandId,
   EnvironmentId,
   type ServerLifecycleStreamEvent,
-} from "@t3tools/contracts";
-import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
-import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
+} from "@houston-app/contracts";
+import { DEFAULT_SIGNAL_EXPORT } from "@houston-app/shared/observability";
+import * as OtelEnvironment from "@houston-app/shared/otelEnvironment";
 import { HttpServer } from "effect/http";
 import * as NetAddress from "effect/net/NetAddress";
 import * as Deferred from "effect/Deferred";
@@ -235,7 +235,6 @@ it.effect.each([
     }),
   ),
 );
-
 
 it.effect("queues commands until startup signals readiness", () =>
   Effect.scoped(

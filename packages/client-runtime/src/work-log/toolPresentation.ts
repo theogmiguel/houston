@@ -1,11 +1,11 @@
-import { isWorkspaceImagePreviewPath } from "@t3tools/shared/mediaPreview";
-import { COMPUTER_USE_TOOL_SOURCE, dynamicToolSurface } from "@t3tools/shared/toolActivity";
+import { isWorkspaceImagePreviewPath } from "@houston-app/shared/mediaPreview";
+import { COMPUTER_USE_TOOL_SOURCE, dynamicToolSurface } from "@houston-app/shared/toolActivity";
 import type {
   ToolActivityIcon,
   ToolActivityNativeAppReference,
   ToolActivitySource,
   ToolActivitySurface,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 
 export interface ExtractedToolActivityPresentation {
   readonly viewedImagePath?: string;

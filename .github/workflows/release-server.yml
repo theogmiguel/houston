@@ -71,7 +71,7 @@ jobs:
       - name: Build the renderer and server bundle
         run: |
           set -euo pipefail
-          pnpm --filter @t3tools/web build
+          pnpm --filter @houston-app/web build
           pnpm --filter houston exec node scripts/cli.ts build
 
       - name: Build the server single-executable

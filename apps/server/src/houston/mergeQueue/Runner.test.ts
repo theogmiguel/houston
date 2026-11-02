@@ -5,8 +5,8 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
 import { assert, describe, it } from "@effect/vitest";
-import type { ProjectId } from "@t3tools/contracts";
-import type { HoustonMergeQueueError } from "@t3tools/contracts/houston/mergeQueue";
+import type { ProjectId } from "@houston-app/contracts";
+import type { HoustonMergeQueueError } from "@houston-app/contracts/houston/mergeQueue";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";

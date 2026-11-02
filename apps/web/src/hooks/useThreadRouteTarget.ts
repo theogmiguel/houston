@@ -1,4 +1,4 @@
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { ScopedThreadRef } from "@houston-app/contracts";
 import { useParams } from "@tanstack/react-router";
 
 import {

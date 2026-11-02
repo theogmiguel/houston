@@ -3,7 +3,7 @@
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProviderInstanceId, ThreadId } from "@houston-app/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -188,11 +188,35 @@ describe("a question has a button per option and is refused outside a slack run"
           readonly limit?: number;
           readonly actual?: number;
         }> = [
-          { patch: { context: "c".repeat(501) }, kind: "limit", field: "context", limit: 500, actual: 501 },
-          { patch: { question: "q".repeat(301) }, kind: "limit", field: "question", limit: 300, actual: 301 },
-          { patch: { options: ["CSV", "o".repeat(201)] }, kind: "limit", field: "options", limit: 200, actual: 201 },
+          {
+            patch: { context: "c".repeat(501) },
+            kind: "limit",
+            field: "context",
+            limit: 500,
+            actual: 501,
+          },
+          {
+            patch: { question: "q".repeat(301) },
+            kind: "limit",
+            field: "question",
+            limit: 300,
+            actual: 301,
+          },
+          {
+            patch: { options: ["CSV", "o".repeat(201)] },
+            kind: "limit",
+            field: "options",
+            limit: 200,
+            actual: 201,
+          },
           { patch: { options: ["CSV"] }, kind: "invalid", field: "options" },
-          { patch: { options: ["a", "b", "c", "d", "e"] }, kind: "limit", field: "options", limit: 4, actual: 5 },
+          {
+            patch: { options: ["a", "b", "c", "d", "e"] },
+            kind: "limit",
+            field: "options",
+            limit: 4,
+            actual: 5,
+          },
         ];
         for (const entry of bounds) {
           const label = JSON.stringify(entry.patch).slice(0, 40);
@@ -283,11 +307,17 @@ describe("a hand-back goes to the thread and the owner", () => {
           );
           yield* advance(360);
 
-          const bounds: ReadonlyArray<{ readonly patch: Record<string, unknown>; readonly field: string }> = [
+          const bounds: ReadonlyArray<{
+            readonly patch: Record<string, unknown>;
+            readonly field: string;
+          }> = [
             { patch: { subject: "s".repeat(61) }, field: "subject" },
             { patch: { changes: "c".repeat(1_501) }, field: "changes" },
             { patch: { steps: ["a", "b", "c", "d"] }, field: "steps" },
-            { patch: { warnings: Array.from({ length: 7 }, (_, n) => `warning ${n}`) }, field: "warnings" },
+            {
+              patch: { warnings: Array.from({ length: 7 }, (_, n) => `warning ${n}`) },
+              field: "warnings",
+            },
           ];
           for (const entry of bounds) {
             const refusal = refused(
@@ -320,7 +350,11 @@ describe("a hand-back goes to the thread and the owner", () => {
           const thread = postedText(ready[0]);
           assert.include(thread, "Export works");
           assert.include(thread, "Open Reports and click Export");
-          for (const hidden of [request.key, `houston/task-${request.taskId}`, "Ran the export test"]) {
+          for (const hidden of [
+            request.key,
+            `houston/task-${request.taskId}`,
+            "Ran the export test",
+          ]) {
             assert.notInclude(thread, hidden);
           }
           assert.include(

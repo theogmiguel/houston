@@ -1,4 +1,4 @@
-import type { ThemeAppearance } from "@t3tools/shared/themePalettes";
+import type { ThemeAppearance } from "@houston-app/shared/themePalettes";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";

@@ -1,4 +1,4 @@
-import { createPhoneInteraction } from "@t3tools/client-runtime/device/phone-interaction";
+import { createPhoneInteraction } from "@houston-app/client-runtime/device/phone-interaction";
 import { observeResize } from "../../lib/observeResize";
 import { bindPhoneTrackpad } from "./phoneTrackpad";
 

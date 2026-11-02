@@ -5,7 +5,7 @@ import type {
   VcsStatusRemoteResult,
   VcsStatusResult,
   VcsStatusStreamEvent,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 

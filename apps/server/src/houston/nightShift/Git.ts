@@ -3,7 +3,7 @@
 // read of the remote heads at a run's start and settle.
 import * as NodeChildProcess from "node:child_process";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -23,7 +23,9 @@ export class NightShiftGit extends Context.Service<
       root: string,
     ) => Effect.Effect<{ readonly branch: string; readonly sha: string }, string>;
     /** Network: `git ls-remote --heads origin`, ref to sha. */
-    readonly lsRemoteHeads: (root: string) => Effect.Effect<Readonly<Record<string, string>>, string>;
+    readonly lsRemoteHeads: (
+      root: string,
+    ) => Effect.Effect<Readonly<Record<string, string>>, string>;
   }
 >()("houston/houston/nightShift/Git/NightShiftGit") {}
 
@@ -45,7 +47,8 @@ const run = (
       },
       (error, stdout, stderr) => {
         if (error === null) resume(Effect.succeed(stdout));
-        else resume(Effect.fail(`git ${args.join(" ")} failed: ${(stderr || error.message).trim()}`));
+        else
+          resume(Effect.fail(`git ${args.join(" ")} failed: ${(stderr || error.message).trim()}`));
       },
     );
   });
@@ -69,7 +72,7 @@ export const layer = Layer.effect(
     const git = (root: string, args: ReadonlyArray<string>, timeout?: number) =>
       run(environment, root, args, timeout);
     return NightShiftGit.of({
-    origin: Effect.fn("NightShiftGit.origin")(function* (root) {
+      origin: Effect.fn("NightShiftGit.origin")(function* (root) {
         const inside = yield* git(root, ["rev-parse", "--is-inside-work-tree"]).pipe(
           Effect.map((out) => out.trim() === "true"),
           Effect.orElseSucceed(() => false),
@@ -82,7 +85,7 @@ export const layer = Layer.effect(
         if (url === "") return { kind: "noOrigin" } as const;
         return { kind: "origin", url, host: remoteHost(url) } as const;
       }),
-    defaultBranch: Effect.fn("NightShiftGit.defaultBranch")(function* (root) {
+      defaultBranch: Effect.fn("NightShiftGit.defaultBranch")(function* (root) {
         const remoteHead = yield* git(root, [
           "symbolic-ref",
           "--quiet",
@@ -99,20 +102,20 @@ export const layer = Layer.effect(
         const sha = (yield* git(root, ["rev-parse", `${ref}^{commit}`])).trim();
         return { branch: ref.replace(/^origin\//, ""), sha };
       }),
-    lsRemoteHeads: Effect.fn("NightShiftGit.lsRemoteHeads")((root) =>
-      git(root, ["ls-remote", "--heads", "origin"], 60_000).pipe(
-        Effect.map((out) => {
-          const heads: Record<string, string> = {};
-          for (const line of out.split("\n")) {
-            const [sha, ref] = line.trim().split(/\s+/);
-            if (sha !== undefined && ref !== undefined && ref.startsWith("refs/heads/")) {
-              heads[ref] = sha;
+      lsRemoteHeads: Effect.fn("NightShiftGit.lsRemoteHeads")((root) =>
+        git(root, ["ls-remote", "--heads", "origin"], 60_000).pipe(
+          Effect.map((out) => {
+            const heads: Record<string, string> = {};
+            for (const line of out.split("\n")) {
+              const [sha, ref] = line.trim().split(/\s+/);
+              if (sha !== undefined && ref !== undefined && ref.startsWith("refs/heads/")) {
+                heads[ref] = sha;
+              }
             }
-          }
-          return heads;
-        }),
+            return heads;
+          }),
+        ),
       ),
-    ),
     });
   }),
 );

@@ -1,4 +1,4 @@
-import { AuthMcpClientAccess } from "@t3tools/contracts";
+import { AuthMcpClientAccess } from "@houston-app/contracts";
 import { useId } from "react";
 
 import { accessConfig } from "../auth/ConnectAgentSurface";

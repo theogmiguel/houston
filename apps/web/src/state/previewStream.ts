@@ -1,10 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
-import { PREVIEW_STREAM_BASE_PATH } from "@t3tools/client-runtime/preview/server-browser-stream";
+import { PREVIEW_STREAM_BASE_PATH } from "@houston-app/client-runtime/preview/server-browser-stream";
 import {
   type DeviceHubAccess,
   resolveDeviceHubAccess,
-} from "@t3tools/client-runtime/state/deviceHubAccess";
-import type { EnvironmentId } from "@t3tools/contracts";
+} from "@houston-app/client-runtime/state/deviceHubAccess";
+import type { EnvironmentId } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";

@@ -9,7 +9,7 @@ import {
   PullRequestOperationError,
   WS_METHODS,
   type AuthSessionState,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Data from "effect/Data";
 import * as Deferred from "effect/Deferred";

@@ -4,7 +4,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderReplayTranscript,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -12,8 +12,8 @@ import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
+import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
+import { checkpointWorkspace } from "@houston-app/provider-testing/replayWorkspace";
 import { AcpRegistryOrchestratorReplayHarness } from "../Adapters/AcpRegistryAdapterV2.testkit.ts";
 import * as EffectWorker from "../EffectWorker.ts";
 import * as Orchestrator from "../Orchestrator.ts";

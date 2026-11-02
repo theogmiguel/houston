@@ -3,7 +3,7 @@ import {
   ServerSettings,
   type ServerConfig,
   type ServerConfigStreamEvent,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";

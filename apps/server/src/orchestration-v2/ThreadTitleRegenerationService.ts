@@ -1,5 +1,5 @@
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
-import { isAttachmentOnlyBootstrapPrompt } from "@t3tools/shared/composerContextReferences";
+import { resolveProjectSettings } from "@houston-app/shared/projectSettings";
+import { isAttachmentOnlyBootstrapPrompt } from "@houston-app/shared/composerContextReferences";
 import {
   CommandId,
   type ChatAttachment,
@@ -9,7 +9,7 @@ import {
   type RunId,
   type ServerSettingsError,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -23,8 +23,8 @@ import type { OrchestratorV2Error } from "./Orchestrator.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 
-import { formatThreadTitleContext } from "@t3tools/provider-core/server/threadTitleContext";
-export { formatThreadTitleContext } from "@t3tools/provider-core/server/threadTitleContext";
+import { formatThreadTitleContext } from "@houston-app/provider-core/server/threadTitleContext";
+export { formatThreadTitleContext } from "@houston-app/provider-core/server/threadTitleContext";
 
 export class ThreadTitleRegenerationService extends Context.Service<
   ThreadTitleRegenerationService,

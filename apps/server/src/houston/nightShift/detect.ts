@@ -4,7 +4,10 @@
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
-import { HOUSTON_NIGHT_SHIFT_LIMITS, type NightCheck } from "@t3tools/contracts/houston/nightShift";
+import {
+  HOUSTON_NIGHT_SHIFT_LIMITS,
+  type NightCheck,
+} from "@houston-app/contracts/houston/nightShift";
 import * as YAML from "yaml";
 
 /** A workflow, manifest or instruction file larger than this is not read. */

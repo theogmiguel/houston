@@ -12,7 +12,7 @@ import {
   ProviderDriverKind,
   type ProviderInstanceId,
   type SidebarProjectGroupingMode,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   DEFAULT_UNIFIED_SETTINGS,
   type DiffLayout,
@@ -20,10 +20,10 @@ import {
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   type QuitConfirmationMode,
   SidebarProjectSortOrder,
-} from "@t3tools/contracts/settings";
-import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
-import { createModelSelection } from "@t3tools/shared/model";
-import { resolvePastedPath } from "@t3tools/shared/path";
+} from "@houston-app/contracts/settings";
+import { desktopUpdateChannelOf } from "@houston-app/shared/cliRelease";
+import { createModelSelection } from "@houston-app/shared/model";
+import { resolvePastedPath } from "@houston-app/shared/path";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";

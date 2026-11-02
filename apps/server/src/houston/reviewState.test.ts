@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { ReviewCommentContextRecord } from "@t3tools/contracts";
+import type { ReviewCommentContextRecord } from "@houston-app/contracts";
 import {
   formatComposerContextReference,
   projectComposerContextForProvider,
-} from "@t3tools/shared/composerContextReferences";
+} from "@houston-app/shared/composerContextReferences";
 
 import { judgeMark, mapAnchor } from "./reviewState.ts";
 

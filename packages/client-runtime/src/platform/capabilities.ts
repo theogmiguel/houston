@@ -3,7 +3,7 @@ import {
   type DesktopSshEnvironmentBootstrap,
   type DesktopSshEnvironmentTarget,
   EnvironmentId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import type * as Option from "effect/Option";
@@ -27,7 +27,7 @@ export interface ProvisionedSshEnvironment extends PreparedSshEnvironment {
  */
 export class AnalyticsDevice extends Context.Reference<{
   readonly id: Effect.Effect<Option.Option<string>>;
-}>("@t3tools/client-runtime/platform/capabilities/AnalyticsDevice", {
+}>("@houston-app/client-runtime/platform/capabilities/AnalyticsDevice", {
   defaultValue: () => ({ id: Effect.succeedNone }),
 }) {}
 
@@ -36,14 +36,14 @@ export class ClientPresentation extends Context.Service<
   {
     readonly metadata: AuthClientPresentationMetadata;
   }
->()("@t3tools/client-runtime/platform/capabilities/ClientPresentation") {}
+>()("@houston-app/client-runtime/platform/capabilities/ClientPresentation") {}
 
 export class PrimaryEnvironmentAuth extends Context.Service<
   PrimaryEnvironmentAuth,
   {
     readonly bearerToken: Effect.Effect<Option.Option<string>, ConnectionAttemptError>;
   }
->()("@t3tools/client-runtime/platform/capabilities/PrimaryEnvironmentAuth") {}
+>()("@houston-app/client-runtime/platform/capabilities/PrimaryEnvironmentAuth") {}
 
 export class SshEnvironmentGateway extends Context.Service<
   SshEnvironmentGateway,
@@ -72,4 +72,4 @@ export class SshEnvironmentGateway extends Context.Service<
       target: DesktopSshEnvironmentTarget,
     ) => Effect.Effect<void, ConnectionAttemptError>;
   }
->()("@t3tools/client-runtime/platform/capabilities/SshEnvironmentGateway") {}
+>()("@houston-app/client-runtime/platform/capabilities/SshEnvironmentGateway") {}

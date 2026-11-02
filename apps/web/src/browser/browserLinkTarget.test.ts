@@ -1,4 +1,4 @@
-import type { BrowserLinkTarget } from "@t3tools/contracts";
+import type { BrowserLinkTarget } from "@houston-app/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { resolveLinkTarget } from "./browserLinkTarget";

@@ -1,10 +1,10 @@
-import { ARCHIVE_MAX_BYTES } from "@t3tools/client-runtime/zip/bounded-zip";
+import { ARCHIVE_MAX_BYTES } from "@houston-app/client-runtime/zip/bounded-zip";
 
 export {
   ARCHIVE_ENTRY_MAX_BYTES,
   ARCHIVE_MAX_ENTRIES,
   ARCHIVE_MAX_RATIO,
-} from "@t3tools/client-runtime/zip/bounded-zip";
+} from "@houston-app/client-runtime/zip/bounded-zip";
 export const BINARY_PREVIEW_MAX_BYTES = ARCHIVE_MAX_BYTES;
 export const SQLITE_PAGE_SIZE = 50;
 

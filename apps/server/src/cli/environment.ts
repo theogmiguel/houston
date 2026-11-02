@@ -1,4 +1,4 @@
-import { AuthMcpClientAccess, EnvironmentId, type PeerLinkSummary } from "@t3tools/contracts";
+import { AuthMcpClientAccess, EnvironmentId, type PeerLinkSummary } from "@houston-app/contracts";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

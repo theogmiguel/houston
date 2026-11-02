@@ -20,12 +20,12 @@ import type {
   VcsStatusResult,
   VcsStatusStreamEvent,
   VcsStatusSubscriptionInput,
-} from "@t3tools/contracts";
-import { DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL } from "@t3tools/contracts";
-import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
-import { mergeGitStatusParts } from "@t3tools/shared/git";
-import * as KeyedLock from "@t3tools/shared/KeyedLock";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+} from "@houston-app/contracts";
+import { DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL } from "@houston-app/contracts";
+import { resolveServerBackgroundActivitySettings } from "@houston-app/shared/backgroundActivitySettings";
+import { mergeGitStatusParts } from "@houston-app/shared/git";
+import * as KeyedLock from "@houston-app/shared/KeyedLock";
+import { resolveProjectSettings } from "@houston-app/shared/projectSettings";
 
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";

@@ -7,8 +7,8 @@ import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import { ProjectId, ThreadId } from "@t3tools/contracts";
-import type { HoustonHarnessOverviewEvent } from "@t3tools/contracts/houston/harnessReview";
+import { ProjectId, ThreadId } from "@houston-app/contracts";
+import type { HoustonHarnessOverviewEvent } from "@houston-app/contracts/houston/harnessReview";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

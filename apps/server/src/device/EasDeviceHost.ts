@@ -11,7 +11,7 @@ import {
   DeviceOperationError,
   type DevicePlatform,
   type EasDeviceHostConfig,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
@@ -28,8 +28,8 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
-import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import { writeFileStringAtomically } from "@houston-app/shared/atomicWrite";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 
 import * as ServerConfig from "../config.ts";
 import { releaseAgentDeviceSession } from "./AgentDeviceTarget.ts";

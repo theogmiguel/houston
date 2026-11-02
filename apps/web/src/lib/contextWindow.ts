@@ -1,10 +1,13 @@
-import type { ThreadStructure, ThreadStructureTurnItem } from "@t3tools/client-runtime/state/shell";
+import type {
+  ThreadStructure,
+  ThreadStructureTurnItem,
+} from "@houston-app/client-runtime/state/shell";
 import type {
   OrchestrationV2ProviderTurn,
   OrchestrationV2ProviderTurnTokenUsage,
   OrchestrationV2ProviderThread,
   ThreadTokenUsageSnapshot,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
 
 function asFiniteNumber(value: unknown): number | null {

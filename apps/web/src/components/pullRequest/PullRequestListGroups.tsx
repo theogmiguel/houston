@@ -1,4 +1,4 @@
-import type { EnvironmentId, PullRequestAction } from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestAction } from "@houston-app/contracts";
 import { EyeIcon, LayersIcon, PenLineIcon, UsersIcon, type LucideIcon } from "lucide-react";
 import type { RefCallback } from "react";
 

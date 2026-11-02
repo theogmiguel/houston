@@ -1,9 +1,9 @@
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
-import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import { expandHomePath } from "@houston-app/provider-core/server/pathExpansion";
 
 import * as ServerConfig from "./config.ts";
 import * as ServerSettings from "./serverSettings.ts";

@@ -1,6 +1,6 @@
-import { ProviderDriverKind } from "@t3tools/contracts";
+import { ProviderDriverKind } from "@houston-app/contracts";
 import { MuseSettings } from "../settings.ts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -8,18 +8,18 @@ import * as Schema from "effect/Schema";
 import * as HttpClient from "effect/http/HttpClient";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
-import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
-import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import * as ProviderLatestVersions from "@houston-app/provider-core/server/ProviderLatestVersions";
+import * as ProviderHost from "@houston-app/provider-core/server/ProviderHost";
+import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
+import { expandHomePath } from "@houston-app/provider-core/server/pathExpansion";
 import { makeMuseTextGeneration } from "./textGeneration.ts";
-import { ProviderDriverError } from "@t3tools/provider-core/server/errors";
+import { ProviderDriverError } from "@houston-app/provider-core/server/errors";
 import { makeMuseAdapterV2 } from "./adapter.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
+import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
+import * as ProviderContinuationRequests from "@houston-app/provider-core/server/ProviderContinuationRequests";
 import { checkMuseProviderStatus, makePendingMuseProvider } from "./status.ts";
-import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
-import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
+import * as ProviderEventLoggers from "@houston-app/provider-core/server/ProviderEventLoggers";
+import { makeManagedServerProvider } from "@houston-app/provider-core/server/managedProvider";
 import { enrichMuseSnapshot, latestMuseVersion, museMaintenance } from "./maintenance.ts";
 import { makeMuseEnvironment } from "./sdk.ts";
 import { museUsageReader } from "./usage.ts";
@@ -28,18 +28,18 @@ import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
   type ProviderInstance,
-} from "@t3tools/provider-core/server/driver";
-import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
+} from "@houston-app/provider-core/server/driver";
+import { mergeProviderInstanceEnvironment } from "@houston-app/provider-core/server/instanceEnvironment";
 import {
   makeCachedProviderMaintenanceResolution,
   resolveProviderMaintenanceCapabilitiesEffect,
-} from "@t3tools/provider-core/server/maintenanceResolver";
+} from "@houston-app/provider-core/server/maintenanceResolver";
 import {
   haveProviderSnapshotSettingsChanged,
   makeProviderSnapshotSettingsSource,
   type ProviderSnapshotSettings,
-} from "@t3tools/provider-core/server/snapshotSettings";
-import { withInstanceIdentity } from "@t3tools/provider-core/server/instanceIdentity";
+} from "@houston-app/provider-core/server/snapshotSettings";
+import { withInstanceIdentity } from "@houston-app/provider-core/server/instanceIdentity";
 
 const DRIVER_KIND = ProviderDriverKind.make("muse");
 const decodeMuseSettings = Schema.decodeSync(MuseSettings);

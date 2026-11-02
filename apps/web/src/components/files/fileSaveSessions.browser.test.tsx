@@ -1,5 +1,5 @@
 import { render, fakeTimers } from "../../../test/render";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@houston-app/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { StrictMode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -8,7 +8,7 @@ const { runAtomCommand, getUnsavedFile } = vi.hoisted(() => ({
   runAtomCommand: vi.fn(),
   getUnsavedFile: vi.fn(),
 }));
-vi.mock(import("@t3tools/client-runtime/state/runtime"), async (original) => ({
+vi.mock(import("@houston-app/client-runtime/state/runtime"), async (original) => ({
   ...(await original()),
   runAtomCommand: runAtomCommand as never,
 }));

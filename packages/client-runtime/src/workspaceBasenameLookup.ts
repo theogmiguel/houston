@@ -1,4 +1,4 @@
-import { isAbsolutePath, isWindowsAbsolutePath } from "@t3tools/shared/path";
+import { isAbsolutePath, isWindowsAbsolutePath } from "@houston-app/shared/path";
 
 export const WORKSPACE_BASENAME_LOOKUP_LIMIT = 25;
 

@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
-import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { scopeThreadRef, scopedThreadKey } from "@houston-app/client-runtime/environment";
+import type { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import type { RefObject } from "react";
 
 import { findThread } from "../../grid/tree";

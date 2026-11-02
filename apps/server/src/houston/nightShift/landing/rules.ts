@@ -1,6 +1,6 @@
 // The landing rules that decide an outcome without I/O: the gates, the CI decision, the merge
 // order and the audit of remote heads.
-import type { NightGateState, NightRemoteChange } from "@t3tools/contracts/houston/nightShift";
+import type { NightGateState, NightRemoteChange } from "@houston-app/contracts/houston/nightShift";
 
 export interface ClaimRef {
   /** The plan entry's id. */

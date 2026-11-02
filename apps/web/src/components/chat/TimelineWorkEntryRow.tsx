@@ -5,26 +5,26 @@ import {
   getQuestionAnswerText,
   getQuestionTextPreview,
   hasQuestionAnswer,
-} from "@t3tools/client-runtime/work-log/user-input";
+} from "@houston-app/client-runtime/work-log/user-input";
 import {
   ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE,
   type EnvironmentId,
   ThreadId,
-} from "@t3tools/contracts";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+} from "@houston-app/contracts";
+import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { Link } from "@tanstack/react-router";
-import { notificationChildThreadId } from "@t3tools/client-runtime/state/thread-execution";
+import { notificationChildThreadId } from "@houston-app/client-runtime/state/thread-execution";
 import {
   resolveViewedImageAsset,
   toolGroupAction,
   workEntryViewedImagePath,
-} from "@t3tools/client-runtime/work-log/presentation";
+} from "@houston-app/client-runtime/work-log/presentation";
 import {
   turnItemDetailRevision,
   turnItemHasDetail,
   turnItemNeedsDetailFetch,
-} from "@t3tools/client-runtime/work-log/item-detail";
-import { claudeSkillInvocation } from "@t3tools/shared/toolActivity";
+} from "@houston-app/client-runtime/work-log/item-detail";
+import { claudeSkillInvocation } from "@houston-app/shared/toolActivity";
 import { memo, use, useState, type KeyboardEvent } from "react";
 import {
   workEntryDisplayIndicatesToolFailure,
@@ -647,7 +647,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
 function QuestionAnswerHistory({
   answer,
 }: {
-  answer: import("@t3tools/contracts").UserInputAttachmentAnswerPayload;
+  answer: import("@houston-app/contracts").UserInputAttachmentAnswerPayload;
 }) {
   const { activeThreadEnvironmentId } = use(TimelineRowCtx);
   const attachments = Object.values(answer.attachmentsByQuestionId).flat();

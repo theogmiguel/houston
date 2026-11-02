@@ -93,7 +93,7 @@ fi
 APP="$ROOT/src-tauri/target/debug/houston-tauri"
 
 echo "[dev] building the v2 web renderer."
-(cd "$ROOT" && npx -y pnpm@12.14.0 --filter @t3tools/web build)
+(cd "$ROOT" && npx -y pnpm@12.14.0 --filter @houston-app/web build)
 
 echo "[dev] building the v2 server."
 (cd "$ROOT" && npx -y pnpm@12.14.0 --filter houston build:bundle)

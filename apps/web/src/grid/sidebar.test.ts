@@ -1,4 +1,4 @@
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -73,7 +73,8 @@ function thread(
   } as EnvironmentThreadShell;
 }
 
-function grid(tree: GridRecord["tree"], overrides: Partial<GridRecord> = {}): GridRecord {  return {
+function grid(tree: GridRecord["tree"], overrides: Partial<GridRecord> = {}): GridRecord {
+  return {
     id: "g-1",
     name: "Grid 1",
     environmentId: "env-1",
@@ -437,10 +438,7 @@ describe("attention navigation", () => {
   });
 
   it("keeps a hidden grid's threads reachable with Ctrl .", () => {
-    const hidden = grid(
-      { kind: "thread", threadId: "thread-b", id: "p1" },
-      { hidden: true },
-    );
+    const hidden = grid({ kind: "thread", threadId: "thread-b", id: "p1" }, { hidden: true });
     const cards = attentionCardsForGrids(
       [hidden],
       [thread({ id: "thread-b", hasPendingApprovals: true })],

@@ -1,7 +1,7 @@
 // Hand-off to GitHub's merge queue and auto-merge over real git and the GitHub fake: the mode
 // rides on the reads, every hand-off is pinned to the verified commit, and a held entry settles.
 import { assert, describe, it } from "@effect/vitest";
-import type { HoustonMergeQueueError } from "@t3tools/contracts/houston/mergeQueue";
+import type { HoustonMergeQueueError } from "@houston-app/contracts/houston/mergeQueue";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";

@@ -22,11 +22,11 @@ import {
   type OrchestrationV2Run,
   type ProviderInteractionMode,
   type RuntimeMode,
-} from "@t3tools/contracts";
-import type * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
-import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
+} from "@houston-app/contracts";
+import type * as McpProviderSession from "@houston-app/provider-core/server/mcpSession";
+import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
+import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
+import { checkpointWorkspace } from "@houston-app/provider-testing/replayWorkspace";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -45,7 +45,7 @@ import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterReg
 import * as ProviderReplayHarness from "../orchestration-v2/testkit/ProviderReplayHarness.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
-import { AcpProviderCapabilitiesV2 } from "@t3tools/provider-acp/server/adapter";
+import { AcpProviderCapabilitiesV2 } from "@houston-app/provider-acp/server/adapter";
 
 const ACTIVE_RUN_STATUSES: ReadonlySet<OrchestrationV2Run["status"]> = new Set([
   "preparing",

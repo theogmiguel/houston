@@ -3,9 +3,9 @@ import {
   SourceControlSignInError,
   type SourceControlSignInFailure,
   type SourceControlSignInPrompt,
-} from "@t3tools/contracts";
-import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
-import { readSourceControlHostSettings } from "@t3tools/source-control-core/shared/definition";
+} from "@houston-app/contracts";
+import * as SourceControlHost from "@houston-app/source-control-core/server/SourceControlHost";
+import { readSourceControlHostSettings } from "@houston-app/source-control-core/shared/definition";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -19,7 +19,7 @@ import * as Schema from "effect/Schema";
 import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 
 import * as GitHubClient from "../shared/definition.ts";
 
@@ -93,7 +93,7 @@ export class GitHubAppSignIn extends Context.Service<
     readonly wait: (host: string) => Effect.Effect<void, SourceControlSignInError>;
     readonly cancel: (host: string) => Effect.Effect<void>;
   }
->()("@t3tools/source-control-github/server/GitHubAppSignIn") {}
+>()("@houston-app/source-control-github/server/GitHubAppSignIn") {}
 
 interface PendingSignIn {
   readonly deferred: Deferred.Deferred<void, SourceControlSignInError>;

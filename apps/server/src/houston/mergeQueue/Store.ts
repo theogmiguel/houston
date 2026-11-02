@@ -1,6 +1,6 @@
 // The merge queue tables. Writes are serialised and each publishes the project it changed, in
 // commit order; a deleted project's rows go with its deletion hook.
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId } from "@houston-app/contracts";
 import {
   HOUSTON_MERGE_QUEUE_LIMITS,
   type HoustonMergeQueueAway,
@@ -10,7 +10,7 @@ import {
   type HoustonMergeQueueLogEntry,
   type HoustonMergeQueueSettings,
   type HoustonMergeQueueVerification,
-} from "@t3tools/contracts/houston/mergeQueue";
+} from "@houston-app/contracts/houston/mergeQueue";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

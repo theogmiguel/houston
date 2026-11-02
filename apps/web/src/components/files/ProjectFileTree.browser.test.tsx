@@ -1,4 +1,4 @@
-import type { ProjectEntry } from "@t3tools/contracts";
+import type { ProjectEntry } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { render } from "../../../test/render";

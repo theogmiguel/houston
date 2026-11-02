@@ -1,5 +1,9 @@
-import { findProjectByPath } from "@t3tools/client-runtime/state/projects";
-import type { AgentSessionProjectCandidate, EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { findProjectByPath } from "@houston-app/client-runtime/state/projects";
+import type {
+  AgentSessionProjectCandidate,
+  EnvironmentId,
+  ProjectId,
+} from "@houston-app/contracts";
 
 const RECENT_PROJECT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_SELECTION_MIN_THREADS = 3;

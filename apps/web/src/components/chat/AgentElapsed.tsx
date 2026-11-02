@@ -1,6 +1,6 @@
-import type { RuntimeSubagent } from "@t3tools/client-runtime/state/subagentRuntime";
-import { isOrchestrationV2WorkActive } from "@t3tools/contracts";
-import { deriveSubagentElapsedMs } from "@t3tools/shared/orchestrationTiming";
+import type { RuntimeSubagent } from "@houston-app/client-runtime/state/subagentRuntime";
+import { isOrchestrationV2WorkActive } from "@houston-app/contracts";
+import { deriveSubagentElapsedMs } from "@houston-app/shared/orchestrationTiming";
 import { tickTextContent } from "~/lib/tickTextContent";
 
 function formatElapsedSeconds(totalSeconds: number): string {

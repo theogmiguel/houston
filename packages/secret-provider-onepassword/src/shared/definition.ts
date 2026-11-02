@@ -1,5 +1,5 @@
-import { SecretProviderKind } from "@t3tools/contracts";
-import { defineSecretProvider } from "@t3tools/secret-provider-core/shared/definition";
+import { SecretProviderKind } from "@houston-app/contracts";
+import { defineSecretProvider } from "@houston-app/secret-provider-core/shared/definition";
 import * as Schema from "effect/Schema";
 
 const ACCOUNT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;

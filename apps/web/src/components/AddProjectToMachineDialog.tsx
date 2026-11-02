@@ -1,22 +1,22 @@
 import { useParams } from "@tanstack/react-router";
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef } from "@houston-app/client-runtime/environment";
 import {
   getAddProjectInitialQuery,
   getCloneDestinationPath,
   getCloneDirectoryName,
-} from "@t3tools/client-runtime/operations/projects";
-import { resolvePastedPath } from "@t3tools/shared/path";
+} from "@houston-app/client-runtime/operations/projects";
+import { resolvePastedPath } from "@houston-app/shared/path";
 import {
   type EnvironmentId,
   type ProjectIgnoredFile,
   type ScopedProjectRef,
   resolveEnvironmentMachineKind,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   type CloneProtocol,
   cloneUrlForProtocol,
   cloneUrlProtocol,
-} from "@t3tools/shared/cloneUrl";
+} from "@houston-app/shared/cloneUrl";
 import { ArrowRightIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { create } from "zustand";

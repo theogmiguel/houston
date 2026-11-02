@@ -1,4 +1,4 @@
-import type { MessageId, RunId } from "@t3tools/contracts";
+import type { MessageId, RunId } from "@houston-app/contracts";
 
 export interface TimelineRunObservation {
   readonly threadKey: string | null;
@@ -32,7 +32,7 @@ export function observeTimelineRun(
   }
   return { observation, anchorMessageId: input.messageId };
 }
-import type { RunAttemptId } from "@t3tools/contracts";
+import type { RunAttemptId } from "@houston-app/contracts";
 
 // Match the titlebar fade inset so draft promotion preserves the first row's position.
 export const CHAT_TIMELINE_ANCHOR_OFFSET = 24;

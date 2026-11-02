@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/provider-testing",
+  "name": "@houston-app/provider-testing",
   "private": true,
   "type": "module",
   "exports": {
@@ -29,9 +29,9 @@
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/provider-core": "workspace:*",
-    "@t3tools/shared": "workspace:*",
+    "@houston-app/contracts": "workspace:*",
+    "@houston-app/provider-core": "workspace:*",
+    "@houston-app/shared": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

@@ -11,8 +11,8 @@ import {
   type OrchestrationV2TurnItem,
   type RunId,
   type ThreadId,
-} from "@t3tools/contracts";
-import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+} from "@houston-app/contracts";
+import type * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

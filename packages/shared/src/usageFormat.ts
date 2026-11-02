@@ -4,7 +4,7 @@ import {
   type UsageResolution,
   type UsageSource,
   type UsageSummaryInput,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 
 import type { UsageContractMismatch } from "./usageMerge.ts";
 

@@ -1,5 +1,5 @@
 import { Spinner } from "~/components/ui/spinner";
-import { AuthFilesystemReadScope, type ProjectContentMatch } from "@t3tools/contracts";
+import { AuthFilesystemReadScope, type ProjectContentMatch } from "@houston-app/contracts";
 
 import { useState, type ReactNode } from "react";
 

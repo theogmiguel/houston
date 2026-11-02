@@ -5,7 +5,7 @@ import {
   type OrchestrationV2ThreadFamily,
   type OrchestrationV2ThreadShell,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as SubscriptionRef from "effect/SubscriptionRef";

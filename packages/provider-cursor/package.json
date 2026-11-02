@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/provider-cursor",
+  "name": "@houston-app/provider-cursor",
   "private": true,
   "type": "module",
   "exports": {
@@ -50,17 +50,17 @@
   },
   "dependencies": {
     "@cursor/sdk": "1.0.38",
+    "@houston-app/contracts": "workspace:*",
+    "@houston-app/provider-core": "workspace:*",
+    "@houston-app/shared": "workspace:*",
     "@napi-rs/keyring": "^1.3.0",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/provider-core": "workspace:*",
-    "@t3tools/shared": "workspace:*",
     "effect": "catalog:",
     "yaml": "catalog:"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
-    "@t3tools/provider-testing": "workspace:*",
+    "@houston-app/provider-testing": "workspace:*",
     "@types/node": "catalog:",
     "vite-plus": "catalog:"
   }

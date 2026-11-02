@@ -1,4 +1,4 @@
-import { EnvironmentId, ProjectId, type ServerConfig } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, type ServerConfig } from "@houston-app/contracts";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import * as Option from "effect/Option";
 import { describe, expect, it } from "vite-plus/test";

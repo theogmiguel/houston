@@ -1,11 +1,11 @@
 import {
   capitalizeTerm,
   sourceControlClients,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@houston-app/client-runtime/source-control-clients";
 import {
   COMPOSER_CONTEXT_REVIEW_DIFF_MAX_CHARS,
   COMPOSER_CONTEXT_REVIEW_TEXT_MAX_CHARS,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import type {
   ComposerContextId,
   ComposerContextRecord,
@@ -22,14 +22,14 @@ import type {
   TerminalContextRecord,
   ThreadContextRecord,
   ThreadId,
-} from "@t3tools/contracts";
-import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
-import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
+} from "@houston-app/contracts";
+import { upgradeLegacyContextMessage } from "@houston-app/shared/composerContextLegacy";
+import { encodeComposerContextFragment } from "@houston-app/shared/composerContextClipboard";
 import {
   collectComposerContextReferences,
   sanitizeComposerContextLabel,
   toKindScopedComposerContextId,
-} from "@t3tools/shared/composerContextReferences";
+} from "@houston-app/shared/composerContextReferences";
 
 import {
   type ComposerContextReference,

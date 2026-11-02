@@ -1,14 +1,14 @@
-import { resolvePullRequestDetailChecks } from "@t3tools/client-runtime/pull-request-checks";
+import { resolvePullRequestDetailChecks } from "@houston-app/client-runtime/pull-request-checks";
 import {
   capitalizeTerm,
   sourceControlClients,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@houston-app/client-runtime/source-control-clients";
 import { PullRequestChangeBreakdownRows } from "../pullRequest/PullRequestChangeBreakdownStat";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { ThreadDetailsRow } from "../ui/thread-details-row";
-import { selectEnvironmentQueryData } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentId, ProjectId, PullRequestRef } from "@t3tools/contracts";
+import { selectEnvironmentQueryData } from "@houston-app/client-runtime/state/runtime";
+import type { EnvironmentProject } from "@houston-app/client-runtime/state/shell";
+import type { EnvironmentId, ProjectId, PullRequestRef } from "@houston-app/contracts";
 import {
   ArrowUpRightIcon,
   EyeIcon,

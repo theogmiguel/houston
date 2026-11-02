@@ -3,7 +3,7 @@
 // until its stdin closes: at settle, or when the server exits and the pipe closes with it.
 import * as NodeChildProcess from "node:child_process";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

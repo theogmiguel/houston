@@ -1,4 +1,4 @@
-import { ChatFileAttachment, ChatImageAttachment } from "@t3tools/contracts";
+import { ChatFileAttachment, ChatImageAttachment } from "@houston-app/contracts";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 

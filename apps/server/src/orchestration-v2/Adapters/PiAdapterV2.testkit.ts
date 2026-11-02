@@ -5,7 +5,7 @@ import {
   type ResolvedProviderInstanceEnvironment,
   type ProviderReplayTranscript,
   type ProviderReplayEntry as ProviderReplayEntryType,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -15,12 +15,12 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import { ProviderAdapterDriverCreateError } from "@t3tools/provider-core/server/adapterDriver";
+import * as TestProviderHost from "@houston-app/provider-testing/TestProviderHost";
+import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
+import { ProviderAdapterDriverCreateError } from "@houston-app/provider-core/server/adapterDriver";
 import * as ProviderAdapterRegistry from "../ProviderAdapterRegistry.ts";
 import type { OrchestratorV2ProviderReplayHarness } from "../testkit/ProviderReplayHarness.ts";
-import { PI_PROVIDER, PiAdapterV2Driver } from "@t3tools/provider-pi/server";
+import { PI_PROVIDER, PiAdapterV2Driver } from "@houston-app/provider-pi/server";
 
 export const PI_RPC_REPLAY_PROTOCOL = "pi.rpc-jsonl";
 export const PI_REPLAY_ANY = "<any>";

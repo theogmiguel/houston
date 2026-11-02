@@ -6,7 +6,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import { vi } from "vite-plus/test";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 
 import { readBootstrapEnvelope } from "./bootstrap.ts";
 import { assertNone, assertSome } from "@effect/vitest/utils";

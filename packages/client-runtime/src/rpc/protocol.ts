@@ -1,4 +1,4 @@
-import { WsRpcGroup } from "@t3tools/contracts";
+import { WsRpcGroup } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import { RpcClient } from "effect/rpc";
 

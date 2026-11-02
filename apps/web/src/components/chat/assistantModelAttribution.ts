@@ -1,5 +1,5 @@
-import type { ModelSelection, ProviderInstanceId, ServerProvider } from "@t3tools/contracts";
-import { resolveProviderInstanceDisplayName } from "@t3tools/client-runtime/state/provider-instance-display";
+import type { ModelSelection, ProviderInstanceId, ServerProvider } from "@houston-app/contracts";
+import { resolveProviderInstanceDisplayName } from "@houston-app/client-runtime/state/provider-instance-display";
 import { getTriggerDisplayModelName } from "./providerIconUtils";
 
 /** The provider and model an assistant answer ran on, as the history names them. */

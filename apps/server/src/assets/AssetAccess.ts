@@ -1,4 +1,4 @@
-import type { AssetResource } from "@t3tools/contracts";
+import type { AssetResource } from "@houston-app/contracts";
 import {
   AssetAttachmentNotFoundError,
   AssetSourceControlMediaUrlValidationError,
@@ -17,26 +17,29 @@ import {
   ThreadId,
   ToolActivityNativeAppReference,
   TurnItemId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   hostPreviewMimeTypeFromExtension,
   isWorkspaceAudioPreviewPath,
   isWorkspacePreviewEntryPath,
   isWorkspaceVideoPreviewPath,
   WORKSPACE_BROWSER_PREVIEW_EXTENSIONS,
-} from "@t3tools/shared/filePreview";
+} from "@houston-app/shared/filePreview";
 import {
   IMAGE_DIMENSIONS_HEADER_BYTES,
   readImageDimensions,
   type ImageDimensions,
-} from "@t3tools/shared/imageDimensions";
-import { MCP_APP_MAX_HTML_BYTES } from "@t3tools/shared/mcpApp";
+} from "@houston-app/shared/imageDimensions";
+import { MCP_APP_MAX_HTML_BYTES } from "@houston-app/shared/mcpApp";
 import {
   isProjectFaviconPath,
   PROJECT_FAVICON_FALLBACK_MARKER,
-} from "@t3tools/shared/projectFavicon";
-import { isNetworkPath } from "@t3tools/shared/path";
-import { MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH, toolOutputImages } from "@t3tools/shared/toolOutput";
+} from "@houston-app/shared/projectFavicon";
+import { isNetworkPath } from "@houston-app/shared/path";
+import {
+  MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH,
+  toolOutputImages,
+} from "@houston-app/shared/toolOutput";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -58,7 +61,7 @@ import { makeIsServerInternalPath } from "../auth/serverInternalPaths.ts";
 import { parseAttachmentFileExtension, resolveAttachmentPathById } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
-import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import { expandHomePath } from "@houston-app/provider-core/server/pathExpansion";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import { isWithinRoot } from "../workspace/KnownWorkspaces.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
@@ -66,7 +69,7 @@ import * as NativeAppIconResolver from "./NativeAppIconResolver.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import { extractIcnsPng } from "./icns.ts";
 import { openMediaFile, readMediaFileHeader, type OpenMediaFile } from "./MediaFile.ts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 
 export const ASSET_ROUTE_PREFIX = "/api/assets";
 

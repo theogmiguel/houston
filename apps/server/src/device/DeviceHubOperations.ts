@@ -3,7 +3,7 @@ import {
   type DeviceHostId,
   DeviceOperationError,
   type DevicePlatform,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";

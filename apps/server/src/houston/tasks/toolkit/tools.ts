@@ -8,7 +8,7 @@ import {
   PositiveInt,
   ProjectId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   HoustonTask,
   HoustonTaskAcceptanceItem,
@@ -23,7 +23,7 @@ import {
   HoustonTaskRun,
   HoustonTaskStatus,
   HoustonTaskSummary,
-} from "@t3tools/contracts/houston/tasks";
+} from "@houston-app/contracts/houston/tasks";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 

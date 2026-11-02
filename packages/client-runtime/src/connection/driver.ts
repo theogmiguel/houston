@@ -63,7 +63,7 @@ export class ConnectionDriver extends Context.Service<
     /** Asks the host behind a live session to answer a fresh request on the session's own origin. */
     readonly checkHost: (prepared: PreparedConnection) => Effect.Effect<RouteCheck>;
   }
->()("@t3tools/client-runtime/connection/driver/ConnectionDriver") {}
+>()("@houston-app/client-runtime/connection/driver/ConnectionDriver") {}
 
 export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")(function* <R>(
   entry: ConnectionCatalogEntry,

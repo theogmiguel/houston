@@ -1,4 +1,8 @@
-import { EnvironmentId, ProjectId, type AgentSessionProjectCandidate } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  type AgentSessionProjectCandidate,
+} from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

@@ -9,9 +9,9 @@ import {
   ThreadId,
   TurnItemId,
   type OrchestrationV2ProviderTurn,
-} from "@t3tools/contracts";
-import type { MessageDelivery } from "@t3tools/contracts/houston/messageDelivery";
-import type { ProviderAdapterV2Event } from "@t3tools/provider-core/server/ProviderAdapter";
+} from "@houston-app/contracts";
+import type { MessageDelivery } from "@houston-app/contracts/houston/messageDelivery";
+import type { ProviderAdapterV2Event } from "@houston-app/provider-core/server/ProviderAdapter";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -25,7 +25,9 @@ const messageId = MessageId.make("message:steer");
 const t0 = DateTime.makeUnsafe("2026-10-29T12:00:00.000Z");
 const later = (seconds: number) => DateTime.add(t0, { seconds });
 
-const providerTurn = (status: OrchestrationV2ProviderTurn["status"]): OrchestrationV2ProviderTurn => ({
+const providerTurn = (
+  status: OrchestrationV2ProviderTurn["status"],
+): OrchestrationV2ProviderTurn => ({
   id: turnId,
   providerThreadId,
   nodeId: NodeId.make("node:1"),
@@ -221,9 +223,9 @@ describe("message delivery transitions", () => {
       adopted,
     );
     // unconfirmed accepts nothing but adopted
-    expect(
-      nextDelivery(unconfirmed, { type: "failed", message: "boom", at: later(5) }),
-    ).toEqual(unconfirmed);
+    expect(nextDelivery(unconfirmed, { type: "failed", message: "boom", at: later(5) })).toEqual(
+      unconfirmed,
+    );
     expect(fold(unconfirmed, [[report("dropped"), 5]])).toEqual(unconfirmed);
     // dropped accepts nothing further
     const dropped = nextDelivery(steer, { type: "cancelled", at: later(1) });

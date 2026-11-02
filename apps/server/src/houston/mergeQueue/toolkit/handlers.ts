@@ -1,11 +1,11 @@
 // Every call resolves the caller thread's project and acts on that project's queue only; a pull
 // request URL of another repository is refused before GitHub is read.
-import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import { OrchestratorMcpFailure } from "@houston-app/contracts";
 import {
   HoustonMergeQueueError,
   type HoustonMergeQueueEntry,
-} from "@t3tools/contracts/houston/mergeQueue";
-import { hasSourceThread } from "@t3tools/contracts/houston/sideThreads";
+} from "@houston-app/contracts/houston/mergeQueue";
+import { hasSourceThread } from "@houston-app/contracts/houston/sideThreads";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 

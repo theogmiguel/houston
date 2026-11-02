@@ -63,7 +63,7 @@ export class CursorSdk extends Context.Service<
     readonly load: typeof loadCursorSdk;
     readonly loadSqlite: typeof loadCursorSqlite;
   }
->()("@t3tools/provider-cursor/server/CursorSdk") {}
+>()("@houston-app/provider-cursor/server/CursorSdk") {}
 
 /** Provide once per process: a second guard would defer to the first and swallow real rejections. */
 export const layer = Layer.effect(

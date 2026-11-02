@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { EnvironmentIdentificationMode } from "@t3tools/contracts";
+import type { EnvironmentIdentificationMode } from "@houston-app/contracts";
 import { useId } from "react";
 
 import { APP_STAGE_LABEL } from "../branding";

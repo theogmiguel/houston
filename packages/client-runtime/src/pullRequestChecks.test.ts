@@ -1,4 +1,4 @@
-import type { PullRequestCheck, PullRequestDetail } from "@t3tools/contracts";
+import type { PullRequestCheck, PullRequestDetail } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolvePullRequestDetailChecks } from "./pullRequestChecks.ts";

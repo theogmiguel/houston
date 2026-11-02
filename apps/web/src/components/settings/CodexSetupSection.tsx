@@ -1,20 +1,20 @@
-import { AuthProvidersManageScope, ProviderDriverKind } from "@t3tools/contracts";
+import { AuthProvidersManageScope, ProviderDriverKind } from "@houston-app/contracts";
 import { readPreparedConnection, useEnvironmentScope } from "../../state/session";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@houston-app/client-runtime/state/runtime";
 import type {
   ChatGptHandoffInput,
   ChatGptTransferredProfile,
   EnvironmentId,
   ProviderInstanceId,
   ServerProvider,
-} from "@t3tools/contracts";
-import { codexAuthHandoffUrl } from "@t3tools/shared/codexAuthHandoff";
-import { providerAuthReturnUrl } from "@t3tools/shared/providerAuthReturnUrl";
-import { isLoopbackHost } from "@t3tools/shared/preview";
+} from "@houston-app/contracts";
+import { codexAuthHandoffUrl } from "@houston-app/shared/codexAuthHandoff";
+import { providerAuthReturnUrl } from "@houston-app/shared/providerAuthReturnUrl";
+import { isLoopbackHost } from "@houston-app/shared/preview";
 import { CheckIcon, ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
 import {
   Children,

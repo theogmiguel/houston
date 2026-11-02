@@ -1,7 +1,7 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@houston-app/contracts";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
-import type { ChangeRequest } from "@t3tools/contracts";
+import type { ChangeRequest } from "@houston-app/contracts";
 
 const Repository = Schema.Struct({
   full_name: Schema.String,

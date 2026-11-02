@@ -1,4 +1,4 @@
-import type { OrchestrationV2PlanStep } from "@t3tools/contracts";
+import type { OrchestrationV2PlanStep } from "@houston-app/contracts";
 import { CheckCircle2Icon, CircleIcon } from "lucide-react";
 import { StreamingGlyph } from "./TimelineRowParts";
 import { cn } from "~/lib/utils";

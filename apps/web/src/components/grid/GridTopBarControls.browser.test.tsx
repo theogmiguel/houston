@@ -1,5 +1,5 @@
 import "~/index.css";
-import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ThreadId } from "@houston-app/contracts";
 import { expect, it, vi } from "vite-plus/test";
 
 vi.mock(import("~/state/server"), async () => {
@@ -8,7 +8,7 @@ vi.mock(import("~/state/server"), async () => {
 });
 
 import { render } from "../../../test/render";
-import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { useRightPanelStore } from "../../rightPanelStore";
 import type { GridRecord } from "../../grid/gridStore";
 import { threadLeaf } from "../../grid/tree";

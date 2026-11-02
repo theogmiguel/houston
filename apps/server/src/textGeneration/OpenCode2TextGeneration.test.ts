@@ -1,16 +1,16 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { ProviderInstanceId } from "@t3tools/contracts";
+import { ProviderInstanceId } from "@houston-app/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import { TestClock } from "effect/testing";
 
-import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
+import * as TestProviderHost from "@houston-app/provider-testing/TestProviderHost";
 import * as OpenCode2AdapterV2Testkit from "../orchestration-v2/Adapters/OpenCode2AdapterV2.testkit.ts";
-import * as OpenCode2Server from "@t3tools/provider-opencode/server/v2/OpenCode2Server";
-import * as OpenCode2TextGeneration from "@t3tools/provider-opencode/server/v2/textGeneration";
+import * as OpenCode2Server from "@houston-app/provider-opencode/server/v2/OpenCode2Server";
+import * as OpenCode2TextGeneration from "@houston-app/provider-opencode/server/v2/textGeneration";
 import { OPENCODE2_TITLE_GENERATION } from "./OpenCode2TextGeneration.fixture.ts";
 
 const layer = TestProviderHost.layer().pipe(Layer.provideMerge(NodeServices.layer));

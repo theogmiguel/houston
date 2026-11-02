@@ -1,5 +1,5 @@
 import { discardComposerDraft } from "../../lib/discardComposerDraft";
-import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import { replaceComposerContextReferences } from "@houston-app/shared/composerContextReferences";
 import { SquarePenIcon, XIcon } from "lucide-react";
 import {
   memo,

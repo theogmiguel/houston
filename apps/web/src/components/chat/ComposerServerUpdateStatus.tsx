@@ -1,4 +1,4 @@
-import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
+import type { ServerUpdateState } from "@houston-app/client-runtime/state/server";
 import { CircleAlertIcon, DownloadIcon } from "lucide-react";
 
 // Static on purpose: the title says when an update is running, and spinners repaint every frame.

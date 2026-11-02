@@ -2,7 +2,7 @@ import {
   createVcsActionManager,
   createVcsEnvironmentAtoms,
   createVcsStatusRevalidationAtomFamily,
-} from "@t3tools/client-runtime/state/vcs";
+} from "@houston-app/client-runtime/state/vcs";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { subscribeDocumentReturn } from "../lib/documentActivity";

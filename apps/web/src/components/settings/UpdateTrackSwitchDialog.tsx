@@ -1,8 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
-import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { DesktopUpdateChannel } from "@t3tools/contracts";
-import { acceptsTrackSwitchRelease, desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
-import { isMacPlatform } from "@t3tools/shared/keybindings";
+import { settlePromise, squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
+import type { DesktopUpdateChannel } from "@houston-app/contracts";
+import { acceptsTrackSwitchRelease, desktopUpdateChannelOf } from "@houston-app/shared/cliRelease";
+import { isMacPlatform } from "@houston-app/shared/keybindings";
 import { useState } from "react";
 import { AsyncResult } from "effect/reactivity";
 

@@ -3,7 +3,7 @@ import {
   HoustonTaskSourceError,
   type HoustonTaskSourceSettingsInput,
   type HoustonTaskSourceSnapshot,
-} from "@t3tools/contracts/houston/taskSources";
+} from "@houston-app/contracts/houston/taskSources";
 
 import {
   checkGithubSettings,

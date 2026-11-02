@@ -1,4 +1,4 @@
-import { secondTick } from "@t3tools/client-runtime/clock";
+import { secondTick } from "@houston-app/client-runtime/clock";
 
 /**
  * Ref callback that writes `format(Date.now())` into a node and, while `live`,

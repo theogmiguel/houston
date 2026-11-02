@@ -1,4 +1,4 @@
-import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+import { DEFAULT_UNIFIED_SETTINGS } from "@houston-app/contracts/settings";
 
 import { BranchNamingAdvancedSettings, WorktreeBranchNamingRow } from "./BranchNamingSettings";
 import { WorktreeSubmodulesRow } from "./ProjectDefaultsSettings";

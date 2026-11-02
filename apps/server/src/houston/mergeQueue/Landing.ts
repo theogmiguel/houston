@@ -1,12 +1,12 @@
 // Lands the entry that goes next: re-checks the pause, gates, head and base, pushes the verified
 // commit with a lease when it is not the head yet, and merges exactly the commit the gates read,
 // or hands that commit to GitHub's merge queue or auto-merge.
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId } from "@houston-app/contracts";
 import type {
   HoustonMergeQueueFailure,
   HoustonMergeQueueMergeHeadResult,
   HoustonMergeQueueVerification,
-} from "@t3tools/contracts/houston/mergeQueue";
+} from "@houston-app/contracts/houston/mergeQueue";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

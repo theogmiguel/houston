@@ -6,7 +6,7 @@ import type {
   OrchestrationV2CheckpointFileTotals,
   OrchestrationV2ThreadProjection,
   RunId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
 
 export interface ThreadCheckpointSummary {

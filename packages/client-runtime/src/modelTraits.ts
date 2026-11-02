@@ -2,13 +2,13 @@ import type {
   ModelSelection,
   ProviderDriverKind,
   ProviderOptionDescriptor,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   buildProviderOptionSelectionsFromDescriptors,
   getProviderOptionCurrentLabel,
   getProviderOptionCurrentValue,
   isClaudeUltrathinkPrompt,
-} from "@t3tools/shared/model";
+} from "@houston-app/shared/model";
 import { REASONING_EFFORT_OPTION_IDS } from "./state/threadExecution.ts";
 
 const REASONING_DESCRIPTOR_IDS: ReadonlySet<string> = new Set([

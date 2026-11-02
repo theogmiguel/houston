@@ -1,7 +1,7 @@
 import {
   IMAGE_DIMENSIONS_HEADER_BYTES,
   readImageDimensions,
-} from "@t3tools/shared/imageDimensions";
+} from "@houston-app/shared/imageDimensions";
 
 export async function officeImageBitmap(blob: Blob) {
   const bytes = new Uint8Array(await blob.slice(0, IMAGE_DIMENSIONS_HEADER_BYTES).arrayBuffer());

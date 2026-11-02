@@ -1,6 +1,6 @@
 // The rules that decide a Night shift outcome without I/O: the settings' defaults and bounds,
 // the window, the idle rule, the headline and the fallback report.
-import type { ModelSelection } from "@t3tools/contracts";
+import type { ModelSelection } from "@houston-app/contracts";
 import {
   HOUSTON_NIGHT_SHIFT_LIMITS as LIMITS,
   type HoustonNightShiftErrorKind,
@@ -8,7 +8,7 @@ import {
   type NightCheck,
   type NightCrewRole,
   type NightStopReason,
-} from "@t3tools/contracts/houston/nightShift";
+} from "@houston-app/contracts/houston/nightShift";
 
 export const ORCHESTRATOR_DRIVERS: ReadonlySet<string> = new Set([
   "claudeAgent",

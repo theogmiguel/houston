@@ -10,7 +10,7 @@ import {
   ProviderDriverKind,
   ScheduledTaskId,
   defaultInstanceIdForDriver,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   HoustonNightShiftError,
   HoustonNightShiftSettings,
@@ -18,8 +18,8 @@ import {
   type HoustonNightShiftImportResult,
   type HoustonNightShiftImportStatus,
   type NightFocusLevel,
-} from "@t3tools/contracts/houston/nightShift";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@houston-app/contracts/houston/nightShift";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

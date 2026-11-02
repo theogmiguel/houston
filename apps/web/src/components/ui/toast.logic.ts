@@ -1,4 +1,4 @@
-import type { ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import type { ScopedThreadRef, ThreadId } from "@houston-app/contracts";
 
 /** Base UI updates omit undefined; clear actions with defined actionProps and empty children, treated as
  * invisible. */

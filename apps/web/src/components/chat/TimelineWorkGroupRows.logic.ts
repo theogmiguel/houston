@@ -1,4 +1,4 @@
-import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import { formatDuration } from "@houston-app/shared/orchestrationTiming";
 import type { ThreadStatusPill } from "../Sidebar.logic";
 
 /**

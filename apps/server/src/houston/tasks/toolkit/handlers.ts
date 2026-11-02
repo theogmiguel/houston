@@ -1,11 +1,11 @@
 // Every call checks the caller's project access first; writes then stay in that project or on
 // unassigned tasks, and starting work needs a caller that may delegate.
-import { OrchestratorMcpFailure, type ProjectId } from "@t3tools/contracts";
+import { OrchestratorMcpFailure, type ProjectId } from "@houston-app/contracts";
 import {
   type HoustonTaskDetail,
   type HoustonTaskPatch,
   type HoustonTaskSummary,
-} from "@t3tools/contracts/houston/tasks";
+} from "@houston-app/contracts/houston/tasks";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 

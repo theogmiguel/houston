@@ -1,6 +1,6 @@
 // At startup, unassigns tasks whose project no longer exists: a deletion whose hook did not run,
 // such as one interrupted between its commit and the hook, leaves them on a deleted project.
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 

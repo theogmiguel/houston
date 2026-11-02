@@ -1,13 +1,13 @@
 import type { StoredSdkCredentials } from "@cursor/sdk";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { ProviderInstanceId } from "@t3tools/contracts";
+import { ProviderInstanceId } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
-import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
-import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
+import * as ProviderHost from "@houston-app/provider-core/server/ProviderHost";
+import * as TestProviderHost from "@houston-app/provider-testing/TestProviderHost";
 import * as Layer from "effect/Layer";
 import { makeCursorCredentialStore } from "./credentialStore.ts";
 

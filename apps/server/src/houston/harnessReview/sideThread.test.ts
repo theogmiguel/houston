@@ -19,13 +19,13 @@ import {
   type ProviderReplayTranscript,
   type RunId,
   ThreadId,
-} from "@t3tools/contracts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+} from "@houston-app/contracts";
+import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
 import {
   materializeReplayTranscriptWorkspace,
   readProviderReplayTranscript,
-} from "@t3tools/provider-testing/replayTranscript";
-import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
+} from "@houston-app/provider-testing/replayTranscript";
+import { checkpointWorkspace } from "@houston-app/provider-testing/replayWorkspace";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

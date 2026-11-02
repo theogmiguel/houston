@@ -3,7 +3,7 @@ import {
   EnvironmentId,
   type ResourceTelemetryHistory,
   type ResourceTelemetrySnapshot,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Data from "effect/Data";

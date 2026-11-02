@@ -4,7 +4,7 @@ import {
   type ConnectionDiagnosis,
   connectionDiagnosisText,
   presentConnectionDiagnosis,
-} from "@t3tools/client-runtime/connection";
+} from "@houston-app/client-runtime/connection";
 import { AsyncResult } from "effect/reactivity";
 import { ChevronRightIcon } from "lucide-react";
 

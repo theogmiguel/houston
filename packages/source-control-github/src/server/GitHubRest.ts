@@ -1,4 +1,4 @@
-import { normalizeHost } from "@t3tools/source-control-core/server/pullRequestUtils";
+import { normalizeHost } from "@houston-app/source-control-core/server/pullRequestUtils";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -7,12 +7,12 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http";
 
-import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
+import { collectUint8StreamText } from "@houston-app/provider-core/server/collectStreamText";
 import * as GitHubAppSignIn from "./GitHubAppSignIn.ts";
 import * as GitHubCredentials from "./GitHubCredentials.ts";
 import * as GitHubQuota from "./GitHubQuota.ts";
 import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
+import * as SourceControlRateLimit from "@houston-app/source-control-core/server/SourceControlRateLimit";
 
 const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const { gitHubApiUrls } = GitHubRequestPolicy;
@@ -52,7 +52,7 @@ export class GitHubRest extends Context.Service<
     readonly credential: GitHubRequestPolicy.GitHubRequestPolicy["Service"]["credential"];
     readonly appCredential: GitHubRequestPolicy.GitHubRequestPolicy["Service"]["appCredential"];
   }
->()("@t3tools/source-control-github/server/GitHubRest") {}
+>()("@houston-app/source-control-github/server/GitHubRest") {}
 
 const decodeRestErrors = Schema.decodeUnknownOption(
   Schema.fromJsonString(

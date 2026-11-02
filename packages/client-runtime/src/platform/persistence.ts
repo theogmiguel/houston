@@ -5,7 +5,7 @@ import {
   type ServerConfig,
   type ThreadId,
   type VcsListRefsResult,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -48,7 +48,7 @@ export class ConnectionTargetStore extends Context.Service<
     readonly list: Effect.Effect<ReadonlyArray<ConnectionTarget>, ConnectionPersistenceError>;
     readonly listDisabled: Effect.Effect<ReadonlyArray<EnvironmentId>, ConnectionPersistenceError>;
   }
->()("@t3tools/client-runtime/platform/persistence/ConnectionTargetStore") {}
+>()("@houston-app/client-runtime/platform/persistence/ConnectionTargetStore") {}
 
 export class ConnectionRegistrationStore extends Context.Service<
   ConnectionRegistrationStore,
@@ -75,7 +75,7 @@ export class ConnectionRegistrationStore extends Context.Service<
       enabled: boolean,
     ) => Effect.Effect<void, ConnectionPersistenceError>;
   }
->()("@t3tools/client-runtime/platform/persistence/ConnectionRegistrationStore") {}
+>()("@houston-app/client-runtime/platform/persistence/ConnectionRegistrationStore") {}
 
 export class EnvironmentCacheStore extends Context.Service<
   EnvironmentCacheStore,
@@ -137,11 +137,11 @@ export class EnvironmentCacheStore extends Context.Service<
       environmentId: EnvironmentId,
     ) => Effect.Effect<void, ConnectionPersistenceError>;
   }
->()("@t3tools/client-runtime/platform/persistence/EnvironmentCacheStore") {}
+>()("@houston-app/client-runtime/platform/persistence/EnvironmentCacheStore") {}
 
 export class EnvironmentOwnedDataCleanup extends Context.Reference<{
   readonly clear: (environmentId: EnvironmentId) => Effect.Effect<void>;
-}>("@t3tools/client-runtime/platform/persistence/EnvironmentOwnedDataCleanup", {
+}>("@houston-app/client-runtime/platform/persistence/EnvironmentOwnedDataCleanup", {
   defaultValue: () => ({
     clear: () => Effect.void,
   }),

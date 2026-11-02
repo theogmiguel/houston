@@ -1,4 +1,7 @@
-import type { PullRequestFileViewedState, PullRequestFilesViewedResult } from "@t3tools/contracts";
+import type {
+  PullRequestFileViewedState,
+  PullRequestFilesViewedResult,
+} from "@houston-app/contracts";
 
 export type FileViewedStates = ReadonlyMap<string, PullRequestFileViewedState>;
 

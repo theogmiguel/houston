@@ -3,7 +3,7 @@
 import {
   HoustonHarnessError,
   type HoustonHarnessError as HoustonHarnessErrorType,
-} from "@t3tools/contracts/houston/harnessReview";
+} from "@houston-app/contracts/houston/harnessReview";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";

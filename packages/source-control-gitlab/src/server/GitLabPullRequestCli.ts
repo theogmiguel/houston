@@ -1,10 +1,10 @@
-import { isCommitSha } from "@t3tools/source-control-core/server/pullRequestUtils";
+import { isCommitSha } from "@houston-app/source-control-core/server/pullRequestUtils";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import { resolvePullRequestAuthorFilter, VcsProcessExitError } from "@t3tools/contracts";
+import { resolvePullRequestAuthorFilter, VcsProcessExitError } from "@houston-app/contracts";
 import type {
   PullRequestAction,
   PullRequestActor,
@@ -25,7 +25,7 @@ import type {
   PullRequestReviewThread,
   PullRequestReviewVerdict,
   PullRequestReviewerCandidateList,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 
 import * as GitLabCli from "./GitLabCli.ts";
 import {
@@ -63,7 +63,7 @@ import {
 import type {
   ProviderFileStats,
   ProviderListCursor,
-} from "@t3tools/source-control-core/server/PullRequestProvider";
+} from "@houston-app/source-control-core/server/PullRequestProvider";
 
 export class GitLabMergeRequestReadError extends Schema.TaggedError<GitLabMergeRequestReadError>()(
   "GitLabMergeRequestReadError",
@@ -475,7 +475,7 @@ export class GitLabPullRequestCli extends Context.Service<
       readonly reacted: boolean;
     }) => Effect.Effect<void, GitLabPullRequestCliError>;
   }
->()("@t3tools/source-control-gitlab/server/GitLabPullRequestCli") {}
+>()("@houston-app/source-control-gitlab/server/GitLabPullRequestCli") {}
 
 function projectPath(repository: string): string {
   return encodeURIComponent(repository.trim());

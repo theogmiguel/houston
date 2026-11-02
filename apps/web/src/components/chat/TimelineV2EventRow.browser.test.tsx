@@ -4,7 +4,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
@@ -123,9 +123,7 @@ describe("subagent group", () => {
     await expect.element(screen.getByText("Ready")).toBeVisible();
     expect(onToggleWorkEntry).toHaveBeenCalledWith("subagent-group-row", false);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "Open Review: web renderer" }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: "Open Review: web renderer" }));
     expect(onOpenThread).toHaveBeenCalledWith(RENDERER);
 
     await userEvent.click(summary);

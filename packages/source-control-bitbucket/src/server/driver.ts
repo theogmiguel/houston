@@ -1,7 +1,7 @@
 import {
   defineSourceControlDriver,
   withOwnServices,
-} from "@t3tools/source-control-core/server/driver";
+} from "@houston-app/source-control-core/server/driver";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 

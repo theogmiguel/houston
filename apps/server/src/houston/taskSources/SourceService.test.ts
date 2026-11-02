@@ -1,7 +1,7 @@
 // Settings, credentials and project deletion through the service over the real project service,
 // the memory keychain and a loopback Notion fake.
 import { assert, describe, it } from "@effect/vitest";
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";

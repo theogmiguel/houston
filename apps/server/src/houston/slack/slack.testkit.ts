@@ -1,9 +1,9 @@
 // Slack intake over one database with the real project and task services, the memory keychain,
 // a recording `HoustonTaskRuns` fake and the loopback Slack fake (slack.fake.ts).
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import type { ProjectId } from "@t3tools/contracts";
-import type { HoustonSlackInfo } from "@t3tools/contracts/houston/slack";
-import type { HoustonTaskError } from "@t3tools/contracts/houston/tasks";
+import type { ProjectId } from "@houston-app/contracts";
+import type { HoustonSlackInfo } from "@houston-app/contracts/houston/slack";
+import type { HoustonTaskError } from "@houston-app/contracts/houston/tasks";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";

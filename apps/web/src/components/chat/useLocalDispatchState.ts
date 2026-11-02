@@ -1,4 +1,4 @@
-import { type MessageId, type RuntimeRequestId } from "@t3tools/contracts";
+import { type MessageId, type RuntimeRequestId } from "@houston-app/contracts";
 import { useState } from "react";
 import { type ComposerSubmissionIntent } from "../../composer-logic";
 import { type SessionPhase, type Thread } from "../../types";

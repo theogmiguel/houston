@@ -8,26 +8,26 @@ import {
   type ToolActivityIcon,
   type OrchestrationV2TurnItem,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   resolveT3McpSummaryAction,
   resolveT3McpToolDefinition,
   type T3McpToolDefinition,
   type T3McpToolSummaryAction,
-} from "@t3tools/shared/t3McpToolPresentation";
-import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-images";
-import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { isWorkspaceImagePreviewPath } from "@t3tools/shared/mediaPreview";
-import { formatTokens } from "@t3tools/shared/usageFormat";
-import { classifyToolActivity } from "@t3tools/shared/toolActivity";
-import { toolOutputIndicatesFailure } from "@t3tools/shared/toolOutput";
+} from "@houston-app/shared/t3McpToolPresentation";
+import { classifyMarkdownImageSource } from "@houston-app/client-runtime/markdown-images";
+import { resolveMediaSource } from "@houston-app/client-runtime/media-source";
+import { sourceControlClients } from "@houston-app/client-runtime/source-control-clients";
+import { isWorkspaceImagePreviewPath } from "@houston-app/shared/mediaPreview";
+import { formatTokens } from "@houston-app/shared/usageFormat";
+import { classifyToolActivity } from "@houston-app/shared/toolActivity";
+import { toolOutputIndicatesFailure } from "@houston-app/shared/toolOutput";
 
 import {
   summarizeT3ToolCalls,
   t3ToolResultIndicatesFailure,
   type T3ToolSummaryCall,
-} from "@t3tools/client-runtime/t3ToolSummary";
+} from "@houston-app/client-runtime/t3ToolSummary";
 
 export type WorkLogToolLifecycleStatus = RuntimeItemStatus | "stopped" | "idle";
 
@@ -80,7 +80,7 @@ export function contextCompactionLabel(item: CompactionLabelItem): string {
 }
 
 export interface WorkLogPresentationEntry {
-  readonly questionAnswer?: import("@t3tools/contracts").UserInputAttachmentAnswerPayload;
+  readonly questionAnswer?: import("@houston-app/contracts").UserInputAttachmentAnswerPayload;
   readonly id: string;
   readonly createdAt: string;
   readonly label: string;

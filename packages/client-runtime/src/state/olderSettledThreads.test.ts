@@ -8,7 +8,7 @@ import {
   type OrchestrationV2SearchThreadsResult,
   type OrchestrationV2ShellSnapshot,
   type OrchestrationV2ThreadShell,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";

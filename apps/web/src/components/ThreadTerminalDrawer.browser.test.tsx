@@ -1,5 +1,5 @@
-import { EMPTY_TERMINAL_SESSION_STATE } from "@t3tools/client-runtime/state/terminal";
-import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import { EMPTY_TERMINAL_SESSION_STATE } from "@houston-app/client-runtime/state/terminal";
+import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@houston-app/contracts";
 import { expect, it, vi } from "vite-plus/test";
 import { act, fakeTimers, render } from "../../test/render";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
@@ -60,7 +60,7 @@ vi.mock("../editorPreferences", () => ({ useOpenInPreferredEditor: () => () => {
 vi.mock("./preview/openTerminalLinkInPreview", () => ({ openTerminalLinkInPreview: () => {} }));
 vi.mock("~/localApi", () => ({ readLocalApi: () => null }));
 vi.mock("../hooks/useSettings", async () => {
-  const { DEFAULT_CLIENT_SETTINGS } = await import("@t3tools/contracts/settings");
+  const { DEFAULT_CLIENT_SETTINGS } = await import("@houston-app/contracts/settings");
   return {
     useClientSettings: <T,>(select: (settings: typeof DEFAULT_CLIENT_SETTINGS) => T) =>
       select(DEFAULT_CLIENT_SETTINGS),

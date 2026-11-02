@@ -1,4 +1,4 @@
-import { readImageDimensions } from "@t3tools/shared/imageDimensions";
+import { readImageDimensions } from "@houston-app/shared/imageDimensions";
 
 const ICNS_HEADER_BYTES = 8;
 const ICNS_MAGIC = 0x69636e73;

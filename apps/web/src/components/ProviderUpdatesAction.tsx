@@ -1,5 +1,5 @@
-import { AuthProvidersManageScope, PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
-import { settlePromise } from "@t3tools/client-runtime/state/runtime";
+import { AuthProvidersManageScope, PROVIDER_DISPLAY_NAMES } from "@houston-app/contracts";
+import { settlePromise } from "@houston-app/client-runtime/state/runtime";
 import { useRef, useState } from "react";
 
 import { useEnvironmentProviders, useEnvironments } from "~/state/environments";

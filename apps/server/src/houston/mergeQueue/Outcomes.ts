@@ -3,7 +3,7 @@
 import type {
   HoustonMergeQueueFailure,
   HoustonMergeQueueMergeMethod,
-} from "@t3tools/contracts/houston/mergeQueue";
+} from "@houston-app/contracts/houston/mergeQueue";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

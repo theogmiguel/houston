@@ -3,9 +3,12 @@
 // Start begins it under the working cap, Refuse cancels it. One operation runs at a time.
 import * as NodePath from "node:path";
 
-import { ChatAttachment } from "@t3tools/contracts";
-import { HOUSTON_SLACK_LIMITS, type HoustonSlackLanguage } from "@t3tools/contracts/houston/slack";
-import { houstonTaskKey } from "@t3tools/contracts/houston/tasks";
+import { ChatAttachment } from "@houston-app/contracts";
+import {
+  HOUSTON_SLACK_LIMITS,
+  type HoustonSlackLanguage,
+} from "@houston-app/contracts/houston/slack";
+import { houstonTaskKey } from "@houston-app/contracts/houston/tasks";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -846,9 +849,7 @@ const make = Effect.gen(function* () {
       );
       return;
     }
-    yield* store.write(
-      seen(request, key, classified.ts).pipe(Effect.as({ result: undefined })),
-    );
+    yield* store.write(seen(request, key, classified.ts).pipe(Effect.as({ result: undefined })));
   });
 
   /** During the work: the owner hears it; the agent does not. */

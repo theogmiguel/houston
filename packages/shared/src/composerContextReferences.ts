@@ -8,7 +8,7 @@ import {
   type KnownComposerContextRecord,
   type ScopedThreadRef,
   type ThreadContextRecord,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 
 const CONTEXT_PROTOCOL = "t3-context:";
 const COMPOSER_CONTEXT_HREF_PREFIX = `${CONTEXT_PROTOCOL}//v1/`;
@@ -383,10 +383,10 @@ export function threadContextsOutsideEnvironment(input: {
 }
 
 export function remapComposerContextAttachments(
-  context: import("@t3tools/contracts").OrchestrationMessageContext | undefined,
+  context: import("@houston-app/contracts").OrchestrationMessageContext | undefined,
   before: ReadonlyArray<{ readonly id?: string | undefined }>,
   after: ReadonlyArray<{ readonly id: string }>,
-): import("@t3tools/contracts").OrchestrationMessageContext | undefined {
+): import("@houston-app/contracts").OrchestrationMessageContext | undefined {
   if (context === undefined) return undefined;
   const ids = new Map(
     before.flatMap((attachment, index) => {

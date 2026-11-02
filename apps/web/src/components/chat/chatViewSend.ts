@@ -6,16 +6,16 @@ import {
   type ScopedThreadRef,
   type ThreadId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   wasBootstrapThreadDeleted,
   wasBootstrapThreadNotCreated,
-} from "@t3tools/client-runtime/errors";
+} from "@houston-app/client-runtime/errors";
 import { Atom } from "effect/reactivity";
 import {
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@houston-app/client-runtime/state/runtime";
 import { readLocalApi } from "../../localApi";
 import { getUploadedAttachments } from "../../lib/attachmentUploadQueue";
 import { findRevertCheckpoint } from "../../session-logic";
@@ -29,8 +29,8 @@ import {
   useComposerDraftStore,
   DraftId,
 } from "../../composerDraftStore";
-import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
-import { createModelSelection } from "@t3tools/shared/model";
+import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@houston-app/shared/composerContextReferences";
+import { createModelSelection } from "@houston-app/shared/model";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { getComposerPromptInjectionState, getComposerProviderState } from "./composerProviderState";
 import {

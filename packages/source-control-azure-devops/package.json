@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/source-control-azure-devops",
+  "name": "@houston-app/source-control-azure-devops",
   "private": true,
   "type": "module",
   "exports": {
@@ -17,16 +17,16 @@
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/shared": "workspace:*",
-    "@t3tools/source-control-core": "workspace:*",
+    "@houston-app/contracts": "workspace:*",
+    "@houston-app/shared": "workspace:*",
+    "@houston-app/source-control-core": "workspace:*",
     "diff": "8.0.3",
     "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
-    "@t3tools/source-control-testing": "workspace:*",
+    "@houston-app/source-control-testing": "workspace:*",
     "@types/node": "catalog:",
     "vite-plus": "catalog:"
   }

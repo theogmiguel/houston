@@ -1,8 +1,8 @@
 // The merge queue's pure rules on literal values.
 import { describe, expect, it } from "@effect/vitest";
-import type { ProjectId } from "@t3tools/contracts";
-import type { HoustonMergeQueueEntry } from "@t3tools/contracts/houston/mergeQueue";
-import type { HoustonTaskRunState } from "@t3tools/contracts/houston/tasks";
+import type { ProjectId } from "@houston-app/contracts";
+import type { HoustonMergeQueueEntry } from "@houston-app/contracts/houston/mergeQueue";
+import type { HoustonTaskRunState } from "@houston-app/contracts/houston/tasks";
 
 import {
   checkEnqueue,

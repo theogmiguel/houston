@@ -1,5 +1,5 @@
-import { type ModelCapabilities, type ProviderOptionChoice } from "@t3tools/contracts";
-import { createModelCapabilities } from "@t3tools/shared/model";
+import { type ModelCapabilities, type ProviderOptionChoice } from "@houston-app/contracts";
+import { createModelCapabilities } from "@houston-app/shared/model";
 import * as Predicate from "effect/Predicate";
 
 // xhigh/max require per-model thinkingLevelMap opt-in; global advertising makes set_thinking_level fail.

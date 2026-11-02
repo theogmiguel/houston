@@ -1,4 +1,4 @@
-import { EnvironmentId, type ThreadPullRequestLink } from "@t3tools/contracts";
+import { EnvironmentId, type ThreadPullRequestLink } from "@houston-app/contracts";
 import { expect, it, vi } from "vite-plus/test";
 
 import { render } from "../../test/render";

@@ -1,16 +1,16 @@
 import { pipe } from "effect/Function";
-import { ACP_REGISTRY_MAX_AGENTS, AuthProvidersManageScope } from "@t3tools/contracts";
+import { ACP_REGISTRY_MAX_AGENTS, AuthProvidersManageScope } from "@houston-app/contracts";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@houston-app/client-runtime/state/runtime";
 import type {
   AcpRegistryPrepareResult,
   AcpRegistrySearchAgent,
   EnvironmentId,
   ProviderInstanceConfig,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { ExternalLinkIcon, SearchIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 
@@ -24,7 +24,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group"
 import { ScrollArea } from "../ui/scroll-area";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { isConfiguredAcpRegistryAgent } from "./AddProviderInstanceDialog.logic";
-import { ProviderDriverKind } from "@t3tools/contracts";
+import { ProviderDriverKind } from "@houston-app/contracts";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { providerClients } from "./providerDriverMeta";
 

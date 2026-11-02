@@ -1,7 +1,7 @@
 import {
   isProviderSendTurnSupportedImageMimeType,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Predicate from "effect/Predicate";
 
 import {

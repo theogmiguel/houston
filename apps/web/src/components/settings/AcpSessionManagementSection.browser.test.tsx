@@ -6,7 +6,7 @@ import {
   ThreadId,
   type ServerProvider,
   type AcpRegistryConfigurableProvider,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 

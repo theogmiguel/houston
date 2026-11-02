@@ -1,7 +1,7 @@
 // The Slack intake's pure rules on literal values: tokens, settings, events, catch-up, text and
 // its fence, images, acceptance, the working cap and the status reactions.
 import { assert, describe, it } from "@effect/vitest";
-import { HoustonSlackError } from "@t3tools/contracts/houston/slack";
+import { HoustonSlackError } from "@houston-app/contracts/houston/slack";
 
 import {
   SLACK_ANSWER_CLOSE,
@@ -507,8 +507,20 @@ describe("question forms are bounded field by field", () => {
       readonly limit?: number;
       readonly actual?: number;
     }> = [
-      { patch: { context: "c".repeat(501) }, kind: "limit", field: "context", limit: 500, actual: 501 },
-      { patch: { question: "q".repeat(301) }, kind: "limit", field: "question", limit: 300, actual: 301 },
+      {
+        patch: { context: "c".repeat(501) },
+        kind: "limit",
+        field: "context",
+        limit: 500,
+        actual: 501,
+      },
+      {
+        patch: { question: "q".repeat(301) },
+        kind: "limit",
+        field: "question",
+        limit: 300,
+        actual: 301,
+      },
       {
         patch: { options: ["CSV", "o".repeat(201)] },
         kind: "limit",
@@ -518,7 +530,13 @@ describe("question forms are bounded field by field", () => {
       },
       { patch: { why: "w".repeat(201) }, kind: "limit", field: "why", limit: 200, actual: 201 },
       { patch: { options: ["CSV"] }, kind: "invalid", field: "options" },
-      { patch: { options: ["a", "b", "c", "d", "e"] }, kind: "limit", field: "options", limit: 4, actual: 5 },
+      {
+        patch: { options: ["a", "b", "c", "d", "e"] },
+        kind: "limit",
+        field: "options",
+        limit: 4,
+        actual: 5,
+      },
       { patch: { recommended: 3 }, kind: "invalid", field: "recommended" },
       { patch: { question: "   " }, kind: "invalid", field: "question" },
     ];
@@ -563,7 +581,12 @@ describe("question forms are bounded field by field", () => {
       { patch: { steps: ["a".repeat(301)] }, field: "steps", limit: 300, actual: 301 },
       { patch: { caveats: "v".repeat(601) }, field: "caveats", limit: 600, actual: 601 },
       { patch: { liveNote: "l".repeat(501) }, field: "liveNote", limit: 500, actual: 501 },
-      { patch: { warnings: Array.from({ length: 7 }, () => "w") }, field: "warnings", limit: 6, actual: 7 },
+      {
+        patch: { warnings: Array.from({ length: 7 }, () => "w") },
+        field: "warnings",
+        limit: 6,
+        actual: 7,
+      },
       { patch: { notes: ["n".repeat(201)] }, field: "notes", limit: 200, actual: 201 },
     ];
     for (const entry of cases) {
@@ -605,10 +628,16 @@ describe("everything posted to slack is escaped, path-free and redacted", () => 
       assert.strictEqual(agentText(input, context), posted, input);
     }
     assert.strictEqual(
-      agentText(String.raw`see C:\work\shop\src\b.ts`, { root: String.raw`C:\work\shop`, hide: [] }),
+      agentText(String.raw`see C:\work\shop\src\b.ts`, {
+        root: String.raw`C:\work\shop`,
+        hide: [],
+      }),
       String.raw`see src\b.ts`,
     );
-    for (const secret of ["ghp_abcdefghijklmnopqrstuvwxyz0123", "xoxb-1700000000-leaked-bot-token"]) {
+    for (const secret of [
+      "ghp_abcdefghijklmnopqrstuvwxyz0123",
+      "xoxb-1700000000-leaked-bot-token",
+    ]) {
       const posted = agentText(`warning: ${secret} was printed`, context);
       assert.notInclude(posted, secret);
       assert.include(posted, "[redacted]");

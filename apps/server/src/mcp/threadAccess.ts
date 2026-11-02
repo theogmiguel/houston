@@ -8,7 +8,7 @@ import {
   type RuntimeMode,
   ThreadId,
   type OrchestrationV2ThreadShell,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 

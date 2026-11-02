@@ -1,4 +1,4 @@
-import type { ProviderApprovalDecision, RuntimeRequestId } from "@t3tools/contracts";
+import type { ProviderApprovalDecision, RuntimeRequestId } from "@houston-app/contracts";
 import { TriangleAlertIcon } from "lucide-react";
 import { memo } from "react";
 

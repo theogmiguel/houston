@@ -1,4 +1,4 @@
-import { type ProviderSetupError, TextGenerationError } from "@t3tools/contracts";
+import { type ProviderSetupError, TextGenerationError } from "@houston-app/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -13,8 +13,8 @@ import { type AcpError, AcpRequestError } from "effect-acp/errors";
 
 import { applyAntigravityAcpModelSelection } from "../provider/acp/AntigravityAcpSupport.ts";
 import { removeAntigravitySessionFiles } from "../provider/acp/AntigravitySessionFiles.ts";
-import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
-import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
+import type * as AcpSessionRuntime from "@houston-app/provider-acp/server/AcpSessionRuntime";
+import * as TextGenerationOperations from "@houston-app/provider-core/server/textGenerationOperations";
 
 const ANTIGRAVITY_TIMEOUT_MS = 180_000;
 const MAX_OUTPUT_CHARS = 128_000;

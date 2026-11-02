@@ -1,6 +1,6 @@
 // The harness review tables. Every write publishes the project it touched after it commits, so
 // subscribers see changes in commit order.
-import { ProjectId, ScheduledTaskId, ThreadId } from "@t3tools/contracts";
+import { ProjectId, ScheduledTaskId, ThreadId } from "@houston-app/contracts";
 import {
   HOUSTON_DEFECT_LIMITS,
   HoustonHarnessError,
@@ -8,7 +8,7 @@ import {
   type HoustonHarnessReview,
   type HoustonHarnessReviewStatus,
   type HoustonHarnessTrigger,
-} from "@t3tools/contracts/houston/harnessReview";
+} from "@houston-app/contracts/houston/harnessReview";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

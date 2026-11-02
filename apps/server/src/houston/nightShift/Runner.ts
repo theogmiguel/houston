@@ -7,7 +7,7 @@ import {
   type ProjectId,
   type ScheduledTaskId,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   HOUSTON_NIGHT_SHIFT_LIMITS as LIMITS,
   HoustonNightShiftError,
@@ -16,7 +16,7 @@ import {
   type HoustonNightShiftWrapUpResult,
   type NightStopReason,
   type PreflightItem,
-} from "@t3tools/contracts/houston/nightShift";
+} from "@houston-app/contracts/houston/nightShift";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";

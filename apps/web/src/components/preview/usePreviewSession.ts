@@ -3,8 +3,8 @@ import {
   parseScopedThreadKey,
   scopeThreadRef,
   scopedThreadKey,
-} from "@t3tools/client-runtime/environment";
-import { type EnvironmentId, type ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+} from "@houston-app/client-runtime/environment";
+import { type EnvironmentId, type ScopedThreadRef, ThreadId } from "@houston-app/contracts";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
 

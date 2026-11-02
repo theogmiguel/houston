@@ -1,8 +1,8 @@
-import type { ThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
+import type { ThreadReferenceCopyTarget } from "@houston-app/client-runtime/thread-reference";
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   encodeComposerContextFragment,
-} from "@t3tools/shared/composerContextClipboard";
+} from "@houston-app/shared/composerContextClipboard";
 
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";

@@ -1,5 +1,5 @@
 //! Host side of upstream's desktop SSH bridge: runs the server entry with a hidden
-//! `__ssh-bridge` argument (protocol work stays in `@t3tools/ssh`) and owns the child,
+//! `__ssh-bridge` argument (protocol work stays in `@houston-app/ssh`) and owns the child,
 //! request correlation, password prompts and remote-editor probing.
 
 use std::ffi::OsString;

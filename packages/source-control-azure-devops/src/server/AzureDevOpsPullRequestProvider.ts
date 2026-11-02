@@ -1,7 +1,7 @@
-import { resolvePullRequestAuthorFilter, SourceControlProviderKind } from "@t3tools/contracts";
+import { resolvePullRequestAuthorFilter, SourceControlProviderKind } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
-import type { PullRequestCapabilities, PullRequestViewerPermissions } from "@t3tools/contracts";
+import type { PullRequestCapabilities, PullRequestViewerPermissions } from "@houston-app/contracts";
 
 import * as AzureDevOpsPullRequestCli from "./AzureDevOpsPullRequestCli.ts";
 import {
@@ -25,7 +25,7 @@ import {
   type ProviderChangeRequestSummary,
   type ProviderDiffSlice,
   type PullRequestProviderApi,
-} from "@t3tools/source-control-core/server/PullRequestProvider";
+} from "@houston-app/source-control-core/server/PullRequestProvider";
 import type {
   AzureDevOpsChangeEntry,
   AzureDevOpsItemContent,

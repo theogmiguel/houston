@@ -1,5 +1,5 @@
 import { render } from "../../../test/render";
-import { DEFAULT_SERVER_SETTINGS, type ServerObservability } from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS, type ServerObservability } from "@houston-app/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 

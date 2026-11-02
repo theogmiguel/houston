@@ -3,14 +3,14 @@
 // runs after the Tasks import, into a store with no reviews and no defects, in one transaction.
 import * as NodeSqlite from "node:sqlite";
 
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId } from "@houston-app/contracts";
 import {
   HoustonHarnessError,
   HoustonHarnessImportCounts,
   type HoustonHarnessImportResult,
   type HoustonHarnessImportStatus,
-} from "@t3tools/contracts/houston/harnessReview";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@houston-app/contracts/houston/harnessReview";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

@@ -6,7 +6,7 @@ import {
   type ProjectId,
   ProviderDriverKind,
   defaultInstanceIdForDriver,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   HOUSTON_TASK_LIMITS,
   type HoustonTask,
@@ -30,7 +30,7 @@ import {
   type HoustonTaskStreamEvent,
   type HoustonTaskSubscribeInput,
   type HoustonTaskSummary,
-} from "@t3tools/contracts/houston/tasks";
+} from "@houston-app/contracts/houston/tasks";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

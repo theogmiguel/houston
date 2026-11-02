@@ -1,6 +1,6 @@
 // Sends what the intake owes Slack: at most 10 rows per 5-second tick in id order, each once per
 // dedupe key, with the bot token read from the OS keychain per tick. Nothing while disabled.
-import { HOUSTON_SLACK_LIMITS } from "@t3tools/contracts/houston/slack";
+import { HOUSTON_SLACK_LIMITS } from "@houston-app/contracts/houston/slack";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

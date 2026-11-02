@@ -1,5 +1,5 @@
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { scopeProjectRef, scopeThreadRef } from "@houston-app/client-runtime/environment";
+import type { EnvironmentId, ProjectId, ThreadId } from "@houston-app/contracts";
 
 import { type DraftId, useComposerDraftStore } from "../composerDraftStore";
 import { requestConfirmDialog } from "../confirmDialog";

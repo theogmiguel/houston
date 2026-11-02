@@ -5,7 +5,7 @@ import {
   type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { ProviderInstanceId, type ProviderReplayEntry } from "@t3tools/contracts";
+import { ProviderInstanceId, type ProviderReplayEntry } from "@houston-app/contracts";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -15,8 +15,8 @@ import {
   makeClaudeUserMessage,
   type ClaudeAgentSdkQueryOptions,
 } from "../src/orchestration-v2/Adapters/ClaudeAdapterV2.ts";
-import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
-import { makeCheckpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
+import { randomUuidV4 } from "@houston-app/provider-core/server/randomUuid";
+import { makeCheckpointWorkspace } from "@houston-app/provider-testing/replayWorkspace";
 
 const SCENARIO = "thread_fork_native_fork_local_rollback";
 const DEFAULT_OUTPUT = new URL(

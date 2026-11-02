@@ -1,6 +1,6 @@
-import { ServerProviderModel } from "@t3tools/contracts";
+import { ServerProviderModel } from "@houston-app/contracts";
 import { MuseSettings } from "../settings.ts";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { resolveSpawnCommand } from "@houston-app/shared/shell";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -18,7 +18,7 @@ import {
   providerModelsFromSettings,
   spawnAndCollect,
   type ProviderProbeResult,
-} from "@t3tools/provider-core/server/snapshotProbe";
+} from "@houston-app/provider-core/server/snapshotProbe";
 
 const MUSE_PRESENTATION = {
   displayName: "Muse Code",

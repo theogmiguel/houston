@@ -3,8 +3,8 @@ import {
   type EnvironmentId,
   type T3ProjectFile,
   type T3ProjectFileScript,
-} from "@t3tools/contracts";
-import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
+} from "@houston-app/contracts";
+import { parseT3ProjectFile } from "@houston-app/shared/t3ProjectFile";
 
 import { useProjectFileQuery } from "~/components/files/projectFilesQueryState";
 

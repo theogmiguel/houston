@@ -1,6 +1,10 @@
-import { T3_PROJECT_FILE_NAME, type EnvironmentId, type T3ProjectFile } from "@t3tools/contracts";
-import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
-import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
+import {
+  T3_PROJECT_FILE_NAME,
+  type EnvironmentId,
+  type T3ProjectFile,
+} from "@houston-app/contracts";
+import { parseT3ProjectFile } from "@houston-app/shared/t3ProjectFile";
+import { executeAtomQuery } from "@houston-app/client-runtime/state/runtime";
 
 import {
   getProjectFileQueryAtom,

@@ -2,7 +2,7 @@
 import * as NodeFS from "node:fs";
 import * as NodeTty from "node:tty";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 
 /**
  * Electron's Windows launcher has no stdin; Node substitutes a non-console NUL device.

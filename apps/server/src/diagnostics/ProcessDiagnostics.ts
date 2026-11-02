@@ -4,7 +4,7 @@ import type {
   ServerProcessDiagnosticsResult,
   ServerProcessSignal,
   ServerSignalProcessResult,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -127,7 +127,9 @@ export const make = Effect.fn("makeProcessDiagnostics")(function* () {
           pid: input.pid,
           signal: input.signal,
           signaled: false,
-          message: Option.some(`Process ${input.pid} is not a signalable Houston backend descendant.`),
+          message: Option.some(
+            `Process ${input.pid} is not a signalable Houston backend descendant.`,
+          ),
         };
       }
       return yield* Effect.try({

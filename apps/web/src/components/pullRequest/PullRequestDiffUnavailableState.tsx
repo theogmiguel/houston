@@ -1,4 +1,4 @@
-import type { SourceControlProviderKind } from "@t3tools/contracts";
+import type { SourceControlProviderKind } from "@houston-app/contracts";
 import { ExternalLinkIcon, TriangleAlertIcon } from "lucide-react";
 
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";

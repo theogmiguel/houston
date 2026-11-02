@@ -1,4 +1,4 @@
-import type { ProviderInstanceId, UnifiedSettings } from "@t3tools/contracts";
+import type { ProviderInstanceId, UnifiedSettings } from "@houston-app/contracts";
 
 import { mergeEnvironmentSettings } from "../../hooks/useSettings";
 import { getCustomModelOptionsByInstance } from "../../modelSelection";

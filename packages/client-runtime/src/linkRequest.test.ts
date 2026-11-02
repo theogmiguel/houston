@@ -1,4 +1,4 @@
-import { EnvironmentId, type ServerConfig, ThreadId, TurnItemId } from "@t3tools/contracts";
+import { EnvironmentId, type ServerConfig, ThreadId, TurnItemId } from "@houston-app/contracts";
 import * as Option from "effect/Option";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -251,7 +251,7 @@ describe("rankMachinesByHint", () => {
           ...machine,
           machine: "server",
           connected: true,
-            linked: false,
+          linked: false,
           urls: [],
         }) as const,
     );

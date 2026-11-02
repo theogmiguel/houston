@@ -1,7 +1,7 @@
 // Reads secrets that settings point at through a configured secret provider. Each read, including
 // a failed one, is held for the server's life so rebuilds never re-prompt an unlock; `invalidate`
 // (the Settings refresh) is the only way to read again.
-import type { SecretReference, ServerSettings } from "@t3tools/contracts";
+import type { SecretReference, ServerSettings } from "@houston-app/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -21,7 +21,7 @@ export class SecretResolver extends Context.Service<
     /** Forgets the given references, or every reference, so the next read asks the provider again. */
     readonly invalidate: (references?: ReadonlyArray<SecretReference>) => Effect.Effect<void>;
   }
->()("@t3tools/secret-provider-core/server/SecretResolver") {}
+>()("@houston-app/secret-provider-core/server/SecretResolver") {}
 
 const cacheKey = (reference: SecretReference) =>
   `${reference.provider}\u0000${reference.reference}`;

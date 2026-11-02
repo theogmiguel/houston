@@ -16,16 +16,16 @@ import {
   type ProviderReplayTranscript,
   RunId,
   ThreadId,
-} from "@t3tools/contracts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import { openCodePermissionRules } from "@t3tools/provider-opencode/server";
-import { sessionRules } from "@t3tools/provider-opencode/server/v2/adapter";
+} from "@houston-app/contracts";
+import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
+import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
+import { openCodePermissionRules } from "@houston-app/provider-opencode/server";
+import { sessionRules } from "@houston-app/provider-opencode/server/v2/adapter";
 import {
   materializeReplayTranscriptWorkspace,
   readProviderReplayTranscript,
-} from "@t3tools/provider-testing/replayTranscript";
-import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
+} from "@houston-app/provider-testing/replayTranscript";
+import { checkpointWorkspace } from "@houston-app/provider-testing/replayWorkspace";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

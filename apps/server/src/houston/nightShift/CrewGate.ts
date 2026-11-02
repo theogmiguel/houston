@@ -7,8 +7,8 @@ import {
   type OrchestratorMcpTaskRole,
   ProviderInstanceId,
   type ThreadId,
-} from "@t3tools/contracts";
-import type { NightCrewRole } from "@t3tools/contracts/houston/nightShift";
+} from "@houston-app/contracts";
+import type { NightCrewRole } from "@houston-app/contracts/houston/nightShift";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";

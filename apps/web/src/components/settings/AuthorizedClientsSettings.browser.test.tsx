@@ -1,4 +1,4 @@
-import type { AdvertisedEndpoint } from "@t3tools/contracts";
+import type { AdvertisedEndpoint } from "@houston-app/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import "~/index.css";

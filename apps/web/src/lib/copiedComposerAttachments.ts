@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@houston-app/contracts";
 
 // Keep the latest copy's files alive after source removal, including preview URL revocation.
 // Replacing the copy releases the previous files instead of accumulating draft attachments.

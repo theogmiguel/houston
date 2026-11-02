@@ -1,4 +1,4 @@
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { ScopedThreadRef } from "@houston-app/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { createContext, useContext, type ReactNode } from "react";
 

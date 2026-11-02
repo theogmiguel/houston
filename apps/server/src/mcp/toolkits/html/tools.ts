@@ -1,4 +1,4 @@
-import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import { OrchestratorMcpFailure } from "@houston-app/contracts";
 import {
   HTML_RENDER_COLUMN_WIDTH,
   HTML_RENDER_LAYOUT_GUIDE,
@@ -8,7 +8,7 @@ import {
   HTML_RENDER_MIN_HEIGHT,
   HTML_RENDER_THEME_GUIDE,
   HTML_RENDER_TOOL_NAME,
-} from "@t3tools/shared/htmlRender";
+} from "@houston-app/shared/htmlRender";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 

@@ -1,6 +1,6 @@
 // The Slack intake's tables, its connection status and its stream. Every write runs inside the
 // Tasks store's transaction, so a request and its task land together; events follow commit order.
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId } from "@houston-app/contracts";
 import type {
   HoustonSlackConnection,
   HoustonSlackInfo,
@@ -8,7 +8,7 @@ import type {
   HoustonSlackRequest,
   HoustonSlackRequestState,
   HoustonSlackStreamEvent,
-} from "@t3tools/contracts/houston/slack";
+} from "@houston-app/contracts/houston/slack";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

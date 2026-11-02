@@ -1,14 +1,14 @@
 // @effect-diagnostics nodeBuiltinImport:off - checks the host's default Codex directory without writing to it.
 import * as NodeFSP from "node:fs/promises";
 import * as NodeURL from "node:url";
-import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import { symlinksSupported } from "@houston-app/shared/testing/symlinks";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as CodexManagedTokenBroker from "./CodexManagedTokenBroker.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { CodexSettings, EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
+import { CodexSettings, EnvironmentId, ProviderInstanceId } from "@houston-app/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

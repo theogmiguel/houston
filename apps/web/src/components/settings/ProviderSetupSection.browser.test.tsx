@@ -5,7 +5,7 @@ import {
   type ProviderAuthState,
   type ProviderInstallState,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { userEvent } from "vite-plus/test/browser";
 import { describe, expect, it, vi } from "vite-plus/test";
 

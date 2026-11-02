@@ -1,4 +1,4 @@
-import type { EnvironmentId, PullRequestRef, PullRequestReviewGuide } from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestRef, PullRequestReviewGuide } from "@houston-app/contracts";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
 import { createPullRequestDiffFileContentsLoader } from "~/lib/diffFileContents";
@@ -18,7 +18,7 @@ import {
   useGuideRunStore,
   type GuideProgress,
 } from "./guideRunStore";
-import { stepTourPosition, stopFilePaths } from "@t3tools/client-runtime/review-guide-tour";
+import { stepTourPosition, stopFilePaths } from "@houston-app/client-runtime/review-guide-tour";
 import { useGuideDiffFiles } from "./useGuideDiffFiles";
 
 export function GuideTour({

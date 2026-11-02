@@ -9,8 +9,8 @@ import {
   type NightReportClaim,
   type NightReportDecision,
   type NightReportPullRequest,
-} from "@t3tools/contracts/houston/nightShift";
-import { houstonTaskKey } from "@t3tools/contracts/houston/tasks";
+} from "@houston-app/contracts/houston/nightShift";
+import { houstonTaskKey } from "@houston-app/contracts/houston/tasks";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";

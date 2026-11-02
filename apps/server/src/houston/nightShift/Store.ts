@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - one path join names the run folder for every caller.
 // The Night shift tables. Every write publishes the project it touched after it commits, so
 // subscribers see changes in commit order; a settled run's notice is published once.
-import { ProjectId, ScheduledTaskId, ThreadId } from "@t3tools/contracts";
+import { ProjectId, ScheduledTaskId, ThreadId } from "@houston-app/contracts";
 import {
   HoustonNightShiftError,
   HoustonNightShiftSettings,
@@ -14,7 +14,7 @@ import {
   type NightRunPhase,
   type NightRunTrigger,
   type NightStopReason,
-} from "@t3tools/contracts/houston/nightShift";
+} from "@houston-app/contracts/houston/nightShift";
 import * as NodePath from "node:path";
 
 import * as Context from "effect/Context";

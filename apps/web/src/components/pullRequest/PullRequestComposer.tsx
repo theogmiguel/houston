@@ -1,8 +1,8 @@
 import {
   capitalizeTerm,
   sourceControlClients,
-} from "@t3tools/client-runtime/source-control-clients";
-import type { EnvironmentId, PullRequestDetailView, PullRequestRef } from "@t3tools/contracts";
+} from "@houston-app/client-runtime/source-control-clients";
+import type { EnvironmentId, PullRequestDetailView, PullRequestRef } from "@houston-app/contracts";
 import { MessageSquareIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useRef, useState } from "react";
 

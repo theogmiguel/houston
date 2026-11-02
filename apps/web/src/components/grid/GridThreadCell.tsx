@@ -1,5 +1,5 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import { scopeThreadRef } from "@houston-app/client-runtime/environment";
+import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@houston-app/contracts";
 import { EllipsisIcon, Maximize2Icon, SquareSplitHorizontalIcon, XIcon } from "lucide-react";
 import { useEffect, useState, type CSSProperties, type RefObject } from "react";
 

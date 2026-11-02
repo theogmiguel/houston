@@ -1,9 +1,9 @@
-import type { TurnItemId } from "@t3tools/contracts";
+import type { TurnItemId } from "@houston-app/contracts";
 import {
   appendTerminalOutput,
   EMPTY_TERMINAL_OUTPUT,
   type TerminalOutputState,
-} from "@t3tools/shared/terminalOutput";
+} from "@houston-app/shared/terminalOutput";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

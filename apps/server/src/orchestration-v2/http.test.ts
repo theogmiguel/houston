@@ -13,9 +13,9 @@ import {
   OrchestrationV2ThreadTranscript,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { expect, it } from "@effect/vitest";
-import { threadTranscriptHeader } from "@t3tools/shared/threadTranscript";
+import { threadTranscriptHeader } from "@houston-app/shared/threadTranscript";
 import * as Effect from "effect/Effect";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";

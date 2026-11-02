@@ -13,9 +13,9 @@ import {
   type OrchestrationV2ThreadProjection,
   RunId,
   ThreadId,
-} from "@t3tools/contracts";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+} from "@houston-app/contracts";
+import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
+import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

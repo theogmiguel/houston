@@ -1,14 +1,14 @@
 import {
   EMPTY_ENVIRONMENT_THREAD_STATE,
   type EnvironmentThreadState,
-} from "@t3tools/client-runtime/state/threads";
+} from "@houston-app/client-runtime/state/threads";
 import {
   EnvironmentId,
   MessageId,
   RunId,
   ThreadId,
   type OrchestrationV2ThreadShell,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { makeThreadProjectionFixture } from "../test-fixtures";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";

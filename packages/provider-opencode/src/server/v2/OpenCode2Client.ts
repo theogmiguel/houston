@@ -70,7 +70,7 @@ export class OpenCode2Client extends Context.Service<
       readonly password: string | Redacted.Redacted;
     }) => Effect.Effect<OpenCode2Api>;
   }
->()("@t3tools/provider-opencode/server/v2/OpenCode2Client") {}
+>()("@houston-app/provider-opencode/server/v2/OpenCode2Client") {}
 
 // Heartbeats arrive every 10-15 seconds; longer silence means stuck, not idle.
 const SILENT_STREAM_TIMEOUT = "45 seconds";

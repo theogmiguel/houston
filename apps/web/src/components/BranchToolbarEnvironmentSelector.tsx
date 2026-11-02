@@ -4,7 +4,7 @@ import { Tooltip, TooltipTrigger, TooltipPopup } from "./ui/tooltip";
 import { useAtomValue } from "@effect/atom-react";
 import { shortcutLabelForCommand } from "../keybindings";
 import { primaryServerKeybindingsAtom } from "../state/server";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@houston-app/contracts";
 import { PlusIcon, ScaleIcon } from "lucide-react";
 import { memo } from "react";
 

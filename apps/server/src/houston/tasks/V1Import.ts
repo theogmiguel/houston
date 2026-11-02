@@ -8,7 +8,7 @@ import {
   type ModelSelection,
   ProviderDriverKind,
   defaultInstanceIdForDriver,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   HOUSTON_TASK_LIMITS,
   HoustonTaskImportCounts,
@@ -17,7 +17,7 @@ import {
   type HoustonTaskError,
   type HoustonTaskImportResult,
   type HoustonTaskImportStatus,
-} from "@t3tools/contracts/houston/tasks";
+} from "@houston-app/contracts/houston/tasks";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -29,7 +29,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import type * as SqlError from "effect/sql/SqlError";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as ServerConfig from "../../config.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import { HostedLaunch } from "../baseDir.ts";

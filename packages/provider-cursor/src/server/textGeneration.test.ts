@@ -1,12 +1,12 @@
 import type { RunResult } from "@cursor/sdk";
-import { ProviderInstanceId, TextGenerationError } from "@t3tools/contracts";
+import { ProviderInstanceId, TextGenerationError } from "@houston-app/contracts";
 import { CursorSettings } from "../settings.ts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { createModelSelection } from "@t3tools/shared/model";
+import { createModelSelection } from "@houston-app/shared/model";
 import { beforeEach, vi } from "vite-plus/test";
 
 import { makeCursorTextGeneration } from "./textGeneration.ts";

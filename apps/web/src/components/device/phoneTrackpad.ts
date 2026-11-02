@@ -2,7 +2,7 @@
 import {
   phoneWheelNavigation,
   type createPhoneInteraction,
-} from "@t3tools/client-runtime/device/phone-interaction";
+} from "@houston-app/client-runtime/device/phone-interaction";
 
 /** Safari reports cumulative pinch scale instead of Ctrl-wheel. */
 export function bindPhoneTrackpad(

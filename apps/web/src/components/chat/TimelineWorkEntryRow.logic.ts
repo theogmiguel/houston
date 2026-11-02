@@ -3,8 +3,8 @@ import type { Root, RootContent } from "mdast";
 import {
   resolveWorkEntryToolPresentation,
   toolGroupAction,
-} from "@t3tools/client-runtime/work-log/presentation";
-import { isJavaScriptReplTool } from "@t3tools/shared/toolActivity";
+} from "@houston-app/client-runtime/work-log/presentation";
+import { isJavaScriptReplTool } from "@houston-app/shared/toolActivity";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import { workEntryDisplayLabel } from "./MessagesTimeline.logic";
 import { type TimelineWorkEntry, type TimelineRow } from "./timelineRowContext";

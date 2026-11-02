@@ -4,7 +4,7 @@ import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   type ComposerContextReference,
   collectInlineContextIds,
@@ -31,14 +31,14 @@ import {
 import {
   fileAttachmentTooLargeMessage,
   formatAttachmentSize,
-} from "@t3tools/client-runtime/state/attachments";
+} from "@houston-app/client-runtime/state/attachments";
 import { fileContextReference, imageContextReference } from "~/lib/composerContextRecords";
 import { isMacPlatform, randomUUID } from "~/lib/utils";
 import {
   nextPastedTextFileName,
   pastedTextDisposition,
   wouldTextPasteExceedLimit,
-} from "@t3tools/client-runtime/text-paste";
+} from "@houston-app/client-runtime/text-paste";
 import {
   inheritComposerImageThumbnail,
   prepareImageForAttachment,

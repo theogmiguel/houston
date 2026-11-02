@@ -6,7 +6,7 @@ import {
   type OrchestrationV2ShellSnapshot,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2ThreadShell,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
 
 export const v2Now = DateTime.makeUnsafe("2026-06-20T00:00:00.000Z");

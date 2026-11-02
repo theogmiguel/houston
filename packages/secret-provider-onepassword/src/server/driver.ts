@@ -1,6 +1,6 @@
-import { spawnAndCollect } from "@t3tools/provider-core/server/snapshotProbe";
-import { defineSecretProviderDriver } from "@t3tools/secret-provider-core/server/driver";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { spawnAndCollect } from "@houston-app/provider-core/server/snapshotProbe";
+import { defineSecretProviderDriver } from "@houston-app/secret-provider-core/server/driver";
+import { resolveSpawnCommand } from "@houston-app/shared/shell";
 import * as Crypto from "effect/Crypto";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

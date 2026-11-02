@@ -7,9 +7,9 @@ import {
   type ProviderDriverKind,
   type ProviderInstanceId,
   type ServerProvider,
-} from "@t3tools/contracts";
-import type { ProviderReadiness } from "@t3tools/contracts/houston/providerReadiness";
-import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+} from "@houston-app/contracts";
+import type { ProviderReadiness } from "@houston-app/contracts/houston/providerReadiness";
+import type * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -462,9 +462,9 @@ export const decorateProviderRegistry = Effect.fn("decorateProviderRegistry")(fu
     refreshInstance: (instanceId) =>
       raw.refreshInstance(instanceId).pipe(Effect.flatMap(clearing(() => [instanceId]))),
     reloadSecretsAndRefresh: (instanceId) =>
-      raw.reloadSecretsAndRefresh(instanceId).pipe(
-        Effect.flatMap(clearing(() => (instanceId === undefined ? "all" : [instanceId]))),
-      ),
+      raw
+        .reloadSecretsAndRefresh(instanceId)
+        .pipe(Effect.flatMap(clearing(() => (instanceId === undefined ? "all" : [instanceId])))),
     refreshAfterUpdate: (provider, selectedInstanceId) =>
       raw
         .refreshAfterUpdate(provider, selectedInstanceId)

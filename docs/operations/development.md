@@ -40,7 +40,7 @@ Then:
 ./scripts/dev.sh                 # dev channel, build + run
 ```
 
-The development script builds the renderer (`pnpm --filter @t3tools/web build`), the
+The development script builds the renderer (`pnpm --filter @houston-app/web build`), the
 server bundle (`pnpm --filter houston build:bundle`) and the debug host (`cargo build` in
 `src-tauri`), then `exec`s `src-tauri/target/debug/houston-tauri --channel <target>`. The
 host attaches to the channel's running server or spawns one detached. Close the existing
@@ -171,8 +171,8 @@ with three jobs on Windows.
 
 ```
 pnpm -r typecheck
-pnpm --filter @t3tools/web build
-pnpm --filter @t3tools/contracts --filter @t3tools/shared test
+pnpm --filter @houston-app/web build
+pnpm --filter @houston-app/contracts --filter @houston-app/shared test
 pnpm --filter houston exec vp test run src/houston
 ```
 
@@ -246,7 +246,7 @@ missing or incorrect metadata upstream to LiteLLM.
 ./scripts/build-app.sh --bundles deb    # other bundle targets
 ```
 
-Build the renderer and stage the server first (`pnpm --filter @t3tools/web build`,
+Build the renderer and stage the server first (`pnpm --filter @houston-app/web build`,
 `pnpm --filter houston build:exe`, `node scripts/stage-v2-server.mjs`). `build-app.sh`
 re-execs itself under `scripts/oom-shield.sh` (`-j 3`) unless already shielded, then runs
 `CARGO_BUILD_JOBS=3 cargo tauri build --bundles <targets>`. Output lands at

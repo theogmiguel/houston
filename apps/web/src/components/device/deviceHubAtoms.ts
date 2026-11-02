@@ -1,4 +1,4 @@
-import type { DeviceHubAccess } from "@t3tools/client-runtime/state/deviceHubAccess";
+import type { DeviceHubAccess } from "@houston-app/client-runtime/state/deviceHubAccess";
 import * as Effect from "effect/Effect";
 import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";

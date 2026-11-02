@@ -1,6 +1,6 @@
-import type { OrchestrationV2TurnItem } from "@t3tools/contracts";
-import { resolveT3McpToolId } from "@t3tools/shared/t3McpToolPresentation";
-import { formatReadToolLabel, formatSearchToolLabel } from "@t3tools/shared/toolActivity";
+import type { OrchestrationV2TurnItem } from "@houston-app/contracts";
+import { resolveT3McpToolId } from "@houston-app/shared/t3McpToolPresentation";
+import { formatReadToolLabel, formatSearchToolLabel } from "@houston-app/shared/toolActivity";
 
 // Search results stay on the timeline wire, so keep their text a preview.
 const SEARCH_PREVIEW_MAX_CHARS = 8_000;

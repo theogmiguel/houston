@@ -6,7 +6,7 @@ import {
   ProviderInstanceId,
   ScheduledTaskId,
   type ScheduledTask,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type {

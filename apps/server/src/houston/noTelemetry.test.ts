@@ -3,9 +3,9 @@ import * as NodeFS from "node:fs";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { DesktopBackendBootstrap } from "@t3tools/contracts";
-import * as NetService from "@t3tools/shared/Net";
-import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
+import { DesktopBackendBootstrap } from "@houston-app/contracts";
+import * as NetService from "@houston-app/shared/Net";
+import * as OtelEnvironment from "@houston-app/shared/otelEnvironment";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

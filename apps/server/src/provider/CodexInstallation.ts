@@ -3,10 +3,10 @@ import {
   ProviderDriverKind,
   type ProviderInstallState,
   type ServerProviderCompatibilityAdvisory,
-} from "@t3tools/contracts";
-import { cliArchiveTarCommand } from "@t3tools/shared/cliRelease";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { resolveCommandPath, resolveSpawnCommand } from "@t3tools/shared/shell";
+} from "@houston-app/contracts";
+import { cliArchiveTarCommand } from "@houston-app/shared/cliRelease";
+import * as HostProcess from "@houston-app/shared/HostProcess";
+import { resolveCommandPath, resolveSpawnCommand } from "@houston-app/shared/shell";
 import * as Clock from "effect/Clock";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";

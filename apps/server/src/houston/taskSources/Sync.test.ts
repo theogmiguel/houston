@@ -1,6 +1,6 @@
 // Records merged into tasks, initiatives and links, and conflicts resolved, over one database.
 import { assert, describe, it } from "@effect/vitest";
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import type * as Layer from "effect/Layer";

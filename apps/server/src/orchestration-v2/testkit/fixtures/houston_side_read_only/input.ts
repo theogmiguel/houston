@@ -1,7 +1,7 @@
 // The prompts and thread ids the composed read-only recordings expect. Each transcript keeps its
 // recording's prompt; only the permission rules (OpenCode) or the second source turn (Codex)
 // differ from the recording named in its transcript_start metadata.
-import { ProviderInstanceId, ThreadId, type ModelSelection } from "@t3tools/contracts";
+import { ProviderInstanceId, ThreadId, type ModelSelection } from "@houston-app/contracts";
 
 import {
   OPENCODE2_MODEL_SELECTION,

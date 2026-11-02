@@ -3,15 +3,15 @@
 // @effect-diagnostics nodeBuiltinImport:off - hashes the remote body for the link.
 import * as NodeCrypto from "node:crypto";
 
-import type { ProjectId } from "@t3tools/contracts";
-import { HOUSTON_TASK_LIMITS, HoustonTaskStatus } from "@t3tools/contracts/houston/tasks";
+import type { ProjectId } from "@houston-app/contracts";
+import { HOUSTON_TASK_LIMITS, HoustonTaskStatus } from "@houston-app/contracts/houston/tasks";
 import type {
   HoustonTaskSourceConflictResolveInput,
   HoustonTaskSourceError,
   HoustonTaskSourceLink,
   HoustonTaskSourceProvider,
   HoustonTaskSourceSnapshot,
-} from "@t3tools/contracts/houston/taskSources";
+} from "@houston-app/contracts/houston/taskSources";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

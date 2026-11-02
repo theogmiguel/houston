@@ -8,7 +8,7 @@ import * as NodePath from "node:path";
 import * as NodeStream from "node:stream";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import { ProviderSessionId, ThreadId } from "@t3tools/contracts";
+import { ProviderSessionId, ThreadId } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Deferred from "effect/Deferred";
@@ -19,11 +19,11 @@ import * as Path from "effect/Path";
 import * as TestClock from "effect/testing/TestClock";
 import { vi } from "vite-plus/test";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { AgentScope } from "@t3tools/shared/AgentScope";
-import { ProviderEventLoggers } from "@t3tools/provider-core/server/ProviderEventLoggers";
-import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
-import { signalProcessGroup } from "@t3tools/provider-core/server/processGroup";
+import * as HostProcess from "@houston-app/shared/HostProcess";
+import { AgentScope } from "@houston-app/shared/AgentScope";
+import { ProviderEventLoggers } from "@houston-app/provider-core/server/ProviderEventLoggers";
+import { makeProviderFailure } from "@houston-app/provider-core/server/failure";
+import { signalProcessGroup } from "@houston-app/provider-core/server/processGroup";
 import * as PortScanner from "../../preview/PortScanner.ts";
 import {
   ClaudeAgentSdkQueryRunner,

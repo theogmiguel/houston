@@ -1,4 +1,4 @@
-import type { ServerProvider } from "@t3tools/contracts";
+import type { ServerProvider } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { reuseProvidersIgnoringCheckedAt } from "./serverProviders.logic";

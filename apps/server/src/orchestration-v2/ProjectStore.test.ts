@@ -1,5 +1,5 @@
 import { assert, it } from "@effect/vitest";
-import { EventId, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
+import { EventId, ProjectId, ProviderInstanceId } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";

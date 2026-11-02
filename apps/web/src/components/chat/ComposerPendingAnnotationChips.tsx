@@ -1,4 +1,4 @@
-import type { AssistantCitation, PreviewAnnotationPayload } from "@t3tools/contracts";
+import type { AssistantCitation, PreviewAnnotationPayload } from "@houston-app/contracts";
 import { ImageIcon, QuoteIcon, XIcon } from "lucide-react";
 
 export type PendingCitationChip = {

@@ -1,5 +1,5 @@
 // The calling thread's project owns the defect; a side thread is refused before anything is stored.
-import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import { OrchestratorMcpFailure } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";

@@ -1,6 +1,6 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { Spinner } from "~/components/ui/spinner";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@houston-app/contracts";
 import { ArrowLeftIcon, ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -19,7 +19,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useTheme } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
-import { isHostPath } from "@t3tools/shared/path";
+import { isHostPath } from "@houston-app/shared/path";
 
 import {
   breadcrumbPathOf,

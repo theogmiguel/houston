@@ -1,7 +1,7 @@
 // The fix tasks linked to a project's findings: each task's status and landing as the Tasks
 // backlog records them, and the project's sessions since. It reads tasks and never writes them.
-import type { ProjectId } from "@t3tools/contracts";
-import type { HoustonTaskStatus } from "@t3tools/contracts/houston/tasks";
+import type { ProjectId } from "@houston-app/contracts";
+import type { HoustonTaskStatus } from "@houston-app/contracts/houston/tasks";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

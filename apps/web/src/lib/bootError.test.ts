@@ -1,4 +1,8 @@
-import type { DesktopBridge, DesktopCliCommandState, DesktopUpdateState } from "@t3tools/contracts";
+import type {
+  DesktopBridge,
+  DesktopCliCommandState,
+  DesktopUpdateState,
+} from "@houston-app/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -21,7 +25,9 @@ const notOnPath = (launcherPath: string | null): DesktopCliCommandState => ({
 describe("resolveTriageCommand", () => {
   it("prefers houston on PATH, then the desktop launcher", async () => {
     const onPath = { ...notOnPath("/home/me/.t3/bin/houston"), onPath: true };
-    await expect(resolveTriageCommand(desktopWith(async () => onPath))).resolves.toBe("houston triage");
+    await expect(resolveTriageCommand(desktopWith(async () => onPath))).resolves.toBe(
+      "houston triage",
+    );
     await expect(
       resolveTriageCommand(desktopWith(async () => notOnPath("/home/me/.t3/bin/houston"))),
     ).resolves.toBe("/home/me/.t3/bin/houston triage");
@@ -32,7 +38,9 @@ describe("resolveTriageCommand", () => {
       resolveTriageCommand(desktopWith(async () => notOnPath("/Users/O'Neil/.t3/bin/houston"))),
     ).resolves.toBe(`'/Users/O'"'"'Neil/.t3/bin/houston' triage`);
     await expect(
-      resolveTriageCommand(desktopWith(async () => notOnPath("C:\\Users\\Me\\.t3\\bin\\houston.cmd"))),
+      resolveTriageCommand(
+        desktopWith(async () => notOnPath("C:\\Users\\Me\\.t3\\bin\\houston.cmd")),
+      ),
     ).resolves.toBe("C:\\Users\\Me\\.t3\\bin\\houston.cmd triage");
     await expect(
       resolveTriageCommand(

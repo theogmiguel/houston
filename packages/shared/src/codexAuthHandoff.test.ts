@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
+import { EnvironmentId, ProviderInstanceId } from "@houston-app/contracts";
 import {
   codexAuthorizationRequest,
   codexAuthDeliveryUrl,

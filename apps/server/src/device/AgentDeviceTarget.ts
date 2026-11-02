@@ -1,4 +1,4 @@
-import { DeviceOperationError } from "@t3tools/contracts";
+import { DeviceOperationError } from "@houston-app/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

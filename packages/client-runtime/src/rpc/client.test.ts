@@ -3,7 +3,7 @@ import {
   type ServerSelfUpdateProgressEvent,
   type ServerLifecycleStreamEvent,
   WS_METHODS,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
@@ -93,7 +93,10 @@ describe("environment RPC", () => {
       const { activeSession, supervisor } = yield* makeHarness();
 
       yield* SubscriptionRef.set(activeSession, Option.some(session(firstClient)));
-      const resultFiber = yield* runStream(WS_METHODS.serverUpdateServerWithProgress, {} as never).pipe(
+      const resultFiber = yield* runStream(
+        WS_METHODS.serverUpdateServerWithProgress,
+        {} as never,
+      ).pipe(
         Stream.take(2),
         Stream.runCollect,
         Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),

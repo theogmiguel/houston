@@ -1,4 +1,4 @@
-import { AuthDiagnosticsReadScope, AuthOrchestrationReadScope } from "@t3tools/contracts";
+import { AuthDiagnosticsReadScope, AuthOrchestrationReadScope } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveUsageAccess } from "./usageAccess.ts";

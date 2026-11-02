@@ -1,5 +1,5 @@
-import type { SourceControlProviderAuth } from "@t3tools/contracts";
-import type { HostCredentialSettings } from "@t3tools/client-runtime/source-control-clients";
+import type { SourceControlProviderAuth } from "@houston-app/contracts";
+import type { HostCredentialSettings } from "@houston-app/client-runtime/source-control-clients";
 
 export type DiscoveredAccount = NonNullable<SourceControlProviderAuth["accounts"]>[number];
 

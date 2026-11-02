@@ -1,4 +1,4 @@
-import type { OfficePreviewKind } from "@t3tools/shared/filePreview";
+import type { OfficePreviewKind } from "@houston-app/shared/filePreview";
 import { lazy, Suspense } from "react";
 
 import { FileSurfaceLoading } from "./fileSurfaceChrome";

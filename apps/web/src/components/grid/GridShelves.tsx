@@ -1,4 +1,4 @@
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { ChevronDownIcon } from "lucide-react";
 import { useState, type DragEvent as ReactDragEvent, type ReactNode } from "react";
 import * as Schema from "effect/Schema";

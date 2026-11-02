@@ -4,7 +4,7 @@ import type {
   EnvironmentId,
   ReviewDiffPreviewInput,
   ReviewDiffPreviewSource,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import { useContext, useState } from "react";

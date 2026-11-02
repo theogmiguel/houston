@@ -10,12 +10,12 @@ import {
   DesktopAppActivationResponse,
   type DesktopAppActivationPlatform,
   type DesktopAppActivationRequest,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   resolveDesktopAppControlAddress,
   type DesktopAppControlAddress,
-} from "@t3tools/shared/desktopAppControl";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@houston-app/shared/desktopAppControl";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
 import * as Crypto from "effect/Crypto";

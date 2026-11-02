@@ -8,14 +8,14 @@ import {
   ProviderInstanceId,
   type ThreadId,
   TurnItemId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   appendTerminalOutput,
   EMPTY_TERMINAL_OUTPUT,
   normalizeTerminalOutput,
   TERMINAL_OUTPUT_TAIL_CHARS,
   type TerminalOutputState,
-} from "@t3tools/shared/terminalOutput";
+} from "@houston-app/shared/terminalOutput";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -27,7 +27,7 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
 import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
 const layerTestDatabase = SqlitePersistence.layerMemory;

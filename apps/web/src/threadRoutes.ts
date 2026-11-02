@@ -1,7 +1,7 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentThreadState } from "@t3tools/client-runtime/state/threads";
-import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import { scopeThreadRef } from "@houston-app/client-runtime/environment";
+import type { EnvironmentShellStatus } from "@houston-app/client-runtime/state/shell";
+import type { EnvironmentThreadState } from "@houston-app/client-runtime/state/threads";
+import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@houston-app/contracts";
 import * as Option from "effect/Option";
 import type { DraftId } from "./composerDraftStore";
 

@@ -1,9 +1,9 @@
-import type { ServerDirectEndpoint } from "@t3tools/contracts";
+import type { ServerDirectEndpoint } from "@houston-app/contracts";
 import {
   buildTailscaleHttpsBaseUrl,
   probeTailscaleHttpsEndpoint,
   readTailscaleStatus,
-} from "@t3tools/tailscale";
+} from "@houston-app/tailscale";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -14,8 +14,8 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { isTailnetHost } from "@t3tools/shared/hostClassification";
+import * as HostProcess from "@houston-app/shared/HostProcess";
+import { isTailnetHost } from "@houston-app/shared/hostClassification";
 
 import * as ServerConfig from "../config.ts";
 import {

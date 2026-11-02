@@ -1,4 +1,4 @@
-import type { UsageProviderKind } from "@t3tools/contracts";
+import type { UsageProviderKind } from "@houston-app/contracts";
 
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { PROVIDER_PRESENTATION } from "./usageProviders";

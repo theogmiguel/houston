@@ -11,7 +11,7 @@ import {
   readComposerImageThumbnail,
 } from "./imageCompression";
 
-import type { SnapShotSource } from "@t3tools/contracts";
+import type { SnapShotSource } from "@houston-app/contracts";
 import { hydrateImagesFromPersisted } from "../composerDraftStore";
 import { resizeSnapShotSource } from "./snapShotSource";
 

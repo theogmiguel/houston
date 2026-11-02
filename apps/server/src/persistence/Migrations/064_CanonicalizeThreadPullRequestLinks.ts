@@ -1,4 +1,4 @@
-import { ThreadLinkedPullRequest, ThreadPullRequestLink } from "@t3tools/contracts";
+import { ThreadLinkedPullRequest, ThreadPullRequestLink } from "@houston-app/contracts";
 import { legacyThreadPullRequestKey } from "./legacyThreadPullRequestKey.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";

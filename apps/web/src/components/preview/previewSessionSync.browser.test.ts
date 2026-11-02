@@ -4,7 +4,7 @@ import {
   type PreviewEvent,
   type PreviewListResult,
   type PreviewSessionSnapshot,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { createElement } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";

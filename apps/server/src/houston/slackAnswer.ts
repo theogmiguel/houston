@@ -1,6 +1,6 @@
 // A Slack answer to a run's thread (AD-066): one queued user message per question, which waits
 // behind an active run and starts a turn on an idle thread. The orchestrator applies it.
-import type { MessageId, OrchestrationV2Command, OrchestrationV2Run } from "@t3tools/contracts";
+import type { MessageId, OrchestrationV2Command, OrchestrationV2Run } from "@houston-app/contracts";
 
 export const SLACK_ANSWER_ALREADY_SENT = "This Slack answer is already in the thread.";
 export const SLACK_ANSWER_NEEDS_LIVE_THREAD =

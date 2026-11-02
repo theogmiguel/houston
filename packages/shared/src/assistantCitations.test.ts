@@ -7,7 +7,7 @@ import {
   MessageId,
   ThreadId,
   type AssistantCitation,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   assistantCitationsToPlainText,
   collectAssistantCitations,

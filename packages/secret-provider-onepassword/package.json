@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/secret-provider-onepassword",
+  "name": "@houston-app/secret-provider-onepassword",
   "private": true,
   "type": "module",
   "exports": {
@@ -17,10 +17,10 @@
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/provider-core": "workspace:*",
-    "@t3tools/secret-provider-core": "workspace:*",
-    "@t3tools/shared": "workspace:*",
+    "@houston-app/contracts": "workspace:*",
+    "@houston-app/provider-core": "workspace:*",
+    "@houston-app/secret-provider-core": "workspace:*",
+    "@houston-app/shared": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

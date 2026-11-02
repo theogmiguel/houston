@@ -4,7 +4,7 @@ import {
   MessageId,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadProjection,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { describe, test } from "vite-plus/test";

@@ -1,5 +1,5 @@
-import type { ModelCapabilities, ProviderOptionDescriptor } from "@t3tools/contracts";
-import { REASONING_EFFORT_OPTION_IDS } from "@t3tools/client-runtime/state/thread-execution";
+import type { ModelCapabilities, ProviderOptionDescriptor } from "@houston-app/contracts";
+import { REASONING_EFFORT_OPTION_IDS } from "@houston-app/client-runtime/state/thread-execution";
 import { formatCompactContextWindowTokens } from "~/lib/contextWindow";
 
 type SelectDescriptor = Extract<ProviderOptionDescriptor, { type: "select" }>;

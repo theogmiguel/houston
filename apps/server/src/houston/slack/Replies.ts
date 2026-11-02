@@ -1,7 +1,7 @@
 // What each open request is owed when its task or run changes in Houston: derived from the rows
 // every 5 seconds and on each Tasks change, then queued in the outbox under a dedupe key.
-import { HOUSTON_SLACK_LIMITS } from "@t3tools/contracts/houston/slack";
-import { houstonTaskKey } from "@t3tools/contracts/houston/tasks";
+import { HOUSTON_SLACK_LIMITS } from "@houston-app/contracts/houston/slack";
+import { houstonTaskKey } from "@houston-app/contracts/houston/tasks";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -92,7 +92,9 @@ const make = Effect.gen(function* () {
   const resultOf = (runId: number) =>
     run(sql<{ readonly form_json: string }>`
       SELECT form_json FROM houston_slack_results WHERE task_run_id = ${runId}
-    `).pipe(Effect.map((rows) => (rows[0] === undefined ? undefined : decodeResult(rows[0].form_json))));
+    `).pipe(
+      Effect.map((rows) => (rows[0] === undefined ? undefined : decodeResult(rows[0].form_json))),
+    );
 
   const newestResult = (requestId: number) =>
     run(sql<{ readonly form_json: string; readonly task_run_id: number }>`
@@ -136,10 +138,12 @@ const make = Effect.gen(function* () {
   /** Minutes from the run's start to its hand-back, minus the time its questions waited. */
   const minutesWorked = Effect.fn("HoustonSlackReplies.minutesWorked")(function* (latest: RunRow) {
     const end = ms(latest.ended_at ?? (yield* nowIso));
-    const questions = yield* run(sql<{
-      readonly created_at: string;
-      readonly answered_at: string | null;
-    }>`SELECT created_at, answered_at FROM houston_slack_questions WHERE task_run_id = ${latest.id}`);
+    const questions = yield* run(
+      sql<{
+        readonly created_at: string;
+        readonly answered_at: string | null;
+      }>`SELECT created_at, answered_at FROM houston_slack_questions WHERE task_run_id = ${latest.id}`,
+    );
     const waited = questions.reduce(
       (sum, question) =>
         sum +

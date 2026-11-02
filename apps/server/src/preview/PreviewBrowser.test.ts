@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Crypto from "effect/Crypto";
 import type * as Duration from "effect/Duration";
 import * as DateTime from "effect/DateTime";
@@ -172,7 +172,9 @@ it.layer(NodeServices.layer, { excludeTestServices: true })("PreviewBrowser", (i
       const error = yield* browser.executable.pipe(Effect.flip);
 
       expect(error._tag).toBe("PreviewBrowserInstallError");
-      expect(error.message).toMatch(/^Houston could not install its headless browser: .+ Try again\.$/);
+      expect(error.message).toMatch(
+        /^Houston could not install its headless browser: .+ Try again\.$/,
+      );
       expect(yield* fs.readDirectory(installRoot)).toEqual([]);
       yield* browser.executable.pipe(Effect.flip);
       expect(requests).toHaveLength(2);

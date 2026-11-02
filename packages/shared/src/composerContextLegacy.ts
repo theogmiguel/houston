@@ -5,7 +5,7 @@ import {
   type PreviewAnnotationContextRecord,
   ReviewCommentContextRecord,
   type TerminalContextRecord,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Schema from "effect/Schema";
 
 import { formatComposerContextReference } from "./composerContextReferences.ts";

@@ -28,11 +28,11 @@ const app = createOxlintRuleHarness("t3code/no-rpc-permission-bypass", {
 });
 app.invalid(
   "blocks guard imports through the barrel",
-  'import { RpcPermissionGuard as Guard } from "@t3tools/client-runtime/rpc";',
+  'import { RpcPermissionGuard as Guard } from "@houston-app/client-runtime/rpc";',
 );
 app.invalid(
   "blocks explicit index imports",
-  'import { RpcPermissionGuard } from "@t3tools/client-runtime/rpc/index.ts";',
+  'import { RpcPermissionGuard } from "@houston-app/client-runtime/rpc/index.ts";',
 );
 app.invalid(
   "blocks raw session access in subscription callbacks",
@@ -44,12 +44,12 @@ app.invalid(
 );
 app.valid(
   "allows public typed RPC helpers",
-  'import { request, runStream } from "@t3tools/client-runtime/rpc";',
+  'import { request, runStream } from "@houston-app/client-runtime/rpc";',
 );
 
 rpc.invalid(
   "raw client allowance does not permit installing the guard",
-  'import { RpcPermissionGuard } from "@t3tools/client-runtime/rpc";',
+  'import { RpcPermissionGuard } from "@houston-app/client-runtime/rpc";',
 );
 const boundary = createOxlintRuleHarness("t3code/no-rpc-permission-bypass", {
   filename: "fixture.ts",
@@ -57,7 +57,7 @@ const boundary = createOxlintRuleHarness("t3code/no-rpc-permission-bypass", {
 });
 boundary.valid(
   "permits guard installation when configured",
-  'import { RpcPermissionGuard } from "@t3tools/client-runtime/rpc"; RpcPermissionGuard.of({ authorize });',
+  'import { RpcPermissionGuard } from "@houston-app/client-runtime/rpc"; RpcPermissionGuard.of({ authorize });',
 );
 boundary.invalid(
   "guard installation allowance does not permit raw clients",

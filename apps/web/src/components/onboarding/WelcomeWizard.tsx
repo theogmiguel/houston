@@ -7,12 +7,12 @@ import type {
   ScopedProjectRef,
   ServerConfig,
   ServerProvider,
-} from "@t3tools/contracts";
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+} from "@houston-app/contracts";
+import { scopeProjectRef, scopeThreadRef } from "@houston-app/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@houston-app/client-runtime/state/runtime";
 import {
   AgentSessionSource,
   AuthTerminalOperateScope,
@@ -22,7 +22,7 @@ import {
   isManagedDriverAllowed,
   ProviderDriverKind,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Schema from "effect/Schema";
 import {
   ArrowRightIcon,

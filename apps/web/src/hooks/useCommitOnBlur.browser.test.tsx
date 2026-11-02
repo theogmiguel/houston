@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
-import { resolvePastedPath } from "@t3tools/shared/path";
+import { resolvePastedPath } from "@houston-app/shared/path";
 
 import { render } from "../../test/render";
 import { DraftInput } from "../components/ui/draft-input";

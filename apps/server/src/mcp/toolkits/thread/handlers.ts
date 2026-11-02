@@ -6,9 +6,9 @@ import {
   type RunId,
   OrchestratorMcpFailure,
   type OrchestrationV2Command,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
-import { modelSelectionCommandType } from "@t3tools/shared/model";
+import { modelSelectionCommandType } from "@houston-app/shared/model";
 
 import { admitOperation, crewGateFailure } from "../../../houston/nightShift/CrewGate.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";

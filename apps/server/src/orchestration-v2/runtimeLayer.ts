@@ -26,14 +26,14 @@ import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EffectWorker from "./EffectWorker.ts";
 import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectionMaintenance from "./ProjectionMaintenance.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
-import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
+import * as ProviderContinuationRequests from "@houston-app/provider-core/server/ProviderContinuationRequests";
 import * as ProviderContinuationService from "./ProviderContinuationService.ts";
 import * as ThreadTitleRegenerationService from "./ThreadTitleRegenerationService.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
@@ -297,9 +297,7 @@ const layerScheduledTaskProvided = ScheduledTaskService.layer.pipe(
     layerHoustonScheduledTaskRunner.pipe(
       Layer.provideMerge(
         layerNightShiftRunner.pipe(
-          Layer.provide(
-            Layer.mergeAll(layerThreadLaunchProvided, layerThreadManagementProvided),
-          ),
+          Layer.provide(Layer.mergeAll(layerThreadLaunchProvided, layerThreadManagementProvided)),
         ),
       ),
       Layer.provide(

@@ -1,11 +1,11 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, ProjectId, type ScopedThreadRef } from "@t3tools/contracts";
+import { scopeProjectRef } from "@houston-app/client-runtime/environment";
+import { EnvironmentId, ProjectId, type ScopedThreadRef } from "@houston-app/contracts";
 
 import {
   readPullRequestDetailSnapshot,
   resolvePullRequestReferenceHost,
 } from "../components/pullRequest/pullRequestDetail.logic";
-import { projectChangeRequestUrl } from "@t3tools/client-runtime/change-request-links";
+import { projectChangeRequestUrl } from "@houston-app/client-runtime/change-request-links";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "../rightPanelStore";
 import { useProject } from "../state/entities";
 import { pullRequestEnvironment } from "../state/pullRequests";

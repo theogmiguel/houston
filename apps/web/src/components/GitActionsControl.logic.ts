@@ -2,22 +2,22 @@ import type {
   GitRunStackedActionResult,
   GitStackedAction,
   VcsStatusResult,
-} from "@t3tools/contracts";
-import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
-import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
+} from "@houston-app/contracts";
+import { isTemporaryWorktreeBranch } from "@houston-app/shared/git";
+import type { ChangeRequestTerminology } from "@houston-app/client-runtime/source-control-clients";
 import {
   changeRequestTerminologyFor,
   type DefaultBranchActionDialogCopy,
   type DefaultBranchConfirmableAction,
   type GitActionIconName,
   type GitDialogAction,
-} from "@t3tools/client-runtime/state/vcs";
+} from "@houston-app/client-runtime/state/vcs";
 
 export {
   requiresDefaultBranchConfirmation,
   type DefaultBranchConfirmableAction,
   type GitActionIconName,
-} from "@t3tools/client-runtime/state/vcs";
+} from "@houston-app/client-runtime/state/vcs";
 
 export interface GitActionMenuItem {
   id: "commit" | "push" | "pr";

@@ -1,5 +1,5 @@
-import { isModelCostUnknown, type ModelTotals } from "@t3tools/shared/usageMerge";
-import { formatPercent, formatTokens, formatUsd } from "@t3tools/shared/usageFormat";
+import { isModelCostUnknown, type ModelTotals } from "@houston-app/shared/usageMerge";
+import { formatPercent, formatTokens, formatUsd } from "@houston-app/shared/usageFormat";
 
 import { cn } from "~/lib/utils";
 import { ProviderMark } from "./UsageProviderMark";

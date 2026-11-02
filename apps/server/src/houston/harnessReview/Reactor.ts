@@ -1,7 +1,7 @@
 // Reads a review run's answer when its run ends: publishes the report and findings, sends at most
 // two corrections for an unreadable answer, or fails the review. On start it settles open reviews.
-import { CommandId, type OrchestrationV2Run, ThreadId } from "@t3tools/contracts";
-import { HOUSTON_HARNESS_LIMITS } from "@t3tools/contracts/houston/harnessReview";
+import { CommandId, type OrchestrationV2Run, ThreadId } from "@houston-app/contracts";
+import { HOUSTON_HARNESS_LIMITS } from "@houston-app/contracts/houston/harnessReview";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

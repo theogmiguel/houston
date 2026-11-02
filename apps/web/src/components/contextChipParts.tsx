@@ -1,4 +1,4 @@
-import type { EnvironmentId, PullRequestContextMetadata } from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestContextMetadata } from "@houston-app/contracts";
 import { CircleDashedIcon, FilmIcon, ImageIcon } from "lucide-react";
 import { useEffect, useState, type ComponentProps, type MouseEvent, type ReactNode } from "react";
 import { useAssetUrlState } from "~/assets/assetUrls";

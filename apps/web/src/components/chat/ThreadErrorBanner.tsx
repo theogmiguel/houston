@@ -1,9 +1,9 @@
-import type { OrchestrationV2ProviderFailureClass } from "@t3tools/contracts";
+import type { OrchestrationV2ProviderFailureClass } from "@houston-app/contracts";
 import {
   CHATGPT_USAGE_LIMIT_CODE,
   CHATGPT_WORKSPACE_ADMIN_REQUEST,
   CHATGPT_WORKSPACE_USAGE_LIMIT_CODE,
-} from "@t3tools/shared/usageLimits";
+} from "@houston-app/shared/usageLimits";
 import { memo } from "react";
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { Alert, AlertAction, AlertDescription } from "../ui/alert";

@@ -10,11 +10,11 @@ import {
   ProviderInstanceId,
   ProviderSetupError,
   type ServerProvider,
-} from "@t3tools/contracts";
-import type { ProviderReadiness } from "@t3tools/contracts/houston/providerReadiness";
-import type { ServerProviderDraft } from "@t3tools/provider-core/server/snapshotProbe";
-import { acpRegistryProbeFailure } from "@t3tools/provider-acp-registry/testing";
-import * as OpenCodeRuntime from "@t3tools/provider-opencode/server/OpenCodeRuntime";
+} from "@houston-app/contracts";
+import type { ProviderReadiness } from "@houston-app/contracts/houston/providerReadiness";
+import type { ServerProviderDraft } from "@houston-app/provider-core/server/snapshotProbe";
+import { acpRegistryProbeFailure } from "@houston-app/provider-acp-registry/testing";
+import * as OpenCodeRuntime from "@houston-app/provider-opencode/server/OpenCodeRuntime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -26,7 +26,7 @@ import * as Stream from "effect/Stream";
 import * as HttpClient from "effect/http/HttpClient";
 import { ChildProcessSpawner } from "effect/process";
 import * as EffectAcpErrors from "effect-acp/errors";
-import { createModelCapabilities } from "@t3tools/shared/model";
+import { createModelCapabilities } from "@houston-app/shared/model";
 import type * as EffectAcpSchema from "effect-acp/compat";
 import * as CodexErrors from "effect-codex-app-server/errors";
 

@@ -2,7 +2,7 @@ import * as NodeV8 from "node:v8";
 import * as NodeVM from "node:vm";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { PullRequestOperationError } from "@t3tools/contracts";
+import { PullRequestOperationError } from "@houston-app/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";

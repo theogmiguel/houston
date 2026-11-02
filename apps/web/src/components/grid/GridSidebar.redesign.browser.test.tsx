@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import type { GridRecord } from "../../grid/gridStore";
 import { clearThreadSelection } from "../../grid/sidebar";
 import { render, type Screen } from "../../../test/render";

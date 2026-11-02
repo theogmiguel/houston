@@ -1,4 +1,4 @@
-import type { MessageId, ThreadId } from "@t3tools/contracts";
+import type { MessageId, ThreadId } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";

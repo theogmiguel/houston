@@ -6,7 +6,7 @@ import {
   type ProjectId as ProjectIdType,
   type ScopedProjectRef,
   type ScopedThreadRef,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 
 export function scopeProjectRef(
   environmentId: EnvironmentIdType,

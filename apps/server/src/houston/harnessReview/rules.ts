@@ -5,8 +5,8 @@ import {
   type HoustonHarnessDecisionState,
   type HoustonHarnessFindingPhase,
   type HoustonHarnessReviewStatus,
-} from "@t3tools/contracts/houston/harnessReview";
-import { HOUSTON_TASK_LIMITS } from "@t3tools/contracts/houston/tasks";
+} from "@houston-app/contracts/houston/harnessReview";
+import { HOUSTON_TASK_LIMITS } from "@houston-app/contracts/houston/tasks";
 
 export const DAY_MS = 86_400_000;
 /** A fortnight the first time, then from the previous review's end: never under a week (too few

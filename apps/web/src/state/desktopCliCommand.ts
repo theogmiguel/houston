@@ -1,4 +1,4 @@
-import type { DesktopBridge, DesktopCliCommandState } from "@t3tools/contracts";
+import type { DesktopBridge, DesktopCliCommandState } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";

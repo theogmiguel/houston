@@ -2,8 +2,8 @@ import {
   resolveDeviceModelId,
   type DeviceAccessorySource,
   type DeviceModelSource,
-} from "@t3tools/client-runtime/device/model";
-import type { DevicePlatform } from "@t3tools/contracts";
+} from "@houston-app/client-runtime/device/model";
+import type { DevicePlatform } from "@houston-app/contracts";
 import iphoneDuo from "./models/iphone-duo.glb?url";
 import iphone18Pro from "./models/iphone-18-pro.glb?url";
 import iphone18ProMax from "./models/iphone-18-pro-max.glb?url";

@@ -1,6 +1,6 @@
 // Client-supplied worktrees count only under managed folders or when Git lists them for the project.
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as HostProcess from "@houston-app/shared/HostProcess";
+import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

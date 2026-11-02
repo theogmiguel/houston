@@ -1,8 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off -- replace the native OS lookup and sync its ESM bindings.
 import * as NodeModule from "node:module";
 import { it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as NetService from "@t3tools/shared/Net";
+import * as HostProcess from "@houston-app/shared/HostProcess";
+import * as NetService from "@houston-app/shared/Net";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Sink from "effect/Sink";

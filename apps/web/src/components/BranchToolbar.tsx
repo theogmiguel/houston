@@ -1,12 +1,12 @@
 import { formatAttachmentUploadProgress } from "../lib/attachmentUploadState";
 import { useAttachmentUploadStore } from "../lib/attachmentUploadQueue";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
-import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
+import { formatFilePathForClipboard } from "@houston-app/client-runtime/media-actions";
 import { readLocalApi } from "../localApi";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { ComposerContextLabel } from "./ComposerContextLabel";
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { scopeProjectRef, scopeThreadRef } from "@houston-app/client-runtime/environment";
+import type { EnvironmentId, ProjectId, ThreadId } from "@houston-app/contracts";
 import {
   ArrowUpIcon,
   ChevronDownIcon,

@@ -1,4 +1,4 @@
-import type { ToolActivityNativeAppReference } from "@t3tools/contracts";
+import type { ToolActivityNativeAppReference } from "@houston-app/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
@@ -15,7 +15,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Semaphore from "effect/Semaphore";
 import * as Hex from "effect/encoding/Hex";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 
 import * as ServerConfig from "../config.ts";
 

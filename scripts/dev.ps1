@@ -129,7 +129,7 @@ if ($Fresh) {
 $App = Join-Path $Root 'src-tauri\target\debug\houston-tauri.exe'
 
 Write-Host '[dev] building the v2 web renderer...'
-Invoke-BuildStep -WorkingDirectory $Root -FilePath 'npx' -ArgumentList @('-y', 'pnpm@12.14.0', '--filter', '@t3tools/web', 'build')
+Invoke-BuildStep -WorkingDirectory $Root -FilePath 'npx' -ArgumentList @('-y', 'pnpm@12.14.0', '--filter', '@houston-app/web', 'build')
 
 Write-Host '[dev] building the v2 server...'
 Invoke-BuildStep -WorkingDirectory $Root -FilePath 'npx' -ArgumentList @('-y', 'pnpm@12.14.0', '--filter', 'houston', 'build:bundle')

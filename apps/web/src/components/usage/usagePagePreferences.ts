@@ -1,4 +1,4 @@
-import { UsageProviderKind } from "@t3tools/contracts";
+import { UsageProviderKind } from "@houston-app/contracts";
 import * as Schema from "effect/Schema";
 
 import { getLocalStorageItem, setLocalStorageItem } from "../../hooks/useLocalStorage";

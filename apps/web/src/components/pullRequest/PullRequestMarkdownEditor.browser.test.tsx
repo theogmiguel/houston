@@ -1,5 +1,5 @@
 import { act, render, type Screen } from "../../../test/render";
-import { AuthSourceControlWriteScope, EnvironmentId } from "@t3tools/contracts";
+import { AuthSourceControlWriteScope, EnvironmentId } from "@houston-app/contracts";
 import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 

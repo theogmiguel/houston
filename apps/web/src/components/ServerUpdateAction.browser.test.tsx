@@ -1,5 +1,5 @@
 import { RegistryContext } from "@effect/atom-react";
-import { AuthSessionState, type EnvironmentId } from "@t3tools/contracts";
+import { AuthSessionState, type EnvironmentId } from "@houston-app/contracts";
 import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { type EnvironmentId, managedPolicyDeniedMessage } from "@t3tools/contracts";
+import { type EnvironmentId, managedPolicyDeniedMessage } from "@houston-app/contracts";
 
 import {
   clearBrowserProfileData,

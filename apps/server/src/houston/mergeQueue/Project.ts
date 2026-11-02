@@ -5,10 +5,10 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-import type { ProjectId, RuntimeMode } from "@t3tools/contracts";
-import { houstonTaskKey, type HoustonTaskRunState } from "@t3tools/contracts/houston/tasks";
-import { parseGitRemoteRepository } from "@t3tools/shared/git";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import type { ProjectId, RuntimeMode } from "@houston-app/contracts";
+import { houstonTaskKey, type HoustonTaskRunState } from "@houston-app/contracts/houston/tasks";
+import { parseGitRemoteRepository } from "@houston-app/shared/git";
+import { resolveProjectSettings } from "@houston-app/shared/projectSettings";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

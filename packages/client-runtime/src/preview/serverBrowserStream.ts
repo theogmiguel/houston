@@ -4,7 +4,7 @@ import {
   PREVIEW_STREAM_HOST_SETUP_CLOSE_CODE,
   type PreviewStreamHostSetup,
   type PreviewViewportSetting,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 
 export const PREVIEW_STREAM_BASE_PATH = "/api/preview-stream";
 

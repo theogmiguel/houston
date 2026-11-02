@@ -1,5 +1,5 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
-import type { PullRequestDiffSide } from "@t3tools/contracts";
+import type { PullRequestDiffSide } from "@houston-app/contracts";
 
 /** Only rendered hunks can anchor comments; list others off-diff. */
 export function isLineInFileDiff(

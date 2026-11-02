@@ -3,16 +3,16 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
-import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
-import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import { mergeProviderInstanceEnvironment } from "@houston-app/provider-core/server/instanceEnvironment";
+import { expandHomePath } from "@houston-app/provider-core/server/pathExpansion";
 import {
   tokenCount,
   totalTokens,
   type ProviderUsageReader,
   type TranscriptUsageFormat,
   type UsageRecord,
-} from "@t3tools/provider-core/server/usage";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@houston-app/provider-core/server/usage";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import type { MuseSettings } from "../settings.ts";
 import { makeMuseEnvironment } from "./sdk.ts";
 import * as MuseUsageHome from "./MuseUsageHome.ts";

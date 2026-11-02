@@ -8,8 +8,8 @@ import {
   type HoustonSlackError,
   type HoustonSlackImportResult,
   type HoustonSlackImportStatus,
-} from "@t3tools/contracts/houston/slack";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@houston-app/contracts/houston/slack";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -314,7 +314,9 @@ const make = Effect.gen(function* () {
       const projectId =
         mapped.get(String(event.channel)) ?? projectOf(String(event.workspace)) ?? task.project_id;
       if (projectId === null) {
-        notes.push(`${label}: workspace ${String(event.workspace)} matches no project; not imported`);
+        notes.push(
+          `${label}: workspace ${String(event.workspace)} matches no project; not imported`,
+        );
         continue;
       }
       const reaction = REACTIONS.has(String(event.status_reaction) as StatusReaction)

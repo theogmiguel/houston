@@ -1,5 +1,5 @@
-import type { ResponseStreamingMode } from "@t3tools/contracts";
-import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import type { ResponseStreamingMode } from "@houston-app/contracts";
+import type * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 
 // List fences can open at any indentation; closers may be at most three spaces deeper.
 const MARKDOWN_FENCE_PATTERN = /^( *)(`{3,}|~{3,})/;

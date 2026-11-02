@@ -1,4 +1,4 @@
-import type { PickedElementPayload } from "@t3tools/contracts";
+import type { PickedElementPayload } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { normalizeElementContextSelection } from "./elementContext";

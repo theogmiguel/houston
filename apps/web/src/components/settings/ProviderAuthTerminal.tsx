@@ -1,4 +1,4 @@
-import type { ProviderAuthResponse } from "@t3tools/contracts";
+import type { ProviderAuthResponse } from "@houston-app/contracts";
 import { useEffect, useRef, useState } from "react";
 import { GhosttyTerminalSurface } from "../../terminal/ghostty/surface";
 import { ensureLocalApi } from "../../localApi";

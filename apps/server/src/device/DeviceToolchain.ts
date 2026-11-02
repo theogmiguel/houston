@@ -1,4 +1,4 @@
-import type { DeviceToolVersions } from "@t3tools/contracts";
+import type { DeviceToolVersions } from "@houston-app/contracts";
 // npm exposes entry files before extraction completes; their presence does not prove a usable tree.
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

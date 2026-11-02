@@ -5,13 +5,13 @@ import {
   type KeybindingWhenNode,
   type ResolvedKeybindingRule,
   type ResolvedKeybindingsConfig,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   DEFAULT_RESOLVED_KEYBINDINGS,
   parseKeybindingShortcut,
   parseKeybindingWhenExpression,
   US_SHIFTED_TO_UNSHIFTED_KEYS,
-} from "@t3tools/shared/keybindings";
+} from "@houston-app/shared/keybindings";
 
 import { shortcutConflictKey, shortcutKeyFromEvent } from "../../keybindings";
 import { isMacPlatform } from "../../lib/utils";

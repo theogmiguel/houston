@@ -9,10 +9,10 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
-import { GrokSettings } from "@t3tools/provider-grok/settings";
+import { GrokSettings } from "@houston-app/provider-grok/settings";
 
-import { checkGrokProviderStatus } from "@t3tools/provider-grok/testing";
-import { execScriptSource, writeFakeCli } from "@t3tools/provider-testing/fakeCli";
+import { checkGrokProviderStatus } from "@houston-app/provider-grok/testing";
+import { execScriptSource, writeFakeCli } from "@houston-app/provider-testing/fakeCli";
 
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
 const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));

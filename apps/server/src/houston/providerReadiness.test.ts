@@ -4,9 +4,9 @@ import {
   ProviderInstanceId,
   type OrchestrationV2ProviderFailure,
   type ServerProvider,
-} from "@t3tools/contracts";
-import type { ProviderReadiness } from "@t3tools/contracts/houston/providerReadiness";
-import { acpRegistryPromptFailure } from "@t3tools/provider-acp-registry/testing";
+} from "@houston-app/contracts";
+import type { ProviderReadiness } from "@houston-app/contracts/houston/providerReadiness";
+import { acpRegistryPromptFailure } from "@houston-app/provider-acp-registry/testing";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

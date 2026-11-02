@@ -2,7 +2,7 @@ import type {
   ProviderUsageLimitsUpdate,
   ServerProvider,
   ServerSettingsError,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 import type { ProviderMaintenanceCapabilities } from "./maintenance.ts";

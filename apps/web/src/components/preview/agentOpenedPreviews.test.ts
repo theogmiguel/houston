@@ -1,10 +1,10 @@
-import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
 import {
   type DeviceServiceState,
   type EnvironmentId,
   type PreviewSessionSnapshot,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { browserMiniPlayerSource, usePreviewMiniPlayerStore } from "../../previewMiniPlayerStore";

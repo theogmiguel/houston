@@ -1,4 +1,4 @@
-import type { OrchestrationV2ThreadShell, ScopedThreadRef } from "@t3tools/contracts";
+import type { OrchestrationV2ThreadShell, ScopedThreadRef } from "@houston-app/contracts";
 
 import type { ToolCallDiffTarget } from "../diffPanelStore";
 import { useRightPanelStore } from "../rightPanelStore";

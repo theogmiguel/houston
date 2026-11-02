@@ -14,15 +14,15 @@ import {
   type ModelSelection,
   type ProjectId,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import type {
   HoustonTask,
   HoustonTaskError,
   HoustonTaskPatch,
   HoustonTaskSettingsInput,
-} from "@t3tools/contracts/houston/tasks";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+} from "@houston-app/contracts/houston/tasks";
+import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
+import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { TestClock } from "effect/testing";

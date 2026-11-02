@@ -1,12 +1,12 @@
-import { PrimaryConnectionTarget } from "@t3tools/client-runtime/connection";
-import { createEnvironmentThreadShellAtoms } from "@t3tools/client-runtime/state/threads";
+import { PrimaryConnectionTarget } from "@houston-app/client-runtime/connection";
+import { createEnvironmentThreadShellAtoms } from "@houston-app/client-runtime/state/threads";
 import {
   applyShellStreamEvent,
   createEnvironmentSnapshotAtom,
   EMPTY_SHELL_STATE,
   type EnvironmentShellState,
   type EnvironmentShellStatus,
-} from "@t3tools/client-runtime/state/shell";
+} from "@houston-app/client-runtime/state/shell";
 import { makeThreadProjectionFixture } from "./test-fixtures";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
@@ -15,8 +15,8 @@ import {
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
-import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+} from "@houston-app/client-runtime/environment";
+import { DEFAULT_UNIFIED_SETTINGS } from "@houston-app/contracts/settings";
 import {
   defaultInstanceIdForDriver,
   DEFAULT_MODEL,
@@ -34,8 +34,8 @@ import {
   type PreviewAnnotationPayload,
   type ProviderOptionSelection,
   type ScopedThreadRef,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@houston-app/contracts";
+import { createModelSelection } from "@houston-app/shared/model";
 
 const CODEX_INSTANCE = ProviderInstanceId.make("codex");
 const CODEX_SECONDARY_INSTANCE = ProviderInstanceId.make("codex_secondary");
@@ -100,7 +100,7 @@ import {
   environmentContextRecord,
   terminalContextReference,
 } from "./lib/composerContextRecords";
-import { threadContextRecord } from "@t3tools/shared/composerContextReferences";
+import { threadContextRecord } from "@houston-app/shared/composerContextReferences";
 import {
   copiedComposerAttachmentFile,
   rememberCopiedComposerAttachments,

@@ -1,4 +1,4 @@
-import type { ProjectEntry } from "@t3tools/contracts";
+import type { ProjectEntry } from "@houston-app/contracts";
 
 export interface ProjectFileTreeRow {
   readonly entry: ProjectEntry;

@@ -1,9 +1,9 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@houston-app/contracts";
 import type {
   PreviewStreamControl,
   PreviewStreamEvents,
   PreviewStreamInput,
-} from "@t3tools/client-runtime/preview/server-browser-stream";
+} from "@houston-app/client-runtime/preview/server-browser-stream";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   painted: null as (() => void) | null,
 }));
 
-vi.mock(import("@t3tools/client-runtime/preview/server-browser-stream"), async (original) => ({
+vi.mock(import("@houston-app/client-runtime/preview/server-browser-stream"), async (original) => ({
   ...(await original()),
   createPreviewStreamClient: mocks.createClient as never,
   createPreviewFramePainter: (_canvas, onPainted) => {

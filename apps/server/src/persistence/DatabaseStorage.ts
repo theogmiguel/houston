@@ -1,4 +1,4 @@
-import type { DatabaseStorageStatus } from "@t3tools/contracts";
+import type { DatabaseStorageStatus } from "@houston-app/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";

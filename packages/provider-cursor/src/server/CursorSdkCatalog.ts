@@ -48,7 +48,7 @@ export class CursorSdkCatalog extends Context.Service<
       apiKey: string,
     ) => Effect.Effect<CursorSdkCatalogSnapshot, CursorSdkCatalogError>;
   }
->()("@t3tools/provider-cursor/server/CursorSdkCatalog") {}
+>()("@houston-app/provider-cursor/server/CursorSdkCatalog") {}
 
 export interface CursorSdkCatalogProbes {
   readonly readUser: (apiKey: string) => Effect.Effect<SDKUser, CursorSdkCatalogError>;

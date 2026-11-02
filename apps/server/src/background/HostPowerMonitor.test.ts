@@ -1,4 +1,4 @@
-import type { DesktopHostTelemetrySnapshot } from "@t3tools/contracts";
+import type { DesktopHostTelemetrySnapshot } from "@houston-app/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";

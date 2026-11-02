@@ -11,7 +11,7 @@ import {
   type ProviderSettingsFormOption,
   type ProviderSettingsFormSchemaAnnotation,
   type SecretReference,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { PlusIcon, XIcon } from "lucide-react";
 
 import { cn } from "../../lib/utils";
@@ -23,7 +23,7 @@ import { SecretSourceInput, useSecretSources } from "./SecretSourceInput";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
-import type { ProviderClientDefinition } from "@t3tools/provider-core/client";
+import type { ProviderClientDefinition } from "@houston-app/provider-core/client";
 
 export type SettingsFormDefinition = Pick<ProviderClientDefinition, "settingsSchema"> & {
   readonly driverKind?: ProviderClientDefinition["driverKind"];

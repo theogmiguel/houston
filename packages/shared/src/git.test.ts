@@ -1,5 +1,5 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
-import type { VcsStatusRemoteResult, VcsStatusResult } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@houston-app/contracts";
+import type { VcsStatusRemoteResult, VcsStatusResult } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

@@ -8,7 +8,7 @@ describe("t3code/no-global-process-runtime", () => {
   rule.valid(
     "allows injected host process references",
     `
-      import * as HostProcess from "@t3tools/shared/HostProcess";
+      import * as HostProcess from "@houston-app/shared/HostProcess";
       import * as Effect from "effect/Effect";
 
       export const isWindows = Effect.map(HostProcess.Platform, (platform) => platform === "win32");

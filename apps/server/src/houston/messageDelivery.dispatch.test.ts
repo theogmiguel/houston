@@ -1,7 +1,7 @@
 // What the server records for queue, steer and interrupt, driven through the orchestrator and
 // its effect worker with the in-test provider double in messageDelivery.testkit.ts.
 import { assert, describe, it } from "@effect/vitest";
-import { CommandId, MessageId } from "@t3tools/contracts";
+import { CommandId, MessageId } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import { TestClock } from "effect/testing";
 

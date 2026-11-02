@@ -1,7 +1,7 @@
 // @effect-diagnostics globalDate:off - Intl reads a zone's wall clock only from a Date.
 // When a run wraps up and stops, and whether a missed night is caught up, in a named time zone so
 // clock times follow daylight saving.
-import { HOUSTON_NIGHT_SHIFT_LIMITS as LIMITS } from "@t3tools/contracts/houston/nightShift";
+import { HOUSTON_NIGHT_SHIFT_LIMITS as LIMITS } from "@houston-app/contracts/houston/nightShift";
 
 import { clockMinutes, formatMinutes } from "./rules.ts";
 

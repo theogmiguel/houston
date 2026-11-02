@@ -1,4 +1,4 @@
-import type { DesktopSnapShotState } from "@t3tools/contracts";
+import type { DesktopSnapShotState } from "@houston-app/contracts";
 import * as Option from "effect/Option";
 import { Atom, type AtomRegistry } from "effect/reactivity";
 

@@ -1,5 +1,8 @@
-import type { ThreadStructure, ThreadStructureRuntime } from "@t3tools/client-runtime/state/shell";
-import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
+import type {
+  ThreadStructure,
+  ThreadStructureRuntime,
+} from "@houston-app/client-runtime/state/shell";
+import { resolveThreadWorkingStartedAt } from "@houston-app/client-runtime/state/models";
 import {
   type AssetResource,
   type OrchestrationV2Checkpoint,
@@ -15,30 +18,33 @@ import {
   type ToolActivitySource,
   type ThreadId,
   type TurnItemId,
-} from "@t3tools/contracts";
-import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
+} from "@houston-app/contracts";
+import { extractToolActivityPresentation } from "@houston-app/client-runtime/work-log/tool-presentation";
 import {
   classifyToolActivity,
   collectToolFilePaths,
   formatReadToolLabel,
   formatSearchToolLabel,
-} from "@t3tools/shared/toolActivity";
-import type { HtmlRenderReference } from "@t3tools/shared/htmlRender";
-import { turnItemDetailRevision } from "@t3tools/client-runtime/work-log/item-detail";
-import type { McpAppReference } from "@t3tools/shared/mcpApp";
-import { htmlRenderFromToolItem, mcpAppFromToolItem } from "@t3tools/shared/toolOutput";
+} from "@houston-app/shared/toolActivity";
+import type { HtmlRenderReference } from "@houston-app/shared/htmlRender";
+import { turnItemDetailRevision } from "@houston-app/client-runtime/work-log/item-detail";
+import type { McpAppReference } from "@houston-app/shared/mcpApp";
+import { htmlRenderFromToolItem, mcpAppFromToolItem } from "@houston-app/shared/toolOutput";
 import {
   contextCompactionLabel,
   workEntryIndicatesToolFailure,
-} from "@t3tools/client-runtime/work-log/presentation";
-import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
+} from "@houston-app/client-runtime/work-log/presentation";
+import type { ThreadCheckpointSummary } from "@houston-app/client-runtime/state/thread-checkpoints";
 import type {
   ThreadPendingApproval,
   ThreadPendingUserInput,
-} from "@t3tools/client-runtime/state/thread-requests";
-import type { ThreadRunSummary, ThreadRuntimeSummary } from "@t3tools/client-runtime/state/shell";
-import { threadRuntimeHasInterruptibleRun } from "@t3tools/client-runtime/state/thread-execution";
-import { turnItemIsWorkspacePreparation } from "@t3tools/client-runtime/state/turn-item-presentation";
+} from "@houston-app/client-runtime/state/thread-requests";
+import type {
+  ThreadRunSummary,
+  ThreadRuntimeSummary,
+} from "@houston-app/client-runtime/state/shell";
+import { threadRuntimeHasInterruptibleRun } from "@houston-app/client-runtime/state/thread-execution";
+import { turnItemIsWorkspacePreparation } from "@houston-app/client-runtime/state/turn-item-presentation";
 
 import {
   isImageAttachment,
@@ -52,11 +58,11 @@ import * as DateTime from "effect/DateTime";
 import * as Equal from "effect/Equal";
 import { shallow } from "zustand/vanilla/shallow";
 
-export { formatDuration } from "@t3tools/shared/orchestrationTiming";
+export { formatDuration } from "@houston-app/shared/orchestrationTiming";
 export {
   workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolFailure,
-} from "@t3tools/client-runtime/work-log/presentation";
+} from "@houston-app/client-runtime/work-log/presentation";
 
 export type WorkLogToolLifecycleStatus =
   | "idle"
@@ -67,7 +73,7 @@ export type WorkLogToolLifecycleStatus =
   | "stopped";
 
 export interface WorkLogEntry {
-  readonly questionAnswer?: import("@t3tools/contracts").UserInputAttachmentAnswerPayload;
+  readonly questionAnswer?: import("@houston-app/contracts").UserInputAttachmentAnswerPayload;
   readonly id: string;
   readonly createdAt: string;
   readonly runId?: RunId | null;

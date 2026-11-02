@@ -1,7 +1,7 @@
 // The merge queue's rules: enqueue checks, order, the gates, the line and who goes next, which
 // verification and failure still hold, the push guard, the output tail and the WSL refusal.
 // Nothing here reads GitHub, git or the database.
-import type { ProjectId, PullRequestCheckStatus } from "@t3tools/contracts";
+import type { ProjectId, PullRequestCheckStatus } from "@houston-app/contracts";
 import {
   HOUSTON_MERGE_QUEUE_LIMITS,
   HoustonMergeQueueError,
@@ -16,8 +16,8 @@ import {
   type HoustonMergeQueueSettingsSetInput,
   type HoustonMergeQueueStatus,
   type HoustonMergeQueueVerification,
-} from "@t3tools/contracts/houston/mergeQueue";
-import type { HoustonTaskRunState } from "@t3tools/contracts/houston/tasks";
+} from "@houston-app/contracts/houston/mergeQueue";
+import type { HoustonTaskRunState } from "@houston-app/contracts/houston/tasks";
 
 import { redactSecrets, stripAnsi } from "./redact.ts";
 

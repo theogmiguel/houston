@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 import type * as EffectAcpSchema from "effect-acp/compat";
 
-import { ProviderAdapterV2RuntimePolicy } from "@t3tools/provider-core/server/ProviderAdapter";
+import { ProviderAdapterV2RuntimePolicy } from "@houston-app/provider-core/server/ProviderAdapter";
 
 import { fxPermissionDisposition } from "./acpSupport.ts";
 

@@ -1,5 +1,5 @@
 import { type ComposerImageAttachment, type DraftId } from "../../composerDraftStore";
-import { type ScopedThreadRef } from "@t3tools/contracts";
+import { type ScopedThreadRef } from "@houston-app/contracts";
 import {
   getPendingSnapShotAnimations,
   pendingSnapShotAnimationIdsForTarget,

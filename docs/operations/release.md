@@ -390,7 +390,7 @@ It refuses a too-new bundle and prints the symbol versions that caused it. A
 
 `build-app.sh` re-execs itself under `scripts/oom-shield.sh` (`-j 3`) unless already
 shielded, then runs `CARGO_BUILD_JOBS=3 cargo tauri build --bundles <targets>`. The
-renderer and the bundled server are built beforehand (`pnpm --filter @t3tools/web build`,
+renderer and the bundled server are built beforehand (`pnpm --filter @houston-app/web build`,
 `pnpm --filter houston build:exe` and `node scripts/stage-v2-server.mjs`).
 
 Bundle output: `src-tauri/target/release/bundle/{appimage,deb}/*.{AppImage,deb}`.

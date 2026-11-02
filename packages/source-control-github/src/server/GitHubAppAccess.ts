@@ -67,7 +67,7 @@ export class GitHubAppAccess extends Context.Service<
       GitHubRequestPolicy.GitHubApiError
     >;
   }
->()("@t3tools/source-control-github/server/GitHubAppAccess") {}
+>()("@houston-app/source-control-github/server/GitHubAppAccess") {}
 
 /** Callers may name a repository as a URL, `host/owner/name` or `owner/name.git`. */
 function ownerAndName(repository: string): string {

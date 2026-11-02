@@ -14,7 +14,7 @@ import {
   type RuntimeMode,
   ThreadId,
   type ThreadPullRequestLink,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   HOUSTON_TASK_LIMITS,
   HoustonTaskPlan,
@@ -36,8 +36,8 @@ import {
   type HoustonTaskStartInput,
   type HoustonTaskStartResult,
   houstonTaskKey,
-} from "@t3tools/contracts/houston/tasks";
-import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
+} from "@houston-app/contracts/houston/tasks";
+import { randomUuidV4 } from "@houston-app/provider-core/server/randomUuid";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

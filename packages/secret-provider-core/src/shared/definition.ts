@@ -1,4 +1,4 @@
-import type { SecretProviderKind } from "@t3tools/contracts";
+import type { SecretProviderKind } from "@houston-app/contracts";
 import type * as Schema from "effect/Schema";
 
 /** What clients and the server both need to know about one kind of secret provider. */

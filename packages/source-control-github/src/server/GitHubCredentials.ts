@@ -1,4 +1,4 @@
-import { normalizeHost } from "@t3tools/source-control-core/server/pullRequestUtils";
+import { normalizeHost } from "@houston-app/source-control-core/server/pullRequestUtils";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -12,11 +12,11 @@ import * as PlatformError from "effect/PlatformError";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 
-import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
-import { readSourceControlHostSettings } from "@t3tools/source-control-core/shared/definition";
-import type { ServerSettings } from "@t3tools/contracts";
+import * as SourceControlHost from "@houston-app/source-control-core/server/SourceControlHost";
+import { readSourceControlHostSettings } from "@houston-app/source-control-core/shared/definition";
+import type { ServerSettings } from "@houston-app/contracts";
 
 import * as GitHubClient from "../shared/definition.ts";
 
@@ -99,7 +99,7 @@ export class GitHubCredentials extends Context.Service<
     readonly fingerprint: (host: string, token: string) => Effect.Effect<string>;
     readonly invalidate: (host: string) => Effect.Effect<void>;
   }
->()("@t3tools/source-control-github/server/GitHubCredentials") {}
+>()("@houston-app/source-control-github/server/GitHubCredentials") {}
 
 const HOSTNAME =
   /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*(?::\d{1,5})?$/;

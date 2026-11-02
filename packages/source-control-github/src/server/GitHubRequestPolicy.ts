@@ -1,5 +1,5 @@
-import { normalizeHost } from "@t3tools/source-control-core/server/pullRequestUtils";
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { normalizeHost } from "@houston-app/source-control-core/server/pullRequestUtils";
+import { SourceControlProviderKind } from "@houston-app/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -9,7 +9,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
+import * as SourceControlRateLimit from "@houston-app/source-control-core/server/SourceControlRateLimit";
 
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
@@ -29,7 +29,7 @@ export const PinnedGitHubCredential = Context.Reference<{
   readonly token: Redacted.Redacted<string>;
   readonly credentialFingerprint: string;
   readonly source?: GitHubCredentials.GitHubCredentialSource;
-} | null>("@t3tools/source-control-github/server/GitHubRequestPolicy/PinnedGitHubCredential", {
+} | null>("@houston-app/source-control-github/server/GitHubRequestPolicy/PinnedGitHubCredential", {
   defaultValue: () => null,
 });
 
@@ -223,7 +223,7 @@ export class GitHubRequestPolicy extends Context.Service<
       host: string,
     ) => Effect.Effect<Option.Option<GitHubHeldCredential>, GitHubAppSignIn.GitHubAppSessionError>;
   }
->()("@t3tools/source-control-github/server/GitHubRequestPolicy") {}
+>()("@houston-app/source-control-github/server/GitHubRequestPolicy") {}
 
 export interface GitHubHeldCredential {
   readonly source?: GitHubCredentials.GitHubCredentialSource;
