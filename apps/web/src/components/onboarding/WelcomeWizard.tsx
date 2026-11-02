@@ -538,9 +538,12 @@ function PairingForm({
             </p>
             <CommandBlock command="houston pair" className="mt-2" />
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              Start Houston first, or run <code className="font-mono">houston serve</code> (install the CLI from{" "}
-              <a className="underline" href="https://github.com/theogmiguel/houston/releases">GitHub releases</a>). Add{" "}
-              <code className="font-mono">--tailscale</code> to use your tailnet.
+              Start Houston first, or run <code className="font-mono">houston serve</code> (install
+              the CLI from{" "}
+              <a className="underline" href="https://github.com/theogmiguel/houston/releases">
+                GitHub releases
+              </a>
+              ). Add <code className="font-mono">--tailscale</code> to use your tailnet.
             </p>
           </CollapsiblePanel>
         </Collapsible>

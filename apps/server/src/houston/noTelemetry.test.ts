@@ -42,6 +42,7 @@ const desktopFlags = (bootstrapFd: number): CliServerFlags => ({
   logWebSocketEvents: Option.none(),
   tailscaleServeEnabled: Option.none(),
   tailscaleServePort: Option.none(),
+  lan: Option.none(),
 });
 
 const resolveWith = Effect.fn(function* (sources: ReadonlyArray<[Source, Signal]>) {

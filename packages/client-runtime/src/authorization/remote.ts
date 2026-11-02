@@ -52,9 +52,9 @@ export interface ClientOwnerParams {
  */
 export const readClientOwnerParams = Effect.gen(function* () {
   const device = yield* (yield* ClientCapabilities.AnalyticsDevice).id;
-  return (Option.isSome(device)
-    ? { device: hashTelemetryId(device.value) }
-    : {}) satisfies ClientOwnerParams;
+  return (
+    Option.isSome(device) ? { device: hashTelemetryId(device.value) } : {}
+  ) satisfies ClientOwnerParams;
 });
 
 export const appendClientConnectionParams = (
@@ -235,4 +235,3 @@ export const resolveRemoteWebSocketConnectionUrl = Effect.fn(
   );
   return url.toString();
 });
-

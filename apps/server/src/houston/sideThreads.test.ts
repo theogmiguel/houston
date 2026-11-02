@@ -34,6 +34,7 @@ import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterReg
 import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
 import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import { layerNoReadOnlyThreads, mayHoldT3Tools, reviewPrompt } from "./sideThreads.ts";
@@ -195,12 +196,15 @@ const layerProjectStoreBase = RuntimePolicy.layerFromProjectStore.pipe(
           faviconPath: null,
           projectIcon: null,
           scripts: [],
+          pinnedAt: null,
+          archivedAt: null,
           createdAt: "2026-10-30T00:00:00.000Z",
           updatedAt: "2026-10-30T00:00:00.000Z",
           deletedAt: null,
         }),
     }),
   ),
+  Layer.provide(ServerSettings.layerTest().pipe(Layer.orDie)),
 );
 
 // The two assemblies that resolve a turn's policy: the replay harness and the server runtime.
@@ -341,6 +345,7 @@ const layerServerRuntimePolicy = RuntimeLayer.layerRuntimePolicyProvided.pipe(
   ),
   Layer.provide(SqlitePersistence.layerMemory),
   Layer.provide(layerNoReadOnlyThreads),
+  Layer.provide(ServerSettings.layerTest()),
 );
 
 describe("the server's side-thread policy", () => {

@@ -3,7 +3,6 @@ import {
   ServerNpmReleaseInput,
   type ServerNpmRelease,
 } from "@t3tools/contracts";
-import { npmReleaseDatabaseMigration } from "@t3tools/shared/cliRelease";
 import { resolveCommandPath } from "@t3tools/shared/shell";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
@@ -27,6 +26,12 @@ const decodeError = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Struct({ error: Schema.Struct({ code: Schema.String }) })),
 );
 const decodeInput = Schema.decodeUnknownEffect(ServerNpmReleaseInput);
+// The release manifest names the highest server migration that release knows. Houston reads it
+// from the manifest rather than the upstream npm helper the shared CLI package no longer ships.
+const ReleaseDatabaseMigration = Schema.Struct({
+  t3code: Schema.Struct({ databaseMigration: Schema.Int }),
+});
+const decodeReleaseDatabaseMigration = Schema.decodeUnknownOption(ReleaseDatabaseMigration);
 
 export class NpmRelease extends Context.Service<
   NpmRelease,
@@ -35,7 +40,7 @@ export class NpmRelease extends Context.Service<
       input: ServerNpmReleaseInput,
     ) => Effect.Effect<ServerNpmRelease | null, ServerNpmReleaseError>;
   }
->()("t3/cloud/npmRelease") {}
+>()("houston/cloud/npmRelease") {}
 
 function toRelease(spec: string, json: string) {
   const decoded = Option.getOrUndefined(decodeManifest(json));
@@ -48,7 +53,8 @@ function toRelease(spec: string, json: string) {
       new ServerNpmReleaseError({ reason: "npm returned invalid release metadata." }),
     );
   }
-  const databaseMigration = npmReleaseDatabaseMigration(manifest);
+  const databaseMigration = Option.getOrUndefined(decodeReleaseDatabaseMigration(manifest))?.t3code
+    .databaseMigration;
   return Effect.succeed({
     version: manifest.version,
     ...(databaseMigration === undefined ? {} : { databaseMigration }),

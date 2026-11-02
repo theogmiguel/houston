@@ -21,6 +21,7 @@ import type {
 import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
+import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -57,6 +58,7 @@ import * as KnownWorkspaces from "../../workspace/KnownWorkspaces.ts";
 import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
 import * as McpAppRequests from "../../mcpApps/McpAppRequests.ts";
 import * as ModelManifest from "../../provider/ModelManifest.ts";
+import * as NpmRelease from "../../cloud/npmRelease.ts";
 import * as OrchestrationEventStore from "../../persistence/OrchestrationEventStore.ts";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as OtlpEndpointCheck from "../../observability/OtlpEndpointCheck.ts";
@@ -186,9 +188,11 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(ReviewService.ReviewService)({}),
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
+  Layer.mock(SecretResolver.SecretResolver)({}),
   Layer.mock(ServerLifecycleEvents.ServerLifecycleEvents)({}),
   Layer.mock(ServerRuntimeStartup.ServerRuntimeStartup)({}),
   Layer.mock(ServerSelfUpdate.ServerSelfUpdate)({}),
+  Layer.mock(NpmRelease.NpmRelease)({}),
   Layer.mock(SessionStore.SessionStore)({
     cookieName: "houston-mq-test",
     legacyCookieName: undefined,
@@ -289,6 +293,7 @@ const makeWsClient = Effect.fn("makeWsClient")(function* (
           },
           {},
           browser,
+          () => Effect.void,
         ),
         RpcAuthorization.layer(scopes),
       ),

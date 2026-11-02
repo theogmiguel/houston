@@ -89,7 +89,7 @@ export const startCommand = Command.make("start", { ...sharedServerCommandFlags 
 export const serveCommand = Command.make("serve", { ...sharedServerCommandFlags }).pipe(
   Command.withShortDescription("Run Houston in this terminal, with no browser."),
   Command.withDescription(
-    "Run the Houston server in this terminal without opening a browser, and print pairing details. The background service runs this. To set up access from your other devices, run `houston up`.",
+    "Run the Houston server in this terminal without opening a browser, and print headless pairing details.",
   ),
   Command.withHandler((flags) =>
     runServerCommand(flags, {

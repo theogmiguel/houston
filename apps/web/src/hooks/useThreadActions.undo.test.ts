@@ -347,7 +347,7 @@ describe("archive and delete Undo expiry", () => {
       await actions.settleThread(target);
       commands[lifecycle === "archiveThread" ? "archive" : "delete"].mockResolvedValue(failure);
       await actions[lifecycle](target);
-      expect(useThreadUndoNotice.getState().notice).toMatchObject({ action: "Settled" });
+      expect(useThreadUndoNotice.getState().notice).toMatchObject({ action: "Closed" });
       await currentUndo()();
       expect(commands.unsettle).toHaveBeenCalledOnce();
     });

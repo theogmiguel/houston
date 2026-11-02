@@ -36,6 +36,7 @@ import * as RuntimeLayer from "../../orchestration-v2/runtimeLayer.ts";
 import * as ThreadLaunchService from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
+import * as ManagedPolicy from "../../policy/ManagedPolicy.ts";
 import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
 import * as ProjectEnrichmentService from "../../project/ProjectEnrichmentService.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
@@ -312,6 +313,8 @@ export const layerKit = (kit: Kit) => {
     Layer.provideMerge(layerWorkspacePaths),
     Layer.provideMerge(layerProjectMetadata),
     Layer.provideMerge(kit.database),
+    // A scheduled task's webhook policy is read from the machine-wide policy; unmanaged here.
+    Layer.provideMerge(ManagedPolicy.layerTest()),
     Layer.provideMerge(ServerSettings.layerTest()),
     Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "houston-harness-test-" })),
     Layer.provideMerge(NodeServices.layer),

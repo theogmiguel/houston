@@ -68,7 +68,8 @@ describe("Esc in a shortcut recorder", () => {
       name: "new binding",
       field: newField,
       open: async () => {
-        await activate(page.getByRole("button", { name: "Add keybinding" }), "click");
+        await activate(page.getByRole("button", { name: "Keybinding actions" }), "click");
+        await activate(page.getByRole("menuitem", { name: "Add keybinding" }), "click");
         await activate(newField, "focus");
       },
       expectReset: async () => {
@@ -106,22 +107,25 @@ describe("Esc in a shortcut recorder", () => {
 });
 
 it("re-enables Save when a When editor closes on an expression it could not parse", async () => {
-  await using screen = await render(
+  await using _screen = await render(
     <RegistryProvider>
       <KeybindingsSettingsPanel />
     </RegistryProvider>,
   );
-  const whenTrigger = screen.getByRole("button", { name: "Edit when clause for Terminal: Toggle" });
-  const expression = screen.getByRole("textbox", { name: "When expression" });
+  const rowMenu = page.getByRole("button", { name: "Actions for Terminal: Toggle" });
+  const whenTrigger = page.getByRole("menuitem", { name: /^When:/ });
+  const expression = page.getByRole("textbox", { name: "When expression" });
 
-  await whenTrigger.click();
+  await userEvent.click(rowMenu);
+  await userEvent.click(whenTrigger);
   await userEvent.type(expression, "terminalFocus");
   await userEvent.type(expression, " &&");
-  await expect.element(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  await expect.element(page.getByRole("button", { name: "Save" })).toBeDisabled();
 
   await userEvent.keyboard("{Escape}");
-  await whenTrigger.click();
+  await userEvent.click(rowMenu);
+  await userEvent.click(whenTrigger);
 
   await expect.element(expression).toHaveValue("terminalFocus");
-  await expect.element(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  await expect.element(page.getByRole("button", { name: "Save" })).toBeEnabled();
 });

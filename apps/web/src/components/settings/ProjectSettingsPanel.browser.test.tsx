@@ -480,7 +480,6 @@ describe("project settings permissions", () => {
 });
 
 describe("project identity reset", () => {
-  const scratchIcon = { kind: "lucide", name: "message-square-dashed", color: "gray" } as const;
   const resetButton = (screen: Screen, label: string) =>
     screen.container.querySelector<HTMLButtonElement>(`[aria-label="Reset ${label} to default"]`);
   const asScratch = (project: Project): Project => ({
@@ -491,7 +490,7 @@ describe("project identity reset", () => {
     projectIcon: { kind: "emoji", emoji: "📝" },
   });
 
-  it("restores a renamed scratch project's built-in name and icon", async () => {
+  it("restores a renamed scratch project's built-in name", async () => {
     setup();
     state.projects = [{ ...asScratch(state.projects[0]!), faviconPath: null, projectIcon: null }];
     await using screen = await mountPanel();
@@ -503,34 +502,15 @@ describe("project identity reset", () => {
         input: { projectId: state.projects[0]!.id, title: "No project" },
       }),
     );
-    await userEvent.click(resetButton(screen, "project icon")!);
-    await vi.waitFor(() =>
-      expect(state.update).toHaveBeenLastCalledWith({
-        environmentId: primaryId,
-        input: { projectId: state.projects[0]!.id, faviconPath: null, projectIcon: scratchIcon },
-      }),
-    );
   });
 
-  it("resets each member of a mixed group to its own default icon", async () => {
+  it("does not offer a scratch name reset for a mixed group", async () => {
     setup();
     const [primary, remote] = state.projects;
     state.projects = [asScratch(primary!), { ...remote!, faviconPath: "logo.png" }];
     await using screen = await mountPanel();
 
     expect(resetButton(screen, "project name")).toBeNull();
-    await userEvent.click(resetButton(screen, "project icon")!);
-    await vi.waitFor(() => expect(state.update).toHaveBeenCalledTimes(2));
-    expect(state.update.mock.calls.map(([request]) => request)).toEqual([
-      {
-        environmentId: primaryId,
-        input: { projectId: primary!.id, faviconPath: null, projectIcon: scratchIcon },
-      },
-      {
-        environmentId: remoteId,
-        input: { projectId: remote!.id, faviconPath: null, projectIcon: null },
-      },
-    ]);
   });
 });
 

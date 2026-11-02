@@ -2581,8 +2581,7 @@ it.effect.each([
         key: "hard-stop",
         shouldFinalizeRun: () => Effect.succeed(true),
         loadRunInterruptReason: () => Effect.succeed(requestReason),
-        events: (ids) =>
-          Stream.make({ ...rootTerminalEvent(ids, "interrupted"), reason: providerReason }),
+        events: (ids) => Stream.make(rootTerminalEvent(ids, "interrupted", providerReason)),
       });
       assert.deepEqual(
         written.map((item) => item.type),
@@ -3602,6 +3601,7 @@ function makeRunOwnedSubagentChildNodeFixture(input: {
 function rootTerminalEvent(
   ids: BackgroundScenarioIds,
   status: "completed" | "interrupted" | "cancelled" | "failed",
+  reason?: string,
 ): ProviderAdapter.ProviderAdapterV2Event {
   const common = {
     type: "turn.terminal" as const,
@@ -3623,7 +3623,12 @@ function rootTerminalEvent(
           retryable: null,
         },
       }
-    : { ...common, status, failure: null };
+    : {
+        ...common,
+        status,
+        failure: null,
+        ...(reason === undefined ? {} : { reason }),
+      };
 }
 
 function runBackgroundItemScenario(

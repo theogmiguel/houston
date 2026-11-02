@@ -368,7 +368,7 @@ function SecretSettingsControl({
         id={inputId}
         aria-describedby={descriptionId}
         aria-label={field.label}
-        size="sm"
+        size="compact"
         className="min-w-0 flex-1"
         value={reference ?? ""}
         configured={reference === undefined && configured}

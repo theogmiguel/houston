@@ -882,7 +882,11 @@ export const TraitsPicker = memo(function TraitsPicker({
   ) {
     return null;
   }
-  const { label: triggerLabel } = buildTraitsTriggerDisplay({
+  const {
+    label: triggerLabel,
+    speedLabel,
+    otherLabels,
+  } = buildTraitsTriggerDisplay({
     provider,
     descriptors,
     primarySelectDescriptorId: primarySelectDescriptor?.id ?? null,
@@ -896,9 +900,7 @@ export const TraitsPicker = memo(function TraitsPicker({
     ? [`Effort: ${triggerLabel}`, speedLabel, extraMenuHint].filter(Boolean).join(" · ")
     : triggerLabel;
   const effortGlyph =
-    isComposerOwned &&
-    primarySelectDescriptor &&
-    isReasoningSelect(primarySelectDescriptor)
+    isComposerOwned && primarySelectDescriptor && isReasoningSelect(primarySelectDescriptor)
       ? resolveEffortGlyph(
           primarySelectDescriptor,
           ultrathinkPromptControlled

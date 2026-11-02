@@ -299,7 +299,9 @@ export const makePreviewBrowser = Effect.fn("PreviewBrowser.make")(function* (
     },
     Effect.scoped,
     Effect.mapError(
-      wrapFailure("Could not unpack the browser. Check free disk space in Houston's home directory."),
+      wrapFailure(
+        "Could not unpack the browser. Check free disk space in Houston's home directory.",
+      ),
     ),
   );
 

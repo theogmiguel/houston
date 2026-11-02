@@ -665,7 +665,8 @@ describe("EnvironmentRegistry", () => {
         yield* registry.start;
         yield* SubscriptionRef.changes(registry.entries).pipe(
           Stream.filter(
-            (entries) => entries.get(FALLBACK_TARGET.environmentId)?.unsupportedReason !== undefined,
+            (entries) =>
+              entries.get(FALLBACK_TARGET.environmentId)?.unsupportedReason !== undefined,
           ),
           Stream.take(1),
           Stream.runDrain,
@@ -821,10 +822,12 @@ describe("EnvironmentRegistry", () => {
           FALLBACK_TARGET.environmentId,
         );
         expect(entry?.enabled).toBe(false);
-        expect((yield* Ref.get(harness.storedDisabled)).has(FALLBACK_TARGET.environmentId)).toBe(true);
-        expect(hasRoutes(yield* Ref.get(harness.storedTargets), FALLBACK_TARGET.environmentId)).toBe(
+        expect((yield* Ref.get(harness.storedDisabled)).has(FALLBACK_TARGET.environmentId)).toBe(
           true,
         );
+        expect(
+          hasRoutes(yield* Ref.get(harness.storedTargets), FALLBACK_TARGET.environmentId),
+        ).toBe(true);
         expect(yield* Ref.get(harness.releasedSessions)).toBe(1);
 
         yield* registry.setEnabled(FALLBACK_TARGET.environmentId, true);
@@ -850,7 +853,9 @@ describe("EnvironmentRegistry", () => {
         const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
         yield* registry.start;
         yield* registry.register(
-          fallbackRegistration(new BearerConnectionTarget({ ...FALLBACK_TARGET, label: "Renamed" })),
+          fallbackRegistration(
+            new BearerConnectionTarget({ ...FALLBACK_TARGET, label: "Renamed" }),
+          ),
         );
         yield* Effect.yieldNow;
 
@@ -1717,7 +1722,7 @@ describe("EnvironmentRegistry routes", () => {
       const [savedTarget, savedProfile] = loopback("bearer:ip", "127.0.0.1");
       const [pastedTarget, pastedProfile] = loopback("bearer:localhost", "localhost");
       const harness = yield* makeHarness(
-        [savedTarget, RELAY_TARGET],
+        [savedTarget],
         [savedProfile],
         [[savedTarget.connectionId, BEARER_CREDENTIAL]],
       );
@@ -1728,7 +1733,6 @@ describe("EnvironmentRegistry routes", () => {
         expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual([
           pastedTarget,
           savedTarget,
-          RELAY_TARGET,
         ]);
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
@@ -1772,7 +1776,10 @@ describe("EnvironmentRegistry routes", () => {
       );
       yield* Effect.gen(function* () {
         const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-        yield* registry.reorderRoutes(LAN_TARGET.environmentId, ["fallback-connection", LAN_TARGET.connectionId]);
+        yield* registry.reorderRoutes(LAN_TARGET.environmentId, [
+          "fallback-connection",
+          LAN_TARGET.connectionId,
+        ]);
         expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual([
           FALLBACK_TARGET,
           LAN_TARGET,
@@ -1814,10 +1821,7 @@ describe("EnvironmentRegistry routes", () => {
     "revokes pull request routing trust when a route is added but keeps it on reorder",
     () =>
       Effect.gen(function* () {
-        const harness = yield* makeHarness(
-          [FALLBACK_TARGET],
-          [fallbackProfile(FALLBACK_TARGET)],
-        );
+        const harness = yield* makeHarness([FALLBACK_TARGET], [fallbackProfile(FALLBACK_TARGET)]);
         let stored: ReadonlyArray<StoredPullRequestRoutingPermission> = [];
         const permissions = yield* makePullRequestRoutingPermissions({
           read: Effect.sync(() => stored),

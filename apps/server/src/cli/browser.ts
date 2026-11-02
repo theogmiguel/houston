@@ -110,7 +110,9 @@ const browserSetupCommand = Command.make("setup", { baseDir: baseDirFlag }).pipe
   Command.withHandler(({ baseDir }) =>
     Effect.gen(function* () {
       if ((yield* HostProcess.Platform) !== "linux") {
-        return yield* Console.log("Nothing to set up: Houston's browser runs as is on this system.");
+        return yield* Console.log(
+          "Nothing to set up: Houston's browser runs as is on this system.",
+        );
       }
       const fs = yield* FileSystem.FileSystem;
       const isRoot = (yield* HostProcess.UserId) === 0;
@@ -151,7 +153,9 @@ const browserSetupCommand = Command.make("setup", { baseDir: baseDirFlag }).pipe
           );
         }
         if (missing.length > 0) {
-          yield* Console.log(`Houston's browser is missing ${missing.join(", ")}; setup installs them.`);
+          yield* Console.log(
+            `Houston's browser is missing ${missing.join(", ")}; setup installs them.`,
+          );
         }
         if (needsFonts) {
           yield* Console.log(

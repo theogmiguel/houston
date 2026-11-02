@@ -15,6 +15,7 @@ import {
 import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
+import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -43,6 +44,8 @@ import * as ExternalLauncher from "../process/externalLauncher.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as HostResources from "../resourceTelemetry/HostResources.ts";
 import * as Keybindings from "../keybindings.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
+import * as NpmRelease from "../cloud/npmRelease.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as McpAppRequests from "../mcpApps/McpAppRequests.ts";
 import * as ModelManifest from "../provider/ModelManifest.ts";
@@ -174,9 +177,11 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(ReviewService.ReviewService)({}),
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
+  Layer.mock(SecretResolver.SecretResolver)({}),
   Layer.mock(ServerLifecycleEvents.ServerLifecycleEvents)({}),
   Layer.mock(ServerRuntimeStartup.ServerRuntimeStartup)({}),
   Layer.mock(ServerSelfUpdate.ServerSelfUpdate)({}),
+  Layer.mock(NpmRelease.NpmRelease)({}),
   Layer.mock(SessionStore.SessionStore)({ cookieName: "side-test", legacyCookieName: undefined }),
   Layer.mock(SourceControlDiscovery.SourceControlDiscovery)({}),
   Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({}),
@@ -242,7 +247,9 @@ const layerUnusedRpcServices = Layer.mergeAll(
 
 const layerConfigSources = Layer.mergeAll(
   Keybindings.layer,
-  ServerSettings.layer.pipe(Layer.provide(ServerSecretStore.layer)),
+  ServerSettings.layer.pipe(
+    Layer.provide(Layer.merge(ServerSecretStore.layer, ManagedPolicy.layerTest())),
+  ),
 ).pipe(Layer.provideMerge(Layer.fresh(SqlitePersistence.layerMemory)));
 
 /** A `/ws` client of the real handlers; every response value lands in one queue. */
@@ -272,6 +279,7 @@ const makeWsClient = Effect.fn("makeWsClient")(function* () {
         },
         {},
         browser,
+        () => Effect.void,
       ),
     ),
   );

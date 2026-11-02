@@ -24,6 +24,7 @@ import type {
 import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
+import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -84,6 +85,7 @@ import * as ResourceTelemetry from "../../resourceTelemetry/ResourceTelemetry.ts
 import * as ReviewService from "../../review/ReviewService.ts";
 import * as ScheduledTasks from "../../scheduledTasks/ScheduledTaskService.ts";
 import * as ScratchThreadPromotion from "../../project/ScratchThreadPromotion.ts";
+import * as NpmRelease from "../../cloud/npmRelease.ts";
 import * as SecretRequests from "../../secrets/SecretRequests.ts";
 import * as ServerBrowser from "../../preview/ServerBrowser.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
@@ -177,9 +179,11 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(ReviewService.ReviewService)({}),
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
+  Layer.mock(SecretResolver.SecretResolver)({}),
   Layer.mock(ServerLifecycleEvents.ServerLifecycleEvents)({}),
   Layer.mock(ServerRuntimeStartup.ServerRuntimeStartup)({}),
   Layer.mock(ServerSelfUpdate.ServerSelfUpdate)({}),
+  Layer.mock(NpmRelease.NpmRelease)({}),
   Layer.mock(SessionStore.SessionStore)({
     cookieName: "houston-tasks-test",
     legacyCookieName: undefined,
@@ -283,6 +287,7 @@ const makeWsClient = Effect.fn("makeWsClient")(function* (
           },
           {},
           browser,
+          () => Effect.void,
         ),
         RpcAuthorization.layer(scopes),
       ),

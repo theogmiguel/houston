@@ -895,7 +895,7 @@ export default function DiffPanel({
         <span className="shrink-0 truncate text-[13px] font-semibold text-foreground">
           {selectedScopeLabel}
         </span>
-        {isGitSelection && selectedGitScope === "branch" && selectedGitSource?.baseRef && (
+        {canSelectBranchBase && (
           <div
             className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden text-xs text-muted-foreground"
             aria-label={`Comparing ${comparisonHeadRef} against ${comparisonBaseRef}`}

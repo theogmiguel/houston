@@ -228,6 +228,7 @@ describe("MessagesTimeline work rows", () => {
         id: string,
         status: OrchestrationV2Subagent["status"],
         result: string,
+        title: string,
       ): OrchestrationV2Subagent => ({
         id: NodeId.make(id),
         threadId: ThreadId.make("thread-1"),
@@ -241,7 +242,7 @@ describe("MessagesTimeline work rows", () => {
         childThreadId,
         nativeTaskRef: null,
         prompt: "Simplify delivery",
-        title: "Simplify delivery",
+        title,
         model: null,
         status,
         result,
@@ -250,9 +251,9 @@ describe("MessagesTimeline work rows", () => {
         updatedAt: now,
       });
       const tasks = [
-        task("original", "interrupted", "Old interrupted progress"),
-        task("continued", "completed", "Final implementation report"),
-        task("follow-up", "completed", "Follow-up explanation"),
+        task("original", "interrupted", "Old interrupted progress", "Original task"),
+        task("continued", "completed", "Final implementation report", "Continued task"),
+        task("follow-up", "completed", "Follow-up explanation", "Follow-up task"),
       ];
       using _threadAtom = vi.spyOn(environmentThreadDetails, "threadAtom").mockReturnValue(
         Atom.make({
@@ -280,16 +281,16 @@ describe("MessagesTimeline work rows", () => {
         { onOpenThread },
       );
       if (source === "delegated") {
-        expect(screen.text()).toContain("Final implementation report");
-        expect(screen.text()).toContain("Follow-up explanation");
-        expect(screen.text()).not.toContain("Old interrupted progress");
-        await click(screen.buttons("Open Simplify delivery")[0]!);
+        expect(screen.text()).toContain("Continued task");
+        expect(screen.text()).toContain("Follow-up task");
+        expect(screen.text()).not.toContain("Original task");
+        await click(screen.buttons("Open Continued task")[0]!);
         expect(onOpenThread).toHaveBeenCalledWith(childThreadId);
       } else if (source === "legacy") {
-        expect(screen.text()).toContain("Old interrupted progress");
+        expect(screen.text()).toContain("Original task");
       } else {
         expect(screen.text()).toContain("Notification fallback");
-        expect(screen.text()).not.toContain("Old interrupted progress");
+        expect(screen.text()).not.toContain("Original task");
       }
     },
   );

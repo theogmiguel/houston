@@ -631,53 +631,57 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ),
   // The Night shift service over the runner and claim the orchestration runtime below exports.
   layerNightShift,
-).pipe(
-  // The merge queue reads through the PR page's own service and GitHub client.
-  Layer.provideMerge(
-    layerMergeQueue(
-      Layer.mergeAll(GitHubRest.layerWithDependencies, layerPullRequestService).pipe(
-        Layer.merge(HoustonMergeQueueThreads.layer),
+)
+  .pipe(
+    // The merge queue reads through the PR page's own service and GitHub client.
+    Layer.provideMerge(
+      layerMergeQueue(
+        Layer.mergeAll(GitHubRest.layerWithDependencies, layerPullRequestService).pipe(
+          Layer.merge(HoustonMergeQueueThreads.layer),
+        ),
       ),
     ),
-  ),
-  Layer.provideMerge(layerOrchestrationApplication),
-  Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer, HoustonTaskV1Import.layer)),
-  // The task source poller reads GitHub through its own client and the token from the OS keychain.
-  Layer.provideMerge(
-    layerTaskSources(
-      Layer.mergeAll(GitHubRest.layerWithDependencies, HoustonTaskSourceNotion.layer),
+    Layer.provideMerge(layerOrchestrationApplication),
+    Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer, HoustonTaskV1Import.layer)),
+    // The task source poller reads GitHub through its own client and the token from the OS keychain.
+    Layer.provideMerge(
+      layerTaskSources(
+        Layer.mergeAll(GitHubRest.layerWithDependencies, HoustonTaskSourceNotion.layer),
+      ),
     ),
-  ),
-  Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
-  Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
-  Layer.provideMerge(SecretResolver.layer),
-  Layer.provideMerge(layerServerSettings),
-  Layer.provideMerge(layerSourceControlProviderRegistry),
-  Layer.provideMerge(layerGit),
-  Layer.provideMerge(layerVcs),
-  Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
-  // Below the orchestration runtime so its ProjectService sees the store on project deletion.
-  Layer.provideMerge(
-    Layer.mergeAll(
-      HoustonTaskSourceStore.layer,
-      HoustonMergeQueueStore.layer,
-      HoustonHarnessStore.layer,
-      HoustonNightShiftStore.layer,
+    Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
+    Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
+    Layer.provideMerge(SecretResolver.layer),
+    Layer.provideMerge(layerServerSettings),
+    Layer.provideMerge(layerSourceControlProviderRegistry),
+    Layer.provideMerge(layerGit),
+    Layer.provideMerge(layerVcs),
+  )
+  .pipe(
+    // Split from the chain above: Effect's `pipe` overloads accept at most 20 stages.
+    Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
+    // Below the orchestration runtime so its ProjectService sees the store on project deletion.
+    Layer.provideMerge(
+      Layer.mergeAll(
+        HoustonTaskSourceStore.layer,
+        HoustonMergeQueueStore.layer,
+        HoustonHarnessStore.layer,
+        HoustonNightShiftStore.layer,
+      ),
     ),
-  ),
-  Layer.provideMerge(HoustonSlackStore.layer),
-  Layer.provideMerge(HoustonKeychain.layerLive),
-  Layer.provideMerge(layerHoustonTaskPersistence),
-  Layer.provideMerge(layerPersistence),
-  Layer.provideMerge(
-    Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),
-  ),
-  Layer.provideMerge(ProviderRegistry.layer),
-  Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
-  // Provider hydration builds the Claude runner, which reports agents to the same scanner the
-  // terminal and preview layers share.
-  Layer.provideMerge(layerPortScanner),
-);
+    Layer.provideMerge(HoustonSlackStore.layer),
+    Layer.provideMerge(HoustonKeychain.layerLive),
+    Layer.provideMerge(layerHoustonTaskPersistence),
+    Layer.provideMerge(layerPersistence),
+    Layer.provideMerge(
+      Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),
+    ),
+    Layer.provideMerge(ProviderRegistry.layer),
+    Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
+    // Provider hydration builds the Claude runner, which reports agents to the same scanner the
+    // terminal and preview layers share.
+    Layer.provideMerge(layerPortScanner),
+  );
 
 const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(

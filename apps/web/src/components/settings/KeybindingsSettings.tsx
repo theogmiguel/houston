@@ -978,7 +978,7 @@ function KeybindingConditionDialog({
   variables: ReadonlyArray<WhenVariableOption>;
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} modal={false} onOpenChange={onOpenChange}>
       <DialogPopup className="max-w-lg">
         <DialogHeader>
           <DialogTitle>When condition</DialogTitle>
@@ -1275,7 +1275,11 @@ function KeybindingTableRow(props: KeybindingRowProps) {
         />
         <KeybindingConditionDialog
           open={conditionOpen}
-          onOpenChange={setConditionOpen}
+          onOpenChange={(open) => {
+            setConditionOpen(open);
+            // Closing drops an unparsed draft and keeps the last valid expression.
+            if (!open) editor.setDraft({ isWhenDraftValid: true });
+          }}
           row={row}
           editor={editor}
           variables={variables}

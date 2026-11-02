@@ -386,15 +386,6 @@ describe("updateOutdatedHost", () => {
           Layer.mergeAll(
             Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, registry),
             Layer.succeed(ConnectionResolver.ConnectionResolver, resolver),
-            Layer.succeed(
-              RelayEnvironmentDiscovery.RelayEnvironmentDiscovery,
-              RelayEnvironmentDiscovery.RelayEnvironmentDiscovery.of({
-                state: yield* SubscriptionRef.make(
-                  RelayEnvironmentDiscovery.EMPTY_RELAY_ENVIRONMENT_DISCOVERY_STATE,
-                ),
-                refresh: Effect.void,
-              }),
-            ),
             Layer.succeed(HttpClient.HttpClient, httpClient),
             Layer.succeed(Socket.WebSocketConstructor, (url) => {
               const socket = new OutdatedHostSocket(url, () => {

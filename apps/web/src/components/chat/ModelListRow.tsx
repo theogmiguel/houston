@@ -1,7 +1,7 @@
 import { type ProviderDriverKind, type ProviderInstanceId } from "@t3tools/contracts";
 import { memo } from "react";
 import { CheckIcon, StarIcon } from "lucide-react";
-import { getDisplayModelName, getProviderRowLabel } from "./providerIconUtils";
+import { getDisplayModelName } from "./providerIconUtils";
 import { ComboboxItem } from "../ui/combobox";
 import { Badge } from "../ui/badge";
 import { Kbd } from "../ui/kbd";
@@ -9,6 +9,22 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import { modelPickerModelKey } from "./modelPickerKeys";
 import { formatModelPickerTraits, type ModelPickerTraits } from "./modelPickerTraits";
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getProviderRowLabel(providerDisplayName: string, subProvider: string | undefined): string {
+  const provider = providerDisplayName.trim();
+  const sub = subProvider?.trim();
+  if (!sub) {
+    return providerDisplayName;
+  }
+  if (provider && new RegExp(`^${escapeRegExp(provider)}\\s+\\S`, "i").test(sub)) {
+    return sub;
+  }
+  return `${providerDisplayName} · ${sub}`;
+}
 
 export const ModelListRow = memo(function ModelListRow(props: {
   index: number;

@@ -160,11 +160,7 @@ export function isAutoSettlementCandidate(
 export function isSnoozed(
   thread: Pick<
     ProjectionStore.ProjectionSettlementCandidate,
-    | "snoozedUntil"
-    | "snoozedAt"
-    | "latestRunCompletedAt"
-    | "status"
-    | "pendingRuntimeRequest"
+    "snoozedUntil" | "snoozedAt" | "latestRunCompletedAt" | "status" | "pendingRuntimeRequest"
   >,
   nowMs: number,
 ): boolean {

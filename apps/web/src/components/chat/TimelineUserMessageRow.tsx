@@ -777,8 +777,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
         )}
         {copyText && (
-          <MessageCopyButton
-            text={contextClipboardFragment ? copyText : plainText}
+          <CopyButton
+            label="Copy message"
+            size="xs"
+            value={contextClipboardFragment ? copyText : plainText}
+            variant="ghost-muted"
             {...(contextClipboardFragment
               ? {
                   extraFlavors: {
@@ -786,15 +789,15 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                   },
                 }
               : {})}
-            variant="ghost"
           />
         )}
         {promptLink !== null && (
-          <MessageCopyButton
-            text={promptLink}
-            label="Copy prompt link"
+          <CopyButton
             icon={LinkIconNode}
-            variant="ghost"
+            label="Copy prompt link"
+            size="xs"
+            value={promptLink}
+            variant="ghost-muted"
           />
         )}
       </div>

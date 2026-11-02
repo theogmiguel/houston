@@ -336,7 +336,7 @@ describe("workspace card beside chat", () => {
       preview: player,
     });
   it("keeps chat centered while the card fits beside it", () => {
-    expect(withCard(1500).chat).toEqual({ left: 382, width: 736, insetStart: 0, insetEnd: 0 });
+    expect(withCard(1600).chat).toEqual({ left: 432, width: 736, insetStart: 0, insetEnd: 0 });
   });
   it("narrows chat only after it reaches the left padding", () => {
     expect(withCard(1168).chat).toMatchObject({ left: 48, width: 736 });

@@ -123,10 +123,7 @@ describe("learned routes", () => {
       reported: [{ httpBaseUrl: "http://192.168.1.20:3773/" }],
       allowInsecure: true,
     });
-    expect(ids(routes)).toEqual([
-      "lan",
-      `learned:${ENVIRONMENT_ID}:http://192.168.1.20:3773@lan`,
-    ]);
+    expect(ids(routes)).toEqual(["lan", `learned:${ENVIRONMENT_ID}:http://192.168.1.20:3773@lan`]);
     expect(profileOf(routes![1]!)).toMatchObject({
       learned: true,
       wsBaseUrl: "ws://192.168.1.20:3773/",

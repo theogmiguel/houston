@@ -127,10 +127,9 @@ describe("ServerBrowserContexts", () => {
       expect.objectContaining({ chromiumSandbox: true, executablePath: "/test/chromium-launcher" }),
     );
     expect(release).toHaveBeenCalledTimes(2);
-    expect(launches.mkdir).toHaveBeenCalledWith(
-      NodePath.join("/test/profiles", "work%2Fteam"),
-      { recursive: true },
-    );
+    expect(launches.mkdir).toHaveBeenCalledWith(NodePath.join("/test/profiles", "work%2Fteam"), {
+      recursive: true,
+    });
     await pool.close();
     expect(human.close).toHaveBeenCalledTimes(1);
   });
@@ -181,10 +180,10 @@ describe("ServerBrowserContexts", () => {
     launches.persistent.mockResolvedValue(makeContext() as unknown as BrowserContext);
     expect(await pool.contextFor("work/team")).not.toBe(persistent);
     await pool.clearProfile("never-opened");
-    expect(launches.rm).toHaveBeenLastCalledWith(
-      NodePath.join("/test/profiles", "never-opened"),
-      { recursive: true, force: true },
-    );
+    expect(launches.rm).toHaveBeenLastCalledWith(NodePath.join("/test/profiles", "never-opened"), {
+      recursive: true,
+      force: true,
+    });
     await pool.close();
   });
 
