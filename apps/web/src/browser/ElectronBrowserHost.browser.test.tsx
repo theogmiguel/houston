@@ -20,7 +20,11 @@ const mocks = vi.hoisted(() => ({
   getPreviewConfig: vi.fn<DesktopPreviewBridge["getPreviewConfig"]>(),
 }));
 
-vi.mock(import("~/env"), async (original) => ({ ...(await original()), isElectron: true }));
+vi.mock(import("~/env"), async (original) => ({
+  ...(await original()),
+  isElectron: true,
+  hasNativeBrowserHost: true,
+}));
 
 vi.mock(import("~/state/session"), async (original) => ({
   ...(await original()),

@@ -52,7 +52,7 @@ import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ComposerControl, ComposerControlIcon, type ComposerControlSize } from "./ComposerControl";
-import { useComposerMenuProps } from "./composerEventScope";
+import { focusRequestedPermission, useComposerMenuProps } from "./composerEventScope";
 import { EffortGlyph, resolveEffortGlyph } from "./EffortGlyph";
 import { useComposerMenuState } from "./useComposerMenuState";
 
@@ -930,6 +930,7 @@ export const TraitsPicker = memo(function TraitsPicker({
       onOpenChange={(open) => {
         setIsMenuOpen(open && !disabled);
       }}
+      onOpenChangeComplete={(open) => focusRequestedPermission(open, triggerRef.current)}
     >
       <Tooltip>
         <TooltipTrigger
@@ -937,8 +938,16 @@ export const TraitsPicker = memo(function TraitsPicker({
             <MenuTrigger
               render={
                 <ComposerControl
+                  ref={triggerRef}
                   disabled={disabled}
-                  aria-label={triggerLabel}
+                  aria-label={triggerDescription}
+                  data-composer-shortcut={
+                    isComposerOwned
+                      ? extraMenuOwnsModeShortcut
+                        ? "composer.effort composer.mode"
+                        : "composer.effort"
+                      : undefined
+                  }
                   size={size}
                   className={cn(
                     isCodexStyle
@@ -1008,7 +1017,7 @@ export const TraitsPicker = memo(function TraitsPicker({
             </>
           )}
         </TooltipTrigger>
-        <TooltipPopup side="top">{triggerLabel}</TooltipPopup>
+        <TooltipPopup side="top">{triggerDescription}</TooltipPopup>
       </Tooltip>
       <MenuPopup
         align="start"

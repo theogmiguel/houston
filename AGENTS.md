@@ -148,9 +148,9 @@ The [development runbook](docs/operations/development.md) contains exact command
   Windows, limit Cargo to three jobs. Never run concurrent Cargo workloads.
 - Diagnose failures using the discriminator appropriate to the failure mode in
   [testing](docs/internals/testing.md); a standalone rerun is not sufficient for every case.
-- Push and PR CI runs `safety-checks`, `linux-native-checks`, `windows-checks` and `licence-inventory`;
-  Contributors still run the full suites locally before every push. `v2-checks.yml` runs the
-  workspace suites, the web build and the upstream drift check.
+- Push and PR CI runs the static guards, the workspace typecheck and suites, the renderer unit
+  and browser tests, and the native checks; `ci-gate` is the single aggregate check. Contributors
+  still run the full suites locally before every push. See [CI](docs/internals/ci.md).
 
 ## Pull requests and releases
 
