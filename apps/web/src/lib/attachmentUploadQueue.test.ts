@@ -296,6 +296,24 @@ describe("attachmentUploadQueue", () => {
     );
   });
 
+  it("holds uploads past the per-environment cap in the queued state", () => {
+    const images = ["queued-1", "queued-2", "queued-3", "queued-4"].map(makeImage);
+    for (const image of images) {
+      startAttachmentUpload({ environmentId: firstEnvironment, image });
+    }
+
+    expect(images.slice(0, 3).map((image) => readAttachmentUpload(image.id)?.status)).toEqual([
+      "uploading",
+      "uploading",
+      "uploading",
+    ]);
+    expect(readAttachmentUpload(images[3]!.id)).toMatchObject({
+      status: "queued",
+      environmentId: firstEnvironment,
+    });
+    expect(getUploadedAttachments({ environmentId: firstEnvironment, images })).toBeNull();
+  });
+
   it("uploads images immediately and sends attachment references", async () => {
     const image = {
       ...makeImage("image-1"),

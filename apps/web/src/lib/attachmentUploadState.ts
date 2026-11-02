@@ -8,6 +8,11 @@ export type ReadyAttachmentUpload = {
 
 export type AttachmentUploadState =
   | {
+      readonly status: "queued";
+      readonly environmentId: EnvironmentId;
+      readonly previous?: ReadyAttachmentUpload;
+    }
+  | {
       readonly status: "uploading";
       readonly environmentId: EnvironmentId;
       readonly progress: number;
