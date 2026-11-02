@@ -402,5 +402,44 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       <TooltipPopup>{submitTooltip}</TooltipPopup>
     </Tooltip>
   );
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   return submit;
+=======
+  if (compactTokens === null) return submit;
+
+  return (
+    <div data-chat-composer-compact-send="true" className="flex items-center gap-2">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-(--control-radius) px-2 font-medium text-base text-foreground/80 tabular-nums outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 sm:text-sm aria-pressed:bg-accent/60 aria-pressed:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:text-muted-foreground"
+              {...pointerFocusProps}
+              aria-pressed={!keepFullHistory}
+              aria-label={`Compact ${compactTokens} tokens of history before sending`}
+              disabled={!canOperateThread}
+              onClick={onToggleKeepFullHistory}
+            />
+          }
+        >
+          <Minimize2Icon aria-hidden="true" />
+          <span className="@max-[480px]/composer-surface:hidden">
+            {keepFullHistory ? "Keep" : "Compact"}
+          </span>
+          <span className="text-muted-foreground">{compactTokens}</span>
+        </TooltipTrigger>
+        <TooltipPopup>
+          <div>
+            {keepFullHistory
+              ? `Next send keeps all ${compactTokens} tokens.`
+              : `Next send compacts ${compactTokens} tokens first.`}
+          </div>
+          <div>{keepFullHistory ? "Click to compact first" : "Click to keep full history"}</div>
+        </TooltipPopup>
+      </Tooltip>
+      {submit}
+    </div>
+  );
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 });

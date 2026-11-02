@@ -5,7 +5,10 @@ import { APP_VERSION } from "~/branding";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isElectron } from "~/env";
 import { useEnvironments } from "~/state/environments";
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 import { useReleasePublished } from "~/state/releasePublication";
+=======
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentUpdateStatesAtom } from "~/state/server";
 import { environmentSessionStatesAtom } from "~/state/session";
@@ -21,7 +24,6 @@ import {
   collectUpdateEverythingResult,
   describeUpdateEverything,
   runUpdateEverything,
-  type SkippedMachine,
   type UpdateRunMachine,
 } from "./updateEverything.logic";
 import {
@@ -68,6 +70,7 @@ export function useUpdateEverything(
     canMaintain: canUpdateServer(sessionStates[index]!),
     updateState: updateStates[index]!,
   }));
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   // A track switch's target came from GitHub already.
   const {
     targets: behindServers,
@@ -90,6 +93,11 @@ export function useUpdateEverything(
         reason: `houston@${targetVersion} has no published server release yet`,
       })),
   ];
+=======
+  const { targets: servers, skipped } = channelSwitch
+    ? collectChannelSwitchTargets(machines, channelSwitch)
+    : collectServerUpdateTargets(machines, targetVersion);
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   // Track-only hosts save a setting and restart nothing, so they are neither listed nor counted.
   const moving = servers.filter((server) => server.trackOnly !== true);
   const restarts = collectRestartingMachines(machines, moving, localUpdateVersion !== null);

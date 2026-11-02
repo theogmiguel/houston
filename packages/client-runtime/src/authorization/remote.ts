@@ -12,6 +12,7 @@ import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
 import { hashTelemetryId } from "@t3tools/shared/telemetryId";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
 import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import {
@@ -225,7 +226,7 @@ export const resolveRemoteWebSocketConnectionUrl = Effect.fn(
   });
 
   const url = rpcSocketUrl(input.wsBaseUrl);
-  url.searchParams.set("wsTicket", issued.ticket);
+  url.searchParams.set("wsTicket", Redacted.value(issued.ticket));
   appendClientConnectionParams(
     url,
     input.clientMetadata,
@@ -234,3 +235,62 @@ export const resolveRemoteWebSocketConnectionUrl = Effect.fn(
   );
   return url.toString();
 });
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
+=======
+
+/**
+ * A DPoP client's RPC ticket is bound to its key, so the upgrade carries a
+ * proof too. A WebSocket cannot set headers, so it rides in the `dpop` query
+ * parameter and names the socket URL as the HTTP request the server sees.
+ */
+export const resolveRemoteDpopWebSocketConnectionUrl = Effect.fn(
+  "clientRuntime.authorization.resolveRemoteDpopWebSocketConnectionUrl",
+)(function* <E>(input: {
+  readonly wsBaseUrl: string;
+  readonly httpBaseUrl: string;
+  readonly accessToken: string;
+  readonly createProof: (input: {
+    readonly method: "GET" | "POST";
+    readonly url: string;
+    readonly accessToken: string;
+  }) => Effect.Effect<string, E>;
+  readonly clientMetadata?: AuthClientPresentationMetadata;
+  readonly connectionMethod?: ClientConnectionMethod;
+  readonly timeoutMs?: number;
+}) {
+  const ticketProof = yield* input.createProof({
+    method: "POST",
+    url: environmentEndpointUrl(input.httpBaseUrl, webSocketTicketPath("rpc")),
+    accessToken: input.accessToken,
+  });
+  const issued = yield* issueRemoteDpopWebSocketTicket({
+    httpBaseUrl: input.httpBaseUrl,
+    accessToken: input.accessToken,
+    dpopProof: ticketProof,
+    use: "rpc",
+    fallbackProof: Effect.suspend(() =>
+      input.createProof({
+        method: "POST",
+        url: environmentEndpointUrl(input.httpBaseUrl, webSocketTicketPath(undefined)),
+        accessToken: input.accessToken,
+      }),
+    ),
+    ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
+  });
+  const url = rpcSocketUrl(input.wsBaseUrl);
+  const upgradeProof = yield* input.createProof({
+    method: "GET",
+    url: `${url.protocol === "wss:" ? "https:" : "http:"}//${url.host}${url.pathname}`,
+    accessToken: Redacted.value(issued.ticket),
+  });
+  url.searchParams.set("wsTicket", Redacted.value(issued.ticket));
+  url.searchParams.set("dpop", upgradeProof);
+  appendClientConnectionParams(
+    url,
+    input.clientMetadata,
+    input.connectionMethod,
+    yield* readClientOwnerParams,
+  );
+  return url.toString();
+});
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb

@@ -1,7 +1,11 @@
 import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import type { ProviderDriverKind, ProviderReplayTranscript } from "@t3tools/contracts";
+import type {
+  ManagedPolicyDocument,
+  ProviderDriverKind,
+  ProviderReplayTranscript,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -15,6 +19,7 @@ import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
 import * as ServerConfig from "../../config.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as ServerSettings from "../../serverSettings.ts";
+import * as ManagedPolicy from "../../policy/ManagedPolicy.ts";
 import * as ThreadManagementService from "../ThreadManagementService.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import type * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
@@ -203,9 +208,13 @@ export function runOrchestratorV2ProviderReplayScenario<
     readonly runContinuationWorker?: boolean;
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
     /** Houston: issue T3 MCP credentials as the server does, through this registry. */
     readonly configureMcp?: boolean;
     readonly mcpSessionRegistry?: Layer.Layer<McpSessionRegistry.McpSessionRegistry>;
+=======
+    readonly managedPolicy?: ManagedPolicyDocument;
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   } = {},
 ): Effect.Effect<
   OrchestratorV2ScenarioResult,
@@ -248,9 +257,13 @@ export function layerProviderReplay<Transcript extends ProviderReplayTranscript,
     readonly runContinuationWorker?: boolean;
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
     /** Houston: issue T3 MCP credentials as the server does, through this registry. */
     readonly configureMcp?: boolean;
     readonly mcpSessionRegistry?: Layer.Layer<McpSessionRegistry.McpSessionRegistry>;
+=======
+    readonly managedPolicy?: ManagedPolicyDocument;
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     readonly replayGate?: ProviderReplayGate;
   } = {},
 ): Layer.Layer<
@@ -287,11 +300,15 @@ export function layerWithRegistry<Error>(
     readonly runContinuationWorker?: boolean;
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
     /** Houston: issue T3 MCP credentials as the server does, through this registry. */
     readonly configureMcp?: boolean;
     readonly mcpSessionRegistry?: Layer.Layer<McpSessionRegistry.McpSessionRegistry>;
     /** Houston: the planners and reviewers that run read-only; none when absent. */
     readonly readOnlyThreads?: Layer.Layer<HoustonReadOnlyThreads>;
+=======
+    readonly managedPolicy?: ManagedPolicyDocument;
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   } = {},
 ): Layer.Layer<
   | Orchestrator.OrchestratorV2
@@ -306,7 +323,11 @@ export function layerWithRegistry<Error>(
     ServerConfig.ServerConfig,
     makeReplayServerConfig(scenario.name).pipe(Effect.orDie),
   ).pipe(Layer.provide(NodeServices.layer));
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   const layerBaseRuntime =
+=======
+  const layerRuntimeBase =
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     scenario.runtimePolicyOverride === undefined
       ? RuntimePolicy.layer
       : RuntimePolicy.layerWithOverride(
@@ -322,6 +343,7 @@ export function layerWithRegistry<Error>(
   const layerProvidedRegistry = registryLayer.pipe(
     Layer.provide(Layer.merge(layerContinuationRequests, McpProviderSessions.layer)),
   );
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   // Houston: side threads resolve read-only last, so no scenario override reaches them.
   const layerReadOnlyThreads = options.readOnlyThreads ?? layerNoReadOnlyThreads;
   const layerRuntime = RuntimePolicy.layerReadOnlySideThreads.pipe(
@@ -335,6 +357,21 @@ export function layerWithRegistry<Error>(
   }).pipe(Layer.orDie);
   // Houston: one application event store, shared with clients that tail it (the /ws thread stream).
   const layerApplicationEvents = OrchestrationEventStore.layer.pipe(Layer.provide(layerDatabase));
+=======
+  const layerServerSettings = Layer.unwrap(
+    Effect.map(ManagedPolicy.fromDocument("/test/policy.json", options.managedPolicy), (policy) =>
+      ServerSettings.layerTest(
+        {
+          responseStreamingMode: "turn",
+          ...(options.continueThreadsAfterServerUpdate === undefined
+            ? {}
+            : { continueThreadsAfterServerUpdate: options.continueThreadsAfterServerUpdate }),
+        },
+        policy.summary,
+      ),
+    ),
+  ).pipe(Layer.orDie);
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   const layerStores = Layer.mergeAll(
     EventStore.layerFromOrchestrationEventStore.pipe(Layer.provide(layerApplicationEvents)),
     ProjectionStore.layer,
@@ -345,6 +382,9 @@ export function layerWithRegistry<Error>(
   ).pipe(Layer.provide(layerDatabase));
   const layerEventSinkProvided = EventSink.layerFromStores.pipe(
     Layer.provide(Layer.mergeAll(layerStores, layerDatabase)),
+  );
+  const layerRuntime = RuntimePolicy.layerEnforcingCeiling.pipe(
+    Layer.provide(Layer.merge(layerRuntimeBase, layerServerSettings)),
   );
   const layerCommandReceiptStoreProvided = CommandReceiptStore.layer.pipe(
     Layer.provide(layerDatabase),

@@ -52,10 +52,18 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
   cwd: Schema.NullOr(Schema.String),
   approvalPolicy: Schema.optional(Schema.Unknown),
   sandboxPolicy: Schema.optional(Schema.Unknown),
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   /** Houston: the one T3 tool a read-only task planner or reviewer may call. */
   houstonTaskSubmitTool: Schema.optional(
     Schema.Literals(["houston_task_plan_submit", "houston_task_review_submit"]),
   ),
+=======
+  /**
+   * The administrator's ceiling, when a managed policy sets one. `runtimeMode` is already under
+   * it; adapters use it to refuse native mode choices a user makes beside T3 Code's own.
+   */
+  maxRuntimeMode: Schema.optional(RuntimeMode),
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 });
 export type ProviderAdapterV2RuntimePolicy = typeof ProviderAdapterV2RuntimePolicy.Type;
 
@@ -124,6 +132,14 @@ export const ProviderAdapterV2Event = Schema.Union([
     driver: ProviderDriverKind,
     turnItem: OrchestrationV2TurnItem,
   }),
+  // Start before the root terminal; clear only after the final covered projection.
+  // Consumer lifetime cannot depend on a producer probe that runs ahead of its queue.
+  Schema.Struct({
+    type: Schema.Literal("background_work.updated"),
+    driver: ProviderDriverKind,
+    providerTurnId: ProviderTurnId,
+    pending: Schema.Boolean,
+  }),
   /** Unpersisted deltas go only to clients showing the row; final output arrives in turn_item.updated. */
   Schema.Struct({
     type: Schema.Literal("command_output.delta"),
@@ -163,6 +179,7 @@ export const ProviderAdapterV2Event = Schema.Union([
     runOrdinal: PositiveInt,
     status: Schema.Literals(["completed", "interrupted", "cancelled"]),
     failure: Schema.Null,
+    reason: Schema.optional(Schema.String),
     threadDisposition: Schema.Literals(["reusable", "broken"]),
   }),
   Schema.Struct({
@@ -513,6 +530,7 @@ export type ProviderAdapterV2RollbackTarget =
       readonly checkpointId: CheckpointId;
       readonly appRunOrdinal: number;
       readonly providerTurn: OrchestrationV2ProviderTurn;
+      readonly message?: Pick<OrchestrationV2ConversationMessage, "role" | "text" | "attachments">;
     };
 
 export interface ProviderAdapterV2RollbackThreadInput {

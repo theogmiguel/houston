@@ -127,15 +127,25 @@ export function SidebarUpdateReleaseNotes({
               ? "View release on GitHub"
               : `${omittedItemCount} more ${omittedItemCount === 1 ? "change" : "changes"} on GitHub`);
 
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
           if (releaseNote.intro !== undefined) {
             return (
               <section className={index > 0 ? "mt-4" : undefined} key={releaseNote.version}>
                 {releaseNote.version !== state.availableVersion ? (
                   <h3 className="mb-1 text-headline leading-4 font-medium text-muted-foreground">
+=======
+          const generated = releaseNote.stats !== undefined || releaseNote.intro !== undefined;
+          return (
+            <section className={index > 0 ? "mt-4" : undefined} key={releaseNote.version}>
+              {generated ? (
+                releaseNote.version !== state.availableVersion && (
+                  <h3 className="mb-1 text-xs leading-4 font-medium text-muted-foreground">
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
                     {releaseNote.releasedAt
                       ? `${releaseNote.version} · ${formatReleaseAge(releaseNote.releasedAt)}`
                       : releaseNote.version}
                   </h3>
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
                 ) : null}
                 <p className="break-words text-headline leading-5 text-secondary-foreground">
                   {releaseNote.intro}
@@ -170,6 +180,44 @@ export function SidebarUpdateReleaseNotes({
                   </ReleaseLink>
                 </div>
               ) : null}
+=======
+                )
+              ) : (
+                <h3 className="mb-2 text-foreground text-xs leading-4 font-semibold">
+                  {index === 0 ? "What's changed" : `Changes in ${releaseNote.version}`}
+                </h3>
+              )}
+              {releaseNote.intro ? (
+                <p className="break-words text-xs leading-5 text-popover-foreground">
+                  {releaseNote.intro}
+                </p>
+              ) : releaseNote.items.length > 0 ? (
+                <ul className="space-y-1.5 pl-4 text-xs leading-5 text-popover-foreground/90">
+                  {keyReleaseNoteItems(releaseNote.items).map(({ item, key }) => {
+                    const highlight = /^\*\*([^*]+)\*\* (.+)$/.exec(item);
+                    return (
+                      <li className="list-disc break-words" key={key}>
+                        {highlight ? (
+                          <>
+                            <strong>{highlight[1]}</strong> {highlight[2]}
+                          </>
+                        ) : (
+                          item
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+              {releaseNote.footer && (
+                <p className="mt-2 text-xs leading-5 font-semibold">{releaseNote.footer}</p>
+              )}
+              {releaseUrl && (
+                <ReleaseLink releaseUrl={releaseUrl} shell={shell}>
+                  {linkLabel}
+                </ReleaseLink>
+              )}
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
             </section>
           );
         })}

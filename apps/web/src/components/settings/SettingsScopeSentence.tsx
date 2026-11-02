@@ -311,17 +311,30 @@ function ProjectScopeMenu({ value, groups, environments, onChange }: SettingsSco
             other.group.projectKey !== group.projectKey &&
             other.group.displayName === group.displayName,
         );
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
         const secondary =
           sameName.length === 0
             ? undefined
+=======
+        const location =
+          sameName.length === 0
+            ? environments.length > 1
+              ? group.workspaceRoot
+              : ""
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
             : sameName.some((other) => other.machines === machines)
               ? `${machines} · ${group.workspaceRoot}`
               : machines;
         return {
           value: group.projectKey,
           label: group.displayName,
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
           secondary,
           secondaryMono: secondary?.includes(group.workspaceRoot) ?? false,
+=======
+          secondary: group.archived ? ["Archived", location].filter(Boolean).join(" · ") : location,
+          icon: <ProjectFavicon project={group} className="size-3.5 shrink-0" />,
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         };
       })}
     />

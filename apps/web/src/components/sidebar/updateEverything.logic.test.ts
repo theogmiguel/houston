@@ -69,7 +69,6 @@ describe("collectServerUpdateTargets", () => {
         machine("manual", "0.0.40", undefined),
       ],
       "0.0.50",
-      true,
     );
 
     expect(targets.map((target) => [target.serverLabel, target.targetVersion])).toEqual([
@@ -86,22 +85,55 @@ describe("collectServerUpdateTargets", () => {
     ]);
   });
 
-  it("waits for npm only for hosts that install from it or when the release may lack archives", () => {
-    const hosts = [
-      machine("archive-service", "0.0.41-nightly.20260914.1700", "boot-service"),
-      machine("npm-service", "0.0.41-nightly.20260914.1699", "boot-service"),
-      machine("legacy-respawn", "0.1.4-nightly.20261027.3796", "respawn"),
-      machine("desktop", "0.1.4-nightly.20261027.3796", "desktop-managed"),
+  it("skips servers whose policy refuses the update, with the policy's message", () => {
+    const managed = (
+      id: string,
+      updates: { mode: "off" } | { mode: "auto"; allowNightly: false },
+      selfUpdate: "boot-service" | "desktop-managed" = "boot-service",
+    ) => {
+      const base = machine(id, "0.0.40", selfUpdate);
+      return {
+        ...base,
+        serverConfig: {
+          ...base.serverConfig!,
+          managedPolicy: { organization: "Example Corp", lockedSettings: [], limits: { updates } },
+        },
+      };
+    };
+    const machines = [
+      managed("off", { mode: "off" }),
+      managed("no-nightly", { mode: "auto", allowNightly: false }),
+      // A desktop app updates from its own feed, whatever track this app is on.
+      managed("desktop-no-nightly", { mode: "auto", allowNightly: false }, "desktop-managed"),
     ];
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
     const waits = (releaseArchivesPublished: boolean) =>
       collectServerUpdateTargets(
         hosts,
         "0.1.5-nightly.20261029.3873",
         releaseArchivesPublished,
       ).waitForPublished.map((target) => target.serverLabel);
+=======
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 
-    expect(waits(true)).toEqual(["npm-service", "legacy-respawn"]);
-    expect(waits(false)).toEqual(["archive-service", "npm-service", "legacy-respawn"]);
+    expect(
+      collectServerUpdateTargets(machines, "0.0.50").skipped.map((entry) => [
+        entry.label,
+        entry.reason,
+      ]),
+    ).toEqual([["off", "Example Corp manages T3 Code updates."]]);
+    expect(
+      collectServerUpdateTargets(
+        machines.map((entry) => ({
+          ...entry,
+          serverConfig: {
+            ...entry.serverConfig,
+            environment: { ...entry.serverConfig.environment, serverVersion: "0.0.49-nightly.1" },
+          },
+        })),
+        "0.0.50-nightly.20261028.1",
+      ).skipped.map((entry) => entry.label),
+    ).toEqual(["off", "no-nightly"]);
   });
 });
 
@@ -173,6 +205,18 @@ describe("collectChannelSwitchTargets", () => {
     ]);
   });
 
+  const managedHost = (base: UpdateEverythingMachine): UpdateEverythingMachine => ({
+    ...base,
+    serverConfig: {
+      ...base.serverConfig!,
+      managedPolicy: {
+        organization: "Example Corp",
+        lockedSettings: [],
+        limits: { updates: { mode: "auto", allowNightly: false } },
+      },
+    },
+  });
+
   it("moves stable hosts to nightly only when nightly knows their database", () => {
     const nightly = { channel: "nightly" as const, version: NIGHTLY, databaseMigration: 72 };
     const { targets, skipped } = collectChannelSwitchTargets(
@@ -190,6 +234,8 @@ describe("collectChannelSwitchTargets", () => {
           },
         }),
         machine("current", NIGHTLY, "boot-service"),
+        // The server refuses a track its policy rules out, so the dialog skips it up front.
+        managedHost(host(machine("no-nightly", "0.1.2", "boot-service"), 70)),
       ],
       nightly,
     );
@@ -203,6 +249,10 @@ describe("collectChannelSwitchTargets", () => {
         `its database has changes ${NIGHTLY} does not support yet; stay on Stable until Nightly has them`,
       ],
       ["old-desktop", "needs a newer desktop app"],
+      [
+        "no-nightly",
+        "Example Corp manages T3 Code updates. Only stable releases can be installed.",
+      ],
     ]);
   });
 });

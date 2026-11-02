@@ -73,6 +73,8 @@ import {
 import { chatMarkdownClipboardPayload } from "../../markdown-clipboard";
 import type { ChatMarkdownContextReference } from "../ChatMarkdown";
 import { cn } from "~/lib/utils";
+import { markdownProseDirection } from "~/textDirection";
+import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 import { WorkflowOpeningBlock } from "./WorkflowOpeningBlock";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
@@ -173,9 +175,11 @@ function UserFileCard({
 function UserVideoAttachment({
   file,
   standalone = false,
+  cornerClassName,
 }: {
   readonly file: ChatFileAttachment;
   readonly standalone?: boolean;
+  readonly cornerClassName?: string | undefined;
 }) {
   const ctx = use(TimelineRowCtx);
   // Row updates rebuild attachment objects, so the asset follows only the
@@ -197,7 +201,7 @@ function UserVideoAttachment({
         className={cn(
           "flex aspect-[4/3] w-full items-center justify-center bg-black px-2 py-3 text-center text-2xs text-white/70",
           standalone
-            ? cn(MEDIA_EDGE_CLASS_NAME, "rounded-2xl")
+            ? cn(MEDIA_EDGE_CLASS_NAME, "rounded-2xl", cornerClassName)
             : "rounded-lg border border-border/80",
         )}
       >
@@ -232,7 +236,9 @@ function UserVideoAttachment({
     />
   );
   return standalone ? (
-    <div className={cn(MEDIA_EDGE_CLASS_NAME, "overflow-hidden rounded-2xl")}>{player}</div>
+    <div className={cn(MEDIA_EDGE_CLASS_NAME, "overflow-hidden rounded-2xl", cornerClassName)}>
+      {player}
+    </div>
   ) : (
     player
   );
@@ -402,6 +408,7 @@ function UserMessageProjectedStatus({ row }: { row: Extract<TimelineRow, { kind:
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   const { onImageExpand, onFileOpen } = ctx;
+  const coarsePointer = useMediaQuery({ pointer: "coarse" });
   const senderThreadId = row.message.senderThreadId;
   const resources = selectMessageImageResources(row.message.attachments);
   const previewUrls = useAssetUrls(ctx.activeThreadEnvironmentId, resources);
@@ -479,6 +486,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     userVideos.length === 0 &&
     regularImages.length > 1 &&
     regularImages.every((image) => image.source?.kind !== "snap-shot");
+  // Corners that touch the bubble or a neighbouring message tighten, like the bubble's.
+  const mediaCornerClassName = cn(
+    row.groupedWithPrevious && "rounded-tr-md",
+    (mediaAboveText || row.groupedWithNext) && "rounded-br-md",
+  );
   // Files sent without words show as cards, not as a bubble around a name chip.
   const fileCardsOnly =
     !folded &&
@@ -635,6 +647,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                 ? cn(
                     MEDIA_EDGE_CLASS_NAME,
                     "w-80 max-w-full gap-px overflow-hidden rounded-2xl bg-black/9 dark:bg-white/12",
+                    mediaCornerClassName,
                     regularImages.length === 2
                       ? "auto-rows-[12rem] grid-cols-2"
                       : regularImages.length === 3
@@ -658,11 +671,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                       ? cn(
                           MEDIA_EDGE_CLASS_NAME,
                           "min-h-16 justify-self-end overflow-hidden rounded-2xl",
+                          loneImage && mediaCornerClassName,
                         )
                       : SNAP_SHOT_ATTACHMENT_FRAME_CLASS,
                   )
                 : loneImage
-                  ? cn(MEDIA_EDGE_CLASS_NAME, "overflow-hidden rounded-2xl")
+                  ? cn(MEDIA_EDGE_CLASS_NAME, "overflow-hidden rounded-2xl", mediaCornerClassName)
                   : collage
                     ? cn(
                         "overflow-hidden bg-background",
@@ -723,14 +737,72 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           </div>
         ))}
         {userVideos.map((file) => (
-          <UserVideoAttachment key={file.id} file={file} standalone={standaloneMedia} />
+          <UserVideoAttachment
+            key={file.id}
+            file={file}
+            standalone={standaloneMedia}
+            cornerClassName={
+              regularImages.length + userVideos.length === 1 ? mediaCornerClassName : undefined
+            }
+          />
         ))}
       </div>
     ) : null;
 
+  // Touch shows actions all the time, and narrow lanes have no room beside the
+  // bubble, so both keep the actions on their own line.
+  const floatActions = row.groupedWithNext === true && !coarsePointer;
+  const messageActions = (
+    <div
+      className={cn(
+        "flex items-center justify-end gap-x-2 gap-y-0.5",
+        floatActions ? "flex-wrap" : "shrink-0",
+      )}
+    >
+      {folded && senderThreadId ? (
+        <InlineButton onClick={() => ctx.onOpenThread(senderThreadId)} tone="muted">
+          Open thread
+        </InlineButton>
+      ) : null}
+      <Tooltip>
+        <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
+          {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
+        </TooltipTrigger>
+        <TooltipPopup>
+          {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
+        </TooltipPopup>
+      </Tooltip>
+      <div className={cn("flex items-center gap-0.5", floatActions && "flex-wrap justify-end")}>
+        {typeof revertTurnCount === "number" && (
+          <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
+        )}
+        {copyText && (
+          <MessageCopyButton
+            text={contextClipboardFragment ? copyText : plainText}
+            {...(contextClipboardFragment
+              ? {
+                  extraFlavors: {
+                    [COMPOSER_CONTEXT_CLIPBOARD_MIME]: contextClipboardFragment,
+                  },
+                }
+              : {})}
+            variant="ghost"
+          />
+        )}
+        {promptLink !== null && (
+          <MessageCopyButton
+            text={promptLink}
+            label="Copy prompt link"
+            icon={LinkIconNode}
+            variant="ghost"
+          />
+        )}
+      </div>
+    </div>
+  );
   return (
     <div
-      className="group flex flex-col items-end gap-1"
+      className="group @container flex flex-col items-end gap-1"
       data-user-message-attribution={folded ? "agent" : undefined}
     >
       {userMessage.attribution === "t3code" ? (
@@ -755,8 +827,14 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       ) : null}
       <div
         className={cn(
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
           "relative min-w-0 max-w-[82%] rounded-(--r-group) border border-border bg-card text-prose leading-5 text-foreground",
           mediaAboveText && "rounded-tr-(--r-badge)",
+=======
+          "relative min-w-0 max-w-[80%] rounded-2xl text-message-foreground",
+          (mediaAboveText || row.groupedWithPrevious) && "rounded-tr-md",
+          row.groupedWithNext && "rounded-br-md",
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
           BUBBLE_CHIP_CLASS_NAME,
           !folded && !mediaOnly && !fileCardsOnly && !audioOnly && "px-3.5 py-2.5",
           folded && expanded && "w-full",
@@ -780,6 +858,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           <div
             ref={folded ? revealFoldRef : undefined}
             hidden={folded && !expanded}
+            dir={markdownProseDirection(resolvedContext.text)}
             className={cn(
               folded && "px-3 pb-3",
               folded && !ctx.findActive && "max-h-96 overflow-auto",
@@ -904,9 +983,20 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             )}
           </div>
         ) : null}
+        {floatActions ? (
+          <div
+            className={cn(
+              "absolute end-full top-1/2 me-2 hidden w-max max-w-[calc(20cqw-0.5rem)] -translate-y-1/2 @min-[37rem]:flex",
+              ACTIONS_REVEAL_CLASS_NAME,
+            )}
+          >
+            {messageActions}
+          </div>
+        ) : null}
       </div>
       <UserMessageProjectedStatus row={row} />
       {!folded || expanded ? (
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
         <div className="flex w-full max-w-[82%] items-center justify-end pe-1 text-callout text-(--t3) tabular-nums">
           <div className="flex shrink-0 items-center gap-2">
             {folded && senderThreadId ? (
@@ -952,11 +1042,24 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               )}
             </div>
           </div>
+=======
+        <div
+          className={cn(
+            "flex w-full max-w-[80%] justify-end pe-1",
+            floatActions && "@min-[37rem]:hidden",
+            ACTIONS_REVEAL_CLASS_NAME,
+          )}
+        >
+          {messageActions}
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         </div>
       ) : null}
     </div>
   );
 }
+
+const ACTIONS_REVEAL_CLASS_NAME =
+  "items-center text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100";
 
 function UserMessageIntentMarker({
   intent,

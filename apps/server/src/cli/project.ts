@@ -37,6 +37,7 @@ import * as ProjectService from "../project/ProjectService.ts";
 import { projectMutationOperation } from "../project/ProjectMutation.ts";
 import * as T3ProjectFileLoader from "../project/T3ProjectFileLoader.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import {
   clearPersistedServerRuntimeState,
   readPersistedServerRuntimeState,
@@ -211,9 +212,17 @@ const layerProjectCliRuntime = RuntimeLayer.layerProjectService.pipe(
     ),
   ),
   Layer.provideMerge(WorkspacePaths.layer),
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   Layer.provideMerge(ServerSettings.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   // Houston: a project removed here unassigns its tasks, as the server's deletion does.
   Layer.provideMerge(HoustonTaskStore.layer),
+=======
+  Layer.provideMerge(
+    ServerSettings.layer.pipe(
+      Layer.provide(Layer.merge(ServerSecretStore.layer, ManagedPolicy.layer)),
+    ),
+  ),
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   Layer.provideMerge(SqlitePersistence.layerConfig),
 );
 

@@ -24,10 +24,17 @@ const buttonVariants = cva(
         "icon-xs":
           "size-7 sm:size-6 not-in-data-[slot=input-group]:[&_svg:not([class*='size-'])]:size-4 sm:not-in-data-[slot=input-group]:[&_svg:not([class*='size-'])]:size-3.5",
         micro:
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
           "h-5 gap-1 rounded-[var(--r-badge)] px-1.5 text-[11px] [&_svg:not([class*='size-'])]:size-3",
         sm: "h-[22px] gap-1.5 px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",
         selection:
           "h-(--h-pill) gap-1.5 rounded-[7px] px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3.5",
+=======
+          "h-5 gap-1 rounded-sm px-[calc(--spacing(1.5)-1px)] text-[11px] before:rounded-[calc(var(--radius-sm)-1px)] sm:text-[11px] [&_svg:not([class*='size-'])]:size-3 sm:[&_svg:not([class*='size-'])]:size-3",
+        multiline:
+          "min-h-9 px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] whitespace-normal sm:min-h-8",
+        sm: "h-8 gap-1.5 px-[calc(--spacing(2.5)-1px)] sm:h-7",
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         "sm-multiline":
           "min-h-[22px] gap-1.5 px-2 py-1 whitespace-normal [&_svg:not([class*='size-'])]:size-3.5",
         xs: "h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",

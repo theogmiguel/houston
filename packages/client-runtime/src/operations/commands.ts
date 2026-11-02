@@ -59,6 +59,8 @@ export interface UpdateProjectInput extends CommandMetadata {
   readonly faviconPath?: string | null;
   readonly defaultThreadEnvMode?: ThreadEnvMode | null;
   readonly scripts?: ReadonlyArray<ProjectScript>;
+  readonly pinned?: boolean;
+  readonly archived?: boolean;
 }
 
 export interface DeleteProjectInput extends CommandMetadata {
@@ -374,6 +376,8 @@ export const updateProject = Effect.fn("EnvironmentCommands.updateProject")(func
       ? {}
       : { defaultThreadEnvMode: input.defaultThreadEnvMode }),
     ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
+    ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
+    ...(input.archived === undefined ? {} : { archived: input.archived }),
   });
 });
 
@@ -424,6 +428,42 @@ function simpleThreadCommand(
 export const deleteThread = Effect.fn("EnvironmentCommands.deleteThread")(function* (
   input: DeleteThreadInput,
 ) {
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
+=======
+  return yield* dispatch({
+    type: "thread.delete",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+    ...(input.onlyIfUnused === undefined ? {} : { onlyIfUnused: input.onlyIfUnused }),
+  });
+});
+
+export type CloseGuestShareInput = ThreadCommandInput;
+export const closeGuestShare = Effect.fn("EnvironmentCommands.closeGuestShare")(function* (
+  input: CloseGuestShareInput,
+) {
+  return yield* simpleThreadCommand("thread.guest-share.close", input);
+});
+
+export interface ResolveGuestMessageInput extends ThreadCommandInput {
+  readonly guestMessageId: GuestMessageId;
+  readonly decision: "send" | "dismiss";
+  readonly creationSource?: "web" | "mobile";
+}
+/** Send runs the guest's text as a normal turn; the server supplies the text, not the client. */
+export const resolveGuestMessage = Effect.fn("EnvironmentCommands.resolveGuestMessage")(function* (
+  input: ResolveGuestMessageInput,
+) {
+  const commandId = yield* allocateCommandId(input);
+  if (input.decision === "dismiss") {
+    return yield* dispatch({
+      type: "thread.guest-message.dismiss",
+      commandId,
+      threadId: input.threadId,
+      guestMessageId: input.guestMessageId,
+    });
+  }
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   return yield* dispatch({
     type: "thread.delete",
     commandId: yield* allocateCommandId(input),

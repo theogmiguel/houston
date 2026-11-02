@@ -91,10 +91,99 @@ refuse `--fresh` from a pane on its own target channel.
 
 ## Running it
 
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 ```
 ./scripts/dev.sh                 # dev channel, build + run
 ./scripts/dev.sh --channel NAME  # target a named channel instead of dev
 ./scripts/dev.sh --print-target  # print resolved channel/state dir, no side effects
+=======
+### Replay provider
+
+`vp run dev` registers `Replay (dev)`, a local ACP agent at
+[dev-replay-agent.ts](../../apps/server/scripts/dev-replay-agent.ts). It plays recorded
+ACP transcripts with simulated streaming, so the real adapter, orchestration, and UI run
+without a paid model. Each scenario is a model, and each prompt plays the next recorded turn.
+Bundled servers, including desktop dev, skip it because they have no agent script.
+Dev servers add it back on start, so turn it off in Settings instead of removing it.
+To add a scenario, point a `SCENARIOS` entry at a generic ACP replay fixture
+(`registry_transcript.ndjson`) or a file in [dev-replay](../../apps/server/scripts/dev-replay).
+The agent replays session updates, permission requests, and questions. It drops session setup
+and vendor frames, so Grok and fx recordings lose their vendor-only behavior.
+
+### Profiling dev startup
+
+Run `vp run profile:startup` to capture the first 20 seconds of inherited Node processes under
+`.t3/startup-profiles/<timestamp>`. Workers that execute the preload get separate profiles.
+It starts the normal dev runner and accepts its flags.
+Stop it with Ctrl+C after the capture. Set `T3CODE_STARTUP_PROFILE_DIR` to choose another output
+directory. Profiling adds overhead, so compare readiness with an ordinary `vp run dev` run.
+
+Open a `.cpuprofile` in Chrome DevTools' Performance panel for sampled function stacks and source
+lines. Each `.modules.json` is a Chrome trace containing timed module resolution, loading,
+synchronous subprocess calls, and startup measures. Per-file records include importer URLs,
+source loading, preparation, recursive dependency linking, and top-level evaluation. Preparation
+uses synchronous loader boundaries; linking includes dependencies, and CommonJS evaluation can
+include nested `require` calls. Some ESM/CommonJS interop reports a combined stage. `.process.json` records the process, Node version, and capture window.
+The server's nested Effect and SQL spans remain in `.t3/userdata/logs/server.trace.ndjson`.
+
+The preload temporarily adds module-body timing markers and uses one automatic debugger pause
+to instrument the live Node loader. The launcher adds `--no-node-snapshot` to inherited
+`NODE_OPTIONS` because Node 26's snapshotted loader cannot accept that breakpoint. Include the
+same flag when using the preload directly. This disables Node's built-in startup snapshot,
+can change compilation-cache hits, and adds overhead.
+Treat per-file captures as diagnostic runs; use uninstrumented runs for baseline startup latency.
+The first entry module can compile before loader instrumentation is installed.
+
+A fresh process still uses filesystem, Node compilation, provider, and Vite dependency caches.
+Measure a missing Vite dependency cache separately from a restart with an existing database.
+Neither the Vite ready message nor the HTTP listener proves that a browser has rendered the app.
+
+### Sharing and remote debugging
+
+`vp run dev --share` publishes the web port over the machine's tailnet and prints a pairing URL
+for that origin. Give the tester the complete URL, including its token. The dev runner removes
+its mapping on exit.
+
+Leave `VITE_HTTP_URL` and `VITE_WS_URL` unset. Vite proxies the backend through the browser's
+origin so the same build works over localhost and remote connections.
+
+Shared runs enable bundled dev to avoid a network round trip for each import level.
+`T3CODE_BUNDLED_DEV=0` opts out when debugging bundler differences. Two reload traps matter
+when changing this setup:
+
+- The web entry must dynamically import the app so React refresh initializes before application
+  chunks. Static imports can work on first load and fail after a route split.
+- Bundled dev rebuilds Tailwind through watched files. Its ordinary Vite hot-update hook expects
+  a server/module graph that Rolldown does not provide.
+- The app and its routes are lazy chunks, built on first request. A plugin pre-bundles the
+  startup chain when the server starts. Renaming or moving a startup route or the app entry
+  silently drops it from that list.
+
+The workarounds live in the [web entry](../../apps/web/src/bootstrap.ts),
+[Tailwind plugin](../../apps/web/vite/tailwind.ts), and
+[startup warmup](../../apps/web/vite/warmBundledDev.ts).
+
+`vp run dev --share --built` skips the Vite dev server. It runs `vp build --watch` for the web
+app, and the backend serves `apps/web/dist` on the same tailnet URL and pairing flow. Use it when
+someone tests over a slow link or only needs to use the app: loads are production size, and the
+first load does not wait for dev bundling. There is no HMR. After an edit, wait for the
+`built in` line (about 6 s), then reload. Until the first build exists, the URL shows a page that
+reloads by itself. The license manifest is not generated in this mode. `--built` requires
+`--share` and the `dev` mode.
+
+#### Reusable dev credential
+
+Use this only on a hostname where you trust every service. Browsers send cookies to all ports
+on that hostname. Any service you visit there can receive the reusable admin credential,
+including services unrelated to T3 Code. If you run untrusted services on that hostname, keep
+normal per-environment pairing instead.
+
+To use one browser profile across web dev worktrees on the same hostname, generate one fixed
+value once:
+
+```sh
+openssl rand -hex 32
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 ```
 
 **No hot reload.** The renderer is a built artifact embedded by the host. Re-run the
@@ -152,7 +241,19 @@ Every checkout and worktree has its own `target/`, which only grows. Agent workt
 
 ## Checks
 
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 ### Cadence
+=======
+`vp run check:changed` runs CI's fast checks for your branch's changes: format and lint of the
+changed files, `knip:check` when code or a manifest changes, the generated GraphQL checks, typecheck
+of the affected packages and their dependents, and the test files beside the changed files. It also
+runs the checks that read other files: the agent context budget when the server is affected, and
+React Compiler coverage for only the changed web and mobile files. It maps
+files to packages with [ci-changes.cjs](../../.github/scripts/ci-changes.cjs), as CI does. It
+compares against the closest merge base with any remote's `main`, so a fork whose `main` lags
+upstream still compares against upstream, or with a ref you pass. CI still runs the full
+test suites and the jobs the summary lists, so a local pass does not promise a green CI run.
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 
 **Per item** (in the package or crate touched), run constantly:
 
@@ -193,7 +294,34 @@ inside `dbus-run-session`: it opens the host's real login keyring and re-encrypt
 the password read from stdin. The wrapper points `XDG_DATA_HOME` and `XDG_RUNTIME_DIR` at a
 temporary directory. The bare `--unlock` recipe is only safe in CI and the testbed VM.
 
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 ### The safety scripts
+=======
+### Prepared server bytecode
+
+Native macOS and Windows desktop artifact builds generate server bytecode with the packaged
+Electron executable, after ASAR creation and before signing. Linux builds skip generation until
+native packaging and relocated AppImage reuse have been validated. Cross-platform and
+cross-architecture builds also skip generation explicitly. CLI, SEA and WSL runtimes keep their
+existing behavior; only desktop backend imports covered by generation receive prepared bytecode.
+Worker-only modules compile normally.
+
+Electron's Node 24 cache has no read-only option and includes the producer UID in its directory
+name. The backend links individual prepared files into its writable cache with keys for the
+installed module paths. Node replaces files atomically, so regeneration cannot write through those
+links into signed resources. Windows uses hard links and falls back to normal caching when volumes
+differ or resource permissions prevent linking. Protected installations therefore may not reuse
+prepared bytecode. No cache bytes are copied during startup.
+
+The key calculation follows Node's internal portable ESM format. Generation checks that the
+packaged engine produced the expected CLI entry and fails the build if that format changes.
+The manifest also checks Electron, Node, OS, architecture and V8's flags-sensitive version tag.
+Missing or rejected entries compile from the shipped JavaScript. Prepared backends skip the
+explicit startup flush; Node can persist missing entries on normal exit. The writable fallback
+keeps the explicit flush needed when Windows force-kills the backend.
+
+### Linux AppImage prerequisites
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 
 Hermetic, sub-second text-search invariants, run in `ci.yml`'s `safety-checks` job.
 

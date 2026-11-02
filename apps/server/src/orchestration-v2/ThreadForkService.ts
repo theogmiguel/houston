@@ -90,6 +90,16 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
           cause: sourceLineage.sideChat
             ? "A side chat cannot start another side chat."
             : "A subagent cannot start a side chat.",
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
+        });
+      }
+      if (sourceRun !== null && !isForkableSourceRunStatus(sourceRun.status)) {
+        return yield* new ThreadForkPlanError({
+          sourceThreadId: input.sourceProjection.thread.id,
+          targetThreadId: input.targetThreadId,
+          cause: forkableSourceRunStatusError(sourceRun),
+=======
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         });
       }
       if (sourceRun !== null && !isForkableSourceRunStatus(sourceRun.status)) {
@@ -99,8 +109,10 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
           cause: forkableSourceRunStatusError(sourceRun),
         });
       }
+      // The remote parent delegated the source thread, not its forks.
+      const { delegatedFrom: _delegatedFrom, ...inherited } = input.sourceProjection.thread;
       const targetThread: OrchestrationV2AppThread = {
-        ...input.sourceProjection.thread,
+        ...inherited,
         // PR context follows the conversation; watching remains the source thread's responsibility.
         pullRequests: input.sourceProjection.thread.pullRequests?.map(
           ({ watch: _watch, ...link }) => link,
@@ -131,6 +143,16 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
         settledAt: null,
         snoozedUntil: null,
         snoozedAt: null,
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
+=======
+        lastSnoozeWakeAt: null,
+        pinnedAt: null,
+        pinOrderKey: null,
+        activeOrderKey: null,
+        autoSettleDisabledAt: null,
+        // A guest link belongs to the thread it was made for.
+        guestShare: null,
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         lastVisitedAt: null,
         // A fork is a new thread; it does not inherit how often the source was opened.
         opens: null,

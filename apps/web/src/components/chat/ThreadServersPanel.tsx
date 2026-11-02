@@ -34,7 +34,7 @@ import { ThreadDetailsSection } from "./ThreadDetailsSection";
 
 const serverKey = (server: DiscoveredLocalServer) => `${server.pid}:${server.port}`;
 
-/** Web servers the thread's terminals and agent started. Hidden while none run. */
+/** Local servers the thread's terminals and agent started. Hidden while none run. */
 export function ThreadServersPanel(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;

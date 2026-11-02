@@ -184,6 +184,7 @@ function SideChat(props: { toggles: string[]; stops: string[] }) {
   );
 }
 
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 const escapeStopKeybindings: ResolvedKeybindingsConfig = [
   {
     command: "thread.stop",
@@ -244,6 +245,8 @@ it("leaves Escape to an open popover instead of stopping the thread", async () =
   expect(stops).toEqual([]);
 });
 
+=======
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 it("runs a side chat's composer chords only from its composer, and never thread commands", async () => {
   const toggles: string[] = [];
   const stops: string[] = [];

@@ -94,6 +94,43 @@ const THREAD_HISTORY = {
 
 function makeHarness(reply: (requestNumber: number) => Response | Promise<Response>) {
   const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
+=======
+  const authorizations: Array<
+    Parameters<
+      RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization["Service"]["authorizeDpopHttp"]
+    >[0]
+  > = [];
+  const proofs: Array<ManagedRelay.ManagedRelayDpopProofInput> = [];
+  const remoteAuthorization = RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization.of({
+    authorizeBearer: () => Effect.die("Unexpected bearer connection preparation."),
+    authorizeDpop: () => Effect.die("HTTP requests must not prepare a WebSocket connection."),
+    authorizeDpopHttp: (input) =>
+      Effect.sync(() => {
+        authorizations.push(input);
+        const rejected = input.rejectedAccessToken !== undefined;
+        return {
+          environmentId: TARGET.environmentId,
+          label: TARGET.label,
+          httpBaseUrl: rejected ? RENEWED_ORIGIN : CURRENT_ORIGIN,
+          httpAuthorization: {
+            _tag: "Dpop" as const,
+            accessToken: rejected ? "renewed-token" : "current-token",
+            expiresAtEpochMs: 3_600_000,
+          },
+        };
+      }),
+    renewDpopBeforeExpiry: () => Effect.die("HTTP requests must not renew a socket's token."),
+  });
+  const signer = ManagedRelay.ManagedRelayDpopSigner.of({
+    thumbprint: Effect.succeed("test-thumbprint"),
+    createProof: (input) =>
+      Effect.sync(() => {
+        proofs.push(input);
+        return `proof-${proofs.length}`;
+      }),
+  });
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   const fetchFn: typeof fetch = async (request, init) => {
     calls.push({ url: String(request), init: init ?? {} });
     return reply(calls.length);

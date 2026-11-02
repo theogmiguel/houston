@@ -9,7 +9,11 @@ import { AsyncResult } from "effect/reactivity";
 import { APP_VERSION } from "~/branding";
 import { useDesktopUpdateState } from "~/state/desktopUpdate";
 import { useEnvironments } from "~/state/environments";
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 import { releaseAtom } from "~/state/releasePublication";
+=======
+import { npmReleaseAtom, npmReleaseFailureMessage } from "~/state/npmRelease";
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 import { downloadLocalUpdate, installLocalUpdate } from "../sidebar/SidebarUpdatePill";
 import { UpdateEverythingDialog } from "../sidebar/UpdateEverythingDialog";
 import {
@@ -18,7 +22,7 @@ import {
   type ChannelSwitchRelease,
 } from "../sidebar/updateEverything.logic";
 import { isHostedByThisApp, useUpdateEverything } from "../sidebar/useUpdateEverything";
-import { prepareLocalTrackSwitch } from "./updateTrackSwitch.logic";
+import { localUpdaterStaysPut, prepareLocalTrackSwitch } from "./updateTrackSwitch.logic";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -51,9 +55,17 @@ export function UpdateTrackSwitchDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Switch to {label}</AlertDialogTitle>
           <AlertDialogDescription>
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
             {AsyncResult.isFailure(release) || AsyncResult.isSuccess(release)
               ? `Could not find the latest ${label} release on GitHub. Try again later.`
               : "Checking releases…"}
+=======
+            {AsyncResult.isFailure(release)
+              ? npmReleaseFailureMessage(release.cause)
+              : AsyncResult.isSuccess(release)
+                ? `Could not find the latest ${label} release in this environment's npm registry.`
+                : "Checking releases…"}
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -74,8 +86,7 @@ function SwitchPlan({
   const updateState = useDesktopUpdateState();
   const { environments } = useEnvironments();
   const crossesLocal = desktopUpdateChannelOf(APP_VERSION) !== release.channel;
-  // With its updater off (a .deb install, or no feed) this app stays put and only remotes move.
-  const updatesOff = updateState?.enabled === false;
+  const updatesOff = localUpdaterStaysPut(updateState, release.channel);
   // After a partial switch this app may already be on the track; then only remotes move.
   const switchesLocal = crossesLocal && !updatesOff;
   const [checking, setChecking] = useState(false);

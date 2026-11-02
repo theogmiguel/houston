@@ -157,10 +157,17 @@ export function ThreadDetailsCard({
     const measure = () => {
       const frame = element.closest<HTMLElement>("[data-thread-details-card]");
       const next = element.offsetHeight + (frame ? frame.offsetHeight - frame.clientHeight : 0);
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
       // PR lists, lineage and side chats scroll as they expand. Counting them toward density
       // would hide the section and workspace controls when the user asks to see more rows.
       const lists = element.querySelectorAll<HTMLElement>(
         "[data-thread-relationships-panel], [data-thread-side-chats-panel], [data-thread-details-pr-list]",
+=======
+      // PR lists, lineage, side chats and automations scroll as they grow. Counting them toward
+      // density would hide the section and workspace controls when the user asks to see more rows.
+      const lists = element.querySelectorAll<HTMLElement>(
+        "[data-thread-relationships-panel], [data-thread-side-chats-panel], [data-thread-details-pr-list], [data-thread-automations-panel]",
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
       );
       const fittingHeight =
         next - Array.from(lists).reduce((sum, list) => sum + list.offsetHeight, 0);

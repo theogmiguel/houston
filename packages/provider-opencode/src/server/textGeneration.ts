@@ -10,6 +10,8 @@ import * as TextGenerationOperations from "@t3tools/provider-core/server/textGen
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
 import * as OpenCodeServerOwner from "./OpenCodeServerOwner.ts";
 
+const GENERATION_TIMEOUT = "3 minutes";
+
 const OpenCodeTextGenerationOperation = Schema.Literals([
   "generateCommitMessage",
   "generatePrContent",
@@ -189,8 +191,17 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
           try: (signal) =>
             client.session.create(
               {
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
                 title: `Houston ${input.operation}`,
                 permission: [{ permission: "*", pattern: "*", action: "deny" }],
+=======
+                title: `T3 Code ${input.operation}`,
+                // OpenCode Zen refuses free-model requests that carry no tools, so keep read.
+                permission: [
+                  { permission: "*", pattern: "*", action: "deny" },
+                  { permission: "read", pattern: "*", action: "allow" },
+                ],
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
               },
               { signal },
             ),
@@ -207,6 +218,11 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
             cwd: input.cwd,
           });
         }
+        yield* Effect.addFinalizer(() =>
+          OpenCodeRuntime.runOpenCodeSdk("session.delete", (signal) =>
+            client.session.delete({ sessionID: session.data.id }, { signal }),
+          ).pipe(Effect.timeout("5 seconds"), Effect.ignore({ log: "Warn" })),
+        );
         const selectedAgent = getModelSelectionStringOptionValue(input.modelSelection, "agent");
         const selectedVariant = getModelSelectionStringOptionValue(input.modelSelection, "variant");
         const promptContext = {
@@ -271,6 +287,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
         }
         return rawText;
       },
+      Effect.scoped,
       Effect.catchTags({
         OpenCodeTextGenerationSessionRequestError: (cause) =>
           Effect.fail(
@@ -329,6 +346,16 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
             .pipe(Effect.flatMap(runAgainstServer), Effect.scoped)
         : serverOwner.withServer(runAgainstServer);
     const rawOutput = yield* serverOutput.pipe(
+      Effect.timeoutOrElse({
+        duration: GENERATION_TIMEOUT,
+        orElse: () =>
+          Effect.fail(
+            new TextGenerationError({
+              operation: input.operation,
+              detail: "OpenCode did not finish generating in time.",
+            }),
+          ),
+      }),
       Effect.catchTags({
         OpenCodeRuntimeError: (cause) =>
           Effect.fail(

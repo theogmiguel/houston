@@ -152,7 +152,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
           <div className="px-3 py-2.5">
             <p className="text-(--t3) text-xs">
               {props.isLoading
-                ? props.triggerKind === "skill"
+                ? props.triggerKind === "skill" || props.triggerKind === "slash-command"
                   ? "Searching workspace skills..."
                   : props.triggerKind === "pull-request"
                     ? "Finding pull request..."

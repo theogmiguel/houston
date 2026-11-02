@@ -8,7 +8,6 @@ import {
   type ScopedThreadRef,
   type ServerProviderModel,
 } from "@t3tools/contracts";
-import type { EffortDisplay } from "@t3tools/contracts/settings";
 import {
   buildExplicitProviderOptionSelectionsFromDescriptors,
   getProviderOptionCurrentValue,
@@ -16,17 +15,13 @@ import {
   isClaudeUltrathinkPrompt,
   normalizeModelSlug,
 } from "@t3tools/shared/model";
-import type { ReactNode } from "react";
 
 import type { DraftId } from "../../composerDraftStore";
 import { getProviderModelCapabilities } from "../../providerModels";
-import type { ComposerControlSize } from "./ComposerControl";
 import {
   getReasoningTraitStep,
-  shouldRenderTraitsControls,
-  TraitsMenuContent,
-  TraitsPicker,
   type PromptUltrathink,
+  type TraitsSelectionInput,
 } from "./TraitsPicker";
 
 type ComposerProviderStateInput = {
@@ -49,11 +44,11 @@ type ComposerProviderState = {
   modelPickerIconClassName?: string;
 };
 
-type TraitsRenderInput = {
+type ComposerTraitsTarget = {
   provider: ProviderDriverKind;
-  instanceId?: ProviderInstanceId;
-  threadRef?: ScopedThreadRef;
-  draftId?: DraftId;
+  instanceId: ProviderInstanceId;
+  threadRef?: ScopedThreadRef | undefined;
+  draftId?: DraftId | undefined;
   model: string;
   models: ReadonlyArray<ServerProviderModel>;
   modelOptions: ReadonlyArray<ProviderOptionSelection> | undefined;
@@ -61,6 +56,7 @@ type TraitsRenderInput = {
   promptUltrathink: PromptUltrathink;
   onPromptEdit: (edit: (prompt: string) => string) => void;
   planModeEnabled: boolean;
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   size?: ComposerControlSize;
   hidden?: boolean;
   triggerClassName?: string;
@@ -70,6 +66,8 @@ type TraitsRenderInput = {
   extraMenuContent?: ReactNode;
   extraMenuOwnsModeShortcut?: boolean;
   extraMenuHint?: string;
+=======
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 };
 
 export function getComposerPromptInjectionState(prompt: string): ComposerPromptInjectionState {
@@ -167,7 +165,7 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
   };
 }
 
-/** Expanded caret positions stay on the same character across Ultrathink prefix changes. */
+/** The caret stays on the same character when stepping strips a typed Ultrathink prefix. */
 export function getComposerReasoningStep(input: {
   provider: ProviderDriverKind;
   instanceId: ProviderInstanceId;
@@ -182,7 +180,7 @@ export function getComposerReasoningStep(input: {
 }): {
   prompt: string;
   cursor: number;
-  modelOptions?: ReadonlyArray<ProviderOptionSelection>;
+  modelOptions: ReadonlyArray<ProviderOptionSelection>;
 } | null {
   const { prompt, cursor } = input;
   const { selections } = resolveComposerOptionSelections(
@@ -204,21 +202,14 @@ export function getComposerReasoningStep(input: {
     direction: input.direction,
   });
   if (!step) return null;
-  const modelOptions = "modelOptions" in step ? { modelOptions: step.modelOptions } : {};
-  if (step.prompt === prompt) return { prompt, cursor, ...modelOptions };
-  // Adding the prefix also trims the prompt.
-  const keptStart = "modelOptions" in step ? 0 : step.prompt.length - prompt.trim().length;
-  const offset =
-    "modelOptions" in step
-      ? step.prompt.length - prompt.length
-      : keptStart - (prompt.length - prompt.trimStart().length);
   return {
     prompt: step.prompt,
-    cursor: Math.min(step.prompt.length, Math.max(keptStart, cursor + offset)),
-    ...modelOptions,
+    cursor: Math.max(0, cursor + step.prompt.length - prompt.length),
+    modelOptions: step.modelOptions,
   };
 }
 
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 function renderTraitsControl(
   Component: typeof TraitsMenuContent | typeof TraitsPicker,
   input: TraitsRenderInput,
@@ -289,13 +280,24 @@ function renderTraitsControl(
       {...(extraMenuOwnsModeShortcut ? { extraMenuOwnsModeShortcut } : {})}
       {...(extraMenuHint ? { extraMenuHint } : {})}
     />
+=======
+/**
+ * The composer's traits input with the model's implicit defaults applied, so a pick writes what
+ * the composer would send. Null without a draft or thread to persist to.
+ */
+export function resolveComposerTraitsInput(
+  input: ComposerTraitsTarget,
+): TraitsSelectionInput | null {
+  const { threadRef, draftId, ...rest } = input;
+  const { selections } = resolveComposerOptionSelections(
+    input.models,
+    input.model,
+    input.provider,
+    input.modelOptions,
+    input.planModeEnabled,
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   );
-}
-
-export function renderProviderTraitsMenuContent(input: TraitsRenderInput): ReactNode {
-  return renderTraitsControl(TraitsMenuContent, input);
-}
-
-export function renderProviderTraitsPicker(input: TraitsRenderInput): ReactNode {
-  return renderTraitsControl(TraitsPicker, input);
+  const persistence = threadRef ? { threadRef } : draftId ? { draftId } : null;
+  if (!persistence) return null;
+  return { ...rest, ...persistence, modelOptions: selections };
 }

@@ -149,6 +149,7 @@ function PreviewPanelShellFrame(
       data-preview-panel-mode={props.mode}
       data-preview-panel-maximized={maximized ? "true" : "false"}
     >
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
       {isInline && !maximized ? (
         <RightPanelResizeHandle
           handlers={handlers}
@@ -183,8 +184,23 @@ function PreviewPanelShellFrame(
         />
       ) : null}
       <div className={cn("h-full min-h-0 w-full", collapsible && "overflow-clip")}>
+=======
+      {isInline && !maximized ? <RightPanelResizeHandle handlers={handlers} /> : null}
+      {/* Content stays pinned to the right edge, so closing uncovers the chat
+          instead of sliding the tab bar under the title bar controls. */}
+      <div
+        className={cn(
+          "h-full min-h-0 w-full",
+          collapsible && "overflow-clip",
+          collapsible && !maximized && "flex justify-end",
+        )}
+      >
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         <div
-          className="flex h-full min-h-0 min-w-0 flex-col"
+          className={cn(
+            "flex h-full min-h-0 min-w-0 flex-col",
+            collapsible && !maximized && "shrink-0",
+          )}
           style={
             collapsible && !maximized
               ? { width: `calc(var(${RESIZABLE_WIDTH_PROPERTY}) - 1px)` }

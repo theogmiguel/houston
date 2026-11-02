@@ -18,8 +18,16 @@ not your operating system, not any identifier — and nothing comes back except 
 own public details. A prerelease is ignored: a release candidate is cut as a tag and
 installed by hand, never offered as an update.
 
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 If GitHub refuses the check because of a rate limit, the panel names the limit, how much of
 it was used and when it resets, when GitHub reports them.
+=======
+Each server checks that it can install the release before it restarts. If the
+release is not available to a server yet, its update fails, the server keeps
+running, and you can retry. The confirmation lists each machine it skips and
+why, such as a machine that is offline or needs a manual update. Use
+**Settings → Environments** for those.
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 
 **Switching it off.** Settings ▸ About ▸ *Check for updates*. Off means the request is
 never made, and the panel says so rather than going quiet. The current value is always on
@@ -115,6 +123,90 @@ protocol number the app speaks. It starts nothing: no window, no daemon.
 
 ## Release notes
 
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 Each release's page lists what changed, generated from the pull requests that went into
 it. The releases page is
 [github.com/theogmiguel/houston/releases](https://github.com/theogmiguel/houston/releases).
+=======
+## If an update fails
+
+Keep the client open until it reconnects or reports a failure. A failed service
+update can roll back to the previous version. If the update still fails:
+
+1. Retry the offered action once.
+2. Check that you updated the server's machine, not only the device you are using.
+3. For a command-line server, stop it and relaunch the exact version shown in the notice.
+
+Only one server can use a T3 home directory at a time. If startup reports that
+another server owns it, stop that server before retrying, or use a separate home
+directory and pair with the running server.
+
+### macOS app does not reopen after an Alpha update
+
+Updating an older **T3 Code (Alpha)** installation can replace it with
+**T3 Code (Beta)** without reopening the app. Open **T3 Code (Beta)** from
+Applications, or run:
+
+```sh
+open "/Applications/T3 Code (Beta).app"
+```
+
+If an old Dock shortcut no longer opens the app, remove it and add the Beta app
+from Applications again.
+
+## If the desktop app does not start
+
+If the desktop app's server keeps failing at startup, T3 Code shows a "T3 Code
+could not start" window instead of the app. If a newer version is available,
+choose **Update** to install it. If not, the window links to the last version
+that started on your computer. Download and install it to go back. Use **Copy
+details** to include the error in a bug report.
+
+## Registries and proxies
+
+Each server checks T3 Code releases, and providers installed with npm, through
+its own npm, so the checks use npm's configured registry, authentication, and
+proxy settings. Providers installed with Homebrew or pnpm check through those
+tools.
+Configure npm on the server's machine. If that registry cannot be reached, the
+release shows as unavailable; T3 Code does not try the public registry instead.
+Machines without npm check the public npm registry directly.
+
+## Update providers
+
+**Settings → Providers** shows provider updates for the selected environment.
+**Update all** updates every outdated provider on every connected environment
+at once. Hover it to see which providers it will update. Providers that only
+offer a manual update command are not included.
+
+After a successful provider CLI update, T3 Code refreshes model discovery for
+every enabled instance of that provider using its own configuration. Connected
+clients receive the refreshed catalogs automatically. Provider update checks
+must be enabled to download the latest T3 Code model catalog.
+
+Provider updates do not restart running chats. An existing session can keep
+using the previous CLI until it ends. If discovery fails, check the provider
+status and refresh it again.
+
+## Mobile updates
+
+To update an environment from your phone, open **Settings → Environments** and
+select it. **Check for updates** finds the latest release on that environment's
+current release channel. Keep the app open while the environment updates and
+reconnects. Hosts that cannot update remotely show instructions for updating on
+the machine instead.
+
+The same page lets you refresh provider status and update supported providers.
+These controls require a connected environment and permission to operate it.
+Provider update checks and restart continuation preferences are in
+**Settings → Maintenance**. If provider update checks are disabled, enable them
+there before refreshing to find newer versions. The same setting controls whether
+T3 Code downloads model catalog updates, so with it off new models may not appear
+until you enable it and refresh provider status.
+
+Install App Store or Google Play releases as usual. The mobile app can also
+download updates in the background and apply them when you next leave the app.
+It saves drafts and queued messages before restarting. If you keep the app open
+for a long time, it may ask to install immediately; choosing **Later** leaves the
+update queued for the next suitable moment.
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb

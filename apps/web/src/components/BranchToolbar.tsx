@@ -228,9 +228,7 @@ const RunContextSelector = memo(function RunContextSelector({
   const workspaceIcon = (
     <Tooltip>
       <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
-        <WorkspaceIcon
-          className={isPanel ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3 shrink-0 mx-0!"}
-        />
+        <WorkspaceIcon className={isPanel ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3 shrink-0"} />
       </TooltipTrigger>
       <TooltipPopup>
         {isPanel
@@ -246,7 +244,7 @@ const RunContextSelector = memo(function RunContextSelector({
       <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
         {autoEnvironmentLabel ? (
           <ScaleIcon
-            className={isPanel ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3 shrink-0 mx-0!"}
+            className={isPanel ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3 shrink-0"}
             aria-hidden="true"
           />
         ) : (
@@ -254,9 +252,7 @@ const RunContextSelector = memo(function RunContextSelector({
             kind={activeEnvironment?.machine ?? "server"}
             // Wide machine glyphs need a little more box to match the square row icons.
             className={
-              isPanel
-                ? cn(THREAD_DETAILS_PANEL_ICON_CLASS, "-mx-px size-4.5")
-                : "size-3 shrink-0 mx-0!"
+              isPanel ? cn(THREAD_DETAILS_PANEL_ICON_CLASS, "-mx-px size-4.5") : "size-3 shrink-0"
             }
           />
         )}
@@ -312,7 +308,13 @@ const RunContextSelector = memo(function RunContextSelector({
     return (
       <span
         className={cn(
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
           "inline-flex h-7 min-w-0 max-w-[48%] flex-initial items-center justify-start gap-1 rounded-md border border-transparent px-1.75 font-normal text-foreground/70 text-xs sm:h-6 dark:text-muted-foreground",
+=======
+          "inline-flex h-7 min-w-0 max-w-[48%] flex-initial items-center justify-start gap-1 rounded-md border border-transparent px-1.75 font-normal text-foreground/70 text-sm sm:h-6 sm:text-xs dark:text-muted-foreground",
+          isPanel && "max-w-full",
+          isPanel && THREAD_DETAILS_PANEL_LOCKED_ROW_CLASS,
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         )}
         onContextMenu={handleContextMenu}
         data-composer-context-control
@@ -731,7 +733,11 @@ export const BranchToolbar = memo(function BranchToolbar({
         </>
       ) : null}
       {showGitControls ? (
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
         <div className={cn("contents", isServerThread && "@3xl/composer-surface:hidden")}>
+=======
+        <div className="contents @xl/composer-surface:hidden">
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
           <RunContextSelector
             forceNewWorktree={forceNewWorktree}
             autoEnvironmentLabel={autoEnvironmentLabel}
@@ -759,7 +765,7 @@ export const BranchToolbar = memo(function BranchToolbar({
         <div
           className={cn(
             "min-h-7 min-w-10 items-center gap-1 sm:min-h-6",
-            showGitControls ? "hidden @3xl/composer-surface:flex" : "flex",
+            showGitControls ? "hidden @xl/composer-surface:flex" : "flex",
             "flex-1",
           )}
         >
@@ -802,7 +808,11 @@ export const BranchToolbar = memo(function BranchToolbar({
         <BranchToolbarBranchSelector
           forceNewWorktree={forceNewWorktree}
           ref={branchSelectorRef}
+<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
           className="min-w-0 flex-1 justify-end @3xl/composer-surface:ml-auto"
+=======
+          className="min-w-0 flex-initial justify-end @xl/composer-surface:ml-auto"
+>>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
           environmentId={environmentId}
           threadId={threadId}
           {...(draftId ? { draftId } : {})}
