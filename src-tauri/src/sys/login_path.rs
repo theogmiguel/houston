@@ -285,6 +285,23 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
+    fn a_noisy_shell_does_not_block_path_capture() {
+        // stderr is discarded and stdout is drained on its own thread, so startup
+        // noise cannot fill a pipe buffer and deadlock the probe.
+        let dir = tempfile::tempdir().unwrap();
+        let shell = fake_shell(
+            dir.path(),
+            "noisy.sh",
+            "printf '%2097152s' '' >&2\nprintf '__TR_LOGIN_PATH__/opt/bin:/usr/bin\\n'",
+        );
+        assert_eq!(
+            probe(&shell, PROBE_TIMEOUT).as_deref(),
+            Some("/opt/bin:/usr/bin")
+        );
+    }
+
+    #[test]
     fn probe_missing_shell_is_none() {
         assert!(probe("/nonexistent/shell", PROBE_TIMEOUT).is_none());
     }

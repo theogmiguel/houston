@@ -202,6 +202,9 @@ impl HyprlandCaptureSetup {
             .map_err(|error| format!("writing {}: {error}", executable.display()))?;
         file.write_all(&bundle)
             .map_err(|error| format!("writing {}: {error}", executable.display()))?;
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755))
+            .map_err(|error| format!("making {} executable: {error}", executable.display()))?;
         Ok(())
     }
 }
@@ -235,13 +238,28 @@ fn decode_window(value: &Value) -> Option<WindowMetadata> {
     })
 }
 
+/// An installed helper left behind by an earlier app version is replaced before
+/// capture; a first-time installation stays an explicit SnapShot settings action.
+fn refresh_stale_helper(setup: &HyprlandCaptureSetup) -> Result<CaptureHelperState, String> {
+    let mut state = setup.state();
+    if state.status != "update-required" {
+        return Ok(state);
+    }
+    setup
+        .perform("install-hyprland-helper")
+        .map_err(|error| format!("{} Updating the helper failed: {error}", state.message))?;
+    state = setup.state();
+    Ok(state)
+}
+
 pub fn capture(
     paths: &PlatformPaths,
     options: CaptureOptions,
     temp_dir: &Path,
 ) -> Result<CaptureOutput, String> {
     let setup = HyprlandCaptureSetup::new(paths.clone());
-    let helper = setup.state();
+    let helper = refresh_stale_helper(&setup)
+        .map_err(|error| format!("{error} Open Settings → SnapShots to continue setup."))?;
     if helper.status != "ready" {
         return Err(format!(
             "{} Open Settings → SnapShots to continue setup.",
@@ -338,5 +356,85 @@ mod tests {
     #[test]
     fn invalid_app_ids_are_refused() {
         assert!(capture_shortcut("bad app", Path::new("/tmp")).is_err());
+    }
+
+    fn helper_script() -> &'static str {
+        "#!/bin/sh\nprintf '{\"feedbackAvailable\":false}'\n"
+    }
+
+    #[cfg(unix)]
+    fn write_executable(path: &Path, body: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, body).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    fn helper_paths(home: &Path) -> PlatformPaths {
+        PlatformPaths {
+            home: home.to_path_buf(),
+            state_dir: home.join("state"),
+            config_home: home.join("config"),
+            data_home: home.join("data"),
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_stale_helper_is_replaced_before_capturing() {
+        let home = test_home("hyprland-stale-helper-test");
+        let paths = helper_paths(&home);
+        write_executable(&capture_executable(&paths), "old build");
+        write_executable(&bundle_path(&paths), helper_script());
+
+        let setup = HyprlandCaptureSetup::new(paths.clone());
+        let state = refresh_stale_helper(&setup).unwrap();
+
+        assert_eq!(state.status, "ready");
+        assert_eq!(
+            fs::read_to_string(capture_executable(&paths)).unwrap(),
+            helper_script()
+        );
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_first_install_is_left_to_explicit_setup() {
+        let home = test_home("hyprland-first-install-test");
+        let paths = helper_paths(&home);
+        write_executable(&bundle_path(&paths), helper_script());
+
+        let setup = HyprlandCaptureSetup::new(paths.clone());
+        let state = refresh_stale_helper(&setup).unwrap();
+
+        assert_eq!(state.status, "not-installed");
+        assert!(
+            !capture_executable(&paths).exists(),
+            "capture must not install the helper on its own"
+        );
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn an_explicit_install_leaves_a_runnable_helper() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let home = test_home("hyprland-install-test");
+        let paths = helper_paths(&home);
+        write_executable(&bundle_path(&paths), helper_script());
+
+        let setup = HyprlandCaptureSetup::new(paths.clone());
+        setup.perform("install-hyprland-helper").unwrap();
+
+        let mode = fs::metadata(capture_executable(&paths))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o755);
+        assert_eq!(setup.state().status, "ready");
+        let _ = fs::remove_dir_all(home);
     }
 }
