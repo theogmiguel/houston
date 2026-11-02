@@ -7,20 +7,20 @@ per platform and never ran the renderer's own tests.
 
 ## Jobs
 
-| Job                | Runs on                                | Proves                                                                                                                                         |
-| ------------------ | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `changes`          | every run                              | classifies the changed paths; every other job waits on its outputs                                                                             |
-| `static`           | every run                              | workflow syntax, the safety scripts, changed-file format and lint, doc and comment hygiene, web style guards, the licence notice and inventory |
-| `typecheck`        | changed code                           | `pnpm -r --no-bail typecheck` for every workspace package                                                                                      |
-| `test-packages`    | workspace package changes              | package suites and the node:test script suites                                                                                                 |
-| `test-server`      | server changes                         | `apps/server` `src/` and `scripts/` tests in six vitest shards                                                                                 |
-| `test-web`         | web changes                            | the production renderer build and the `unit` vitest project                                                                                    |
-| `test-web-browser` | web changes                            | the `browser` vitest project in four shards                                                                                                    |
-| `native-linux`     | native changes, and every non-PR run   | renderer build, formatting, Clippy and `src-tauri` tests under an isolated keyring                                                             |
-| `native-macos`     | native changes, and every non-PR run   | the same host checks on Apple silicon                                                                                                          |
-| `native-windows`   | native changes, and every non-PR run   | the same host checks on Windows                                                                                                                |
-| `server-windows`   | nightly, and pushes to `v2` and `main` | the server suites in three Windows shards                                                                                                      |
-| `ci-gate`          | every run                              | the aggregate check to require on branches                                                                                                     |
+| Job                | Runs on                                | Proves                                                                                                                                                  |
+| ------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `changes`          | every run                              | classifies the changed paths; every other job waits on its outputs                                                                                      |
+| `static`           | every run                              | workflow syntax, the safety scripts, changed-file format, the lint ratchet, doc and comment hygiene, web style guards, the licence notice and inventory |
+| `typecheck`        | changed code                           | `pnpm -r --no-bail typecheck` for every workspace package                                                                                               |
+| `test-packages`    | workspace package changes              | package suites and the node:test script suites                                                                                                          |
+| `test-server`      | server changes                         | `apps/server` `src/` and `scripts/` tests in six vitest shards                                                                                          |
+| `test-web`         | web changes                            | the production renderer build and the `unit` vitest project                                                                                             |
+| `test-web-browser` | web changes                            | the `browser` vitest project in four shards                                                                                                             |
+| `native-linux`     | native changes, and every non-PR run   | renderer build, formatting, Clippy and `src-tauri` tests under an isolated keyring                                                                      |
+| `native-macos`     | native changes, and every non-PR run   | the same host checks on Apple silicon                                                                                                                   |
+| `native-windows`   | native changes, and every non-PR run   | the same host checks on Windows                                                                                                                         |
+| `server-windows`   | nightly, and pushes to `v2` and `main` | the server suites in three Windows shards                                                                                                               |
+| `ci-gate`          | every run                              | the aggregate check to require on branches                                                                                                              |
 
 `ci-gate` fails when any job failed or was cancelled, or when `changes` did not succeed. A job
 skipped by the path filter counts as a pass.
@@ -88,3 +88,12 @@ Percentiles use the nearest-rank definition, so a small sample reports a real ob
 project-owned hook. `.vite-hooks/pre-push` runs `scripts/check-changed.ts`, which formats and
 lints the branch's changed files and typechecks the affected packages when a TypeScript or
 manifest file changed. It prints `nothing relevant changed` and exits 0 when the range is empty.
+
+## Lint ratchet
+
+The tree carries lint errors that predate the gate, so `scripts/ci/lint-ratchet.mjs` compares each
+file's error count with `scripts/lint-baseline.json`. A file may keep or lower its count; an
+increase, or any error in a file with no entry, fails and prints the new errors with their
+positions. `static` runs it over the whole tree (about 16 s); the pre-push gate runs it on the
+changed files. After fixing errors, `node scripts/ci/lint-ratchet.mjs --update` rewrites the
+baseline so the allowance only falls.
