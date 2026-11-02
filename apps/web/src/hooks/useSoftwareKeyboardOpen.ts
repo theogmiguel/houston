@@ -1,11 +1,11 @@
 import { useSyncExternalStore } from "react";
 
-import { isElectron } from "../env";
+import { isDesktopHost } from "../env";
 import { createSoftwareKeyboardStore } from "../lib/softwareKeyboard";
 
 const store = createSoftwareKeyboardStore(
   typeof window === "undefined" ? undefined : window,
-  isElectron,
+  isDesktopHost,
 );
 
 function getServerSnapshot() {

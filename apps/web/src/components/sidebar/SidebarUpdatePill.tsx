@@ -1,5 +1,5 @@
 import {
-  type DesktopBridge,
+  type HostBridge,
   type DesktopUpdateState,
   managedUpdatesDenial,
 } from "@houston-app/contracts";
@@ -7,7 +7,7 @@ import { TriangleAlertIcon } from "lucide-react";
 import { type ComponentProps, useId, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { settlePromise, squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
-import { isElectron } from "../../env";
+import { isDesktopHost } from "../../env";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { cn } from "../../lib/utils";
 import { ensureLocalApi } from "../../localApi";
@@ -154,7 +154,7 @@ function resolveSidebarUpdatePillCopy(
 }
 
 export function SidebarUpdateArchitectureWarning() {
-  return isElectron ? <SidebarUpdateArchitectureWarningContent /> : null;
+  return isDesktopHost ? <SidebarUpdateArchitectureWarningContent /> : null;
 }
 
 function SidebarUpdateArchitectureWarningContent() {
@@ -178,7 +178,7 @@ const toastUpdateError: ReportLocalUpdateError = (title, description) => {
 };
 
 export async function downloadLocalUpdate(
-  bridge: DesktopBridge,
+  bridge: HostBridge,
   {
     notifyDownloaded,
     reportError = toastUpdateError,
@@ -204,7 +204,7 @@ export async function downloadLocalUpdate(
 }
 
 export async function installLocalUpdate(
-  bridge: DesktopBridge,
+  bridge: HostBridge,
   reportError: ReportLocalUpdateError = toastUpdateError,
   expectedVersion?: string,
 ): Promise<boolean> {
@@ -316,7 +316,7 @@ function SidebarUpdateControl() {
   }
 
   const handleAction = async () => {
-    const bridge = window.desktopBridge;
+    const bridge = window.hostBridge;
     if (isInteractionDisabled) return;
 
     if (runsEverything) {
@@ -391,7 +391,7 @@ function SidebarUpdateControl() {
   };
 
   const runEverything = async () => {
-    const bridge = window.desktopBridge;
+    const bridge = window.hostBridge;
     setIsConfirmingEverything(false);
     setIsActionPending(true);
     const result = await settlePromise(() =>
@@ -429,7 +429,7 @@ function SidebarUpdateControl() {
     );
   };
 
-  if (!isElectron && !runsEverything && !isRunningEverything) return null;
+  if (!isDesktopHost && !runsEverything && !isRunningEverything) return null;
 
   const pillCopy = resolveSidebarUpdatePillCopy(state, action);
 
@@ -467,7 +467,7 @@ function SidebarUpdateControl() {
           run={run}
           local={local}
           icon={statusIcon}
-          {...(run.localVersion === null && action === "install" && window.desktopBridge
+          {...(run.localVersion === null && action === "install" && window.hostBridge
             ? {
                 onRestart: async () => {
                   saveUpdateEverythingResult({
@@ -477,7 +477,7 @@ function SidebarUpdateControl() {
                     failures: [],
                     restarting: [],
                   });
-                  if (!(await installLocalUpdate(window.desktopBridge!))) {
+                  if (!(await installLocalUpdate(window.hostBridge!))) {
                     clearSavedUpdateEverythingResult();
                   }
                 },
@@ -614,7 +614,7 @@ function SidebarUpdateControl() {
                 void handleAction();
               }}
               onDismiss={() => setReleaseNotesOpen(false)}
-              shell={window.desktopBridge}
+              shell={window.hostBridge}
               state={state}
               tooltip={tooltip}
             />

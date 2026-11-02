@@ -960,7 +960,7 @@ pub fn v2_show_context_menu(
     Ok(())
 }
 
-/// Routes a menu event to the waiting `desktopBridge.showContextMenu` call.
+/// Routes a menu event to the waiting `hostBridge.showContextMenu` call.
 /// Returns false for ids this host did not create.
 pub fn handle_context_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) -> bool {
     let Some((nonce, item)) = decode_context_menu_id(id) else {

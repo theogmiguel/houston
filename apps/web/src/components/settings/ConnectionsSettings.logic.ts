@@ -14,7 +14,7 @@ import {
   type AuthPairingLink,
   AuthTerminalOperateScope,
   AuthTerminalReadScope,
-  type DesktopBridge,
+  type HostBridge,
   type DesktopServerExposureState,
   type DesktopSshEnvironmentTarget,
   type DesktopUpdateState,
@@ -50,7 +50,7 @@ export function canRevokeOtherClients(
   return clientSessions === null || clientSessions.some((session) => !session.current);
 }
 
-type WslEnableBridge = Pick<DesktopBridge, "setWslBackendEnabled" | "setWslDistro" | "setWslOnly">;
+type WslEnableBridge = Pick<HostBridge, "setWslBackendEnabled" | "setWslDistro" | "setWslOnly">;
 
 /** Never offer loopback URLs as QR targets; scanning devices would connect to themselves. */
 export function isQrShareableEndpoint(endpoint: AdvertisedEndpoint): boolean {

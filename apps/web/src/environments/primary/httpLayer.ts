@@ -9,7 +9,7 @@ import { resolvePrimaryEnvironmentHttpUrl } from "./target";
 function isSameOriginBrowserPrimary(): boolean {
   if (
     typeof window === "undefined" ||
-    window.desktopBridge !== undefined ||
+    window.hostBridge !== undefined ||
     !window.location.origin.startsWith("http")
   ) {
     return false;

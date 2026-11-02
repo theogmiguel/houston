@@ -24,7 +24,7 @@ import { fetchRemoteEnvironmentDescriptor } from "@houston-app/client-runtime/en
 import { EnvironmentRpcRequestObserver } from "@houston-app/client-runtime/rpc";
 import {
   AuthStandardClientScopes,
-  type DesktopBridge,
+  type HostBridge,
   type DesktopEnvironmentBootstrap,
   type DesktopSshEnvironmentBootstrap,
   type DesktopSshEnvironmentTarget,
@@ -155,7 +155,7 @@ export function currentClientMetadata() {
       platform: navigator.platform,
       maxTouchPoints: navigator.maxTouchPoints,
     },
-    desktopBridge: window.desktopBridge,
+    hostBridge: window.hostBridge,
   });
 }
 
@@ -180,7 +180,7 @@ const pendingSshSetups = new Map<
   { readonly promise: Promise<DesktopSshEnvironmentBootstrap>; signal: AbortSignal }
 >();
 
-const ensureDesktopSshEnvironment = (bridge: DesktopBridge, target: DesktopSshEnvironmentTarget) =>
+const ensureDesktopSshEnvironment = (bridge: HostBridge, target: DesktopSshEnvironmentTarget) =>
   Effect.tryPromise({
     try: (signal) => {
       const key = sshTargetKey(target);
@@ -206,7 +206,7 @@ const ensureDesktopSshEnvironment = (bridge: DesktopBridge, target: DesktopSshEn
 export const provisionDesktopSshEnvironment = Effect.fn(
   "web.connectionPlatform.ssh.provisionDesktop",
 )(function* (
-  bridge: DesktopBridge,
+  bridge: HostBridge,
   target: DesktopSshEnvironmentTarget,
   expectedEnvironmentId?: EnvironmentId,
 ) {
@@ -258,7 +258,7 @@ export const provisionDesktopSshEnvironment = Effect.fn(
 /** Reuses SSH pairing tokens with all standard scopes to avoid adding a session on each connection. */
 export const prepareDesktopSshEnvironment = Effect.fn("web.connectionPlatform.ssh.prepareDesktop")(
   function* (
-    bridge: DesktopBridge,
+    bridge: HostBridge,
     input: {
       readonly target: DesktopSshEnvironmentTarget;
       readonly expectedEnvironmentId: EnvironmentId;
@@ -335,7 +335,7 @@ const layerCapabilities = Layer.effectContext(
     const ssh = ClientCapabilities.SshEnvironmentGateway.of({
       provision: Effect.fn("web.connectionPlatform.ssh.provision")(
         function* (target, expectedEnvironmentId) {
-          const bridge = window.desktopBridge;
+          const bridge = window.hostBridge;
           if (bridge === undefined) {
             return yield* new ConnectionBlockedError({
               reason: "unsupported",
@@ -346,7 +346,7 @@ const layerCapabilities = Layer.effectContext(
         },
       ),
       prepare: Effect.fn("web.connectionPlatform.ssh.prepare")(function* (input) {
-        const bridge = window.desktopBridge;
+        const bridge = window.hostBridge;
         if (bridge === undefined) {
           return yield* new ConnectionBlockedError({
             reason: "unsupported",
@@ -356,7 +356,7 @@ const layerCapabilities = Layer.effectContext(
         return yield* prepareDesktopSshEnvironment(bridge, input);
       }),
       disconnect: Effect.fn("web.connectionPlatform.ssh.disconnect")(function* (target) {
-        const bridge = window.desktopBridge;
+        const bridge = window.hostBridge;
         if (bridge === undefined) {
           return;
         }

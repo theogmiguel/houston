@@ -3,7 +3,7 @@ import {
   type AuthBrowserSessionResult,
   type AuthCreatePairingCredentialInput,
   type AuthSessionState,
-  type DesktopBridge,
+  type HostBridge,
 } from "@houston-app/contracts";
 import { createBrowserHistory } from "@tanstack/react-router";
 import * as DateTime from "effect/DateTime";
@@ -19,7 +19,7 @@ type TestWindow = {
     state: unknown;
     replaceState: (_data: unknown, _unused: string, url?: string) => void;
   };
-  desktopBridge?: DesktopBridge;
+  hostBridge?: HostBridge;
 };
 
 const LOOPBACK_AUTH = {
@@ -145,7 +145,7 @@ describe("resolveInitialServerAuthGateState", () => {
     });
 
     const testWindow = installTestBrowser("http://localhost/");
-    testWindow.desktopBridge = {
+    testWindow.hostBridge = {
       getLocalEnvironmentBootstraps: () => [
         {
           id: "primary",
@@ -155,7 +155,7 @@ describe("resolveInitialServerAuthGateState", () => {
           bootstrapToken: "desktop-bootstrap-token",
         },
       ],
-    } as unknown as DesktopBridge;
+    } as unknown as HostBridge;
 
     const { resolveInitialServerAuthGateState } = await import("./environments/primary");
 

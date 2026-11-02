@@ -11,7 +11,6 @@ import {
 import { Atom } from "effect/reactivity";
 
 import { PREVIEW_RECENT_URL_LIMIT } from "./components/preview/previewConstants";
-import { hasNativeBrowserHost } from "./env";
 import { appAtomRegistry } from "./rpc/atomRegistry";
 
 export interface DesktopPreviewOverlay {
@@ -66,7 +65,8 @@ export const previewStateAtom = Atom.family((threadKey: string) =>
   ),
 );
 
-// Only Electron needs this cross-thread index; separate it to avoid unrelated preview subscriptions.
+// Only a native webview host needs this cross-thread index; separate it to avoid unrelated
+// preview subscriptions.
 interface ActivePreviewThreadIndex {
   readonly keys: ReadonlySet<string>;
 }
@@ -506,8 +506,8 @@ export function rememberPreviewUrl(ref: ScopedThreadRef, url: string): void {
 }
 
 export function isPreviewSupportedInRuntime(): boolean {
-  if (typeof window === "undefined") return false;
-  return hasNativeBrowserHost && Boolean(window.desktopBridge?.preview);
+  // The desktop host renders preview tabs through the server stream, never a native webview.
+  return false;
 }
 
 /** Releases desktop-host pages as well as local session state. */

@@ -141,7 +141,7 @@ function LocalVersionStatusLabel() {
 
 /** Environments lists the machines this app connects to; access covers who may reach this one. */
 export function ConnectionsSettings({ view }: { readonly view: "environments" | "access" }) {
-  const desktopBridge = window.desktopBridge;
+  const hostBridge = window.hostBridge;
   const { environments } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
   const peerLinkHosts = usePeerLinkHosts();
@@ -154,7 +154,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   const currentSessionScopes = primarySessionState.data?.authenticated
     ? (primarySessionState.data.permissions ?? primarySessionState.data.scopes ?? null)
     : null;
-  const currentAuthPolicy = desktopBridge ? null : (primarySessionState.data?.auth.policy ?? null);
+  const currentAuthPolicy = hostBridge ? null : (primarySessionState.data?.auth.policy ?? null);
   const savedEnvironments = environments.filter(
     (environment) => environment.entry.target._tag !== "PrimaryConnectionTarget",
   );
@@ -282,10 +282,10 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       : null,
   );
   const desktopNetworkAccess = useEnvironmentQuery(
-    showsAccess && canManageLocalBackend && desktopBridge ? desktopNetworkAccessStateAtom : null,
+    showsAccess && canManageLocalBackend && hostBridge ? desktopNetworkAccessStateAtom : null,
   );
   const desktopWsl = useEnvironmentQuery(
-    showsAccess && canManageLocalBackend && desktopBridge ? desktopWslStateAtom : null,
+    showsAccess && canManageLocalBackend && hostBridge ? desktopWslStateAtom : null,
   );
   const desktopWslState = desktopWsl.data;
   const desktopWslError = desktopWslMutationError ?? desktopWsl.error;
@@ -316,7 +316,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       ),
     );
   })();
-  const isLocalBackendNetworkAccessible = desktopBridge
+  const isLocalBackendNetworkAccessible = hostBridge
     ? desktopServerExposureState?.mode === "network-accessible"
     : currentAuthPolicy === "remote-reachable";
   const trimmedTailscaleServePortInput = tailscaleServePortInput.trim();
@@ -335,7 +335,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
 
   const handleDesktopServerExposureChange = async (checked: boolean) => {
     if (
-      !desktopBridge ||
+      !hostBridge ||
       primaryEnvironmentId === null ||
       !readEnvironmentScope(primaryEnvironmentId, AuthEnvironmentMaintainScope)
     )
@@ -343,7 +343,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     setIsUpdatingDesktopServerExposure(true);
     setDesktopServerExposureMutationError(null);
     try {
-      await desktopBridge.setServerExposureMode(checked ? "network-accessible" : "local-only");
+      await hostBridge.setServerExposureMode(checked ? "network-accessible" : "local-only");
       refreshDesktopNetworkAccessState();
       setPendingDesktopServerExposureMode(null);
       setIsUpdatingDesktopServerExposure(false);
@@ -370,7 +370,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
 
   const handleConfirmTailscaleServeSetup = async () => {
     if (
-      !desktopBridge ||
+      !hostBridge ||
       primaryEnvironmentId === null ||
       !readEnvironmentScope(primaryEnvironmentId, AuthEnvironmentMaintainScope)
     )
@@ -379,7 +379,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     setIsUpdatingTailscaleServe(true);
     setDesktopServerExposureMutationError(null);
     const settled = await settlePromise(async () => {
-      await desktopBridge.setTailscaleServeEnabled({
+      await hostBridge.setTailscaleServeEnabled({
         enabled: true,
         port: parsedTailscaleServePort,
       });
@@ -411,7 +411,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
 
   const handleConfirmTailscaleServeDisable = async () => {
     if (
-      !desktopBridge ||
+      !hostBridge ||
       primaryEnvironmentId === null ||
       !readEnvironmentScope(primaryEnvironmentId, AuthEnvironmentMaintainScope)
     )
@@ -419,7 +419,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     setIsUpdatingTailscaleServe(true);
     setDesktopServerExposureMutationError(null);
     const settled = await settlePromise(async () => {
-      await desktopBridge.setTailscaleServeEnabled({
+      await hostBridge.setTailscaleServeEnabled({
         enabled: false,
         port: desktopServerExposureState?.tailscaleServePort ?? DEFAULT_TAILSCALE_SERVE_PORT,
       });
@@ -620,7 +620,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     });
   const applyWslSettingChange = async (apply: () => Promise<DesktopWslState>) => {
     if (
-      !desktopBridge ||
+      !hostBridge ||
       primaryEnvironmentId === null ||
       !readEnvironmentScope(primaryEnvironmentId, AuthEnvironmentMaintainScope)
     )
@@ -652,7 +652,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   );
 
   const handleSelectWslMode = (value: string) => {
-    if (!desktopBridge || !desktopWslState) return;
+    if (!hostBridge || !desktopWslState) return;
     const defaultDistroName =
       desktopWslState.distros.find((distro) => distro.isDefault)?.name ?? null;
     if (value === BACKEND_VALUE_WSL_OFF) {
@@ -663,7 +663,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
         setPendingWslChange({ kind: "disable", wasWslOnly });
         return;
       }
-      void applyWslSettingChange(() => desktopBridge.setWslBackendEnabled(false));
+      void applyWslSettingChange(() => hostBridge.setWslBackendEnabled(false));
       return;
     }
     const nextDistro = value === BACKEND_VALUE_DEFAULT_WSL ? null : value;
@@ -678,17 +678,17 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       setPendingWslChange({ kind: "distro", nextDistro });
       return;
     }
-    void applyWslSettingChange(() => desktopBridge.setWslDistro(nextDistro));
+    void applyWslSettingChange(() => hostBridge.setWslDistro(nextDistro));
   };
 
   const handleConfirmEnableWsl = (mode: "both" | "wsl-only") => {
-    if (!desktopBridge || !pendingWslChange || pendingWslChange.kind !== "enable") return;
+    if (!hostBridge || !pendingWslChange || pendingWslChange.kind !== "enable") return;
     const nextDistro = pendingWslChange.nextDistro;
     setPendingWslChange(null);
     const persistedDistro = desktopWslState?.distro ?? null;
     void applyWslSettingChange(() =>
       applyWslEnableSelection({
-        bridge: desktopBridge,
+        bridge: hostBridge,
         mode,
         nextDistro,
         persistedDistro,
@@ -697,30 +697,30 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   };
 
   const handleToggleWslOnly = (enabled: boolean) => {
-    if (!desktopBridge || !desktopWslState || desktopWslState.wslOnly === enabled) return;
+    if (!hostBridge || !desktopWslState || desktopWslState.wslOnly === enabled) return;
     setPendingWslChange({ kind: "wsl-only", nextValue: enabled });
   };
 
   const handleConfirmWslChange = () => {
-    if (!desktopBridge || !pendingWslChange) return;
+    if (!hostBridge || !pendingWslChange) return;
     const change = pendingWslChange;
     if (change.kind === "enable") return;
     setPendingWslChange(null);
     if (change.kind === "disable") {
       void applyWslSettingChange(async () => {
-        const next = await desktopBridge.setWslBackendEnabled(false);
+        const next = await hostBridge.setWslBackendEnabled(false);
         if (change.wasWslOnly) {
-          return await desktopBridge.setWslOnly(false);
+          return await hostBridge.setWslOnly(false);
         }
         return next;
       });
       return;
     }
     if (change.kind === "distro") {
-      void applyWslSettingChange(() => desktopBridge.setWslDistro(change.nextDistro));
+      void applyWslSettingChange(() => hostBridge.setWslDistro(change.nextDistro));
       return;
     }
-    void applyWslSettingChange(() => desktopBridge.setWslOnly(change.nextValue));
+    void applyWslSettingChange(() => hostBridge.setWslOnly(change.nextValue));
   };
 
   const renderAuthorizedClients = ({
@@ -755,7 +755,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     </>
   );
   const handleToggleWslBackend = (checked: boolean) => {
-    if (!desktopBridge || !desktopWslState) return;
+    if (!hostBridge || !desktopWslState) return;
     if (!checked) {
       handleSelectWslMode(BACKEND_VALUE_WSL_OFF);
       return;
@@ -790,13 +790,11 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       control={
         <Switch
           checked={
-            desktopBridge
+            hostBridge
               ? desktopServerExposureState?.mode === "network-accessible"
               : currentAuthPolicy === "remote-reachable"
           }
-          disabled={
-            !desktopBridge || !desktopServerExposureState || isUpdatingDesktopServerExposure
-          }
+          disabled={!hostBridge || !desktopServerExposureState || isUpdatingDesktopServerExposure}
           onCheckedChange={(checked) => {
             setPendingDesktopServerExposureMode(checked ? "network-accessible" : "local-only");
           }}
@@ -818,7 +816,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       control={
         <Switch
           checked={tailscaleHttpsEndpoint?.status === "available"}
-          disabled={!desktopBridge || !tailscaleHttpsEndpoint || isUpdatingTailscaleServe}
+          disabled={!hostBridge || !tailscaleHttpsEndpoint || isUpdatingTailscaleServe}
           onCheckedChange={(checked) => {
             if (!tailscaleHttpsEndpoint) return;
             if (checked) {
@@ -851,7 +849,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
           <Switch
             checked={enabled}
             disabled={
-              !desktopBridge || !canManageLocalBackend || !desktopWslState || isUpdatingWslBackend
+              !hostBridge || !canManageLocalBackend || !desktopWslState || isUpdatingWslBackend
             }
             onCheckedChange={handleToggleWslBackend}
             aria-label="WSL backend"

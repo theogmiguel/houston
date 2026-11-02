@@ -77,7 +77,7 @@ export function AddEnvironmentDialog({
   readonly onOpenChange: (open: boolean) => void;
   readonly onErrorChange: (error: string | null) => void;
 }) {
-  const desktopBridge = window.desktopBridge;
+  const hostBridge = window.hostBridge;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const connectPairing = useAtomCommand(connectPairingAtom, { reportFailure: false });
   const connectSshEnvironment = useAtomCommand(connectSshEnvironmentAtom, {
@@ -110,7 +110,7 @@ export function AddEnvironmentDialog({
   const highlightedSshHostRef = useRef<DesktopDiscoveredSshHost | undefined>(undefined);
   const [isAddingSavedBackend, setIsAddingSavedBackend] = useState(false);
   const savedBackendSessionRef = useRef(0);
-  const isSshDiscoveryActive = desktopBridge !== undefined && open && savedBackendMode === "ssh";
+  const isSshDiscoveryActive = hostBridge !== undefined && open && savedBackendMode === "ssh";
   const desktopSshHosts = useEnvironmentQuery(
     isSshDiscoveryActive ? desktopSshHostsStateAtom : null,
   );
@@ -136,7 +136,7 @@ export function AddEnvironmentDialog({
   const isLoadingDiscoveredSshHosts = desktopSshHosts.isPending && desktopSshHosts.data === null;
   const discoveredSshHostsError = desktopSshHosts.error;
   const hasSshHostSuggestionContent =
-    desktopBridge !== undefined &&
+    hostBridge !== undefined &&
     (isLoadingDiscoveredSshHosts || unsavedDiscoveredSshHosts.length > 0);
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
@@ -265,7 +265,7 @@ export function AddEnvironmentDialog({
   };
 
   const handleSelectSshHostSuggestion = async (target: DesktopDiscoveredSshHost) => {
-    if (isAddingSavedBackend || !desktopBridge) return;
+    if (isAddingSavedBackend || !hostBridge) return;
 
     const session = savedBackendSessionRef.current;
     setIsAddingSavedBackend(true);
@@ -273,7 +273,7 @@ export function AddEnvironmentDialog({
     setSavedBackendSshHost(target.alias);
     let resolved: DesktopSshEnvironmentTarget;
     try {
-      resolved = await desktopBridge.resolveSshHost(target.alias);
+      resolved = await hostBridge.resolveSshHost(target.alias);
     } catch (error) {
       if (session === savedBackendSessionRef.current) {
         onErrorChange(formatDesktopSshConnectionError(error));
@@ -586,7 +586,7 @@ export function AddEnvironmentDialog({
                 description: "Enter a backend host and pairing code.",
                 icon: <ChevronsLeftRightEllipsisIcon aria-hidden className="size-4" />,
               })}
-              {desktopBridge
+              {hostBridge
                 ? renderConnectionModeCard({
                     mode: "ssh",
                     title: "SSH",

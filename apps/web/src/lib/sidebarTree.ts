@@ -209,7 +209,7 @@ export function installSidebarTree(root: HTMLElement) {
     if (document.activeElement !== row || !row.isConnected) return;
     const rect = row.getBoundingClientRect();
     // Like VS Code's list, suppress keydown and open on release. Reuse the row's
-    // selection-aware handler, including its Electron native menu route.
+    // selection-aware handler, including its desktop native menu route.
     row.dispatchEvent(
       new MouseEvent("contextmenu", {
         bubbles: true,

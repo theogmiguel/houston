@@ -162,7 +162,7 @@ async function mount(...urls: string[]) {
   let deliver: ((url: string) => void) | undefined;
   await using stack = new AsyncDisposableStack();
   stack.use(
-    stubGlobal("desktopBridge", {
+    stubGlobal("hostBridge", {
       getClientSettings: async () => null,
       webLinks: {
         onOpen: (listener: (url: string) => void) => {

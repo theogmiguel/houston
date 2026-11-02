@@ -178,7 +178,7 @@ export function ReopenClosedViewShortcut() {
       if (!event.repeat) enqueueReopen();
     };
     window.addEventListener("keydown", onKeyDown, true);
-    const unsubscribe = window.desktopBridge?.onMenuAction((action) => {
+    const unsubscribe = window.hostBridge?.onMenuAction((action) => {
       if (action === "view.reopenClosed" && !isCommandPaletteOpen()) enqueueReopen();
     });
     return () => {
@@ -189,7 +189,7 @@ export function ReopenClosedViewShortcut() {
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- registers forwarded shortcut chords with the desktop preview bridge and clears them on cleanup
   useEffect(() => {
-    const preview = window.desktopBridge?.preview;
+    const preview = window.hostBridge?.preview;
     if (!preview) return;
     const options = {
       context: {

@@ -1,11 +1,7 @@
-import type {
-  DesktopBridge,
-  DesktopUpdateChannel,
-  DesktopUpdateState,
-} from "@houston-app/contracts";
+import type { HostBridge, DesktopUpdateChannel, DesktopUpdateState } from "@houston-app/contracts";
 import { acceptsTrackSwitchRelease } from "@houston-app/shared/cliRelease";
 
-type TrackSwitchBridge = Pick<DesktopBridge, "setUpdateChannel">;
+type TrackSwitchBridge = Pick<HostBridge, "setUpdateChannel">;
 
 /** Saves the track, then, when this app must reinstall, finds a build the database check covers.
  * The saved track is the user's intent and stays even when no such build is ready yet: a track

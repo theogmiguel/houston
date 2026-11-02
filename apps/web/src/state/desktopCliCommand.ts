@@ -1,11 +1,11 @@
-import type { DesktopBridge, DesktopCliCommandState } from "@houston-app/contracts";
+import type { HostBridge, DesktopCliCommandState } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 
-type DesktopCliCommandBridge = DesktopBridge["cliCommand"];
+type DesktopCliCommandBridge = HostBridge["cliCommand"];
 
 class DesktopCliCommandUnavailableError extends Schema.TaggedError<DesktopCliCommandUnavailableError>()(
   "DesktopCliCommandUnavailableError",
@@ -26,7 +26,7 @@ class DesktopCliCommandLoadError extends Schema.TaggedError<DesktopCliCommandLoa
 }
 
 export function getDesktopCliCommandBridge(): DesktopCliCommandBridge | undefined {
-  return typeof window === "undefined" ? undefined : window.desktopBridge?.cliCommand;
+  return typeof window === "undefined" ? undefined : window.hostBridge?.cliCommand;
 }
 
 const loadDesktopCliCommandState = Effect.fn("loadDesktopCliCommandState")(function* () {

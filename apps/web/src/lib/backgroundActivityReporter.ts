@@ -74,7 +74,7 @@ function getClientId(): string {
 }
 
 function resolveClientKind(): ClientActivityReportInput["clientKind"] {
-  return window.desktopBridge ? "desktop-renderer" : "web";
+  return window.hostBridge ? "desktop-renderer" : "web";
 }
 
 function wasRecentlyInteracted(lastInteractionAtMs: number, observedAtMs: number): boolean {

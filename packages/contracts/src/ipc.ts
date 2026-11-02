@@ -1015,7 +1015,7 @@ export const DesktopPreviewRecordingSaveInputSchema = Schema.Struct({
 export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
-export interface DesktopBridge {
+export interface HostBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getRelayTelemetryEnabled: () => boolean;
   getPathForFile: (file: File) => string;
@@ -1024,7 +1024,7 @@ export interface DesktopBridge {
   onNotificationBadgeClear: (listener: () => void) => () => void;
   onTrackpadScrollEnd: (listener: () => void) => () => void;
   /**
-   * Renderer `window.focus()` cannot raise an Electron window, and on Wayland
+   * Renderer `window.focus()` cannot raise the desktop window, and on Wayland
    * only the main process can spend a notification click's activation token.
    */
   revealWindow: () => Promise<void>;
@@ -1133,13 +1133,13 @@ export interface DesktopBridge {
     complete: (response: DesktopAppActivationResponse) => Promise<void>;
     onRequest: (listener: (request: DesktopAppActivationRequest) => void) => () => void;
   };
-  preview: DesktopPreviewBridge;
+  preview: HostPreviewBridge;
 }
 
-/** Renderer callback invoked by Electron with a fresh user gesture before display-media capture. */
+/** Renderer callback invoked by the desktop host with a fresh user gesture before display-media capture. */
 export const DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER = "__t3DesktopPreviewRecordingCapture";
 
-export interface DesktopPreviewBridge {
+export interface HostPreviewBridge {
   setForwardedShortcuts: (shortcuts: ReadonlyArray<PreviewForwardedShortcut>) => Promise<void>;
   createTab: (tabId: string, defaults?: DesktopPreviewTabDefaults) => Promise<void>;
   closeTab: (tabId: string) => Promise<void>;

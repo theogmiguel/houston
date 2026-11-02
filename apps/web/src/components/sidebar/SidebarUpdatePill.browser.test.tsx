@@ -31,7 +31,7 @@ vi.mock("../../state/desktopUpdate", async (importOriginal) => ({
 // The pill only renders in the desktop app.
 vi.mock("../../env", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../env")>()),
-  isElectron: true,
+  isDesktopHost: true,
 }));
 vi.mock("./useUpdateEverything", () => ({
   useUpdateEverything: () => ({

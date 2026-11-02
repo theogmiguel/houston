@@ -1,4 +1,4 @@
-import type { DesktopBridge } from "@houston-app/contracts";
+import type { HostBridge } from "@houston-app/contracts";
 
 const SNAP_SHOT_FOCUS_EVENT = "houston:focus-composer";
 
@@ -13,6 +13,6 @@ export function subscribeSnapShotComposerFocus(listener: () => void): () => void
   return () => window.removeEventListener(SNAP_SHOT_FOCUS_EVENT, listener);
 }
 
-export function getDesktopSnapShotBridge(): DesktopBridge | undefined {
-  return typeof window === "undefined" ? undefined : window.desktopBridge;
+export function getDesktopSnapShotBridge(): HostBridge | undefined {
+  return typeof window === "undefined" ? undefined : window.hostBridge;
 }

@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { DesktopBridge, DesktopUpdateState } from "@houston-app/contracts";
+import type { HostBridge, DesktopUpdateState } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
@@ -7,7 +7,7 @@ import * as Stream from "effect/Stream";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { Atom } from "effect/reactivity";
 
-type DesktopUpdateBridge = Pick<DesktopBridge, "getUpdateState" | "onUpdateState">;
+type DesktopUpdateBridge = Pick<HostBridge, "getUpdateState" | "onUpdateState">;
 
 const INITIAL_STATE_READ_ATTEMPT_COUNT = 3;
 
@@ -24,7 +24,7 @@ export class DesktopUpdateStateReadError extends Schema.TaggedError<DesktopUpdat
 }
 
 function getDesktopUpdateBridge(): DesktopUpdateBridge | undefined {
-  return typeof window === "undefined" ? undefined : window.desktopBridge;
+  return typeof window === "undefined" ? undefined : window.hostBridge;
 }
 
 export function createDesktopUpdateStateAtom(getBridge: () => DesktopUpdateBridge | undefined) {

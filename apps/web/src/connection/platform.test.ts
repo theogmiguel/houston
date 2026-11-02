@@ -2,7 +2,7 @@ import {
   AuthStandardClientScopes,
   EnvironmentId,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
-  type DesktopBridge,
+  type HostBridge,
   type DesktopSshEnvironmentBootstrap,
   type DesktopSshEnvironmentTarget,
 } from "@houston-app/contracts";
@@ -66,7 +66,7 @@ function makeBridge(
     readonly savedTokenRejected?: boolean;
     readonly savedTokenPermissions?: ReadonlyArray<string>;
   },
-): DesktopBridge {
+): HostBridge {
   return {
     getClientPlatform: () => "linux",
     getLocalEnvironmentEnabled: () => true,
@@ -120,7 +120,7 @@ function makeBridge(
         scope: AuthStandardClientScopes.join(" "),
       };
     },
-  } as unknown as DesktopBridge;
+  } as unknown as HostBridge;
 }
 
 describe("desktop SSH pairing", () => {
@@ -208,7 +208,7 @@ describe("desktop SSH pairing", () => {
       const setup = pendingSetup();
       const ensure = vi.spyOn(bridge, "ensureSshEnvironment").mockReturnValueOnce(setup.promise);
       const exchange = vi.spyOn(bridge, "bootstrapSshBearerSession");
-      vi.stubGlobal("window", { desktopBridge: bridge });
+      vi.stubGlobal("window", { hostBridge: bridge });
       const ssh = yield* ClientCapabilities.SshEnvironmentGateway.pipe(Effect.provide(layer));
       const interrupted = yield* Effect.forkChild(ssh.provision(TARGET), {
         startImmediately: true,

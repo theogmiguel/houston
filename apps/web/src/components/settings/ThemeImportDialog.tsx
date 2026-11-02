@@ -297,7 +297,7 @@ function ThemeImportBody({
   };
 
   const openFilePicker = () => {
-    const bridge = window.desktopBridge;
+    const bridge = window.hostBridge;
     if (bridge) {
       void bridge.pickThemeFiles().then((picked) => {
         if (!picked || picked.length === 0) return;

@@ -60,7 +60,7 @@ export function discoverInstalledFonts(): void {
 
 let grantedProbeStarted = false;
 
-/** Electron and previously granted browsers need no user gesture to enumerate fonts. */
+/** The desktop host and previously granted browsers need no user gesture to enumerate fonts. */
 function probeAlreadyGrantedPermission(): void {
   if (grantedProbeStarted || enumerationState.status !== "unknown") return;
   grantedProbeStarted = true;

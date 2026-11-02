@@ -19,7 +19,7 @@ it("blocks installation behind another t3 without blocking removal of our instal
     shadowedBy: "/usr/local/bin/t3",
   }));
   const uninstall = vi.fn(async () => state);
-  using _bridge = stubGlobal("desktopBridge", {
+  using _bridge = stubGlobal("hostBridge", {
     cliCommand: { getState, install: vi.fn(async () => state), uninstall },
     getLocalEnvironmentEnabled: () => true,
     getLocalEnvironmentBootstraps: () => [],

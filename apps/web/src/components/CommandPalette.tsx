@@ -2356,7 +2356,7 @@ function OpenCommandPaletteDialog(props: {
     (browseEnvironmentId === primaryEnvironmentId ||
       (browseEnvironmentIsDesktopLocal && browseDesktopInstanceId !== null)) &&
     typeof window !== "undefined" &&
-    window.desktopBridge !== undefined;
+    window.hostBridge !== undefined;
   const fileManagerInitialPath = (() => {
     if (!canOpenProjectFromFileManager) {
       return undefined;
@@ -2589,7 +2589,7 @@ function OpenCommandPaletteDialog(props: {
     try {
       desktopWslState =
         browseEnvironmentId === primaryEnvironmentId && browseEnvironmentPlatform === "Linux"
-          ? ((await window.desktopBridge?.getWslState().catch(() => null)) ?? null)
+          ? ((await window.hostBridge?.getWslState().catch(() => null)) ?? null)
           : null;
       // WSL-only primaries need their pool id from desktop settings; the native picker converts WSL UNC
       // paths.
@@ -2616,12 +2616,12 @@ function OpenCommandPaletteDialog(props: {
     }
     if (parseWslUncPath(pickedPath)) {
       if (desktopWslState === null) {
-        desktopWslState = (await window.desktopBridge?.getWslState().catch(() => null)) ?? null;
+        desktopWslState = (await window.hostBridge?.getWslState().catch(() => null)) ?? null;
       }
       let primaryRunningDistro: string | null = null;
       try {
         primaryRunningDistro =
-          window.desktopBridge
+          window.hostBridge
             ?.getLocalEnvironmentBootstraps()
             .find((bootstrap) => bootstrap.id === PRIMARY_LOCAL_ENVIRONMENT_ID)?.runningDistro ??
           null;

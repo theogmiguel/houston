@@ -1,5 +1,5 @@
 import { pipe } from "effect/Function";
-import type { DesktopBridge } from "@houston-app/contracts";
+import type { HostBridge } from "@houston-app/contracts";
 import { safeErrorLogAttributes } from "@houston-app/client-runtime/errors";
 import * as Schema from "effect/Schema";
 import { useSyncExternalStore } from "react";
@@ -37,7 +37,7 @@ type ThemeSnapshot = {
   themeHalves: ThemeHalves | null;
 };
 
-type DesktopThemeBridge = Pick<DesktopBridge, "setTheme">;
+type DesktopThemeBridge = Pick<HostBridge, "setTheme">;
 
 const STORAGE_KEY = "houston:theme";
 const MEDIA_QUERY = "(prefers-color-scheme: dark)";
@@ -388,7 +388,7 @@ function syncDesktopTheme(
   appearanceMode?: ThemePreferenceMode,
 ) {
   if (typeof window === "undefined") return;
-  const bridge = window.desktopBridge;
+  const bridge = window.hostBridge;
   const halves = readStoredThemeHalves();
   const desktopTheme = resolveDesktopTheme(theme, followSystem, appearanceMode, halves);
   if (!bridge || typeof bridge.setTheme !== "function" || lastDesktopTheme === desktopTheme) {

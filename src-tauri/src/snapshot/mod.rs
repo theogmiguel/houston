@@ -1,5 +1,5 @@
 //! SnapShot core: capture state, the pending-capture queue, the acknowledge/attach
-//! flow and the Tauri commands behind `window.desktopBridge`. The desktop APIs are
+//! flow and the Tauri commands behind `window.hostBridge`. The desktop APIs are
 //! reached only through `platform::SnapShotPlatform`.
 
 mod platform;

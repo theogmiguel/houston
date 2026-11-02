@@ -130,7 +130,7 @@ export function dispatchMenuAction(action: string): void {
 
 function ensureMenuActionListener() {
   if (menuActionInstalled || typeof window === "undefined") return;
-  const bridge = window.desktopBridge;
+  const bridge = window.hostBridge;
   if (typeof bridge?.onMenuAction !== "function") return;
   menuActionInstalled = true;
   bridge.onMenuAction(dispatchMenuAction);

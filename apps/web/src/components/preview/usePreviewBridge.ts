@@ -24,7 +24,7 @@ function originOf(url: string): string | null {
 }
 
 /**
- * Keeps a hidden guest painting behind the app while the desktop host captures it; Electron
+ * Keeps a hidden guest painting behind the app while the desktop host captures it; the desktop
  * composites no offscreen guest, so its screenshot or stream would otherwise never finish.
  */
 export function createCaptureActivity(tabId: string) {
@@ -39,7 +39,7 @@ export function createCaptureActivity(tabId: string) {
   return { update, release: () => update(false) };
 }
 
-/** ElectronBrowserHost owns webview lifetime. */
+/** The desktop webview host owns webview lifetime. */
 export function usePreviewBridge(input: {
   threadRef: ScopedThreadRef;
   tabId: string;

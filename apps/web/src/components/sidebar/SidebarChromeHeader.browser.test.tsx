@@ -14,7 +14,7 @@ describe("SidebarChromeHeader", () => {
   it("draws the board's brand row: an 18px mark, Houston and the hide button", async () => {
     await using screen = await render(
       <SidebarProvider defaultOpen>
-        <SidebarChromeHeader isElectron={false} />
+        <SidebarChromeHeader isDesktopHost={false} />
       </SidebarProvider>,
     );
 

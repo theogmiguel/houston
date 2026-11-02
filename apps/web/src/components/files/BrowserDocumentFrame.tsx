@@ -31,7 +31,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { isElectron } from "~/env";
+import { isDesktopHost } from "~/env";
 import { FileSurfaceLoading } from "./fileSurfaceChrome";
 import type { PdfViewState } from "./PdfViewer";
 
@@ -98,10 +98,10 @@ function PdfDocumentRevision(props: {
   onViewChange: (view: PdfViewState) => void;
 }) {
   const [src] = useState(props.src);
-  // The Electron shell does not enable PDF plugins. WebKit embeds on iOS
+  // The desktop shell does not enable PDF plugins. WebKit embeds on iOS
   // expose only the first page, even when pdfViewerEnabled reports support.
   const native =
-    !isElectron &&
+    !isDesktopHost &&
     navigator.pdfViewerEnabled &&
     !/iPad|iPhone|iPod/.test(navigator.userAgent) &&
     !(navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);

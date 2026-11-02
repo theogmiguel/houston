@@ -1,4 +1,4 @@
-import type { DesktopBridge, DesktopWslState } from "@houston-app/contracts";
+import type { HostBridge, DesktopWslState } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
@@ -7,7 +7,7 @@ import { appAtomRegistry } from "~/rpc/atomRegistry";
 
 const DESKTOP_WSL_STATE_STALE_TIME_MS = 30_000;
 
-type DesktopWslStateBridge = Pick<DesktopBridge, "getWslState">;
+type DesktopWslStateBridge = Pick<HostBridge, "getWslState">;
 
 class DesktopWslStateUnavailableError extends Schema.TaggedError<DesktopWslStateUnavailableError>()(
   "DesktopWslStateUnavailableError",
@@ -28,7 +28,7 @@ class DesktopWslStateLoadError extends Schema.TaggedError<DesktopWslStateLoadErr
 }
 
 function getDesktopWslStateBridge(): DesktopWslStateBridge | undefined {
-  return typeof window === "undefined" ? undefined : window.desktopBridge;
+  return typeof window === "undefined" ? undefined : window.hostBridge;
 }
 
 function createDesktopWslStateAtom(getBridge: () => DesktopWslStateBridge | undefined) {

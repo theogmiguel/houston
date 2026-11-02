@@ -59,7 +59,7 @@ import {
   useState,
 } from "react";
 
-import { isElectron } from "~/env";
+import { isDesktopHost } from "~/env";
 import { isTauriHost } from "~/lib/desktopWindow";
 import type { DesktopPreviewOverlay } from "~/previewStateStore";
 import type { RightPanelSurface } from "~/rightPanelStore";
@@ -1030,7 +1030,7 @@ function RightPanelTab(
 
 export function RightPanelTabs(props: RightPanelTabsProps) {
   const focusedSurface = props.surfaces.find((surface) => surface.id === props.activeSurfaceId);
-  const ownsDesktopTitleBar = (isElectron || isTauriHost()) && props.mode === "inline";
+  const ownsDesktopTitleBar = (isDesktopHost || isTauriHost()) && props.mode === "inline";
   const browserProfiles = useBrowserDefaults().profiles;
   const { resolvedTheme } = useTheme();
   const reducedMotion = useReducedMotion();

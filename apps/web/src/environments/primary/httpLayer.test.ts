@@ -1,4 +1,4 @@
-import type { DesktopBridge } from "@houston-app/contracts";
+import type { HostBridge } from "@houston-app/contracts";
 import { afterEach, describe, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { HttpClient } from "effect/http";
@@ -42,7 +42,7 @@ describe("primary environment HTTP layer", { concurrent: false }, () => {
       configurable: true,
       value: {
         location: { origin: "houston://app" },
-        desktopBridge: {
+        hostBridge: {
           getLocalEnvironmentBootstrap: () => ({
             label: "Local environment",
             httpBaseUrl: "http://127.0.0.1:3773",
@@ -50,7 +50,7 @@ describe("primary environment HTTP layer", { concurrent: false }, () => {
             bootstrapToken: "desktop-bootstrap-token",
           }),
           getLocalEnvironmentBearerToken: vi.fn().mockResolvedValue("desktop-bearer-token"),
-        } as unknown as DesktopBridge,
+        } as unknown as HostBridge,
       },
     });
 

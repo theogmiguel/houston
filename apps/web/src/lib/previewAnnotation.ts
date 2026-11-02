@@ -9,7 +9,7 @@ export type PreviewAnnotationCapture =
 
 const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
 
-/** Decode Electron's PNG crop locally; fetching a data URL violates desktop connect-src. */
+/** Decode the host's PNG crop locally; fetching a data URL violates desktop connect-src. */
 export function capturePreviewAnnotationScreenshot(
   annotation: PreviewAnnotationPayload,
 ): PreviewAnnotationCapture {

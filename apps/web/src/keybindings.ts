@@ -18,7 +18,7 @@ import {
   type ShortcutEventLike as SharedShortcutEventLike,
   type ShortcutModifierStateLike,
 } from "@houston-app/shared/keybindings";
-import { isElectron } from "./env";
+import { isDesktopHost } from "./env";
 import { isEditableFocused } from "./lib/editableFocus";
 import { projectScriptIdFromCommand } from "./projectScripts";
 
@@ -66,8 +66,8 @@ function resolveContext(options: ShortcutMatchOptions | undefined): ShortcutMatc
     terminalOpen: false,
     previewFocus: false,
     previewOpen: false,
-    isWeb: !isElectron,
-    isDesktop: isElectron,
+    isWeb: !isDesktopHost,
+    isDesktop: isDesktopHost,
     editableFocus: false,
     ...options?.context,
   };

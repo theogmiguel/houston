@@ -37,7 +37,7 @@ import {
 
 import { isCommandPaletteOpen, openCommandPalette } from "../../commandPaletteBus";
 import { requestCustomSnooze } from "../CustomSnoozeDialog";
-import { isElectron } from "../../env";
+import { isDesktopHost } from "../../env";
 import {
   type GridRecord,
   orderedGridsForWorkspace,
@@ -577,7 +577,7 @@ export function GridSidebar() {
 
   return (
     <>
-      <SidebarChromeHeader isElectron={isElectron} />
+      <SidebarChromeHeader isDesktopHost={isDesktopHost} />
       <SidebarHeader>
         <SidebarRailNav
           pullRequestCount={pullRequestCount}

@@ -2,7 +2,7 @@ import type { PullRequestInvolvement, PullRequestListState } from "@houston-app/
 import { Plug2Icon, SearchIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
-import { isElectron } from "~/env";
+import { isDesktopHost } from "~/env";
 import { observeIntersection } from "~/lib/observeIntersection";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
@@ -171,7 +171,7 @@ export function PullRequestsColumn({
       )}
     >
       <WorkspacePageHeader
-        electron={isElectron}
+        desktop={isDesktopHost}
         reserveNativeControls={!rightPanelOpen}
         className="relative bg-background"
       >
