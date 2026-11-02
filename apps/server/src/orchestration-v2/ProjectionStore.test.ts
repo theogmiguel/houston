@@ -1382,7 +1382,7 @@ it.effect("SQL shells read a subagent family and a worktree's threads", () =>
     const store = yield* ProjectionStore.ProjectionStoreV2;
     const now = yield* DateTime.now;
     const projectId = ProjectId.make("project:family");
-    const worktreePath = "/repo/.t3/worktrees/family";
+    const worktreePath = "/repo/.houston/worktrees/family";
     const id = (name: string) => ThreadId.make(`thread:family:${name}`);
     const payloadOf = (input: {
       readonly name: string;
@@ -2012,7 +2012,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           parentCheckpointId: null,
           ordinalWithinScope: 0,
           appRunOrdinal: null,
-          ref: CheckpointRef.make("refs/t3/bounded-sql-history/0"),
+          ref: CheckpointRef.make("refs/houston/bounded-sql-history/0"),
           status: "ready",
           files: [],
           capturedAt: now,

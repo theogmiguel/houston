@@ -162,7 +162,7 @@ function rehypePreserveImageSourceMeta() {
   };
 }
 
-const IMAGE_SRC_PROTOCOLS = [...(defaultSchema.protocols?.src ?? []), "file", "t3-context"];
+const IMAGE_SRC_PROTOCOLS = [...(defaultSchema.protocols?.src ?? []), "file", "houston-context"];
 
 const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
   ...defaultSchema,
@@ -192,8 +192,8 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
     href: [
       ...(defaultSchema.protocols?.href ?? []),
       "file",
-      "t3-citation",
-      "t3-context",
+      "houston-citation",
+      "houston-context",
       THREAD_LINK_PROTOCOL,
     ],
     src: IMAGE_SRC_PROTOCOLS,

@@ -9,10 +9,10 @@ import {
 } from "./mcpExtensionSource.ts";
 import { buildPiRpcLaunch, resolvePiLaunchArgs } from "./mcpInjection.ts";
 
-const threadId = ThreadId.make("thread-pi-t3-mcp");
+const threadId = ThreadId.make("thread-pi-houston-mcp");
 
 const mcpSession = {
-  environmentId: EnvironmentId.make("environment-pi-t3-mcp"),
+  environmentId: EnvironmentId.make("environment-pi-houston-mcp"),
   threadId,
   providerSessionId: "mcp-session-pi",
   providerInstanceId: ProviderInstanceId.make("pi"),

@@ -94,13 +94,13 @@ const V2SubagentGroup = memo(function V2SubagentGroup({
           <ChevronDownIcon
             aria-hidden
             className={cn(
-              "size-3.25 shrink-0 text-(--t3) transition-transform",
+              "size-3.25 shrink-0 text-(--houston) transition-transform",
               !expanded && "-rotate-90",
             )}
           />
           <span className="shrink-0">{summary.label}</span>
           {summary.running === null ? null : (
-            <span className="min-w-0 truncate text-(--t3)">· {summary.running}</span>
+            <span className="min-w-0 truncate text-(--houston)">· {summary.running}</span>
           )}
         </CollapsibleTrigger>
         {/* Virtualized rows must settle before disclosure scroll anchoring resumes. */}

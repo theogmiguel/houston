@@ -549,7 +549,7 @@ const seedRollbackHistory = Effect.gen(function* () {
         parentCheckpointId: null,
         ordinalWithinScope: ordinal,
         appRunOrdinal: ordinal === 0 ? null : ordinal,
-        ref: CheckpointRef.make(`refs/t3/rollback-history/${ordinal}`),
+        ref: CheckpointRef.make(`refs/houston/rollback-history/${ordinal}`),
         status: ordinal === 7 ? "stale" : "ready",
         files: [],
         capturedAt: now,

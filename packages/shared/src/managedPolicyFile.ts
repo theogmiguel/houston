@@ -89,8 +89,8 @@ export const readManagedPolicyFile = Effect.fn("readManagedPolicyFile")(function
 
 /** Where a configuration profile's managed preferences land on macOS. */
 export const MACOS_MANAGED_PREFERENCES_PATH =
-  "/Library/Managed Preferences/com.t3tools.houston.plist";
-const WINDOWS_POLICY_SUBKEY = "SOFTWARE\\Policies\\T3Tools\\Houston";
+  "/Library/Managed Preferences/dev.houston.policy.plist";
+const WINDOWS_POLICY_SUBKEY = "SOFTWARE\\Policies\\Houston";
 /** The registry key Group Policy and Intune write to on Windows; `Policy` holds the JSON. */
 export const WINDOWS_POLICY_KEY = `HKLM\\${WINDOWS_POLICY_SUBKEY}`;
 // An absolute path: an earlier PATH entry could otherwise answer that there is no policy.
@@ -151,10 +151,10 @@ export const layerWindowsRegistry = (loadFfi: () => Promise<typeof import("ffi-r
               throw new Error(`no registry access on ${architecture}`);
             }
             const { DataType, load, open } = await loadFfi();
-            open({ library: "t3-advapi32", path: "advapi32.dll" });
+            open({ library: "houston-advapi32", path: "advapi32.dll" });
             return (subkey: string, value: string, data: Buffer, size: Buffer): number =>
               load({
-                library: "t3-advapi32",
+                library: "houston-advapi32",
                 funcName: "RegGetValueW",
                 retType: DataType.I32,
                 paramsType: [

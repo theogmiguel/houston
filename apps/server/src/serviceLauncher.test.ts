@@ -115,7 +115,7 @@ const writeFakeRuntime = (
   childSource: string,
 ) =>
   Effect.gen(function* () {
-    const entryPath = path.join(versionDir, "t3");
+    const entryPath = path.join(versionDir, "houston");
     yield* fs.makeDirectory(versionDir, { recursive: true });
     yield* fs.writeFileString(entryPath, `#!${process.execPath}\n${childSource}`);
     yield* fs.chmod(entryPath, 0o755);
@@ -173,7 +173,7 @@ it.layer(NodeServices.layer)("service state persistence", (it) => {
       }),
   );
 
-  it.effect("a fresh launcher clears a restart deferred by t3 update", () =>
+  it.effect("a fresh launcher clears a restart deferred by houston update", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;

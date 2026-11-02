@@ -185,7 +185,9 @@ describe("GridHost drag and drop", () => {
 
   it("refuses an edge drop that would add a seventh cell but still allows a centre replace", async () => {
     const onDropThread = vi.fn();
-    await using screen = await mount(row("t1", "t2", "t3", "t4", "t5", "t6"), { onDropThread });
+    await using screen = await mount(row("t1", "t2", "houston", "t4", "t5", "t6"), {
+      onDropThread,
+    });
     const dataTransfer = new DataTransfer();
 
     await act(() => beginThreadDrag({ gridId: "g-other", threadId: "thread-x" }));

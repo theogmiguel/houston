@@ -215,13 +215,13 @@ describe("VcsProcess.run", () => {
     },
     {
       stderr:
-        "fatal: update_ref failed for ref 'refs/t3/checkpoints/x': cannot update ref 'refs/t3/checkpoints/x': couldn't write '/Volumes/share/.git/refs/t3/checkpoints/x.lock'",
+        "fatal: update_ref failed for ref 'refs/houston/checkpoints/x': cannot update ref 'refs/houston/checkpoints/x': couldn't write '/Volumes/share/.git/refs/houston/checkpoints/x.lock'",
       fsyncMethods: ["fsync", "writeout-only"],
     },
     { stderr: "fatal: Operation not supported", fsyncMethods: ["fsync"] },
     {
       stderr:
-        "fatal: update_ref failed for ref 'refs/t3/checkpoints/x': cannot update ref 'refs/t3/checkpoints/x': couldn't write '/Volumes/share/.git/refs/t3/checkpoints/x.lock': Input/output error",
+        "fatal: update_ref failed for ref 'refs/houston/checkpoints/x': cannot update ref 'refs/houston/checkpoints/x': couldn't write '/Volumes/share/.git/refs/houston/checkpoints/x.lock': Input/output error",
       fsyncMethods: ["fsync"],
     },
     {
@@ -245,7 +245,7 @@ describe("VcsProcess.run", () => {
     },
     {
       stderr:
-        "fatal: update_ref failed for ref 'refs/t3/checkpoints/x': cannot update ref 'refs/t3/checkpoints/x': couldn't write '/Volumes/share/.git/refs/t3/checkpoints/x.lock'",
+        "fatal: update_ref failed for ref 'refs/houston/checkpoints/x': cannot update ref 'refs/houston/checkpoints/x': couldn't write '/Volumes/share/.git/refs/houston/checkpoints/x.lock'",
       fsyncMethods: ["batch", "writeout-only"],
     },
   ] as const)(

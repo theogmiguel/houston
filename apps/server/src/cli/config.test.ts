@@ -61,7 +61,7 @@ const makeDesktopBootstrap = (
   mode: "desktop",
   noBrowser: true,
   port: 4888,
-  t3Home: "/tmp/houston-bootstrap-home",
+  houstonHome: "/tmp/houston-bootstrap-home",
   host: "127.0.0.1",
   desktopBootstrapToken: "desktop-bootstrap-token",
   tailscaleServeEnabled: false,
@@ -391,7 +391,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         makeDesktopBootstrap({
           port: 4888,
           host: "127.0.0.2",
-          t3Home: "/tmp/houston-bootstrap-home",
+          houstonHome: "/tmp/houston-bootstrap-home",
           noBrowser: false,
           desktopBootstrapToken: "desktop-token",
           tailscaleServeEnabled: false,
@@ -729,7 +729,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
             ConfigProvider.layer(
               ConfigProvider.fromEnv({
                 env: {
-                  HOUSTON_OTLP_HEADERS: "authorization=Bearer abc==, x-tenant=t3",
+                  HOUSTON_OTLP_HEADERS: "authorization=Bearer abc==, x-tenant=houston",
                   HOUSTON_OTLP_TRACES_URL: "http://collector.internal:4318",
                 },
               }),
@@ -741,7 +741,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
 
       expect(resolved.otlpTracesExport.headers).toEqual({
         authorization: "Bearer abc==",
-        "x-tenant": "t3",
+        "x-tenant": "houston",
       });
       expect(resolved.otlpTracesUrl).toBe("http://collector.internal:4318");
     }),
@@ -800,7 +800,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
               ConfigProvider.layer(
                 ConfigProvider.fromEnv({
                   env: {
-                    HOUSTON_OTLP_TRACES_URL: "http://t3:4318/v1/traces",
+                    HOUSTON_OTLP_TRACES_URL: "http://houston:4318/v1/traces",
                     HOUSTON_OTLP_HEADERS: "x-key=secret",
                     OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://otel-traces:4318/custom",
                     OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://otel-metrics:4318/custom",
@@ -813,7 +813,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           ),
         );
 
-        expect(resolved.otlpTracesUrl).toBe("http://t3:4318/v1/traces");
+        expect(resolved.otlpTracesUrl).toBe("http://houston:4318/v1/traces");
         expect(resolved.otlpTracesExport.headers).toEqual({ "x-key": "secret" });
         expect(resolved.otlpMetricsUrl).toBe("http://otel-metrics:4318/custom");
         expect(resolved.otlpMetricsExport).toEqual({
@@ -865,7 +865,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
               ConfigProvider.layer(
                 ConfigProvider.fromEnv({
                   env: {
-                    HOUSTON_OTLP_TRACES_URL: "http://t3:4318/v1/traces",
+                    HOUSTON_OTLP_TRACES_URL: "http://houston:4318/v1/traces",
                     OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel:4318",
                     OTEL_EXPORTER_OTLP_HEADERS: "x-key=%zz",
                   },
@@ -876,7 +876,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           ),
         );
 
-        expect(resolved.otlpTracesUrl).toBe("http://t3:4318/v1/traces");
+        expect(resolved.otlpTracesUrl).toBe("http://houston:4318/v1/traces");
         expect(resolved.otlpMetricsUrl).toBeUndefined();
         expect(resolved.otlpLogsUrl).toBeUndefined();
       }),

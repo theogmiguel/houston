@@ -10,11 +10,11 @@ import {
   type ThreadId,
 } from "@houston-app/contracts";
 import {
-  resolveT3McpSummaryAction,
-  resolveT3McpToolDefinition,
-  type T3McpToolDefinition,
-  type T3McpToolSummaryAction,
-} from "@houston-app/shared/t3McpToolPresentation";
+  resolveHoustonMcpSummaryAction,
+  resolveHoustonMcpToolDefinition,
+  type HoustonMcpToolDefinition,
+  type HoustonMcpToolSummaryAction,
+} from "@houston-app/shared/houstonMcpToolPresentation";
 import { classifyMarkdownImageSource } from "@houston-app/client-runtime/markdown-images";
 import { resolveMediaSource } from "@houston-app/client-runtime/media-source";
 import { sourceControlClients } from "@houston-app/client-runtime/source-control-clients";
@@ -24,7 +24,7 @@ import { classifyToolActivity } from "@houston-app/shared/toolActivity";
 import { toolOutputIndicatesFailure } from "@houston-app/shared/toolOutput";
 
 import {
-  summarizeT3ToolCalls,
+  summarizeHoustonToolCalls,
   t3ToolResultIndicatesFailure,
   type T3ToolSummaryCall,
 } from "@houston-app/client-runtime/t3ToolSummary";
@@ -141,7 +141,7 @@ function workEntryToolName(
     return `${data.server}.${data.tool}`;
   }
   if (typeof data?.toolName === "string") return data.toolName;
-  return resolveT3McpToolDefinition(entry.toolTitle) ? entry.toolTitle : entry.label;
+  return resolveHoustonMcpToolDefinition(entry.toolTitle) ? entry.toolTitle : entry.label;
 }
 
 function workEntryToolInput(
@@ -164,8 +164,8 @@ function workEntryToolOutput(
     : (data?.output ?? data?.result ?? data?.rawOutput ?? data?.content);
 }
 
-function resolveT3McpToolPresentation(
-  definition: T3McpToolDefinition | null,
+function resolveHoustonMcpToolPresentation(
+  definition: HoustonMcpToolDefinition | null,
   status: string | undefined,
   data?: unknown,
 ) {
@@ -230,12 +230,12 @@ export function resolveWorkEntryToolPresentation(
   >,
   fallbackStatus?: "inProgress" | "completed",
 ) {
-  const definition = resolveT3McpToolDefinition(
+  const definition = resolveHoustonMcpToolDefinition(
     workEntryToolName(entry),
     workEntryToolInput(entry),
   );
   const status = entry.toolLifecycleStatus ?? fallbackStatus;
-  return resolveT3McpToolPresentation(
+  return resolveHoustonMcpToolPresentation(
     definition,
     definition && t3ToolResultIndicatesFailure(workEntryToolOutput(entry)) ? "failed" : status,
     entry.toolData,
@@ -271,7 +271,7 @@ function workEntryIndicatesToolFailureFromOutput(
   // "that exit code 2 is expected" as a failed tool.
   if (!workLogEntryIsToolLike(entry) || entry.itemType === "reasoning") return false;
   if (
-    resolveT3McpToolDefinition(workEntryToolName(entry)) &&
+    resolveHoustonMcpToolDefinition(workEntryToolName(entry)) &&
     t3ToolResultIndicatesFailure(workEntryToolOutput(entry))
   ) {
     return true;
@@ -471,7 +471,7 @@ function t3ToolSummaryCall(entry: WorkLogPresentationEntry): T3ToolSummaryCall {
   };
 }
 
-function summaryActionPriority(action: ToolGroupAction | T3McpToolSummaryAction): number {
+function summaryActionPriority(action: ToolGroupAction | HoustonMcpToolSummaryAction): number {
   switch (action) {
     case "command":
     case "edit":
@@ -527,35 +527,35 @@ export function summarizeToolGroup(entries: ReadonlyArray<WorkLogPresentationEnt
   }
   entries = toolEntries;
   const groups = new Map<
-    ToolGroupAction | T3McpToolSummaryAction,
+    ToolGroupAction | HoustonMcpToolSummaryAction,
     {
       action: ToolGroupAction;
-      t3Action: T3McpToolSummaryAction | null;
+      houstonAction: HoustonMcpToolSummaryAction | null;
       entries: WorkLogPresentationEntry[];
     }
   >();
   const sources = new Map<string, ToolActivitySource>();
   for (const entry of entries) {
-    const t3Action = resolveT3McpSummaryAction(
+    const houstonAction = resolveHoustonMcpSummaryAction(
       workEntryToolName(entry),
       t3ToolSummaryCall(entry).input,
     );
-    if (entry.toolSource && t3Action === null) {
+    if (entry.toolSource && houstonAction === null) {
       sources.set(entry.toolSource.key, entry.toolSource);
       continue;
     }
     const action = toolGroupAction(entry);
-    const key = t3Action ?? action;
+    const key = houstonAction ?? action;
     const group = groups.get(key);
     if (group) group.entries.push(entry);
-    else groups.set(key, { action, t3Action, entries: [entry] });
+    else groups.set(key, { action, houstonAction, entries: [entry] });
   }
   const summaries = [...groups].map(([action, group], index) => ({
     index,
     count: group.entries.length,
     priority: summaryActionPriority(action),
-    ...(group.t3Action
-      ? summarizeT3ToolCalls(group.t3Action, group.entries.map(t3ToolSummaryCall))
+    ...(group.houstonAction
+      ? summarizeHoustonToolCalls(group.houstonAction, group.entries.map(t3ToolSummaryCall))
       : {
           label: toolGroupActionLabel(
             group.action,
@@ -586,7 +586,7 @@ export function summarizeToolGroup(entries: ReadonlyArray<WorkLogPresentationEnt
   const sourcedCount = entries.filter(
     (entry) =>
       entry.toolSource !== undefined &&
-      resolveT3McpToolDefinition(workEntryToolName(entry)) === null,
+      resolveHoustonMcpToolDefinition(workEntryToolName(entry)) === null,
   ).length;
   const remainingCount =
     entries.length - sourcedCount - selected.reduce((count, group) => count + group.count, 0);

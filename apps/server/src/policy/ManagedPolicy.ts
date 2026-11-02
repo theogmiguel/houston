@@ -47,7 +47,7 @@ type LimitsSummary = NonNullable<ManagedPolicySummary["limits"]>;
 
 const encodeDocumentJson = Schema.encodeEffect(Schema.fromJsonString(ManagedPolicyDocument));
 
-/** What `t3 policy show` compares to tell whether a running server loaded the installed policy. */
+/** What `houston policy show` compares to tell whether a running server loaded the installed policy. */
 export const loadedPolicy = Effect.fn("ManagedPolicy.loadedPolicy")(function* (
   policy: Pick<ManagedPolicy["Service"], "path" | "document">,
 ) {

@@ -51,7 +51,7 @@ const readTogether = Effect.fn("OnePasswordDriver.readTogether")(function* (
   references: ReadonlyArray<string>,
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
-  const separator = `__t3-secret-${yield* (yield* Crypto.Crypto).randomUUIDv4()}__`;
+  const separator = `__houston-secret-${yield* (yield* Crypto.Crypto).randomUUIDv4()}__`;
   const templatePath = yield* fileSystem.makeTempFileScoped({ prefix: "houston-op-inject-" });
   yield* fileSystem.writeFileString(
     templatePath,

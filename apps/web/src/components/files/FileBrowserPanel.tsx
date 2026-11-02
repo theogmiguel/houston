@@ -291,7 +291,7 @@ export default function FileBrowserPanel({
       onDragEnd={() => dragMention.handleDragEnd(() => {})}
     >
       <div className="flex shrink-0 items-center gap-1 px-2 pb-1.5 pt-2" data-surface-subheader>
-        <div className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md bg-[var(--field)] px-2 text-[var(--t3)]">
+        <div className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md bg-[var(--field)] px-2 text-[var(--houston)]">
           <Search className="size-[13px] shrink-0" strokeWidth={1.7} aria-hidden />
           <input
             type="search"
@@ -307,7 +307,7 @@ export default function FileBrowserPanel({
               closeSearch();
               event.currentTarget.blur();
             }}
-            className="min-w-0 flex-1 bg-transparent text-xs text-[var(--t1)] outline-none placeholder:text-[var(--t3)] [&::-webkit-search-cancel-button]:hidden"
+            className="min-w-0 flex-1 bg-transparent text-xs text-[var(--t1)] outline-none placeholder:text-[var(--houston)] [&::-webkit-search-cancel-button]:hidden"
           />
           {query.trim() ? null : <Kbd className="shrink-0">Ctrl P</Kbd>}
         </div>

@@ -62,7 +62,7 @@ import {
   summarizeNativeProtocolPayload,
 } from "@houston-app/provider-core/server/nativeProtocolLogging";
 import { mergeProviderInstanceEnvironment } from "@houston-app/provider-core/server/instanceEnvironment";
-import { t3OrchestrationSystemPrompt } from "@houston-app/provider-core/server/orchestrationInstructions";
+import { houstonOrchestrationSystemPrompt } from "@houston-app/provider-core/server/orchestrationInstructions";
 import { buildRuntimeInstructions } from "@houston-app/provider-core/server/runtimeInstructions";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
 import { readableProviderErrorMessage } from "./providerErrorMessage.ts";
@@ -969,12 +969,12 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
         });
 
         const mcpSession = yield* mcpSessions.read(input.threadId);
-        const hasT3Mcp = mcpSession !== undefined && !connection.external;
-        const orchestrationSystemPrompt = t3OrchestrationSystemPrompt(
-          hasT3Mcp,
+        const hasHoustonMcp = mcpSession !== undefined && !connection.external;
+        const orchestrationSystemPrompt = houstonOrchestrationSystemPrompt(
+          hasHoustonMcp,
           mcpSession?.capabilities?.has("device") === true,
         );
-        if (hasT3Mcp) {
+        if (hasHoustonMcp) {
           yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", () =>
             client.mcp.add({
               name: "houston",

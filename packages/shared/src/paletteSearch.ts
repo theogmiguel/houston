@@ -904,9 +904,9 @@ export interface SearchMatchHint {
   readonly ranges: ReadonlyArray<SearchRange>;
 }
 
-// Most threads' branches start with the app's own worktree prefix ("t3/", and
-// "houston/" before it), so "t3 connect" would match nearly every thread.
-// Only before more text, so typing "t3/" does not empty the list for a keystroke.
+// Most threads' branches start with the app's own worktree prefix ("houston/", and
+// "houston/" before it), so "houston connect" would match nearly every thread.
+// Only before more text, so typing "houston/" does not empty the list for a keystroke.
 const WORKTREE_BRANCH_PREFIX_PATTERN = new RegExp(`^(?:${WORKTREE_BRANCH_PREFIX}|houston)/(?=\\S)`);
 
 function searchableBranch(branch: string | null | undefined): string | null {

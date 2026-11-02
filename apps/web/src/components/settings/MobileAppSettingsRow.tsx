@@ -9,7 +9,7 @@ const stores = [
   {
     label: "iPhone and iPad",
     store: "App Store",
-    url: "https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824",
+    url: "https://apps.apple.com/us/app/houston-code-remote-claude-more/id6787819824",
     Icon: AppleIcon,
   },
   {

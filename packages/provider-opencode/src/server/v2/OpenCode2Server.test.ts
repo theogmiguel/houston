@@ -150,12 +150,12 @@ describe("OpenCode2Server error details", () => {
 
 describe("OpenCode2Server passwords", () => {
   it("hands the spawned server only the Houston password", () => {
-    const password = Redacted.make("t3-generated");
+    const password = Redacted.make("houston-generated");
     const environment = OpenCode2Server.serverEnvironment(
       { PATH: "/bin", OPENCODE_SERVER_PASSWORD: "ambient", OPENCODE_PASSWORD: "ambient" },
       password,
     );
-    assert.deepStrictEqual(environment, { PATH: "/bin", OPENCODE_PASSWORD: "t3-generated" });
+    assert.deepStrictEqual(environment, { PATH: "/bin", OPENCODE_PASSWORD: "houston-generated" });
   });
 });
 
@@ -172,7 +172,7 @@ const server = createServer((request, response) => {
 });
 server.listen(0, "127.0.0.1", () => {
   process.stdout.write("server listening on http://127.0.0.1:" + server.address().port + "\\n");
-  process.stdout.write("server password not-the-t3-password\\n");
+  process.stdout.write("server password not-the-houston-password\\n");
 });
 `;
 
@@ -182,7 +182,7 @@ describe("OpenCode2Server spawned server", () => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const platform = yield* HostProcess.Platform;
-      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-opencode2-fake-" });
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "houston-opencode2-fake-" });
       const isWindows = platform === "win32";
       const binaryPath = path.join(directory, isWindows ? "opencode.cmd" : "opencode");
       const scriptPath = path.join(directory, "opencode.mjs");

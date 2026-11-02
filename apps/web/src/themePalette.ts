@@ -13,8 +13,8 @@ import {
   IRIS_THEME,
   OCEAN_THEME,
   BASE_CHAT_THEME,
-  T3_CODE_LIGHT_THEME_COLORS,
-  T3_CODE_DARK_THEME_COLORS,
+  HOUSTON_LIGHT_THEME_COLORS,
+  HOUSTON_DARK_THEME_COLORS,
   RESERVED_THEME_IDS,
   THEME_COLOR_ROLES,
   type ThemeAppearance,
@@ -300,7 +300,7 @@ function environmentThemeDefinition(theme: EnvironmentTheme): ThemeDefinition {
 
 /**
  * Published palettes this client can render. Reserved ids are dropped here rather
- * than rendered: a published `t3-iris.json` would show this palette on its
+ * than rendered: a published `houston-iris.json` would show this palette on its
  * card while "Use" resolved the built-in, and a published `dark.json` would
  * capture everyone whose stored preference is the stock `"dark"`.
  */
@@ -381,10 +381,10 @@ export function subscribeToCustomThemes(listener: () => void): () => void {
 
 const LEGACY_THEME_ID_ALIASES: Readonly<Record<string, string>> = {
   [LEGACY_BASE_CHAT_DARK_THEME_ID]: BASE_CHAT_THEME_ID,
-  "t3-grove": GROVE_THEME_ID,
-  "t3-ocean": OCEAN_THEME_ID,
-  "t3-ember": EMBER_THEME_ID,
-  "t3-iris": IRIS_THEME_ID,
+  "houston-grove": GROVE_THEME_ID,
+  "houston-ocean": OCEAN_THEME_ID,
+  "houston-ember": EMBER_THEME_ID,
+  "houston-iris": IRIS_THEME_ID,
 };
 
 function normalizeThemeId(themeId: string): string {
@@ -431,8 +431,8 @@ const STANDARD_WEB_THEME_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> =
 export function getStandardThemeColors(appearance: ThemeAppearance): ThemeColors {
   const base =
     appearance === "dark"
-      ? (standardDarkThemeColors ??= decodeThemeColors(T3_CODE_DARK_THEME_COLORS))
-      : (standardLightThemeColors ??= decodeThemeColors(T3_CODE_LIGHT_THEME_COLORS));
+      ? (standardDarkThemeColors ??= decodeThemeColors(HOUSTON_DARK_THEME_COLORS))
+      : (standardLightThemeColors ??= decodeThemeColors(HOUSTON_LIGHT_THEME_COLORS));
   return { ...base, ...STANDARD_WEB_THEME_COLORS[appearance] };
 }
 

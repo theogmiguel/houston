@@ -157,10 +157,10 @@
           "ember",
           "iris",
           "t3-chat-dark",
-          "t3-grove",
-          "t3-ocean",
-          "t3-ember",
-          "t3-iris",
+          "houston-grove",
+          "houston-ocean",
+          "houston-ember",
+          "houston-iris",
         ];
         const setThemeColor = (color) => {
           for (const meta of document.querySelectorAll('meta[name="theme-color"]')) {
@@ -236,15 +236,15 @@
           const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
           const LEGACY_THEME_IDS = {
             "t3-chat-dark": "t3-chat",
-            "t3-grove": "grove",
-            "t3-ocean": "ocean",
-            "t3-ember": "ember",
-            "t3-iris": "iris",
+            "houston-grove": "grove",
+            "houston-ocean": "ocean",
+            "houston-ember": "ember",
+            "houston-iris": "iris",
           };
-          const isLegacyT3ChatDark = storedTheme === "t3-chat-dark";
+          const isLegacyChatDark = storedTheme === "t3-chat-dark";
           const themeId =
             storedTheme === null ? "" : (LEGACY_THEME_IDS[storedTheme] ?? storedTheme);
-          const legacyMode = isLegacyT3ChatDark ? "dark" : null;
+          const legacyMode = isLegacyChatDark ? "dark" : null;
           const builtInModes = BUILT_IN_THEME_MODES[themeId] ?? null;
           const customTheme = builtInModes ? null : findCustomTheme(themeId);
           const themeModes =

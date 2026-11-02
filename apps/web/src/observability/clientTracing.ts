@@ -57,7 +57,7 @@ const CLIENT_TRACING_RESOURCE = {
     "service.namespace": "houston",
     "service.instance.id": ClientTracer.serviceInstanceId,
     ...releaseResourceAttributes(RELEASE_CHANNEL),
-    "service.runtime": "t3-web",
+    "service.runtime": "houston-web",
     "houston.client.surface": isDesktopHost ? "desktop" : "web",
     "service.version": APP_VERSION,
     ...browserResourceAttributes(),

@@ -86,7 +86,7 @@ const repositoryIdentity = {
     remoteUrl: "https://github.com/example/houston.git",
   },
   provider: SourceControlProviderKind.make("github"),
-  owner: "t3tools",
+  owner: "houston",
   name: "houston",
   displayName: "Houston",
 };
@@ -330,7 +330,7 @@ describe("buildProjectGroups", () => {
   it("uses the freshest winner's repository identity when stale duplicates disagree", () => {
     const staleIdentity = {
       ...repositoryIdentity,
-      canonicalKey: "github.com/t3tools/old-repository",
+      canonicalKey: "github.com/houston/old-repository",
       name: "old-repository",
       displayName: "Old Repository",
     };
@@ -354,7 +354,7 @@ describe("buildProjectGroups", () => {
   it("uses the freshest identity-bearing duplicate when the winner lacks identity", () => {
     const staleIdentity = {
       ...repositoryIdentity,
-      canonicalKey: "github.com/t3tools/old-repository",
+      canonicalKey: "github.com/houston/old-repository",
       name: "old-repository",
       displayName: "Old Repository",
     };

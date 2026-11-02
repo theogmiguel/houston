@@ -109,8 +109,8 @@ try {
     });
     await context.addInitScript((mode) => {
       try {
-        localStorage.setItem("t3code:theme-appearance-mode", mode);
-        localStorage.setItem("t3code:theme", mode === "dark" ? "graphite" : "paper");
+        localStorage.setItem("houston:theme-appearance-mode", mode);
+        localStorage.setItem("houston:theme", mode === "dark" ? "graphite" : "paper");
       } catch {
         // Private-mode storage failures leave the app on its default theme.
       }
@@ -271,7 +271,7 @@ async function playReplay(page, replay, recorded) {
     return known;
   }
   await openApp(page, "/");
-  const threadId = await page.evaluate((scenario) => window.t3dev.replay(scenario), replay.id);
+  const threadId = await page.evaluate((scenario) => window.houstonDev.replay(scenario), replay.id);
   await page.waitForFunction((id) => window.location.pathname.includes(id), threadId, {
     timeout: 120_000,
   });

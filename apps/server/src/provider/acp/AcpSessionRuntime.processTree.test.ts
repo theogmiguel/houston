@@ -100,7 +100,7 @@ describe("terminatePosixOwnedProcessTree", () => {
       const currentPidSibling = writeSibling(`houston-acp-${process.pid}-bbbb`, "0");
       const liveForeignSibling = writeSibling(`houston-acp-${liveForeignPid}-cccc`, "0");
       const stalePopulated = writeSibling(`houston-acp-${deadPid}-dddd`, "1");
-      const staleLegacyEmpty = writeSibling(`t3-acp-${deadPid}-ffff`, "0");
+      const staleLegacyEmpty = writeSibling(`houston-acp-${deadPid}-ffff`, "0");
       const unrelated = writeSibling("other-lease", "0");
       const isProcessAlive = (pid: number) => pid === process.pid || pid === liveForeignPid;
       try {

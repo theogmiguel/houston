@@ -1,7 +1,7 @@
 import { getResolvedOrResolveTheme, registerCustomTheme, type DiffsTheme } from "@pierre/diffs";
 
 /** pierre-light with every syntax color darkened until it reads on every light code surface. */
-export const READABLE_LIGHT_THEME_NAME = "t3-light";
+export const READABLE_LIGHT_THEME_NAME = "houston-light";
 
 const MIN_CONTRAST = 4.5;
 // The darkest light code surface is a changed word on a deleted line (#f8d3d4, luminance
@@ -42,7 +42,7 @@ type ZedTheme = NonNullable<DiffsTheme["zed"]>;
 const FURTHER_COLORS = new Set(["#1ca1c7", "#636363", "#1a85d4"]);
 const FURTHER_MIN_CONTRAST = 6;
 
-/** The t3-light color for a pierre-light syntax color. */
+/** The houston-light color for a pierre-light syntax color. */
 export function readableSyntaxColor(color: string): string {
   return readableOnLightCode(
     color,

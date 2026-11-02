@@ -22,7 +22,7 @@ it.effect(
       const fs = yield* FileSystem.FileSystem;
       const git = (yield* SourceControlHost.SourceControlHost).process;
       const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-fj-checkout-" });
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "houston-fj-checkout-" });
       const source = path.join(root, "source");
       const cwd = path.join(root, "checkout");
       yield* fs.makeDirectory(source);

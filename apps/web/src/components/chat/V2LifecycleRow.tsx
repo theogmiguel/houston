@@ -499,7 +499,7 @@ function SubagentTimelineLink(props: {
       {open !== null ? (
         <ChevronRightIcon
           aria-hidden
-          className="size-3.25 shrink-0 text-(--t3) transition-colors group-hover/subagent:text-(--t1)"
+          className="size-3.25 shrink-0 text-(--houston) transition-colors group-hover/subagent:text-(--t1)"
         />
       ) : null}
     </>

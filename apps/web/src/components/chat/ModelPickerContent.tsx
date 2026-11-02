@@ -930,12 +930,12 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           }}
         >
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="mx-1.5 mt-1.5 mb-1 flex h-7 shrink-0 items-center gap-1.75 rounded-md bg-(--field) px-2 text-(--t3)">
+            <div className="mx-1.5 mt-1.5 mb-1 flex h-7 shrink-0 items-center gap-1.75 rounded-md bg-(--field) px-2 text-(--houston)">
               <SearchIcon aria-hidden="true" className="size-3.25 shrink-0" />
               <ComboboxPrimitive.Input
                 ref={searchInputRef}
                 placeholder={onToggleModel ? "Search models · Shift click adds" : "Search models"}
-                className="h-5 min-w-0 flex-1 bg-transparent p-0 text-(--t1) text-xs leading-5 outline-none placeholder:text-(--t3)"
+                className="h-5 min-w-0 flex-1 bg-transparent p-0 text-(--t1) text-xs leading-5 outline-none placeholder:text-(--houston)"
                 value={searchQuery}
                 onChange={(e) => {
                   if (!isSearching) setSearchHeight(pickerContentRef.current?.offsetHeight ?? 0);
@@ -1018,7 +1018,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                       className="group w-full cursor-pointer"
                       data-model-picker-legacy-section="true"
                     >
-                      <div className="flex h-7 min-w-0 flex-1 items-center gap-1.5 px-2 text-(--t3) text-xs">
+                      <div className="flex h-7 min-w-0 flex-1 items-center gap-1.5 px-2 text-(--houston) text-xs">
                         <ChevronDownIcon
                           aria-hidden="true"
                           className={cn(
@@ -1088,7 +1088,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             {onToggleModel && selectedModelKeySet.size > 1 ? (
               <div
                 data-model-picker-selection-footer="true"
-                className="mx-1.5 mb-1.5 flex items-center gap-2 border-t border-border px-1 pt-1.5 pb-0.5 text-(--t3) text-xs"
+                className="mx-1.5 mb-1.5 flex items-center gap-2 border-t border-border px-1 pt-1.5 pb-0.5 text-(--houston) text-xs"
               >
                 <span className="flex-1" data-model-picker-selection-count="true">
                   {selectedModelKeySet.size} models selected

@@ -1716,7 +1716,7 @@ export function PullRequestDetailPanel({
             ) : null}
             <button
               type="button"
-              className="ml-auto inline-flex shrink-0 items-center gap-1 text-xs text-[var(--t3)] underline-offset-2 hover:text-[var(--t1)] hover:underline"
+              className="ml-auto inline-flex shrink-0 items-center gap-1 text-xs text-[var(--houston)] underline-offset-2 hover:text-[var(--t1)] hover:underline"
               onClick={() => void readLocalApi()?.shell.openExternal(detail.url)}
             >
               {openOnHostText}

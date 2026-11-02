@@ -212,7 +212,7 @@ const make = Effect.gen(function* () {
         ),
       );
     // FETCH_HEAD is workspace-global; isolate this run's base from concurrent fetches.
-    const baseRef = `refs/t3/review-guide/${runId}/base`;
+    const baseRef = `refs/houston/review-guide/${runId}/base`;
     yield* fetch([`+refs/heads/${detail.baseBranch}:${baseRef}`]);
     yield* Effect.addFinalizer(() =>
       git

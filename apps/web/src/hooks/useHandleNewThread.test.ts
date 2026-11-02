@@ -201,8 +201,8 @@ vi.mock("../lib/chatThreadActions", async (importOriginal) => ({
   resolveNewThreadModelSelectionOverride: () => null,
 }));
 vi.mock("../providerInstances", () => ({ resolveDefaultProviderModelSelection: () => null }));
-vi.mock("../lib/t3ProjectFileDefaults", () => ({
-  readT3ProjectFile: () => testState.projectFileRead,
+vi.mock("../lib/houstonProjectFileDefaults", () => ({
+  readHoustonProjectFile: () => testState.projectFileRead,
 }));
 vi.mock("../lib/utils", () => ({
   newDraftId: () => "draft-delayed",

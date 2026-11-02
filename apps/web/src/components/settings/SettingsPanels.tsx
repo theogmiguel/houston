@@ -31,7 +31,7 @@ import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
 import { MobileAppSettingsRow } from "./MobileAppSettingsRow";
 import { openDesktopUpdateReleaseNotes } from "../desktopUpdate.toast";
 import { getDesktopUpdateReleaseUrl } from "../desktopUpdate.logic";
-import { T3AppIcon } from "../T3AppIcon";
+import { HoustonAppIcon } from "../HoustonAppIcon";
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
@@ -161,7 +161,7 @@ function AboutVersionTitle() {
   });
   return (
     <span className="inline-flex items-center gap-2">
-      <T3AppIcon className="size-8 shrink-0 rounded-md" />
+      <HoustonAppIcon className="size-8 shrink-0 rounded-md" />
       <span className="inline-flex items-baseline gap-1.5">
         Houston
         <Tooltip>

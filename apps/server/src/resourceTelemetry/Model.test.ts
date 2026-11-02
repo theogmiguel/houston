@@ -136,7 +136,7 @@ describe("resource telemetry process model", () => {
     expect(result.groups.backend.processCount).toBe(4);
     expect(result.groups.monitor.processCount).toBe(1);
     expect(result.groups.monitor.processStarts).toBe(1);
-    expect(result.groups.allT3.processStarts).toBe(5);
+    expect(result.groups.allHouston.processStarts).toBe(5);
   });
 
   it("deduplicates Electron metrics and classifies Electron descendants", () => {
@@ -232,8 +232,8 @@ describe("resource telemetry process model", () => {
       processStarts: 2,
     });
     expect(result.groups.monitor.processCount).toBe(1);
-    expect(result.groups.allT3.currentCpuPercent).toBe(511);
-    expect(result.groups.allT3.currentRssBytes).toBe(6_144);
+    expect(result.groups.allHouston.currentCpuPercent).toBe(511);
+    expect(result.groups.allHouston.currentRssBytes).toBe(6_144);
   });
 
   it("ignores stale Electron metrics after PID reuse", () => {

@@ -238,7 +238,7 @@ describe("houston app", () => {
                     else process.env.TMPDIR = previousTmpdir;
                   }),
               );
-              const baseDir = NodePath.join(root, ".t3");
+              const baseDir = NodePath.join(root, ".houston");
               const userId = yield* HostProcess.UserId;
               assert(userId !== undefined);
               const expectedUserId =

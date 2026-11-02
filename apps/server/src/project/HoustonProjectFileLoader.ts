@@ -6,10 +6,10 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
-import { T3_PROJECT_FILE_NAME, type T3ProjectFile } from "@houston-app/contracts";
-import { T3ProjectFileFromJson } from "@houston-app/shared/t3ProjectFile";
+import { HOUSTON_PROJECT_FILE_NAME, type HoustonProjectFile } from "@houston-app/contracts";
+import { HoustonProjectFileFromJson } from "@houston-app/shared/houstonProjectFile";
 
-const decodeHoustonProjectFileJson = Schema.decodeEffect(T3ProjectFileFromJson);
+const decodeHoustonProjectFileJson = Schema.decodeEffect(HoustonProjectFileFromJson);
 
 export class HoustonProjectFileLoadError extends Schema.TaggedError<HoustonProjectFileLoadError>()(
   "HoustonProjectFileLoadError",
@@ -21,7 +21,7 @@ export class HoustonProjectFileLoadError extends Schema.TaggedError<HoustonProje
   },
 ) {
   override get message(): string {
-    return `Failed to ${this.operation} ${T3_PROJECT_FILE_NAME} at ${this.filePath}.`;
+    return `Failed to ${this.operation} ${HOUSTON_PROJECT_FILE_NAME} at ${this.filePath}.`;
   }
 }
 
@@ -29,7 +29,7 @@ export class HoustonProjectFileLoader extends Context.Service<
   HoustonProjectFileLoader,
   {
     /** Never fails; missing/unreadable/invalid files return none, with warnings for invalid files. */
-    readonly load: (workspaceRoot: string) => Effect.Effect<Option.Option<T3ProjectFile>>;
+    readonly load: (workspaceRoot: string) => Effect.Effect<Option.Option<HoustonProjectFile>>;
   }
 >()("@houston-app/cli/project/HoustonProjectFileLoader") {}
 
@@ -51,7 +51,7 @@ export const make = Effect.gen(function* () {
   const load: HoustonProjectFileLoader["Service"]["load"] = Effect.fn(
     "HoustonProjectFileLoader.load",
   )(function* (workspaceRoot) {
-    const filePath = path.join(workspaceRoot, T3_PROJECT_FILE_NAME);
+    const filePath = path.join(workspaceRoot, HOUSTON_PROJECT_FILE_NAME);
     const raw = yield* fileSystem.readFileString(filePath).pipe(
       Effect.asSome,
       Effect.catchTags({
@@ -69,7 +69,7 @@ export const make = Effect.gen(function* () {
       }),
     );
     if (Option.isNone(raw)) {
-      return Option.none<T3ProjectFile>();
+      return Option.none<HoustonProjectFile>();
     }
     return yield* decodeHoustonProjectFileJson(raw.value).pipe(
       Effect.asSome,
@@ -82,7 +82,7 @@ export const make = Effect.gen(function* () {
               filePath,
               cause: error,
             }),
-          ).pipe(Effect.as(Option.none<T3ProjectFile>())),
+          ).pipe(Effect.as(Option.none<HoustonProjectFile>())),
       }),
     );
   });

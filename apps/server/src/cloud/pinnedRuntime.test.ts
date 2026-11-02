@@ -381,8 +381,11 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
       yield* fs.makeDirectory(binDir);
       yield* fs.makeDirectory(customBinDir);
       // Chained: the launcher reaches its runtime through a second link.
-      yield* fs.symlink(path.join(versionsDir, "1.2.0", "houston"), path.join(baseDir, "alias-t3"));
-      yield* fs.symlink(path.join(baseDir, "alias-t3"), path.join(binDir, "houston"));
+      yield* fs.symlink(
+        path.join(versionsDir, "1.2.0", "houston"),
+        path.join(baseDir, "alias-houston"),
+      );
+      yield* fs.symlink(path.join(baseDir, "alias-houston"), path.join(binDir, "houston"));
       yield* fs.symlink(
         path.join(versionsDir, "1.2.5", "houston"),
         path.join(customBinDir, "houston"),

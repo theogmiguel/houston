@@ -460,13 +460,13 @@ describe("pull request list answers across a reload", () => {
 
   it("removes the composite snapshots it replaced", () => {
     const storage = makeStorage();
-    storage.held.set("t3.pullRequests.list:env-local,env-remote", "{}");
-    storage.held.set("t3.pullRequests.list:env-local", "{}");
-    storage.held.set("t3.other", "kept");
+    storage.held.set("houston.pullRequests.list:env-local,env-remote", "{}");
+    storage.held.set("houston.pullRequests.list:env-local", "{}");
+    storage.held.set("houston.other", "kept");
     rememberPullRequestListAnswer(storage, { environmentId: local, input }, answer([]));
     expect(
-      [...storage.held.keys()].filter((key) => key.startsWith("t3.pullRequests.list:")),
+      [...storage.held.keys()].filter((key) => key.startsWith("houston.pullRequests.list:")),
     ).toEqual([]);
-    expect(storage.held.get("t3.other")).toBe("kept");
+    expect(storage.held.get("houston.other")).toBe("kept");
   });
 });

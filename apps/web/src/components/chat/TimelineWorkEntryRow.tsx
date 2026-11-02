@@ -480,7 +480,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               ) : toolParts ? (
                 <span className="flex min-w-0 items-baseline gap-2">
                   <span className="shrink-0 text-body text-(--t2)">{toolParts.action}</span>
-                  <span className="min-w-0 truncate font-mono text-mono text-(--t3)">
+                  <span className="min-w-0 truncate font-mono text-mono text-(--houston)">
                     {toolParts.value}
                   </span>
                 </span>
@@ -508,7 +508,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       trailing={
         <>
           {toolParts?.additions !== undefined || toolParts?.deletions !== undefined ? (
-            <span className="shrink-0 text-callout text-(--t3) tabular-nums">
+            <span className="shrink-0 text-callout text-(--houston) tabular-nums">
               {toolParts.additions ? (
                 <span className="text-(--ok-ink)">+{toolParts.additions}</span>
               ) : null}
@@ -519,7 +519,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             </span>
           ) : null}
           {toolParts?.results !== undefined ? (
-            <span className="shrink-0 text-callout text-(--t3) tabular-nums">
+            <span className="shrink-0 text-callout text-(--houston) tabular-nums">
               {toolParts.results} {toolParts.results === 1 ? "result" : "results"}
             </span>
           ) : null}
@@ -527,7 +527,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             <span
               className={cn(
                 "flex shrink-0 items-center gap-1 text-callout tabular-nums",
-                toolParts.exitCode === 0 ? "text-(--t3)" : "text-(--stop-ink)",
+                toolParts.exitCode === 0 ? "text-(--houston)" : "text-(--stop-ink)",
               )}
             >
               {toolParts.exitCode === 0 ? (

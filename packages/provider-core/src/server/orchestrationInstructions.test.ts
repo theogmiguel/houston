@@ -1,32 +1,32 @@
 import { assert, describe, it } from "@effect/vitest";
 
 import {
-  T3_CODE_DEVICE_TOOL_INSTRUCTIONS,
-  T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH,
-  T3_CODE_ORCHESTRATION_INSTRUCTIONS,
-  t3AcpPromptWithInstructions,
-  t3OrchestrationPrompt,
-  t3OrchestrationSystemPrompt,
+  HOUSTON_DEVICE_TOOL_INSTRUCTIONS,
+  HOUSTON_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH,
+  HOUSTON_ORCHESTRATION_INSTRUCTIONS,
+  houstonAcpPromptWithInstructions,
+  houstonOrchestrationPrompt,
+  houstonOrchestrationSystemPrompt,
 } from "./orchestrationInstructions.ts";
 
 describe("Houston device instructions", () => {
   it("route device work through device_open and give Claude the line that loads the tools", () => {
     for (const intent of ["`device_list`", "`device_open`", "`agent-device`", "ssh", "`hostId`"]) {
-      assert.include(T3_CODE_DEVICE_TOOL_INSTRUCTIONS, intent);
+      assert.include(HOUSTON_DEVICE_TOOL_INSTRUCTIONS, intent);
     }
-    assert.notInclude(T3_CODE_DEVICE_TOOL_INSTRUCTIONS, "ToolSearch");
+    assert.notInclude(HOUSTON_DEVICE_TOOL_INSTRUCTIONS, "ToolSearch");
     const loadLine =
       " Load them with ToolSearch `select:mcp__houston__device_list,mcp__houston__device_open,mcp__houston__device_screenshot,mcp__houston__device_close`.";
-    assert.include(T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH, loadLine);
+    assert.include(HOUSTON_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH, loadLine);
     assert.equal(
-      T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH.replace(loadLine, ""),
-      T3_CODE_DEVICE_TOOL_INSTRUCTIONS,
+      HOUSTON_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH.replace(loadLine, ""),
+      HOUSTON_DEVICE_TOOL_INSTRUCTIONS,
     );
   });
 
   it("open the app before the returned command's snapshots, screenshots and input", () => {
     assert.include(
-      T3_CODE_DEVICE_TOOL_INSTRUCTIONS,
+      HOUSTON_DEVICE_TOOL_INSTRUCTIONS,
       "its snapshots, screenshots and input need `open <app>` first,",
     );
   });
@@ -34,52 +34,59 @@ describe("Houston device instructions", () => {
   it("keep the failure rule from taking over or closing a session another thread holds", () => {
     // agent-device's DEVICE_IN_USE advice is to rerun with the owner's --session or close it first.
     assert.include(
-      T3_CODE_DEVICE_TOOL_INSTRUCTIONS,
+      HOUSTON_DEVICE_TOOL_INSTRUCTIONS,
       "follow its advice once, but never reuse or close another session; if it still fails,",
     );
   });
 
   it("reach OpenCode and Cursor only when the session holds device access", () => {
-    assert.include(t3OrchestrationSystemPrompt(true, true), T3_CODE_DEVICE_TOOL_INSTRUCTIONS);
-    assert.notInclude(t3OrchestrationSystemPrompt(true, false), "## Houston devices");
-    assert.isUndefined(t3OrchestrationSystemPrompt(false, true));
+    assert.include(houstonOrchestrationSystemPrompt(true, true), HOUSTON_DEVICE_TOOL_INSTRUCTIONS);
+    assert.notInclude(houstonOrchestrationSystemPrompt(true, false), "## Houston devices");
+    assert.isUndefined(houstonOrchestrationSystemPrompt(false, true));
 
     const firstRun = (hasDeviceTools: boolean) =>
-      t3OrchestrationPrompt({
+      houstonOrchestrationPrompt({
         prompt: "Check the login screen.",
-        hasT3Mcp: true,
+        hasHoustonMcp: true,
         hasDeviceTools,
         orchestrationDelivered: false,
         deviceInstructionsDelivered: false,
       });
-    assert.include(firstRun(true), T3_CODE_DEVICE_TOOL_INSTRUCTIONS);
+    assert.include(firstRun(true), HOUSTON_DEVICE_TOOL_INSTRUCTIONS);
     assert.notInclude(firstRun(false), "## Houston devices");
 
     const laterRun = (deviceInstructionsDelivered: boolean) =>
-      t3OrchestrationPrompt({
+      houstonOrchestrationPrompt({
         prompt: "Check the login screen.",
-        hasT3Mcp: true,
+        hasHoustonMcp: true,
         hasDeviceTools: true,
         orchestrationDelivered: true,
         deviceInstructionsDelivered,
       });
-    assert.include(laterRun(false), T3_CODE_DEVICE_TOOL_INSTRUCTIONS);
-    assert.notInclude(laterRun(false), T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim());
+    assert.include(laterRun(false), HOUSTON_DEVICE_TOOL_INSTRUCTIONS);
+    assert.notInclude(laterRun(false), HOUSTON_ORCHESTRATION_INSTRUCTIONS.trim());
     assert.equal(laterRun(true), "Check the login screen.");
   });
 
   it("reach ACP agents again when device access changes mid-thread", () => {
-    const state = { interactionMode: "default", hasT3Mcp: true, hasDeviceTools: false } as const;
-    const withDevices = t3AcpPromptWithInstructions({
+    const state = {
+      interactionMode: "default",
+      hasHoustonMcp: true,
+      hasDeviceTools: false,
+    } as const;
+    const withDevices = houstonAcpPromptWithInstructions({
       prompt: "Check the login screen.",
       state: { ...state, hasDeviceTools: true },
       previousState: state,
     });
-    assert.include(withDevices, T3_CODE_DEVICE_TOOL_INSTRUCTIONS);
+    assert.include(withDevices, HOUSTON_DEVICE_TOOL_INSTRUCTIONS);
     assert.equal(
-      t3AcpPromptWithInstructions({ prompt: "Again.", state, previousState: state }),
+      houstonAcpPromptWithInstructions({ prompt: "Again.", state, previousState: state }),
       "Again.",
     );
-    assert.notInclude(t3AcpPromptWithInstructions({ prompt: "Hi.", state }), "## Houston devices");
+    assert.notInclude(
+      houstonAcpPromptWithInstructions({ prompt: "Hi.", state }),
+      "## Houston devices",
+    );
   });
 });

@@ -34,7 +34,7 @@ my @rules = (
     'no dates in comments; git blame has them' ],
   [ 'phase',   qr/(?:\b(?:phase|wave|charter|batch|round)\s*\d|\bstep\s+\d+[a-z]?\b|\bitem\s+\d+\b|§)/i,
     'no plan/phase/step numbering; describe the behaviour, not the roadmap' ],
-  [ 'product', qr/\b(?:bridgemind|bridge-mind|bm1|t3 ?code|orca|herdr|overclock)\b/i,
+  [ 'product', qr/\b(?:bridgemind|bridge-mind|bm1|houston ?code|orca|herdr|overclock)\b/i,
     'no other app names; keep the value, drop the provenance' ],
   [ 'person',  qr/\bTheo\b/i,
     'no person in a comment; state the rule the code keeps' ],

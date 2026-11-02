@@ -1683,14 +1683,14 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           className="flex h-7 min-w-0 flex-1 cursor-pointer select-none items-center gap-2 rounded-(--r-ctl) px-2 text-left text-body text-(--t2) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
         >
           <MorphIcon
-            className="size-3.5 shrink-0 text-(--t3)"
+            className="size-3.5 shrink-0 text-(--houston)"
             icon={row.expanded ? ChevronDown : ChevronRight}
           />
           <span className="shrink-0">{row.label}</span>
           {row.summary ? (
-            <span className="min-w-0 truncate text-callout text-(--t3)">· {row.summary}</span>
+            <span className="min-w-0 truncate text-callout text-(--houston)">· {row.summary}</span>
           ) : null}
-          {error ? <span className="shrink-0 text-callout text-(--t3)">· {error}</span> : null}
+          {error ? <span className="shrink-0 text-callout text-(--houston)">· {error}</span> : null}
         </button>
         <TimelineRowTimestamp
           createdAt={row.createdAt}

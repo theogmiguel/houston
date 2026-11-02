@@ -130,7 +130,9 @@ it.layer(layerTest)("GrokDriver", (it) => {
       return Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        prefix = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: "t3-grok-brew-" }));
+        prefix = yield* fs.realPath(
+          yield* fs.makeTempDirectoryScoped({ prefix: "houston-grok-brew-" }),
+        );
         const brewPath = path.join(prefix, "bin", "brew");
         const binaryPath = path.join(prefix, ...testCase.binary);
         for (const executable of [brewPath, binaryPath]) {
@@ -176,7 +178,7 @@ it.layer(layerTest)("GrokDriver", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-grok-missing-" });
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-grok-missing-" });
       const instance = yield* GrokDriver.create({
         instanceId: ProviderInstanceId.make("grok-missing"),
         displayName: "Grok test",

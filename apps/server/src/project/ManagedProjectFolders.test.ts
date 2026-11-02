@@ -117,7 +117,7 @@ it.effect("offers nothing when the data dir sits inside a Git checkout", () =>
     const path = yield* Path.Path;
     const checkout = yield* fileSystem.makeTempDirectoryScoped({ prefix: "houston-scratch-repo-" });
     yield* git(checkout, ["init", "--quiet"]);
-    const baseDir = path.join(checkout, ".t3");
+    const baseDir = path.join(checkout, ".houston");
     yield* fileSystem.makeDirectory(baseDir);
     yield* Effect.gen(function* () {
       const scratch = yield* ManagedProjectFolders.ManagedProjectFolders;

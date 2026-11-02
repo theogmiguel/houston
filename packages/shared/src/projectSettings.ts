@@ -9,7 +9,7 @@ import {
   resolveProjectProviderInstanceEnabled,
   type ResolvedServerSettings,
   type ServerSettings,
-  type T3ProjectFile,
+  type HoustonProjectFile,
   type ThreadEnvMode,
   type WorktreeCleanupRules,
 } from "@houston-app/contracts";
@@ -59,13 +59,13 @@ export function resolveProjectSettings(
   settings: ServerSettings,
   projectId: ProjectId | null,
   project: LegacyProjectSettingsFields | null | undefined,
-  projectFile: T3ProjectFile | null,
+  projectFile: HoustonProjectFile | null,
 ): ResolvedProjectSettings<ResolvedServerSettings>;
 export function resolveProjectSettings(
   settings: ServerSettings,
   projectId: ProjectId | null,
   project?: LegacyProjectSettingsFields | null,
-  projectFile?: T3ProjectFile | null,
+  projectFile?: HoustonProjectFile | null,
 ): ResolvedProjectSettings {
   const resolved = resolveProjectOverrides(settings, projectId, project);
   return projectFile === undefined ? resolved : applyProjectFile(resolved, projectFile);
@@ -73,7 +73,7 @@ export function resolveProjectSettings(
 
 function applyProjectFile(
   resolved: ResolvedProjectSettings,
-  projectFile: T3ProjectFile | null,
+  projectFile: HoustonProjectFile | null,
 ): ResolvedProjectSettings {
   let effective: Record<string, unknown> | null = null;
   let sources: Record<ProjectScopedServerSettingKey, ProjectSettingSource> | null = null;
@@ -93,7 +93,7 @@ function applyProjectFile(
 export function resolveProjectFileBackedSetting<K extends ProjectFileBackedSettingKey>(
   key: K,
   setting: ServerSettings[K],
-  projectFile: T3ProjectFile | null,
+  projectFile: HoustonProjectFile | null,
 ): { value: ResolvedServerSettings[K]; source: ProjectSettingSource } {
   if (setting !== null) {
     return { value: setting as ResolvedServerSettings[K], source: "environment" };

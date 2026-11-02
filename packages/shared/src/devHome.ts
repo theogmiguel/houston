@@ -1,4 +1,4 @@
-/** Worktrees use isolated .t3 state; ambient HOUSTON_HOME could otherwise select the live userdata database. */
+/** Worktrees use isolated .houston-worktree state; ambient HOUSTON_HOME could otherwise select the live userdata database. */
 
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -54,13 +54,15 @@ export const resolveGitWorktreePath = Effect.fn("devHome.resolveGitWorktreePath"
  * Deliberately does not require the directory to exist yet: falling back
  * because it is missing would send callers at the shared home.
  */
-export const resolveWorktreeT3Home = Effect.fn("devHome.resolveWorktreeT3Home")(function* (
-  cwd: string,
-): Effect.fn.Return<string | undefined, never, FileSystem.FileSystem | Path.Path> {
-  const worktreePath = yield* resolveGitWorktreePath(cwd);
-  if (worktreePath === undefined) {
-    return undefined;
-  }
-  const path = yield* Path.Path;
-  return path.join(worktreePath, ".t3");
-});
+export const resolveWorktreeHoustonHome = Effect.fn("devHome.resolveWorktreeHoustonHome")(
+  function* (
+    cwd: string,
+  ): Effect.fn.Return<string | undefined, never, FileSystem.FileSystem | Path.Path> {
+    const worktreePath = yield* resolveGitWorktreePath(cwd);
+    if (worktreePath === undefined) {
+      return undefined;
+    }
+    const path = yield* Path.Path;
+    return path.join(worktreePath, ".houston-worktree");
+  },
+);

@@ -9,7 +9,13 @@ import {
   PictureInPicture2,
   RotateCw,
 } from "lucide-react";
-import { type FormEvent, type KeyboardEvent, type ReactNode, type RefObject, useState } from "react";
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+  useState,
+} from "react";
 
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
@@ -111,7 +117,7 @@ export function PreviewChromeRow({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-7 text-[var(--t3)]"
+                  className="size-7 text-[var(--houston)]"
                   onClick={canGoBack ? onBack : NOOP}
                   disabled={!canGoBack}
                   aria-label="Back"
@@ -129,7 +135,7 @@ export function PreviewChromeRow({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-7 text-[var(--t3)]"
+                  className="size-7 text-[var(--houston)]"
                   onClick={canGoForward ? onForward : NOOP}
                   disabled={!canGoForward}
                   aria-label="Forward"
@@ -147,7 +153,7 @@ export function PreviewChromeRow({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-7 text-[var(--t3)]"
+                  className="size-7 text-[var(--houston)]"
                   onClick={refreshDisabled ? NOOP : onRefresh}
                   disabled={refreshDisabled}
                   aria-label={loading ? "Stop" : "Reload"}
@@ -170,7 +176,7 @@ export function PreviewChromeRow({
         <div className="relative mx-1 flex h-7 min-w-0 flex-1 items-center rounded-md bg-[var(--field)] px-2.5 font-mono text-xs">
           {showParts ? (
             <span aria-hidden className="pointer-events-none flex min-w-0 items-center truncate">
-              <span className="shrink-0 text-[var(--t3)]">{parts.host}</span>
+              <span className="shrink-0 text-[var(--houston)]">{parts.host}</span>
               <span className="truncate text-[var(--t1)]">{parts.path}</span>
             </span>
           ) : null}
@@ -199,7 +205,7 @@ export function PreviewChromeRow({
             disabled={inputDisabled}
             data-preview-url-input
             className={cn(
-              "absolute inset-0 h-full w-full rounded-md bg-transparent px-2.5 font-mono text-xs text-[var(--t1)] outline-none placeholder:text-[var(--t3)]",
+              "absolute inset-0 h-full w-full rounded-md bg-transparent px-2.5 font-mono text-xs text-[var(--t1)] outline-none placeholder:text-[var(--houston)]",
               showParts && "text-transparent caret-transparent selection:bg-transparent",
             )}
           />
@@ -212,7 +218,7 @@ export function PreviewChromeRow({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-7 text-[var(--t3)]"
+                  className="size-7 text-[var(--houston)]"
                   onClick={onOpenInBrowser}
                   aria-label="Open in system browser"
                   type="button"
@@ -231,7 +237,7 @@ export function PreviewChromeRow({
                 <Button
                   variant={deviceSizeActive ? "secondary" : "ghost"}
                   size="icon"
-                  className="size-7 text-[var(--t3)]"
+                  className="size-7 text-[var(--houston)]"
                   onClick={onDeviceSize}
                   aria-label="Device size"
                   aria-pressed={deviceSizeActive ? "true" : "false"}
@@ -251,7 +257,7 @@ export function PreviewChromeRow({
                 <Button
                   variant={pickActive ? "secondary" : "ghost"}
                   size="icon"
-                  className="size-7 text-[var(--t3)]"
+                  className="size-7 text-[var(--houston)]"
                   onClick={onPickElement}
                   disabled={pickDisabled}
                   aria-label={pickActive ? "Cancel annotation" : "Annotate preview"}
@@ -260,7 +266,10 @@ export function PreviewChromeRow({
                 />
               }
             >
-              <Crosshair className={cn("size-[15px]", pickActive && "text-[var(--t1)]")} strokeWidth={1.7} />
+              <Crosshair
+                className={cn("size-[15px]", pickActive && "text-[var(--t1)]")}
+                strokeWidth={1.7}
+              />
             </TooltipTrigger>
             <TooltipPopup>
               {pickDisabled && pickDisabledReason
@@ -278,7 +287,7 @@ export function PreviewChromeRow({
                 <Button
                   variant={recording ? "secondary" : "ghost"}
                   size="icon"
-                  className="relative size-7 text-[var(--t3)]"
+                  className="relative size-7 text-[var(--houston)]"
                   onClick={(event) => onCapture(event.shiftKey)}
                   aria-label={recording ? "Stop recording" : "Capture screenshot"}
                   type="button"
@@ -303,9 +312,11 @@ export function PreviewChromeRow({
                 <Button
                   variant={pictureInPicture ? "secondary" : "ghost"}
                   size="icon"
-                  className="size-7 text-[var(--t3)]"
+                  className="size-7 text-[var(--houston)]"
                   onClick={onPictureInPicture}
-                  aria-label={pictureInPicture ? "Close floating preview" : "Float preview over chat"}
+                  aria-label={
+                    pictureInPicture ? "Close floating preview" : "Float preview over chat"
+                  }
                   aria-pressed={pictureInPicture ? "true" : "false"}
                   type="button"
                   disabled={pictureInPictureDisabled}

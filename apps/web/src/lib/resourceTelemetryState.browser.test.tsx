@@ -94,7 +94,7 @@ function setup({ retryFails = false, holdRetry = false } = {}) {
     readAt,
     sampleIntervalMs: 1000,
     processes: [],
-    groups: { backend: aggregate, electron: aggregate, monitor: aggregate, allT3: aggregate },
+    groups: { backend: aggregate, electron: aggregate, monitor: aggregate, allHouston: aggregate },
     power: {
       source: "unknown",
       idle: "unknown",

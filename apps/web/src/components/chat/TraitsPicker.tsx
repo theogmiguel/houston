@@ -340,7 +340,7 @@ export interface TraitsMenuContentProps {
 }
 
 const TRAITS_SECTION_HEADER =
-  "flex items-center px-2 pt-1.5 pb-0.5 text-2xs font-semibold text-(--t3)";
+  "flex items-center px-2 pt-1.5 pb-0.5 text-2xs font-semibold text-(--houston)";
 
 function TraitsSectionHeader(props: { label: string; shortcut?: string | null | undefined }) {
   return (
@@ -366,7 +366,7 @@ function TraitsToggleRow(props: {
       className="grid h-7.5 min-h-0 cursor-pointer grid-cols-[1fr_auto] items-center gap-4 rounded-sm px-2 pe-2 text-(--t1) text-headline outline-none data-disabled:cursor-not-allowed data-disabled:opacity-64 data-highlighted:bg-(--sel)"
     >
       <span className="flex min-w-0 items-center gap-2">
-        <span className="flex size-3.5 shrink-0 items-center justify-center text-(--t3)">
+        <span className="flex size-3.5 shrink-0 items-center justify-center text-(--houston)">
           {props.icon}
         </span>
         <span className="min-w-0 truncate">{props.label}</span>
@@ -400,13 +400,13 @@ function TraitsValueRow(props: {
         className="flex h-7.5 min-h-0 cursor-pointer items-center gap-2 rounded-sm px-2 text-(--t1) text-headline outline-none data-disabled:cursor-not-allowed data-disabled:opacity-64 data-highlighted:bg-(--sel) data-popup-open:bg-(--sel)"
       >
         {props.icon ? (
-          <span className="flex size-3.5 shrink-0 items-center justify-center text-(--t3)">
+          <span className="flex size-3.5 shrink-0 items-center justify-center text-(--houston)">
             {props.icon}
           </span>
         ) : null}
         <span className="min-w-0 flex-1 truncate">{props.label}</span>
-        {props.value ? <span className="shrink-0 text-(--t3)">{props.value}</span> : null}
-        <ChevronDownIcon aria-hidden="true" className="size-3.25 shrink-0 text-(--t3)" />
+        {props.value ? <span className="shrink-0 text-(--houston)">{props.value}</span> : null}
+        <ChevronDownIcon aria-hidden="true" className="size-3.25 shrink-0 text-(--houston)" />
       </MenuPrimitive.SubmenuTrigger>
       <MenuSubPopup>{props.children}</MenuSubPopup>
     </MenuSub>
@@ -417,12 +417,12 @@ function TraitsReadOnlyRow(props: { icon?: ReactNode; label: string; value: stri
   return (
     <div className="flex h-7.5 min-h-0 items-center gap-2 px-2 text-(--t1) text-headline">
       {props.icon ? (
-        <span className="flex size-3.5 shrink-0 items-center justify-center text-(--t3)">
+        <span className="flex size-3.5 shrink-0 items-center justify-center text-(--houston)">
           {props.icon}
         </span>
       ) : null}
       <span className="min-w-0 flex-1 truncate">{props.label}</span>
-      <span className="shrink-0 text-(--t3)">{props.value}</span>
+      <span className="shrink-0 text-(--houston)">{props.value}</span>
     </div>
   );
 }
@@ -631,7 +631,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
             <div key={descriptor.id}>
               {index > 0 ? <MenuDivider /> : null}
               <TraitsSectionHeader label={descriptor.label} />
-              <div className="px-2 pb-1.5 text-(--t3) text-xs">{value}</div>
+              <div className="px-2 pb-1.5 text-(--houston) text-xs">{value}</div>
             </div>
           );
         })}
@@ -708,7 +708,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
       ) : null}
 
       {ultrathinkInBodyText ? (
-        <div className="px-2 pb-1.5 text-(--t3) text-xs">
+        <div className="px-2 pb-1.5 text-(--houston) text-xs">
           Your prompt contains &quot;ultrathink&quot; in the text. Remove it to change this option.
         </div>
       ) : null}

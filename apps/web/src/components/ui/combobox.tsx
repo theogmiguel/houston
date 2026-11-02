@@ -116,7 +116,7 @@ function ComboboxSearchInput({
         <div className="relative flex h-[30px] items-center gap-2 rounded-md bg-(--field) px-2 transition-colors focus-within:ring-1 focus-within:ring-(--line-strong) focus-within:ring-inset">
           <SearchIcon
             aria-hidden="true"
-            className="pointer-events-none size-3.25 shrink-0 text-(--t3)"
+            className="pointer-events-none size-3.25 shrink-0 text-(--houston)"
           />
           <ComboboxInput
             {...props}

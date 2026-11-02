@@ -1,4 +1,4 @@
-import type { T3McpToolSummaryAction } from "@houston-app/shared/t3McpToolPresentation";
+import type { HoustonMcpToolSummaryAction } from "@houston-app/shared/houstonMcpToolPresentation";
 
 export interface T3ToolSummaryCall {
   readonly input: unknown;
@@ -98,8 +98,8 @@ function pullRequestQuantity(
   return quantity(count, "pull request");
 }
 
-export function summarizeT3ToolCalls(
-  action: T3McpToolSummaryAction,
+export function summarizeHoustonToolCalls(
+  action: HoustonMcpToolSummaryAction,
   calls: ReadonlyArray<T3ToolSummaryCall>,
 ): { label: string; failedCount: number } {
   const results = calls.map((call) => {

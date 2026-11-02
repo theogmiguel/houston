@@ -7,7 +7,7 @@ index 14beb98c0bfed9c60611b7d164670798011182ac..9fb0ca056d9dda4d4abeef2bb9bafcf7
       */
      maintainVisibleContentPosition?: boolean | MaintainVisibleContentPositionConfig<ItemT>;
 +    /**
-+     * T3 patch: the scroll offset a change in item or list size should leave, read in the same pass
++     * Houston patch: the scroll offset a change in item or list size should leave, read in the same pass
 +     * that repositions the items so the adjustment commits with them. `undefined` keeps the default.
 +     */
 +    sizeChangeAnchor?: () => number | undefined;
@@ -248,7 +248,7 @@ index ce1fe00001c9e5aee6c6ea8bb2d4757d4586d002..ca6e596aa53327a097a388ffd545a4c6
       */
      maintainVisibleContentPosition?: boolean | MaintainVisibleContentPositionConfig<ItemT>;
 +    /**
-+     * T3 patch: the scroll offset a change in item or list size should leave, read in the same pass
++     * Houston patch: the scroll offset a change in item or list size should leave, read in the same pass
 +     * that repositions the items so the adjustment commits with them. `undefined` keeps the default.
 +     */
 +    sizeChangeAnchor?: () => number | undefined;
@@ -398,7 +398,7 @@ index b3c5a306b293f797a8b338adfca3060c0f6db22b..d7f59b63cd4982dfc9c347732caa77e0
      state.pendingMaintainScrollAtEnd = shouldMaintainScrollAtEnd;
      return false;
    }
-+  // T3 patch: a caller anchor already placed this pass's offset; a later scroll would move it.
++  // Houston patch: a caller anchor already placed this pass's offset; a later scroll would move it.
 +  if (state.props.sizeChangeAnchor && !state.mvcpDataChanged && state.props.sizeChangeAnchor() !== void 0) {
 +    state.pendingMaintainScrollAtEnd = false;
 +    return shouldMaintainScrollAtEnd;
@@ -478,10 +478,10 @@ index b3c5a306b293f797a8b338adfca3060c0f6db22b..d7f59b63cd4982dfc9c347732caa77e0
    }
    return false;
  }
-+// T3 patch: a caller anchor decides where a size change leaves the scroll position. It is read in
++// Houston patch: a caller anchor decides where a size change leaves the scroll position. It is read in
 +// the same pass that repositions the items, so the adjustment commits with the new positions.
  function prepareMVCP(ctx, dataChanged) {
-+  // T3 patch: a data change skips the caller anchor, so end maintenance must still run after it.
++  // Houston patch: a data change skips the caller anchor, so end maintenance must still run after it.
 +  ctx.state.mvcpDataChanged = !!dataChanged;
 +  const sizeChangeAnchor = dataChanged ? void 0 : ctx.state.props.sizeChangeAnchor;
 +  const restore = prepareDefaultMVCP(ctx, dataChanged);
@@ -682,7 +682,7 @@ index b3c5a306b293f797a8b338adfca3060c0f6db22b..d7f59b63cd4982dfc9c347732caa77e0
 +  const SizeComponent = ctx.state.props.sizeComponentInternal;
    const columnWrapperStyle = ctx.columnWrapperStyle;
 -  const animSize = useValue$("totalSize");
-+  // T3 patch: on the new architecture an animated value commits on its own, ahead of the item
++  // Houston patch: on the new architecture an animated value commits on its own, ahead of the item
 +  // positions and their scroll compensation; a rendered size commits with them.
 +  const animSize = IsNewArchitecture ? useArr$(["totalSize"])[0] || 0 : useValue$("totalSize");
    const [readyToRender, numColumns, otherAxisSize = 0] = useArr$(["readyToRender", "numColumns", "otherAxisSize"]);
@@ -774,7 +774,7 @@ index b3c5a306b293f797a8b338adfca3060c0f6db22b..d7f59b63cd4982dfc9c347732caa77e0
        doInitialAllocateContainers(ctx);
      }
 -    if (needsCalculate) {
-+    // T3 patch: a shorter list keeps a caller anchor too, such as the end.
++    // Houston patch: a shorter list keeps a caller anchor too, such as the end.
 +    if (needsCalculate || state.props.sizeChangeAnchor) {
        calculateItemsInView(ctx, { doMVCP: true });
      }
@@ -1038,7 +1038,7 @@ index 40e87cda8c9bc79a889e5542f29af429a24b24d4..c2ca39bab6ea1ebaaed25190a01e8cf2
      state.pendingMaintainScrollAtEnd = shouldMaintainScrollAtEnd;
      return false;
    }
-+  // T3 patch: a caller anchor already placed this pass's offset; a later scroll would move it.
++  // Houston patch: a caller anchor already placed this pass's offset; a later scroll would move it.
 +  if (state.props.sizeChangeAnchor && !state.mvcpDataChanged && state.props.sizeChangeAnchor() !== void 0) {
 +    state.pendingMaintainScrollAtEnd = false;
 +    return shouldMaintainScrollAtEnd;
@@ -1118,10 +1118,10 @@ index 40e87cda8c9bc79a889e5542f29af429a24b24d4..c2ca39bab6ea1ebaaed25190a01e8cf2
    }
    return false;
  }
-+// T3 patch: a caller anchor decides where a size change leaves the scroll position. It is read in
++// Houston patch: a caller anchor decides where a size change leaves the scroll position. It is read in
 +// the same pass that repositions the items, so the adjustment commits with the new positions.
  function prepareMVCP(ctx, dataChanged) {
-+  // T3 patch: a data change skips the caller anchor, so end maintenance must still run after it.
++  // Houston patch: a data change skips the caller anchor, so end maintenance must still run after it.
 +  ctx.state.mvcpDataChanged = !!dataChanged;
 +  const sizeChangeAnchor = dataChanged ? void 0 : ctx.state.props.sizeChangeAnchor;
 +  const restore = prepareDefaultMVCP(ctx, dataChanged);
@@ -1322,7 +1322,7 @@ index 40e87cda8c9bc79a889e5542f29af429a24b24d4..c2ca39bab6ea1ebaaed25190a01e8cf2
 +  const SizeComponent = ctx.state.props.sizeComponentInternal;
    const columnWrapperStyle = ctx.columnWrapperStyle;
 -  const animSize = useValue$("totalSize");
-+  // T3 patch: on the new architecture an animated value commits on its own, ahead of the item
++  // Houston patch: on the new architecture an animated value commits on its own, ahead of the item
 +  // positions and their scroll compensation; a rendered size commits with them.
 +  const animSize = IsNewArchitecture ? useArr$(["totalSize"])[0] || 0 : useValue$("totalSize");
    const [readyToRender, numColumns, otherAxisSize = 0] = useArr$(["readyToRender", "numColumns", "otherAxisSize"]);
@@ -1414,7 +1414,7 @@ index 40e87cda8c9bc79a889e5542f29af429a24b24d4..c2ca39bab6ea1ebaaed25190a01e8cf2
        doInitialAllocateContainers(ctx);
      }
 -    if (needsCalculate) {
-+    // T3 patch: a shorter list keeps a caller anchor too, such as the end.
++    // Houston patch: a shorter list keeps a caller anchor too, such as the end.
 +    if (needsCalculate || state.props.sizeChangeAnchor) {
        calculateItemsInView(ctx, { doMVCP: true });
      }
@@ -2195,7 +2195,7 @@ index e5043320700b12f34f4c0babbc341f85ca8135c1..e8cbd461325a2e2e9ffd61de26a85ae4
       */
      maintainVisibleContentPosition?: boolean | MaintainVisibleContentPositionConfig<ItemT>;
 +    /**
-+     * T3 patch: the scroll offset a change in item or list size should leave, read in the same pass
++     * Houston patch: the scroll offset a change in item or list size should leave, read in the same pass
 +     * that repositions the items so the adjustment commits with them. `undefined` keeps the default.
 +     */
 +    sizeChangeAnchor?: () => number | undefined;

@@ -119,7 +119,7 @@ export function ComposerCompactBeforeSendChip({
             type="button"
             data-chat-composer-compact-send="true"
             className={cn(
-              "flex h-5.5 shrink-0 cursor-pointer items-center gap-1 rounded-md bg-(--sel) px-1.75 font-medium text-(--t2) text-xs tabular-nums transition-colors hover:bg-(--hover) aria-pressed:text-(--t1) disabled:pointer-events-none disabled:opacity-64 [&_svg]:pointer-events-none [&_svg]:size-3 [&_svg]:text-(--t3)",
+              "flex h-5.5 shrink-0 cursor-pointer items-center gap-1 rounded-md bg-(--sel) px-1.75 font-medium text-(--t2) text-xs tabular-nums transition-colors hover:bg-(--hover) aria-pressed:text-(--t1) disabled:pointer-events-none disabled:opacity-64 [&_svg]:pointer-events-none [&_svg]:size-3 [&_svg]:text-(--houston)",
               boardFocusRing,
             )}
             {...pointerFocusProps}
@@ -369,8 +369,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         "relative isolate flex size-7 items-center justify-center overflow-hidden rounded-full transition-colors duration-150 enabled:cursor-pointer disabled:pointer-events-none [&_svg]:size-3.5 [&_svg]:pointer-events-none",
         boardFocusRing,
         hasSendableContent
-          ? "bg-(--t1) text-(--pane) enabled:hover:bg-(--t1)/90 disabled:bg-(--sel) disabled:text-(--t3)"
-          : "bg-(--sel) text-(--t3)",
+          ? "bg-(--t1) text-(--pane) enabled:hover:bg-(--t1)/90 disabled:bg-(--sel) disabled:text-(--houston)"
+          : "bg-(--sel) text-(--houston)",
       )}
       {...pointerFocusProps}
       onClick={showResume ? onResume : onSubmitMessage}

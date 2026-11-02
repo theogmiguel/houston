@@ -146,7 +146,7 @@ const makeCheckpointFixture = Effect.fn("makeCheckpointFixture")(function* (
   yield* fileSystem.writeFileString(path.join(cwd, "file.txt"), "initial\n");
   yield* git(["add", "."]);
   yield* git(["commit", "-m", "initial"]);
-  const checkpointRef = CheckpointRef.make("refs/t3/checkpoints/test");
+  const checkpointRef = CheckpointRef.make("refs/houston/checkpoints/test");
   yield* fileSystem.writeFileString(path.join(cwd, "file.txt"), "staged\n");
   yield* git(["add", "."]);
   yield* fileSystem.writeFileString(path.join(cwd, "file.txt"), "unstaged\n");
@@ -370,8 +370,8 @@ it.effect("checkpoint capture skips an ignored project while keeping its allowed
     yield* fs.writeFileString(path.join(ignoredCwd, "secret.txt"), "private\n");
     yield* fs.writeFileString(path.join(keepCwd, "new.txt"), "new\n");
     const originalIndex = yield* fs.readFile(path.join(parent, ".git", "index"));
-    const ignoredRef = CheckpointRef.make("refs/t3/checkpoints/ignored");
-    const keepRef = CheckpointRef.make("refs/t3/checkpoints/keep");
+    const ignoredRef = CheckpointRef.make("refs/houston/checkpoints/ignored");
+    const keepRef = CheckpointRef.make("refs/houston/checkpoints/keep");
 
     const ignored = yield* Effect.result(
       driver.checkpoints.captureCheckpoint({ cwd: ignoredCwd, checkpointRef: ignoredRef }),
@@ -639,7 +639,7 @@ it.effect.each(
       const originalIndex = yield* fs.readFile(indexPath).pipe(Effect.orElseSucceed(() => null));
       const captureCwd = nested ? path.join(cwd, "scope") : cwd;
       for (const turn of [1, 2]) {
-        const ref = CheckpointRef.make(`refs/t3/checkpoints/sparse/${turn}`);
+        const ref = CheckpointRef.make(`refs/houston/checkpoints/sparse/${turn}`);
         if (turn === 2) {
           yield* write("scope/in/edit", "second\n");
           yield* fs.remove(path.join(cwd, "scope/out/new file"));
@@ -867,8 +867,8 @@ it.effect.each(
       yield* fileSystem.remove(path.join(cwd, "scope/deleted"));
       yield* fileSystem.remove(path.join(cwd, "scope/new-deleted"));
       const captureCwd = nested ? path.join(cwd, "scope") : cwd;
-      const first = CheckpointRef.make("refs/t3/checkpoints/turns/1");
-      const second = CheckpointRef.make("refs/t3/checkpoints/turns/2");
+      const first = CheckpointRef.make("refs/houston/checkpoints/turns/1");
+      const second = CheckpointRef.make("refs/houston/checkpoints/turns/2");
       yield* driver.checkpoints.captureCheckpoint({ cwd: captureCwd, checkpointRef: first });
       for (const name of ["scope/staged", "scope/assumed", "scope/skipped"]) {
         assert.strictEqual((yield* git(["show", `${first}:${name}`])).stdout, "working\n");
@@ -960,7 +960,7 @@ it.effect.each(["committed", "unborn"] as const)(
       });
       const git = (args: ReadonlyArray<string>) =>
         driver.execute({ operation: "checkpoint-test", cwd, args });
-      const checkpointRef = CheckpointRef.make("refs/t3/checkpoints/test");
+      const checkpointRef = CheckpointRef.make("refs/houston/checkpoints/test");
       if (head === "committed") {
         yield* makeCheckpointFixture(driver, cwd);
       } else {
@@ -1006,7 +1006,7 @@ it.effect("checkpoint capture outside a repository fails with the common dir loo
 
     const error = yield* captureRecordingGitCommands(
       cwd,
-      CheckpointRef.make("refs/t3/checkpoints/test"),
+      CheckpointRef.make("refs/houston/checkpoints/test"),
     ).pipe(Effect.flip);
 
     assert.instanceOf(error, VcsProcessExitError);
@@ -1073,7 +1073,7 @@ it.effect("restores empty checkpoints without changing paths outside the workspa
       yield* runGit(root, ["commit", "--allow-empty", "-m", "initial"]);
       const cwd = nested ? path.join(root, "nested") : root;
       yield* fileSystem.makeDirectory(cwd, { recursive: true });
-      const checkpointRef = CheckpointRef.make("refs/t3/checkpoints/empty");
+      const checkpointRef = CheckpointRef.make("refs/houston/checkpoints/empty");
       yield* driver.checkpoints.captureCheckpoint({ cwd, checkpointRef });
       if (nested) {
         yield* fileSystem.writeFileString(path.join(root, "outside.txt"), "changed\n");

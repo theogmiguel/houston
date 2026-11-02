@@ -33,7 +33,7 @@ export class ServiceLauncherClientError extends Schema.TaggedError<ServiceLaunch
       case "decode-context":
         return "The service launcher supplied invalid startup context.";
       case "version-mismatch":
-        return "The service launcher started a different t3 version.";
+        return "The service launcher started a different houston version.";
       case "unmanaged":
         return "This server is not managed by the launcher.";
       case "send":

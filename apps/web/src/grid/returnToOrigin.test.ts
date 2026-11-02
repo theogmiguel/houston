@@ -43,7 +43,7 @@ function row(threadIds: string[]): GridRecord["tree"] {
 }
 
 function sixThreads(): GridRecord["tree"] {
-  return row(["t1", "t2", "t3", "t4", "t5", "t6"]);
+  return row(["t1", "t2", "houston", "t4", "t5", "t6"]);
 }
 
 function origins(entry: ThreadOrigins[string]): ThreadOrigins {

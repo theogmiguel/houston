@@ -13,7 +13,7 @@ const narrow = (value: string) => (
 
 describe("MiddleTruncate", () => {
   it("does not clip a short value that replaces a truncated one", async () => {
-    await using screen = await render(narrow("t3/investigate-release-build-times"));
+    await using screen = await render(narrow("houston/investigate-release-build-times"));
     const label = () => screen.container.querySelector("[title] > span");
     await expect.poll(() => label()?.hasAttribute("data-overflow")).toBe(true);
 

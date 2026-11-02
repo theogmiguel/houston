@@ -220,22 +220,22 @@ function withoutToolSelectionArgs(args: ReadonlyArray<string>): ReadonlyArray<st
   return filtered;
 }
 
-function piT3McpExtensionDestPath(cacheDir: string): string {
+function piHoustonMcpExtensionDestPath(cacheDir: string): string {
   return `${cacheDir.replace(/\\/g, "/")}/${PI_HOUSTON_MCP_EXTENSION_FILENAME}`;
 }
 
-export const materializePiT3McpExtension = Effect.fn("materializePiT3McpExtension")(function* (
-  cacheDir: string,
-) {
-  const fs = yield* FileSystem.FileSystem;
-  yield* fs.makeDirectory(cacheDir, { recursive: true });
-  const dest = piT3McpExtensionDestPath(cacheDir);
-  const existing = yield* fs.readFileString(dest).pipe(Effect.orElseSucceed(() => ""));
-  if (existing !== PI_HOUSTON_MCP_EXTENSION_SOURCE) {
-    yield* fs.writeFileString(dest, PI_HOUSTON_MCP_EXTENSION_SOURCE);
-  }
-  return dest;
-});
+export const materializePiHoustonMcpExtension = Effect.fn("materializePiHoustonMcpExtension")(
+  function* (cacheDir: string) {
+    const fs = yield* FileSystem.FileSystem;
+    yield* fs.makeDirectory(cacheDir, { recursive: true });
+    const dest = piHoustonMcpExtensionDestPath(cacheDir);
+    const existing = yield* fs.readFileString(dest).pipe(Effect.orElseSucceed(() => ""));
+    if (existing !== PI_HOUSTON_MCP_EXTENSION_SOURCE) {
+      yield* fs.writeFileString(dest, PI_HOUSTON_MCP_EXTENSION_SOURCE);
+    }
+    return dest;
+  },
+);
 
 export function buildPiRpcLaunch(input: {
   readonly launchArgs: ReadonlyArray<string>;
@@ -251,8 +251,8 @@ export function buildPiRpcLaunch(input: {
   readonly args: ReadonlyArray<string>;
   readonly env: NodeJS.ProcessEnv;
 } {
-  const hasT3Extension = input.disableExtensions !== true && input.extensionPath !== undefined;
-  const hasT3Mcp = hasT3Extension && input.mcpSession !== undefined;
+  const hasHoustonExtension = input.disableExtensions !== true && input.extensionPath !== undefined;
+  const hasHoustonMcp = hasHoustonExtension && input.mcpSession !== undefined;
   const extensionSafeArgs =
     input.disableExtensions === true
       ? withoutExplicitExtensions(input.launchArgs)
@@ -273,7 +273,7 @@ export function buildPiRpcLaunch(input: {
     ...(input.disableTools === true ? ["--no-tools"] : []),
   ];
   if (
-    hasT3Extension &&
+    hasHoustonExtension &&
     input.extensionPath !== undefined &&
     !hasExplicitExtension(args, input.extensionPath)
   ) {
@@ -289,16 +289,16 @@ export function buildPiRpcLaunch(input: {
     args,
     env: {
       ...environment,
-      ...(hasT3Extension && input.extensionPath !== undefined
+      ...(hasHoustonExtension && input.extensionPath !== undefined
         ? { [HOUSTON_PI_MCP_EXTENSION_PATH_ENV]: input.extensionPath }
         : {}),
-      ...(hasT3Extension && input.runtimeMode !== undefined
+      ...(hasHoustonExtension && input.runtimeMode !== undefined
         ? {
             [HOUSTON_PI_RUNTIME_MODE_ENV]:
               input.runtimeMode === "auto" ? "approval-required" : input.runtimeMode,
           }
         : {}),
-      ...(hasT3Mcp && input.mcpSession !== undefined
+      ...(hasHoustonMcp && input.mcpSession !== undefined
         ? {
             [HOUSTON_MCP_URL_ENV]: input.mcpSession.endpoint,
             [HOUSTON_MCP_BEARER_ENV]: bearerTokenFromAuthorizationHeader(

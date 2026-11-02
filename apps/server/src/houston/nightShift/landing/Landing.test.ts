@@ -60,12 +60,12 @@ describe("night shift landing", () => {
           const store = yield* Store.HoustonNightShiftStore;
 
           const first = yield* landing.record(recordInput(seeded));
-          assert.equal(remoteRef(seeded.fixture, "t3/fix-ws"), seeded.worktree.head);
+          assert.equal(remoteRef(seeded.fixture, "houston/fix-ws"), seeded.worktree.head);
           assert.equal((yield* store.pushes(seeded.runId)).length, 1);
           assert.equal(posts(kit).length, 1);
           const created = posts(kit)[0]!;
           assert.equal(created.path, "/repos/o/r/pulls");
-          assert.equal(created.body.head, "t3/fix-ws");
+          assert.equal(created.body.head, "houston/fix-ws");
           assert.equal(created.body.base, "main");
           assert.equal(created.body.draft, true);
           assert.equal(first.pullRequest.number, 101);
@@ -77,7 +77,7 @@ describe("night shift landing", () => {
           // A new head on the same branch: pushed against Houston's last push, then one PATCH.
           const next = commitIn(seeded.worktree.path, "second");
           const second = yield* landing.record(recordInput(seeded, { head: next }));
-          assert.equal(remoteRef(seeded.fixture, "t3/fix-ws"), next);
+          assert.equal(remoteRef(seeded.fixture, "houston/fix-ws"), next);
           assert.equal(second.push.oldSha, seeded.worktree.head);
           assert.equal(second.pullRequest.number, 101);
           assert.equal(posts(kit).length, 1);
@@ -101,8 +101,8 @@ describe("night shift landing", () => {
               createdAt: NOW,
             });
           }
-          const other = crewWorktree(seeded.fixture, "t3/other");
-          kit.state.managed.add("t3/other");
+          const other = crewWorktree(seeded.fixture, "houston/other");
+          kit.state.managed.add("houston/other");
           yield* store.addCrew({
             runId: seeded.runId,
             threadId: ThreadId.make("land-worker-2"),
@@ -112,12 +112,12 @@ describe("night shift landing", () => {
             providerInstanceId: "claudeAgent",
             requestedInstanceId: null,
             worktreePath: other.path,
-            branch: "t3/other",
+            branch: "houston/other",
             startedAt: NOW,
             endedAt: null,
           });
           const limited = yield* failureOf(
-            landing.record(recordInput(seeded, { branch: "t3/other", head: other.head })),
+            landing.record(recordInput(seeded, { branch: "houston/other", head: other.head })),
           );
           assert.equal(kindOf(limited), "limit");
           assert.include(messageOf(limited), "30");
@@ -194,8 +194,8 @@ describe("night shift landing", () => {
               createdAt: NOW,
             });
           }
-          const second = crewWorktree(seeded.fixture, "t3/second");
-          kit.state.managed.add("t3/second");
+          const second = crewWorktree(seeded.fixture, "houston/second");
+          kit.state.managed.add("houston/second");
           yield* store.addCrew({
             runId: seeded.runId,
             threadId: ThreadId.make("land-worker-2"),
@@ -205,7 +205,7 @@ describe("night shift landing", () => {
             providerInstanceId: "claudeAgent",
             requestedInstanceId: null,
             worktreePath: second.path,
-            branch: "t3/second",
+            branch: "houston/second",
             startedAt: NOW,
             endedAt: null,
           });
@@ -214,7 +214,9 @@ describe("night shift landing", () => {
             [
               Effect.result(landing.record(recordInput(seeded))),
               Effect.result(
-                landing.record(recordInput(seeded, { branch: "t3/second", head: second.head })),
+                landing.record(
+                  recordInput(seeded, { branch: "houston/second", head: second.head }),
+                ),
               ),
             ],
             { concurrency: "unbounded" },
@@ -296,20 +298,20 @@ describe("night shift landing", () => {
 
           // The default branch, which is also every run pull request's base.
           yield* refusedWith({ branch: "main", head: main }, "main", "the default branch");
-          // Outside houston/ and t3/.
+          // Outside houston/.
           kit.state.managed.add("feature/x");
           git(seeded.fixture.root, "branch", "feature/x", "main");
-          yield* refusedWith({ branch: "feature/x", head: main }, "feature/x", "houston/ and t3/");
-          // A t3/ branch in another run's worktree: the merge queue's guard alone would accept it.
-          const foreign = crewWorktree(seeded.fixture, "t3/foreign");
-          kit.state.managed.add("t3/foreign");
+          yield* refusedWith({ branch: "feature/x", head: main }, "feature/x", "outside houston/");
+          // A houston/ branch in another run's worktree: the merge queue's guard alone would accept it.
+          const foreign = crewWorktree(seeded.fixture, "houston/foreign");
+          kit.state.managed.add("houston/foreign");
           yield* refusedWith(
-            { branch: "t3/foreign", head: foreign.head },
-            "t3/foreign",
+            { branch: "houston/foreign", head: foreign.head },
+            "houston/foreign",
             `not a branch of run ${seeded.runId}`,
           );
           // A head that is not the branch's tip names both commits.
-          yield* refusedWith({ head: main }, "t3/fix-ws", main, seeded.worktree.head);
+          yield* refusedWith({ head: main }, "houston/fix-ws", main, seeded.worktree.head);
 
           assert.equal(kit.state.github.requests.length, 0, "nothing was sent to GitHub");
           assert.equal((yield* store.pushes(seeded.runId)).length, 0);
@@ -322,8 +324,8 @@ describe("night shift landing", () => {
           yield* landing.record(recordInput(seeded));
           const pushes = kit.state.gitRuns.filter((run) => run.args.includes("push"));
           assert.equal(pushes.length, 1);
-          assert.include(pushes[0]!.args, "--force-with-lease=refs/heads/t3/fix-ws:");
-          assert.include(pushes[0]!.args, `${seeded.worktree.head}:refs/heads/t3/fix-ws`);
+          assert.include(pushes[0]!.args, "--force-with-lease=refs/heads/houston/fix-ws:");
+          assert.include(pushes[0]!.args, `${seeded.worktree.head}:refs/heads/houston/fix-ws`);
           assert.isFalse(pushes[0]!.args.some((arg) => arg === "--force" || arg === "-f"));
           for (const key of [
             "push.followTags",
@@ -361,14 +363,18 @@ describe("night shift landing", () => {
 
           const first = yield* landing.record(recordInput(seeded));
           // Another push moves the remote branch.
-          const moved = pushToOrigin(seeded.fixture, "t3/fix-ws");
+          const moved = pushToOrigin(seeded.fixture, "houston/fix-ws");
           const next = commitIn(seeded.worktree.path, "after the move");
           const lost = yield* failureOf(landing.record(recordInput(seeded, { head: next })));
           assert.equal(kindOf(lost), "remote");
-          for (const part of ["t3/fix-ws", seeded.worktree.head, moved]) {
+          for (const part of ["houston/fix-ws", seeded.worktree.head, moved]) {
             assert.include(messageOf(lost), part);
           }
-          assert.equal(remoteRef(seeded.fixture, "t3/fix-ws"), moved, "nothing was overwritten");
+          assert.equal(
+            remoteRef(seeded.fixture, "houston/fix-ws"),
+            moved,
+            "nothing was overwritten",
+          );
           const entry = yield* store.getEntry(first.entry.id);
           assert.equal(entry?.head_sha, seeded.worktree.head);
           assert.equal(entry?.pr_number, first.pullRequest.number);
@@ -643,7 +649,7 @@ describe("night shift landing", () => {
           assert.include(refused, label);
 
           const recorded = yield* landing.record(recordInput(seeded));
-          pushToOrigin(seeded.fixture, "t3/fix-ws");
+          pushToOrigin(seeded.fixture, "houston/fix-ws");
           const next = commitIn(seeded.worktree.path, "after the move");
           const lost = messageOf(
             yield* failureOf(landing.record(recordInput(seeded, { head: next }))),
@@ -757,8 +763,8 @@ describe("night shift landing", () => {
           ]);
 
           // A visible change with Hold for my QA waits for the user.
-          const held = crewWorktree(seeded.fixture, "t3/visible");
-          kit.state.managed.add("t3/visible");
+          const held = crewWorktree(seeded.fixture, "houston/visible");
+          kit.state.managed.add("houston/visible");
           yield* store.addCrew({
             runId: seeded.runId,
             threadId: ThreadId.make("land-visible"),
@@ -768,13 +774,13 @@ describe("night shift landing", () => {
             providerInstanceId: "claudeAgent",
             requestedInstanceId: null,
             worktreePath: held.path,
-            branch: "t3/visible",
+            branch: "houston/visible",
             startedAt: NOW,
             endedAt: null,
           });
           const visible = yield* landing.record(
             recordInput(seeded, {
-              branch: "t3/visible",
+              branch: "houston/visible",
               head: held.head,
               plans: [plan.id],
               visible: true,
@@ -1043,11 +1049,11 @@ describe("night shift landing", () => {
             newSha: merged,
             at: "2026-10-30T22:30:00.000Z",
           });
-          const stray = pushToOrigin(seeded.fixture, "t3/stray");
+          const stray = pushToOrigin(seeded.fixture, "houston/stray");
           yield* runner.stop(seeded.runId);
           const run = yield* store.getRun(seeded.runId);
           assert.deepEqual(run?.remoteChanges, {
-            changes: [{ ref: "refs/heads/t3/stray", oldSha: null, newSha: stray }],
+            changes: [{ ref: "refs/heads/houston/stray", oldSha: null, newSha: stray }],
           });
 
           // A failing ls-remote: the audit says it could not run and why.

@@ -238,9 +238,9 @@ export function buildResourceTelemetryHistory(
     );
     aggregateSamples.push({
       sampledAtMs: snapshot.sampledAtUnixMs,
-      cpuPercent: merged.groups.allT3.currentCpuPercent,
-      rssBytes: merged.groups.allT3.currentRssBytes,
-      processCount: merged.groups.allT3.processCount,
+      cpuPercent: merged.groups.allHouston.currentCpuPercent,
+      rssBytes: merged.groups.allHouston.currentRssBytes,
+      processCount: merged.groups.allHouston.processCount,
       ioReadBytes: deltas.reduce((total, process) => total + process.ioReadBytes, 0),
       ioWriteBytes: deltas.reduce((total, process) => total + process.ioWriteBytes, 0),
     });

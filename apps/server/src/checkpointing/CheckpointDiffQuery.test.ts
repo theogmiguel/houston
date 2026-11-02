@@ -22,7 +22,7 @@ const firstRunId = RunId.make("run:checkpoint-diff-v2:1");
 const secondRunId = RunId.make("run:checkpoint-diff-v2:2");
 const firstScopeId = CheckpointScopeId.make("scope:checkpoint-diff-v2:1");
 const secondScopeId = CheckpointScopeId.make("scope:checkpoint-diff-v2:2");
-const secondRef = CheckpointRef.make("refs/t3/test/second");
+const secondRef = CheckpointRef.make("refs/houston/test/second");
 
 function makeProjection(): ProjectionCheckpointContext {
   return {
@@ -82,7 +82,7 @@ it.effect("excludes ready checkpoints from rolled-back runs", () => {
           scopeId: firstScopeId,
           runId: firstRunId,
           appRunOrdinal: 1,
-          ref: CheckpointRef.make("refs/t3/test/first"),
+          ref: CheckpointRef.make("refs/houston/test/first"),
         },
         ...projection.checkpoints,
       ],
@@ -117,7 +117,7 @@ function makeProjectionAfterStoppedRun(stoppedRunCheckpoint: boolean) {
     ordinalWithinScope,
     appRunOrdinal: runId === null ? null : ordinalWithinScope,
     status: "ready",
-    ref: CheckpointRef.make(`refs/t3/test/ordinal/${ordinalWithinScope}`),
+    ref: CheckpointRef.make(`refs/houston/test/ordinal/${ordinalWithinScope}`),
   });
   return {
     runs: [
@@ -133,7 +133,7 @@ function makeProjectionAfterStoppedRun(stoppedRunCheckpoint: boolean) {
       {
         ...checkpoint(2, null),
         scopeId: secondScopeId,
-        ref: CheckpointRef.make("refs/t3/test/tool/2"),
+        ref: CheckpointRef.make("refs/houston/test/tool/2"),
       },
       checkpoint(0, null),
       checkpoint(1, firstRunId),
@@ -167,14 +167,14 @@ it.effect.each([false, true])(
           to: input.toCheckpointRef,
         })),
         [
-          { from: "refs/t3/test/ordinal/2", to: "refs/t3/test/ordinal/3" },
-          { from: "refs/t3/test/ordinal/1", to: "refs/t3/test/ordinal/3" },
+          { from: "refs/houston/test/ordinal/2", to: "refs/houston/test/ordinal/3" },
+          { from: "refs/houston/test/ordinal/1", to: "refs/houston/test/ordinal/3" },
           {
             from: yield* checkpointRefForScopeOrdinal({
               scopeId: firstScopeId,
               ordinalWithinScope: 0,
             }),
-            to: "refs/t3/test/ordinal/3",
+            to: "refs/houston/test/ordinal/3",
           },
         ],
       );
@@ -229,7 +229,7 @@ it.effect("shares the turn and full-thread diff budget across real Git batches",
       scopeId,
       ordinalWithinScope: 0,
     });
-    const toCheckpointRef = CheckpointRef.make("refs/t3/test/aggregate-after");
+    const toCheckpointRef = CheckpointRef.make("refs/houston/test/aggregate-after");
     yield* store.captureCheckpoint({ cwd, checkpointRef: fromCheckpointRef });
     // The old commit models files imported by a pull after the baseline was captured.
     yield* fs.writeFileString(path.join(cwd, "upstream.ts"), "imported\n");

@@ -486,7 +486,7 @@ describe("project identity reset", () => {
     ...project,
     isScratch: true,
     title: "Notes",
-    workspaceRoot: "/t3/scratch",
+    workspaceRoot: "/houston/scratch",
     projectIcon: { kind: "emoji", emoji: "📝" },
   });
 

@@ -49,7 +49,7 @@ export const isHostedLaunch = Effect.fn("houston.isHostedLaunch")(function* (fla
   return Option.isSome(flags.bootstrapFd) || Option.isSome(envBootstrapFd);
 });
 
-/** Hosted, the envelope's `t3Home` is the only base dir; its overrides and `HOUSTON_TRACE_FILE` are ignored. */
+/** Hosted, the envelope's `houstonHome` is the only base dir; its overrides and `HOUSTON_TRACE_FILE` are ignored. */
 export const withHostedBaseDir = Effect.fn("houston.withHostedBaseDir")(function* <
   Flags extends {
     readonly baseDir: Option.Option<string>;
@@ -68,7 +68,7 @@ export const withHostedBaseDir = Effect.fn("houston.withHostedBaseDir")(function
   if (ignored.length > 0) {
     yield* Effect.sync(() =>
       process.stderr.write(
-        `houston: ignoring ${ignored.join(" and ")} for a hosted server; its base dir comes from the envelope's t3Home\n`,
+        `houston: ignoring ${ignored.join(" and ")} for a hosted server; its base dir comes from the envelope's houstonHome\n`,
       ),
     );
   }
@@ -77,7 +77,7 @@ export const withHostedBaseDir = Effect.fn("houston.withHostedBaseDir")(function
   if (nonBlank(envTraceFile)) {
     yield* Effect.sync(() =>
       process.stderr.write(
-        "houston: ignoring HOUSTON_TRACE_FILE for a hosted server; its trace file stays under the envelope's t3Home\n",
+        "houston: ignoring HOUSTON_TRACE_FILE for a hosted server; its trace file stays under the envelope's houstonHome\n",
       ),
     );
   }
@@ -93,8 +93,8 @@ export const withHostedBaseDir = Effect.fn("houston.withHostedBaseDir")(function
 export const refuseHostedDefault = Effect.gen(function* () {
   if (!(yield* HostedLaunch)) return;
   return yield* new HoustonLaunchRefusedError({
-    reason: "the bootstrap envelope's t3Home is missing or blank",
-    expected: "a non-blank t3Home naming <channel dir>/v2",
+    reason: "the bootstrap envelope's houstonHome is missing or blank",
+    expected: "a non-blank houstonHome naming <channel dir>/v2",
   });
 });
 

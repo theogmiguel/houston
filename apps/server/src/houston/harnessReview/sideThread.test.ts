@@ -311,7 +311,7 @@ const replayOnReviewThread = <Transcript extends ProviderReplayTranscript, E>(in
 const workspace = (name: string) => checkpointWorkspace(`harness-families-${name}`);
 
 describe("the review thread runs read-only", () => {
-  it.effect("a review thread runs read-only with no t3 tools", () =>
+  it.effect("a review thread runs read-only with no houston tools", () =>
     Effect.gen(function* () {
       // Claude: the query opens in dontAsk with read tools only and no Houston MCP server.
       const opened: Array<ClaudeAdapterV2.ClaudeAgentSdkQueryOpenInput> = [];

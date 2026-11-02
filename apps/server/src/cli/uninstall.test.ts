@@ -15,8 +15,8 @@ it.layer(NodeServices.layer)("houston uninstall launcher", (it) => {
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "houston-uninstall-" });
       const versionsDir = path.join(root, "runtime/versions");
       const exe = path.join(versionsDir, "1.0.0/houston");
-      const otherExe = path.join(root, "other/runtime/versions/1.0.0/t3");
-      const copy = path.join(root, "copy/t3");
+      const otherExe = path.join(root, "other/runtime/versions/1.0.0/houston");
+      const copy = path.join(root, "copy/houston");
       for (const file of [exe, otherExe, copy]) {
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });
         yield* fs.writeFileString(file, "");
@@ -37,15 +37,15 @@ it.layer(NodeServices.layer)("houston uninstall launcher", (it) => {
 });
 
 it.live.runIf(HostProcess.Platform.defaultValue() === "win32")(
-  "t3 uninstall has cmd.exe remove the runtime directory, preserving spaces and literal environment-variable syntax",
+  "houston uninstall has cmd.exe remove the runtime directory, preserving spaces and literal environment-variable syntax",
   () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "houston-uninstall-" });
-      const runtimeDir = path.join(root, "t3 home %COMSPEC% !COMSPEC! & data", "runtime");
+      const runtimeDir = path.join(root, "houston home %COMSPEC% !COMSPEC! & data", "runtime");
       yield* fs.makeDirectory(path.join(runtimeDir, "versions", "1.0.0"), { recursive: true });
-      yield* fs.writeFileString(path.join(runtimeDir, "versions", "1.0.0", "t3.exe"), "");
+      yield* fs.writeFileString(path.join(runtimeDir, "versions", "1.0.0", "houston.exe"), "");
 
       const child = spawnWindowsRemoval(process.env.ComSpec ?? "cmd.exe", runtimeDir);
       yield* Effect.callback<void, Error>((resume) => {

@@ -62,7 +62,7 @@ import {
   type TurnItemId,
 } from "@houston-app/contracts";
 import type { ThreadRunSummary } from "@houston-app/client-runtime/state/shell";
-import { resolveT3McpToolDefinition } from "@houston-app/shared/t3McpToolPresentation";
+import { resolveHoustonMcpToolDefinition } from "@houston-app/shared/houstonMcpToolPresentation";
 import { compactDynamicToolOutput } from "@houston-app/shared/toolOutput";
 import {
   htmlRenderReferencesEqual,
@@ -184,7 +184,7 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
 export function threadReadTargetId(entry: Pick<WorkLogEntry, "structuredPayload">) {
   const item = entry.structuredPayload;
   if (item?.type !== "dynamic_tool") return null;
-  if (resolveT3McpToolDefinition(item.toolName)?.summaryAction !== "thread-read") return null;
+  if (resolveHoustonMcpToolDefinition(item.toolName)?.summaryAction !== "thread-read") return null;
   const input = item.input;
   const threadId =
     input !== null && typeof input === "object" && "threadId" in input ? input.threadId : null;
@@ -1374,7 +1374,7 @@ function withoutSubagentDelegationRows(entries: ReadonlyArray<TimelineEntry>) {
       item?.type !== "dynamic_tool" ||
       item.runId === null ||
       (item.status !== "running" && item.status !== "completed") ||
-      resolveT3McpToolDefinition(item.toolName)?.summaryAction !== "delegate"
+      resolveHoustonMcpToolDefinition(item.toolName)?.summaryAction !== "delegate"
     )
       return true;
     const output = compactDynamicToolOutput(item.output);

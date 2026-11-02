@@ -9,7 +9,7 @@ import { useEnvironmentSettings } from "../hooks/useSettings";
 import { cn } from "../lib/utils";
 import { useEnvironmentQuery } from "../state/query";
 import { sourceControlEnvironment } from "../state/sourceControl";
-import { T3AppIcon } from "./T3AppIcon";
+import { HoustonAppIcon } from "./HoustonAppIcon";
 import { InlineButton } from "./ui/button";
 
 /**
@@ -51,7 +51,7 @@ export function SourceControlAppAccessNotice(props: {
         props.className,
       )}
     >
-      <T3AppIcon className="size-4 shrink-0" />
+      <HoustonAppIcon className="size-4 shrink-0" />
       <p className="min-w-0 flex-1">
         {appSignIn.appName} isn't installed on <span className="text-foreground">{owner}</span>, so
         requests here use your own GitHub login and its lower rate limit.

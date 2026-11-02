@@ -25,7 +25,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import {
   GitCommandError,
   type GitCommandFailureReason,
-  T3_PROJECT_FILE_NAME,
+  HOUSTON_PROJECT_FILE_NAME,
   type ReviewBranchCommitsInput,
   type ReviewDiffFileContentsInput,
   type ReviewDiffPreviewInput,
@@ -38,7 +38,7 @@ import * as HostProcess from "@houston-app/shared/HostProcess";
 import { compactTraceAttributes } from "@houston-app/shared/observability";
 import { decodeJsonResult } from "@houston-app/shared/schemaJson";
 import { resolveSpawnCommand } from "@houston-app/shared/shell";
-import { parseT3ProjectFile } from "@houston-app/shared/t3ProjectFile";
+import { parseHoustonProjectFile } from "@houston-app/shared/houstonProjectFile";
 import { resolveProjectFileBackedSetting } from "@houston-app/shared/projectSettings";
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
@@ -1273,7 +1273,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     cwd: string,
     requestedBranch: string,
   ) {
-    // A branch at a parent path (such as `t3`) blocks every ref nested under it, so no suffix
+    // A branch at a parent path (such as `houston`) blocks every ref nested under it, so no suffix
     // would help; flatten to a sibling the way temporary worktree branches already do.
     const segments = requestedBranch.split("/");
     let blockedByParent = false;
@@ -4394,20 +4394,22 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           options?.submodules ?? null,
           options?.submodules != null
             ? null
-            : yield* fileSystem.readFileString(path.join(worktreePath, T3_PROJECT_FILE_NAME)).pipe(
-                Effect.flatMap((contents) => {
-                  const file = parseT3ProjectFile(contents);
-                  return file === null
-                    ? Effect.logWarning(
-                        "houston.json is invalid; initializing submodules recursively",
-                        {
-                          worktreePath,
-                        },
-                      ).pipe(Effect.as(null))
-                    : Effect.succeed(file);
-                }),
-                Effect.orElseSucceed(() => null),
-              ),
+            : yield* fileSystem
+                .readFileString(path.join(worktreePath, HOUSTON_PROJECT_FILE_NAME))
+                .pipe(
+                  Effect.flatMap((contents) => {
+                    const file = parseHoustonProjectFile(contents);
+                    return file === null
+                      ? Effect.logWarning(
+                          "houston.json is invalid; initializing submodules recursively",
+                          {
+                            worktreePath,
+                          },
+                        ).pipe(Effect.as(null))
+                      : Effect.succeed(file);
+                  }),
+                  Effect.orElseSucceed(() => null),
+                ),
         );
     if (hasSubmodules && submoduleMode.value === "none" && progress?.onSubmodulesDisabled) {
       yield* progress.onSubmodulesDisabled({

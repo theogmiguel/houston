@@ -43,7 +43,7 @@ import * as AcpRegistrySupport from "@houston-app/provider-acp-registry/server/A
 import * as AcpRegistryRuntimeCoordinator from "@houston-app/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 import { ACP_SESSION_MODE_OPTION_ID } from "@houston-app/provider-acp/server/sessionConfig";
 import * as AcpSessionRuntime from "@houston-app/provider-acp/server/AcpSessionRuntime";
-import { t3AcpPromptWithInstructions } from "@houston-app/provider-core/server/orchestrationInstructions";
+import { houstonAcpPromptWithInstructions } from "@houston-app/provider-core/server/orchestrationInstructions";
 import { buildRuntimeInstructions } from "@houston-app/provider-core/server/runtimeInstructions";
 import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
 import {
@@ -1262,11 +1262,11 @@ describe("AcpRegistryAdapterV2", () => {
             type: "text",
             text:
               ordinal === 1
-                ? t3AcpPromptWithInstructions({
+                ? houstonAcpPromptWithInstructions({
                     prompt: "test prompt",
                     state: {
                       interactionMode: "default",
-                      hasT3Mcp: false,
+                      hasHoustonMcp: false,
                       hasDeviceTools: false,
                     },
                   })
@@ -1793,7 +1793,8 @@ describe("AcpRegistryAdapterV2", () => {
               ...update("grandchild", {
                 sessionUpdate: "terminal_update",
                 terminalId: "nested-terminal",
-                command: "/usr/bin/node /srv/t3/bin.ts acp-mcp-call orchestrator_capabilities {}",
+                command:
+                  "/usr/bin/node /srv/houston/bin.ts acp-mcp-call orchestrator_capabilities {}",
               }),
               label: "nested-output",
             },

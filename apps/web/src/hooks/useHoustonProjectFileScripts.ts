@@ -1,26 +1,31 @@
 import {
-  T3_PROJECT_FILE_NAME,
+  HOUSTON_PROJECT_FILE_NAME,
   type EnvironmentId,
-  type T3ProjectFile,
-  type T3ProjectFileScript,
+  type HoustonProjectFile,
+  type HoustonProjectFileScript,
 } from "@houston-app/contracts";
-import { parseT3ProjectFile } from "@houston-app/shared/t3ProjectFile";
+import { parseHoustonProjectFile } from "@houston-app/shared/houstonProjectFile";
 
 import { useProjectFileQuery } from "~/components/files/projectFilesQueryState";
 
-const NO_SCRIPTS: ReadonlyArray<T3ProjectFileScript> = [];
+const NO_SCRIPTS: ReadonlyArray<HoustonProjectFileScript> = [];
 
-export interface T3ProjectFileState {
+export interface HoustonProjectFileState {
   status: "loading" | "missing" | "invalid" | "valid";
-  file: T3ProjectFile | null;
-  scripts: ReadonlyArray<T3ProjectFileScript>;
+  file: HoustonProjectFile | null;
+  scripts: ReadonlyArray<HoustonProjectFileScript>;
 }
 
-export function useT3ProjectFileState(
+export function useHoustonProjectFileState(
   environmentId: EnvironmentId,
   cwd: string | null,
-): T3ProjectFileState {
-  const query = useProjectFileQuery(environmentId, cwd ?? "", T3_PROJECT_FILE_NAME, cwd !== null);
+): HoustonProjectFileState {
+  const query = useProjectFileQuery(
+    environmentId,
+    cwd ?? "",
+    HOUSTON_PROJECT_FILE_NAME,
+    cwd !== null,
+  );
   const contents = query.data && !query.data.truncated ? query.data.contents : null;
   const isPending = query.isPending;
   if (contents === null) {
@@ -30,16 +35,16 @@ export function useT3ProjectFileState(
       scripts: NO_SCRIPTS,
     } as const;
   }
-  const file = parseT3ProjectFile(contents);
+  const file = parseHoustonProjectFile(contents);
   if (file === null) {
     return { status: "invalid", file: null, scripts: NO_SCRIPTS } as const;
   }
   return { status: "valid", file, scripts: file.scripts ?? NO_SCRIPTS } as const;
 }
 
-export function useT3ProjectFileScripts(
+export function useHoustonProjectFileScripts(
   environmentId: EnvironmentId,
   cwd: string | null,
-): ReadonlyArray<T3ProjectFileScript> {
-  return useT3ProjectFileState(environmentId, cwd).scripts;
+): ReadonlyArray<HoustonProjectFileScript> {
+  return useHoustonProjectFileState(environmentId, cwd).scripts;
 }

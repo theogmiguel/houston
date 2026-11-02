@@ -130,7 +130,7 @@ describe("AcpRuntimeModel", () => {
     } as EffectAcpSchema.InitializeResponse);
 
     expect(response.modes).toBeUndefined();
-    expect(response._meta).toMatchObject({ t3SessionLoadReady: "replay_idle" });
+    expect(response._meta).toMatchObject({ houstonSessionLoadReady: "replay_idle" });
   });
 
   it("keeps initialize mode state whose modes have null descriptions", () => {
@@ -1283,7 +1283,7 @@ describe("extractMcpToolCallIdentity", () => {
     expect(
       extractMcpToolCallIdentity(toolCall, {
         embeddedTerminalCommands: [
-          '/usr/bin/node /srv/t3/bin.ts acp-mcp-call delegate_task {"task":"x"}',
+          '/usr/bin/node /srv/houston/bin.ts acp-mcp-call delegate_task {"task":"x"}',
         ],
       }),
     ).toEqual({ server: "houston", tool: "delegate_task", input: { task: "x" } });
@@ -1525,12 +1525,12 @@ describe("embeddedTerminalIdsFromSessionUpdate", () => {
           toolCallId: "call_1",
           status: "in_progress",
           content: [
-            { type: "terminal", terminalId: "t3-term-9" },
+            { type: "terminal", terminalId: "houston-term-9" },
             { type: "content", content: { type: "text", text: "noise" } },
           ],
         },
       }),
-    ).toEqual({ toolCallId: "call_1", terminalIds: ["t3-term-9"] });
+    ).toEqual({ toolCallId: "call_1", terminalIds: ["houston-term-9"] });
     expect(
       embeddedTerminalIdsFromSessionUpdate({
         sessionId: "session-1",

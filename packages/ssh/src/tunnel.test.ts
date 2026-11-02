@@ -92,14 +92,14 @@ describe("ssh tunnel scripts", () => {
       "v1.2.3",
     ]) {
       assert.throws(
-        () => SshTunnel.buildRemoteT3RunnerScript({ archiveVersion }),
+        () => SshTunnel.buildRemoteHoustonRunnerScript({ archiveVersion }),
         SshTunnel.SshInvalidArchiveVersionError,
         undefined,
         archiveVersion,
       );
     }
     assert.include(
-      SshTunnel.buildRemoteT3RunnerScript(ARCHIVE),
+      SshTunnel.buildRemoteHoustonRunnerScript(ARCHIVE),
       "HOUSTON_ARCHIVE_VERSION='1.2.3-preview.20260911.4'",
     );
   });

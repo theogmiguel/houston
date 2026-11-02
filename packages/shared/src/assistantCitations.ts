@@ -6,7 +6,7 @@ import {
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-const CITATION_PROTOCOL = "t3-citation:";
+const CITATION_PROTOCOL = "houston-citation:";
 const CITATION_HREF_PREFIX = `${CITATION_PROTOCOL}//v1/`;
 // Percent encoding needs up to nine characters per UTF-16 code unit; 16k covers selectors.
 const MAX_CITATION_HREF_LENGTH =

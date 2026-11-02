@@ -23,7 +23,7 @@ describe("projectPendingUserInputAnswer", () => {
   it("sends thread chips as readable links with the actual thread ID", () => {
     const answer = `Compare ${formatInlineContextReference(threadContextReference(record))}`;
     expect(projectPendingUserInputAnswer(answer, [record])).toBe(
-      "Compare [Reference work](t3-thread://v2/env-answer/reference-thread)",
+      "Compare [Reference work](houston-thread://v2/env-answer/reference-thread)",
     );
   });
 

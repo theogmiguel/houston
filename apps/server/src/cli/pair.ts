@@ -5,7 +5,7 @@ import {
   ORCHESTRATION_PROTOCOL_VERSION,
   PortSchema,
 } from "@houston-app/contracts";
-import { resolveWorktreeT3Home } from "@houston-app/shared/devHome";
+import { resolveWorktreeHoustonHome } from "@houston-app/shared/devHome";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import { DEFAULT_SIGNAL_EXPORT } from "@houston-app/shared/observability";
 import { buildPairingAppLink } from "@houston-app/shared/remote";
@@ -249,10 +249,10 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
     bases.push(yield* resolveBaseDir(explicitBaseDir));
   } else {
     // Same precedence as dev-runner: inside a linked worktree only its own
-    // `.t3` counts. Minting opens the target database with this checkout's
+    // `.houston-worktree` counts. Minting opens the target database with this checkout's
     // migrations, so falling back to the shared home could migrate the live
     // install with unreleased schema.
-    const worktreeHome = yield* resolveWorktreeT3Home(yield* HostProcess.WorkingDirectory);
+    const worktreeHome = yield* resolveWorktreeHoustonHome(yield* HostProcess.WorkingDirectory);
     if (worktreeHome !== undefined) {
       bases.push(worktreeHome);
       inLinkedWorktree = true;
@@ -522,7 +522,7 @@ export const pairCommand = Command.make("pair", {
         pairingBaseUrl = resolveDirectPairingBaseUrl(target.state);
         if (isLoopbackHost(new URL(pairingBaseUrl).hostname)) {
           notes.push(
-            "This URL is only reachable from this machine. To reach it from your other devices, run `t3 up`, or re-run with --tailscale.",
+            "This URL is only reachable from this machine. To reach it from your other devices, run `houston up`, or re-run with --tailscale.",
           );
         } else if (target.state.privateNetworkOnly) {
           notes.push(

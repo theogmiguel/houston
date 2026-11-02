@@ -666,7 +666,7 @@ describe("the night shift migration runs on the Houston track", () => {
           yield* sql`INSERT INTO houston_night_shift_settings (project_id, settings_json, updated_at)
             VALUES ('project-p', '{}', 'now')`;
           yield* sql`INSERT INTO houston_night_pushes (run_id, branch, new_sha, at)
-            VALUES (1, 't3/fix', 'abc', 'now')`;
+            VALUES (1, 'houston/fix', 'abc', 'now')`;
           assert.isFalse(
             (yield* upstreamHistory).some((row) => row.name.toLowerCase().includes("night")),
           );

@@ -49,7 +49,7 @@ export function AssistantCitationCommentEditor({
         }
       }}
     >
-      <p className="line-clamp-3 border-(--line-strong) border-l-2 pl-2 text-(--t3) text-xs">
+      <p className="line-clamp-3 border-(--line-strong) border-l-2 pl-2 text-(--houston) text-xs">
         “{citation.text}”
       </p>
       <textarea
@@ -60,7 +60,7 @@ export function AssistantCitationCommentEditor({
         placeholder="Add an optional comment..."
         rows={2}
         dir={textDirection(comment)}
-        className="field-sizing-content block max-h-40 min-h-9 w-full resize-none rounded-(--r-ctl) bg-(--field) px-2.25 py-1.75 text-headline outline-none placeholder:text-(--t3) focus-visible:ring-1 focus-visible:ring-(--accent-ink) focus-visible:ring-inset"
+        className="field-sizing-content block max-h-40 min-h-9 w-full resize-none rounded-(--r-ctl) bg-(--field) px-2.25 py-1.75 text-headline outline-none placeholder:text-(--houston) focus-visible:ring-1 focus-visible:ring-(--accent-ink) focus-visible:ring-inset"
         value={comment}
         onChange={(event) => {
           setComment(event.currentTarget.value);

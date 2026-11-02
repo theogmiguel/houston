@@ -31,11 +31,15 @@ describe("Self invocation", () => {
     Effect.gen(function* () {
       // Node repeats the binary at argv[1] for a single-executable; it is not a script.
       const invocation = yield* resolveSelfInvocation().pipe(
-        Effect.provideService(HostProcess.ExecutablePath, "/packaged/t3"),
+        Effect.provideService(HostProcess.ExecutablePath, "/packaged/houston"),
         Effect.provideService(HostProcess.IsExecutable, true),
-        Effect.provideService(HostProcess.Arguments, ["/packaged/t3", "/packaged/t3", "serve"]),
+        Effect.provideService(HostProcess.Arguments, [
+          "/packaged/houston",
+          "/packaged/houston",
+          "serve",
+        ]),
       );
-      expect(invocation).toEqual({ command: "/packaged/t3", entrypoint: undefined });
+      expect(invocation).toEqual({ command: "/packaged/houston", entrypoint: undefined });
       expect(selfInvocationArgs(invocation, ["acp-mcp-bridge"])).toEqual(["acp-mcp-bridge"]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -64,7 +68,7 @@ describe("Node runtime selection", () => {
         }),
       ).toBe(process.execPath);
     }).pipe(
-      Effect.provideService(HostProcess.ExecutablePath, "/packaged/t3"),
+      Effect.provideService(HostProcess.ExecutablePath, "/packaged/houston"),
       Effect.provideService(HostProcess.IsExecutable, true),
       Effect.provide(NodeServices.layer),
     ),
@@ -88,7 +92,7 @@ describe("Node runtime selection", () => {
       expect(yield* resolveNodeExecutable("Local device support", env)).toBe(node);
     }).pipe(
       Effect.scoped,
-      Effect.provideService(HostProcess.ExecutablePath, "/packaged/t3"),
+      Effect.provideService(HostProcess.ExecutablePath, "/packaged/houston"),
       Effect.provideService(HostProcess.IsExecutable, true),
       Effect.provide(NodeServices.layer),
     ),
@@ -115,7 +119,7 @@ describe("Node runtime selection", () => {
       ).toBe(node);
     }).pipe(
       Effect.scoped,
-      Effect.provideService(HostProcess.ExecutablePath, "/packaged/t3"),
+      Effect.provideService(HostProcess.ExecutablePath, "/packaged/houston"),
       Effect.provideService(HostProcess.IsExecutable, true),
       Effect.provideService(HostProcess.Platform, "win32"),
       Effect.provide(NodeServices.layer),
@@ -149,7 +153,7 @@ describe("Node runtime selection", () => {
       const path = yield* Path.Path;
       const directory = yield* fs.makeTempDirectoryScoped();
       const platform = yield* HostProcess.Platform;
-      const executable = path.join(directory, platform === "win32" ? "t3.exe" : "t3");
+      const executable = path.join(directory, platform === "win32" ? "houston.exe" : "houston");
       const node = path.join(directory, platform === "win32" ? "node.exe" : "node");
       yield* fs.writeFileString(executable, "standalone executable fixture");
       yield* fs.chmod(executable, 0o755);
@@ -178,7 +182,7 @@ describe("Node runtime selection", () => {
       expect(yield* resolveNodeExecutable("Local device support", { PATH: directory })).toBe(node);
     }).pipe(
       Effect.scoped,
-      Effect.provideService(HostProcess.ExecutablePath, "/packaged/t3"),
+      Effect.provideService(HostProcess.ExecutablePath, "/packaged/houston"),
       Effect.provideService(HostProcess.IsExecutable, true),
       Effect.provide(NodeServices.layer),
     ),

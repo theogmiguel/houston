@@ -334,7 +334,7 @@ export const DesktopCliCommandStateSchema = Schema.Struct({
   installedPath: Schema.NullOr(Schema.String),
   onPath: Schema.Boolean,
   shadowedBy: Schema.optionalKey(Schema.String),
-  /** The app's bundled `t3` launcher, which runs without Node or a PATH entry. */
+  /** The app's bundled `houston` launcher, which runs without Node or a PATH entry. */
   launcherPath: Schema.NullOr(Schema.String),
 });
 export type DesktopCliCommandState = typeof DesktopCliCommandStateSchema.Type;
@@ -1137,7 +1137,7 @@ export interface HostBridge {
 }
 
 /** Renderer callback invoked by the desktop host with a fresh user gesture before display-media capture. */
-export const DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER = "__t3DesktopPreviewRecordingCapture";
+export const DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER = "__houstonDesktopPreviewRecordingCapture";
 
 export interface HostPreviewBridge {
   setForwardedShortcuts: (shortcuts: ReadonlyArray<PreviewForwardedShortcut>) => Promise<void>;

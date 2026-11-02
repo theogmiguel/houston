@@ -37,7 +37,7 @@ export interface AcpRequestContext {
 }
 
 export function acpRequestIdentity(requestId: AcpError.AcpRequestId): string {
-  const prefix = "$t3:jsonrpc:";
+  const prefix = "$houston:jsonrpc:";
   if (typeof requestId === "number") return `${prefix}number:${requestId}`;
   return requestId.startsWith(prefix) ? `${prefix}string:${requestId}` : requestId;
 }

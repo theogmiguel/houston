@@ -24,29 +24,29 @@ html[data-mobile-composer-route-transition="true"]::view-transition-new(root) {
   animation: none;
 }
 
-html[data-mobile-composer-route-transition="true"]::view-transition-group(t3-mobile-composer) {
+html[data-mobile-composer-route-transition="true"]::view-transition-group(houston-mobile-composer) {
   animation-duration: var(--mobile-composer-transition-duration);
   animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-html[data-mobile-composer-route-transition="true"]::view-transition-image-pair(t3-mobile-composer) {
+html[data-mobile-composer-route-transition="true"]::view-transition-image-pair(houston-mobile-composer) {
   isolation: isolate;
 }
 
-html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobile-composer) {
-  animation: t3-mobile-composer-old var(--mobile-composer-transition-duration) linear both;
+html[data-mobile-composer-route-transition="true"]::view-transition-old(houston-mobile-composer) {
+  animation: houston-mobile-composer-old var(--mobile-composer-transition-duration) linear both;
   mix-blend-mode: normal;
 }
 
-html[data-mobile-composer-route-transition="true"]::view-transition-new(t3-mobile-composer) {
-  animation: t3-mobile-composer-new var(--mobile-composer-transition-duration) linear both;
+html[data-mobile-composer-route-transition="true"]::view-transition-new(houston-mobile-composer) {
+  animation: houston-mobile-composer-new var(--mobile-composer-transition-duration) linear both;
   mix-blend-mode: normal;
 }
 
 /* The expanded and compact composers have different internal layouts. Use a
    brief crossfade while their shared wrapper moves so the layout change does
    not read as a single-frame cut. */
-@keyframes t3-mobile-composer-old {
+@keyframes houston-mobile-composer-old {
   0%,
   35% {
     opacity: 1;
@@ -57,7 +57,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-new(t3-mobil
   }
 }
 
-@keyframes t3-mobile-composer-new {
+@keyframes houston-mobile-composer-new {
   0%,
   35% {
     opacity: 0;
@@ -68,17 +68,17 @@ html[data-mobile-composer-route-transition="true"]::view-transition-new(t3-mobil
   }
 }
 
-html[data-mobile-composer-route-transition="true"]::view-transition-group(t3-mobile-draft-headline) {
+html[data-mobile-composer-route-transition="true"]::view-transition-group(houston-mobile-draft-headline) {
   animation-duration: var(--mobile-composer-transition-duration);
 }
 
-html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobile-draft-headline) {
-  animation: t3-mobile-draft-headline-exit var(--mobile-composer-transition-duration)
+html[data-mobile-composer-route-transition="true"]::view-transition-old(houston-mobile-draft-headline) {
+  animation: houston-mobile-draft-headline-exit var(--mobile-composer-transition-duration)
     cubic-bezier(0.4, 0, 1, 1) both;
   mix-blend-mode: normal;
 }
 
-@keyframes t3-mobile-draft-headline-exit {
+@keyframes houston-mobile-draft-headline-exit {
   from {
     opacity: 1;
     transform: translateY(0);
@@ -479,7 +479,7 @@ html[data-theme-reveal]::view-transition-new(root) {
 }
 
 /* Paint find results without changing rendered markdown or copied text. */
-::highlight(t3-thread-find) {
+::highlight(houston-thread-find) {
   color: var(--app-theme-search-match-foreground, oklch(0.216164 0.028283 77.423));
   background-color: var(--app-theme-search-match-background, oklch(0.915 0.11 85));
 
@@ -489,7 +489,7 @@ html[data-theme-reveal]::view-transition-new(root) {
   }
 }
 
-::highlight(t3-thread-find-active) {
+::highlight(houston-thread-find-active) {
   color: var(--app-theme-search-match-active-foreground, oklch(0.216164 0.028283 77.423));
   background-color: var(
     --app-theme-search-match-active-background,
@@ -717,7 +717,7 @@ html[data-theme-reveal]::view-transition-new(root) {
 }
 
 @layer base {
-  ::highlight(t3-assistant-citation) {
+  ::highlight(houston-assistant-citation) {
     color: var(--foreground);
     background-color: color-mix(
       in oklab,
@@ -725,7 +725,7 @@ html[data-theme-reveal]::view-transition-new(root) {
       transparent
     );
   }
-  ::highlight(t3-assistant-citation-comment) {
+  ::highlight(houston-assistant-citation-comment) {
     color: var(--foreground);
     background-color: var(--accent-muted);
   }
@@ -1177,7 +1177,7 @@ html[data-theme-reveal]::view-transition-new(root) {
   --code-bg: #f7f7f9;
   --t1: #1d1d1f;
   --t2: #424245;
-  --t3: #5b5b60;
+  --houston: #5b5b60;
   --border: rgba(0, 0, 0, 0.09);
   /* Shell dividers: one step above --border so a 1px seam reads on both panes,
      and below the 16% interactive line so it never reads as a control. */
@@ -1245,7 +1245,7 @@ html[data-theme-reveal]::view-transition-new(root) {
   --secondary: var(--field);
   --secondary-foreground: var(--t2);
   --muted: var(--field);
-  --muted-foreground: var(--t3);
+  --muted-foreground: var(--houston);
   --placeholder: var(--muted-foreground);
   --secondary-label: var(--muted-foreground);
   --icon-muted: var(--muted-foreground);
@@ -1289,7 +1289,7 @@ html[data-theme-reveal]::view-transition-new(root) {
      fills are the achromatic hover/selection overlays. */
   --sidebar: var(--rail);
   --sidebar-foreground: var(--t1);
-  --sidebar-muted-foreground: var(--t3);
+  --sidebar-muted-foreground: var(--houston);
   --sidebar-control-surface: var(--content);
   --sidebar-row-hover: var(--hover);
   --sidebar-row-active: var(--sel);
@@ -1317,7 +1317,7 @@ html[data-theme-reveal]::view-transition-new(root) {
   --code-bg: #18181b;
   --t1: rgba(255, 255, 255, 0.92);
   --t2: rgba(255, 255, 255, 0.66);
-  --t3: rgba(255, 255, 255, 0.52);
+  --houston: rgba(255, 255, 255, 0.52);
   --border: rgba(255, 255, 255, 0.09);
   --divider: rgba(255, 255, 255, 0.14);
   --border-hover: rgba(255, 255, 255, 0.16);
@@ -1374,12 +1374,12 @@ html[data-theme-reveal]::view-transition-new(root) {
   --card-foreground: var(--t1);
   --accent-foreground: var(--t1);
   --muted: var(--field);
-  --muted-foreground: var(--t3);
+  --muted-foreground: var(--houston);
   --border: rgba(0, 0, 0, 0.09);
   --input: var(--line-strong);
   --sidebar: var(--rail);
   --sidebar-foreground: var(--t1);
-  --sidebar-muted-foreground: var(--t3);
+  --sidebar-muted-foreground: var(--houston);
   --sidebar-control-surface: var(--content);
   --sidebar-row-hover: var(--hover);
   --sidebar-row-active: var(--sel);

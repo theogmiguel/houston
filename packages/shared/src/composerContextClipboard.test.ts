@@ -72,7 +72,7 @@ describe("composerContextClipboard", () => {
     expect(html).not.toContain("<script>");
     expect(decodeComposerContextClipboardHtml(html)).toEqual(JSON.parse(raw));
     expect(
-      decodeComposerContextClipboardHtml('<pre data-t3-context-fragment="%ZZ">bad</pre>'),
+      decodeComposerContextClipboardHtml('<pre data-houston-context-fragment="%ZZ">bad</pre>'),
     ).toBeNull();
     expect(decodeComposerContextClipboardHtml("<p>Ordinary clipboard</p>")).toBeNull();
   });
@@ -98,7 +98,7 @@ describe("composerContextClipboard", () => {
     expect(decodeComposerContextClipboardHtml(html)).toEqual(JSON.parse(raw));
     expect(
       decodeComposerContextClipboardHtml(
-        `<pre data-t3-context-fragment='${encodeURIComponent(raw).replaceAll("'", "%27")}'>x</pre>`,
+        `<pre data-houston-context-fragment='${encodeURIComponent(raw).replaceAll("'", "%27")}'>x</pre>`,
       ),
     ).toEqual(JSON.parse(raw));
   });

@@ -80,7 +80,7 @@ import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { WorkflowAgentTranscriptReadObserver } from "../workflowAgentTranscript.ts";
 import * as ServerConfig from "../../config.ts";
 import * as McpProviderSession from "@houston-app/provider-core/server/mcpSession";
-import { T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH } from "@houston-app/provider-core/server/orchestrationInstructions";
+import { HOUSTON_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH } from "@houston-app/provider-core/server/orchestrationInstructions";
 import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
 import { PreviewControlsToolkit } from "../../mcp/toolkits/previewControls/tools.ts";
 import { HtmlToolkit } from "../../mcp/toolkits/html/tools.ts";
@@ -685,7 +685,7 @@ describe("ClaudeAdapterV2 device instructions", () => {
 
   it("gives a session with device access the device block and the ToolSearch line to load it", () => {
     const text = append({ mcp: true, deviceToolsAvailable: true });
-    assert.include(text, T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH);
+    assert.include(text, HOUSTON_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH);
     assert.include(text, "Use `delegate_task`");
   });
 
@@ -722,7 +722,7 @@ describe("ClaudeAdapterV2 device instructions", () => {
       {
         hookSpecificOutput: {
           hookEventName: "SubagentStart",
-          additionalContext: T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH,
+          additionalContext: HOUSTON_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH,
         },
       },
     ]);

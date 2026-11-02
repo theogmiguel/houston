@@ -21,7 +21,7 @@ export function TimelinePlanCard({
     >
       <div className="flex items-center gap-2">
         <span className="flex-1 text-headline font-semibold text-foreground">Plan</span>
-        <span className="text-callout text-(--t3) tabular-nums">
+        <span className="text-callout text-(--houston) tabular-nums">
           {completed} of {steps.length}
         </span>
       </div>
@@ -31,16 +31,16 @@ export function TimelinePlanCard({
         return (
           <div key={step.id} className="flex items-center gap-2.5">
             {done ? (
-              <CheckCircle2Icon aria-hidden className="size-3.5 shrink-0 text-(--t3)" />
+              <CheckCircle2Icon aria-hidden className="size-3.5 shrink-0 text-(--houston)" />
             ) : running ? (
               <StreamingGlyph />
             ) : (
-              <CircleIcon aria-hidden className="size-3.5 shrink-0 text-(--t3)" />
+              <CircleIcon aria-hidden className="size-3.5 shrink-0 text-(--houston)" />
             )}
             <span
               className={cn(
                 "min-w-0",
-                done && "text-(--t3) line-through",
+                done && "text-(--houston) line-through",
                 running ? "text-foreground" : !done && "text-(--t2)",
               )}
             >

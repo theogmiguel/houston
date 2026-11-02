@@ -4,7 +4,7 @@ import {
   AuthSettingsWriteScope,
   type EnvironmentId,
   type ProjectScript,
-  type T3ProjectFileScript,
+  type HoustonProjectFileScript,
 } from "@houston-app/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@houston-app/shared/keybindings";
@@ -57,7 +57,7 @@ import {
 
 export type { NewProjectScriptInput, ProjectScriptActionResult };
 
-const NO_FILE_SCRIPTS: ReadonlyArray<T3ProjectFileScript> = [];
+const NO_FILE_SCRIPTS: ReadonlyArray<HoustonProjectFileScript> = [];
 
 interface ProjectScriptsControlProps {
   displayMode?: "toolbar" | "panel";
@@ -65,7 +65,7 @@ interface ProjectScriptsControlProps {
   onRequestMenuClose?: () => void;
   environmentId: EnvironmentId;
   scripts: ReadonlyArray<ProjectScript>;
-  fileScripts?: ReadonlyArray<T3ProjectFileScript>;
+  fileScripts?: ReadonlyArray<HoustonProjectFileScript>;
   preferredScriptId?: string | null;
   onRunScript?: ((script: ProjectScript) => void) | undefined;
   onAddScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
@@ -130,7 +130,7 @@ export default function ProjectScriptsControl({
   const submitScript = (scriptId: string | null, input: NewProjectScriptInput) =>
     scriptId === null ? onAddScript(input) : onUpdateScript(scriptId, input);
 
-  const importFileScript = async (fileScript: T3ProjectFileScript) => {
+  const importFileScript = async (fileScript: HoustonProjectFileScript) => {
     const payload: NewProjectScriptInput = {
       name: fileScript.name,
       command: fileScript.command,

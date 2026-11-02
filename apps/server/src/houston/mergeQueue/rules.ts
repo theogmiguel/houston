@@ -688,9 +688,9 @@ export const pushGuard = (input: PushGuardInput): string | null => {
   if (input.defaultBranch === branch) {
     return refused("it is the default branch, and the merge queue never pushes to a base");
   }
-  if (!branch.startsWith("houston/") && !branch.startsWith("t3/")) {
+  if (!branch.startsWith("houston/")) {
     return refused(
-      "the merge queue pushes only to branches Houston created, and it is outside houston/ and t3/",
+      "the merge queue pushes only to branches Houston created, and it is outside houston/",
     );
   }
   if (!input.managedBranches.has(branch) && !input.taskBranches.has(branch)) {

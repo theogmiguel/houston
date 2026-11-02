@@ -50,9 +50,9 @@ function ContextStrip({ className, ...props }: ComponentProps<"div">) {
     <div
       data-slot="composer-context-strip"
       className={cn(
-        "group/composer-context relative z-0 mx-2.5 -mb-2.25 flex w-[calc(100%-1.25rem)] min-w-0 items-center gap-px overflow-x-clip rounded-t-md border border-(--border) border-b-0 bg-(--pane-head) px-1.25 pt-0.75 pb-3 text-(--t3) text-xs",
+        "group/composer-context relative z-0 mx-2.5 -mb-2.25 flex w-[calc(100%-1.25rem)] min-w-0 items-center gap-px overflow-x-clip rounded-t-md border border-(--border) border-b-0 bg-(--pane-head) px-1.25 pt-0.75 pb-3 text-(--houston) text-xs",
         // Every strip control is one 22px tab button, labels in the secondary ink.
-        "[&_[data-composer-context-control]]:h-5.5! [&_[data-composer-context-control]]:rounded-md! [&_[data-composer-context-control]]:border-0! [&_[data-composer-context-control]]:px-1.5! [&_[data-composer-context-control]]:font-medium [&_[data-composer-context-control]]:text-(--t3)! [&_[data-composer-context-control]]:text-xs!",
+        "[&_[data-composer-context-control]]:h-5.5! [&_[data-composer-context-control]]:rounded-md! [&_[data-composer-context-control]]:border-0! [&_[data-composer-context-control]]:px-1.5! [&_[data-composer-context-control]]:font-medium [&_[data-composer-context-control]]:text-(--houston)! [&_[data-composer-context-control]]:text-xs!",
         "[&_[data-composer-label]]:font-medium [&_[data-composer-label]]:text-(--t2)",
         className,
       )}

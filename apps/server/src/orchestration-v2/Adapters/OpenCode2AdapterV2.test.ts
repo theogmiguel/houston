@@ -45,7 +45,7 @@ import * as ProviderContinuationRequests from "@houston-app/provider-core/server
 import {
   OPENCODE_2_STILL_STOPPING,
   OPENCODE_PROVIDER,
-  t3McpServerName,
+  houstonMcpServerName,
 } from "@houston-app/provider-opencode/testing";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { openCode2ReplayRuntime } from "./OpenCode2AdapterV2.testkit.ts";
@@ -2533,12 +2533,12 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         "thread:delegated-task:command%3Amcp%3A48bef2bf-6d0e-4f7a-9c3b-2e5d8a1f7c40%3Adelegate-task%3Around1",
         "thread:delegated-task:command%3Amcp%3A48bef2bf-6d0e-4f7a-9c3b-2e5d8a1f7c40%3Adelegate-task%3Around2",
       ];
-      const names = yield* Effect.forEach(ids, t3McpServerName);
+      const names = yield* Effect.forEach(ids, houstonMcpServerName);
       for (const name of names) assert.match(name, /^houston-[A-Za-z0-9_-]{1,56}$/);
       assert.equal(new Set(names).size, ids.length);
-      assert.deepEqual(yield* Effect.forEach(ids, t3McpServerName), names);
+      assert.deepEqual(yield* Effect.forEach(ids, houstonMcpServerName), names);
       assert.equal(names[0], "houston-63abb5df2b188bdd");
-      assert.equal(yield* t3McpServerName(threadId), "houston-thread_opencode2-adapter");
+      assert.equal(yield* houstonMcpServerName(threadId), "houston-thread_opencode2-adapter");
     }).pipe(Effect.provide(NodeCrypto.layer)),
   );
 
@@ -2555,7 +2555,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "t3 oc2 #images-",
+        prefix: "houston oc2 #images-",
       });
       const image = (id: string, name: string, mimeType = "image/png") =>
         ChatImageAttachment.make({

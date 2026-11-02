@@ -46,7 +46,7 @@ export function UsagePlanLimits({
     return (
       <section className="flex flex-col gap-3 rounded-[10px] border border-border bg-card p-5">
         <h2 className="text-[13px] leading-[18px] font-semibold text-[var(--t1)]">Plan limits</h2>
-        <p className="text-xs text-[var(--t3)]">
+        <p className="text-xs text-[var(--houston)]">
           No provider on the selected environments reports subscription limits.
         </p>
       </section>
@@ -70,7 +70,7 @@ export function UsagePlanLimits({
     <section className="rounded-[10px] border border-border bg-card p-5">
       <div className="flex items-baseline gap-2">
         <h2 className="text-[13px] leading-[18px] font-semibold text-[var(--t1)]">Plan limits</h2>
-        <span className="ml-auto text-xs text-[var(--t3)]">
+        <span className="ml-auto text-xs text-[var(--houston)]">
           Current windows · ignores the period above
           {updated ? ` · updated ${updated}` : ""}
         </span>
@@ -100,7 +100,7 @@ export function UsagePlanLimits({
                 />
               </span>
               <span className="text-[13px] font-medium text-[var(--t1)]">{label}</span>
-              {plan ? <span className="text-xs text-[var(--t3)]">{plan}</span> : null}
+              {plan ? <span className="text-xs text-[var(--houston)]">{plan}</span> : null}
               {external ? (
                 <Button
                   className="ml-auto text-[var(--t1)]"
@@ -145,7 +145,7 @@ export function UsagePlanLimits({
                     >
                       {remaining}%
                     </span>
-                    <span className="truncate text-xs text-[var(--t3)]">
+                    <span className="truncate text-xs text-[var(--houston)]">
                       {resets ? resets.replace(/^resets in /, "Resets in ") : ""}
                       {resets && pace ? " · " : ""}
                       {pace ? PACE_TEXT[pace] : ""}
@@ -157,7 +157,7 @@ export function UsagePlanLimits({
           </div>
         );
       })}
-      <p className="mt-3 text-xs text-[var(--t3)]">
+      <p className="mt-3 text-xs text-[var(--houston)]">
         Bars show room left. They stay neutral; below 20% the number turns full contrast, and an
         empty bar turns red when the provider stops.
       </p>

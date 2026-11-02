@@ -48,13 +48,13 @@ export function UsageActivity({
       <div className="flex items-baseline gap-2">
         <h2 className="text-[13px] leading-[18px] font-semibold text-[var(--t1)]">Activity</h2>
         {calendar ? (
-          <span className="ml-auto text-xs text-[var(--t3)]">
+          <span className="ml-auto text-xs text-[var(--houston)]">
             {formatUsd(calendar.totalCostUsd)} in the last year
           </span>
         ) : null}
       </div>
       {calendar === null ? (
-        <p className="mt-3 text-xs text-[var(--t3)]">Loading activity…</p>
+        <p className="mt-3 text-xs text-[var(--houston)]">Loading activity…</p>
       ) : (
         <ActivityCalendar calendar={calendar} />
       )}
@@ -71,7 +71,7 @@ function ActivityCalendar({
     <div className="mt-3 overflow-x-auto pb-1">
       <div className="grid w-max gap-1">
         <div
-          className="ml-[34px] grid h-3.5 text-[11px] leading-3.5 text-[var(--t3)]"
+          className="ml-[34px] grid h-3.5 text-[11px] leading-3.5 text-[var(--houston)]"
           style={{
             gridTemplateColumns: `repeat(${calendar.columns}, 12px)`,
             columnGap: 3,
@@ -86,7 +86,7 @@ function ActivityCalendar({
         </div>
         <div className="flex gap-1.5">
           <div
-            className="grid w-7 text-[10px] leading-3 text-[var(--t3)]"
+            className="grid w-7 text-[10px] leading-3 text-[var(--houston)]"
             style={{ gridTemplateRows: "repeat(7, 12px)", rowGap: 3 }}
             aria-hidden
           >
@@ -124,7 +124,7 @@ function ActivityCalendar({
             )}
           </div>
         </div>
-        <div className="ml-[34px] flex items-center gap-1 text-[11px] text-[var(--t3)]">
+        <div className="ml-[34px] flex items-center gap-1 text-[11px] text-[var(--houston)]">
           <span>Less</span>
           {[0, 1, 2, 3, 4].map((level) => (
             <span

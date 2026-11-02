@@ -22,9 +22,11 @@ it("stays byte-identical to .github/triage/PLAYBOOK.md", () => {
 
 it("launch prompt stays a single argv-safe line naming the prompt file", () => {
   // Windows .cmd shims cannot carry multiline argv.
-  const launch = buildTriageLaunchPrompt(String.raw`C:\Users\a b\.t3\userdata\triage\x\prompt.md`);
+  const launch = buildTriageLaunchPrompt(
+    String.raw`C:\Users\a b\.houston\userdata\triage\x\prompt.md`,
+  );
   assert.notInclude(launch, "\n");
-  assert.include(launch, String.raw`C:\Users\a b\.t3\userdata\triage\x\prompt.md`);
+  assert.include(launch, String.raw`C:\Users\a b\.houston\userdata\triage\x\prompt.md`);
   assert.isBelow(launch.length, 1_000);
 });
 
@@ -48,7 +50,7 @@ it("in-app context warns the agent off its own server and points at the clone in
     server: "running (pid 42, version 0.1.1); this session runs inside it",
     sourceClone: {
       _tag: "cloning",
-      directory: "/home/u/.t3/source/abc123",
+      directory: "/home/u/.houston/source/abc123",
       ref: "v0.1.1",
       commit: "abc123",
       serverVersion: "0.1.1",
@@ -57,7 +59,7 @@ it("in-app context warns the agent off its own server and points at the clone in
   assert.notInclude(context, "Triage CLI version");
   assert.include(context, "- Started from: Houston Desktop version 0.1.1 on macos (");
   assert.include(context, "## This session runs inside Houston");
-  assert.include(context, "/home/u/.t3/source/abc123  (v0.1.1, commit abc123)");
+  assert.include(context, "/home/u/.houston/source/abc123  (v0.1.1, commit abc123)");
   assert.include(context, "Wait for it instead of\ncloning again.");
 });
 
@@ -66,18 +68,18 @@ const contextInput = {
   os: "linux x64 (7.2.0)",
   nodeVersion: "v26.8.2",
   paths: {
-    stateDir: "/home/u/.t3/userdata",
-    dbPath: "/home/u/.t3/userdata/state.sqlite",
-    settingsPath: "/home/u/.t3/userdata/settings.json",
-    logsDir: "/home/u/.t3/userdata/logs",
-    serviceLogPath: "/home/u/.t3/userdata/logs/boot-service.log",
-    desktopBackendLogGlob: "/home/u/.t3/userdata/logs/server-child*.log*",
-    relayClientLogPath: "/home/u/.t3/userdata/logs/relay-client.ndjson",
-    serverTracePath: "/home/u/.t3/userdata/logs/server.trace.ndjson",
-    providerEventLogPath: "/home/u/.t3/userdata/logs/provider/events.log",
-    terminalLogsDir: "/home/u/.t3/userdata/logs/terminals",
-    providerStatusCacheDir: "/home/u/.t3/caches",
-    secretsDir: "/home/u/.t3/userdata/secrets",
-    sourceCacheDir: "/home/u/.t3/source",
+    stateDir: "/home/u/.houston/userdata",
+    dbPath: "/home/u/.houston/userdata/state.sqlite",
+    settingsPath: "/home/u/.houston/userdata/settings.json",
+    logsDir: "/home/u/.houston/userdata/logs",
+    serviceLogPath: "/home/u/.houston/userdata/logs/boot-service.log",
+    desktopBackendLogGlob: "/home/u/.houston/userdata/logs/server-child*.log*",
+    relayClientLogPath: "/home/u/.houston/userdata/logs/relay-client.ndjson",
+    serverTracePath: "/home/u/.houston/userdata/logs/server.trace.ndjson",
+    providerEventLogPath: "/home/u/.houston/userdata/logs/provider/events.log",
+    terminalLogsDir: "/home/u/.houston/userdata/logs/terminals",
+    providerStatusCacheDir: "/home/u/.houston/caches",
+    secretsDir: "/home/u/.houston/userdata/secrets",
+    sourceCacheDir: "/home/u/.houston/source",
   },
 } satisfies Omit<TriageContextInput, "entry" | "server">;
