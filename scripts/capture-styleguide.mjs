@@ -1,26 +1,12 @@
 #!/usr/bin/env node
 /**
- * Captures the renderer screens and component states the style guide embeds.
- *
- * The script starts nothing: point it at a running dev server and it drives the
- * Replay (dev) provider, so every capture comes from the same recorded fixtures.
- * It writes WebP images named `<screen>--<theme>.webp` into the output directory.
- *
- *   node scripts/capture-styleguide.mjs \
- *     --base-url http://localhost:5842 \
- *     --pair-url "http://localhost:5842/pair#token=<one-time-token>" \
- *     --out docs/internals/styleguide
- *
- * A dev server prints its pairing URL in the console. The token is one-time: the
- * script exchanges it for a browser-session cookie through the HTTP API instead
- * of the pairing screen, which avoids the StrictMode double-submit race. Reuse a
- * session with --storage-state once it exists. The sidebar keeps every thread the
- * server has, so capture from a fresh state directory when the guide's images must
- * match across runs.
+ * Captures the renderer screens the style guide embeds, from a running dev server on the
+ * Replay (dev) provider. Usage: node scripts/capture-styleguide.mjs --base-url <url> --pair-url <url> [--out <dir>]
+ * Capture from a fresh state directory when the images must match across runs.
  */
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { parseArgs } from "node:util";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
+import * as NodeUtil from "node:util";
 
 import { chromium } from "playwright-core";
 import sharp from "sharp";
@@ -66,7 +52,7 @@ const PANEL_SURFACES = [
   { label: "Browser", screen: "panel-browser" },
 ];
 
-const { values: options } = parseArgs({
+const { values: options } = NodeUtil.parseArgs({
   options: {
     "base-url": { type: "string" },
     "pair-url": { type: "string" },
@@ -85,7 +71,7 @@ if (!options["base-url"]) {
 }
 
 const baseUrl = options["base-url"].replace(/\/$/, "");
-const outputDirectory = path.resolve(options.out);
+const outputDirectory = NodePath.resolve(options.out);
 const width = Number(options.width ?? DEFAULT_WIDTH);
 const height = Number(options.height ?? DEFAULT_HEIGHT);
 const themes = (options.themes ?? "light,dark")
@@ -106,7 +92,7 @@ const only = new Set(
 );
 const shouldCapture = (screen) => only.size === 0 || only.has(screen);
 
-await mkdir(outputDirectory, { recursive: true });
+await NodeFSP.mkdir(outputDirectory, { recursive: true });
 
 const browser = await chromium.launch({ headless: true });
 let captured = 0;
@@ -151,7 +137,7 @@ try {
         if (!shouldCapture(replay.screen) && !(wantsPanels && replay.id === "showcase")) {
           continue;
         }
-        const threadUrl = await playReplay(page, replay, recorded);
+        await playReplay(page, replay, recorded);
         if (shouldCapture(replay.screen)) await capture(page, replay.screen, theme);
       }
 
@@ -204,13 +190,13 @@ try {
 }
 
 console.log(
-  `Captured ${captured} image${captured === 1 ? "" : "s"} in ${path.relative(process.cwd(), outputDirectory)}`,
+  `Captured ${captured} image${captured === 1 ? "" : "s"} in ${NodePath.relative(process.cwd(), outputDirectory)}`,
 );
 
 async function resolveStorageState() {
   if (options["storage-state"]) {
     try {
-      const state = JSON.parse(await readFile(options["storage-state"], "utf8"));
+      const state = JSON.parse(await NodeFSP.readFile(options["storage-state"], "utf8"));
       if (Array.isArray(state.cookies) && state.cookies.length > 0) return state;
     } catch {
       // The file does not exist yet; pair below and write it.
@@ -243,7 +229,7 @@ async function resolveStorageState() {
     }
     const state = await context.storageState();
     if (options["storage-state"]) {
-      await writeFile(options["storage-state"], `${JSON.stringify(state, null, 2)}\n`);
+      await NodeFSP.writeFile(options["storage-state"], `${JSON.stringify(state, null, 2)}\n`);
     }
     return state;
   } finally {
@@ -351,11 +337,11 @@ async function openRightPanel(page, label) {
 
 async function capture(page, screen, theme) {
   if (!shouldCapture(screen)) return;
-  const file = path.join(outputDirectory, `${screen}--${theme}.webp`);
+  const file = NodePath.join(outputDirectory, `${screen}--${theme}.webp`);
   const png = await page.screenshot({ type: "png" });
   await sharp(png).webp({ quality: SCREENSHOT_QUALITY }).toFile(file);
   captured += 1;
-  console.log(`captured ${path.relative(process.cwd(), file)}`);
+  console.log(`captured ${NodePath.relative(process.cwd(), file)}`);
 }
 
 function slug(value) {
