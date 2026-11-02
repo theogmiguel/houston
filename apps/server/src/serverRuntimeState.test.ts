@@ -112,9 +112,7 @@ const startBesideBootService = Effect.fn("test.startBesideBootService")(function
       }),
   });
   const result = yield* Effect.scoped(
-    ServerOwnership.acquireServerOwnership(
-      path.join(t3Home, "userdata", "server-runtime.json"),
-    ),
+    ServerOwnership.acquireServerOwnership(path.join(t3Home, "userdata", "server-runtime.json")),
   ).pipe(
     Effect.provideService(ProcessRunner.ProcessRunner, runner),
     Effect.provideService(HostProcess.Platform, input.platform),

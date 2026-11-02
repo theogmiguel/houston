@@ -176,11 +176,7 @@ function desktopToken(secret: string): string {
     .digest("hex");
 }
 
-function envelope(
-  port: number,
-  t3Home: string | undefined,
-  extra: Record<string, unknown> = {},
-) {
+function envelope(port: number, t3Home: string | undefined, extra: Record<string, unknown> = {}) {
   const secret = `secret-${port}`;
   return {
     mode: "desktop",
