@@ -533,7 +533,7 @@ function PairingForm({
           </div>
           <CollapsiblePanel>
             <p className="pt-3 text-sm text-muted-foreground">
-              On the computer with your code, start T3 Code or run{" "}
+              On the computer with your code, start Houston or run{" "}
               <code className="font-mono">npx t3 serve</code>, then run:
             </p>
             <CommandBlock command="houston pair" className="mt-2" />

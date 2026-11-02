@@ -3,7 +3,7 @@ import { isPrivateNetworkHost, isPublicFaviconHost } from "@t3tools/shared/hostC
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const readPreparedConnection = vi.fn();
-const env = vi.hoisted(() => ({ isElectron: false }));
+const env = vi.hoisted(() => ({ hasNativeBrowserHost: false }));
 
 vi.mock("~/state/session", () => ({ readPreparedConnection }));
 vi.mock("~/env", () => env);
@@ -41,7 +41,7 @@ describe("browser target resolver", () => {
   it("keeps localhost for servers on the desktop's own WSL or primary backend", async () => {
     // WSL NAT advertises a distro IP, but loopback-bound servers only answer on localhost.
     const { resolveDiscoveredServerUrl } = await import("./browserTargetResolver");
-    env.isElectron = true;
+    env.hasNativeBrowserHost = true;
     try {
       for (const target of [
         { _tag: "BearerConnectionTarget", connectionId: "local:wsl:Ubuntu" },
@@ -60,7 +60,7 @@ describe("browser target resolver", () => {
         resolveDiscoveredServerUrl(EnvironmentId.make("environment-1"), "localhost:3001/"),
       ).toBe("http://192.168.1.25:3001/");
     } finally {
-      env.isElectron = false;
+      env.hasNativeBrowserHost = false;
     }
   });
 
