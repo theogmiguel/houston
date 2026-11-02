@@ -41,7 +41,7 @@ const SESSION = {
     policy: "remote-reachable",
     bootstrapMethods: [],
     sessionMethods: [],
-    sessionCookieName: "t3_session",
+    sessionCookieName: "houston_session",
   },
   scopes: ["orchestration:read"],
 } satisfies AuthSessionState;

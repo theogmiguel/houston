@@ -59,7 +59,7 @@ export function ThreadRouteView({
     threadNeedsGrid && serverThreadShell !== null ? serverThreadShell.projectId : null;
   const serverThreadEnvironmentId = serverThreadRef?.environmentId ?? null;
   const serverThreadId = serverThreadRef?.threadId ?? null;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a standalone thread joins its workspace's grid so the sidebar lists it
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- a standalone thread joins its workspace's grid so the sidebar lists it
   useEffect(() => {
     if (
       serverThreadProjectId === null ||
@@ -119,7 +119,7 @@ export function ThreadRouteView({
   });
   const environmentHasAnyThreads = environmentThreadRefs.length > 0 || environmentHasDraftThreads;
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears pending file drops and navigates the router home once a server thread is confirmed missing
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- clears pending file drops and navigates the router home once a server thread is confirmed missing
   useEffect(() => {
     if (target.kind !== "server" || !bootstrapComplete) {
       return;

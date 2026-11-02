@@ -205,7 +205,7 @@ export function DeviceStreamView(props: {
   const axElements = AsyncResult.getOrElse(axResult, () => NO_AX_ELEMENTS);
 
   const activePointer = useRef<{ id: number; x: number; y: number } | null>(null);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears pointer ownership when its device input connection disconnects or is replaced
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- clears pointer ownership when its device input connection disconnects or is replaced
   useEffect(() => {
     if (!client || !inputState.connected) return;
     return () => {

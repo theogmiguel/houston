@@ -60,7 +60,7 @@ export type PeerLinkRemoveResult = typeof PeerLinkRemoveResult.Type;
 export class PeerLinkError extends Schema.TaggedError<PeerLinkError>()("PeerLinkError", {
   reason: Schema.Literals([
     "unreachable",
-    "not_a_t3_environment",
+    "not_a_houston_environment",
     "incompatible",
     "self",
     "pairing_rejected",

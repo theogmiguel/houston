@@ -3,7 +3,7 @@ import { compareSemverVersions } from "./semver.ts";
 const CLI_RELEASE_REPOSITORY = "theogmiguel/houston";
 export const CLI_RELEASES_PAGE_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases`;
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
-export const CLI_RELEASE_BASE_URL_ENV = "T3CODE_RELEASE_BASE_URL";
+export const CLI_RELEASE_BASE_URL_ENV = "HOUSTON_RELEASE_BASE_URL";
 
 // Houston publishes Linux server archives only for now; macOS and Windows are follow-ups.
 export const CLI_ARCHIVE_PLATFORM_KEYS = ["linux-x64", "linux-arm64"] as const;

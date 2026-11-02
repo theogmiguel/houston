@@ -82,7 +82,7 @@ export function NoticeText({
   const [detailsAtWidth, setDetailsAtWidth] = useState<number | null>(null);
   const showDetails = detailsAtWidth !== null;
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures text overflow in the DOM via ResizeObserver and MutationObserver to show the details button
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- measures text overflow in the DOM via ResizeObserver and MutationObserver to show the details button
   useLayoutEffect(() => {
     const text = textRef.current;
     if (!text) return;

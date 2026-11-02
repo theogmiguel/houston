@@ -22,11 +22,11 @@ const MISMATCH_HINT =
 describe("versionSkew", () => {
   it("updates only the proven npm prefix and safely quotes its path", () => {
     expect(manualServerUpdateCommand("0.0.45", { kind: "npm-global", prefix: "/opt/node" })).toBe(
-      "npm install --global --prefix '/opt/node' t3@0.0.45",
+      "npm install --global --prefix '/opt/node' houston@0.0.45",
     );
     expect(
       manualServerUpdateCommand("0.0.45", { kind: "npm-global", prefix: "/opt/maria's node" }),
-    ).toBe("npm install --global --prefix '/opt/maria'\\''s node' t3@0.0.45");
+    ).toBe("npm install --global --prefix '/opt/maria'\\''s node' houston@0.0.45");
   });
   beforeEach(() => {
     branding.APP_VERSION = "0.0.34";

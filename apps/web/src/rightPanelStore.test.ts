@@ -62,7 +62,7 @@ describe("rightPanelStore", () => {
     const store = useRightPanelStore.getState();
     const pr = pullRequestSurface({
       projectId: "project-a",
-      repository: "pingdotgg/t3code",
+      repository: "pingdotgg/houston",
       number: 42,
     });
     store.openFile(refA, "src/app.ts");
@@ -239,7 +239,7 @@ describe("rightPanelStore", () => {
   const completedDiff = { kind: "diff", turnId: RunId.make("turn-1") } as const;
   const linkedPullRequest = pullRequestSurface({
     projectId: "project-a",
-    repository: "pingdotgg/t3code",
+    repository: "pingdotgg/houston",
     number: 42,
   });
 
@@ -577,7 +577,7 @@ describe("rightPanelStore", () => {
   it("upgrades the legacy singleton pull request surface to a reference-keyed tab", () => {
     const id = pullRequestSurfaceId({
       projectId: "project-a",
-      repository: "pingdotgg/t3code",
+      repository: "pingdotgg/houston",
       number: 4909,
     });
     expect(
@@ -591,7 +591,7 @@ describe("rightPanelStore", () => {
                 id: "pull-request",
                 kind: "pull-request",
                 projectId: "project-a",
-                repository: "pingdotgg/t3code",
+                repository: "pingdotgg/houston",
                 number: 4909,
               },
             ],
@@ -608,7 +608,7 @@ describe("rightPanelStore", () => {
               id,
               kind: "pull-request",
               projectId: "project-a",
-              repository: "pingdotgg/t3code",
+              repository: "pingdotgg/houston",
               number: 4909,
             },
           ],
@@ -621,7 +621,7 @@ describe("rightPanelStore", () => {
   it("drops the pull-request list's shared panel so a restart opens the page fresh", () => {
     const id = pullRequestSurfaceId({
       projectId: "project-a",
-      repository: "pingdotgg/t3code",
+      repository: "pingdotgg/houston",
       number: 4909,
     });
     const panelState = {
@@ -632,7 +632,7 @@ describe("rightPanelStore", () => {
           id,
           kind: "pull-request" as const,
           projectId: "project-a",
-          repository: "pingdotgg/t3code",
+          repository: "pingdotgg/houston",
           number: 4909,
         },
       ],
@@ -1008,11 +1008,11 @@ describe("rightPanelStore", () => {
   });
 
   it("tracks one surface per pull request", () => {
-    const first = { projectId: "project-a", repository: "pingdotgg/t3code", number: 4909 };
-    const second = { projectId: "project-a", repository: "pingdotgg/t3code", number: 4910 };
+    const first = { projectId: "project-a", repository: "pingdotgg/houston", number: 4909 };
+    const second = { projectId: "project-a", repository: "pingdotgg/houston", number: 4910 };
     useRightPanelStore.getState().openPullRequest(refA, first);
     useRightPanelStore.getState().openPullRequest(refA, second);
-    const url = "https://gitlab.example.com/pingdotgg/t3code/-/merge_requests/4909";
+    const url = "https://gitlab.example.com/pingdotgg/houston/-/merge_requests/4909";
     useRightPanelStore.getState().openPullRequest(refA, { ...first, url });
     useRightPanelStore.getState().openPullRequest(refA, first);
 
@@ -1029,7 +1029,7 @@ describe("rightPanelStore", () => {
   });
 
   it("restores each environment, thread and PR surface's detail tab after reload and URL reopen", async () => {
-    const pr = { projectId: "project-a", repository: "pingdotgg/t3code", number: 4909 };
+    const pr = { projectId: "project-a", repository: "pingdotgg/houston", number: 4909 };
     const otherPr = { ...pr, projectId: "project-b" };
     const otherEnvironment = scopeThreadRef("env-2" as EnvironmentId, refA.threadId);
     const selections = [
@@ -1102,13 +1102,13 @@ describe("rightPanelStore", () => {
     const fromServerA = {
       environmentId: "server-a",
       projectId: "project-a",
-      repository: "pingdotgg/t3code",
+      repository: "pingdotgg/houston",
       number: 1,
     };
     const fromServerB = {
       environmentId: "server-b",
       projectId: "project-b",
-      repository: "pingdotgg/t3code",
+      repository: "pingdotgg/houston",
       number: 2,
     };
 

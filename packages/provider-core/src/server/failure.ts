@@ -68,7 +68,7 @@ const PROVIDER_FAILURE_REASONS: Record<ProviderAdapterFailureReason, string> = {
 
 /**
  * Walks a cause chain for curated text without reading arbitrary provider
- * defect text. `known` is the message of a domain error T3 raised itself;
+ * defect text. `known` is the message of a domain error Houston raised itself;
  * `category` is the generic message of the innermost provider wrapper seen.
  */
 function curatedCauseMessages(cause: unknown): {

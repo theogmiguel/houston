@@ -81,9 +81,9 @@ export function AssistantCitationChip({
       commentHost.remove();
     };
   });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync react/exhaustive-effect-dependencies -- keeps the portal host attached to the cited answer while the editor is open
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync react/exhaustive-effect-dependencies -- keeps the portal host attached to the cited answer while the editor is open
   useLayoutEffect(() => attachCommentHost(), [commentOpen]);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drops the uncommitted comment draft held in a ref once the parent closes the comment editor
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- drops the uncommitted comment draft held in a ref once the parent closes the comment editor
   useEffect(() => {
     if (!commentOpen) draftCommentRef.current = null;
   }, [commentOpen]);
@@ -104,7 +104,7 @@ export function AssistantCitationChip({
       setUnavailableSourceAnchor(sourceAnchor);
     }
   });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes the cited DOM source while the comment editor is open and reacts when it disappears
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- observes the cited DOM source while the comment editor is open and reacts when it disappears
   useEffect(() => {
     if (!commentOpen || sourceAnchor === unavailableSourceAnchor) return;
     const anchor = sourceAnchor ?? findAssistantCitationSourceAnchor(document, citation);

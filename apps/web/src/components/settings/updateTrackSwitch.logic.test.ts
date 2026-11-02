@@ -80,7 +80,7 @@ describe("localUpdaterStaysPut", () => {
     const blocked = { enabled: false, channelBlockedByPolicy: true as const };
     expect(localUpdaterStaysPut(blocked, "latest")).toBe(false);
     expect(localUpdaterStaysPut(blocked, "nightly")).toBe(true);
-    // Off for another reason too, such as T3CODE_DISABLE_AUTO_UPDATE or a .deb install.
+    // Off for another reason too, such as HOUSTON_DISABLE_AUTO_UPDATE or a .deb install.
     expect(localUpdaterStaysPut({ enabled: false }, "latest")).toBe(true);
     expect(localUpdaterStaysPut({ enabled: true }, "nightly")).toBe(false);
   });

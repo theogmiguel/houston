@@ -31,7 +31,7 @@ export class OpenCode2Server extends Context.Service<
 
 /**
  * OpenCode 2 always requires one and prints a generated one to stdout
- * otherwise, so T3 supplies its own and keeps it in memory.
+ * otherwise, so Houston supplies its own and keeps it in memory.
  */
 const generatePassword = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;

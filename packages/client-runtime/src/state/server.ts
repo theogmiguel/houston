@@ -103,7 +103,7 @@ export class ServerUpdateResumeTimeoutError extends Schema.TaggedError<ServerUpd
   },
 ) {
   override get message(): string {
-    return `Could not confirm that the server resumed on t3@${this.targetVersion}. Reconnect to check the update outcome.`;
+    return `Could not confirm that the server resumed on houston@${this.targetVersion}. Reconnect to check the update outcome.`;
   }
 }
 
@@ -114,7 +114,7 @@ export class ServerUpdateProgressIncompleteError extends Schema.TaggedError<Serv
   },
 ) {
   override get message(): string {
-    return `The t3@${this.targetVersion} update ended before the server accepted the restart.`;
+    return `The houston@${this.targetVersion} update ended before the server accepted the restart.`;
   }
 }
 
@@ -127,7 +127,7 @@ export class ServerUpdateTerminalError extends Schema.TaggedError<ServerUpdateTe
   },
 ) {
   override get message(): string {
-    return this.reason ?? `The t3@${this.targetVersion} update ${this.status}.`;
+    return this.reason ?? `The houston@${this.targetVersion} update ${this.status}.`;
   }
 }
 

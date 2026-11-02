@@ -108,7 +108,7 @@ export function GridThreadCell({
 
   // The draft is promoted by the composer store, not by this cell; this keeps the grid
   // leaf in step so a sent draft stops rendering as a draft.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- syncs the persisted grid leaf with the composer store's promotion.
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- syncs the persisted grid leaf with the composer store's promotion.
   useEffect(() => {
     if (draftId !== undefined && draftSession === null && promoted !== null) {
       setDraftId(grid.id, node.threadId, null);
@@ -134,7 +134,7 @@ export function GridThreadCell({
   const showSplit = availableThreads.length > 0 || onNewThread !== undefined;
   const archived = useArchivedThreadSnapshots([environmentId]);
   const closeCellStable = useStableCallback(closeArchivedCell);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drops a cell whose thread was archived elsewhere (the sidebar or another window)
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- drops a cell whose thread was archived elsewhere (the sidebar or another window)
   useEffect(() => {
     if (draftId !== undefined) return;
     const archivedIds = new Set<string>(
@@ -151,7 +151,7 @@ export function GridThreadCell({
   const discardDraftStable = useStableCallback(discardDraft);
   // A new draft pane opens with its composer focused; ChatView skips that
   // autofocus while embedded, so the cell asks the mounted editor itself.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses the draft editor once the embedded composer has mounted
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- focuses the draft editor once the embedded composer has mounted
   useEffect(() => {
     if (draftId === undefined || !focused) return;
     let frame = 0;
@@ -175,7 +175,7 @@ export function GridThreadCell({
     return () => window.cancelAnimationFrame(frame);
   }, [draftId, focused, ref]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window Escape listener discards this draft pane before the composer consumes the key
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- window Escape listener discards this draft pane before the composer consumes the key
   useEffect(() => {
     if (draftId === undefined) return;
     const onKeyDown = (event: KeyboardEvent) => {

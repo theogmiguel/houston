@@ -22,7 +22,7 @@ export function DesktopWindowControls() {
   const [layout, setLayout] = useState<WindowButtonLayout>(FALLBACK_WINDOW_BUTTON_LAYOUT);
   const [maximized, setMaximized] = useState(false);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads the native button layout and maximized state for this window chrome
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- reads the native button layout and maximized state for this window chrome
   useEffect(() => {
     if (!isTauriHost()) return;
 

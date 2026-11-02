@@ -356,7 +356,7 @@ export function GridSidebar() {
     })();
   };
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the module-level settle-and-advance registry pointing at the mounted rail
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- keeps the module-level settle-and-advance registry pointing at the mounted rail
   useEffect(
     () =>
       registerSettleAndAdvance((threadRef) => {
@@ -371,7 +371,7 @@ export function GridSidebar() {
     [closeThreads, threads],
   );
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the window's Esc and attention shortcuts in step with the visible rail while it is mounted
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- keeps the window's Esc and attention shortcuts in step with the visible rail while it is mounted
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || !sidebarVisible) return;
@@ -494,7 +494,7 @@ export function GridSidebar() {
   );
 
   // A held or closed thread leaves its pane but keeps its slot for the return.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the grid store in step with thread lifecycle from the server
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- keeps the grid store in step with thread lifecycle from the server
   useEffect(() => {
     for (const grid of grids) {
       if (grid.tree === null) continue;
@@ -514,7 +514,7 @@ export function GridSidebar() {
   }, [grids, threads, nowIso]);
 
   // A woken or reopened thread returns to the grid and slot it left.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the grid store in step with a wake or reopen from the server
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- keeps the grid store in step with a wake or reopen from the server
   useEffect(() => {
     for (const threadId of Object.keys(threadOrigins)) {
       const thread = threadById.get(threadId);

@@ -36,7 +36,7 @@ function nameOf(fiber: Fiber): string | null {
 
 // The setup file and a test file can load this module as two instances. React reports to
 // whichever hook existed when react-dom initialized, so both share one hook and one state.
-const STATE = Symbol.for("t3code.renderCounter");
+const STATE = Symbol.for("houston.renderCounter");
 const state = ((globalThis as { [STATE]?: CounterState })[STATE] ??= {
   on: false,
   commits: 0,

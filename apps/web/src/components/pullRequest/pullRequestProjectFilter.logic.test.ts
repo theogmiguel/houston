@@ -14,12 +14,12 @@ const labels = new Map([
 function project(
   id: string,
   environmentId = nucbox,
-  canonicalKey: string | null = "github.com/pingdotgg/t3code",
+  canonicalKey: string | null = "github.com/pingdotgg/houston",
 ) {
   return {
     id: ProjectId.make(id),
     environmentId,
-    title: "t3code",
+    title: "houston",
     workspaceRoot: `/work/${id}`,
     repositoryIdentity: canonicalKey === null ? null : { canonicalKey },
     faviconPath: `${id}/favicon.png`,
@@ -38,8 +38,8 @@ describe("pull request project filter choices", () => {
     const choices = pullRequestFilterProjects(projects, labels);
 
     expect(choices.map(({ id, environmentId, title }) => ({ id, environmentId, title }))).toEqual([
-      { id: "main", environmentId: cups, title: "t3code · cups" },
-      { id: "main", environmentId: nucbox, title: "t3code · nucbox-1" },
+      { id: "main", environmentId: cups, title: "houston · cups" },
+      { id: "main", environmentId: nucbox, title: "houston · nucbox-1" },
     ]);
     expect(choices[1]?.workspaceRoot).toBe("/work/main");
     expect(choices[1]?.faviconPath).toBe("main/favicon.png");
@@ -52,7 +52,7 @@ describe("pull request project filter choices", () => {
     const choices = pullRequestFilterProjects(projects, labels, selected);
 
     expect(choices.filter((choice) => choice.environmentId === nucbox)).toEqual([
-      { ...projects[1], title: "t3code · nucbox-1" },
+      { ...projects[1], title: "houston · nucbox-1" },
     ]);
     expect(findScopedProject(choices, nucbox, "worktree")).toBeDefined();
     expect(findScopedProject(choices, nucbox, "main")).toBeUndefined();
@@ -62,21 +62,21 @@ describe("pull request project filter choices", () => {
   it("distinguishes same-named repositories on one server by checkout path", () => {
     const projects = [
       project("upstream"),
-      project("fork", nucbox, "github.com/juliusmarminge/t3code"),
+      project("fork", nucbox, "github.com/juliusmarminge/houston"),
     ];
 
     const choices = pullRequestFilterProjects(projects, labels);
 
     expect(choices.map((choice) => choice.title)).toEqual([
-      "t3code · nucbox-1 · /work/fork",
-      "t3code · nucbox-1 · /work/upstream",
+      "houston · nucbox-1 · /work/fork",
+      "houston · nucbox-1 · /work/upstream",
     ]);
   });
 
   // regression: #9948 project filter deduplication must not merge across hosts
   it("keeps repositories on different hosts separate", () => {
     const choices = pullRequestFilterProjects(
-      [project("github"), project("enterprise", nucbox, "git.example.com/pingdotgg/t3code")],
+      [project("github"), project("enterprise", nucbox, "git.example.com/pingdotgg/houston")],
       labels,
     );
 
@@ -91,8 +91,8 @@ describe("pull request project filter choices", () => {
     );
 
     expect(choices.map((choice) => choice.title)).toEqual([
-      "t3code · nucbox-1 · /work/first",
-      "t3code · nucbox-1 · /work/second",
+      "houston · nucbox-1 · /work/first",
+      "houston · nucbox-1 · /work/second",
     ]);
   });
 
@@ -107,8 +107,8 @@ describe("pull request project filter choices", () => {
     const choices = pullRequestFilterProjects([first, second], repeatedLabels);
 
     expect(choices.map((choice) => choice.title)).toEqual([
-      "t3code · nucbox-1 · /work/main · env-cups",
-      "t3code · nucbox-1 · /work/main · env-nucbox",
+      "houston · nucbox-1 · /work/main · env-cups",
+      "houston · nucbox-1 · /work/main · env-nucbox",
     ]);
   });
 });

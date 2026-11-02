@@ -98,7 +98,7 @@ export function buildHostedChannelSelectionUrl(input: {
   if (hostedAppUrl === null) {
     return null;
   }
-  const url = new URL("/__t3code/channel", hostedAppUrl);
+  const url = new URL("/__houston/channel", hostedAppUrl);
   url.searchParams.set("channel", input.channel);
   return url.toString();
 }

@@ -1,5 +1,5 @@
 // Deploys and desktop server swaps can invalidate lazy chunks; one reload fetches the fresh index.
-const CHUNK_RELOAD_GUARD_KEY = "t3code:chunk-load-reloaded";
+const CHUNK_RELOAD_GUARD_KEY = "houston:chunk-load-reloaded";
 
 export function reloadOnceForChunkLoadError(
   getStorage: () => Storage = () => window.sessionStorage,

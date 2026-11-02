@@ -22,7 +22,7 @@ describe("OpenCode 2 session rules", () => {
         { runtimeMode, interactionMode: "default", sandboxPolicy: READ_ONLY },
         [],
         [{ action: "webfetch", resource: "*", effect: "allow" as const }],
-        "t3-code-thread",
+        "houston-thread",
       );
       expect(rules[0], runtimeMode).toEqual({ action: "*", resource: "*", effect: "deny" });
       for (const action of ["read", "glob", "grep"]) {
@@ -36,7 +36,7 @@ describe("OpenCode 2 session rules", () => {
         "websearch",
         "github_create_pull_request",
         "filesystem_write_file",
-        "t3-code-thread_list_threads",
+        "houston-thread_list_threads",
       ]) {
         expect(effectFor(rules, action), `${runtimeMode} ${action}`).toBe("deny");
       }
@@ -48,7 +48,6 @@ describe("OpenCode 2 session rules", () => {
     }
   });
 
-
   it("a read-only sandbox denies shell and edit", () => {
     const grants = [{ action: "shell", resource: "git *", effect: "allow" as const }];
     const paths = [{ action: "edit", resource: "/plans/*", effect: "allow" as const }];
@@ -58,7 +57,7 @@ describe("OpenCode 2 session rules", () => {
           { runtimeMode, interactionMode, sandboxPolicy: READ_ONLY },
           paths,
           grants,
-          "t3-code-thread",
+          "houston-thread",
         );
         const label = `${runtimeMode}/${interactionMode}`;
         expect(lastFor(rules, "shell")?.effect, label).toBe("deny");
@@ -69,9 +68,10 @@ describe("OpenCode 2 session rules", () => {
           label,
         ).toBe(false);
         // Saved grants and plan paths cannot reopen a write.
-        expect(rules.some((rule) => rule.effect === "allow" && rule.resource !== "*"), label).toBe(
-          false,
-        );
+        expect(
+          rules.some((rule) => rule.effect === "allow" && rule.resource !== "*"),
+          label,
+        ).toBe(false);
       }
     }
 

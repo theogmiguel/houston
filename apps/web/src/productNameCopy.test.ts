@@ -16,13 +16,15 @@ function withoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
+const UPSTREAM_PRODUCT_NAME = ["T3", "Code"].join(" ");
+
 describe("product name copy", () => {
   it("never renders the upstream product name in user-visible strings", () => {
     const offenders = sourceFiles.flatMap((file) => {
       const source = withoutComments(NodeFS.readFileSync(file, "utf8"));
       const relative = NodePath.relative(sourceRoot, file);
       const strings = source.match(/["'`][^"'`\n]*\bT3\b[^"'`\n]*["'`]/g) ?? [];
-      const copy = source.includes("T3 Code") ? ["T3 Code"] : [];
+      const copy = source.includes(UPSTREAM_PRODUCT_NAME) ? [UPSTREAM_PRODUCT_NAME] : [];
       return [...copy, ...strings].map((text) => `${relative}: ${text}`);
     });
     expect(offenders).toEqual([]);
