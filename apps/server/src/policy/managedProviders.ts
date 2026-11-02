@@ -14,15 +14,15 @@ import {
   resolveProviderInstanceEnabled,
   type RuntimeMode,
   type ServerSettings,
-} from "@t3tools/contracts";
-import { acpRegistryClient } from "@t3tools/provider-acp-registry/client";
-import { cursorClient } from "@t3tools/provider-cursor/client";
-import { fxClient } from "@t3tools/provider-fx/client";
-import { grokClient } from "@t3tools/provider-grok/client";
-import { museClient } from "@t3tools/provider-muse/client";
-import { openCodeClient } from "@t3tools/provider-opencode/client";
-import { piClient } from "@t3tools/provider-pi/client";
-import type { ProviderClientDefinition } from "@t3tools/provider-core/client";
+} from "@houston-app/contracts";
+import { acpRegistryClient } from "@houston-app/provider-acp-registry/client";
+import { cursorClient } from "@houston-app/provider-cursor/client";
+import { fxClient } from "@houston-app/provider-fx/client";
+import { grokClient } from "@houston-app/provider-grok/client";
+import { museClient } from "@houston-app/provider-muse/client";
+import { openCodeClient } from "@houston-app/provider-opencode/client";
+import { piClient } from "@houston-app/provider-pi/client";
+import type { ProviderClientDefinition } from "@houston-app/provider-core/client";
 
 interface KnownDriver {
   readonly label: string;

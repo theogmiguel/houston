@@ -1,4 +1,4 @@
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { ScopedThreadRef } from "@houston-app/contracts";
 
 /** Desktop ids must distinguish environments and server restarts; server tab ids are process-local. */
 export function previewRuntimeTabId(

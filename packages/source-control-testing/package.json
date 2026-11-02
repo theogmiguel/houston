@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/source-control-testing",
+  "name": "@houston-app/source-control-testing",
   "private": true,
   "type": "module",
   "exports": {
@@ -17,9 +17,9 @@
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/shared": "workspace:*",
-    "@t3tools/source-control-core": "workspace:*",
+    "@houston-app/contracts": "workspace:*",
+    "@houston-app/shared": "workspace:*",
+    "@houston-app/source-control-core": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

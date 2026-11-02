@@ -1,6 +1,6 @@
 import { documentChipKindForFileName } from "~/pierre-icons";
-import { isProviderSkillUserInvocable } from "@t3tools/client-runtime/providerSkills";
-import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
+import { isProviderSkillUserInvocable } from "@houston-app/client-runtime/providerSkills";
+import { formatProviderSkillDisplayName } from "@houston-app/shared/inlineSkills";
 import {
   Extension,
   findChildren,
@@ -28,15 +28,15 @@ import type {
   AssistantCitation,
   ComposerContextClipboardFragment,
   ServerProviderSkill,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   serializeAssistantCitation,
   withAssistantCitationComment,
-} from "@t3tools/shared/assistantCitations";
+} from "@houston-app/shared/assistantCitations";
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   encodeComposerContextClipboardHtml,
-} from "@t3tools/shared/composerContextClipboard";
+} from "@houston-app/shared/composerContextClipboard";
 import {
   createContext,
   use,

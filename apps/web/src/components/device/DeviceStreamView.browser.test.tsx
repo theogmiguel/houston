@@ -1,7 +1,7 @@
 import { RegistryContext } from "@effect/atom-react";
 import { AtomRegistry } from "effect/reactivity";
 import "~/index.css";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@houston-app/contracts";
 import { expect, it, vi } from "vite-plus/test";
 
 import { act, render, stubGlobal } from "../../../test/render";

@@ -1,4 +1,4 @@
-import { ManagedPolicyDocument } from "@t3tools/contracts";
+import { ManagedPolicyDocument } from "@houston-app/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -122,7 +122,7 @@ export class WindowsRegistry extends Context.Service<
       value: string,
     ) => Effect.Effect<string | undefined, WindowsRegistryError>;
   }
->()("@t3tools/shared/managedPolicyFile/WindowsRegistry") {}
+>()("@houston-app/shared/managedPolicyFile/WindowsRegistry") {}
 
 // (HKEY)(LONG)0x80000002, sign-extended to 64 bits.
 const HKEY_LOCAL_MACHINE = -0x7ffffffen;

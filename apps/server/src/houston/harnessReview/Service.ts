@@ -1,6 +1,6 @@
 // houston.harness.*: the project's review schedule, its reviews and findings, decisions, the
 // report, the overview and the seen cursor.
-import type { ProjectId, ScheduledTask, ScheduledTaskId } from "@t3tools/contracts";
+import type { ProjectId, ScheduledTask, ScheduledTaskId } from "@houston-app/contracts";
 import {
   HOUSTON_HARNESS_LIMITS,
   HoustonHarnessError,
@@ -30,8 +30,8 @@ import {
   type HoustonHarnessSetupInput,
   type HoustonHarnessSnapshot,
   type HoustonHarnessVerdict,
-} from "@t3tools/contracts/houston/harnessReview";
-import { HOUSTON_TASK_LIMITS, type HoustonTaskError } from "@t3tools/contracts/houston/tasks";
+} from "@houston-app/contracts/houston/harnessReview";
+import { HOUSTON_TASK_LIMITS, type HoustonTaskError } from "@houston-app/contracts/houston/tasks";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

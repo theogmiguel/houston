@@ -3,14 +3,14 @@
 // by the user and announced once a UTC day. Nothing here sends anything off the machine.
 import * as NodeOS from "node:os";
 
-import type { ProjectId, ThreadId } from "@t3tools/contracts";
+import type { ProjectId, ThreadId } from "@houston-app/contracts";
 import {
   HoustonHarnessError,
   type HoustonDefectDecideInput,
   type HoustonDefectReportResult,
   type HoustonHarnessDefectDestination,
   type HoustonSuspectedDefect,
-} from "@t3tools/contracts/houston/harnessReview";
+} from "@houston-app/contracts/houston/harnessReview";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

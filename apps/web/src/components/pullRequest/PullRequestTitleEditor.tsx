@@ -1,10 +1,10 @@
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, PullRequestDetail, PullRequestRef } from "@t3tools/contracts";
+import { squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
+import type { EnvironmentId, PullRequestDetail, PullRequestRef } from "@houston-app/contracts";
 import { useState } from "react";
 import {
   capitalizeTerm,
   sourceControlClients,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@houston-app/client-runtime/source-control-clients";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -15,7 +15,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { PullRequestDetailTitleRow } from "./PullRequestDetailLayout";
 import { PullRequestEditButton } from "./PullRequestEditButton";
 import { readableFailure } from "./pullRequestDetail.logic";
-import { canEditPullRequestChangeRequest } from "@t3tools/client-runtime/pull-request-editing";
+import { canEditPullRequestChangeRequest } from "@houston-app/client-runtime/pull-request-editing";
 
 /** The pull request title, which the reader can rename in place when the host allows it. */
 export function PullRequestTitleEditor({

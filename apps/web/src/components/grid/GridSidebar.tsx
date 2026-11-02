@@ -3,14 +3,14 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
-import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+} from "@houston-app/client-runtime/state/runtime";
+import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
+import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
+import { effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
 import {
   formatWorkingDurationLabel,
   resolveThreadWorkingStartedAt,
-} from "@t3tools/client-runtime/state/models";
+} from "@houston-app/client-runtime/state/models";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   AlarmClockIcon,

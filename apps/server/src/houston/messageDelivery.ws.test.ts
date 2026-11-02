@@ -7,11 +7,11 @@ import {
   EnvironmentId,
   RpcScopeAuthorization,
   WsRpcGroup,
-} from "@t3tools/contracts";
-import * as AcpRegistryRuntimeCoordinator from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
-import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
-import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
-import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
+} from "@houston-app/contracts";
+import * as AcpRegistryRuntimeCoordinator from "@houston-app/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
+import * as AcpRegistrySupport from "@houston-app/provider-acp-registry/server/AcpRegistrySupport";
+import * as ProviderLatestVersions from "@houston-app/provider-core/server/ProviderLatestVersions";
+import * as SecretResolver from "@houston-app/secret-provider-core/server/SecretResolver";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -104,7 +104,7 @@ import * as WorkspaceFileSystem from "../workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import { layerWsRpc, WS_RPC_SERVER_OPTIONS } from "../ws.ts";
-import { MessageId, ORCHESTRATION_V2_WS_METHODS } from "@t3tools/contracts";
+import { MessageId, ORCHESTRATION_V2_WS_METHODS } from "@houston-app/contracts";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";

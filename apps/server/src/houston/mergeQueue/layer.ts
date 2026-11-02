@@ -1,7 +1,7 @@
 // The merge queue over its store. `adapters` provides GitHub's client, upstream's pull request
 // reads and the project's threads: the server passes the real ones, tests the in-process fakes.
 // One slot, reader and runner.
-import type * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
+import type * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
 import * as Layer from "effect/Layer";
 
 import type * as PullRequestService from "../../pullRequest/PullRequestService.ts";

@@ -3,7 +3,7 @@ import { userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { render } from "../../../test/render";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { GridShelves } from "./GridShelves";
 
 function shelfThread(id: string, title: string): EnvironmentThreadShell {

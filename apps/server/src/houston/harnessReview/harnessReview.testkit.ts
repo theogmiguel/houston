@@ -10,13 +10,13 @@ import {
   ThreadId,
   type ModelSelection,
   type ScheduledTask,
-} from "@t3tools/contracts";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
-import * as GitHubAppSignIn from "@t3tools/source-control-github/server/GitHubAppSignIn";
-import * as GitHubCredentials from "@t3tools/source-control-github/server/GitHubCredentials";
-import * as GitHubQuota from "@t3tools/source-control-github/server/GitHubQuota";
-import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
+} from "@houston-app/contracts";
+import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
+import * as SourceControlRateLimit from "@houston-app/source-control-core/server/SourceControlRateLimit";
+import * as GitHubAppSignIn from "@houston-app/source-control-github/server/GitHubAppSignIn";
+import * as GitHubCredentials from "@houston-app/source-control-github/server/GitHubCredentials";
+import * as GitHubQuota from "@houston-app/source-control-github/server/GitHubQuota";
+import * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

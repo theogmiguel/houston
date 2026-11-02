@@ -1,6 +1,6 @@
 // What Night shift does to threads: launch the orchestrator, stop crew members the way task_cancel
 // stops a delegated child, stop the orchestrator, queue Houston's messages, and read a thread's runs.
-import { CommandId, MessageId, type ThreadId } from "@t3tools/contracts";
+import { CommandId, MessageId, type ThreadId } from "@houston-app/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

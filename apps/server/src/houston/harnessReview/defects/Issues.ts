@@ -3,7 +3,7 @@
 // for github.com. A draft makes one duplicate search; only an explicit file creates or comments.
 import * as NodeOS from "node:os";
 
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId } from "@houston-app/contracts";
 import {
   HOUSTON_DEFECT_LIMITS,
   HOUSTON_DEFECT_REPOSITORY,
@@ -14,9 +14,9 @@ import {
   type HoustonDefectFileResult,
   type HoustonDefectIssueDraft,
   type HoustonDefectIssueMatch,
-} from "@t3tools/contracts/houston/harnessReview";
-import * as GitHubCredentials from "@t3tools/source-control-github/server/GitHubCredentials";
-import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
+} from "@houston-app/contracts/houston/harnessReview";
+import * as GitHubCredentials from "@houston-app/source-control-github/server/GitHubCredentials";
+import * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

@@ -4,7 +4,7 @@ import type {
   PullRequestComment,
   PullRequestDetail,
   ThreadPullRequestWatch,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
 
 /** Bounds consecutive comment-only wakes to stop bot reply loops; check, conflict, or push news resets it. */

@@ -1,5 +1,5 @@
-import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
-import { checkpointFileTotals } from "@t3tools/client-runtime/state/thread-checkpoints";
+import type { ThreadCheckpointSummary } from "@houston-app/client-runtime/state/thread-checkpoints";
+import { checkpointFileTotals } from "@houston-app/client-runtime/state/thread-checkpoints";
 import { ChevronRightIcon } from "lucide-react";
 import { memo } from "react";
 

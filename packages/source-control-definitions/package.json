@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/source-control-definitions",
+  "name": "@houston-app/source-control-definitions",
   "private": true,
   "type": "module",
   "exports": {
@@ -12,12 +12,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@t3tools/source-control-azure-devops": "workspace:*",
-    "@t3tools/source-control-bitbucket": "workspace:*",
-    "@t3tools/source-control-core": "workspace:*",
-    "@t3tools/source-control-forgejo": "workspace:*",
-    "@t3tools/source-control-gitcafe": "workspace:*",
-    "@t3tools/source-control-github": "workspace:*",
-    "@t3tools/source-control-gitlab": "workspace:*"
+    "@houston-app/source-control-azure-devops": "workspace:*",
+    "@houston-app/source-control-bitbucket": "workspace:*",
+    "@houston-app/source-control-core": "workspace:*",
+    "@houston-app/source-control-forgejo": "workspace:*",
+    "@houston-app/source-control-gitcafe": "workspace:*",
+    "@houston-app/source-control-github": "workspace:*",
+    "@houston-app/source-control-gitlab": "workspace:*"
   }
 }

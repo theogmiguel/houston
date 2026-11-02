@@ -3,8 +3,8 @@
 // @effect-diagnostics nodeBuiltinImport:off - draws the marker namespace from the CSPRNG.
 import * as NodeCrypto from "node:crypto";
 
-import type { HoustonTaskSourceProvider } from "@t3tools/contracts/houston/taskSources";
-import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
+import type { HoustonTaskSourceProvider } from "@houston-app/contracts/houston/taskSources";
+import * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";

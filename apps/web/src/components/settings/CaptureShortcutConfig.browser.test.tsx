@@ -2,7 +2,7 @@ import {
   DEFAULT_CLIENT_SETTINGS,
   type DesktopCaptureConfigPreview,
   type DesktopSnapShotState,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { userEvent } from "vite-plus/test/browser";
 import { expect, it, vi } from "vite-plus/test";
 

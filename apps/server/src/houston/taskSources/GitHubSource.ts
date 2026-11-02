@@ -1,7 +1,7 @@
 // Reads a repository's issues through upstream's GitHub client: the credential it resolves for
 // github.com, page ETags so unchanged pages cost no rate limit, and its quota and pause rules.
-import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
-import type * as GitHubRequestPolicy from "@t3tools/source-control-github/server/GitHubRequestPolicy";
+import * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
+import type * as GitHubRequestPolicy from "@houston-app/source-control-github/server/GitHubRequestPolicy";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";

@@ -1,4 +1,4 @@
-import type { DesktopBridge, DesktopUpdateState } from "@t3tools/contracts";
+import type { DesktopBridge, DesktopUpdateState } from "@houston-app/contracts";
 
 const FALLBACK_TRIAGE_COMMAND = "houston triage";
 const DOWNLOAD_URL = "https://github.com/theogmiguel/houston/releases/latest";

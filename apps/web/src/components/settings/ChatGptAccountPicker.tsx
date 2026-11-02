@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ProviderAuthMethod } from "@t3tools/contracts";
+import type { ProviderAuthMethod } from "@houston-app/contracts";
 import { RadioGroup, Radio } from "../ui/radio-group";
 import {
   Dialog,

@@ -34,7 +34,7 @@ import type {
   ScopedThreadRef,
   ServerProvider,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   EnvironmentRequestInvalidError,
   AuthOrchestrationOperateScope,
@@ -43,16 +43,16 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-} from "@t3tools/contracts";
-import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
-import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+} from "@houston-app/contracts";
+import type { EnvironmentConnectionPresentation } from "@houston-app/client-runtime/connection";
+import { settlePromise, squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
-import { isPasteAsTextShortcut } from "@t3tools/client-runtime/text-paste";
-import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import { isPasteAsTextShortcut } from "@houston-app/client-runtime/text-paste";
+import { serializeComposerFileLink } from "@houston-app/shared/composerTrigger";
 import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
 import { splitTransferredFiles } from "./workspaceFileDrop";
-import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
-import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
+import { createModelSelection, normalizeModelSlug } from "@houston-app/shared/model";
+import { USAGE_LIMITS_COMMAND } from "@houston-app/shared/usageLimits";
 import {
   memo,
   use,
@@ -149,8 +149,8 @@ import {
   collectComposerContextReferences,
   threadContextRecord,
   toKindScopedComposerContextId,
-} from "@t3tools/shared/composerContextReferences";
-import { collectAssistantCitations } from "@t3tools/shared/assistantCitations";
+} from "@houston-app/shared/composerContextReferences";
+import { collectAssistantCitations } from "@houston-app/shared/assistantCitations";
 import {
   shouldUseCompactComposerPrimaryActions,
   shouldUseCompactComposerFooter,
@@ -191,8 +191,8 @@ import { rememberCopiedComposerAttachments } from "~/lib/copiedComposerAttachmen
 import { useThreadContextDrop, threadContextDropTargetProps } from "./threadContextDrag";
 import { readThreadShell } from "~/state/entities";
 import { useLinkedEnvironments } from "~/state/peerLinks";
-import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
-import type { ComposerContextRecord, ThreadPullRequestLink } from "@t3tools/contracts";
+import { encodeComposerContextFragment } from "@houston-app/shared/composerContextClipboard";
+import type { ComposerContextRecord, ThreadPullRequestLink } from "@houston-app/contracts";
 import { threadContextAttachment } from "~/lib/threadContextAttachment";
 import {
   type ComposerCommandItem,
@@ -241,16 +241,16 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { ArrowUpIcon, BuildingIcon, PlayIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { useManagedPolicy } from "../../state/managedPolicy";
-import { proposedPlanTitle } from "@t3tools/shared/proposedPlanText";
-import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import { proposedPlanTitle } from "@houston-app/shared/proposedPlanText";
+import { formatDuration } from "@houston-app/shared/orchestrationTiming";
 import { tickTextContent } from "~/lib/tickTextContent";
 import { hasProviderSetup } from "./ProviderStatusBanner";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
-import type { UnifiedSettings } from "@t3tools/contracts/settings";
+import type { UnifiedSettings } from "@houston-app/contracts/settings";
 import { isVideoAttachment, type SessionPhase, type Thread, type ThreadShell } from "../../types";
 import type { PaneDensity } from "../../grid/density";
 import { type ComposerPromptHistoryPosition } from "./composerPromptHistory";
-import type { PendingUserInputDraftAnswer } from "@t3tools/client-runtime/state/pending-user-input";
+import type { PendingUserInputDraftAnswer } from "@houston-app/client-runtime/state/pending-user-input";
 import type { ThreadStatusPill } from "../Sidebar.logic";
 import { THREAD_STATE_TEXT_CLASS } from "../ui/thread-state-glyph";
 import { resolveBlockedThreadStatus } from "./TimelineWorkGroupRows.logic";
@@ -263,12 +263,12 @@ import type {
 import {
   resolveFollowUpDispatch,
   type ComposerDispatchMode,
-} from "@t3tools/client-runtime/state/composer-dispatch";
+} from "@houston-app/client-runtime/state/composer-dispatch";
 import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow";
 import {
   resolveProviderSkillsForCwd,
   resolveProviderSlashCommandsForCwd,
-} from "@t3tools/client-runtime/providerSkills";
+} from "@houston-app/client-runtime/providerSkills";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { useSoftwareKeyboardOpen } from "../../hooks/useSoftwareKeyboardOpen";
 import { useStableCallback } from "../../hooks/useStableCallback";

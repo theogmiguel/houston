@@ -2,7 +2,7 @@ import {
   EnvironmentId,
   getProviderAttachmentLimitError,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { isFileAttachment, isImageAttachment } from "../../types";

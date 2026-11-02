@@ -5,7 +5,7 @@
   "version": "0.19.10",
   "identifier": "dev.houston.desktop",
   "build": {
-    "beforeBuildCommand": "pnpm --filter @t3tools/web build",
+    "beforeBuildCommand": "pnpm --filter @houston-app/web build",
     "frontendDist": "../apps/web/dist"
   },
   "app": {
@@ -26,16 +26,10 @@
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": true,
-    "targets": [
-      "appimage",
-      "deb",
-      "nsis"
-    ],
+    "targets": ["appimage", "deb", "nsis"],
     "linux": {
       "deb": {
-        "depends": [
-          "libasound2t64 | libasound2"
-        ]
+        "depends": ["libasound2t64 | libasound2"]
       }
     },
     "icon": [
@@ -45,10 +39,7 @@
       "icons/icon.png",
       "icons/icon.ico"
     ],
-    "resources": [
-      "resources/third-party-licenses.json",
-      "v2-server/"
-    ],
+    "resources": ["resources/third-party-licenses.json", "v2-server/"],
     "windows": {
       "nsis": {
         "installerHooks": "windows/hooks/uninstaller.nsi"

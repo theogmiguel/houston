@@ -1,4 +1,4 @@
-import type { OrchestrationV2TurnItem } from "@t3tools/contracts";
+import type { OrchestrationV2TurnItem } from "@houston-app/contracts";
 import { ExternalLinkIcon, FileIcon } from "lucide-react";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import { cn } from "~/lib/utils";

@@ -1,9 +1,9 @@
-import type { EnvironmentId, SourceControlSignInPrompt } from "@t3tools/contracts";
+import type { EnvironmentId, SourceControlSignInPrompt } from "@houston-app/contracts";
 import {
   readHostCredentialSettings,
   type SourceControlAppSignIn,
   type SourceControlDefinition,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@houston-app/client-runtime/source-control-clients";
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import { Check, Copy } from "lucide";

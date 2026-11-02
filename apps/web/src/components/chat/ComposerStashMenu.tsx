@@ -1,6 +1,6 @@
 import { FileIcon, FileTextIcon, ImageIcon, XIcon } from "lucide-react";
 import { memo, useEffect, useEffectEvent, useRef, useState, type RefObject } from "react";
-import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
+import { assistantCitationsToPlainText } from "@houston-app/shared/assistantCitations";
 
 import { formatShortcutLabel } from "~/keybindings";
 import { cn } from "~/lib/utils";
@@ -218,7 +218,10 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
                         {fileCount}
                       </span>
                     ) : null}
-                    <time dateTime={entry.createdAt} className="shrink-0 tabular-nums max-sm:hidden">
+                    <time
+                      dateTime={entry.createdAt}
+                      className="shrink-0 tabular-nums max-sm:hidden"
+                    >
                       <RelativeTime timestamp={entry.createdAt} />
                     </time>
                     {highlighted ? (

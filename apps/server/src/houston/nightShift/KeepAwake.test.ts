@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -23,7 +23,13 @@ const keepAwake = (platform: NodeJS.Platform, spawns: Array<Spawned>, failure?: 
     Layer.provide(
       Layer.succeed(KeepAwake.KeepAwakeSpawner, (command, args) => {
         if (failure !== undefined) throw new Error(failure);
-        const child: Spawned = { command, args, stdinClosed: false, killed: false, stubborn: false };
+        const child: Spawned = {
+          command,
+          args,
+          stdinClosed: false,
+          killed: false,
+          stubborn: false,
+        };
         spawns.push(child);
         return {
           closeStdin: () => {

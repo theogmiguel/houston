@@ -1,6 +1,6 @@
 /// <reference types="vite-plus/client" />
 
-import type { DesktopBridge, ThreadId } from "@t3tools/contracts";
+import type { DesktopBridge, ThreadId } from "@houston-app/contracts";
 
 interface ImportMetaEnv {
   readonly VITE_HTTP_URL: string;

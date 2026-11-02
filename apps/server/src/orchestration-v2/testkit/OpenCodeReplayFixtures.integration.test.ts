@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest";
-import type { ProviderReplayEntry } from "@t3tools/contracts";
+import type { ProviderReplayEntry } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 
 import { OpenCodeOrchestratorReplayHarness } from "../Adapters/OpenCodeAdapterV2.testkit.ts";

@@ -1,6 +1,6 @@
 // The Tasks backlog's tables. Writes run one at a time in a transaction and publish the touched
 // task ids after commit, so subscribers see changes in commit order.
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId } from "@houston-app/contracts";
 import {
   HOUSTON_TASK_LIMITS,
   HoustonTaskPlan,
@@ -18,7 +18,7 @@ import {
   type HoustonTaskScope,
   type HoustonTaskStatus,
   type HoustonTaskSummary,
-} from "@t3tools/contracts/houston/tasks";
+} from "@houston-app/contracts/houston/tasks";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

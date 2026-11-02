@@ -1,8 +1,8 @@
 // Houston's Slack tools for the agent working on a Slack-filed task: one question at a time in
 // the request's thread, and the hand-back the requester and the owner read.
-import { OrchestratorMcpFailure, PositiveInt } from "@t3tools/contracts";
-import { HOUSTON_SLACK_LIMITS, HoustonSlackError } from "@t3tools/contracts/houston/slack";
-import { HoustonTask, HoustonTaskError } from "@t3tools/contracts/houston/tasks";
+import { OrchestratorMcpFailure, PositiveInt } from "@houston-app/contracts";
+import { HOUSTON_SLACK_LIMITS, HoustonSlackError } from "@houston-app/contracts/houston/slack";
+import { HoustonTask, HoustonTaskError } from "@houston-app/contracts/houston/tasks";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 

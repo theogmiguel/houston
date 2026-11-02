@@ -1,4 +1,4 @@
-import type { PullRequestListInput } from "@t3tools/contracts";
+import type { PullRequestListInput } from "@houston-app/contracts";
 
 import { type EnvironmentQueryTarget, usePullRequestList } from "~/state/pullRequests";
 import type { MergedPullRequestList } from "./pullRequestList.logic";

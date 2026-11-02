@@ -9,16 +9,16 @@ import {
   type ServerLifecycleWelcomePayload,
   type ServerProvider,
   type ServerSettings,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   AVAILABLE_CONNECTION_STATE,
   presentConnectionState,
   type EnvironmentPresentation,
-} from "@t3tools/client-runtime/connection";
-import { createServerEnvironmentAtoms } from "@t3tools/client-runtime/state/server";
-import { createOutdatedServerUpdateCommand } from "@t3tools/client-runtime/state/outdatedServerUpdate";
-import { createEnvironmentServerConfigsAtom } from "@t3tools/client-runtime/state/shell";
-import { mergeWithDefaultKeybindings } from "@t3tools/shared/keybindings";
+} from "@houston-app/client-runtime/connection";
+import { createServerEnvironmentAtoms } from "@houston-app/client-runtime/state/server";
+import { createOutdatedServerUpdateCommand } from "@houston-app/client-runtime/state/outdatedServerUpdate";
+import { createEnvironmentServerConfigsAtom } from "@houston-app/client-runtime/state/shell";
+import { mergeWithDefaultKeybindings } from "@houston-app/shared/keybindings";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 

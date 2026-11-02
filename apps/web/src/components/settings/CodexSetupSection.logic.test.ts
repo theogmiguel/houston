@@ -1,4 +1,4 @@
-import type { ProviderAuthState, ProviderInstallState } from "@t3tools/contracts";
+import type { ProviderAuthState, ProviderInstallState } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

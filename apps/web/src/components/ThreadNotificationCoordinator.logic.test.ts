@@ -1,4 +1,4 @@
-import { WORKING_EXIT_GRACE_MS } from "@t3tools/client-runtime/state/thread-inbox";
+import { WORKING_EXIT_GRACE_MS } from "@houston-app/client-runtime/state/thread-inbox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {

@@ -5,7 +5,7 @@ import {
   type DesktopPreviewTabDefaults,
   type PreviewAppearancePreference,
   type PreviewViewportSetting,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 
 import {
   ensureClientSettingsHydrated,

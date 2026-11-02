@@ -10,13 +10,13 @@ import {
   type ProjectId,
   type ScheduledTaskId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   HOUSTON_HARNESS_LIMITS,
   HoustonHarnessError,
   type HoustonHarnessRunNowResult,
   type HoustonHarnessTrigger,
-} from "@t3tools/contracts/houston/harnessReview";
+} from "@houston-app/contracts/houston/harnessReview";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

@@ -8,7 +8,7 @@ import {
   MIN_CODE_FONT_SIZE,
   MIN_INTERFACE_FONT_SIZE,
   MIN_PROMPT_FONT_SIZE,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 
 export const DEFAULT_SANS_FONT_STACK =
   '"Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';

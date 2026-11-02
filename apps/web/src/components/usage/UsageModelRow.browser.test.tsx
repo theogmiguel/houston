@@ -1,4 +1,4 @@
-import type { ModelTotals } from "@t3tools/shared/usageMerge";
+import type { ModelTotals } from "@houston-app/shared/usageMerge";
 import { expect, it, vi } from "vite-plus/test";
 
 import "~/index.css";

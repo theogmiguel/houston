@@ -11,7 +11,7 @@ import {
   RunAttemptId,
   RunId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -27,16 +27,16 @@ import * as Deferred from "effect/Deferred";
 import {
   DEFAULT_HANDOFF_TOKEN_CAP,
   handoffBudget,
-} from "@t3tools/provider-core/server/handoffBudget";
-import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
-import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
+} from "@houston-app/provider-core/server/handoffBudget";
+import * as ProviderEventLoggers from "@houston-app/provider-core/server/ProviderEventLoggers";
+import * as TestProviderHost from "@houston-app/provider-testing/TestProviderHost";
 import { CursorDriver } from "./driver.ts";
 import * as CursorAgentSdk from "./CursorAgentSdk.ts";
 import * as CursorSdk from "./CursorSdk.ts";
 import * as CursorKeychain from "./CursorKeychain.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
+import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
+import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import { loadCursorSdk } from "./sdk.ts";
 
 const { Cursor } = loadCursorSdk();

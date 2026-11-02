@@ -1,5 +1,5 @@
-import type { ScopedThreadRef } from "@t3tools/contracts";
-import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
+import type { ScopedThreadRef } from "@houston-app/contracts";
+import { isAtomCommandInterrupted } from "@houston-app/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
 
 import { resolveBrowserDefaults } from "~/browser/browserDefaults";

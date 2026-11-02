@@ -1,7 +1,7 @@
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
-import { type ToolActivityIcon } from "@t3tools/contracts";
-import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
-import { getProjectFaviconCacheKey } from "@t3tools/shared/projectFavicon";
+import { type ToolActivityIcon } from "@houston-app/contracts";
+import { toolActivityFaviconUrl } from "@houston-app/shared/favicon";
+import { getProjectFaviconCacheKey } from "@houston-app/shared/projectFavicon";
 import { use, useState } from "react";
 import { HoustonMark } from "../HoustonWordmark";
 import {

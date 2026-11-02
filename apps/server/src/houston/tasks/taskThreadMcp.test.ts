@@ -8,7 +8,7 @@ import {
   OrchestratorMcpFailure,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -26,8 +26,8 @@ import * as McpToolAccessTestkit from "../../mcp/McpToolAccess.testkit.ts";
 import * as OrchestratorMcpService from "../../mcp/OrchestratorMcpService.ts";
 import { OrchestratorToolkit } from "../../mcp/toolkits/orchestrator/tools.ts";
 import { ProjectToolkit } from "../../mcp/toolkits/project/tools.ts";
-import { openCodePermissionRules } from "@t3tools/provider-opencode/server";
-import { sessionRules } from "@t3tools/provider-opencode/server/v2/adapter";
+import { openCodePermissionRules } from "@houston-app/provider-opencode/server";
+import { sessionRules } from "@houston-app/provider-opencode/server/v2/adapter";
 import {
   claudeMcpQueryOverrides,
   makeClaudeQueryOptions,
@@ -35,7 +35,7 @@ import {
 import { codexThreadRuntimeParams } from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ServerSettings from "../../serverSettings.ts";
-import { ClaudeSettings } from "@t3tools/contracts";
+import { ClaudeSettings } from "@houston-app/contracts";
 
 const environmentId = EnvironmentId.make("environment-task-threads");
 const planner = ThreadId.make("task-plan-1");

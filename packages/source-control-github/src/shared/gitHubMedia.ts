@@ -1,4 +1,4 @@
-import type { SourceControlMediaUrl } from "@t3tools/source-control-core/shared/definition";
+import type { SourceControlMediaUrl } from "@houston-app/source-control-core/shared/definition";
 
 /**
  * Only hosts where a credential is what decides the answer belong here. `objects.githubusercontent.com`

@@ -1,4 +1,4 @@
-import type { PullRequestRef, PullRequestReviewCommentDraft } from "@t3tools/contracts";
+import type { PullRequestRef, PullRequestReviewCommentDraft } from "@houston-app/contracts";
 import { create } from "zustand";
 
 export type PendingReviewComment = PullRequestReviewCommentDraft & { readonly id: string };

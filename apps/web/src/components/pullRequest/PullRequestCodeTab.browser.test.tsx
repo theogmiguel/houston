@@ -4,7 +4,7 @@ import {
   SourceControlProviderKind,
   type PullRequestDetailView,
   type PullRequestDiffResult,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { expect, it, vi } from "vite-plus/test";
 
 import "~/index.css";

@@ -25,7 +25,7 @@ import {
   type IconNode,
 } from "lucide";
 
-import type { ContextMenuItem } from "@t3tools/contracts";
+import type { ContextMenuItem } from "@houston-app/contracts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 

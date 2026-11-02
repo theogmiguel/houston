@@ -2,7 +2,7 @@
 import * as NodeFS from "node:fs";
 
 import { assert, describe, it } from "@effect/vitest";
-import type { ScheduledTask } from "@t3tools/contracts";
+import type { ScheduledTask } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { TestClock } from "effect/testing";

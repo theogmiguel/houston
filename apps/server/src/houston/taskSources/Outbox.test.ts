@@ -6,9 +6,9 @@ import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import type { ProjectId } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import type { HoustonTask } from "@t3tools/contracts/houston/tasks";
+import type { ProjectId } from "@houston-app/contracts";
+import * as HostProcess from "@houston-app/shared/HostProcess";
+import type { HoustonTask } from "@houston-app/contracts/houston/tasks";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

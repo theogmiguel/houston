@@ -1,5 +1,5 @@
-import { ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
-import { HOUSTON_NIGHT_SHIFT_LIMITS } from "@t3tools/contracts/houston/nightShift";
+import { ProviderInstanceId, type ModelSelection } from "@houston-app/contracts";
+import { HOUSTON_NIGHT_SHIFT_LIMITS } from "@houston-app/contracts/houston/nightShift";
 import { describe, expect, it } from "vite-plus/test";
 
 import { composeBrief, ledgerDigest, type BriefInput, type DigestEntry } from "./brief.ts";

@@ -5,7 +5,7 @@ import * as Exit from "effect/Exit";
 import * as Cause from "effect/Cause";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { HoustonTaskError } from "@t3tools/contracts/houston/tasks";
+import { HoustonTaskError } from "@houston-app/contracts/houston/tasks";
 import * as HoustonTaskService from "./TaskService.ts";
 import * as HoustonTaskStore from "./TaskStore.ts";
 import { createProject, layerTasks } from "./tasks.testkit.ts";

@@ -5,9 +5,9 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 
-import { ProjectId, type ServerProvider } from "@t3tools/contracts";
-import type { ProviderReadiness } from "@t3tools/contracts/houston/providerReadiness";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import { ProjectId, type ServerProvider } from "@houston-app/contracts";
+import type { ProviderReadiness } from "@houston-app/contracts/houston/providerReadiness";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

@@ -1,4 +1,4 @@
-import type { EnvironmentId as EnvironmentIdType } from "@t3tools/contracts";
+import type { EnvironmentId as EnvironmentIdType } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import * as EnvironmentRegistry from "../connection/registry.ts";

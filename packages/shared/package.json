@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/shared",
+  "name": "@houston-app/shared",
   "private": true,
   "type": "module",
   "exports": {
@@ -509,9 +509,9 @@
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
+    "@houston-app/contracts": "workspace:*",
     "@noble/curves": "catalog:",
     "@noble/hashes": "catalog:",
-    "@t3tools/contracts": "workspace:*",
     "effect": "catalog:",
     "ffi-rs": "1.3.2",
     "mdast-util-directive": "catalog:",

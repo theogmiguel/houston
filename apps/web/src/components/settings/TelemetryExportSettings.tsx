@@ -1,5 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { OtlpEndpointCheckResult, OtlpSignal, ServerObservability } from "@t3tools/contracts";
+import type {
+  OtlpEndpointCheckResult,
+  OtlpSignal,
+  ServerObservability,
+} from "@houston-app/contracts";
 import { useEffect, useEffectEvent, useState } from "react";
 
 import { serverEnvironment } from "../../state/server";

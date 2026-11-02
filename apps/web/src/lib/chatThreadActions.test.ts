@@ -1,4 +1,4 @@
-import { ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
+import { ProviderInstanceId, type ModelSelection } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { resolveNewThreadModelSelectionOverride } from "./chatThreadActions";
 

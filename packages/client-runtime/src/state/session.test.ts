@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { EnvironmentId, type AuthSessionState } from "@t3tools/contracts";
+import { EnvironmentId, type AuthSessionState } from "@houston-app/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

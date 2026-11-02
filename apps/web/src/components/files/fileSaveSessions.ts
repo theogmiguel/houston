@@ -1,5 +1,5 @@
-import { AuthFilesystemWriteScope, type EnvironmentId } from "@t3tools/contracts";
-import { type AtomCommandResult, runAtomCommand } from "@t3tools/client-runtime/state/runtime";
+import { AuthFilesystemWriteScope, type EnvironmentId } from "@houston-app/contracts";
+import { type AtomCommandResult, runAtomCommand } from "@houston-app/client-runtime/state/runtime";
 import { useEffect } from "react";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";

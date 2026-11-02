@@ -1,7 +1,7 @@
 // Task sources over the Tasks store and the source store. `adapters` provides the GitHub client
 // and the Notion client: the server passes the real ones, tests pass fakes. The outbox itself is
 // provided below the Tasks store, which hands it each write's transitions.
-import type * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
+import type * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
 import * as Layer from "effect/Layer";
 
 import type { NotionClient } from "./NotionClient.ts";

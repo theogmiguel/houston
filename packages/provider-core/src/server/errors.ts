@@ -1,4 +1,4 @@
-import { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInstanceId } from "@houston-app/contracts";
 import * as Schema from "effect/Schema";
 
 export class ProviderDriverError extends Schema.TaggedError<ProviderDriverError>()(

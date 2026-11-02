@@ -5,11 +5,15 @@
  *   node scripts/record-fx-acp-replay-fixture.ts --scenario simple
  */
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { ProviderInstanceId, type ProviderReplayEntry } from "@t3tools/contracts";
-import { FxSettings } from "@t3tools/provider-fx/settings";
-import { FX_DRIVER_KIND, makeFxAcpRuntime, makeFxAdapterV2 } from "@t3tools/provider-fx/testing";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
+import { ProviderInstanceId, type ProviderReplayEntry } from "@houston-app/contracts";
+import { FxSettings } from "@houston-app/provider-fx/settings";
+import {
+  FX_DRIVER_KIND,
+  makeFxAcpRuntime,
+  makeFxAdapterV2,
+} from "@houston-app/provider-fx/testing";
+import * as HostProcess from "@houston-app/shared/HostProcess";
+import { resolveSelfInvocation } from "@houston-app/shared/nodeRuntime";
 import * as Clock from "effect/Clock";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
@@ -19,12 +23,12 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import type * as EffectAcpProtocol from "effect-acp/protocol";
 
-import { ACP_PROTOCOL } from "@t3tools/provider-acp/server/adapter";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
-import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
-import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
-import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
+import { ACP_PROTOCOL } from "@houston-app/provider-acp/server/adapter";
+import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
+import type * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
+import { buildRuntimeInstructions } from "@houston-app/provider-core/server/runtimeInstructions";
+import * as TestProviderHost from "@houston-app/provider-testing/TestProviderHost";
+import { checkpointWorkspace } from "@houston-app/provider-testing/replayWorkspace";
 import * as ProviderAdapterRegistry from "../src/orchestration-v2/ProviderAdapterRegistry.ts";
 import { provideDeterministicTestRuntime } from "../src/orchestration-v2/testkit/DeterministicRuntime.ts";
 import { ORCHESTRATOR_REPLAY_FIXTURES } from "../src/orchestration-v2/testkit/fixtures/index.ts";

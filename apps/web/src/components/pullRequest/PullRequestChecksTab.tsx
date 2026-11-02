@@ -1,4 +1,4 @@
-import type { PullRequestCheck, ScopedThreadRef } from "@t3tools/contracts";
+import type { PullRequestCheck, ScopedThreadRef } from "@houston-app/contracts";
 
 import { useOpenLink } from "~/browser/useOpenLink";
 import { toastManager } from "../ui/toast";

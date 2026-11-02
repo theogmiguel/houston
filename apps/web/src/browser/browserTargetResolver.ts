@@ -2,17 +2,17 @@ import type {
   BrowserNavigationTarget,
   EnvironmentId,
   PreviewUrlResolution,
-} from "@t3tools/contracts";
-import { isLoopbackHost, normalizePreviewUrl } from "@t3tools/shared/preview";
-import { isLocalLoopbackHost, isPrivateNetworkHost } from "@t3tools/shared/hostClassification";
+} from "@houston-app/contracts";
+import { isLoopbackHost, normalizePreviewUrl } from "@houston-app/shared/preview";
+import { isLocalLoopbackHost, isPrivateNetworkHost } from "@houston-app/shared/hostClassification";
 
-import type { ConnectionTarget } from "@t3tools/client-runtime/connection";
+import type { ConnectionTarget } from "@houston-app/client-runtime/connection";
 
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { hasNativeBrowserHost } from "~/env";
 import { readPreparedConnection } from "~/state/session";
 
-export { normalizeHostname, isLocalLoopbackHost } from "@t3tools/shared/hostClassification";
+export { normalizeHostname, isLocalLoopbackHost } from "@houston-app/shared/hostClassification";
 
 const readEnvironmentUrl = (environmentId: EnvironmentId): URL => {
   const connection = readPreparedConnection(environmentId);

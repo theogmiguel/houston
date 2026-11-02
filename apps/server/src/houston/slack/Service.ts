@@ -1,6 +1,6 @@
 // The houston.slack.* operations: both tokens in the OS keychain only and checked with
 // auth.test, the settings and channel map checked by rules.ts, the requests and the stream.
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId } from "@houston-app/contracts";
 import type {
   HoustonSlackConfigureInput,
   HoustonSlackConnectInput,
@@ -9,7 +9,7 @@ import type {
   HoustonSlackRequest,
   HoustonSlackRequestsListInput,
   HoustonSlackStreamEvent,
-} from "@t3tools/contracts/houston/slack";
+} from "@houston-app/contracts/houston/slack";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

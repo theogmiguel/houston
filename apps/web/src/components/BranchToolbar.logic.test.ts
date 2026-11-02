@@ -1,6 +1,6 @@
-import { type VcsRef } from "@t3tools/contracts";
+import { type VcsRef } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { dedupeRemoteBranchesWithLocalMatches } from "@t3tools/shared/git";
+import { dedupeRemoteBranchesWithLocalMatches } from "@houston-app/shared/git";
 import {
   deriveLocalBranchNameFromRemoteRef,
   resolveBranchSelectionTarget,

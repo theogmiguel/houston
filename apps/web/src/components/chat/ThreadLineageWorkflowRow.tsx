@@ -1,8 +1,12 @@
 import type {
   SubagentWorkflowGroup,
   RuntimeSubagent,
-} from "@t3tools/client-runtime/state/subagentRuntime";
-import type { ProviderDriverKind, ProviderInstanceId, ServerProvider } from "@t3tools/contracts";
+} from "@houston-app/client-runtime/state/subagentRuntime";
+import type {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ServerProvider,
+} from "@houston-app/contracts";
 import { ChevronDownIcon, SquareIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 

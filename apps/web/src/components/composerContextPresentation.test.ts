@@ -1,4 +1,4 @@
-import { ThreadId } from "@t3tools/contracts";
+import { ThreadId } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { buildMessageContext } from "~/lib/composerContextRecords";

@@ -1,4 +1,4 @@
-import type { OfficePreviewKind } from "@t3tools/shared/filePreview";
+import type { OfficePreviewKind } from "@houston-app/shared/filePreview";
 
 export const OFFICE_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
 export const OFFICE_PREVIEW_MAX_ROWS = 250_000;

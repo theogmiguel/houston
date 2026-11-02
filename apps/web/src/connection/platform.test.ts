@@ -5,16 +5,16 @@ import {
   type DesktopBridge,
   type DesktopSshEnvironmentBootstrap,
   type DesktopSshEnvironmentTarget,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { afterEach, vi } from "vite-plus/test";
-import { ClientCapabilities } from "@t3tools/client-runtime/platform";
+import { ClientCapabilities } from "@houston-app/client-runtime/platform";
 import {
   ConnectionBlockedError,
   ConnectionTransientError,
-} from "@t3tools/client-runtime/connection";
+} from "@houston-app/client-runtime/connection";
 
 import {
   canRetainCachedPlatformRegistrationAfterRefreshFailure,

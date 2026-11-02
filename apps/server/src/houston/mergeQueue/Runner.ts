@@ -1,6 +1,6 @@
 // One pass a minute, or on a wake: for each project with a queue, the entry that goes next moves
 // one step at a time (verify, fail, land), at most a few steps per project per pass.
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId } from "@houston-app/contracts";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

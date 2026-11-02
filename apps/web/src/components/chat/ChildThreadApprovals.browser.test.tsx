@@ -1,5 +1,5 @@
-import type { ChildThreadApproval } from "@t3tools/client-runtime/state/thread-requests";
-import { EnvironmentId, RuntimeRequestId, ThreadId } from "@t3tools/contracts";
+import type { ChildThreadApproval } from "@houston-app/client-runtime/state/thread-requests";
+import { EnvironmentId, RuntimeRequestId, ThreadId } from "@houston-app/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";

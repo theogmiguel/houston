@@ -1,5 +1,5 @@
-import { ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
-import type { HoustonNightShiftSettings } from "@t3tools/contracts/houston/nightShift";
+import { ProviderInstanceId, type ModelSelection } from "@houston-app/contracts";
+import type { HoustonNightShiftSettings } from "@houston-app/contracts/houston/nightShift";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

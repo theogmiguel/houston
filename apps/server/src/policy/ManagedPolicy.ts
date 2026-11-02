@@ -6,7 +6,7 @@
  */
 import * as NodeModule from "node:module";
 
-import { ManagedPolicyDocument, type ManagedPolicySummary } from "@t3tools/contracts";
+import { ManagedPolicyDocument, type ManagedPolicySummary } from "@houston-app/contracts";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -16,14 +16,14 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import {
   ManagedPolicyFileError,
   managedPolicyPath,
   layerWindowsRegistry,
   readManagedPolicy,
   readManagedPolicyFile,
-} from "@t3tools/shared/managedPolicyFile";
+} from "@houston-app/shared/managedPolicyFile";
 
 import { telemetryChannel } from "../config.ts";
 import * as ManagedLimits from "./managedLimits.ts";

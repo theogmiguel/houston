@@ -1,4 +1,4 @@
-import type { SourceControlIcon } from "@t3tools/source-control-core/shared/definition";
+import type { SourceControlIcon } from "@houston-app/source-control-core/shared/definition";
 
 // The view box starts at -6 to move the mark 6 units in, as the published artwork's group does.
 export const icon: SourceControlIcon = {

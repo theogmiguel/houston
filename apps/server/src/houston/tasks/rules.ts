@@ -1,5 +1,5 @@
 // The rules that decide an outcome in the Tasks backlog, as pure functions over plain values.
-import type { OrchestrationV2RunStatus } from "@t3tools/contracts";
+import type { OrchestrationV2RunStatus } from "@houston-app/contracts";
 import {
   HOUSTON_TASK_LIMITS,
   HoustonTaskError,
@@ -11,7 +11,7 @@ import {
   type HoustonTaskReviewMode,
   type HoustonTaskRunState,
   type HoustonTaskStatus,
-} from "@t3tools/contracts/houston/tasks";
+} from "@houston-app/contracts/houston/tasks";
 
 export const OPEN_RUN_STATES: ReadonlySet<HoustonTaskRunState> = new Set([
   "preparing",

@@ -1,5 +1,5 @@
 import { WorkLogBlock } from "./WorkLog";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { useAtomValue } from "@effect/atom-react";
 import { environmentThreadDetails } from "../../state/threads";
 import { memo, use, useState } from "react";
@@ -76,7 +76,8 @@ const V2SubagentGroup = memo(function V2SubagentGroup({
     };
   });
   const summary = subagentGroupSummaryText(agents.map(({ status }) => status));
-  const fullSummary = summary.running === null ? summary.label : `${summary.label} · ${summary.running}`;
+  const fullSummary =
+    summary.running === null ? summary.label : `${summary.label} · ${summary.running}`;
   const toggleExpanded = (open: boolean) => {
     ctx.onToggleWorkEntry(row.id, expanded);
     if (open) ctx.workGroupViewState.expandedEntries.add(groupId);

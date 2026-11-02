@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { EnvironmentId, ProviderDriverKind } from "@t3tools/contracts";
+import type { EnvironmentId, ProviderDriverKind } from "@houston-app/contracts";
 import { InfoIcon } from "lucide-react";
 
 import { serverEnvironment } from "../../state/server";

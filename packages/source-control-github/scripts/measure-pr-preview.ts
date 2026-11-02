@@ -3,8 +3,8 @@
 // HTTP client request counts are exact; GraphQL cost uses changes in `x-ratelimit-used`,
 // which are approximate when other clients spend the same token's quota.
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
-import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
+import * as SourceControlRateLimit from "@houston-app/source-control-core/server/SourceControlRateLimit";
+import * as TestSourceControlHost from "@houston-app/source-control-testing/TestSourceControlHost";
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Layer from "effect/Layer";

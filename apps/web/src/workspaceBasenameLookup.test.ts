@@ -3,7 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   claimWorkspaceBasenameLookup,
   pickWorkspaceBasenameMatch,
-} from "@t3tools/client-runtime/workspace-basename-lookup";
+} from "@houston-app/client-runtime/workspace-basename-lookup";
 
 describe("pickWorkspaceBasenameMatch", () => {
   const entries = [

@@ -1,10 +1,10 @@
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import {
   effectiveSnoozed,
   isThreadWokeUnseen,
   threadWokeAt,
-} from "@t3tools/client-runtime/state/thread-settled";
-import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
+} from "@houston-app/client-runtime/state/thread-settled";
+import { sortSettledThreads } from "@houston-app/client-runtime/state/thread-sort";
 
 import { isSidebarHiddenThread, resolveThreadStatusPill } from "../components/Sidebar.logic";
 import type { ThreadState } from "../components/ui/thread-state-glyph";

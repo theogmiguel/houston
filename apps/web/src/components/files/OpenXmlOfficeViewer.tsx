@@ -1,5 +1,5 @@
 import { useStableCallback } from "~/hooks/useStableCallback";
-import type { OfficePreviewKind } from "@t3tools/shared/filePreview";
+import type { OfficePreviewKind } from "@houston-app/shared/filePreview";
 import { lazy, Suspense, useEffect, useState } from "react";
 import {
   FileSurfaceLoading,

@@ -1,6 +1,6 @@
 // What landing reads and asks beyond git and GitHub's REST API: CI through upstream's pull
 // request service, and the project's merge queue. Tests replace both.
-import { ProjectId } from "@t3tools/contracts";
+import { ProjectId } from "@houston-app/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

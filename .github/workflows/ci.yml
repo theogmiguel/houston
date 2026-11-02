@@ -223,7 +223,7 @@ jobs:
           filter: blob:none
       - uses: ./.github/actions/setup
       - name: Workspace package tests (web, server and scripts excluded)
-        run: pnpm -r --no-bail --no-sort --filter "!@t3tools/web" --filter "!houston" --filter "!@t3tools/scripts" test
+        run: pnpm -r --no-bail --no-sort --filter "!@houston-app/web" --filter "!houston" --filter "!@houston-app/scripts" test
       - name: Script tests (the licence generator and the style guard)
         run: node --test scripts/gen-third-party-licenses.test.mjs scripts/check-web-style.test.mjs
       - name: Report job timing
@@ -310,9 +310,9 @@ jobs:
           filter: blob:none
       - uses: ./.github/actions/setup
       - name: Build the renderer
-        run: pnpm --filter @t3tools/web build
+        run: pnpm --filter @houston-app/web build
       - name: Web unit tests
-        run: pnpm --filter @t3tools/web exec vp test run --project unit
+        run: pnpm --filter @houston-app/web exec vp test run --project unit
       - name: Report job timing
         if: always()
         continue-on-error: true
@@ -366,7 +366,7 @@ jobs:
       # Two workers keep each Chromium page responsive on the 4-vCPU runner: at the default worker count
       # clicks timed out under load; two retries absorb the remaining scheduling noise.
       - name: Web browser tests
-        run: pnpm --filter @t3tools/web exec vp test run --project browser --shard=${{ matrix.shard }}/4 --maxWorkers=2 --retry=2
+        run: pnpm --filter @houston-app/web exec vp test run --project browser --shard=${{ matrix.shard }}/4 --maxWorkers=2 --retry=2
       - name: Report job timing
         if: always()
         continue-on-error: true
@@ -412,7 +412,7 @@ jobs:
       # tauri.conf.json's frontendDist is the web app's dist directory, which
       # generate_context! requires at compile time.
       - name: Build renderer assets for native compilation
-        run: pnpm --filter @t3tools/web build
+        run: pnpm --filter @houston-app/web build
       - name: Check native formatting and Clippy
         run: |
           cargo fmt --all --check --manifest-path src-tauri/Cargo.toml
@@ -445,7 +445,7 @@ jobs:
           key: macos-checks
       - uses: ./.github/actions/setup
       - name: Build renderer assets for native compilation
-        run: pnpm --filter @t3tools/web build
+        run: pnpm --filter @houston-app/web build
       - name: Check native application
         working-directory: src-tauri
         run: |
@@ -480,7 +480,7 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Build renderer assets for native compilation
         run: |
-          pnpm --filter @t3tools/web build
+          pnpm --filter @houston-app/web build
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Check native application
         working-directory: src-tauri

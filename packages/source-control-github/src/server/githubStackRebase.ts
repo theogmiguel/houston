@@ -5,7 +5,7 @@ import * as Schema from "effect/Schema";
 import * as Base64 from "effect/encoding/Base64";
 
 import * as GitHubAppAccess from "./GitHubAppAccess.ts";
-import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
+import * as SourceControlHost from "@houston-app/source-control-core/server/SourceControlHost";
 
 export interface CascadeLayer {
   readonly number: number;

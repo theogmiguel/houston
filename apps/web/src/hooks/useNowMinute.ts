@@ -1,4 +1,4 @@
-import { minuteTick } from "@t3tools/client-runtime/clock";
+import { minuteTick } from "@houston-app/client-runtime/clock";
 import { useSyncExternalStore } from "react";
 
 export function useNowMinute(): string {

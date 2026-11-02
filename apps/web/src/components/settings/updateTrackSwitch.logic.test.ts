@@ -1,4 +1,4 @@
-import type { DesktopUpdateChannel, DesktopUpdateState } from "@t3tools/contracts";
+import type { DesktopUpdateChannel, DesktopUpdateState } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { localUpdaterStaysPut, prepareLocalTrackSwitch } from "./updateTrackSwitch.logic";

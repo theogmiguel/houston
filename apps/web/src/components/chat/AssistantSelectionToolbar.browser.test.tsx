@@ -1,4 +1,9 @@
-import { EnvironmentId, ThreadId, type AssistantCitation, type ScopedThreadRef } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ThreadId,
+  type AssistantCitation,
+  type ScopedThreadRef,
+} from "@houston-app/contracts";
 import { useState } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";

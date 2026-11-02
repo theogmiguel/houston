@@ -1,4 +1,4 @@
-import { ASSISTANT_CITATION_MAX_COMMENT_LENGTH } from "@t3tools/contracts";
+import { ASSISTANT_CITATION_MAX_COMMENT_LENGTH } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveAssistantCitationCommentDismissal } from "./assistantCitationCommentDismissal";

@@ -2,8 +2,8 @@ import {
   managedNightlyDeniedMessage,
   managedUpdatesMessage,
   type ManagedPolicyDocument,
-} from "@t3tools/contracts";
-import type { CliReleaseChannel } from "@t3tools/shared/cliRelease";
+} from "@houston-app/contracts";
+import type { CliReleaseChannel } from "@houston-app/shared/cliRelease";
 
 /**
  * Why the managed policy refuses an update a user or maintainer asked for, or `undefined` when it

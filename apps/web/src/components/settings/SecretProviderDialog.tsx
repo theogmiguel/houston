@@ -1,4 +1,4 @@
-import type { EnvironmentId, SecretProviderConfig, SecretProviderId } from "@t3tools/contracts";
+import type { EnvironmentId, SecretProviderConfig, SecretProviderId } from "@houston-app/contracts";
 import * as Result from "effect/Result";
 import { useState } from "react";
 

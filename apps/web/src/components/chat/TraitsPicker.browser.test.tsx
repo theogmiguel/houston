@@ -2,8 +2,8 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderOptionDescriptor,
-} from "@t3tools/contracts";
-import { compileResolvedKeybindingsConfig } from "@t3tools/shared/keybindings";
+} from "@houston-app/contracts";
+import { compileResolvedKeybindingsConfig } from "@houston-app/shared/keybindings";
 import { expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 

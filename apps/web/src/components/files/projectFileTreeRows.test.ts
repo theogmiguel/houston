@@ -1,4 +1,4 @@
-import type { ProjectEntry } from "@t3tools/contracts";
+import type { ProjectEntry } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { ancestorDirectoryPaths, projectFileTreeRows } from "./projectFileTreeRows";
@@ -33,11 +33,7 @@ describe("projectFileTreeRows", () => {
 
   it("keeps a deep search result and its ancestors visible", () => {
     const rows = projectFileTreeRows(entries, new Set(), "gridstore");
-    expect(rows.map((row) => row.entry.path)).toEqual([
-      "src",
-      "src/grid",
-      "src/grid/gridStore.ts",
-    ]);
+    expect(rows.map((row) => row.entry.path)).toEqual(["src", "src/grid", "src/grid/gridStore.ts"]);
   });
 
   it("returns the ancestor directories for a reveal", () => {

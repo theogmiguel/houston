@@ -1,12 +1,12 @@
 // A Slack run's side of its thread: the agent asks one question at a time and hands its result
 // back; the first answer from the requester or the owner reaches the run once (AD-066).
-import type { ProjectId } from "@t3tools/contracts";
-import type { HoustonSlackError, HoustonSlackLanguage } from "@t3tools/contracts/houston/slack";
+import type { ProjectId } from "@houston-app/contracts";
+import type { HoustonSlackError, HoustonSlackLanguage } from "@houston-app/contracts/houston/slack";
 import {
   houstonTaskKey,
   type HoustonTask,
   type HoustonTaskError,
-} from "@t3tools/contracts/houston/tasks";
+} from "@houston-app/contracts/houston/tasks";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -249,7 +249,10 @@ const make = Effect.gen(function* () {
                     type: "button",
                     action_id: `${ANSWER_ACTION}_${index}`,
                     value: `${id}:${index}`,
-                    text: { type: "plain_text", text: buttonLabel(`${index + 1}. ${clean(option)}`) },
+                    text: {
+                      type: "plain_text",
+                      text: buttonLabel(`${index + 1}. ${clean(option)}`),
+                    },
                     ...(index === form.recommended ? { style: "primary" } : {}),
                   })),
                   {
@@ -430,7 +433,11 @@ const make = Effect.gen(function* () {
           ? { root: null, hide: [] }
           : yield* contextOf(task, runRow);
       const body = [
-        questionText(decodeQuestion(question.form_json), (field) => agentText(field, context), text),
+        questionText(
+          decodeQuestion(question.form_json),
+          (field) => agentText(field, context),
+          text,
+        ),
         text.questionClosed,
       ].join("\n");
       yield* store.write(

@@ -31,7 +31,7 @@ vi.mock("../ChatView", async () => {
   const [{ ComposerPendingUserInputPanel }, { ComposerBanner }, contracts] = await Promise.all([
     import("../chat/ComposerPendingUserInputPanel"),
     import("../chat/ComposerBanner"),
-    import("@t3tools/contracts"),
+    import("@houston-app/contracts"),
   ]);
   const environmentId = contracts.EnvironmentId.make("env-1");
   const threadId = contracts.ThreadId.make("thread-a");

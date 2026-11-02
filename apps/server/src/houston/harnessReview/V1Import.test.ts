@@ -8,9 +8,9 @@ import * as NodeSqlite from "node:sqlite";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as GitHubCredentials from "@t3tools/source-control-github/server/GitHubCredentials";
-import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
+import * as HostProcess from "@houston-app/shared/HostProcess";
+import * as GitHubCredentials from "@houston-app/source-control-github/server/GitHubCredentials";
+import * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

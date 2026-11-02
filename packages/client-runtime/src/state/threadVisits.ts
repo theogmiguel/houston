@@ -1,5 +1,5 @@
 // @effect-diagnostics globalTimers:off globalDate:off - The tracker runs in atom subscriptions, outside an Effect runtime.
-import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@houston-app/contracts";
 import { Atom } from "effect/reactivity";
 
 import { parseThreadKey, threadKey } from "./entities.ts";

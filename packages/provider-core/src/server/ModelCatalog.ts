@@ -2,7 +2,7 @@ import type {
   ModelCapabilities,
   ProviderDriverKind,
   ServerProviderModel,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
@@ -35,7 +35,7 @@ export class ModelCatalog extends Context.Service<
     readonly bundled: (driverKind: ProviderDriverKind) => ProviderCatalog | undefined;
     readonly refreshInBackground: Effect.Effect<void>;
   }
->()("@t3tools/provider-core/server/ModelCatalog") {}
+>()("@houston-app/provider-core/server/ModelCatalog") {}
 
 export const catalogServerModel = (
   catalog: ProviderCatalog,

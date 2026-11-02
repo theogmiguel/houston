@@ -1,6 +1,6 @@
 // Occurrence indices are fetch-local; replace entire refetched ranges to prevent key collisions.
 import { cursorRateModel } from "./accountUsage.ts";
-import type { UsageRecord } from "@t3tools/provider-core/server/usage";
+import type { UsageRecord } from "@houston-app/provider-core/server/usage";
 
 export type CursorCredentialSource = string | { readonly kind: "keychain" };
 

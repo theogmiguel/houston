@@ -1,10 +1,10 @@
 // The outcome rules of the Tasks backlog on literal values.
-import type { OrchestrationV2RunStatus } from "@t3tools/contracts";
+import type { OrchestrationV2RunStatus } from "@houston-app/contracts";
 import {
   HoustonTaskError,
   type HoustonTaskRunState,
   type HoustonTaskStatus,
-} from "@t3tools/contracts/houston/tasks";
+} from "@houston-app/contracts/houston/tasks";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

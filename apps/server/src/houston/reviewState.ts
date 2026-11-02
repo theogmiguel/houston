@@ -1,6 +1,6 @@
 // Viewed marks and comment anchors for the local Changes review. A mark clears when a commit since
 // it touches the file, or when the content differs; anchors map by content.
-import { GitCommandError, type ReviewDiffPreviewError } from "@t3tools/contracts";
+import { GitCommandError, type ReviewDiffPreviewError } from "@houston-app/contracts";
 import {
   HoustonReviewAnchorRangeError,
   type HoustonReviewAnchorLinesInput,
@@ -12,7 +12,7 @@ import {
   type HoustonReviewMapAnchorsInput,
   type HoustonReviewSetFilesViewedInput,
   type ReviewLineAnchor,
-} from "@t3tools/contracts/houston/reviewState";
+} from "@houston-app/contracts/houston/reviewState";
 import { diffArrays } from "diff";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";

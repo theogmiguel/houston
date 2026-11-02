@@ -7,7 +7,7 @@ import type {
   ProjectId,
   ScopedProjectRef,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 
 export interface DesktopAppActivationProject {
   readonly id: ProjectId;

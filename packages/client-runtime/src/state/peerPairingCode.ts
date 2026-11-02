@@ -3,7 +3,7 @@
  * user's own session there, so a link card can be answered without fetching a code by hand.
  * It carries exactly what an agent sign-in with the chosen access needs.
  */
-import { type AuthMcpClientAccess, mcpClientScopes } from "@t3tools/contracts";
+import { type AuthMcpClientAccess, mcpClientScopes } from "@houston-app/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import type * as HttpClient from "effect/http/HttpClient";

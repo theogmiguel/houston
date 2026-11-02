@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { findProjectByPath } from "@t3tools/client-runtime/state/projects";
+import { findProjectByPath } from "@houston-app/client-runtime/state/projects";
 
 describe("projectPaths", () => {
   it("finds existing projects even when the input formatting differs", () => {

@@ -1,7 +1,7 @@
-import { ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
-import type { ProviderReadiness } from "@t3tools/contracts/houston/providerReadiness";
+import { ProviderInstanceId, type ModelSelection } from "@houston-app/contracts";
+import type { ProviderReadiness } from "@houston-app/contracts/houston/providerReadiness";
 import { it as effectIt } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";

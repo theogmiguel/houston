@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
-import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
-import { SKILL_MENTION_PATTERN } from "@t3tools/shared/composerInlineTokens";
+import { collectComposerContextReferences } from "@houston-app/shared/composerContextReferences";
+import { SKILL_MENTION_PATTERN } from "@houston-app/shared/composerInlineTokens";
 
 import { renderWebhookPrompt, type WebhookRequest } from "./webhookTemplate.ts";
 

@@ -4,7 +4,7 @@
  * once, when the projection reports it, wherever the user is in the app. It also
  * owns the edit's save, because a save outlives the view that started it.
  */
-import type { RunId } from "@t3tools/contracts";
+import type { RunId } from "@houston-app/contracts";
 import { Atom, type AtomRegistry } from "effect/reactivity";
 
 export interface QueuedRunStatus {

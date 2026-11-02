@@ -1,6 +1,6 @@
 import * as NodeAssert from "node:assert/strict";
 
-import { T3_CODE_DEVICE_TOOL_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
+import { T3_CODE_DEVICE_TOOL_INSTRUCTIONS } from "@houston-app/provider-core/server/orchestrationInstructions";
 import { describe, it } from "vite-plus/test";
 
 import {

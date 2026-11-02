@@ -1,4 +1,4 @@
-import { isOrchestrationV2WorkActive, type OrchestrationV2Subagent } from "@t3tools/contracts";
+import { isOrchestrationV2WorkActive, type OrchestrationV2Subagent } from "@houston-app/contracts";
 
 export function deriveSubagentElapsedMs(
   agent: {

@@ -2,7 +2,7 @@ import {
   OrchestrationV2ShellSnapshot,
   type ThreadId,
   ThreadPullRequestLink,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";

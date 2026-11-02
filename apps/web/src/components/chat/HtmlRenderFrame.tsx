@@ -1,10 +1,10 @@
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef } from "@houston-app/contracts";
 import {
   HTML_RENDER_COLUMN_WIDTH,
   htmlRenderFileName,
   htmlRenderFrameHeight,
   type HtmlRenderReference,
-} from "@t3tools/shared/htmlRender";
+} from "@houston-app/shared/htmlRender";
 import { CircleAlertIcon, CodeXmlIcon, Maximize2Icon } from "lucide-react";
 import { useEffect, useState } from "react";
 

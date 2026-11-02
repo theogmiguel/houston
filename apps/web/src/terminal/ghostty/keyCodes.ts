@@ -1,4 +1,4 @@
-import { US_SHIFTED_TO_UNSHIFTED_KEYS } from "@t3tools/shared/keybindings";
+import { US_SHIFTED_TO_UNSHIFTED_KEYS } from "@houston-app/shared/keybindings";
 
 // This order mirrors GhosttyKey in ghostty/vt/key/event.h. The values are
 // intentionally derived from the official W3C-aligned enum instead of

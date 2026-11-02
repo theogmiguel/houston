@@ -6,22 +6,22 @@
 // @effect-diagnostics globalErrorInEffectFailure:off
 // @effect-diagnostics anyUnknownInErrorContext:off
 // @effect-diagnostics preferSchemaOverJson:off
-import type { DesktopSshEnvironmentTarget } from "@t3tools/contracts";
+import type { DesktopSshEnvironmentTarget } from "@houston-app/contracts";
 import {
   bootstrapRemoteBearerSession,
   fetchRemoteSessionState,
-} from "@t3tools/client-runtime/authorization";
-import { fetchRemoteEnvironmentDescriptor } from "@t3tools/client-runtime/environment";
-import * as SshAuth from "@t3tools/ssh/auth";
-import { resolveSshTarget } from "@t3tools/ssh/command";
-import { discoverSshHosts } from "@t3tools/ssh/config";
-import { SshPasswordPromptError } from "@t3tools/ssh/errors";
+} from "@houston-app/client-runtime/authorization";
+import { fetchRemoteEnvironmentDescriptor } from "@houston-app/client-runtime/environment";
+import * as SshAuth from "@houston-app/ssh/auth";
+import { resolveSshTarget } from "@houston-app/ssh/command";
+import { discoverSshHosts } from "@houston-app/ssh/config";
+import { SshPasswordPromptError } from "@houston-app/ssh/errors";
 import {
   resolveLoopbackSshHttpBaseUrl,
   SshEnvironmentManager,
   type RemoteT3RunnerOptions,
-} from "@t3tools/ssh/tunnel";
-import * as NetService from "@t3tools/shared/Net";
+} from "@houston-app/ssh/tunnel";
+import * as NetService from "@houston-app/shared/Net";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -116,10 +116,7 @@ function serializeError(error: unknown): {
 }
 
 function isPasswordPromptCancellation(error: unknown): boolean {
-  return (
-    error instanceof SshPasswordPromptError &&
-    /cancelled|timed out/iu.test(error.message)
-  );
+  return error instanceof SshPasswordPromptError && /cancelled|timed out/iu.test(error.message);
 }
 
 interface PendingPrompt {
@@ -174,9 +171,7 @@ function makePromptService() {
     pending.delete(requestId);
     clearTimeout(entry.timer);
     if (password === null) {
-      entry.reject(
-        new SshPasswordPromptError({ message: "SSH authentication cancelled." }),
-      );
+      entry.reject(new SshPasswordPromptError({ message: "SSH authentication cancelled." }));
       return null;
     }
     entry.resolve(password);
@@ -185,10 +180,7 @@ function makePromptService() {
   return { service, resolve };
 }
 
-function paramsOf<T>(
-  params: unknown,
-  method: string,
-): Effect.Effect<T, SshBridgeRequestError> {
+function paramsOf<T>(params: unknown, method: string): Effect.Effect<T, SshBridgeRequestError> {
   if (typeof params !== "object" || params === null) {
     return Effect.fail(
       new SshBridgeRequestError({
@@ -225,22 +217,22 @@ export async function runDesktopSshBridge(): Promise<void> {
           case "discover-hosts":
             return yield* discoverSshHosts({});
           case "resolve-host":
-            return yield* resolveSshTarget(String((request.params as { alias?: unknown })?.alias ?? "").trim());
+            return yield* resolveSshTarget(
+              String((request.params as { alias?: unknown })?.alias ?? "").trim(),
+            );
           case "ensure-environment": {
             const params = yield* paramsOf<{
               readonly target: DesktopSshEnvironmentTarget;
               readonly options?: { readonly issuePairingToken?: boolean };
             }>(request.params, request.method);
-            return yield* manager
-              .ensureEnvironment(params.target, params.options)
-              .pipe(
-                Effect.catchIf(isPasswordPromptCancellation, (error) =>
-                  Effect.succeed({
-                    type: "ssh-password-prompt-cancelled" as const,
-                    message: error.message,
-                  }),
-                ),
-              );
+            return yield* manager.ensureEnvironment(params.target, params.options).pipe(
+              Effect.catchIf(isPasswordPromptCancellation, (error) =>
+                Effect.succeed({
+                  type: "ssh-password-prompt-cancelled" as const,
+                  message: error.message,
+                }),
+              ),
+            );
           }
           case "disconnect-environment": {
             const params = yield* paramsOf<{

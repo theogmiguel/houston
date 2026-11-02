@@ -1,6 +1,6 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Keys need a deterministic digest, not random bytes.
 import * as NodeCrypto from "node:crypto";
-import { ScheduledTask, ScheduledTaskError } from "@t3tools/contracts";
+import { ScheduledTask, ScheduledTaskError } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";

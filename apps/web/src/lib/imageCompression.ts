@@ -2,11 +2,11 @@ import {
   downscalableImageMimeType,
   fitImageAttachmentSize,
   IMAGE_ATTACHMENT_MAX_EDGE,
-} from "@t3tools/client-runtime/image-attachment-size";
+} from "@houston-app/client-runtime/image-attachment-size";
 import {
   IMAGE_DIMENSIONS_HEADER_BYTES,
   readImageDimensions,
-} from "@t3tools/shared/imageDimensions";
+} from "@houston-app/shared/imageDimensions";
 
 const MAX_DIMENSION = IMAGE_ATTACHMENT_MAX_EDGE;
 export const MAX_STASH_IMAGE_DATA_URL_CHARS = 1_300_000;

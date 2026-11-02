@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
+import type { ServerUpdateState } from "@houston-app/client-runtime/state/server";
 import { useState } from "react";
 
 import { environmentIdsKey } from "~/state/environmentAtomList";

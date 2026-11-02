@@ -8,13 +8,13 @@ import * as Schema from "effect/Schema";
 import {
   SourceControlProviderKind as SourceControlProviderKindSchema,
   type SourceControlProviderKind,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 
 const FALLBACK_COOLDOWN = Duration.seconds(30);
 const MAX_FALLBACK_COOLDOWN = Duration.minutes(15);
 
 export const CredentialScope = Context.Reference<string>(
-  "@t3tools/source-control-core/server/SourceControlRateLimit/CredentialScope",
+  "@houston-app/source-control-core/server/SourceControlRateLimit/CredentialScope",
   {
     defaultValue: () => "",
   },
@@ -22,7 +22,7 @@ export const CredentialScope = Context.Reference<string>(
 
 /** Interactive requests may use reserved quota and bypass pauses caused by background reads. */
 export const Interactive = Context.Reference<boolean>(
-  "@t3tools/source-control-core/server/SourceControlRateLimit/Interactive",
+  "@houston-app/source-control-core/server/SourceControlRateLimit/Interactive",
   { defaultValue: () => false },
 );
 
@@ -70,7 +70,7 @@ export class SourceControlRateLimit extends Context.Service<
     ) => Effect.Effect<void>;
     readonly recordSuccess: (input: RateLimitLease) => Effect.Effect<void>;
   }
->()("@t3tools/source-control-core/server/SourceControlRateLimit") {}
+>()("@houston-app/source-control-core/server/SourceControlRateLimit") {}
 
 function normalizedKey(key: RateLimitKey, scope: string): string {
   return `${key.provider}\0${key.host.trim().toLowerCase()}\0${scope}`;

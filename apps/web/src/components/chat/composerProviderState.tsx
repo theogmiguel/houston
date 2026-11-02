@@ -7,16 +7,16 @@ import {
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   type ServerProviderModel,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   buildExplicitProviderOptionSelectionsFromDescriptors,
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
   isClaudeUltrathinkPrompt,
   normalizeModelSlug,
-} from "@t3tools/shared/model";
+} from "@houston-app/shared/model";
 
-import type { EffortDisplay } from "@t3tools/contracts/settings";
+import type { EffortDisplay } from "@houston-app/contracts/settings";
 import type { ReactNode } from "react";
 
 import type { DraftId } from "../../composerDraftStore";

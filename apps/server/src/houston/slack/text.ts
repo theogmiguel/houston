@@ -1,6 +1,9 @@
 // Houston's own words in Slack, in the intake's language, as Houston 1 phrased them. Slack text
 // quoted here is escaped by the caller.
-import { HOUSTON_SLACK_LIMITS, type HoustonSlackLanguage } from "@t3tools/contracts/houston/slack";
+import {
+  HOUSTON_SLACK_LIMITS,
+  type HoustonSlackLanguage,
+} from "@houston-app/contracts/houston/slack";
 
 export type LeftOutReason = "host" | "type" | "size" | "count" | "failed";
 
@@ -167,7 +170,8 @@ export const slackText = (language: HoustonSlackLanguage) => {
       "the run is waiting for a confirmation in its thread",
     ),
     // Replies and adjustments.
-    addedInSlack: (date: string) => pick(`Adicionado no Slack em ${date}:`, `Added in Slack on ${date}:`),
+    addedInSlack: (date: string) =>
+      pick(`Adicionado no Slack em ${date}:`, `Added in Slack on ${date}:`),
     replyTooLong: (chars: number) =>
       pick(
         `Sua resposta tem ${chars} caracteres, acima do limite de ${HOUSTON_SLACK_LIMITS.dialogChars}; nada foi feito com ela. Responda de novo de forma mais curta.`,

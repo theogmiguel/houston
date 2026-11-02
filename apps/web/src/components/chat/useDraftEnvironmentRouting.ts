@@ -8,14 +8,14 @@ import {
   ProviderInstanceId,
   resolveProjectProviderInstanceEnabled,
   type ThreadContextRecord,
-} from "@t3tools/contracts";
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+} from "@houston-app/contracts";
+import { scopeProjectRef } from "@houston-app/client-runtime/environment";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { toastManager } from "../ui/toast";
 import {
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
-} from "@t3tools/client-runtime/state/project-grouping";
+} from "@houston-app/client-runtime/state/project-grouping";
 import { useComposerDraftStore, DraftId } from "../../composerDraftStore";
 import { type EnvironmentPresentation, useEnvironmentProviders } from "../../state/environments";
 import { useProjects } from "../../state/entities";

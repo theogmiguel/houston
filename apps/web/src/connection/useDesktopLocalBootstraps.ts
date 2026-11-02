@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { DesktopEnvironmentBootstrap } from "@t3tools/contracts";
+import type { DesktopEnvironmentBootstrap } from "@houston-app/contracts";
 import { Atom } from "effect/reactivity";
 
 import { readDesktopSecondaryBootstraps } from "./desktopLocal";

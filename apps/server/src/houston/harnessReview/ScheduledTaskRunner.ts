@@ -1,8 +1,8 @@
 // The hook upstream's scheduled tasks ask before launching a thread. Without it, every task
 // launches as upstream does; Houston's layer (layer.ts) claims the tasks its features own.
-import type { ScheduledTask, ThreadId } from "@t3tools/contracts";
-import type { HoustonHarnessError } from "@t3tools/contracts/houston/harnessReview";
-import type { HoustonNightShiftError } from "@t3tools/contracts/houston/nightShift";
+import type { ScheduledTask, ThreadId } from "@houston-app/contracts";
+import type { HoustonHarnessError } from "@houston-app/contracts/houston/harnessReview";
+import type { HoustonNightShiftError } from "@houston-app/contracts/houston/nightShift";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 

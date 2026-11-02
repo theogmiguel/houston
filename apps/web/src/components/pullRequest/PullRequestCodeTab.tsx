@@ -1,7 +1,7 @@
 import {
   capitalizeTerm,
   sourceControlClients,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@houston-app/client-runtime/source-control-clients";
 import type { CodeViewItem, DiffLineAnnotation, SelectedLineRange } from "@pierre/diffs";
 import type { CodeViewAnnotationArgs, CodeViewDiffItem } from "@pierre/diffs/react";
 import type {
@@ -14,7 +14,7 @@ import type {
   PullRequestReviewPosition,
   PullRequestReviewThread,
   PullRequestThreadCommentsResult,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -51,8 +51,8 @@ import { pullRequestFindingKey, type PullRequestFinding } from "./pullRequestDet
 import {
   canEditPullRequestComment,
   canResolvePullRequestThread,
-} from "@t3tools/client-runtime/pull-request-editing";
-import { isTestChangedFile } from "@t3tools/shared/changedFileKind";
+} from "@houston-app/client-runtime/pull-request-editing";
+import { isTestChangedFile } from "@houston-app/shared/changedFileKind";
 import { orderDiffFiles } from "./pullRequestFileOrder.logic";
 import {
   buildFileDiffRenderKey,

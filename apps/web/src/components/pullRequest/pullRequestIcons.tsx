@@ -3,7 +3,7 @@ import type {
   PullRequestChecksState,
   PullRequestReviewDecision,
   PullRequestState,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   CircleCheckIcon,
   CircleDashedIcon,

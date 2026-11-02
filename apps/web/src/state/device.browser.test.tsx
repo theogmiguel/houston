@@ -4,8 +4,8 @@ import {
   EnvironmentId,
   ThreadId,
   type DeviceServiceState,
-} from "@t3tools/contracts";
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+} from "@houston-app/contracts";
+import { scopedThreadKey } from "@houston-app/client-runtime/environment";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";

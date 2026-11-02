@@ -1,6 +1,6 @@
 // The task source tables. Every write runs inside the Tasks store's transaction, so a record's
 // task, initiative and link land together; source events are published in commit order.
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId } from "@houston-app/contracts";
 import {
   HoustonTaskSourceSnapshot,
   HoustonTaskSourceSyncState,
@@ -8,7 +8,7 @@ import {
   type HoustonTaskSourceProvider,
   type HoustonTaskSourceSettings,
   type HoustonTaskSourceStreamEvent,
-} from "@t3tools/contracts/houston/taskSources";
+} from "@houston-app/contracts/houston/taskSources";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

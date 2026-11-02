@@ -1,6 +1,6 @@
 // The houston.mergeQueue.* operations: enqueue checks by rules.ts before GitHub is read, the
 // snapshot and its subscriptions, settings, pause, and the user's Merge through the landing.
-import { ThreadId, type ProjectId } from "@t3tools/contracts";
+import { ThreadId, type ProjectId } from "@houston-app/contracts";
 import {
   HOUSTON_MERGE_QUEUE_LIMITS,
   HoustonMergeQueueError,
@@ -20,7 +20,7 @@ import {
   type HoustonMergeQueueSnapshot,
   type HoustonMergeQueueSummary,
   type HoustonMergeQueueSummaryInput,
-} from "@t3tools/contracts/houston/mergeQueue";
+} from "@houston-app/contracts/houston/mergeQueue";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -29,7 +29,7 @@ import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
-import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
+import { randomUuidV4 } from "@houston-app/provider-core/server/randomUuid";
 
 import { HoustonMergeQueueGitHub } from "./GitHubQueueClient.ts";
 import { HoustonMergeLanding } from "./Landing.ts";

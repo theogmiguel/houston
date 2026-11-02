@@ -3,7 +3,7 @@ import {
   EnvironmentId,
   ThreadId,
   type DesktopPreviewBridge,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const {

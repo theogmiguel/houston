@@ -1,4 +1,8 @@
-import type { EnvironmentId, ManagedPolicySummary, ProviderDriverKind } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ManagedPolicySummary,
+  ProviderDriverKind,
+} from "@houston-app/contracts";
 
 import { useServerConfigs } from "./entities";
 import { usePrimaryEnvironmentId } from "./environments";

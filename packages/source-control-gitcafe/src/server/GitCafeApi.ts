@@ -50,7 +50,7 @@ export class GitCafeApi extends Context.Service<
   {
     readonly request: (input: GitCafeApiRequest) => Effect.Effect<string, GitCafeApiError>;
   }
->()("@t3tools/source-control-gitcafe/server/GitCafeApi") {}
+>()("@houston-app/source-control-gitcafe/server/GitCafeApi") {}
 
 const decodeProblem = Schema.decodeUnknownOption(
   Schema.fromJsonString(

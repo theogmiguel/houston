@@ -1,9 +1,9 @@
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { sourceControlClients } from "@houston-app/client-runtime/source-control-clients";
+import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import {
   threadRuntimeIsActive,
   type EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
+} from "@houston-app/client-runtime/state/shell";
 import {
   useProjects,
   useQuietThreadShell,
@@ -13,7 +13,7 @@ import {
 import {
   threadPullRequestKeysEqual,
   visibleThreadPullRequests,
-} from "@t3tools/client-runtime/thread-pull-requests";
+} from "@houston-app/client-runtime/thread-pull-requests";
 import type {
   ContextMenuItem,
   EnvironmentId,
@@ -22,8 +22,8 @@ import type {
   PullRequestState,
   ResolvedKeybindingsConfig,
   ThreadId,
-} from "@t3tools/contracts";
-import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
+} from "@houston-app/contracts";
+import { getTerminalLabel } from "@houston-app/shared/terminalLabels";
 import {
   closestCenter,
   DndContext,
@@ -86,7 +86,7 @@ import {
 import { useBrowserDefaults } from "~/browser/browserDefaults";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
-import { faviconUrlForOrigin } from "@t3tools/shared/favicon";
+import { faviconUrlForOrigin } from "@houston-app/shared/favicon";
 import { useTheme } from "~/hooks/useTheme";
 import { useDeviceState } from "~/state/device";
 import type { PreviewPanelInlineSize } from "~/hooks/usePreviewPanelInlineSize";

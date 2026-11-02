@@ -4,11 +4,11 @@
 import * as NodeHttp from "node:http";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
-import * as GitHubAppSignIn from "@t3tools/source-control-github/server/GitHubAppSignIn";
-import * as GitHubCredentials from "@t3tools/source-control-github/server/GitHubCredentials";
-import * as GitHubQuota from "@t3tools/source-control-github/server/GitHubQuota";
-import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
+import * as SourceControlRateLimit from "@houston-app/source-control-core/server/SourceControlRateLimit";
+import * as GitHubAppSignIn from "@houston-app/source-control-github/server/GitHubAppSignIn";
+import * as GitHubCredentials from "@houston-app/source-control-github/server/GitHubCredentials";
+import * as GitHubQuota from "@houston-app/source-control-github/server/GitHubQuota";
+import * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";

@@ -8,8 +8,8 @@ import * as NodeSqlite from "node:sqlite";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import { HoustonSlackError } from "@t3tools/contracts/houston/slack";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import { HoustonSlackError } from "@houston-app/contracts/houston/slack";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -124,9 +124,42 @@ const writeV1Slack = (file: string, options: { readonly wal?: boolean } = {}) =>
         state, permalink, queued_at, created_at, status_reaction)
        VALUES (?, 'slack', ?, 'C1', ?, 'U2', ?, ?, ?, ?, ?, ?, ?)`,
     );
-    event.run(1, "C1:1700000000.000100", "1700000000.000100", V1_ROOT, 1, "pending", PERMALINK, null, T0, "eyes");
-    event.run(2, "C1:1700000000.000200", "1700000000.000200", V1_ROOT, 2, "queued", null, T0 + 5, T0 + 1, "eyes");
-    event.run(3, "C1:1700000000.000300", "1700000000.000300", V1_ROOT, 99, "pending", null, null, T0 + 2, "eyes");
+    event.run(
+      1,
+      "C1:1700000000.000100",
+      "1700000000.000100",
+      V1_ROOT,
+      1,
+      "pending",
+      PERMALINK,
+      null,
+      T0,
+      "eyes",
+    );
+    event.run(
+      2,
+      "C1:1700000000.000200",
+      "1700000000.000200",
+      V1_ROOT,
+      2,
+      "queued",
+      null,
+      T0 + 5,
+      T0 + 1,
+      "eyes",
+    );
+    event.run(
+      3,
+      "C1:1700000000.000300",
+      "1700000000.000300",
+      V1_ROOT,
+      99,
+      "pending",
+      null,
+      null,
+      T0 + 2,
+      "eyes",
+    );
     db.prepare(
       `INSERT INTO intake_questions (intake_id, run_id, session_id, question, created_at)
        VALUES (1, 1, 1, 'Which format?', ?)`,
@@ -321,7 +354,9 @@ describe("v1 intake arrives disabled with its filed requests", () => {
             yield* sendEvent(fake, reactionEvent("U01", "white_check_mark", "1700000000.000100"));
             yield* until(
               "the imported request started",
-              storedRequest("1700000000.000100").pipe(Effect.map((row) => row?.state === "started")),
+              storedRequest("1700000000.000100").pipe(
+                Effect.map((row) => row?.state === "started"),
+              ),
             );
             assert.deepEqual(runs.starts, ["HOU-1"]);
           }),

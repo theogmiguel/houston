@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { ServerProvider } from "@t3tools/contracts";
+import type { ServerProvider } from "@houston-app/contracts";
 import {
   CheckIcon,
   CircleMinusIcon,

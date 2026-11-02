@@ -38,13 +38,13 @@ and writes a preview summary, but creates no commit, tag, installer or release.
 Run again with that option unchecked when ready. A preview does not reserve its
 version; another cut or changes to `main` can change the next result.
 
-| Cut release input | Meaning |
-|---|---|
-| `kind` | `patch`, `minor`, `major` or `rc`; ignored when resuming |
-| `ref` | Source branch, tag or SHA; stable cuts require the current tip of `main` |
-| `include_windows` | Defaults to `true`; disabling it deliberately produces Linux packages only |
-| `preview_only` | Inspect source CI, version and notes without building or changing repository state |
-| `resume_tag` | Existing tag to rebuild without another version commit or tag |
+| Cut release input | Meaning                                                                            |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| `kind`            | `patch`, `minor`, `major` or `rc`; ignored when resuming                           |
+| `ref`             | Source branch, tag or SHA; stable cuts require the current tip of `main`           |
+| `include_windows` | Defaults to `true`; disabling it deliberately produces Linux packages only         |
+| `preview_only`    | Inspect source CI, version and notes without building or changing repository state |
+| `resume_tag`      | Existing tag to rebuild without another version commit or tag                      |
 
 ## Recover a failed attempt
 
@@ -119,15 +119,15 @@ not synchronize the manifest; finish editorial review before promoting it.
 
 ## Workflow responsibilities
 
-| Actions name | File | Purpose |
-|---|---|---|
-| CI | `ci.yml` | PR and main validation; no installers or publication |
-| Cut release | `cut-release.yml` | Manual version allocation, notes, builds and draft |
-| Promote draft to public | `publish-draft.yml` | Manual publication after smoke-test attestation and environment approval |
-| Build installers | `build-installers.yml` | Manual packaging validation; no version bump, tag or release |
-| Build Linux packages (internal) | `release-linux.yml` | Reusable Linux builds and packaged runtime checks |
-| Build Windows installer (internal) | `release-windows.yml` | Reusable native compilation and subsequent NSIS packaging |
-| Create release draft (internal) | `release-publish.yml` | Reusable signature verification, updater manifest and draft creation |
+| Actions name                       | File                   | Purpose                                                                  |
+| ---------------------------------- | ---------------------- | ------------------------------------------------------------------------ |
+| CI                                 | `ci.yml`               | PR and main validation; no installers or publication                     |
+| Cut release                        | `cut-release.yml`      | Manual version allocation, notes, builds and draft                       |
+| Promote draft to public            | `publish-draft.yml`    | Manual publication after smoke-test attestation and environment approval |
+| Build installers                   | `build-installers.yml` | Manual packaging validation; no version bump, tag or release             |
+| Build Linux packages (internal)    | `release-linux.yml`    | Reusable Linux builds and packaged runtime checks                        |
+| Build Windows installer (internal) | `release-windows.yml`  | Reusable native compilation and subsequent NSIS packaging                |
+| Create release draft (internal)    | `release-publish.yml`  | Reusable signature verification, updater manifest and draft creation     |
 
 The three internal workflows are called by the manual workflows; their lack of
 independent runs does not mean they are unused. They are not dispatched directly.
@@ -390,7 +390,7 @@ It refuses a too-new bundle and prints the symbol versions that caused it. A
 
 `build-app.sh` re-execs itself under `scripts/oom-shield.sh` (`-j 3`) unless already
 shielded, then runs `CARGO_BUILD_JOBS=3 cargo tauri build --bundles <targets>`. The
-renderer and the bundled server are built beforehand (`pnpm --filter @t3tools/web build`,
+renderer and the bundled server are built beforehand (`pnpm --filter @houston-app/web build`,
 `pnpm --filter houston build:exe` and `node scripts/stage-v2-server.mjs`).
 
 Bundle output: `src-tauri/target/release/bundle/{appimage,deb}/*.{AppImage,deb}`.
@@ -413,7 +413,7 @@ Bundle output: `src-tauri/target/release/bundle/nsis/*.exe`.
 ### 3. Smoke-test the bundle
 
 A stable cut creates only a **draft**, and **Promote draft to public** is what
-makes it visible. CI proves the built x86_64 AppImage *loads and answers* on
+makes it visible. CI proves the built x86_64 AppImage _loads and answers_ on
 the four distributions above, but not that the window opens: runners are
 headless, so no webview ever initializes there. Manual smoke-test is a hard
 requirement before promoting or handing anything out, local release or not:
@@ -491,4 +491,3 @@ Installs: `~/.local/lib/houston/{houston, start.sh, launch.sh}`,
 `~/.local/share/applications/houston.desktop`
 (`StartupWMClass=houston`), and night-tile PNGs at 48/64/128/256/512px under
 `~/.local/share/icons/hicolor/**/apps/houston.png`.
-

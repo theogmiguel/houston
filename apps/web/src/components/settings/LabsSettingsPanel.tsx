@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { managedCapabilityDenial } from "@t3tools/contracts";
+import { managedCapabilityDenial } from "@houston-app/contracts";
 
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";

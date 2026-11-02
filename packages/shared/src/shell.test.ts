@@ -1,8 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off -- The synchronous shell probe runs real commands with isolated config files.
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it as effectIt } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { DesktopHostTelemetryMessage } from "@t3tools/contracts";
+import * as HostProcess from "@houston-app/shared/HostProcess";
+import { DesktopHostTelemetryMessage } from "@houston-app/contracts";
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";

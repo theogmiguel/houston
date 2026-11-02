@@ -7,17 +7,21 @@ import {
   type UsageSummary,
   type UsageProviderKind,
   type UsageSummaryInput,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   needsCursorKeychainAccess,
   refreshUsage,
   usageSummaryInput,
-} from "@t3tools/client-runtime/state/usage";
-import { resolveUsageAccess } from "@t3tools/client-runtime/state/usage-access";
+} from "@houston-app/client-runtime/state/usage";
+import { resolveUsageAccess } from "@houston-app/client-runtime/state/usage-access";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useState } from "react";
 
-import { mergeUsage, type EnvironmentUsage, type MergedUsage } from "@t3tools/shared/usageMerge";
+import {
+  mergeUsage,
+  type EnvironmentUsage,
+  type MergedUsage,
+} from "@houston-app/shared/usageMerge";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "./presentation";
 import { serverEnvironment } from "./server";

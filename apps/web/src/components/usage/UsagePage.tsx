@@ -1,5 +1,5 @@
 import { ChatGptUsageButton } from "../settings/ChatGptUsageButton";
-import { usesChatGptSharing } from "@t3tools/shared/usageLimits";
+import { usesChatGptSharing } from "@houston-app/shared/usageLimits";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
@@ -9,21 +9,21 @@ import {
   type EnvironmentId,
   type UsageProviderKind,
   type UsageSummaryInput,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { CircleAlertIcon, ChevronDownIcon, InfoIcon, SlidersHorizontalIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
-import { settlePromise } from "@t3tools/client-runtime/state/runtime";
+import { settlePromise } from "@houston-app/client-runtime/state/runtime";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Cause from "effect/Cause";
 import {
   cursorKeychainAccessEnvironments,
   refreshUsageLimits,
-} from "@t3tools/client-runtime/state/usage";
+} from "@houston-app/client-runtime/state/usage";
 import {
   updatingProvidersLabel,
   usageEnvironmentProgress,
   usageLoadingState,
-} from "@t3tools/client-runtime/state/usage-progress";
+} from "@houston-app/client-runtime/state/usage-progress";
 
 import {
   isCompatibleUsageContractVersion,
@@ -31,7 +31,7 @@ import {
   type DailyTotals,
   type HourlyTotals,
   type MergedUsage,
-} from "@t3tools/shared/usageMerge";
+} from "@houston-app/shared/usageMerge";
 
 import { cn } from "../../lib/utils";
 import { isElectron } from "../../env";
@@ -58,7 +58,7 @@ import {
   formatUsd,
   makeWindow,
   usageSourceMessages,
-} from "@t3tools/shared/usageFormat";
+} from "@houston-app/shared/usageFormat";
 import { Button, InlineButton } from "../ui/button";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import {

@@ -18,7 +18,7 @@ import {
 } from "effect/graphql";
 import { HttpClient } from "effect/http";
 import * as Headers from "effect/http/Headers";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 
 import { ExpoApiGraphQLGroup, type T3EasSimulatorSession } from "./ExpoApi.graphql.ts";
 import type { DeviceRunSessionStatus } from "../../schema/expo.graphql.ts";
@@ -156,7 +156,9 @@ const DEVICE_RUN_SESSIONS_GATE = "device-run-sessions";
 const isFeatureGates = Schema.is(Schema.Record(Schema.String, Schema.Unknown));
 
 /** Sends every operation with the resolved credential. */
-class ExpoAuth extends GraphQLMiddleware.Service<ExpoAuth>()("houston/server/device/ExpoApi/ExpoAuth") {}
+class ExpoAuth extends GraphQLMiddleware.Service<ExpoAuth>()(
+  "houston/server/device/ExpoApi/ExpoAuth",
+) {}
 
 const ExpoGroup = ExpoApiGraphQLGroup.middleware(ExpoAuth);
 

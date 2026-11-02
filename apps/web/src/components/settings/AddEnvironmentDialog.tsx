@@ -5,11 +5,11 @@ import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 
 import {
   type DesktopDiscoveredSshHost,
   type DesktopSshEnvironmentTarget,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@houston-app/client-runtime/state/runtime";
 import * as Option from "effect/Option";
 
 import { cn } from "../../lib/utils";

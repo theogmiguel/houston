@@ -1,4 +1,4 @@
-import { EnvironmentId, ORCHESTRATION_PROTOCOL_VERSION } from "@t3tools/contracts";
+import { EnvironmentId, ORCHESTRATION_PROTOCOL_VERSION } from "@houston-app/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -52,9 +52,7 @@ const websocketTicket = (ticket: string) =>
     expiresAt: "2026-06-06T01:00:00.000Z",
   });
 
-const makeHarness = (input: {
-  readonly responses: ReadonlyArray<RecordedResponse>;
-}) => {
+const makeHarness = (input: { readonly responses: ReadonlyArray<RecordedResponse> }) => {
   const fetch = recordedFetch(input.responses);
   const layer = RemoteEnvironmentAuthorization.layer.pipe(
     Layer.provideMerge(

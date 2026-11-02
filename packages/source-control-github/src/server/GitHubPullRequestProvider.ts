@@ -1,5 +1,5 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
-import { removeAgentCredits } from "@t3tools/source-control-core/server/mergeMessage";
+import { SourceControlProviderKind } from "@houston-app/contracts";
+import { removeAgentCredits } from "@houston-app/source-control-core/server/mergeMessage";
 import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
@@ -12,9 +12,9 @@ import type {
   PullRequestCheck,
   PullRequestReaction,
   PullRequestViewerPermissions,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
+import * as SourceControlRateLimit from "@houston-app/source-control-core/server/SourceControlRateLimit";
 import * as GitHubPullRequestApi from "./GitHubPullRequestApi.ts";
 import {
   PullRequestProviderError,
@@ -23,7 +23,7 @@ import {
   type ProviderChangeRequestDetail,
   type PullRequestProviderApi,
   type ProviderRepositoryRef,
-} from "@t3tools/source-control-core/server/PullRequestProvider";
+} from "@houston-app/source-control-core/server/PullRequestProvider";
 import type { GitHubCredentialSource } from "./GitHubCredentials.ts";
 import type {
   GitHubRepositoryAccess,

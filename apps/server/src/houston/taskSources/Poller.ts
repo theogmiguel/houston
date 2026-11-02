@@ -1,11 +1,11 @@
 // Polls every enabled task source every 20 seconds, and one project's at once on Sync now. The
 // Notion token is read from the OS keychain for each poll; a failed poll keeps tasks and cursor.
-import type { ProjectId } from "@t3tools/contracts";
+import type { ProjectId } from "@houston-app/contracts";
 import type {
   HoustonTaskSourceProvider,
   HoustonTaskSourceSyncResult,
-} from "@t3tools/contracts/houston/taskSources";
-import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
+} from "@houston-app/contracts/houston/taskSources";
+import * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

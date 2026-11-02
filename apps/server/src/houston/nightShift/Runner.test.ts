@@ -11,9 +11,9 @@ import {
   OrchestrationV2RpcSchemas,
   type ProjectId,
   ThreadId,
-} from "@t3tools/contracts";
-import type { HoustonNightShiftError } from "@t3tools/contracts/houston/nightShift";
-import type { ProviderReadiness } from "@t3tools/contracts/houston/providerReadiness";
+} from "@houston-app/contracts";
+import type { HoustonNightShiftError } from "@houston-app/contracts/houston/nightShift";
+import type { ProviderReadiness } from "@houston-app/contracts/houston/providerReadiness";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";

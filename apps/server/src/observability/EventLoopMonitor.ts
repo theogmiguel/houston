@@ -2,8 +2,8 @@
 import * as NodeOS from "node:os";
 import * as NodePerfHooks from "node:perf_hooks";
 
-import type { ServerEventLoopStall } from "@t3tools/contracts";
-import { RotatingFileSink } from "@t3tools/shared/logging";
+import type { ServerEventLoopStall } from "@houston-app/contracts";
+import { RotatingFileSink } from "@houston-app/shared/logging";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

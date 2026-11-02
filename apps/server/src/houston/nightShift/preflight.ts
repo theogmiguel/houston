@@ -1,12 +1,12 @@
 // @effect-diagnostics globalDate:off - Intl reads a zone's wall clock only from a Date.
 // The items checked before every start, from readings the caller takes locally: readiness as last
 // published, battery, free memory and disk, the settings, and the platform's own warnings.
-import type { ProviderReadiness } from "@t3tools/contracts/houston/providerReadiness";
+import type { ProviderReadiness } from "@houston-app/contracts/houston/providerReadiness";
 import {
   HOUSTON_NIGHT_SHIFT_LIMITS as LIMITS,
   type HoustonNightShiftSettings,
   type PreflightItem,
-} from "@t3tools/contracts/houston/nightShift";
+} from "@houston-app/contracts/houston/nightShift";
 
 export interface PreflightInput {
   readonly settings: HoustonNightShiftSettings;

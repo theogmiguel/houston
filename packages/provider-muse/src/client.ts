@@ -1,5 +1,5 @@
-import { ProviderDriverKind } from "@t3tools/contracts";
-import { defineProviderClient } from "@t3tools/provider-core/client";
+import { ProviderDriverKind } from "@houston-app/contracts";
+import { defineProviderClient } from "@houston-app/provider-core/client";
 
 import { MuseSettings } from "./settings.ts";
 

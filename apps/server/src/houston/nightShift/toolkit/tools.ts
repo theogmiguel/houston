@@ -5,8 +5,8 @@ import {
   OrchestratorMcpFailure,
   PositiveInt,
   ThreadId,
-} from "@t3tools/contracts";
-import { HoustonNightToolError } from "@t3tools/contracts/houston/nightShift";
+} from "@houston-app/contracts";
+import { HoustonNightToolError } from "@houston-app/contracts/houston/nightShift";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";

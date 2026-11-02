@@ -1,9 +1,9 @@
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import { WorkLogButton, WorkLogList, WorkLogRow } from "./WorkLog";
-import type { WorktreeSetupSnapshot } from "@t3tools/contracts";
-import { type ToolActivityIcon } from "@t3tools/contracts";
-import { liveThoughtLine } from "@t3tools/client-runtime/work-log/presentation";
-import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
+import type { WorktreeSetupSnapshot } from "@houston-app/contracts";
+import { type ToolActivityIcon } from "@houston-app/contracts";
+import { liveThoughtLine } from "@houston-app/client-runtime/work-log/presentation";
+import { resolveWorkGroupScrollAnchor } from "@houston-app/client-runtime/work-log/scroll-anchor";
 import { observeResize } from "~/lib/observeResize";
 import { tickTextContent } from "~/lib/tickTextContent";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
@@ -26,7 +26,7 @@ import { Spinner } from "../ui/spinner";
 import { ThreadStateGlyph, THREAD_STATE_TEXT_CLASS } from "../ui/thread-state-glyph";
 import { WorktreeSetupCard } from "./WorktreeSetupCard";
 import { cn } from "~/lib/utils";
-import { type TimestampFormat } from "@t3tools/contracts/settings";
+import { type TimestampFormat } from "@houston-app/contracts/settings";
 import {
   TimelineRowCtx,
   TimelineRowActivityCtx,

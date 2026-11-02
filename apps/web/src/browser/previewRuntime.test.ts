@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@houston-app/contracts";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const env = vi.hoisted(() => ({ hasNativeBrowserHost: false }));

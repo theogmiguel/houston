@@ -1,5 +1,5 @@
 import { StrictMode, type ReactNode } from "react";
-import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@houston-app/contracts";
 import { PlusIcon } from "lucide-react";
 import { expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";

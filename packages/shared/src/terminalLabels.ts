@@ -1,4 +1,4 @@
-import type { TerminalSummary } from "@t3tools/contracts";
+import type { TerminalSummary } from "@houston-app/contracts";
 
 function terminalNumber(terminalId: string): string | undefined {
   return /^term(?:inal)?-(\d+)(?:-[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12})?$/i.exec(

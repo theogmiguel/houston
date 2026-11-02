@@ -1,6 +1,6 @@
 // GitHub for the queue: reads through upstream's PullRequestService plus one facts query for what
 // its detail lacks, the merge pinned to one commit, and the merged report upstream's reactors read.
-import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
+import * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -9,7 +9,7 @@ import * as Schema from "effect/Schema";
 import * as PullRequestService from "../../pullRequest/PullRequestService.ts";
 import type { ProjectTarget } from "./Project.ts";
 import type { Facts, HandOffFacts } from "./rules.ts";
-import type { HoustonMergeQueueMergeMethod } from "@t3tools/contracts/houston/mergeQueue";
+import type { HoustonMergeQueueMergeMethod } from "@houston-app/contracts/houston/mergeQueue";
 import { nowIso } from "./Store.ts";
 
 /** One read: the facts, and the repositories GitHub answered for the pull request and its head. */

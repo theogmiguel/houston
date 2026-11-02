@@ -1,4 +1,4 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 
 import ChatView from "../ChatView";

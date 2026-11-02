@@ -6,13 +6,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { assert, describe, it } from "@effect/vitest";
-import { CommandId, ThreadId, type OrchestrationV2ThreadProjection } from "@t3tools/contracts";
+import { CommandId, ThreadId, type OrchestrationV2ThreadProjection } from "@houston-app/contracts";
 import {
   HoustonTaskError,
   type HoustonTask,
   type HoustonTaskDetail,
   type HoustonTaskRun,
-} from "@t3tools/contracts/houston/tasks";
+} from "@houston-app/contracts/houston/tasks";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";

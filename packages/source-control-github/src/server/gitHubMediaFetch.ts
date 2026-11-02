@@ -1,4 +1,4 @@
-import type { SourceControlMediaRequest } from "@t3tools/source-control-core/server/driver";
+import type { SourceControlMediaRequest } from "@houston-app/source-control-core/server/driver";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import {

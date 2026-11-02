@@ -3,8 +3,8 @@
 // @effect-diagnostics nodeBuiltinImport:off - keys write-back markers with HMAC-SHA256.
 import * as NodeCrypto from "node:crypto";
 
-import type { ProjectId } from "@t3tools/contracts";
-import { HoustonTaskStatus } from "@t3tools/contracts/houston/tasks";
+import type { ProjectId } from "@houston-app/contracts";
+import { HoustonTaskStatus } from "@houston-app/contracts/houston/tasks";
 import {
   HOUSTON_TASK_SOURCE_LIMITS,
   HoustonTaskSourceError,
@@ -16,7 +16,7 @@ import {
   type HoustonTaskSourceSnapshot,
   type HoustonTaskSourceStatusMapping,
   type HoustonTaskSourceSyncState,
-} from "@t3tools/contracts/houston/taskSources";
+} from "@houston-app/contracts/houston/taskSources";
 import * as Schema from "effect/Schema";
 
 export const POLL_INTERVAL_SECONDS = 20;

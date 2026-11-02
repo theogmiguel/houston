@@ -1,7 +1,7 @@
 // Night shift's claim on upstream's scheduled tasks, composed with the harness review's into the one
 // hook `ScheduledTaskService` asks, and the catch-up of a night the server missed.
-import type { ScheduledTask, ScheduledTaskId, ThreadId } from "@t3tools/contracts";
-import { HoustonNightShiftError } from "@t3tools/contracts/houston/nightShift";
+import type { ScheduledTask, ScheduledTaskId, ThreadId } from "@houston-app/contracts";
+import { HoustonNightShiftError } from "@houston-app/contracts/houston/nightShift";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";

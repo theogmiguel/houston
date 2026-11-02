@@ -4,8 +4,8 @@ import {
   HoustonTaskError,
   type HoustonTask,
   type HoustonTaskStreamEvent,
-} from "@t3tools/contracts/houston/tasks";
-import { ProjectId } from "@t3tools/contracts";
+} from "@houston-app/contracts/houston/tasks";
+import { ProjectId } from "@houston-app/contracts";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";

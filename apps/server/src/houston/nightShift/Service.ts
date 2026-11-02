@@ -6,7 +6,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ScheduledTaskId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   HOUSTON_NIGHT_SHIFT_LIMITS as LIMITS,
   HoustonNightShiftError,
@@ -34,7 +34,7 @@ import {
   type NightEntry,
   type NightRun,
   type NightShiftOverviewRow,
-} from "@t3tools/contracts/houston/nightShift";
+} from "@houston-app/contracts/houston/nightShift";
 import * as FileSystem from "effect/FileSystem";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";

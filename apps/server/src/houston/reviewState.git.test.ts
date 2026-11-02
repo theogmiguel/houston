@@ -5,7 +5,7 @@ import type {
   HoustonReviewAnchorMapResult,
   HoustonReviewFilesViewedResult,
   ReviewLineAnchor,
-} from "@t3tools/contracts/houston/reviewState";
+} from "@houston-app/contracts/houston/reviewState";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

@@ -1,8 +1,8 @@
 import {
   formatProviderSubagentStatus,
   type ProviderSubagentStatus,
-} from "@t3tools/client-runtime/state/thread-execution";
-import { isOrchestrationV2WorkActive } from "@t3tools/contracts";
+} from "@houston-app/client-runtime/state/thread-execution";
+import { isOrchestrationV2WorkActive } from "@houston-app/contracts";
 import { ArrowUpLeftIcon } from "lucide-react";
 
 import { tickTextContent } from "~/lib/tickTextContent";

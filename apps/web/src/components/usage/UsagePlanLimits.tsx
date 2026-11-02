@@ -1,11 +1,11 @@
-import type { EnvironmentId, UsageProviderKind } from "@t3tools/contracts";
+import type { EnvironmentId, UsageProviderKind } from "@houston-app/contracts";
 import {
   collectLimitAccounts,
   formatResetsIn,
   paceOf,
   remainingPercent,
   type LimitAccount,
-} from "@t3tools/shared/usageLimits";
+} from "@houston-app/shared/usageLimits";
 import { useAtomValue } from "@effect/atom-react";
 
 import { environmentPresentations } from "../../state/presentation";
@@ -78,9 +78,8 @@ export function UsagePlanLimits({
       {[...byDriver].map(([driver, driverAccounts]) => {
         const label = providerClients.get(driver)?.label ?? String(driver);
         const plan = driverAccounts.find((account) => account.plan)?.plan;
-        const external = driverAccounts.find(
-          (account) => account.limits.externalUsage?.url,
-        )?.limits.externalUsage;
+        const external = driverAccounts.find((account) => account.limits.externalUsage?.url)?.limits
+          .externalUsage;
         return (
           <div
             key={driver}
@@ -132,7 +131,10 @@ export function UsagePlanLimits({
                     <span className="block h-1 w-full overflow-hidden rounded-full bg-border">
                       <span
                         className="block h-full rounded-full"
-                        style={{ width: `${remaining}%`, backgroundColor: usageRemainingFill(remaining) }}
+                        style={{
+                          width: `${remaining}%`,
+                          backgroundColor: usageRemainingFill(remaining),
+                        }}
                       />
                     </span>
                     <span

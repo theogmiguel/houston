@@ -6,9 +6,9 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import { assert, describe, it } from "@effect/vitest";
-import type { ProjectId } from "@t3tools/contracts";
-import type { HoustonMergeQueueError } from "@t3tools/contracts/houston/mergeQueue";
-import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import type { ProjectId } from "@houston-app/contracts";
+import type { HoustonMergeQueueError } from "@houston-app/contracts/houston/mergeQueue";
+import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";

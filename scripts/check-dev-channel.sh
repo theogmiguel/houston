@@ -196,10 +196,10 @@ for fails in (False, True):
     for path, text in records.items():
         assert path.read_text() == text, f"--fresh changed v1's {path.name}"
     if fails:
-        assert calls == ["npx -y pnpm@12.14.0 --filter @t3tools/web build"], calls
+        assert calls == ["npx -y pnpm@12.14.0 --filter @houston-app/web build"], calls
     else:
         assert calls == [
-            "npx -y pnpm@12.14.0 --filter @t3tools/web build",
+            "npx -y pnpm@12.14.0 --filter @houston-app/web build",
             "npx -y pnpm@12.14.0 --filter houston build:bundle",
             "cargo build",
             "houston-tauri --channel dev",

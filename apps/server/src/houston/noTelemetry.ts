@@ -1,4 +1,4 @@
-import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
+import * as OtelEnvironment from "@houston-app/shared/otelEnvironment";
 
 import type * as ServerConfig from "../config.ts";
 

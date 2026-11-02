@@ -137,7 +137,7 @@ The [development runbook](docs/operations/development.md) contains exact command
 - Server code that reaches a provider, GitHub, Notion, Slack or the keychain is tested against
   replay fixtures, local fakes and the in-memory keychain, never the real service.
 - For host changes, run `cargo fmt`, `cargo clippy --all-targets -- -D warnings` and
-  `cargo test` in `src-tauri` (it embeds the `@t3tools/web` build, so build that first). On
+  `cargo test` in `src-tauri` (it embeds the `@houston-app/web` build, so build that first). On
   Linux, run heavy builds under `scripts/oom-shield.sh`, with `nice -n 19` and `-j 3`. On
   Windows, limit Cargo to three jobs. Never run concurrent Cargo workloads.
 - Diagnose failures using the discriminator appropriate to the failure mode in

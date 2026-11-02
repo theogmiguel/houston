@@ -19,7 +19,7 @@ import {
   RunId,
   NonNegativeInt,
   ProjectId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";

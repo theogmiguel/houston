@@ -1,4 +1,4 @@
-import { type ProjectId, type ServerSettings } from "@t3tools/contracts";
+import { type ProjectId, type ServerSettings } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";

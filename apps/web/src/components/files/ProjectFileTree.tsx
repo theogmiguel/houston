@@ -1,4 +1,4 @@
-import type { ProjectEntry } from "@t3tools/contracts";
+import type { ProjectEntry } from "@houston-app/contracts";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { type DragEvent, type KeyboardEvent, type MouseEvent, useRef } from "react";
 

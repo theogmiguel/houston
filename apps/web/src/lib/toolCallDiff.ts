@@ -1,4 +1,4 @@
-import type { OrchestrationV2TurnItem } from "@t3tools/contracts";
+import type { OrchestrationV2TurnItem } from "@houston-app/contracts";
 import { getRenderablePatch, resolveFileDiffPath } from "./diffRendering";
 
 type FileChange = Extract<OrchestrationV2TurnItem, { type: "file_change" }>;

@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import type { PullRequestCheck } from "@t3tools/contracts";
+import type { PullRequestCheck } from "@houston-app/contracts";
 
 // The branch endpoint reports the governing protection rule with repository read access.
 export const ForgejoBranchStatusChecks = Schema.Struct({

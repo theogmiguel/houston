@@ -5,7 +5,7 @@ import {
   type ProviderOptionDescriptor,
   type ProviderOptionSelection,
   type ServerProviderModel,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   getComposerProviderState,
   getComposerReasoningStep,

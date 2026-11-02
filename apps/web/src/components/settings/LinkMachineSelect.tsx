@@ -1,4 +1,4 @@
-import type { LinkableMachine } from "@t3tools/client-runtime/link-request";
+import type { LinkableMachine } from "@houston-app/client-runtime/link-request";
 import { useId } from "react";
 
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";

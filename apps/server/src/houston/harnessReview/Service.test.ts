@@ -1,7 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import { CommandId, MessageId, type ProjectId, ThreadId } from "@t3tools/contracts";
-import type { HoustonTaskStatus } from "@t3tools/contracts/houston/tasks";
+import { CommandId, MessageId, type ProjectId, ThreadId } from "@houston-app/contracts";
+import type { HoustonTaskStatus } from "@houston-app/contracts/houston/tasks";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -1092,16 +1092,14 @@ describe("fix tasks", () => {
           );
 
           const commentsOf = (key: string) =>
-            tasks
-              .get({ id: key })
-              .pipe(
-                Effect.map((detail) =>
-                  detail.comments.map((comment) => ({
-                    body: comment.body,
-                    author: comment.author,
-                  })),
-                ),
-              );
+            tasks.get({ id: key }).pipe(
+              Effect.map((detail) =>
+                detail.comments.map((comment) => ({
+                  body: comment.body,
+                  author: comment.author,
+                })),
+              ),
+            );
           assert.deepEqual(yield* commentsOf("HOU-1"), [
             {
               body: "Harness review 6 verified finding denied-push as gone.",

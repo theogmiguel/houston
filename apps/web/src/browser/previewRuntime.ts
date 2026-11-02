@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { EnvironmentId, PreviewRuntime, PreviewSessionSnapshot } from "@t3tools/contracts";
+import type { EnvironmentId, PreviewRuntime, PreviewSessionSnapshot } from "@houston-app/contracts";
 
 import { hasNativeBrowserHost } from "~/env";
 import { isPreviewSupportedInRuntime } from "~/previewStateStore";

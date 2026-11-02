@@ -35,10 +35,10 @@ import {
   type PreviewAppearancePreference,
   type PreviewViewportSetting,
   managedCapabilityDenial,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { usePrimaryManagedPolicy } from "~/state/managedPolicy";
-import { isValidSearchUrlTemplate } from "@t3tools/shared/preview";
-import { PREVIEW_VIEWPORT_PRESETS } from "@t3tools/shared/previewViewport";
+import { isValidSearchUrlTemplate } from "@houston-app/shared/preview";
+import { PREVIEW_VIEWPORT_PRESETS } from "@houston-app/shared/previewViewport";
 import { MoreVertical, Plus as PlusIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -53,7 +53,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { formatEnvironmentQueryError } from "~/state/query";
 import { previewEnvironment } from "~/state/preview";
 import { useServerConfigs } from "~/state/entities";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
 import {
   AgentDeviceSetupStatus,
   DeviceHubSetupStatus,

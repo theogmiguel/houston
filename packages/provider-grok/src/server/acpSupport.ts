@@ -4,7 +4,7 @@ import {
   type ProviderApprovalOption,
   ProviderDriverKind,
   type RuntimeMode,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import type { GrokSettings } from "../settings.ts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -12,10 +12,10 @@ import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as EffectAcpErrors from "effect-acp/errors";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { normalizeModelSlug } from "@t3tools/shared/model";
+import * as HostProcess from "@houston-app/shared/HostProcess";
+import { normalizeModelSlug } from "@houston-app/shared/model";
 
-import * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
+import * as AcpSessionRuntime from "@houston-app/provider-acp/server/AcpSessionRuntime";
 import { makeXAiPromptCompletionRuntime } from "./xaiAcpExtension.ts";
 
 const GROK_API_KEY_ENV = "XAI_API_KEY";

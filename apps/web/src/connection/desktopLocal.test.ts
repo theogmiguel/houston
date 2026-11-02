@@ -1,4 +1,7 @@
-import { type DesktopEnvironmentBootstrap, PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
+import {
+  type DesktopEnvironmentBootstrap,
+  PRIMARY_LOCAL_ENVIRONMENT_ID,
+} from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { createDesktopSecondaryBootstrapsReader } from "./desktopLocal";

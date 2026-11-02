@@ -1,7 +1,7 @@
 // Reads every queued pull request once a minute, and fresh when asked. An entry GitHub reports
 // merged or closed leaves the queue; a read that changes nothing publishes nothing.
-import { HOUSTON_MERGE_QUEUE_LIMITS } from "@t3tools/contracts/houston/mergeQueue";
-import type { ProjectId } from "@t3tools/contracts";
+import { HOUSTON_MERGE_QUEUE_LIMITS } from "@houston-app/contracts/houston/mergeQueue";
+import type { ProjectId } from "@houston-app/contracts";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

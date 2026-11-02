@@ -2,7 +2,7 @@ import {
   SimlockDeviceHostConfig,
   type EnvironmentId,
   type SimlockDeviceHostConfig as SimlockDeviceHostConfigType,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 

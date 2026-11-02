@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import type { ServerProviderModel } from "@t3tools/contracts";
+import type { ServerProviderModel } from "@houston-app/contracts";
 
 import * as ModelCatalog from "./ModelCatalog.ts";
 

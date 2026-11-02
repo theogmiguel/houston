@@ -1,4 +1,4 @@
-import { type OrchestrationV2TurnItem } from "@t3tools/contracts";
+import { type OrchestrationV2TurnItem } from "@houston-app/contracts";
 
 type SubagentStatus = OrchestrationV2TurnItem["status"];
 

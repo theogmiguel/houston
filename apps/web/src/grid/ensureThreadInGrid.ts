@@ -1,4 +1,4 @@
-import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ThreadId } from "@houston-app/contracts";
 
 import { gridContainingThread, useGridStore, workspaceKeyOf } from "./gridStore";
 

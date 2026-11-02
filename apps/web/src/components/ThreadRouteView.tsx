@@ -1,5 +1,5 @@
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+import { scopedThreadKey } from "@houston-app/client-runtime/environment";
+import { effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
 import { Navigate, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 

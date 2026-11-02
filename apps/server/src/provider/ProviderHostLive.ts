@@ -1,5 +1,5 @@
-import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
-import { ProviderCredentialError } from "@t3tools/provider-core/server/errors";
+import * as ProviderHost from "@houston-app/provider-core/server/ProviderHost";
+import { ProviderCredentialError } from "@houston-app/provider-core/server/errors";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

@@ -10,17 +10,17 @@ import {
   type LinkRequestItem,
   linkRequestTargetName,
   rankMachinesByHint,
-} from "@t3tools/client-runtime/link-request";
+} from "@houston-app/client-runtime/link-request";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@houston-app/client-runtime/state/runtime";
 import {
   AuthAccessWriteScope,
   type AuthMcpClientAccess,
   type EnvironmentId,
   type OrchestrationV2ProjectedTurnItem,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import { CheckIcon, LinkIcon, MinusIcon, XIcon } from "lucide-react";

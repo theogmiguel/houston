@@ -4,7 +4,7 @@ import {
   type ProjectReadFileResult,
   type ScopedProjectRef,
   WS_METHODS,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -29,7 +29,7 @@ import {
 import { createProject, deleteProject, updateProject } from "../operations/commands.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { createFileMetadataAtoms } from "./fileMetadata.ts";
-import { resolveWorkspaceFilePath } from "@t3tools/shared/path";
+import { resolveWorkspaceFilePath } from "@houston-app/shared/path";
 
 export type {
   CreateProjectInput,

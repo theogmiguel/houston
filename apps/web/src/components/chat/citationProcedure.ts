@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { type AtomCommandSuccess, runAtomCommand } from "@t3tools/client-runtime/state/runtime";
+import { type AtomCommandSuccess, runAtomCommand } from "@houston-app/client-runtime/state/runtime";
 import { Atom, type AtomRegistry } from "effect/reactivity";
 import type { TimelineEntry } from "../../session-logic";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";

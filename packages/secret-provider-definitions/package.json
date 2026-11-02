@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/secret-provider-definitions",
+  "name": "@houston-app/secret-provider-definitions",
   "private": true,
   "type": "module",
   "exports": {
@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@t3tools/secret-provider-core": "workspace:*",
-    "@t3tools/secret-provider-onepassword": "workspace:*"
+    "@houston-app/secret-provider-core": "workspace:*",
+    "@houston-app/secret-provider-onepassword": "workspace:*"
   }
 }

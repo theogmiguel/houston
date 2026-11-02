@@ -10,7 +10,7 @@ import {
   ProviderInstanceId,
   RunId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { McpSchema, McpServer } from "effect/ai";
@@ -129,7 +129,10 @@ describe("the defect toolkit", () => {
               };
               assert.isTrue(value.recorded);
               assert.strictEqual(value.count, 1);
-              assert.strictEqual(value.note, "Stored as a suspected defect; nothing is sent anywhere.");
+              assert.strictEqual(
+                value.note,
+                "Stored as a suspected defect; nothing is sent anywhere.",
+              );
               const snapshot = yield* (yield* HoustonHarnessService.HoustonHarnessService).get({
                 projectId,
               });
@@ -156,7 +159,7 @@ describe("the defect toolkit", () => {
               assert.isTrue(refused.isError);
               assert.include(refused.text, "side thread");
               assert.lengthOf(
-                (yield* (yield* HoustonDefects.HoustonDefects).list(projectId)),
+                yield* (yield* HoustonDefects.HoustonDefects).list(projectId),
                 1,
                 "the refusal stored nothing",
               );

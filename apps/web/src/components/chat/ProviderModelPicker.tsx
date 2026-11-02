@@ -4,7 +4,7 @@ import {
   type EnvironmentId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import { memo, useRef, useState, type ReactNode } from "react";
 import { BotIcon, ChevronDownIcon } from "lucide-react";
 import { Badge } from "../ui/badge";

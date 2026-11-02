@@ -1,4 +1,4 @@
-import type { DailyTotals } from "@t3tools/shared/usageMerge";
+import type { DailyTotals } from "@houston-app/shared/usageMerge";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

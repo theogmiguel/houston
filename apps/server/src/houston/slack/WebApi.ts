@@ -1,6 +1,6 @@
 // The Slack Web API client: HTTPS to slack.com/api only, no redirects, bounded answers, a
 // 30-second timeout and one bounded wait on a rate limit. The token is borrowed per call.
-import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
+import { collectUint8StreamText } from "@houston-app/provider-core/server/collectStreamText";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Duration from "effect/Duration";

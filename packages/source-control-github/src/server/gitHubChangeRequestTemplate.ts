@@ -1,8 +1,8 @@
-import type { GitCommandError } from "@t3tools/contracts";
+import type { GitCommandError } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
-import type * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
+import type * as SourceControlHost from "@houston-app/source-control-core/server/SourceControlHost";
 
 const TEMPLATE_MAX_BYTES = 8_000;
 const TREE_LIST_MAX_BYTES = 100_000;

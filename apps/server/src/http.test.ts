@@ -24,8 +24,8 @@ import {
   injectMcpAppCookieBootstrap,
   injectMcpAppThemeBootstrap,
   MCP_APP_MAX_HTML_BYTES,
-} from "@t3tools/shared/mcpApp";
-import { ORCHESTRATION_PROTOCOL_HEADER } from "@t3tools/contracts";
+} from "@houston-app/shared/mcpApp";
+import { ORCHESTRATION_PROTOCOL_HEADER } from "@houston-app/contracts";
 
 import * as ServerConfig from "./config.ts";
 

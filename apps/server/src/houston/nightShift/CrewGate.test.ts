@@ -17,10 +17,10 @@ import {
   RunId,
   type ServerProvider,
   ThreadId,
-} from "@t3tools/contracts";
-import type { HoustonNightShiftSettings } from "@t3tools/contracts/houston/nightShift";
-import type { ProviderReadiness } from "@t3tools/contracts/houston/providerReadiness";
-import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+} from "@houston-app/contracts";
+import type { HoustonNightShiftSettings } from "@houston-app/contracts/houston/nightShift";
+import type { ProviderReadiness } from "@houston-app/contracts/houston/providerReadiness";
+import type * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";

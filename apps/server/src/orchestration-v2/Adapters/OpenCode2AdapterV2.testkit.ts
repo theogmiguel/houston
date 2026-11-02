@@ -5,7 +5,7 @@ import {
   ProviderSessionId,
   ThreadId,
   type ProviderReplayTranscript,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -15,21 +15,21 @@ import * as HttpClientError from "effect/http/HttpClientError";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as UrlParams from "effect/http/UrlParams";
 
-import * as OpenCode2Client from "@t3tools/provider-opencode/server/v2/OpenCode2Client";
-import * as OpenCode2Server from "@t3tools/provider-opencode/server/v2/OpenCode2Server";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
+import * as OpenCode2Client from "@houston-app/provider-opencode/server/v2/OpenCode2Client";
+import * as OpenCode2Server from "@houston-app/provider-opencode/server/v2/OpenCode2Server";
+import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
+import * as ProviderHost from "@houston-app/provider-core/server/ProviderHost";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import * as ProviderAdapterRegistry from "../ProviderAdapterRegistry.ts";
-import type { ProviderReplayGate } from "@t3tools/provider-testing/replayGate";
+import type { ProviderReplayGate } from "@houston-app/provider-testing/replayGate";
 import type { OrchestratorV2ProviderReplayHarness } from "../testkit/ProviderReplayHarness.ts";
-import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
-import { OPENCODE_PROVIDER } from "@t3tools/provider-opencode/testing";
+import * as TestProviderHost from "@houston-app/provider-testing/TestProviderHost";
+import { OPENCODE_PROVIDER } from "@houston-app/provider-opencode/testing";
 import {
   OpenCodeReplayController,
   OpenCodeReplayTranscriptDecodeError,
 } from "./OpenCodeAdapterV2.testkit.ts";
-import * as OpenCode2Adapter from "@t3tools/provider-opencode/server/v2/adapter";
+import * as OpenCode2Adapter from "@houston-app/provider-opencode/server/v2/adapter";
 
 export const OPENCODE2_HTTP_PROTOCOL = "opencode2-http.sse" as const;
 const BASE_URL = "http://opencode2.replay";

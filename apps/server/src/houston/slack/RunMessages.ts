@@ -1,6 +1,6 @@
 // How an answer reaches a Slack run's thread: one queued user message through the
 // `houston.slack.answer` command (AD-066). One command id per question, so a resend replays.
-import { CommandId, ThreadId } from "@t3tools/contracts";
+import { CommandId, ThreadId } from "@houston-app/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

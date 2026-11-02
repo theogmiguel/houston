@@ -4,12 +4,12 @@ import {
   OrchestratorMcpFailure,
   McpCapabilityUnavailableError,
   PositiveInt,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import {
   HoustonMergeQueueEntry,
   HoustonMergeQueueError,
   HoustonMergeQueueFailureKind,
-} from "@t3tools/contracts/houston/mergeQueue";
+} from "@houston-app/contracts/houston/mergeQueue";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 

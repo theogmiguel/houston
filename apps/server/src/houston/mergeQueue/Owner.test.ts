@@ -11,8 +11,8 @@ import {
   ProjectId,
   ThreadId,
   type OrchestrationV2ServerCommand,
-} from "@t3tools/contracts";
-import type { HoustonMergeQueueError } from "@t3tools/contracts/houston/mergeQueue";
+} from "@houston-app/contracts";
+import type { HoustonMergeQueueError } from "@houston-app/contracts/houston/mergeQueue";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

@@ -1,7 +1,7 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
-import { settlePromise } from "@t3tools/client-runtime/state/runtime";
-import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import type { EnvironmentId, ProjectEntry } from "@houston-app/contracts";
+import { settlePromise } from "@houston-app/client-runtime/state/runtime";
+import { serializeComposerFileLink } from "@houston-app/shared/composerTrigger";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Cause from "effect/Cause";
 import { ChevronsDownUp, ChevronsUpDown } from "lucide";

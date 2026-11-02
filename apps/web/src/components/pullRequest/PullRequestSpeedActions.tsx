@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { PullRequestAction } from "@t3tools/contracts";
+import type { PullRequestAction } from "@houston-app/contracts";
 import { createContext, use, type ReactNode } from "react";
-import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
+import type { ChangeRequestTerminology } from "@houston-app/client-runtime/source-control-clients";
 
 import { useShortcutModifierState } from "~/shortcutModifierState";
 import { pullRequestEnvironment } from "~/state/pullRequests";

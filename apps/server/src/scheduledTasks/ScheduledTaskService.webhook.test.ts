@@ -7,7 +7,7 @@ import {
   type ManagedPolicyDocument,
   ScheduledTaskUpsertInput,
   SecretRequestError,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";

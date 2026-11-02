@@ -2,11 +2,11 @@ import {
   AuthTerminalOperateScope,
   AuthTerminalReadScope,
   type ScopedThreadRef,
-} from "@t3tools/contracts";
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
-import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
-import { nextTerminalId } from "@t3tools/shared/terminalLabels";
+} from "@houston-app/contracts";
+import { scopeProjectRef } from "@houston-app/client-runtime/environment";
+import { isAtomCommandInterrupted } from "@houston-app/client-runtime/state/runtime";
+import { projectScriptCwd, projectScriptRuntimeEnv } from "@houston-app/shared/projectScripts";
+import { nextTerminalId } from "@houston-app/shared/terminalLabels";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { randomUUID } from "~/lib/utils";

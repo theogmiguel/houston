@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/secret-provider-core",
+  "name": "@houston-app/secret-provider-core",
   "private": true,
   "type": "module",
   "exports": {
@@ -21,7 +21,7 @@
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
-    "@t3tools/contracts": "workspace:*",
+    "@houston-app/contracts": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

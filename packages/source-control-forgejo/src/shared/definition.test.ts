@@ -1,5 +1,5 @@
-import type { ChangeRequestProjectIdentity } from "@t3tools/source-control-core/shared/definition";
-import { recognizeRemoteWith } from "@t3tools/source-control-core/shared/definition";
+import type { ChangeRequestProjectIdentity } from "@houston-app/source-control-core/shared/definition";
+import { recognizeRemoteWith } from "@houston-app/source-control-core/shared/definition";
 import { describe, expect, it } from "vite-plus/test";
 
 import { definition } from "./definition.ts";

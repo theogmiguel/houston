@@ -45,7 +45,10 @@ const executable = join(serverDir, "dist-exe", "houston");
 const client = join(serverDir, "dist", "client");
 for (const [path, hint] of [
   [executable, "run `pnpm --filter houston run build:exe` first"],
-  [join(client, "index.html"), "run `pnpm --filter @t3tools/web build` and the server build first"],
+  [
+    join(client, "index.html"),
+    "run `pnpm --filter @houston-app/web build` and the server build first",
+  ],
 ]) {
   if (!existsSync(path)) throw new Error(`Missing ${path}; ${hint}.`);
 }
@@ -69,9 +72,10 @@ try {
   const deployed = join(stageRoot, "deploy");
   const patches = JSON.stringify(RUNTIME_PATCHES);
   // CI installs pnpm on PATH; developer shells reach it through corepack.
-  const pnpm = spawnSync("pnpm", ["--version"], { stdio: "ignore" }).status === 0
-    ? ["pnpm"]
-    : ["corepack", "pnpm"];
+  const pnpm =
+    spawnSync("pnpm", ["--version"], { stdio: "ignore" }).status === 0
+      ? ["pnpm"]
+      : ["corepack", "pnpm"];
   const deploy = spawnSync(
     pnpm[0],
     [

@@ -1,5 +1,5 @@
 // @effect-diagnostics globalTimers:off - The wake debounce runs in an atom subscription, outside an Effect runtime.
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@houston-app/contracts";
 import { Atom, type AtomRegistry } from "effect/reactivity";
 
 import { type AtomCommand, type AtomCommandResult, runAtomCommand } from "./runtime.ts";

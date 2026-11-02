@@ -7,7 +7,7 @@ import {
   HOUSTON_DEFECT_LIMITS,
   type HoustonHarnessDecisionState,
   type HoustonHarnessDefectDestination,
-} from "@t3tools/contracts/houston/harnessReview";
+} from "@houston-app/contracts/houston/harnessReview";
 import * as DateTime from "effect/DateTime";
 
 import { findingDecision } from "../rules.ts";

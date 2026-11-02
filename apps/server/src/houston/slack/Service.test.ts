@@ -1,7 +1,7 @@
 // Connecting the Slack app, its tokens in the (memory) keychain, the settings and channel map,
 // over one database with the loopback fake Slack.
 import { assert, describe, it } from "@effect/vitest";
-import { HoustonSlackError } from "@t3tools/contracts/houston/slack";
+import { HoustonSlackError } from "@houston-app/contracts/houston/slack";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as SqlClient from "effect/sql/SqlClient";

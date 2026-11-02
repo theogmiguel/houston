@@ -1,4 +1,4 @@
-import type { OrchestrationV2RunStatus, RunId } from "@t3tools/contracts";
+import type { OrchestrationV2RunStatus, RunId } from "@houston-app/contracts";
 
 import type { SidebarThreadSummary } from "../types";
 import { runOutcomeText, THREAD_STATUS_TEXT } from "./chat/threadActivityAnnouncement";

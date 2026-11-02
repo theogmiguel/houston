@@ -3,8 +3,8 @@ import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import { useState } from "react";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { ProviderClientDefinition } from "@t3tools/provider-core/client";
+import { squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
+import type { ProviderClientDefinition } from "@houston-app/provider-core/client";
 import {
   type AcpRegistrySearchAgent,
   AuthProvidersManageScope,
@@ -14,7 +14,7 @@ import {
   type ProviderInstanceConfig,
   type ProviderInstanceEnvironmentVariable,
   isManagedDriverAllowed,
-} from "@t3tools/contracts";
+} from "@houston-app/contracts";
 
 import {
   useEnvironmentSettings,

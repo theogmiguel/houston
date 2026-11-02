@@ -7,8 +7,8 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import type { ScopedThreadRef } from "@t3tools/contracts";
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import type { ScopedThreadRef } from "@houston-app/contracts";
+import { scopedThreadKey } from "@houston-app/client-runtime/environment";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/utils";
 import { Popover, PopoverPopup, PopoverCreateHandle } from "../ui/popover";

@@ -1,4 +1,4 @@
-import { deadlineStore } from "@t3tools/client-runtime/clock";
+import { deadlineStore } from "@houston-app/client-runtime/clock";
 import { useState, useSyncExternalStore } from "react";
 
 /** Re-renders once when `deadlineMs` (epoch ms) is reached; `null` never passes. */
