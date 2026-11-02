@@ -25,7 +25,7 @@ export class AntigravityUsage extends Context.Service<
       readonly windowStartMs: number;
     }) => Effect.Effect<ReadonlyArray<ProviderUsageScan>, UsageReadError>;
   }
->()("houston/provider/Drivers/AntigravityUsage") {}
+>()("@houston-app/cli/provider/Drivers/AntigravityUsage") {}
 
 const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;

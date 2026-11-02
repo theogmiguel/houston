@@ -1,0 +1,42 @@
+# Windows server parity, shared by the main CI workflow (nightly and pushes) and the
+# `ci:windows` label workflow (opt-in on a pull request).
+name: Server (Windows)
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  HOUSTON_CHANNEL: dev
+
+jobs:
+  server-windows:
+    runs-on: windows-latest
+    # Three Windows server shards; the old advisory job was the slowest.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          filter: blob:none
+      - uses: ./.github/actions/setup
+      - name: Resolve Playwright version
+        id: playwright_version
+        shell: bash
+        run: echo "version=$(node -p "require('./apps/server/node_modules/playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Chromium
+        id: chromium_cache
+        uses: actions/cache@v6
+        with:
+          path: ~\AppData\Local\ms-playwright
+          key: playwright-chromium-shell-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright_version.outputs.version }}
+      - name: Install Chromium for server browser integration tests
+        if: steps.chromium_cache.outputs.cache-hit != 'true'
+        run: node apps/server/node_modules/playwright-core/cli.js install --only-shell chromium
+      - name: Server tests (src and scripts)
+        run: pnpm --filter @houston-app/cli exec vp test run src/ scripts/ --shard=${{ matrix.shard }}/3

@@ -35,7 +35,7 @@ export class HoustonKeychain extends Context.Service<
     /** An absent entry succeeds. */
     readonly remove: (service: string, account: string) => Effect.Effect<void, KeychainUnavailable>;
   }
->()("houston/houston/secrets/HoustonKeychain") {}
+>()("@houston-app/cli/houston/secrets/HoustonKeychain") {}
 
 /** The keychain calls a backend makes; the live one is `@napi-rs/keyring`. */
 export interface KeychainBackend {

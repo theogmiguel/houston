@@ -150,7 +150,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
           </CommandList>
         ) : (
           <div className="px-3 py-2.5">
-            <p className="text-(--t3) text-xs">
+            <p className="text-(--houston) text-xs">
               {props.isLoading
                 ? props.triggerKind === "skill" || props.triggerKind === "slash-command"
                   ? "Searching workspace skills..."
@@ -211,14 +211,14 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
           pathValue={props.item.path}
           kind={props.item.pathKind}
           theme={props.resolvedTheme}
-          className="col-start-1 row-start-1 size-4 text-(--t3)"
+          className="col-start-1 row-start-1 size-4 text-(--houston)"
         />
       ) : pullRequestPresentation ? (
         <pullRequestPresentation.Icon
           role="img"
           aria-label={pullRequestPresentation.label}
           className={cn(
-            "col-start-1 row-start-1 size-4 text-(--t3)",
+            "col-start-1 row-start-1 size-4 text-(--houston)",
             pullRequestPresentation.toneClassName,
           )}
         />
@@ -226,7 +226,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
         <EnvironmentMachineIcon
           kind={props.item.machine}
           aria-hidden="true"
-          className="col-start-1 row-start-1 size-4 text-(--t3)"
+          className="col-start-1 row-start-1 size-4 text-(--houston)"
         />
       ) : (
         <ComposerCommandItemGlyph item={props.item} />
@@ -234,7 +234,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
       <span className="col-start-2 row-start-1 min-w-0 truncate text-(--t1) text-headline">
         {isSlashSkill ? (
           <>
-            <span className="text-(--t3)">/skill:</span>
+            <span className="text-(--houston)">/skill:</span>
             {formatProviderSkillDisplayName(isSlashSkill)}
           </>
         ) : (
@@ -243,7 +243,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
       </span>
       <span
         className={cn(
-          "col-start-2 row-start-2 min-w-0 truncate text-(--t3) text-xs leading-4",
+          "col-start-2 row-start-2 min-w-0 truncate text-(--houston) text-xs leading-4",
           isPath && "font-mono text-2xs",
         )}
       >
@@ -254,7 +254,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
   );
 });
 
-const MENU_ICON_CLASS = "col-start-1 row-start-1 size-4 text-(--t3)";
+const MENU_ICON_CLASS = "col-start-1 row-start-1 size-4 text-(--houston)";
 
 function ComposerCommandItemGlyph({ item }: { item: ComposerCommandItem }) {
   switch (item.type) {
@@ -314,7 +314,7 @@ const SKILL_SOURCE_LABEL_BY_KIND: Record<ProviderSkillSourceKind, string> = {
 
 function SkillSourceBadge(props: { kind: ProviderSkillSourceKind }) {
   return (
-    <span className="col-start-3 row-span-2 row-start-1 self-center rounded-(--r-badge) border border-(--line-strong) px-1 font-semibold text-(--t3) text-3xs leading-4">
+    <span className="col-start-3 row-span-2 row-start-1 self-center rounded-(--r-badge) border border-(--line-strong) px-1 font-semibold text-(--houston) text-3xs leading-4">
       {SKILL_SOURCE_LABEL_BY_KIND[props.kind]}
     </span>
   );

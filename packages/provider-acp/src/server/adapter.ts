@@ -38,7 +38,7 @@ import { AgentScope, AgentScopeThreadId } from "@houston-app/shared/AgentScope";
 import { HTML_RENDER_TOOL_NAME } from "@houston-app/shared/htmlRender";
 import { modelSelectionsEqual } from "@houston-app/shared/model";
 import { type SelfInvocation, selfInvocationArgs } from "@houston-app/shared/nodeRuntime";
-import { resolveT3McpToolId } from "@houston-app/shared/t3McpToolPresentation";
+import { resolveHoustonMcpToolId } from "@houston-app/shared/houstonMcpToolPresentation";
 import { compactDynamicToolOutput, htmlRenderFromToolItem } from "@houston-app/shared/toolOutput";
 import { FILE_HEADERS_ONLY, formatPatch, structuredPatch } from "diff";
 import * as Cause from "effect/Cause";
@@ -106,8 +106,8 @@ import {
 } from "./sessionConfig.ts";
 import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 import {
-  t3AcpPromptWithInstructions,
-  type T3AcpInstructionState,
+  houstonAcpPromptWithInstructions,
+  type HoustonAcpInstructionState,
 } from "@houston-app/provider-core/server/orchestrationInstructions";
 import { buildRuntimeInstructions } from "@houston-app/provider-core/server/runtimeInstructions";
 import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
@@ -1687,7 +1687,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         });
         const activeSelection = yield* Ref.make<ModelSelection | null>(null);
         const activeInteractionMode = yield* Ref.make<ProviderInteractionMode | null>(null);
-        const promptInstructionStates = yield* Ref.make(new Map<string, T3AcpInstructionState>());
+        const promptInstructionStates = yield* Ref.make(
+          new Map<string, HoustonAcpInstructionState>(),
+        );
         // Unique markers keep delayed prompt completions from clearing later compactions.
         const compactionMarkers = yield* Ref.make(new Map<string, symbol>());
         const runtimeRestartRequired = yield* Ref.make(false);
@@ -3775,7 +3777,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             const input =
               mcpIdentity.input ?? unknownRecord(rawInputRecord?.arguments) ?? rawInputRecord ?? {};
             let output = rawOutput === undefined ? undefined : acpMcpToolCallOutput(rawOutput);
-            const isHtmlRender = resolveT3McpToolId(toolName) === HTML_RENDER_TOOL_NAME;
+            const isHtmlRender = resolveHoustonMcpToolId(toolName) === HTML_RENDER_TOOL_NAME;
             const isError =
               compactDynamicToolOutput(output)?.isError === true ||
               compactDynamicToolOutput(rawOutputRecord?.result)?.isError === true;
@@ -7365,9 +7367,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           const mcpSession = yield* mcpSessions.read(turnInput.threadId);
           const instructionState = {
             interactionMode: turnInput.runtimePolicy.interactionMode,
-            hasT3Mcp: mcpSession !== undefined,
+            hasHoustonMcp: mcpSession !== undefined,
             hasDeviceTools: mcpSession?.capabilities?.has("device") === true,
-          } satisfies T3AcpInstructionState;
+          } satisfies HoustonAcpInstructionState;
           const previousInstructionState = (yield* Ref.get(promptInstructionStates)).get(sessionId);
           const compactionMarker = (yield* Ref.get(compactionMarkers)).get(sessionId);
           const userText =
@@ -7388,7 +7390,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             resolveExtractedTextPath: host.resolveExtractedTextPath,
           });
           const isNativeSlashCommand = userText.trimStart().startsWith("/");
-          const text = t3AcpPromptWithInstructions({
+          const text = houstonAcpPromptWithInstructions({
             prompt: messageText,
             state: instructionState,
             ...(previousInstructionState === undefined || compactionMarker !== undefined

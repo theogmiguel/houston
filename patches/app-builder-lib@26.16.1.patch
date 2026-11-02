@@ -7,7 +7,7 @@ index 8a3462b185b078a260483635e6d774e2ece6e269..105778c145ab63a26444179215c643a7
          // http://forums.winamp.com/showthread.php?p=3078545
          // TODO: remove workaround when wine is fully upgraded to 11
 -        if ((0, macosVersion_1.isMacOsCatalina)()) {
-+        // T3 Code builds Windows installers on Linux without wine; read the
++        // Houston builds Windows installers on Linux without wine; read the
 +        // uninstaller out of the stub the way macOS hosts already do.
 +        if ((0, macosVersion_1.isMacOsCatalina)() || process.platform === "linux") {
              try {

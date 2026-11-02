@@ -75,11 +75,11 @@ The semantic aliases used by copied feature components resolve to those values:
 
 ### Text
 
-| Token  | Use it for                                                                |
-| ------ | ------------------------------------------------------------------------- |
-| `--t1` | Titles, active rows, values the user is reading. Also `--foreground`.     |
-| `--t2` | Supporting text and secondary labels.                                     |
-| `--t3` | Muted chrome, placeholders, inactive metadata. Also `--muted-foreground`. |
+| Token       | Use it for                                                                |
+| ----------- | ------------------------------------------------------------------------- |
+| `--t1`      | Titles, active rows, values the user is reading. Also `--foreground`.     |
+| `--t2`      | Supporting text and secondary labels.                                     |
+| `--houston` | Muted chrome, placeholders, inactive metadata. Also `--muted-foreground`. |
 
 Three readable tiers. Icons use `--icon-muted` (an alias of `--muted-foreground`) when they
 should sit quieter than their label.

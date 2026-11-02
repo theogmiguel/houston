@@ -45,11 +45,11 @@ const layerMetadata = Layer.merge(
   Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
     resolve: (workspaceRoot) =>
       Effect.succeed({
-        canonicalKey: `github.com/t3tools/${workspaceRoot.split("/").at(-1)}`,
+        canonicalKey: `github.com/houston/${workspaceRoot.split("/").at(-1)}`,
         locator: {
           source: "git-remote" as const,
           remoteName: "origin",
-          remoteUrl: `git@github.com:t3tools/${workspaceRoot.split("/").at(-1)}.git`,
+          remoteUrl: `git@github.com:houston/${workspaceRoot.split("/").at(-1)}.git`,
         },
         rootPath: workspaceRoot,
       }),
@@ -61,7 +61,7 @@ const layerMetadata = Layer.merge(
 );
 
 class EnrichmentCompletions extends Context.Service<EnrichmentCompletions, Queue.Queue<void>>()(
-  "houston/project/ProjectService.test/EnrichmentCompletions",
+  "@houston-app/cli/project/ProjectService.test/EnrichmentCompletions",
 ) {}
 
 const layerEnrichmentCompletions = Layer.effectContext(
@@ -260,7 +260,7 @@ it.layer(layerTest)("ProjectService", (it) => {
         projectId,
         (project) => project.repositoryIdentity !== null && project.faviconPath !== null,
       );
-      assert.equal(hydratedCreated?.repositoryIdentity?.canonicalKey, "github.com/t3tools/project");
+      assert.equal(hydratedCreated?.repositoryIdentity?.canonicalKey, "github.com/houston/project");
       assert.equal(hydratedCreated?.faviconPath, "/work/project/favicon.svg");
 
       const updated = yield* service.update({

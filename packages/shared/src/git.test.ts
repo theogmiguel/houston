@@ -29,11 +29,11 @@ describe("normalizeGitRemoteUrl", () => {
   });
 
   it("preserves nested group paths for providers like GitLab", () => {
-    expect(normalizeGitRemoteUrl("git@gitlab.com:T3Tools/platform/Houston.git")).toBe(
-      "gitlab.com/t3tools/platform/houston",
+    expect(normalizeGitRemoteUrl("git@gitlab.com:Houston/platform/Houston.git")).toBe(
+      "gitlab.com/houston/platform/houston",
     );
-    expect(normalizeGitRemoteUrl("https://gitlab.com/T3Tools/platform/Houston.git")).toBe(
-      "gitlab.com/t3tools/platform/houston",
+    expect(normalizeGitRemoteUrl("https://gitlab.com/Houston/platform/Houston.git")).toBe(
+      "gitlab.com/houston/platform/houston",
     );
   });
 
@@ -152,13 +152,13 @@ describe("isTemporaryWorktreeBranch", () => {
     );
   });
 
-  it("matches legacy houston temporary worktree refs", () => {
+  it("matches temporary worktree refs that carry a UUID", () => {
     expect(isTemporaryWorktreeBranch("houston/deadbeef")).toBe(true);
     expect(isTemporaryWorktreeBranch("houston-deadbeef")).toBe(true);
     expect(isTemporaryWorktreeBranch("houston/f4ae4e0e-f971-4d48-b4f2-9cf0aa54ab12")).toBe(true);
     expect(
       isTemporaryWorktreeBranch(`${WORKTREE_BRANCH_PREFIX}/f4ae4e0e-f971-4d48-b4f2-9cf0aa54ab12`),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("rejects UUID-shaped refs that are not RFC 4122 v4", () => {
@@ -166,7 +166,7 @@ describe("isTemporaryWorktreeBranch", () => {
     expect(isTemporaryWorktreeBranch("houston/f4ae4e0e-f971-4d48-c4f2-9cf0aa54ab12")).toBe(false);
   });
 
-  it("matches the flat fallback used when a plain t3 branch exists", () => {
+  it("matches the flat fallback used when a plain houston branch exists", () => {
     const flat = flattenTemporaryWorktreeBranchName(`${WORKTREE_BRANCH_PREFIX}/deadbeef`);
     expect(flat).toBe(`${WORKTREE_BRANCH_PREFIX}-deadbeef`);
     expect(isTemporaryWorktreeBranch(flat)).toBe(true);

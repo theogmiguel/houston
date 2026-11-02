@@ -534,7 +534,7 @@ function PairingForm({
           <CollapsiblePanel>
             <p className="pt-3 text-sm text-muted-foreground">
               On the computer with your code, start Houston or run{" "}
-              <code className="font-mono">npx t3 serve</code>, then run:
+              <code className="font-mono">npx houston serve</code>, then run:
             </p>
             <CommandBlock command="houston pair" className="mt-2" />
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">

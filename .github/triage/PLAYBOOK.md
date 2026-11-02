@@ -40,7 +40,7 @@ Before cloning, ask the user which version, device, and surface the bug happened
 on. The bug may have happened on another machine, a remote server, the mobile app,
 or an older build they have since updated. Check their answer against local facts
 where they apply: the server version in the context file, or `serverVersion` from
-`<origin>/.well-known/t3/environment` when a local server is running. If neither
+`<origin>/.well-known/houston/environment` when a local server is running. If neither
 the user nor the machine can tell you the version, say it is unknown. Do not guess.
 
 Clone the repo at the release tag for that version (`v` followed by the version,

@@ -177,7 +177,7 @@ export class AgentSessionScanner extends Context.Service<
       completedSources?: ReadonlyArray<AgentSessionImportSource>,
     ) => Stream.Stream<AgentSessionRecentThread, AgentSessionScanError>;
   }
->()("houston/project/AgentSessionScanner") {}
+>()("@houston-app/cli/project/AgentSessionScanner") {}
 
 type AgentSessionSource = AgentSessionProjectCandidate["sources"][number];
 
@@ -637,7 +637,7 @@ function isHoustonManagedWorktree(
   const normalized = normalizeForWorktreeMatch(candidatePath, caseFold);
   return (
     normalized.startsWith(normalizeForWorktreeMatch(worktreesDir, caseFold)) ||
-    normalized.includes("/.t3/worktrees/")
+    normalized.includes("/.houston/worktrees/")
   );
 }
 

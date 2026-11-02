@@ -191,7 +191,7 @@ it.effect("effect-acp agent handles core agent requests and outbound client requ
         result: { ok: true },
       });
       assert.deepEqual(yield* Ref.get(requestContexts), [
-        { requestId: "$t3:jsonrpc:number:2", method: "initialize" },
+        { requestId: "$houston:jsonrpc:number:2", method: "initialize" },
         { requestId: "extension-3", method: "x/test" },
       ]);
 
@@ -376,7 +376,7 @@ it.effect.each([0, 2 ** 30, 2 ** 32])(
         },
       });
       assert.deepEqual(yield* Ref.get(contexts), [
-        { requestId: `$t3:jsonrpc:number:${requestId}`, method: "initialize" },
+        { requestId: `$houston:jsonrpc:number:${requestId}`, method: "initialize" },
       ]);
 
       yield* Queue.offer(

@@ -152,7 +152,7 @@ describe("mcpAppFromToolItem", () => {
       tool: "get_weather",
       resourceUri: "ui://weather/dashboard",
     };
-    const stored = { t3McpApp: app, result: { content: [] } };
+    const stored = { houstonMcpApp: app, result: { content: [] } };
     const toolName = "weather.get_weather";
     expect(mcpAppFromToolItem({ toolName, output: stored })).toEqual(app);
     expect(mcpAppFromToolItem({ toolName, output: compactDynamicToolOutput(stored) })).toEqual(app);
@@ -161,7 +161,7 @@ describe("mcpAppFromToolItem", () => {
   it("ignores a reference naming a server or tool other than the item's own", async () => {
     const { mcpAppFromToolItem } = await import("./toolOutput.ts");
     const forged = {
-      t3McpApp: {
+      houstonMcpApp: {
         attachmentId: "thread-1-abc-html",
         server: "bank",
         tool: "transfer",
@@ -176,14 +176,14 @@ describe("mcpAppFromToolItem", () => {
     const { compactDynamicToolOutput } = await import("./toolOutput.ts");
     const resourceUri = `ui://weather/${"segment/".repeat(60)}dashboard`;
     const output = compactDynamicToolOutput({
-      t3McpApp: {
+      houstonMcpApp: {
         attachmentId: "thread-1-abc-html",
         server: "weather",
         tool: "get_weather",
         resourceUri,
       },
     });
-    expect(output?.t3McpApp?.resourceUri).toBe(resourceUri);
+    expect(output?.houstonMcpApp?.resourceUri).toBe(resourceUri);
   });
 
   it("keeps the compact app reference within the wire budget", async () => {
@@ -193,7 +193,7 @@ describe("mcpAppFromToolItem", () => {
       (_, index) => `https://${"a".repeat(200)}${index}.test`,
     );
     const output = compactDynamicToolOutput({
-      t3McpApp: {
+      houstonMcpApp: {
         attachmentId: "thread-1-abc-html",
         server: "weather",
         tool: "get_weather",
@@ -202,7 +202,7 @@ describe("mcpAppFromToolItem", () => {
       },
     });
     expect(new TextEncoder().encode(JSON.stringify(output)).byteLength).toBeLessThanOrEqual(8_192);
-    expect(output?.t3McpApp?.server).toBe("weather");
+    expect(output?.houstonMcpApp?.server).toBe("weather");
   });
 });
 

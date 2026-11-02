@@ -1,6 +1,6 @@
 import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
 import { AuthSettingsWriteScope } from "@houston-app/contracts";
-import { EnvironmentId, type T3ProjectFileScript } from "@houston-app/contracts";
+import { EnvironmentId, type HoustonProjectFileScript } from "@houston-app/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -8,7 +8,7 @@ import {
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@houston-app/shared/keybindings";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import { useState } from "react";
-import { useT3ProjectFileState } from "../../hooks/useT3ProjectFileScripts";
+import { useHoustonProjectFileState } from "../../hooks/useHoustonProjectFileScripts";
 import { useEnvironments } from "../../state/environments";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
@@ -71,11 +71,11 @@ export function ProjectActionsSettings() {
   );
 
   const representativeMember = target?.projectId ? memberById.get(target.projectId) : undefined;
-  const t3File = useT3ProjectFileState(
+  const houstonFile = useHoustonProjectFileState(
     representativeMember?.environmentId ?? EnvironmentId.make("none"),
     representativeMember?.workspaceRoot ?? null,
   );
-  const importableScripts = t3File.scripts.filter(
+  const importableScripts = houstonFile.scripts.filter(
     (fileScript) =>
       !scripts.some(
         (script) =>
@@ -83,7 +83,7 @@ export function ProjectActionsSettings() {
           script.name.toLowerCase() === fileScript.name.toLowerCase(),
       ),
   );
-  const importFileScript = async (fileScript: T3ProjectFileScript) => {
+  const importFileScript = async (fileScript: HoustonProjectFileScript) => {
     const payload: NewProjectScriptInput = {
       name: fileScript.name,
       command: fileScript.command,
@@ -183,7 +183,7 @@ export function ProjectActionsSettings() {
           onEdit={(script) => setRequest(editorRequestForScript(script, keybindings))}
         />
       )}
-      {t3File.status === "invalid" ? (
+      {houstonFile.status === "invalid" ? (
         <SettingsRow
           title="houston.json is invalid"
           description="A houston.json exists in this checkout but fails to parse, so every action and icon it declares is ignored. Check the JSON syntax and icon values."

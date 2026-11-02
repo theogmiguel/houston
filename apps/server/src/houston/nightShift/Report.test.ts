@@ -130,7 +130,7 @@ describe("night shift morning report", () => {
             providerInstanceId: "claudeAgent",
             requestedInstanceId: "codex",
             worktreePath: null,
-            branch: "t3/a",
+            branch: "houston/a",
             startedAt: NOW,
             endedAt: null,
           });

@@ -3,10 +3,10 @@ import type * as EffectAcpSchema from "effect-acp/compat";
 
 import type { AcpSessionModeState } from "./runtimeModel.ts";
 
-export const ACP_SESSION_MODE_OPTION_ID = "_t3/session-mode";
+export const ACP_SESSION_MODE_OPTION_ID = "_houston/session-mode";
 
 /** Encodes a valid empty ACP choice as a non-empty Houston ID; map back before applying. */
-export const ACP_EMPTY_OPTION_VALUE = "_t3/empty";
+export const ACP_EMPTY_OPTION_VALUE = "_houston/empty";
 
 const MAX_OPTION_DESCRIPTORS = 16;
 const MAX_OPTION_CHOICES = 64;

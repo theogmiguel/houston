@@ -189,7 +189,7 @@ export class PullRequestWatchReactor extends Context.Service<
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
     readonly sweep: Effect.Effect<void>;
   }
->()("houston/orchestration-v2/PullRequestWatchReactor") {}
+>()("@houston-app/cli/orchestration-v2/PullRequestWatchReactor") {}
 
 /** @public */
 export const make = Effect.gen(function* () {

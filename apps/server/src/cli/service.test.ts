@@ -21,7 +21,7 @@ const status = {
   installed: true,
   current: true,
   unitPath: "/home/me/.config/systemd/user/houston.service",
-  logPath: "/home/me/.t3/userdata/logs/boot-service.log",
+  logPath: "/home/me/.houston/userdata/logs/boot-service.log",
 } as const;
 
 const newerServiceStatus = { ...status, current: false, installedVersion: "999.0.0" };
@@ -43,8 +43,8 @@ function makeTestService(
       Effect.sync(() => {
         installOptions.push(options);
         return {
-          program: ["/test/t3/runtime/versions/1.0.0/houston", "__service-launcher"],
-          baseDir: "/test/t3",
+          program: ["/test/houston/runtime/versions/1.0.0/houston", "__service-launcher"],
+          baseDir: "/test/houston",
           unitPath: serviceStatus.unitPath,
           logPath: serviceStatus.logPath,
         };
@@ -130,7 +130,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("service commands
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const parent = yield* fs.makeTempDirectoryScoped({ prefix: "houston-service-cli-test-" });
-      const baseDir = `${parent}/t3`;
+      const baseDir = `${parent}/houston`;
       vi.spyOn(BootService, "layer").mockReturnValue(
         Layer.succeed(BootService.BootService, makeTestService(status).service),
       );
@@ -169,7 +169,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("service commands
           Layer.succeed(BootService.BootService, service),
         );
         const node = "/home/me/.nvm/versions/node/v26.8.2/bin/node";
-        const script = "/home/me/.nvm/versions/node/v26.8.2/lib/node_modules/houston/dist/bin.mjs";
+        const script =
+          "/home/me/.nvm/versions/node/v26.8.2/lib/node_modules/@houston-app/cli/dist/bin.mjs";
 
         const output = yield* Command.runWith(serviceCommand, { version: packageJson.version })([
           command,

@@ -297,7 +297,7 @@ it.effect("never follows a peer's redirect with the pairing code", () =>
       );
       // Answers as B, then sends every linking request on to another address.
       const front = yield* serveRaw((request) =>
-        request.url.startsWith("/.well-known/t3/environment")
+        request.url.startsWith("/.well-known/houston/environment")
           ? HttpClient.get(`${b.url}${request.url}`).pipe(
               Effect.flatMap((response) => response.text),
               Effect.map((body) =>
@@ -356,7 +356,7 @@ it.effect("cancelling a descriptor probe aborts its request and leaves later res
         (httpEffect) =>
           Effect.gen(function* () {
             const request = yield* HttpServerRequest.HttpServerRequest;
-            if (request.url.startsWith("/.well-known/t3/environment")) {
+            if (request.url.startsWith("/.well-known/houston/environment")) {
               yield* Ref.update(requests, (count) => count + 1);
               if (yield* Ref.get(hold)) {
                 return yield* Deferred.succeed(entered, undefined).pipe(

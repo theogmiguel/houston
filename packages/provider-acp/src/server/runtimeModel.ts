@@ -10,7 +10,7 @@ import {
   deriveToolActivityPresentation,
   mergeToolActivityData,
 } from "@houston-app/shared/toolActivity";
-import { HOUSTON_MCP_TOOL_NAMES } from "@houston-app/shared/t3McpToolPresentation";
+import { HOUSTON_MCP_TOOL_NAMES } from "@houston-app/shared/houstonMcpToolPresentation";
 import type {
   OrchestrationV2ProviderThreadNativeMetadata,
   ThreadTokenUsageSnapshot,
@@ -1320,7 +1320,7 @@ export function syntheticLoadSessionResponseFromInitialize(
   return {
     ...(modes ? { modes } : {}),
     _meta: {
-      t3SessionLoadReady: "replay_idle",
+      houstonSessionLoadReady: "replay_idle",
     },
   };
 }

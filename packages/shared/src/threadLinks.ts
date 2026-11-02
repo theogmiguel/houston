@@ -2,12 +2,12 @@ import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@houston-app/cont
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-export const THREAD_LINK_PROTOCOL = "t3-thread";
+export const THREAD_LINK_PROTOCOL = "houston-thread";
 const V1_PREFIX = `${THREAD_LINK_PROTOCOL}://v1/`;
 const V2_PREFIX = `${THREAD_LINK_PROTOCOL}://v2/`;
 // Code comes first in the alternation so a link written inside a code span or fence is skipped.
 const THREAD_LINK_OUTSIDE_CODE =
-  /(?<fence>(`{3,}|~{3,})[\s\S]*?(?:\2|$))|(?<span>(`+)[^\n]*?\4)|\[(?<label>[^\]\n]*)\]\((?<href>t3-thread:\/\/v[12]\/[^\s)]+)\)|<(?<autolink>t3-thread:\/\/v[12]\/[^\s<>]+)>/g;
+  /(?<fence>(`{3,}|~{3,})[\s\S]*?(?:\2|$))|(?<span>(`+)[^\n]*?\4)|\[(?<label>[^\]\n]*)\]\((?<href>houston-thread:\/\/v[12]\/[^\s)]+)\)|<(?<autolink>houston-thread:\/\/v[12]\/[^\s<>]+)>/g;
 
 const decodeThreadId = Schema.decodeUnknownOption(ThreadId);
 const decodeEnvironmentId = Schema.decodeUnknownOption(EnvironmentId);

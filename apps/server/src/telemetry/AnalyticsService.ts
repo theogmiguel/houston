@@ -25,4 +25,4 @@ export class AnalyticsService extends Context.Service<
       observedBy: "server" | "client",
     ) => Effect.Effect<void>;
   }
->()("houston/telemetry/AnalyticsService") {}
+>()("@houston-app/cli/telemetry/AnalyticsService") {}

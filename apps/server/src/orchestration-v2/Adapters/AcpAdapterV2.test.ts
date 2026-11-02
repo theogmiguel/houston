@@ -3836,7 +3836,7 @@ describe("AcpAdapterV2", () => {
             name: "houston",
             command: process.execPath,
             args: [
-              process.argv[1] === undefined ? "t3" : NodePath.resolve(process.argv[1]),
+              process.argv[1] === undefined ? "houston" : NodePath.resolve(process.argv[1]),
               "acp-mcp-bridge",
             ],
             env: [

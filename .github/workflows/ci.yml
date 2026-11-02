@@ -223,7 +223,7 @@ jobs:
           filter: blob:none
       - uses: ./.github/actions/setup
       - name: Workspace package tests (web, server and scripts excluded)
-        run: pnpm -r --no-bail --no-sort --filter "!@houston-app/web" --filter "!houston" --filter "!@houston-app/scripts" test
+        run: pnpm -r --no-bail --no-sort --filter "!@houston-app/web" --filter "!@houston-app/cli" --filter "!@houston-app/scripts" test
       - name: Script tests (the licence generator and the style guard)
         run: node --test scripts/gen-third-party-licenses.test.mjs scripts/check-web-style.test.mjs
       - name: Report job timing
@@ -279,7 +279,7 @@ jobs:
             node apps/server/node_modules/playwright-core/cli.js install-deps chromium
           fi
       - name: Server tests (src and scripts)
-        run: pnpm --filter houston exec vp test run src/ scripts/ --shard=${{ matrix.shard }}/6
+        run: pnpm --filter @houston-app/cli exec vp test run src/ scripts/ --shard=${{ matrix.shard }}/6
       - name: Report job timing
         if: always()
         continue-on-error: true
@@ -493,37 +493,12 @@ jobs:
           exit $LASTEXITCODE
 
   # Windows server parity runs nightly and on pushes, never on PRs, so it cannot
-  # hold a review. Its failures are real failures, not advisory.
+  # hold a review. Its failures are real failures, not advisory. A PR can opt in
+  # with the `ci:windows` label (.github/workflows/ci-windows-label.yml).
   server-windows:
     needs: changes
     if: github.event_name != 'pull_request'
-    runs-on: windows-latest
-    # Three Windows server shards; the old advisory job was the slowest.
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3]
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          filter: blob:none
-      - uses: ./.github/actions/setup
-      - name: Resolve Playwright version
-        id: playwright_version
-        shell: bash
-        run: echo "version=$(node -p "require('./apps/server/node_modules/playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
-      - name: Cache Chromium
-        id: chromium_cache
-        uses: actions/cache@v6
-        with:
-          path: ~\AppData\Local\ms-playwright
-          key: playwright-chromium-shell-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright_version.outputs.version }}
-      - name: Install Chromium for server browser integration tests
-        if: steps.chromium_cache.outputs.cache-hit != 'true'
-        run: node apps/server/node_modules/playwright-core/cli.js install --only-shell chromium
-      - name: Server tests (src and scripts)
-        run: pnpm --filter houston exec vp test run src/ scripts/ --shard=${{ matrix.shard }}/3
+    uses: ./.github/workflows/server-windows.yml
 
   # The single check to require. A job skipped by the path filter is a pass; a
   # failure, a cancellation, or a failed path filter is not.

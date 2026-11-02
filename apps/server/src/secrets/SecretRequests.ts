@@ -67,7 +67,7 @@ export class SecretRequests extends Context.Service<
       readonly turnItemId: string;
     }) => Effect.Effect<string, SecretRequestError>;
   }
->()("houston/secrets/SecretRequests") {}
+>()("@houston-app/cli/secrets/SecretRequests") {}
 
 const make = Effect.gen(function* () {
   const store = yield* ServerSecretStore.ServerSecretStore;

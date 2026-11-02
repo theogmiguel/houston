@@ -1,5 +1,5 @@
 import type { OrchestrationV2TurnItem } from "@houston-app/contracts";
-import { resolveT3McpToolId } from "@houston-app/shared/t3McpToolPresentation";
+import { resolveHoustonMcpToolId } from "@houston-app/shared/houstonMcpToolPresentation";
 import { formatReadToolLabel, formatSearchToolLabel } from "@houston-app/shared/toolActivity";
 
 // Search results stay on the timeline wire, so keep their text a preview.
@@ -13,7 +13,7 @@ type ToolItemBase = Omit<
 function openCodeToolProjectionKind(
   toolName: string,
 ): "command_execution" | "file_change" | "file_search" | "web_search" | "dynamic_tool" {
-  if (resolveT3McpToolId(toolName) !== null) return "dynamic_tool";
+  if (resolveHoustonMcpToolId(toolName) !== null) return "dynamic_tool";
   const normalized = toolName.toLowerCase();
   if (normalized === "todowrite") {
     return "dynamic_tool";

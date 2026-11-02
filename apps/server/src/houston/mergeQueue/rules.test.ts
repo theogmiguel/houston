@@ -555,7 +555,7 @@ describe("the push guard refuses bases, defaults and branches houston did not cr
       branch,
       baseRef: "main",
       defaultBranch: "trunk",
-      managedBranches: new Set(["t3/abc"]),
+      managedBranches: new Set(["houston/abc"]),
       taskBranches: new Set(["houston/task/hou-4-fix"]),
       ...patch,
     });
@@ -564,14 +564,14 @@ describe("the push guard refuses bases, defaults and branches houston did not cr
     expect(guard("main")).toContain("it is the base");
     expect(guard("main")).toContain("main");
     expect(guard("trunk")).toContain("it is the default branch");
-    expect(guard("feature/x")).toContain("outside houston/ and t3/");
+    expect(guard("feature/x")).toContain("outside houston/");
     expect(guard("houston/x")).toContain("Houston created no worktree on that branch");
-    expect(guard("t3/abc")).toBeNull();
+    expect(guard("houston/abc")).toBeNull();
     expect(guard("houston/task/hou-4-fix")).toBeNull();
     // A Houston branch that is the base is still refused as the base.
-    expect(guard("t3/abc", { baseRef: "t3/abc" })).toContain("it is the base");
+    expect(guard("houston/abc", { baseRef: "houston/abc" })).toContain("it is the base");
     // An unknown default branch refuses rather than guesses.
-    expect(guard("t3/abc", { defaultBranch: null })).toContain("default branch");
+    expect(guard("houston/abc", { defaultBranch: null })).toContain("default branch");
   });
 });
 
@@ -684,10 +684,10 @@ describe("the failure note names the files and the output tail", () => {
       number: 8,
       url: "https://github.com/o/r/pull/8",
       title: null,
-      headRef: "t3/eight",
+      headRef: "houston/eight",
       failure: {
         kind: "refused",
-        message: "refusing to push to t3/eight: Houston created no worktree on that branch",
+        message: "refusing to push to houston/eight: Houston created no worktree on that branch",
         headSha: sha(8),
         baseSha: null,
         files: [],
@@ -698,6 +698,6 @@ describe("the failure note names the files and the output tail", () => {
     });
     expect(bare).not.toContain("```");
     expect(bare).not.toContain("- and");
-    expect(bare).toContain("Fix it on t3/eight and push.");
+    expect(bare).toContain("Fix it on houston/eight and push.");
   });
 });

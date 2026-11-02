@@ -2,8 +2,8 @@ import { findThreadSearchOccurrences } from "@houston-app/shared/threadSearch";
 import { useEffect, useEffectEvent, useRef } from "react";
 import { THREAD_FIND_BLOCK_TAGS } from "@houston-app/shared/threadFindText";
 
-const THREAD_FIND_HIGHLIGHT_NAME = "t3-thread-find";
-const THREAD_FIND_ACTIVE_HIGHLIGHT_NAME = "t3-thread-find-active";
+const THREAD_FIND_HIGHLIGHT_NAME = "houston-thread-find";
+const THREAD_FIND_ACTIVE_HIGHLIGHT_NAME = "houston-thread-find-active";
 
 const THREAD_FIND_TEXT_SELECTOR = "[data-thread-find-text]";
 const THREAD_FIND_IGNORE_SELECTOR = "[data-thread-find-ignore]";

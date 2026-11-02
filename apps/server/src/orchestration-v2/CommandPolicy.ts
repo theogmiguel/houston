@@ -241,7 +241,7 @@ export interface CommandPolicyV2Shape {
 }
 
 export class CommandPolicyV2 extends Context.Service<CommandPolicyV2, CommandPolicyV2Shape>()(
-  "houston/orchestration-v2/CommandPolicy/CommandPolicyV2",
+  "@houston-app/cli/orchestration-v2/CommandPolicy/CommandPolicyV2",
 ) {}
 
 function unsupported(

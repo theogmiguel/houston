@@ -22,4 +22,4 @@ export class HoustonScheduledTaskRunner extends Context.Service<
       task: ScheduledTask["id"],
     ) => Effect.Effect<HoustonHarnessError | undefined>;
   }
->()("houston/houston/harnessReview/ScheduledTaskRunner/HoustonScheduledTaskRunner") {}
+>()("@houston-app/cli/houston/harnessReview/ScheduledTaskRunner/HoustonScheduledTaskRunner") {}

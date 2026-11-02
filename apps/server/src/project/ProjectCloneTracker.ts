@@ -50,7 +50,7 @@ export class ProjectCloneTracker extends Context.Service<
     readonly get: (projectId: ProjectId) => Effect.Effect<ProjectCloneSnapshot | null>;
     readonly stream: Stream.Stream<ReadonlyArray<ProjectCloneSnapshot>>;
   }
->()("houston/project/ProjectCloneTracker") {}
+>()("@houston-app/cli/project/ProjectCloneTracker") {}
 
 export interface ProjectCloneHooks {
   readonly createProject: (input: {

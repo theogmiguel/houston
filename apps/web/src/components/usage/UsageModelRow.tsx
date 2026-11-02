@@ -37,10 +37,12 @@ export function UsageModelRow({
           <span className="font-mono">{model.model}</span>
         </button>
       </td>
-      <td className={cn("px-4 text-[var(--t3)]", rowFigures)}>{formatTokens(model.totalTokens)}</td>
+      <td className={cn("px-4 text-[var(--houston)]", rowFigures)}>
+        {formatTokens(model.totalTokens)}
+      </td>
       <td className={cn("px-4 text-[var(--t1)]", rowFigures)}>
         {isModelCostUnknown(model) ? (
-          <span className="text-[var(--t3)]">Unpriced</span>
+          <span className="text-[var(--houston)]">Unpriced</span>
         ) : (
           formatUsd(model.costUsd)
         )}
@@ -56,7 +58,7 @@ export function UsageModelRow({
               }}
             />
           </span>
-          <span className={cn("w-11 text-right text-xs text-[var(--t3)]", rowFigures)}>
+          <span className={cn("w-11 text-right text-xs text-[var(--houston)]", rowFigures)}>
             {share === null ? "" : formatPercent(share)}
           </span>
         </span>

@@ -39,17 +39,17 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
 
   it.effect("keeps a user-installed Node reachable when the command runs under sudo", () =>
     Effect.gen(function* () {
-      const npx = "/home/theo/.npm/_npx/abc/node_modules/houston/dist/bin.mjs";
+      const npx = "/home/theo/.npm/_npx/abc/node_modules/@houston-app/cli/dist/bin.mjs";
       expect(yield* rootCommand({ node: "/usr/bin/node", entry: npx })).toBe(
-        "sudo npx houston browser setup",
+        "sudo npx @houston-app/cli browser setup",
       );
       expect(
         yield* rootCommand({ node: "/home/theo/.nvm/versions/node/v24/bin/node", entry: npx }),
-      ).toBe('sudo env "PATH=$PATH" npx houston browser setup');
+      ).toBe('sudo env "PATH=$PATH" npx @houston-app/cli browser setup');
       expect(
         yield* rootCommand({
           node: "/home/theo/.local/node/bin/node",
-          entry: "/home/theo/.local/lib/node_modules/houston/dist/bin.mjs",
+          entry: "/home/theo/.local/lib/node_modules/@houston-app/cli/dist/bin.mjs",
           path: yield* pathWithHouston,
         }),
       ).toBe('sudo env "PATH=$PATH" houston browser setup');
@@ -62,19 +62,19 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
       expect(
         yield* rootCommand({
           node: "/home/theo/.local/node/bin/node",
-          entry: "/home/theo/.local/lib/node_modules/houston/dist/bin.mjs",
+          entry: "/home/theo/.local/lib/node_modules/@houston-app/cli/dist/bin.mjs",
           path: yield* pathWithHouston,
           args,
         }),
       ).toBe(`sudo env "PATH=$PATH" houston browser setup --base-dir '/srv/houston home'`);
       expect(
         yield* rootCommand({
-          node: "/opt/t3/houston",
-          entry: "/opt/t3/houston",
+          node: "/opt/houston/houston",
+          entry: "/opt/houston/houston",
           executable: true,
           args,
         }),
-      ).toBe("sudo /opt/t3/houston browser setup --base-dir '/srv/houston home'");
+      ).toBe("sudo /opt/houston/houston browser setup --base-dir '/srv/houston home'");
     }).pipe(Effect.scoped),
   );
 
@@ -108,11 +108,11 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
 
       expect(
         yield* rootCommand({
-          node: "/opt/t3/houston",
-          entry: "/opt/t3/houston",
+          node: "/opt/houston/houston",
+          entry: "/opt/houston/houston",
           executable: true,
         }),
-      ).toBe("sudo /opt/t3/houston browser setup");
+      ).toBe("sudo /opt/houston/houston browser setup");
 
       expect(
         yield* rootCommand({ ...desktop, env: { HOUSTON_CLI_PATH: path.join(home, "gone") } }),
@@ -130,7 +130,7 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
       const shim = path.join(home, "houston.cmd");
       yield* fs.writeFileString(shim, "@echo off\r\n");
       const hostCommand = (platform: NodeJS.Platform, env: Record<string, string>) =>
-        resolveHostCliCommand("doctor", ["--base-dir", "C:\\Users\\Jane Doe\\.t3"]).pipe(
+        resolveHostCliCommand("doctor", ["--base-dir", "C:\\Users\\Jane Doe\\.houston"]).pipe(
           Effect.provideService(
             HostProcess.ExecutablePath,
             "C:\\Program Files\\Houston\\houston.exe",
@@ -144,10 +144,10 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
           Effect.provideService(HostProcess.Environment, { PATH: "", ...env }),
         );
       expect((yield* hostCommand("win32", { HOUSTON_CLI_PATH: shim })).command).toBe(
-        `& "${shim}" doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"`,
+        `& "${shim}" doctor "--base-dir" "C:\\Users\\Jane Doe\\.houston"`,
       );
       expect((yield* hostCommand("win32", {})).command).toBe(
-        'houston doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"',
+        'houston doctor "--base-dir" "C:\\Users\\Jane Doe\\.houston"',
       );
       expect(
         (yield* resolveHostCliCommand("doctor", [
@@ -162,7 +162,7 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
         )).command,
       ).toBe('houston doctor "--base-dir" "C:\\Houston\\\u201C\u201CArchive\u201D\u201D"');
       expect((yield* hostCommand("linux", { HOUSTON_CLI_PATH: shim })).command).toMatch(
-        / doctor --base-dir 'C:\\Users\\Jane Doe\\\.t3'$/,
+        / doctor --base-dir 'C:\\Users\\Jane Doe\\\.houston'$/,
       );
     }).pipe(Effect.scoped),
   );
@@ -174,13 +174,13 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped();
-      const executable = path.join(root, ".t3/runtime/versions/1.0.0/t3");
+      const executable = path.join(root, ".houston/runtime/versions/1.0.0/houston");
       yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
       yield* fs.writeFileString(executable, "");
       for (const [relative, kind] of [
-        ["npm/_npx/hash/node_modules/houston/dist/bin.mjs", "npx"],
-        ["npm/_npx/hash/node_modules/houston/bin/houston.mjs", "npx"],
-        ["pnpm/dlx/hash/node_modules/houston/dist/bin.mjs", "pnpm-dlx"],
+        ["npm/_npx/hash/node_modules/@houston-app/cli/dist/bin.mjs", "npx"],
+        ["npm/_npx/hash/node_modules/@houston-app/cli/bin/houston.mjs", "npx"],
+        ["pnpm/dlx/hash/node_modules/@houston-app/cli/dist/bin.mjs", "pnpm-dlx"],
         [".bun/install/cache/houston/dist/bin.mjs", "bunx"],
       ] as const) {
         const entry = path.join(root, relative);
@@ -188,7 +188,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
         yield* fs.writeFileString(entry, "");
         yield* fs.writeFileString(
           path.join(path.dirname(entry), "../package.json"),
-          `{"name":"houston","version":"${packageJson.version}","bin":{"houston":"./bin/houston.mjs"}}`,
+          `{"name":"@houston-app/cli","version":"${packageJson.version}","bin":{"houston":"./bin/houston.mjs"}}`,
         );
         const launchedBy = entry.endsWith("houston.mjs");
         const installation = yield* resolveServerInstallation.pipe(
@@ -211,7 +211,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped();
       const prefix = path.join(root, "bunx-tools");
-      const packageRoot = path.join(prefix, "lib/node_modules/houston");
+      const packageRoot = path.join(prefix, "lib/node_modules/@houston-app/cli");
       const entry = path.join(packageRoot, "dist/bin.mjs");
       const globalBin = path.join(prefix, "bin/houston");
       yield* fs.makeDirectory(path.dirname(entry), { recursive: true });
@@ -219,7 +219,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       yield* fs.writeFileString(entry, "");
       yield* fs.writeFileString(
         path.join(packageRoot, "package.json"),
-        '{"name":"houston","version":"0.0.45","bin":{"houston":"./dist/bin.mjs"}}',
+        '{"name":"@houston-app/cli","version":"0.0.45","bin":{"houston":"./dist/bin.mjs"}}',
       );
       const resolve = resolveServerInstallation.pipe(
         Effect.provideService(HostProcess.Arguments, ["node", entry]),
@@ -242,9 +242,9 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped();
       const prefix = path.join(root, "bunx-tools");
-      const packageRoot = path.join(prefix, "lib/node_modules/houston");
+      const packageRoot = path.join(prefix, "lib/node_modules/@houston-app/cli");
       const launcher = path.join(packageRoot, "bin/houston.mjs");
-      const executable = path.join(root, ".t3/runtime/versions/1.0.0/t3");
+      const executable = path.join(root, ".houston/runtime/versions/1.0.0/houston");
       yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
       yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
       yield* fs.makeDirectory(path.join(prefix, "bin"));
@@ -264,7 +264,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       ] as const) {
         yield* fs.writeFileString(
           path.join(packageRoot, "package.json"),
-          `{"name":"houston","version":"${version}","bin":{"houston":"./bin/houston.mjs"}}`,
+          `{"name":"@houston-app/cli","version":"${version}","bin":{"houston":"./bin/houston.mjs"}}`,
         );
         expect(yield* resolve).toEqual(expected);
       }
@@ -277,9 +277,9 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped();
       for (const relative of [
-        "project/node_modules/houston/dist/bin.mjs",
+        "project/node_modules/@houston-app/cli/dist/bin.mjs",
         "project/apps/server/dist/bin.mjs",
-        ".t3/runtime/0.0.45/t3",
+        ".houston/runtime/0.0.45/houston",
         "missing/dist/bin.mjs",
       ]) {
         const entry = path.join(root, relative);

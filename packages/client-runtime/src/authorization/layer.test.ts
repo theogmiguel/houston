@@ -148,7 +148,7 @@ describe("RemoteEnvironmentAuthorization", () => {
         success: { socketUrl: expect.stringContaining("wsTicket=cold-ticket") },
       });
       expect(harness.fetch.calls.map(([url]) => new URL(String(url)).pathname)).toEqual([
-        "/.well-known/t3/environment",
+        "/.well-known/houston/environment",
         "/api/auth/websocket-ticket/rpc",
       ]);
     }),
@@ -213,7 +213,9 @@ describe("RemoteEnvironmentAuthorization", () => {
       expect(first.socketUrl).toContain("wsTicket=first-ticket");
       expect(second.socketUrl).toContain("wsTicket=second-ticket");
       expect(
-        harness.fetch.calls.filter(([url]) => String(url).endsWith("/.well-known/t3/environment")),
+        harness.fetch.calls.filter(([url]) =>
+          String(url).endsWith("/.well-known/houston/environment"),
+        ),
       ).toHaveLength(2);
       expect(
         harness.fetch.calls.filter(([url]) =>

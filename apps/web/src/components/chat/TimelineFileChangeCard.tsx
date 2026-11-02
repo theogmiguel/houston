@@ -84,11 +84,11 @@ export function TimelineFileChangeCard({
       className="overflow-hidden rounded-(--r-group) border border-border bg-card"
     >
       <div className="flex h-9 items-center gap-2 border-b border-border pe-1.5 ps-3">
-        <FileIcon aria-hidden className="size-3.5 shrink-0 text-(--t3)" />
+        <FileIcon aria-hidden className="size-3.5 shrink-0 text-(--houston)" />
         <span className="min-w-0 flex-1 truncate font-mono text-mono text-(--t1)">
           {formatWorkspaceRelativePath(item.fileName, workspaceRoot)}
         </span>
-        <span className="shrink-0 text-callout text-(--t3) tabular-nums">
+        <span className="shrink-0 text-callout text-(--houston) tabular-nums">
           {additions > 0 ? <span className="text-(--ok-ink)">+{additions}</span> : null}
           {additions > 0 && deletions > 0 ? " " : null}
           {deletions > 0 ? <span className="text-(--stop-ink)">−{deletions}</span> : null}
@@ -98,7 +98,7 @@ export function TimelineFileChangeCard({
             type="button"
             aria-label="Open diff"
             onClick={onOpenDiff}
-            className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-(--r-ctl) text-(--t3) transition-colors hover:bg-(--hover) hover:text-(--t1) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+            className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-(--r-ctl) text-(--houston) transition-colors hover:bg-(--hover) hover:text-(--t1) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
           >
             <ExternalLinkIcon aria-hidden className="size-3.5" />
           </button>
@@ -113,10 +113,10 @@ export function TimelineFileChangeCard({
                 "grid grid-cols-[36px_14px_minmax(0,1fr)]",
                 row.kind === "add" && "bg-(--add-bg)",
                 row.kind === "del" && "bg-(--del-bg)",
-                row.kind === "hunk" && "text-(--t3)",
+                row.kind === "hunk" && "text-(--houston)",
               )}
             >
-              <span className="select-none pe-2 text-right text-(--t3) tabular-nums">
+              <span className="select-none pe-2 text-right text-(--houston) tabular-nums">
                 {row.number ?? ""}
               </span>
               <span
@@ -124,8 +124,8 @@ export function TimelineFileChangeCard({
                 className={cn(
                   row.kind === "add" && "text-(--ok-ink)",
                   row.kind === "del" && "text-(--stop-ink)",
-                  row.kind === "context" && "text-(--t3)",
-                  row.kind === "hunk" && "text-(--t3)",
+                  row.kind === "context" && "text-(--houston)",
+                  row.kind === "hunk" && "text-(--houston)",
                 )}
               >
                 {row.kind === "add" ? "+" : row.kind === "del" ? "−" : ""}

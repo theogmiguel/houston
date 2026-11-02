@@ -84,7 +84,7 @@ export interface CommandReceiptStoreV2Shape {
 export class CommandReceiptStoreV2 extends Context.Service<
   CommandReceiptStoreV2,
   CommandReceiptStoreV2Shape
->()("houston/orchestration-v2/CommandReceiptStore/CommandReceiptStoreV2") {}
+>()("@houston-app/cli/orchestration-v2/CommandReceiptStore/CommandReceiptStoreV2") {}
 
 const decodeReceipt = Schema.decodeUnknownEffect(
   CommandReceiptV2.mapFields((fields) => ({

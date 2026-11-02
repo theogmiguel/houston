@@ -127,7 +127,7 @@ export class HoustonTaskTransitions extends Context.Service<
   {
     readonly recorded: (transitions: ReadonlyArray<TaskTransition>) => Effect.Effect<void>;
   }
->()("houston/houston/tasks/TaskStore/HoustonTaskTransitions") {}
+>()("@houston-app/cli/houston/tasks/TaskStore/HoustonTaskTransitions") {}
 
 /** The history action that records a head pushed to a run thread's pull request. */
 export const PUSHED_ACTION = "houston:pushed";
@@ -321,7 +321,7 @@ export class HoustonTaskStore extends Context.Service<
     /** Unassigns a deleted project's tasks and interrupts their open runs. */
     readonly projectRemoved: (projectId: ProjectId) => Effect.Effect<void>;
   }
->()("houston/houston/tasks/TaskStore/HoustonTaskStore") {}
+>()("@houston-app/cli/houston/tasks/TaskStore/HoustonTaskStore") {}
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

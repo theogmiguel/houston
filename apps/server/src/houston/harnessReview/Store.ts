@@ -266,7 +266,7 @@ export class HoustonHarnessStore extends Context.Service<
     readonly changes: PubSub.PubSub<ProjectId>;
     readonly notices: PubSub.PubSub<DefectNotice>;
   }
->()("houston/houston/harnessReview/Store/HoustonHarnessStore") {}
+>()("@houston-app/cli/houston/harnessReview/Store/HoustonHarnessStore") {}
 
 const nowIso = DateTime.now.pipe(Effect.map((now) => DateTime.formatIso(now)));
 const toJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));

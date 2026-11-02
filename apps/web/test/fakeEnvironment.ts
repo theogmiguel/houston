@@ -72,7 +72,7 @@ const serverConfig: ServerConfig = {
     environment: descriptor,
     auth,
     cwd: "/workspace/render",
-    keybindingsConfigPath: "/workspace/.t3/keybindings.json",
+    keybindingsConfigPath: "/workspace/.houston/keybindings.json",
     keybindings: [],
     issues: [],
     providers: [
@@ -90,7 +90,7 @@ const serverConfig: ServerConfig = {
     ],
     availableEditors: [],
     observability: {
-      logsDirectoryPath: "/workspace/.t3/logs",
+      logsDirectoryPath: "/workspace/.houston/logs",
       localTracingEnabled: false,
       otlpTracesEnabled: false,
       otlpMetricsEnabled: false,
@@ -438,7 +438,7 @@ export function installFakeEnvironment(fixtures: ReadonlyArray<FakeThread>): Dis
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
     if (url.origin !== window.location.origin) return realFetch(input, init);
-    if (url.pathname === "/.well-known/t3/environment") return json(encodedDescriptor);
+    if (url.pathname === "/.well-known/houston/environment") return json(encodedDescriptor);
     if (url.pathname === "/api/auth/session") {
       return json({
         authenticated: true,

@@ -71,7 +71,7 @@ const resolveWith = Effect.fn(function* (sources: ReadonlyArray<[Source, Signal]
     mode: "desktop",
     noBrowser: true,
     port: 4888,
-    t3Home: base,
+    houstonHome: base,
     host: "127.0.0.1",
     desktopBootstrapToken: "token",
     tailscaleServeEnabled: false,

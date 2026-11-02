@@ -58,36 +58,38 @@ describe("thread link destinations", () => {
 
 describe("thread links", () => {
   it("takes the ids verbatim, percent escapes included", () => {
-    expect(parseThreadLinkHref("t3-thread://v1/mcp:1234")).toEqual(v1("mcp:1234"));
-    expect(parseThreadLinkHref("t3-thread://v1/thread:delegated-task:mcp%3A1")).toEqual(
+    expect(parseThreadLinkHref("houston-thread://v1/mcp:1234")).toEqual(v1("mcp:1234"));
+    expect(parseThreadLinkHref("houston-thread://v1/thread:delegated-task:mcp%3A1")).toEqual(
       v1("thread:delegated-task:mcp%3A1"),
     );
-    expect(parseThreadLinkHref("t3-thread://v2/env-1/thread:a/b%3A1")).toEqual(
+    expect(parseThreadLinkHref("houston-thread://v2/env-1/thread:a/b%3A1")).toEqual(
       ref("env-1", "thread:a/b%3A1"),
     );
   });
 
   it("rejects other links and an empty id", () => {
     expect(parseThreadLinkHref("https://example.test")).toBeNull();
-    expect(parseThreadLinkHref("t3-thread://v1/")).toBeNull();
-    expect(parseThreadLinkHref("t3-thread://v1/ ")).toBeNull();
-    expect(parseThreadLinkHref("t3-thread://v2/env-1")).toBeNull();
-    expect(parseThreadLinkHref("t3-thread://v2/env-1/")).toBeNull();
-    expect(parseThreadLinkHref("t3-thread://v2//chat-1")).toBeNull();
+    expect(parseThreadLinkHref("houston-thread://v1/")).toBeNull();
+    expect(parseThreadLinkHref("houston-thread://v1/ ")).toBeNull();
+    expect(parseThreadLinkHref("houston-thread://v2/env-1")).toBeNull();
+    expect(parseThreadLinkHref("houston-thread://v2/env-1/")).toBeNull();
+    expect(parseThreadLinkHref("houston-thread://v2//chat-1")).toBeNull();
   });
 
   it("resolves a percent-encoded id when the id as written names no thread", () => {
     const title = titlesIn({ local: { "thread:project:1": "Decoded", "provider%3A1": "Literal" } });
     expect(
       relabelThreadLinks(
-        "[a](t3-thread://v1/thread%3Aproject%3A1) [b](t3-thread://v1/provider%3A1)",
+        "[a](houston-thread://v1/thread%3Aproject%3A1) [b](houston-thread://v1/provider%3A1)",
         local,
         title,
       ),
-    ).toBe("[Decoded](t3-thread://v1/thread:project:1) [Literal](t3-thread://v1/provider%3A1)");
+    ).toBe(
+      "[Decoded](houston-thread://v1/thread:project:1) [Literal](houston-thread://v1/provider%3A1)",
+    );
     const untitled = titlesIn({ local: { "a%3A1": "", "a:1": "Other" } });
-    expect(relabelThreadLinks("[Kept](t3-thread://v1/a%3A1)", local, untitled)).toBe(
-      "[Kept](t3-thread://v1/a%3A1)",
+    expect(relabelThreadLinks("[Kept](houston-thread://v1/a%3A1)", local, untitled)).toBe(
+      "[Kept](houston-thread://v1/a%3A1)",
     );
   });
 
@@ -95,41 +97,41 @@ describe("thread links", () => {
     const title = titlesIn({ local: { t1: "Here" }, there: { t1: "There" } });
     expect(
       relabelThreadLinks(
-        "<t3-thread://v2/there/t1> and [old](t3-thread://v2/local/t1)",
+        "<houston-thread://v2/there/t1> and [old](houston-thread://v2/local/t1)",
         local,
         title,
       ),
-    ).toBe("[There](t3-thread://v2/there/t1) and [Here](t3-thread://v2/local/t1)");
+    ).toBe("[There](houston-thread://v2/there/t1) and [Here](houston-thread://v2/local/t1)");
   });
 
   it("turns a v2 link it cannot resolve into plain text, never the raw link", () => {
     expect(
       relabelThreadLinks(
-        "<t3-thread://v2/there/t1>, <t3-thread://v2/local/t1>, [Old title](t3-thread://v2/there/t1)",
+        "<houston-thread://v2/there/t1>, <houston-thread://v2/local/t1>, [Old title](houston-thread://v2/there/t1)",
         local,
         () => undefined,
       ),
     ).toBe("Thread on another machine, Thread no longer available, Old title");
-    expect(relabelThreadLinks("[Old](t3-thread://v1/t1)", local, () => undefined)).toBe(
-      "[Old](t3-thread://v1/t1)",
+    expect(relabelThreadLinks("[Old](houston-thread://v1/t1)", local, () => undefined)).toBe(
+      "[Old](houston-thread://v1/t1)",
     );
   });
 
   it("leaves links inside code spans and fences as written", () => {
     const markdown = [
-      "Live [old](t3-thread://v1/t1), literal `[old](t3-thread://v1/t1)`.",
+      "Live [old](houston-thread://v1/t1), literal `[old](houston-thread://v1/t1)`.",
       "```md",
-      "<t3-thread://v2/local/t1>",
+      "<houston-thread://v2/local/t1>",
       "```",
-      "After <t3-thread://v2/local/t1>",
+      "After <houston-thread://v2/local/t1>",
     ].join("\n");
     expect(relabelThreadLinks(markdown, local, () => "New")).toBe(
       [
-        "Live [New](t3-thread://v1/t1), literal `[old](t3-thread://v1/t1)`.",
+        "Live [New](houston-thread://v1/t1), literal `[old](houston-thread://v1/t1)`.",
         "```md",
-        "<t3-thread://v2/local/t1>",
+        "<houston-thread://v2/local/t1>",
         "```",
-        "After [New](t3-thread://v2/local/t1)",
+        "After [New](houston-thread://v2/local/t1)",
       ].join("\n"),
     );
   });
@@ -137,7 +139,7 @@ describe("thread links", () => {
   it("lists the threads a message's links can name, outside code", () => {
     expect(
       threadLinkRefs(
-        "<t3-thread://v2/there/t1> [a](t3-thread://v1/t%3A2) `<t3-thread://v2/code/t3>`",
+        "<houston-thread://v2/there/t1> [a](houston-thread://v1/t%3A2) `<houston-thread://v2/code/houston>`",
         local,
       ),
     ).toEqual([ref("there", "t1"), ref("local", "t%3A2"), ref("local", "t:2")]);
@@ -154,14 +156,14 @@ describe("thread links", () => {
         return match;
       });
     });
-    expect(threadLinkRefs("<t3-thread://v2/local/t1> [a](t3-thread://v2/there/t2)", local)).toEqual(
-      [ref("local", "t1"), ref("there", "t2")],
-    );
+    expect(
+      threadLinkRefs("<houston-thread://v2/local/t1> [a](houston-thread://v2/there/t2)", local),
+    ).toEqual([ref("local", "t1"), ref("there", "t2")]);
   });
 
   it("writes a titleless autolink that opens that exact thread", () => {
     const link = formatThreadLink(ref("env-1", "thread:delegated-task:mcp%3A1"));
-    expect(link).toBe("<t3-thread://v2/env-1/thread:delegated-task:mcp%3A1>");
+    expect(link).toBe("<houston-thread://v2/env-1/thread:delegated-task:mcp%3A1>");
     expect(parseThreadLinkHref(link.slice(1, -1))).toEqual(
       ref("env-1", "thread:delegated-task:mcp%3A1"),
     );
@@ -169,8 +171,8 @@ describe("thread links", () => {
 
   it("formats a label that would otherwise break the Markdown link", () => {
     expect(formatThreadLink(ref("e", "t1"), "Fix [ci] \\ build")).toBe(
-      "[Fix ci build](t3-thread://v2/e/t1)",
+      "[Fix ci build](houston-thread://v2/e/t1)",
     );
-    expect(formatThreadLink(ref("e", "t1"), " ] ")).toBe("<t3-thread://v2/e/t1>");
+    expect(formatThreadLink(ref("e", "t1"), " ] ")).toBe("<houston-thread://v2/e/t1>");
   });
 });

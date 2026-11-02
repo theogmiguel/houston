@@ -32,7 +32,7 @@ export const layer = (
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const baseDir = yield* fileSystem
-        .makeTempDirectoryScoped({ prefix: "t3-provider-host-" })
+        .makeTempDirectoryScoped({ prefix: "houston-provider-host-" })
         .pipe(Effect.orDie);
       const stateDir = path.join(baseDir, "userdata");
       const providerStatusCacheDir = path.join(baseDir, "caches");
@@ -64,7 +64,7 @@ export const layer = (
           return Effect.sync(() => {
             const key = `${namespace}:${bindingId}`;
             return {
-              binding: { owner: "t3" as const, key },
+              binding: { owner: "houston" as const, key },
               get: Effect.sync(() => Option.fromUndefinedOr(credentials.get(key))),
               set: (value: Uint8Array) => Effect.sync(() => void credentials.set(key, value)),
               remove: Effect.sync(() => void credentials.delete(key)),

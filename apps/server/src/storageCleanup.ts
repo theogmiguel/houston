@@ -243,7 +243,7 @@ export class StorageCleanup extends Context.Service<
     readonly reports: Stream.Stream<StorageCleanupReport | null>;
     readonly drain: Effect.Effect<void>;
   }
->()("houston/storageCleanup") {}
+>()("@houston-app/cli/storageCleanup") {}
 
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;

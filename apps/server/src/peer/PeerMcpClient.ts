@@ -43,7 +43,7 @@ export class PeerMcpClient extends Context.Service<
       readonly success: S;
     }) => Effect.Effect<S["Type"], OrchestratorMcpFailure>;
   }
->()("houston/peer/PeerMcpClient") {}
+>()("@houston-app/cli/peer/PeerMcpClient") {}
 
 const ToolCallResponse = Schema.Struct({
   result: Schema.optional(

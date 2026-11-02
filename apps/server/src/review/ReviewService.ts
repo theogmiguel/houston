@@ -50,7 +50,7 @@ export class ReviewService extends Context.Service<
       cwd: string,
     ) => Effect.Effect<void, VcsRepositoryDetectionError>;
   }
->()("houston/review/ReviewService") {}
+>()("@houston-app/cli/review/ReviewService") {}
 
 /** @public */
 export const make = Effect.gen(function* () {

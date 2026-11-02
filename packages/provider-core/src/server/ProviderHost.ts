@@ -23,7 +23,7 @@ export interface ProviderHostPaths {
 
 export interface ProviderCredentials {
   /** Instances whose bindings are equal share these credentials. */
-  readonly binding: { readonly owner: "t3"; readonly key: string };
+  readonly binding: { readonly owner: "houston"; readonly key: string };
   readonly get: Effect.Effect<Option.Option<Uint8Array>, ProviderCredentialError>;
   readonly set: (credentials: Uint8Array) => Effect.Effect<void, ProviderCredentialError>;
   readonly remove: Effect.Effect<void, ProviderCredentialError>;

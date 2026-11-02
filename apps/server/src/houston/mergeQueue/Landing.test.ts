@@ -467,7 +467,7 @@ describe("a refused push runs no git push and records the failure", () => {
       Effect.gen(function* () {
         const queue = yield* HoustonMergeQueueService;
         const runner = yield* HoustonMergeQueueRunner;
-        // #7's branch is outside houston/ and t3/; #8's is a managed houston/ branch.
+        // #7's branch is outside houston/; #8's is a managed houston/ branch.
         const projectId = yield* queueScenario(github, [7, 8], {
           command: "git --version",
           mergeWhenVerified: true,
@@ -484,7 +484,7 @@ describe("a refused push runs no git push and records the failure", () => {
         const refused = entryOf(snapshot, 7);
         assert.strictEqual(refused.failure?.kind, "refused");
         assert.include(refused.failure?.message, "feature/x");
-        assert.include(refused.failure?.message, "outside houston/ and t3/");
+        assert.include(refused.failure?.message, "outside houston/");
         // The queue moved on: #8 landed.
         assert.deepEqual(
           mergesOf(github).map((request) => request.path),

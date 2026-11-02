@@ -226,7 +226,7 @@ export class HoustonMergeQueueStore extends Context.Service<
     readonly away: (projectId: string) => Effect.Effect<HoustonMergeQueueAway>;
     readonly projectRemoved: (projectId: ProjectId) => Effect.Effect<void>;
   }
->()("houston/houston/mergeQueue/Store/HoustonMergeQueueStore") {}
+>()("@houston-app/cli/houston/mergeQueue/Store/HoustonMergeQueueStore") {}
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

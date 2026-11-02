@@ -11,7 +11,7 @@ import {
   type ProjectScopedServerSettingKey,
   type ProjectSettingsOverrides,
   ServerSettings,
-  type T3ProjectFile,
+  type HoustonProjectFile,
   type ServerSettingsPatch,
 } from "@houston-app/contracts";
 import type { EnvironmentConnectionPhase } from "@houston-app/client-runtime/connection";
@@ -85,7 +85,7 @@ export function resolveScopedSettingsTargets(
   scope: ResolvedSettingsScope,
   connectedEnvironments: readonly ScopedSettingsEnvironment[],
   // A member absent here has no file tier yet; null is a missing or invalid file.
-  projectFiles?: ReadonlyMap<string, T3ProjectFile | null>,
+  projectFiles?: ReadonlyMap<string, HoustonProjectFile | null>,
 ): readonly ScopedSettingsTarget[] {
   const byId = new Map(
     connectedEnvironments.map((environment) => [environment.environmentId, environment]),

@@ -24,29 +24,31 @@ const notOnPath = (launcherPath: string | null): DesktopCliCommandState => ({
 
 describe("resolveTriageCommand", () => {
   it("prefers houston on PATH, then the desktop launcher", async () => {
-    const onPath = { ...notOnPath("/home/me/.t3/bin/houston"), onPath: true };
+    const onPath = { ...notOnPath("/home/me/.houston/bin/houston"), onPath: true };
     await expect(resolveTriageCommand(desktopWith(async () => onPath))).resolves.toBe(
       "houston triage",
     );
     await expect(
-      resolveTriageCommand(desktopWith(async () => notOnPath("/home/me/.t3/bin/houston"))),
-    ).resolves.toBe("/home/me/.t3/bin/houston triage");
+      resolveTriageCommand(desktopWith(async () => notOnPath("/home/me/.houston/bin/houston"))),
+    ).resolves.toBe("/home/me/.houston/bin/houston triage");
   });
 
   it("quotes launcher paths for the shell that runs them", async () => {
     await expect(
-      resolveTriageCommand(desktopWith(async () => notOnPath("/Users/O'Neil/.t3/bin/houston"))),
-    ).resolves.toBe(`'/Users/O'"'"'Neil/.t3/bin/houston' triage`);
+      resolveTriageCommand(
+        desktopWith(async () => notOnPath("/Users/O'Neil/.houston/bin/houston")),
+      ),
+    ).resolves.toBe(`'/Users/O'"'"'Neil/.houston/bin/houston' triage`);
     await expect(
       resolveTriageCommand(
-        desktopWith(async () => notOnPath("C:\\Users\\Me\\.t3\\bin\\houston.cmd")),
+        desktopWith(async () => notOnPath("C:\\Users\\Me\\.houston\\bin\\houston.cmd")),
       ),
-    ).resolves.toBe("C:\\Users\\Me\\.t3\\bin\\houston.cmd triage");
+    ).resolves.toBe("C:\\Users\\Me\\.houston\\bin\\houston.cmd triage");
     await expect(
       resolveTriageCommand(
-        desktopWith(async () => notOnPath("C:\\Users\\Jo O'Neil\\.t3\\bin\\houston.cmd")),
+        desktopWith(async () => notOnPath("C:\\Users\\Jo O'Neil\\.houston\\bin\\houston.cmd")),
       ),
-    ).resolves.toBe("& 'C:\\Users\\Jo O''Neil\\.t3\\bin\\houston.cmd' triage");
+    ).resolves.toBe("& 'C:\\Users\\Jo O''Neil\\.houston\\bin\\houston.cmd' triage");
   });
 
   it("falls back to the installed houston CLI without a usable desktop launcher", async () => {

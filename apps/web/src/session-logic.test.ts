@@ -1295,7 +1295,7 @@ describe("HTML renders in the timeline", () => {
       tool: "get_weather",
       resourceUri: "ui://weather/dashboard",
     };
-    const call = renderCall("completed", { t3McpApp: mcpApp, result: { content: [] } });
+    const call = renderCall("completed", { houstonMcpApp: mcpApp, result: { content: [] } });
     const entries = turn(
       call.type === "dynamic_tool" ? { ...call, toolName: "weather.get_weather" } : call,
     );
@@ -1315,7 +1315,7 @@ describe("HTML renders in the timeline", () => {
       resourceUri: "ui://github-mcp-server/pr-create",
     };
     const call = renderCall("failed", {
-      t3McpApp: mcpApp,
+      houstonMcpApp: mcpApp,
       result: { content: [], isError: true },
     });
     const entries = turn(

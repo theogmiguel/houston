@@ -126,8 +126,8 @@ it.layer(NodeServices.layer)("houston update launcher", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "houston-update-" });
-      const oldExe = path.join(root, "runtime/versions/1.0.0/t3");
-      const newExe = path.join(root, "runtime/versions/2.0.0/t3");
+      const oldExe = path.join(root, "runtime/versions/1.0.0/houston");
+      const newExe = path.join(root, "runtime/versions/2.0.0/houston");
       const launcher = path.join(root, "bin/houston");
       for (const file of [oldExe, newExe]) {
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });
@@ -150,12 +150,12 @@ it.layer(NodeServices.layer)("houston update launcher", (it) => {
   it.effect.each([
     { name: "no launcher records", recorded: undefined },
     { name: "an empty launcher record", recorded: "" },
-    { name: "whole launcher records", recorded: "/opt/t3\n" },
-    { name: "Windows launcher records", recorded: "C:\\t3.cmd\r\n" },
+    { name: "whole launcher records", recorded: "/opt/houston\n" },
+    { name: "Windows launcher records", recorded: "C:\\houston.cmd\r\n" },
     // An interrupted append cut this record short.
     { name: "an unterminated launcher record", recorded: "/opt/t" },
-    // Another process's append is cut short after t3 update reads the records.
-    { name: "a record cut short after the read", recorded: "/opt/t3\n", cut: "/opt/t" },
+    // Another process's append is cut short after houston update reads the records.
+    { name: "a record cut short after the read", recorded: "/opt/houston\n", cut: "/opt/t" },
   ])("keeps the runtime a repointed launcher off PATH points at with $name", ({ recorded, cut }) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -165,7 +165,7 @@ it.layer(NodeServices.layer)("houston update launcher", (it) => {
       for (const version of ["1.0.0", "2.0.0"]) {
         const directory = path.join(root, "runtime/versions", version);
         yield* fs.makeDirectory(directory, { recursive: true });
-        yield* fs.writeFileString(path.join(directory, "t3"), "");
+        yield* fs.writeFileString(path.join(directory, "houston"), "");
         yield* fs.writeFileString(path.join(directory, ".install-complete"), `${version}\n`);
         yield* fs.utimes(path.join(directory, ".install-complete"), 0, 0);
       }
@@ -173,14 +173,14 @@ it.layer(NodeServices.layer)("houston update launcher", (it) => {
         yield* fs.writeFileString(path.join(root, "runtime/launchers"), recorded);
       }
       // A launcher in the Houston home itself, which neither PATH nor the default bin dir reaches.
-      const launcher = path.join(root, "t3");
-      yield* fs.symlink(path.join(root, "runtime/versions/1.0.0/t3"), launcher);
+      const launcher = path.join(root, "houston");
+      yield* fs.symlink(path.join(root, "runtime/versions/1.0.0/houston"), launcher);
 
       const launchersFile = path.join(root, "runtime/launchers");
       yield* repointLauncher({
         launchedAs: launcher,
         baseDir: root,
-        targetEntryPath: path.join(root, "runtime/versions/2.0.0/t3"),
+        targetEntryPath: path.join(root, "runtime/versions/2.0.0/houston"),
       }).pipe(
         Effect.provideService(FileSystem.FileSystem, {
           ...fs,
@@ -196,7 +196,7 @@ it.layer(NodeServices.layer)("houston update launcher", (it) => {
               ),
         }),
       );
-      // A later server start prunes with no idea how this machine launches t3.
+      // A later server start prunes with no idea how this machine launches houston.
       const removed = yield* prunePinnedRuntimes({ baseDir: root, keep: [] }).pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, unrelatedLsof),
         Effect.provideService(HostProcess.Platform, "darwin"),
@@ -208,7 +208,7 @@ it.layer(NodeServices.layer)("houston update launcher", (it) => {
       // macOS temp dirs sit behind the /var -> /private/var symlink, so compare canonical paths.
       assert.equal(
         yield* fs.realPath(launcher),
-        yield* fs.realPath(path.join(root, "runtime/versions/2.0.0/t3")),
+        yield* fs.realPath(path.join(root, "runtime/versions/2.0.0/houston")),
       );
     }).pipe(Effect.scoped, Effect.provideService(HostProcess.Platform, "linux")),
   );
@@ -217,9 +217,9 @@ it.layer(NodeServices.layer)("houston update launcher", (it) => {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const root = yield* fs.makeTempDirectoryScoped({ prefix: "houston-update-" });
-    const oldExe = path.join(root, "runtime/versions/1.0.0/t3");
-    const newExe = path.join(root, "runtime/versions/2.0.0/t3");
-    const launcher = path.join(root, "t3");
+    const oldExe = path.join(root, "runtime/versions/1.0.0/houston");
+    const newExe = path.join(root, "runtime/versions/2.0.0/houston");
+    const launcher = path.join(root, "houston");
     for (const file of [oldExe, newExe]) {
       yield* fs.makeDirectory(path.dirname(file), { recursive: true });
       yield* fs.writeFileString(file, "");
@@ -263,7 +263,7 @@ it.layer(NodeServices.layer)("houston update launcher", (it) => {
   );
 
   it.effect.each(["recording", "repointing"] as const)(
-    "never leaves a repointed launcher unrecorded when t3 update dies while %s",
+    "never leaves a repointed launcher unrecorded when houston update dies while %s",
     (step) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -278,11 +278,11 @@ it.layer(NodeServices.layer)("houston update launcher", (it) => {
             ...fs,
             writeFileString: (path, data, options) =>
               step === "recording" && path === launchersFile
-                ? Effect.die("t3 update was killed")
+                ? Effect.die("houston update was killed")
                 : fs.writeFileString(path, data, options),
             rename: (from, to) =>
               step === "repointing" && to === launcher
-                ? Effect.die("t3 update was killed")
+                ? Effect.die("houston update was killed")
                 : fs.rename(from, to),
           }),
           Effect.exit,
@@ -303,11 +303,11 @@ it.layer(NodeServices.layer)("houston update launcher", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "houston-update-" });
-      const newExe = path.join(root, "runtime/versions/2.0.0/t3");
-      const copy = path.join(root, "copy/t3");
-      const foreign = path.join(root, "foreign/t3");
-      const elsewhere = path.join(root, "elsewhere/t3");
-      const otherHome = path.join(root, "other/runtime/versions/1.0.0/t3");
+      const newExe = path.join(root, "runtime/versions/2.0.0/houston");
+      const copy = path.join(root, "copy/houston");
+      const foreign = path.join(root, "foreign/houston");
+      const elsewhere = path.join(root, "elsewhere/houston");
+      const otherHome = path.join(root, "other/runtime/versions/1.0.0/houston");
       const otherLauncher = path.join(root, "other/bin/houston");
       for (const file of [newExe, copy, elsewhere, otherHome]) {
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });

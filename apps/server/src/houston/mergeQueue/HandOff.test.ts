@@ -367,7 +367,7 @@ describe("a hand-off is pinned to the verified commit and confirmed", () => {
         assert.deepEqual(mutationsOf(github), []);
         const out = entryOf(yield* queue.get({ projectId }), 7);
         assert.strictEqual(out.failure?.kind, "refused");
-        assert.include(out.failure?.message, "outside houston/ and t3/");
+        assert.include(out.failure?.message, "outside houston/");
       }),
       gitLog,
     );

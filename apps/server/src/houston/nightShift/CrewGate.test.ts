@@ -242,7 +242,7 @@ const layerThreadManagement = (world: World) =>
           if (command.workspaceStrategy !== undefined) {
             world.workspaces.set(childThreadId, {
               worktreePath: `/worktrees/${childThreadId}`,
-              branch: `t3/${childThreadId}`,
+              branch: `houston/${childThreadId}`,
             });
           }
           const task = {
@@ -549,7 +549,7 @@ describe("the crew gate", () => {
         providerInstanceId: "codex",
         requestedInstanceId: "codex",
         worktreePath: `/worktrees/${child.childThreadId}`,
-        branch: `t3/${child.childThreadId}`,
+        branch: `houston/${child.childThreadId}`,
         endedAt: null,
       });
       assert.equal(row(general.childThreadId).role, "general");
@@ -996,7 +996,7 @@ describe("the crew gate", () => {
       const caller = ThreadId.make(implementer.childThreadId!);
       world.workspaces.set("task-review-1", {
         worktreePath: "/worktrees/review-1",
-        branch: "t3/review",
+        branch: "houston/review",
       });
 
       const first = yield* gate.review({ callerThreadId: caller, providerInstanceId: "codex" });

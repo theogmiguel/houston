@@ -10,7 +10,7 @@ export const DesktopBackendBootstrap = Schema.Struct({
   noBrowser: Schema.Boolean,
   port: PortSchema,
   // Omit in WSL to use the Linux home instead of the mapped Windows directory.
-  t3Home: Schema.optional(Schema.String),
+  houstonHome: Schema.optional(Schema.String),
   host: Schema.String,
   desktopBootstrapToken: Schema.String,
   // Derives rotating tokens instead of trusting desktopBootstrapToken indefinitely; see @houston-app/shared/desktopBootstrapToken.
@@ -31,5 +31,5 @@ export const DesktopBackendBootstrap = Schema.Struct({
 
 export type DesktopBackendBootstrap = typeof DesktopBackendBootstrap.Type;
 
-/** Written to `<t3Home>/runtime` before update shutdown so the backend keeps its runtime state. */
+/** Written to `<houstonHome>/runtime` before update shutdown so the backend keeps its runtime state. */
 export const DESKTOP_UPDATE_RESTART_MARKER_FILE = "desktop-update-restart";

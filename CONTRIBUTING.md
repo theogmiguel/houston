@@ -60,7 +60,7 @@ Run the gates for whatever you touched.
 - `src-tauri`: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, the item's own
   and touched tests.
 - `apps/` and `packages/`: the package's `typecheck` and its touched tests, for example
-  `pnpm --filter houston exec vp test run <files>` for the server.
+  `pnpm --filter @houston-app/cli exec vp test run <files>` for the server.
 
 **Before every push, and at the end of a work block** — the full suites. On Linux,
 run Cargo inside `scripts/oom-shield.sh`. On Windows, set `$env:CARGO_BUILD_JOBS = '3'`
@@ -72,7 +72,7 @@ in PowerShell. Never run concurrent Cargo workloads.
 pnpm -r typecheck
 pnpm --filter @houston-app/web build
 pnpm --filter @houston-app/contracts --filter @houston-app/shared test
-pnpm --filter houston exec vp test run src/houston
+pnpm --filter @houston-app/cli exec vp test run src/houston
 ```
 
 **`src-tauri/`**:

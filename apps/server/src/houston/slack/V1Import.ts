@@ -140,7 +140,7 @@ export class HoustonSlackV1Import extends Context.Service<
     readonly status: Effect.Effect<HoustonSlackImportStatus>;
     readonly run: Effect.Effect<HoustonSlackImportResult, HoustonSlackError>;
   }
->()("houston/houston/slack/V1Import/HoustonSlackV1Import") {}
+>()("@houston-app/cli/houston/slack/V1Import/HoustonSlackV1Import") {}
 
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;

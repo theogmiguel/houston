@@ -1,6 +1,6 @@
 import * as NodeAssert from "node:assert/strict";
 
-import { T3_CODE_DEVICE_TOOL_INSTRUCTIONS } from "@houston-app/provider-core/server/orchestrationInstructions";
+import { HOUSTON_DEVICE_TOOL_INSTRUCTIONS } from "@houston-app/provider-core/server/orchestrationInstructions";
 import { describe, it } from "vite-plus/test";
 
 import {
@@ -83,7 +83,7 @@ describe("Codex device context", () => {
       buildCodexAdditionalContext({ model: "gpt-6.1-sol" }, { browser: true, device })
         .houston_code_tools?.value ?? "";
 
-    NodeAssert.ok(tools(true).includes(T3_CODE_DEVICE_TOOL_INSTRUCTIONS));
+    NodeAssert.ok(tools(true).includes(HOUSTON_DEVICE_TOOL_INSTRUCTIONS));
     NodeAssert.ok(!tools(true).includes("ToolSearch"));
     NodeAssert.ok(!tools(false).includes("## Houston devices"));
   });

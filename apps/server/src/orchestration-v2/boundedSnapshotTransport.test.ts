@@ -311,7 +311,7 @@ function bodiesEvents(at: DateTime.Utc): OrchestrationV2DomainEvent[] {
         parentCheckpointId: null,
         ordinalWithinScope: 1,
         appRunOrdinal: 1,
-        ref: CheckpointRef.make(`refs/t3/${BODIES}`),
+        ref: CheckpointRef.make(`refs/houston/${BODIES}`),
         status: "ready",
         files,
         capturedAt: at,

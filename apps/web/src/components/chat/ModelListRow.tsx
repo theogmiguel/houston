@@ -65,7 +65,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
         render={
           <button
             type="button"
-            className="flex size-3.5 shrink-0 cursor-pointer items-center justify-center rounded-xs text-(--t3) outline-none hover:text-(--t1) disabled:pointer-events-none disabled:opacity-64"
+            className="flex size-3.5 shrink-0 cursor-pointer items-center justify-center rounded-xs text-(--houston) outline-none hover:text-(--t1) disabled:pointer-events-none disabled:opacity-64"
             onClick={(event) => {
               event.stopPropagation();
               props.onToggleFavorite(props.instanceId, props.slug);
@@ -156,7 +156,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
         {props.jumpLabel ? <Kbd className="col-start-2 row-start-1">{props.jumpLabel}</Kbd> : null}
         <div className="col-start-3 row-start-1 flex items-center justify-end">{trailing}</div>
         {meta ? (
-          <div className="col-span-2 col-start-1 row-start-2 min-w-0 truncate text-(--t3) text-2xs">
+          <div className="col-span-2 col-start-1 row-start-2 min-w-0 truncate text-(--houston) text-2xs">
             {meta}
           </div>
         ) : null}

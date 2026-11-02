@@ -960,7 +960,7 @@ export interface LandingRun {
   readonly worktree: { readonly path: string; readonly head: string };
 }
 
-/** A live run whose origin is a bare repository named github.com/o/r; a worker on `t3/fix-ws`. */
+/** A live run whose origin is a bare repository named github.com/o/r; a worker on `houston/fix-ws`. */
 export const seedLandingRun = Effect.fn("NightShiftKit.seedLandingRun")(function* (
   kit: Kit,
   name: string,
@@ -993,12 +993,12 @@ export const seedLandingRun = Effect.fn("NightShiftKit.seedLandingRun")(function
     branch: `houston/night/${run.id}`,
     remoteHeads: heads,
   });
-  const worktree = crewWorktree(fixture, "t3/fix-ws");
-  kit.state.managed.add("t3/fix-ws");
+  const worktree = crewWorktree(fixture, "houston/fix-ws");
+  kit.state.managed.add("houston/fix-ws");
   kit.state.managed.add(`houston/night/${run.id}`);
   for (const [threadId, role, branch] of [
     [LANDING_ORCHESTRATOR, "orchestrator", `houston/night/${run.id}`],
-    [LANDING_WORKER, "implementation", "t3/fix-ws"],
+    [LANDING_WORKER, "implementation", "houston/fix-ws"],
     [LANDING_REVIEWER, "review", null],
   ] as const) {
     yield* store.addCrew({
@@ -1009,7 +1009,7 @@ export const seedLandingRun = Effect.fn("NightShiftKit.seedLandingRun")(function
       role,
       providerInstanceId: "claudeAgent",
       requestedInstanceId: null,
-      worktreePath: branch === "t3/fix-ws" ? worktree.path : null,
+      worktreePath: branch === "houston/fix-ws" ? worktree.path : null,
       branch,
       startedAt: NOW,
       endedAt: null,
@@ -1023,7 +1023,7 @@ export const landingInput = (seeded: LandingRun, patch: Record<string, unknown> 
   runId: seeded.runId,
   callerThreadId: LANDING_ORCHESTRATOR,
   head: seeded.worktree.head,
-  branch: "t3/fix-ws",
+  branch: "houston/fix-ws",
   title: "Fix the websocket retry",
   body: "Retries a dropped socket.",
   theme: "reliability",

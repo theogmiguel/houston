@@ -4,7 +4,7 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeOS from "node:os";
 import * as NodeURL from "node:url";
-import { resolveWorktreeT3Home } from "@houston-app/shared/devHome";
+import { resolveWorktreeHoustonHome } from "@houston-app/shared/devHome";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -25,7 +25,7 @@ export class MigrateDevDbNotInWorktreeError extends Schema.TaggedError<MigrateDe
   {},
 ) {
   override get message(): string {
-    return "Not inside a linked git worktree. Pass --base-dir to target an isolated .t3 directory.";
+    return "Not inside a linked git worktree. Pass --base-dir to target an isolated .houston-worktree directory.";
   }
 }
 
@@ -34,7 +34,7 @@ export class MigrateDevDbSharedHomeError extends Schema.TaggedError<MigrateDevDb
   {},
 ) {
   override get message(): string {
-    return "Refusing to rebuild the shared ~/.t3 database. Use an isolated --base-dir.";
+    return "Refusing to rebuild the shared ~/.houston/v2 database. Use an isolated --base-dir.";
   }
 }
 
@@ -414,7 +414,9 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
 
-  const sharedHome = path.resolve(options.sharedHome ?? path.join(NodeOS.homedir(), ".t3"));
+  const sharedHome = path.resolve(
+    options.sharedHome ?? path.join(NodeOS.homedir(), ".houston", "v2"),
+  );
   const sourcePath = path.resolve(
     input.source ?? path.join(sharedHome, "userdata", "statev2.sqlite"),
   );
@@ -422,7 +424,7 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   const baseDir =
     input.baseDir !== undefined
       ? path.resolve(input.baseDir)
-      : yield* resolveWorktreeT3Home(process.cwd());
+      : yield* resolveWorktreeHoustonHome(process.cwd());
   if (baseDir === undefined) {
     return yield* new MigrateDevDbNotInWorktreeError();
   }
@@ -550,11 +552,13 @@ export const migrateDevDbCommand = Command.make(
     ),
     baseDir: Flag.String("base-dir").pipe(
       Flag.optional,
-      Flag.withDescription("Isolated .t3 directory. Defaults to the current worktree's .t3."),
+      Flag.withDescription(
+        "Isolated .houston-worktree directory. Defaults to the current worktree's .houston-worktree.",
+      ),
     ),
     source: Flag.String("source").pipe(
       Flag.optional,
-      Flag.withDescription("Source database. Defaults to ~/.t3/userdata/statev2.sqlite."),
+      Flag.withDescription("Source database. Defaults to ~/.houston/v2/userdata/statev2.sqlite."),
     ),
   },
   ({ projects, threadsPerProject, baseDir, source }) =>
@@ -581,7 +585,7 @@ export const migrateDevDbCommand = Command.make(
     }),
 ).pipe(
   Command.withDescription(
-    "Rebuild the worktree dev database from a pruned snapshot of the real ~/.t3 data, then run migrations.",
+    "Rebuild the worktree dev database from a pruned snapshot of the real ~/.houston/v2 data, then run migrations.",
   ),
 );
 

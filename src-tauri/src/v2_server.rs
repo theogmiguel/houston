@@ -33,11 +33,11 @@ const READY_POLL: Duration = Duration::from_millis(250);
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 const TOKEN_WINDOW_MS: u128 = 12 * 60 * 60 * 1000;
 const TOKEN_EXCHANGE_GRANT: &str = "urn:ietf:params:oauth:grant-type:token-exchange";
-const BOOTSTRAP_TOKEN_TYPE: &str = "urn:t3:params:oauth:token-type:environment-bootstrap";
+const BOOTSTRAP_TOKEN_TYPE: &str = "urn:houston:params:oauth:token-type:environment-bootstrap";
 const ACCESS_TOKEN_TYPE: &str = "urn:ietf:params:oauth:token-type:access_token";
 
 /// Readiness endpoint upstream's desktop shell polls before showing the app.
-pub const READINESS_PATH: &str = "/.well-known/t3/environment";
+pub const READINESS_PATH: &str = "/.well-known/houston/environment";
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[allow(dead_code)] // optional upstream fields are decoded for completeness, not read yet
@@ -440,7 +440,7 @@ fn resolve_server_entry_with(
         "cannot find the v2 server: HOUSTON_V2_SERVER_ENTRY is unset, the bundled executable \
          {bundled_location} is missing, and the dev checkout entry {} is missing. Set \
          HOUSTON_V2_SERVER_ENTRY to a server entry (with HOUSTON_NODE pointing at its Node \
-         runtime), or build the dev checkout with `pnpm --filter houston build:bundle`.",
+         runtime), or build the dev checkout with `pnpm --filter @houston-app/cli build:bundle`.",
         dev.display()
     ))
 }
@@ -455,7 +455,7 @@ pub fn current_desktop_bootstrap_token(secret: &str, now_ms: u128) -> String {
     let window = now_ms / TOKEN_WINDOW_MS;
     let mut mac =
         Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key length");
-    mac.update(format!("t3-desktop-bootstrap:{window}").as_bytes());
+    mac.update(format!("houston-desktop-bootstrap:{window}").as_bytes());
     mac.finalize()
         .into_bytes()
         .iter()
@@ -482,7 +482,7 @@ pub fn bootstrap_envelope(
         "mode": "desktop",
         "noBrowser": true,
         "port": port,
-        "t3Home": base_dir.to_string_lossy(),
+        "houstonHome": base_dir.to_string_lossy(),
         "host": host,
         "desktopBootstrapToken": token,
         "desktopBootstrapSecret": secret,
@@ -1394,7 +1394,7 @@ mod tests {
         assert_eq!(envelope["desktopBootstrapToken"], "token");
         assert_eq!(envelope["tailscaleServeEnabled"], false);
         assert_eq!(envelope["tailscaleServePort"], 443);
-        assert!(envelope["t3Home"].as_str().unwrap().ends_with("v2"));
+        assert!(envelope["houstonHome"].as_str().unwrap().ends_with("v2"));
     }
 
     #[cfg(windows)]

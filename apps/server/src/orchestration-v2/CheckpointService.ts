@@ -23,7 +23,7 @@ import { isGitImport, parseTurnDiffFilesFromNumstat } from "../checkpointing/Dif
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
 
-const CHECKPOINT_REFS_PREFIX = "refs/t3/orchestration-v2/checkpoints";
+const CHECKPOINT_REFS_PREFIX = "refs/houston/orchestration-v2/checkpoints";
 const ROOT_CHECKPOINT_SCOPE_NAME = "root";
 
 export class CheckpointRootScopePrepareError extends Schema.TaggedError<CheckpointRootScopePrepareError>()(
@@ -143,7 +143,7 @@ export interface CheckpointServiceV2Shape {
 export class CheckpointServiceV2 extends Context.Service<
   CheckpointServiceV2,
   CheckpointServiceV2Shape
->()("houston/orchestration-v2/CheckpointService/CheckpointServiceV2") {}
+>()("@houston-app/cli/orchestration-v2/CheckpointService/CheckpointServiceV2") {}
 
 export const checkpointRefForScopeOrdinal = Effect.fn("checkpointRefForScopeOrdinal")(
   function* (input: { readonly scopeId: CheckpointScopeId; readonly ordinalWithinScope: number }) {

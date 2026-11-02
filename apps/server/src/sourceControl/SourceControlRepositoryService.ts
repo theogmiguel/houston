@@ -58,7 +58,7 @@ export class SourceControlRepositoryService extends Context.Service<
       input: SourceControlPublishRepositoryInput,
     ) => Effect.Effect<SourceControlPublishRepositoryResult, SourceControlRepositoryError>;
   }
->()("houston/sourceControl/SourceControlRepositoryService") {}
+>()("@houston-app/cli/sourceControl/SourceControlRepositoryService") {}
 
 export interface SourceControlPreparedClone {
   readonly destinationPath: string;

@@ -1,11 +1,11 @@
-export type T3McpToolLogo = "houston";
+export type HoustonMcpToolLogo = "houston";
 
-export interface T3McpToolPresentation {
+export interface HoustonMcpToolPresentation {
   readonly displayName: string;
-  readonly logo: T3McpToolLogo;
+  readonly logo: HoustonMcpToolLogo;
 }
 
-export type T3McpToolSummaryAction =
+export type HoustonMcpToolSummaryAction =
   | "capabilities"
   | "delegate"
   | "task-status"
@@ -70,25 +70,25 @@ export type T3McpToolSummaryAction =
   | "html-preview"
   | "html-render";
 
-export interface T3McpToolDefinition {
+export interface HoustonMcpToolDefinition {
   readonly displayName: string;
   readonly labels: readonly [action: string, running: string, completed: string, detail: string];
   readonly icon: "houston" | "browser" | "device" | "pull-request";
-  readonly summaryAction: T3McpToolSummaryAction;
+  readonly summaryAction: HoustonMcpToolSummaryAction;
 }
 
 function tool(
-  labels: T3McpToolDefinition["labels"],
-  summaryAction: T3McpToolSummaryAction,
-  icon: T3McpToolDefinition["icon"] = "houston",
+  labels: HoustonMcpToolDefinition["labels"],
+  summaryAction: HoustonMcpToolSummaryAction,
+  icon: HoustonMcpToolDefinition["icon"] = "houston",
   displayName = `${labels[0]} ${labels[3]}`,
-): T3McpToolDefinition {
+): HoustonMcpToolDefinition {
   return { displayName, labels, icon, summaryAction };
 }
 
 const HOUSTON_MCP_SERVER_ALIASES = new Set(["houston", "houston_code"]);
 
-const HOUSTON_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
+const HOUSTON_MCP_TOOLS: Readonly<Record<string, HoustonMcpToolDefinition>> = {
   link_pull_request: tool(
     ["Link", "Linking", "Linked", "a pull request"],
     "link-pr",
@@ -409,13 +409,13 @@ const HOUSTON_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
 
 export const HOUSTON_MCP_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(HOUSTON_MCP_TOOLS));
 
-function normalizeT3McpToolLabel(value: string): string {
+function normalizeHoustonMcpToolLabel(value: string): string {
   return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
 }
 
 // ACP tool prefixes vary; match loosely but require a known display-name entry.
-function resolveT3McpToolName(value: string): string | null {
-  const label = normalizeT3McpToolLabel(value);
+function resolveHoustonMcpToolName(value: string): string | null {
+  const label = normalizeHoustonMcpToolLabel(value);
   if (Object.hasOwn(HOUSTON_MCP_TOOLS, label)) return label;
   const mcpMatch = /^mcp__(?<server>.+?)__(?<tool>.+)$/i.exec(label);
   if (mcpMatch?.groups) {
@@ -448,8 +448,8 @@ function resolveT3McpToolName(value: string): string | null {
   return longest;
 }
 
-export function resolveT3McpToolId(toolName: string | null | undefined): string | null {
-  const name = toolName == null ? null : resolveT3McpToolName(toolName);
+export function resolveHoustonMcpToolId(toolName: string | null | undefined): string | null {
+  const name = toolName == null ? null : resolveHoustonMcpToolName(toolName);
   return name !== null && Object.hasOwn(HOUSTON_MCP_TOOLS, name) ? name : null;
 }
 
@@ -472,11 +472,11 @@ const ACTION_TOOLS: Readonly<Record<string, (action: string) => string | undefin
 };
 
 /** Pass the call's input so an action tool resolves to the labels and summary of its action. */
-export function resolveT3McpToolDefinition(
+export function resolveHoustonMcpToolDefinition(
   toolName: string | null | undefined,
   input?: unknown,
-): T3McpToolDefinition | null {
-  const name = toolName == null ? null : resolveT3McpToolName(toolName);
+): HoustonMcpToolDefinition | null {
+  const name = toolName == null ? null : resolveHoustonMcpToolName(toolName);
   if (name === null || !Object.hasOwn(HOUSTON_MCP_TOOLS, name)) return null;
   const action = asSummaryInput(input)?.action;
   const actionTool = typeof action === "string" ? ACTION_TOOLS[name]?.(action) : undefined;
@@ -487,7 +487,7 @@ export function resolveT3McpToolDefinition(
 
 /** Tools whose summary depends on which fields a call sets. */
 const ACTION_SUMMARIES: Readonly<
-  Record<string, (input: SummaryInput) => T3McpToolSummaryAction | undefined>
+  Record<string, (input: SummaryInput) => HoustonMcpToolSummaryAction | undefined>
 > = {
   houston_thread_configure: ({ modelSelection }) =>
     modelSelection === undefined ? "thread-configuration" : "thread-configure",
@@ -495,21 +495,21 @@ const ACTION_SUMMARIES: Readonly<
     scheduledTaskId === undefined ? "schedule-create" : "schedule-update",
 };
 
-export function resolveT3McpSummaryAction(
+export function resolveHoustonMcpSummaryAction(
   toolName: string | null | undefined,
   input: unknown,
-): T3McpToolSummaryAction | null {
-  const definition = resolveT3McpToolDefinition(toolName, input);
+): HoustonMcpToolSummaryAction | null {
+  const definition = resolveHoustonMcpToolDefinition(toolName, input);
   if (definition === null) return null;
-  const summarize = ACTION_SUMMARIES[resolveT3McpToolName(toolName!) ?? ""];
+  const summarize = ACTION_SUMMARIES[resolveHoustonMcpToolName(toolName!) ?? ""];
   const fields = asSummaryInput(input);
   return (fields && summarize?.(fields)) ?? definition.summaryAction;
 }
 
-export function resolveT3McpToolPresentation(
+export function resolveHoustonMcpToolPresentation(
   toolName: string | null | undefined,
   input?: unknown,
-): T3McpToolPresentation | null {
-  const definition = resolveT3McpToolDefinition(toolName, input);
+): HoustonMcpToolPresentation | null {
+  const definition = resolveHoustonMcpToolDefinition(toolName, input);
   return definition === null ? null : { displayName: definition.displayName, logo: "houston" };
 }

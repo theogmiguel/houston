@@ -265,7 +265,7 @@ const VALID: Record<(typeof NIGHT_TOOLS)[number], Record<string, unknown>> = {
   houston_night_plan: PLAN,
   houston_night_pr: {
     head: "a".repeat(40),
-    branch: "t3/fix-upload",
+    branch: "houston/fix-upload",
     title: "Retry dropped uploads",
     body: "Retries a dropped upload.",
     theme: "reliability",
@@ -333,7 +333,7 @@ describe("night shift ledger tools", () => {
         number: 41,
         url: "https://github.com/o/r/pull/41",
       });
-      assert.equal(landed.at(-1), `${runId}|${ORCHESTRATOR}|t3/fix-upload|${"a".repeat(40)}`);
+      assert.equal(landed.at(-1), `${runId}|${ORCHESTRATOR}|houston/fix-upload|${"a".repeat(40)}`);
       refused(
         yield* call(ORCHESTRATOR, "houston_night_verdict", VALID.houston_night_verdict),
         "orchestrator verdict",

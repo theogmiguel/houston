@@ -10,10 +10,10 @@ import {
 
 describe("fileBreadcrumbs", () => {
   it("starts host paths outside the workspace at the filesystem root", () => {
-    expect(fileBreadcrumbs("houston", "/tmp/t3-cleanup/report.md")).toEqual([
+    expect(fileBreadcrumbs("houston", "/tmp/houston-cleanup/report.md")).toEqual([
       { label: "tmp", path: "/tmp", kind: "directory" },
-      { label: "t3-cleanup", path: "/tmp/t3-cleanup", kind: "directory" },
-      { label: "report.md", path: "/tmp/t3-cleanup/report.md", kind: "file" },
+      { label: "houston-cleanup", path: "/tmp/houston-cleanup", kind: "directory" },
+      { label: "report.md", path: "/tmp/houston-cleanup/report.md", kind: "file" },
     ]);
     expect(fileBreadcrumbs("houston", "C:\\Temp\\report.md")).toEqual([
       { label: "C:", path: "C:\\", kind: "directory" },

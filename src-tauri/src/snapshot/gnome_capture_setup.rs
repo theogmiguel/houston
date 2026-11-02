@@ -11,7 +11,7 @@ use zbus::zvariant::OwnedValue;
 
 pub const GNOME_CAPTURE_UUID: &str = "houston-snap-shot@houston";
 /// Installed by earlier releases; removed once so GNOME cannot load a second copy.
-const LEGACY_GNOME_CAPTURE_UUID: &str = "t3-snap-shot@t3tools";
+const LEGACY_GNOME_CAPTURE_UUID: &str = "houston-snap-shot@t3tools";
 const SHELL: &str = "org.gnome.Shell";
 const SHELL_PATH: &str = "/org/gnome/Shell";
 const EXTENSIONS: &str = "org.gnome.Shell.Extensions";

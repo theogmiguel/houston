@@ -1,6 +1,6 @@
 import type { HostBridge } from "@houston-app/contracts";
 
-export const DESKTOP_PASTE_AS_TEXT_EVENT = "t3:paste-as-text";
+export const DESKTOP_PASTE_AS_TEXT_EVENT = "houston:paste-as-text";
 
 /**
  * Arm composer paste handling before the desktop host delivers the native clipboard event. The event

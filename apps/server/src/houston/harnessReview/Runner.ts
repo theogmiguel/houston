@@ -78,7 +78,7 @@ export class HoustonHarnessRunner extends Context.Service<
       input: StartInput,
     ) => Effect.Effect<HoustonHarnessRunNowResult, HoustonHarnessError>;
   }
->()("houston/houston/harnessReview/Runner/HoustonHarnessRunner") {}
+>()("@houston-app/cli/houston/harnessReview/Runner/HoustonHarnessRunner") {}
 
 const make = Effect.gen(function* () {
   const store = yield* HoustonHarnessStore;

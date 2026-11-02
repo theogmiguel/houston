@@ -258,7 +258,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               Unavailable
             </Badge>
           ) : null}
-          <ChevronDownIcon aria-hidden className="size-3.25 shrink-0 text-(--t3)" />
+          <ChevronDownIcon aria-hidden className="size-3.25 shrink-0 text-(--houston)" />
         </span>
       </PopoverTrigger>
       <PopoverPopup

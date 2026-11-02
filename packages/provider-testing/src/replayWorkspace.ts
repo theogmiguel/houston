@@ -48,7 +48,7 @@ const makeCheckpointWorkspaceEffect = Effect.fn("makeCheckpointWorkspace")(funct
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const cwd = yield* fs.makeTempDirectory({
-    prefix: `t3-orchestrator-v2-${fixtureName}-`,
+    prefix: `houston-orchestrator-v2-${fixtureName}-`,
   });
   yield* runGit(cwd, ["init"]);
   yield* runGit(cwd, ["config", "user.name", "Houston Test"]);

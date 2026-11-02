@@ -132,7 +132,7 @@ export class GitWorkflowService extends Context.Service<
       readonly newBranch: string;
     }) => Effect.Effect<{ readonly branch: string }, GitManagerServiceError>;
   }
->()("houston/git/GitWorkflowService") {}
+>()("@houston-app/cli/git/GitWorkflowService") {}
 
 function nonRepositoryLocalStatus(): VcsStatusLocalResult {
   return {

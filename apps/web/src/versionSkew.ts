@@ -5,6 +5,7 @@ import type {
   ServerSelfUpdateCapability,
 } from "@houston-app/contracts";
 import type { ServerUpdateState } from "@houston-app/client-runtime/state/server";
+import { SERVER_PACKAGE_NAME } from "@houston-app/shared/serverPackage";
 import { compareSemverVersions, parseSemver } from "@houston-app/shared/semver";
 import * as Schema from "effect/Schema";
 
@@ -101,11 +102,11 @@ export function manualServerUpdateCommand(
 ): string {
   if (installation?.kind === "npm-global") {
     const prefix = `'${installation.prefix.replaceAll("'", "'\\''")}'`;
-    return `npm install --global --prefix ${prefix} houston@${targetVersion}`;
+    return `npm install --global --prefix ${prefix} ${SERVER_PACKAGE_NAME}@${targetVersion}`;
   }
   const runner =
     installation?.kind === "pnpm-dlx" ? "pnpm dlx" : installation?.kind === "bunx" ? "bunx" : "npx";
-  return `${runner} houston@${targetVersion}`;
+  return `${runner} ${SERVER_PACKAGE_NAME}@${targetVersion}`;
 }
 
 export function buildVersionMismatchDismissalKey(

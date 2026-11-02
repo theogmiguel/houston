@@ -237,7 +237,7 @@ export function GridThreadCell({
           <span
             className={cn(
               "max-w-48 min-w-0 truncate text-xs leading-4 font-medium",
-              focused ? "text-(--t1)" : "text-(--t3)",
+              focused ? "text-(--t1)" : "text-(--houston)",
             )}
           >
             {title}

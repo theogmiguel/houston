@@ -106,7 +106,7 @@ describe("tailscale", () => {
       Web: {
         "box.tailnet.ts.net:443": {
           Handlers: {
-            "/t3": { Proxy: "http://127.0.0.1:3773" },
+            "/houston": { Proxy: "http://127.0.0.1:3773" },
             "/dashboard": { Proxy: "http://127.0.0.1:9000" },
           },
         },
@@ -138,9 +138,9 @@ describe("tailscale", () => {
         },
       },
       Services: {
-        "svc:t3": {
+        "svc:houston": {
           Web: {
-            "t3.tailnet.ts.net:443": { Handlers: { "/": { Proxy: "http://127.0.0.1:3773" } } },
+            "houston.tailnet.ts.net:443": { Handlers: { "/": { Proxy: "http://127.0.0.1:3773" } } },
           },
         },
       },
@@ -150,7 +150,7 @@ describe("tailscale", () => {
     });
     assert.deepEqual(parseTailscaleServeRoutesTo(status, { host: "127.0.0.1", port: 3773 }), [
       { servePort: 7000 },
-      { servePort: 443, mount: "/t3", host: "box.tailnet.ts.net" },
+      { servePort: 443, mount: "/houston", host: "box.tailnet.ts.net" },
       // `localhost` and `[::]` can dial either loopback, so they might be another service's.
       ...(
         [
@@ -173,7 +173,7 @@ describe("tailscale", () => {
         host: "box.tailnet.ts.net",
         ...(ambiguous === undefined ? {} : { ambiguous }),
       })),
-      { servePort: 443, mount: "/", host: "t3.tailnet.ts.net", owner: "svc:t3" },
+      { servePort: 443, mount: "/", host: "houston.tailnet.ts.net", owner: "svc:houston" },
       { servePort: 9000, ambiguous: "localhost", owner: "foreground" },
     ]);
     assert.deepEqual(

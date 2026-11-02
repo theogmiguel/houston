@@ -3599,7 +3599,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       role="status"
                       className={cn(
                         "shrink-0 px-1.5 text-xs tabular-nums",
-                        needsUserStatus === null ? "text-(--t3)" : THREAD_STATE_TEXT_CLASS.needs,
+                        needsUserStatus === null
+                          ? "text-(--houston)"
+                          : THREAD_STATE_TEXT_CLASS.needs,
                       )}
                     >
                       {needsUserStatus?.label ?? "Running"} ·{" "}

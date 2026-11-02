@@ -45,7 +45,7 @@ export class NightShiftThreads extends Context.Service<
       threadId: ThreadId,
     ) => Effect.Effect<{ readonly worktreePath: string | null; readonly branch: string | null }>;
   }
->()("houston/houston/nightShift/Threads/NightShiftThreads") {}
+>()("@houston-app/cli/houston/nightShift/Threads/NightShiftThreads") {}
 
 const STOP_REASON = "Night shift stopped the run";
 

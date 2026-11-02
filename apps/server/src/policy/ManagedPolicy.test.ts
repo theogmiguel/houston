@@ -38,7 +38,7 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
         JSON.stringify({
           schemaVersion: 1,
           organization: "Example Corp",
-          supportUrl: "https://it.example/t3",
+          supportUrl: "https://it.example/houston",
           settings: {
             "storageCleanup.logsAfterDays": { value: 30, locked: true },
             defaultRuntimeMode: { value: "approval-required", locked: false },
@@ -47,7 +47,7 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
       );
       assert.deepEqual(policy.summary, {
         organization: "Example Corp",
-        supportUrl: "https://it.example/t3",
+        supportUrl: "https://it.example/houston",
         lockedSettings: ["storageCleanup.logsAfterDays"],
       });
     }),
@@ -425,14 +425,14 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
         const base = { schemaVersion: 1, organization: "Example Corp" };
         const updates = {
           mode: "auto" as const,
-          feedUrl: "https://updates.example/t3",
+          feedUrl: "https://updates.example/houston",
           allowNightly: false,
         };
         const policy = yield* loadFrom(JSON.stringify({ ...base, limits: { updates } }));
         const { feedUrl: _feedUrl, ...clientUpdates } = updates;
         assert.deepEqual(policy.summary?.limits, { updates: clientUpdates });
         for (const invalid of [
-          { mode: "auto", feedUrl: "http://updates.example/t3" },
+          { mode: "auto", feedUrl: "http://updates.example/houston" },
           { mode: "manual" },
           { mode: "sometimes" },
           { mode: "auto", pinVersion: "1.2.3" },

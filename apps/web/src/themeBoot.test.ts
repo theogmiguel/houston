@@ -187,8 +187,8 @@ describe("index.html boot script", () => {
       prefersDark: true,
     },
     {
-      name: "a legacy t3-grove preference resolves through the alias",
-      storage: { [THEME_STORAGE_KEY]: "t3-grove", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
+      name: "a legacy houston-grove preference resolves through the alias",
+      storage: { [THEME_STORAGE_KEY]: "houston-grove", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
       prefersDark: true,
     },
     {

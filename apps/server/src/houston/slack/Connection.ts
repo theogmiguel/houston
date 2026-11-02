@@ -60,7 +60,7 @@ export interface SlackSocketSession {
 export class SlackSocketTransport extends Context.Service<
   SlackSocketTransport,
   { readonly open: (url: string) => Effect.Effect<SlackSocketSession, string, Scope.Scope> }
->()("houston/houston/slack/Connection/SlackSocketTransport") {}
+>()("@houston-app/cli/houston/slack/Connection/SlackSocketTransport") {}
 
 const openSocket = Effect.fn("HoustonSlack.openSocket")(function* (url: string) {
   const incoming = yield* Queue.dropping<SocketIncoming>(INCOMING_CAPACITY);
@@ -127,7 +127,7 @@ export class HoustonSlackConnection extends Context.Service<
     /** Ends the current connection and starts again from the stored settings and tokens. */
     readonly refresh: Effect.Effect<void>;
   }
->()("houston/houston/slack/Connection/HoustonSlackConnection") {}
+>()("@houston-app/cli/houston/slack/Connection/HoustonSlackConnection") {}
 
 type SessionEnd = "silent" | "closed" | "blocked" | "disconnect" | "link_disabled" | "open_failed";
 

@@ -901,7 +901,7 @@ it.effect("resolves an explicit checkpoint fork to its source run", () =>
             parentCheckpointId: null,
             ordinalWithinScope: 1,
             appRunOrdinal: 1,
-            ref: CheckpointRef.make("refs/t3/checkpoint-fork/1"),
+            ref: CheckpointRef.make("refs/houston/checkpoint-fork/1"),
             status: "ready",
             files: [],
             capturedAt: now,

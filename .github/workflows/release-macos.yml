@@ -4,20 +4,20 @@ on:
   workflow_call:
     inputs:
       version:
-        description: 'Manifest version from the version-guard job: names the uploaded artifact and must match the checked-out tree'
+        description: "Manifest version from the version-guard job: names the uploaded artifact and must match the checked-out tree"
         type: string
         required: true
       ref:
-        description: 'Commit to build; a cut passes its tag and Build installers passes a resolved SHA'
+        description: "Commit to build; a cut passes its tag and Build installers passes a resolved SHA"
         type: string
         required: false
-        default: ''
+        default: ""
       tauri_cli_version:
-        description: 'Pinned Tauri CLI version, threaded through from the caller so the pin has one source of truth'
+        description: "Pinned Tauri CLI version, threaded through from the caller so the pin has one source of truth"
         type: string
         required: true
       require_signing:
-        description: 'Fail when the updater signing secrets are absent; a real release passes true, a dry run false'
+        description: "Fail when the updater signing secrets are absent; a real release passes true, a dry run false"
         type: boolean
         required: false
         default: true
@@ -26,28 +26,28 @@ on:
       # run passes no secrets. Apple signing and notarization are skipped when
       # their secrets are absent, leaving an unsigned but runnable bundle.
       TAURI_SIGNING_PRIVATE_KEY:
-        description: 'Updater signing key. Set, the macOS updater .app.tar.gz ships a .sig beside it'
+        description: "Updater signing key. Set, the macOS updater .app.tar.gz ships a .sig beside it"
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
-        description: 'Passphrase for TAURI_SIGNING_PRIVATE_KEY; leave unset for an unencrypted key'
+        description: "Passphrase for TAURI_SIGNING_PRIVATE_KEY; leave unset for an unencrypted key"
         required: false
       APPLE_CERTIFICATE:
-        description: 'Base64 Developer ID Application certificate; with its password, Tauri signs the .app'
+        description: "Base64 Developer ID Application certificate; with its password, Tauri signs the .app"
         required: false
       APPLE_CERTIFICATE_PASSWORD:
-        description: 'Password for the .p12 in APPLE_CERTIFICATE'
+        description: "Password for the .p12 in APPLE_CERTIFICATE"
         required: false
       APPLE_SIGNING_IDENTITY:
-        description: 'Exact codesign identity; defaults to the identity inside APPLE_CERTIFICATE'
+        description: "Exact codesign identity; defaults to the identity inside APPLE_CERTIFICATE"
         required: false
       APPLE_ID:
-        description: 'Apple account for notarization; needs APPLE_PASSWORD and APPLE_TEAM_ID too'
+        description: "Apple account for notarization; needs APPLE_PASSWORD and APPLE_TEAM_ID too"
         required: false
       APPLE_PASSWORD:
-        description: 'App-specific password for APPLE_ID notarization'
+        description: "App-specific password for APPLE_ID notarization"
         required: false
       APPLE_TEAM_ID:
-        description: 'Apple Developer team ID for notarization'
+        description: "Apple Developer team ID for notarization"
         required: false
 
 permissions:
@@ -196,7 +196,7 @@ jobs:
       - name: Build and stage the bundled v2 server
         run: |
           set -euo pipefail
-          pnpm --filter houston build:exe
+          pnpm --filter @houston-app/cli build:exe
           node scripts/stage-v2-server.mjs
 
       - name: Build the bundles (renderer + app,dmg)

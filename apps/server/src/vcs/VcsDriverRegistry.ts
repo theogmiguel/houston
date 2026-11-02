@@ -37,7 +37,7 @@ export class VcsDriverRegistry extends Context.Service<
     ) => Effect.Effect<VcsDriverHandle | null, VcsError>;
     readonly resolve: (input: VcsDriverResolveInput) => Effect.Effect<VcsDriverHandle, VcsError>;
   }
->()("houston/vcs/VcsDriverRegistry") {}
+>()("@houston-app/cli/vcs/VcsDriverRegistry") {}
 
 function detectionCacheKey(input: {
   readonly cwd: string;

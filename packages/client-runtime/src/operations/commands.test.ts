@@ -188,7 +188,7 @@ describe("V2 environment commands", () => {
             parentCheckpointId: null,
             ordinalWithinScope: 0,
             appRunOrdinal: null,
-            ref: CheckpointRef.make("refs/t3/thread-start"),
+            ref: CheckpointRef.make("refs/houston/thread-start"),
             status: "ready",
             files: [],
             capturedAt: v2Now,

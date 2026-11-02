@@ -51,7 +51,7 @@ interface ManagedChild {
 const runtimePaths = (baseDir: string, version: string) => {
   const versionDir = NodePath.join(baseDir, "runtime", "versions", version);
   // oxlint-disable-next-line houston/no-global-process-runtime -- Standalone launcher has no Effect runtime.
-  const executableName = process.platform === "win32" ? "t3.exe" : "t3";
+  const executableName = process.platform === "win32" ? "houston.exe" : "houston";
   return {
     versionDir,
     entryPath: NodePath.join(versionDir, executableName),
@@ -568,7 +568,7 @@ export class Launcher {
   async #startChild(version: string, role: ChildRole, update?: ServiceUpdateRecord): Promise<void> {
     if (this.#stopping) return;
     if (!(await runtimeExists(this.#baseDir, version))) {
-      throw new Error(`Selected t3@${version} runtime is missing or incomplete.`);
+      throw new Error(`Selected houston@${version} runtime is missing or incomplete.`);
     }
     if (this.#stopping) return;
     const paths = runtimePaths(this.#baseDir, version);

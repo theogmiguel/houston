@@ -106,7 +106,7 @@ function AttachmentTileRemoveButton(props: {
         "absolute top-1 right-1 z-10 grid size-4 place-items-center rounded-full",
         props.overImage
           ? "bg-black/50 text-white hover:bg-black/70"
-          : "text-(--t3) hover:bg-(--hover) hover:text-(--t1)",
+          : "text-(--houston) hover:bg-(--hover) hover:text-(--t1)",
       )}
       data-attachment-tile-action="remove"
     >
@@ -633,7 +633,7 @@ export function ComposerAttachmentFileList({
                         className="size-[18px]"
                       />
                     )}
-                    <span className="w-full truncate text-3xs text-(--t3) leading-3">
+                    <span className="w-full truncate text-3xs text-(--houston) leading-3">
                       {file.name}
                     </span>
                   </button>
@@ -843,7 +843,7 @@ export function ComposerQueuedAttachmentRow({
                   theme={resolvedTheme}
                   className="size-[18px]"
                 />
-                <span className="w-full truncate text-3xs text-(--t3) leading-3">
+                <span className="w-full truncate text-3xs text-(--houston) leading-3">
                   {attachment.name}
                 </span>
               </div>

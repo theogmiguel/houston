@@ -47,7 +47,7 @@ export class HoustonMergeQueueThreads extends Context.Service<
     }) => Effect.Effect<void, string>;
     readonly launch: (request: LaunchRequest) => Effect.Effect<void, string>;
   }
->()("houston/houston/mergeQueue/Threads/HoustonMergeQueueThreads") {}
+>()("@houston-app/cli/houston/mergeQueue/Threads/HoustonMergeQueueThreads") {}
 
 const errorText = (error: unknown) =>
   typeof error === "object" && error !== null && "message" in error

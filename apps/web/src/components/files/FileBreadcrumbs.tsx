@@ -241,7 +241,7 @@ function FolderContentsMenu(props: FileBreadcrumbsProps & { readonly crumb: File
             type="button"
             tone="muted"
             aria-label={`Browse ${props.crumb.label}`}
-            className="relative mx-1 flex h-5 shrink-0 cursor-pointer items-center justify-center rounded-sm !font-normal text-xs text-[var(--t3)] outline-none hover:bg-hover hover:text-foreground hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:bg-hover data-popup-open:text-foreground pointer-coarse:after:absolute pointer-coarse:after:-inset-3"
+            className="relative mx-1 flex h-5 shrink-0 cursor-pointer items-center justify-center rounded-sm !font-normal text-xs text-[var(--houston)] outline-none hover:bg-hover hover:text-foreground hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:bg-hover data-popup-open:text-foreground pointer-coarse:after:absolute pointer-coarse:after:-inset-3"
           />
         }
       >
@@ -332,7 +332,7 @@ export function FileBreadcrumbs(props: FileBreadcrumbsProps) {
                 />
               )}
               {index === breadcrumbs.length - 1 ? null : hostPath ? (
-                <span aria-hidden className="mx-1 shrink-0 text-xs text-[var(--t3)]">
+                <span aria-hidden className="mx-1 shrink-0 text-xs text-[var(--houston)]">
                   /
                 </span>
               ) : (

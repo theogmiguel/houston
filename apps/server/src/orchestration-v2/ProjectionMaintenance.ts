@@ -45,7 +45,7 @@ export interface ProjectionMaintenanceV2Shape {
 export class ProjectionMaintenanceV2 extends Context.Service<
   ProjectionMaintenanceV2,
   ProjectionMaintenanceV2Shape
->()("houston/orchestration-v2/ProjectionMaintenance/ProjectionMaintenanceV2") {}
+>()("@houston-app/cli/orchestration-v2/ProjectionMaintenance/ProjectionMaintenanceV2") {}
 
 type ProjectionMetadataRow = {
   readonly schema_version: number;

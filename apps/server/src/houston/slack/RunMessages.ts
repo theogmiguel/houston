@@ -18,7 +18,7 @@ export interface RunMessage {
 export class HoustonSlackRunMessages extends Context.Service<
   HoustonSlackRunMessages,
   { readonly deliver: (message: RunMessage) => Effect.Effect<void, string> }
->()("houston/houston/slack/RunMessages/HoustonSlackRunMessages") {}
+>()("@houston-app/cli/houston/slack/RunMessages/HoustonSlackRunMessages") {}
 
 export const layer = Layer.effect(
   HoustonSlackRunMessages,

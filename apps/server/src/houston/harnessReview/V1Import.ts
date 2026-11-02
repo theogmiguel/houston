@@ -104,7 +104,7 @@ export class HoustonHarnessV1Import extends Context.Service<
     readonly status: Effect.Effect<HoustonHarnessImportStatus>;
     readonly run: Effect.Effect<HoustonHarnessImportResult, HoustonHarnessError>;
   }
->()("houston/houston/harnessReview/V1Import/HoustonHarnessV1Import") {}
+>()("@houston-app/cli/houston/harnessReview/V1Import/HoustonHarnessV1Import") {}
 
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;

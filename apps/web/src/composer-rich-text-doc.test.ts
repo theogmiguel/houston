@@ -152,7 +152,7 @@ describe("editable math source", () => {
   });
   it("preserves formula source as text when styling is disabled", () => {
     const source =
-      "\\[\n\\text{use $browser, @README.md and [file](t3-context://v1/file/ctx_1)}\n\\]";
+      "\\[\n\\text{use $browser, @README.md and [file](houston-context://v1/file/ctx_1)}\n\\]";
     const doc = plainSchema.nodeFromJSON(
       buildDocJson(source, (name) => ({ label: name, description: null }), { styling: false }),
     );

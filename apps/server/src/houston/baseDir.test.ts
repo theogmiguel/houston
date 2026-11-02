@@ -68,13 +68,13 @@ it.layer(NodeServices.layer)("houston base dir", (it) => {
     }),
   );
 
-  it.effect("a hosted base dir comes only from t3Home", () =>
+  it.effect("a hosted base dir comes only from houstonHome", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const home = yield* fs.makeTempDirectoryScoped({ prefix: "houston-home-" });
 
-      // Hosted: the envelope's t3Home is the only source, and it may not be blank.
+      // Hosted: the envelope's houstonHome is the only source, and it may not be blank.
       for (const raw of [undefined, "", "   "]) {
         const error = yield* resolveBaseDir(raw).pipe(
           Effect.provideService(HostedLaunch, true),
@@ -82,7 +82,7 @@ it.layer(NodeServices.layer)("houston base dir", (it) => {
           Effect.flip,
         );
         expect(exitCodeOf(error)).toBe(HOUSTON_EXIT_CODE_REFUSED_LAUNCH);
-        expect(error.message).toContain("t3Home");
+        expect(error.message).toContain("houstonHome");
         expect(error.message.startsWith("houston: ")).toBe(true);
       }
       expect(yield* fs.exists(path.join(home, ".houston", "v2"))).toBe(false);

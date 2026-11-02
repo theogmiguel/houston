@@ -94,7 +94,7 @@ export class HoustonMergeLanding extends Context.Service<
       input: LandInput,
     ) => Effect.Effect<HoustonMergeQueueMergeHeadResult, ReturnType<typeof refuse>>;
   }
->()("houston/houston/mergeQueue/Landing/HoustonMergeLanding") {}
+>()("@houston-app/cli/houston/mergeQueue/Landing/HoustonMergeLanding") {}
 
 const make = Effect.gen(function* () {
   const store = yield* HoustonMergeQueueStore;

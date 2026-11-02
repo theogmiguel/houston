@@ -78,7 +78,7 @@ describe("ServerObservability", () => {
   it("rejects an unknown endpoint source", () => {
     expect(() =>
       decodeServerObservability({
-        logsDirectoryPath: "/tmp/t3/logs",
+        logsDirectoryPath: "/tmp/houston/logs",
         localTracingEnabled: true,
         otlpTracesUrl: "https://collector.example.com/v1/traces",
         otlpTracesSource: "cli",

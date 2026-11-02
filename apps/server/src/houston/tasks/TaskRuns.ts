@@ -204,7 +204,7 @@ export class HoustonTaskRuns extends Context.Service<
     /** Applies every thread event stored since the last call. */
     readonly catchUp: Effect.Effect<void>;
   }
->()("houston/houston/tasks/TaskRuns/HoustonTaskRuns") {}
+>()("@houston-app/cli/houston/tasks/TaskRuns/HoustonTaskRuns") {}
 
 /** An agent thread acting on tasks through MCP. */
 export interface HoustonTaskAgent {

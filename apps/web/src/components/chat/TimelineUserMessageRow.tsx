@@ -310,7 +310,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
       </div>
       <UserMessageProjectedStatus row={row} />
       {expanded ? (
-        <div className="flex w-full max-w-[82%] items-center justify-end pe-1 text-callout text-(--t3) tabular-nums">
+        <div className="flex w-full max-w-[82%] items-center justify-end pe-1 text-callout text-(--houston) tabular-nums">
           <div className="flex shrink-0 items-center gap-2">
             {scheduledTaskId ? (
               <Link
@@ -993,7 +993,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       </div>
       <UserMessageProjectedStatus row={row} />
       {!folded || expanded ? (
-        <div className="flex w-full max-w-[82%] items-center justify-end pe-1 text-callout text-(--t3) tabular-nums">
+        <div className="flex w-full max-w-[82%] items-center justify-end pe-1 text-callout text-(--houston) tabular-nums">
           <div className="flex shrink-0 items-center gap-2">
             {folded && senderThreadId ? (
               <InlineButton onClick={() => ctx.onOpenThread(senderThreadId)} tone="muted">
@@ -1001,7 +1001,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               </InlineButton>
             ) : null}
             <Tooltip>
-              <TooltipTrigger render={<p className="text-(--t3) text-callout tabular-nums" />}>
+              <TooltipTrigger render={<p className="text-(--houston) text-callout tabular-nums" />}>
                 {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
               </TooltipTrigger>
               <TooltipPopup>

@@ -51,6 +51,6 @@ describe("writeTextToClipboard", () => {
     const items = write.mock.calls[0]![0] as Array<{ data: Record<string, Blob> }>;
     const html = await items[0]!.data["text/html"]!.text();
     expect(html).toContain(rich);
-    expect(html).toContain("data-t3-context-fragment=");
+    expect(html).toContain("data-houston-context-fragment=");
   });
 });

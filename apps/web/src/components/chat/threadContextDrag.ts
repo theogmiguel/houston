@@ -1,7 +1,7 @@
 import type { EnvironmentId, ScopedThreadRef } from "@houston-app/contracts";
 import { type RefObject, useEffect, useEffectEvent, useSyncExternalStore } from "react";
 
-export const THREAD_CONTEXT_DROP_EVENT = "t3-thread-context-drop";
+export const THREAD_CONTEXT_DROP_EVENT = "houston-thread-context-drop";
 
 export function useThreadContextDrop(
   targetRef: RefObject<EventTarget | null>,

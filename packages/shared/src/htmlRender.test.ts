@@ -14,7 +14,7 @@ describe("injectHtmlRenderBootstrap", () => {
     const html =
       "<!doctype html><html><head><style>:root{--background:red}</style></head><body>x</body></html>";
     const injected = injectHtmlRenderBootstrap(html);
-    const themeAt = injected.indexOf('<style id="t3-theme">');
+    const themeAt = injected.indexOf('<style id="houston-theme">');
     expect(themeAt).toBeGreaterThan(injected.indexOf("<head>"));
     expect(themeAt).toBeLessThan(injected.indexOf(":root{--background:red}"));
     expect(injected).toContain('<meta charset="utf-8">');
@@ -35,7 +35,9 @@ describe("injectHtmlRenderBootstrap", () => {
     const fragment = `<${tag}><head><meta name="viewport"></head></${tag}>`;
     const injected = injectHtmlRenderBootstrap(fragment);
     expect(injected.startsWith("<!doctype html><head>")).toBe(true);
-    expect(injected.indexOf('<style id="t3-theme">')).toBeLessThan(injected.indexOf(`<${tag}>`));
+    expect(injected.indexOf('<style id="houston-theme">')).toBeLessThan(
+      injected.indexOf(`<${tag}>`),
+    );
     expect(injected).toContain('<meta name="viewport" content="width=device-width');
     expect(injected.endsWith(fragment)).toBe(true);
   });
@@ -46,7 +48,9 @@ describe("injectHtmlRenderBootstrap", () => {
   ])("keeps the bootstrap outside inert template content: %s", (fragment) => {
     const injected = injectHtmlRenderBootstrap(fragment);
     expect(injected.startsWith("<!doctype html><head>")).toBe(true);
-    expect(injected.indexOf('<style id="t3-theme">')).toBeLessThan(injected.indexOf("<template>"));
+    expect(injected.indexOf('<style id="houston-theme">')).toBeLessThan(
+      injected.indexOf("<template>"),
+    );
     expect(injected).toContain('<meta name="viewport" content="width=device-width');
     expect(injected.endsWith(fragment)).toBe(true);
   });
@@ -56,7 +60,7 @@ describe("injectHtmlRenderBootstrap", () => {
       '<!-- copy <head> and <meta name="viewport"> here --><html><head>' +
       "<script>const tag = '<meta name=\"viewport\">';</script></head><body>x</body></html>";
     const injected = injectHtmlRenderBootstrap(html);
-    expect(injected.indexOf('<style id="t3-theme">')).toBeGreaterThan(
+    expect(injected.indexOf('<style id="houston-theme">')).toBeGreaterThan(
       injected.indexOf("<html><head>"),
     );
     expect(injected).toContain('<meta name="viewport" content="width=device-width');
@@ -90,7 +94,7 @@ describe("readHtmlRenderLinkRequest", () => {
       }),
     ).toBeUndefined();
     expect(
-      readHtmlRenderLinkRequest({ type: "t3-html-render-link", url: "https://example.com" }),
+      readHtmlRenderLinkRequest({ type: "houston-html-render-link", url: "https://example.com" }),
     ).toBeUndefined();
   });
 });
@@ -99,7 +103,7 @@ describe("readHtmlRenderImageRequest", () => {
   it("accepts http(s) and inline image URLs in an open-image notification", () => {
     const image = (params: unknown) => ({
       jsonrpc: "2.0",
-      method: "t3/notifications/open-image",
+      method: "houston/notifications/open-image",
       params,
     });
     expect(

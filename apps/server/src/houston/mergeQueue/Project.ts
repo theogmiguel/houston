@@ -157,7 +157,7 @@ export class HoustonMergeQueueProject extends Context.Service<
     /** The project's resolved `defaultRuntimeMode`, as the startup thread uses it. */
     readonly defaultRuntimeMode: (projectId: ProjectId) => Effect.Effect<RuntimeMode, string>;
   }
->()("houston/houston/mergeQueue/Project/HoustonMergeQueueProject") {}
+>()("@houston-app/cli/houston/mergeQueue/Project/HoustonMergeQueueProject") {}
 
 interface RunRow {
   readonly task_id: number;

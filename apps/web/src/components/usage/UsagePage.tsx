@@ -673,7 +673,7 @@ function UsageOverview({
           <h2 className="text-[13px] leading-[18px] font-semibold text-[var(--t1)]">
             {metric === "tokens" ? "Tokens per" : "Cost per"} {shownHourly ? "hour" : "day"}
           </h2>
-          <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--t3)]">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--houston)]">
             {activeProviders.map((provider) => (
               <span key={provider} className="inline-flex items-center gap-1.5">
                 <span
@@ -770,7 +770,7 @@ function UsageOverview({
           {breakdown === "model" ? (
             <table className="w-full text-[13px]">
               <thead>
-                <tr className="h-8 text-right text-xs text-[var(--t3)]">
+                <tr className="h-8 text-right text-xs text-[var(--houston)]">
                   <th className="px-4 text-left font-medium">Model</th>
                   <th className="w-20 px-4 font-medium">Tokens</th>
                   <th className="w-[100px] px-4 font-medium">Cost</th>
@@ -945,7 +945,7 @@ function ByAgentCard({
                 </span>
                 <span
                   className={cn(
-                    "text-xs text-[var(--t3)] tabular-nums",
+                    "text-xs text-[var(--houston)] tabular-nums",
                     figureClass(providerLoading),
                     awaitingData && "invisible",
                   )}
@@ -970,7 +970,7 @@ function ByAgentCard({
                 </span>
                 <span
                   className={cn(
-                    "text-xs text-[var(--t3)] tabular-nums",
+                    "text-xs text-[var(--houston)] tabular-nums",
                     figureClass(providerLoading),
                     awaitingData && "invisible",
                   )}
@@ -995,7 +995,7 @@ function ByAgentCard({
         );
       })}
       {showChatGptSharing ? (
-        <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-2.5 text-xs text-[var(--t3)]">
+        <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-2.5 text-xs text-[var(--houston)]">
           <span>ChatGPT shared usage</span>
           <ChatGptUsageButton size="xs" />
         </div>
@@ -1042,7 +1042,7 @@ function WhereCostGoesCard({ merged }: { readonly merged: MergedUsage }) {
                 style={{ backgroundColor: segment.color }}
               />
               <span className="flex-1 text-[var(--t2)]">{segment.label}</span>
-              <span className="w-12 text-right text-[var(--t3)] tabular-nums">{share}%</span>
+              <span className="w-12 text-right text-[var(--houston)] tabular-nums">{share}%</span>
               <span className="w-20 text-right text-[var(--t1)] tabular-nums">
                 {formatUsd(segment.value)}
               </span>
@@ -1051,7 +1051,7 @@ function WhereCostGoesCard({ merged }: { readonly merged: MergedUsage }) {
         })}
       </div>
       {speedUpgrade > 0 || cacheSavings > 0 ? (
-        <p className="border-t border-border pt-2 text-xs leading-4 text-[var(--t3)]">
+        <p className="border-t border-border pt-2 text-xs leading-4 text-[var(--houston)]">
           {speedUpgrade > 0 ? `Fast mode added ${formatUsd(speedUpgrade)}.` : ""}
           {speedUpgrade > 0 && cacheSavings > 0 ? " " : ""}
           {cacheSavings > 0
@@ -1085,7 +1085,7 @@ function UsageSourceFootnote({
   }
   if (sources.size === 0) return null;
   return (
-    <p className="px-1 text-xs leading-4 text-[var(--t3)]">
+    <p className="px-1 text-xs leading-4 text-[var(--houston)]">
       Read from{" "}
       {[...sources.values()]
         .sort((left, right) => left.path.localeCompare(right.path))

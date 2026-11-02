@@ -98,7 +98,7 @@ const addCrew = (runId: number, threadId: string, parent: ThreadId, startedAt: s
       providerInstanceId: "claudeAgent",
       requestedInstanceId: null,
       worktreePath: `/worktrees/${threadId}`,
-      branch: `t3/${threadId}`,
+      branch: `houston/${threadId}`,
       startedAt,
       endedAt: null,
     }),

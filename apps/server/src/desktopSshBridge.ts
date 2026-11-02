@@ -19,7 +19,7 @@ import { SshPasswordPromptError } from "@houston-app/ssh/errors";
 import {
   resolveLoopbackSshHttpBaseUrl,
   SshEnvironmentManager,
-  type RemoteT3RunnerOptions,
+  type RemoteHoustonRunnerOptions,
 } from "@houston-app/ssh/tunnel";
 import * as NetService from "@houston-app/shared/Net";
 import * as Data from "effect/Data";
@@ -72,7 +72,7 @@ function writeMessage(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
-function runnerOptions(): RemoteT3RunnerOptions {
+function runnerOptions(): RemoteHoustonRunnerOptions {
   const devRemoteEntry = process.env.HOUSTON_DEV_REMOTE_SERVER_ENTRY_PATH?.trim();
   if (devRemoteEntry) {
     return {

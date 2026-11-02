@@ -366,7 +366,7 @@ function ToastBodyContent({
           {leadingIcon}
         </div>
         <Toast.Title className="min-w-0 flex-1 truncate font-medium" />
-        <Toast.Description className="flex shrink-0 items-center gap-2 text-(--t3)" />
+        <Toast.Description className="flex shrink-0 items-center gap-2 text-(--houston)" />
       </div>
     );
   }

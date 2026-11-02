@@ -222,7 +222,7 @@ export class VcsStatusBroadcaster extends Context.Service<
       input: VcsStatusSubscriptionInput,
     ) => Stream.Stream<VcsStatusStreamEvent, GitManagerServiceError>;
   }
->()("houston/vcs/VcsStatusBroadcaster") {}
+>()("@houston-app/cli/vcs/VcsStatusBroadcaster") {}
 
 function fingerprintStatusPart(status: unknown): string {
   return JSON.stringify(status);

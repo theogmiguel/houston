@@ -120,7 +120,7 @@ export function ProjectFileTree({
             )}
             style={{ paddingLeft: 8 + depth * 14 }}
           >
-            <span className="flex w-[13px] shrink-0 items-center justify-center text-[var(--t3)]">
+            <span className="flex w-[13px] shrink-0 items-center justify-center text-[var(--houston)]">
               {directory ? (
                 isExpanded ? (
                   <ChevronDown className="size-[13px]" strokeWidth={1.7} aria-hidden />

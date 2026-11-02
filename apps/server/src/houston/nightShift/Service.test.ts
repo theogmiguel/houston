@@ -225,7 +225,7 @@ describe("night shift service", () => {
           yield* db`INSERT INTO houston_night_entries (run_id, project_id, kind, title, created_at)
             VALUES (${runQ.runId}, ${projectQ}, 'lesson', 'Q lesson', 'now')`;
           yield* db`INSERT INTO houston_night_pushes (run_id, branch, new_sha, at)
-            VALUES (${runP.runId}, 't3/p', 'abc', 'now')`;
+            VALUES (${runP.runId}, 'houston/p', 'abc', 'now')`;
 
           const taskP = (yield* nightTask(projectP))!;
           yield* night.delete({ projectId: projectP });

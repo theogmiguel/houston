@@ -18,7 +18,7 @@ use super::platform::{
 pub const HYPRLAND_CAPTURE_EXECUTABLE: &str = "houston-hyprland-snap-shot";
 /// Written by earlier releases; moved once when the current helper is absent.
 const LEGACY_HELPER_DIR: &str = "t3code";
-const LEGACY_HELPER: &str = "t3-hyprland-snap-shot";
+const LEGACY_HELPER: &str = "houston-hyprland-snap-shot";
 const RUN_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Debug, Clone, Serialize)]

@@ -172,17 +172,21 @@ function desktopToken(secret: string): string {
   // oxlint-disable-next-line houston/no-wall-clock-in-tests -- the server checks the credential against its own clock.
   const window = Math.floor(Date.now() / WINDOW_MS);
   return NodeCrypto.createHmac("sha256", secret)
-    .update(`t3-desktop-bootstrap:${window}`)
+    .update(`houston-desktop-bootstrap:${window}`)
     .digest("hex");
 }
 
-function envelope(port: number, t3Home: string | undefined, extra: Record<string, unknown> = {}) {
+function envelope(
+  port: number,
+  houstonHome: string | undefined,
+  extra: Record<string, unknown> = {},
+) {
   const secret = `secret-${port}`;
   return {
     mode: "desktop",
     noBrowser: true,
     port,
-    ...(t3Home === undefined ? {} : { t3Home }),
+    ...(houstonHome === undefined ? {} : { houstonHome }),
     host: "127.0.0.1",
     desktopBootstrapToken: desktopToken(secret),
     desktopBootstrapSecret: secret,
@@ -234,7 +238,7 @@ const lines = (server: Server) => server.output.join("").split(/\r?\n/);
 
 async function environmentStatus(port: number): Promise<number | undefined> {
   try {
-    const response = await fetch(`http://127.0.0.1:${port}/.well-known/t3/environment`, {
+    const response = await fetch(`http://127.0.0.1:${port}/.well-known/houston/environment`, {
       signal: AbortSignal.timeout(3_000),
     });
     await response.arrayBuffer();
@@ -251,7 +255,7 @@ function exchangeCredential(port: number, credential: string): Promise<Response>
     body: new URLSearchParams({
       grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
       subject_token: credential,
-      subject_token_type: "urn:t3:params:oauth:token-type:environment-bootstrap",
+      subject_token_type: "urn:houston:params:oauth:token-type:environment-bootstrap",
       requested_token_type: "urn:ietf:params:oauth:token-type:access_token",
       client_label: "Houston",
       client_device_type: "desktop",
@@ -307,7 +311,7 @@ async function readRecord(base: string) {
 
 describe("houston server entrypoint", () => {
   it(
-    "a run keeps v1 files and creates no .t3",
+    "a run keeps v1 files and creates no .houston",
     async () => {
       const root = makeSandbox();
       const channel = NodePath.join(root, ".houston-dev");
@@ -328,25 +332,25 @@ describe("houston server entrypoint", () => {
         true,
       );
       expect(NodeFS.readdirSync(channel).toSorted()).toEqual(["daemon.json", "v2"]);
-      expect(NodeFS.existsSync(NodePath.join(root, ".t3"))).toBe(false);
+      expect(NodeFS.existsSync(NodePath.join(root, ".houston"))).toBe(false);
     },
     TEST_TIMEOUT_MS,
   );
 
   it(
-    "a hosted start without t3Home exits 64",
+    "a hosted start without houstonHome exits 64",
     async () => {
       await Promise.all(
-        ["", "   ", undefined].map(async (t3Home) => {
+        ["", "   ", undefined].map(async (houstonHome) => {
           const root = makeSandbox();
           const port = await freePort();
           const server = spawnServer({
             env: sandboxEnv(root),
-            envelope: envelope(port, t3Home),
+            envelope: envelope(port, houstonHome),
           });
-          expect(await exitCode(server), `t3Home ${JSON.stringify(t3Home)}`).toBe(64);
-          expect(server.output.join("")).toContain("t3Home");
-          expect(NodeFS.existsSync(NodePath.join(root, ".t3"))).toBe(false);
+          expect(await exitCode(server), `houstonHome ${JSON.stringify(houstonHome)}`).toBe(64);
+          expect(server.output.join("")).toContain("houstonHome");
+          expect(NodeFS.existsSync(NodePath.join(root, ".houston"))).toBe(false);
         }),
       );
     },
@@ -396,7 +400,7 @@ describe("houston server entrypoint", () => {
           if ("warns" in row) {
             expect(warnings, `${row.name}\n${server.output.join("")}`).toHaveLength(1);
             expect(warnings[0]).toContain(row.warns);
-            expect(warnings[0]).toContain("t3Home");
+            expect(warnings[0]).toContain("houstonHome");
           } else {
             expect(warnings, row.name).toEqual([]);
           }

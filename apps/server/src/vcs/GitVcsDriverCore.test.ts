@@ -1371,7 +1371,12 @@ it.effect("lets a worktree checkout that is still working run past five minutes"
     const worktreePath = path.join(cwd, "worktree");
 
     const creation = yield* driver
-      .createWorktree({ cwd, refName: "main", newRefName: "t3/slow-checkout", path: worktreePath })
+      .createWorktree({
+        cwd,
+        refName: "main",
+        newRefName: "houston/slow-checkout",
+        path: worktreePath,
+      })
       .pipe(Effect.forkChild);
     yield* Deferred.await(checkoutStarted);
     yield* TestClock.adjust("6 minutes");
@@ -1379,7 +1384,7 @@ it.effect("lets a worktree checkout that is still working run past five minutes"
 
     const result = yield* Fiber.join(creation);
     assert.equal(result.worktree.path, worktreePath);
-    assert.equal(result.worktree.refName, "t3/slow-checkout");
+    assert.equal(result.worktree.refName, "houston/slow-checkout");
   }).pipe(Effect.provide(layerServerConfig.pipe(Layer.provideMerge(NodeServices.layer)))),
 );
 
@@ -3940,19 +3945,19 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const cwd = yield* makeTmpDir();
         yield* initRepoWithCommit(cwd);
         const driver = yield* GitVcsDriver.GitVcsDriver;
-        // A local `t3` branch is why launches start on the flat `t3-<hex>` temporary branch.
-        yield* git(cwd, ["branch", "t3"]);
-        yield* git(cwd, ["checkout", "-b", "t3-abcd1234"]);
-        yield* git(cwd, ["branch", "t3-fix-login"]);
+        // A local `houston` branch is why launches start on the flat `houston-<hex>` temporary branch.
+        yield* git(cwd, ["branch", "houston"]);
+        yield* git(cwd, ["checkout", "-b", "houston-abcd1234"]);
+        yield* git(cwd, ["branch", "houston-fix-login"]);
 
         const renamed = yield* driver.renameBranch({
           cwd,
-          oldBranch: "t3-abcd1234",
-          newBranch: "t3/fix-login",
+          oldBranch: "houston-abcd1234",
+          newBranch: "houston/fix-login",
         });
 
-        assert.equal(renamed.branch, "t3-fix-login-1");
-        assert.equal(yield* git(cwd, ["branch", "--show-current"]), "t3-fix-login-1");
+        assert.equal(renamed.branch, "houston-fix-login-1");
+        assert.equal(yield* git(cwd, ["branch", "--show-current"]), "houston-fix-login-1");
       }),
     );
 
@@ -3961,18 +3966,18 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const cwd = yield* makeTmpDir();
         yield* initRepoWithCommit(cwd);
         const driver = yield* GitVcsDriver.GitVcsDriver;
-        yield* git(cwd, ["branch", "t3"]);
-        yield* git(cwd, ["checkout", "-b", "t3-abcd1234"]);
-        yield* git(cwd, ["branch", "t3-fix-login/child"]);
+        yield* git(cwd, ["branch", "houston"]);
+        yield* git(cwd, ["checkout", "-b", "houston-abcd1234"]);
+        yield* git(cwd, ["branch", "houston-fix-login/child"]);
 
         const renamed = yield* driver.renameBranch({
           cwd,
-          oldBranch: "t3-abcd1234",
-          newBranch: "t3/fix-login",
+          oldBranch: "houston-abcd1234",
+          newBranch: "houston/fix-login",
         });
 
-        assert.equal(renamed.branch, "t3-fix-login-1");
-        assert.equal(yield* git(cwd, ["branch", "--show-current"]), "t3-fix-login-1");
+        assert.equal(renamed.branch, "houston-fix-login-1");
+        assert.equal(yield* git(cwd, ["branch", "--show-current"]), "houston-fix-login-1");
       }),
     );
 
@@ -4986,17 +4991,17 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const lockPath = path.join(cwd, ".git", "config.lock");
         yield* fileSystem.writeFileString(lockPath, "");
         const { driver, failures } = yield* makeDriverReleasingLock(
-          (args) => args[1] === "t3.test",
+          (args) => args[1] === "houston.test",
           lockPath,
         );
 
         // The retry waits on the real clock; the lock is already gone by then.
         yield* TestClock.withLive(
-          driver.writeConfigValue({ cwd, key: "t3.test", value: "written" }),
+          driver.writeConfigValue({ cwd, key: "houston.test", value: "written" }),
         );
 
         assert.equal(yield* Ref.get(failures), 1);
-        assert.equal(yield* git(cwd, ["config", "t3.test"]), "written");
+        assert.equal(yield* git(cwd, ["config", "houston.test"]), "written");
       }),
     );
 

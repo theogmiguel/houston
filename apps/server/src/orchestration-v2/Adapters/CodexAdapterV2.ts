@@ -748,7 +748,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
     readonly codexInput: ReadonlyArray<CodexSchema.V2TurnStartParams__UserInput>;
     readonly runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
     readonly modelSelection: ModelSelection;
-    readonly hasT3Mcp?: boolean;
+    readonly hasHoustonMcp?: boolean;
     readonly browserToolsAvailable?: boolean;
     readonly deviceToolsAvailable?: boolean;
     /** ChatGPT token sharing does not accept service tiers. */
@@ -781,7 +781,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
       ]),
     );
     const houstonContext =
-      input.hasT3Mcp === true
+      input.hasHoustonMcp === true
         ? buildCodexAdditionalContext(
             { model: input.modelSelection.model, reasoningEffort: effort ?? undefined },
             {
@@ -1329,7 +1329,7 @@ export interface CodexAppServerClientFactoryShape {
 export class CodexAppServerClientFactory extends Context.Service<
   CodexAppServerClientFactory,
   CodexAppServerClientFactoryShape
->()("houston/orchestration-v2/Adapters/CodexAdapterV2/CodexAppServerClientFactory") {}
+>()("@houston-app/cli/orchestration-v2/Adapters/CodexAdapterV2/CodexAppServerClientFactory") {}
 
 /** MCP startup grace in milliseconds; the 1 s default excludes cold npx/uvx servers from the first model request. */
 export const CODEX_THREAD_CONFIG = {
@@ -6737,7 +6737,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               codexInput,
               runtimePolicy: turnInput.runtimePolicy,
               modelSelection: turnInput.modelSelection,
-              hasT3Mcp: mcpSession !== undefined,
+              hasHoustonMcp: mcpSession !== undefined,
               browserToolsAvailable: mcpSession?.browserToolsAvailable ?? true,
               deviceToolsAvailable: mcpSession?.capabilities?.has("device") ?? false,
               omitServiceTier: adapterOptions.resolveRuntime !== undefined,

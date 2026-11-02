@@ -99,7 +99,7 @@ export class DatabaseMaintenance extends Context.Service<
       databasePath: string,
     ) => Effect.Effect<void, DatabaseInUseError | LegacyDatabaseRemoveError>;
   }
->()("houston/persistence/DatabaseMaintenance") {}
+>()("@houston-app/cli/persistence/DatabaseMaintenance") {}
 
 const isDomainError = Schema.is(
   Schema.Union([DatabaseMissingError, DatabaseInUseError, DatabaseProjectionsInvalidError]),

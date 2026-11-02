@@ -189,7 +189,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
         };
         const child: OrchestrationV2ThreadShell = {
           ...threadShell("child-thread"),
-          branch: "t3/reply-ok",
+          branch: "houston/reply-ok",
           worktreePath: "/workspace/child",
           lineage: {
             rootThreadId: parent.id,

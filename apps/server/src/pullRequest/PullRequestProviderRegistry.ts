@@ -12,7 +12,7 @@ export class PullRequestProviderRegistry extends Context.Service<
     readonly get: (kind: SourceControlProviderKind) => PullRequestProviderApi | null;
     readonly kinds: ReadonlyArray<SourceControlProviderKind>;
   }
->()("houston/pullRequest/PullRequestProviderRegistry") {}
+>()("@houston-app/cli/pullRequest/PullRequestProviderRegistry") {}
 
 export function fromProviders(
   providers: ReadonlyArray<PullRequestProviderApi>,

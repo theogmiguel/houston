@@ -29,7 +29,7 @@ export class NativeAppIconResolver extends Context.Service<
   {
     readonly resolve: (app: ToolActivityNativeAppReference) => Effect.Effect<string | null>;
   }
->()("houston/assets/NativeAppIconResolver") {}
+>()("@houston-app/cli/assets/NativeAppIconResolver") {}
 
 function appCacheKey(app: ToolActivityNativeAppReference): string {
   return JSON.stringify(app);

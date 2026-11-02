@@ -57,7 +57,7 @@ export class ProjectEnrichmentService extends Context.Service<
       Scope.Scope
     >;
   }
->()("houston/project/ProjectEnrichmentService") {}
+>()("@houston-app/cli/project/ProjectEnrichmentService") {}
 
 function availableValue<A, E>(cached: Option.Option<Exit.Exit<A, E>>): A | null {
   return Option.match(cached, {

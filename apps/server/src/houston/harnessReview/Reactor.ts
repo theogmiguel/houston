@@ -65,7 +65,7 @@ export class HarnessReviewReactor extends Context.Service<
     /** Settles every open review against the stored runs, as the server does on start. */
     readonly recover: Effect.Effect<void>;
   }
->()("houston/houston/harnessReview/Reactor/HarnessReviewReactor") {}
+>()("@houston-app/cli/houston/harnessReview/Reactor/HarnessReviewReactor") {}
 
 const make = Effect.gen(function* () {
   const store = yield* HoustonHarnessStore;

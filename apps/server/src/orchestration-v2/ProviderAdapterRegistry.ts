@@ -57,7 +57,7 @@ export interface ProviderAdapterRegistryV2Shape {
 export class ProviderAdapterRegistryV2 extends Context.Service<
   ProviderAdapterRegistryV2,
   ProviderAdapterRegistryV2Shape
->()("houston/orchestration-v2/ProviderAdapterRegistry/ProviderAdapterRegistryV2") {}
+>()("@houston-app/cli/orchestration-v2/ProviderAdapterRegistry/ProviderAdapterRegistryV2") {}
 
 export const layerFromProviderInstanceRegistry: Layer.Layer<
   ProviderAdapterRegistryV2,

@@ -33,7 +33,7 @@ export class ServiceLauncherClientError extends Schema.TaggedError<ServiceLaunch
       case "decode-context":
         return "The service launcher supplied invalid startup context.";
       case "version-mismatch":
-        return "The service launcher started a different t3 version.";
+        return "The service launcher started a different houston version.";
       case "unmanaged":
         return "This server is not managed by the launcher.";
       case "send":
@@ -106,7 +106,7 @@ export class ServiceLauncherClient extends Context.Service<
       ServiceLauncherClientError
     >;
   }
->()("houston/cloud/serviceLauncherClient") {}
+>()("@houston-app/cli/cloud/serviceLauncherClient") {}
 
 const resolveStartup = Effect.fn("cloud.service_launcher_client.resolve_startup")(
   function* (options?: { readonly currentVersion?: string }) {

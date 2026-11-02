@@ -5,7 +5,7 @@ import { ThreadEnvMode, WorktreeSubmodules } from "./environment.ts";
 import { ProjectScriptIcon } from "./project.ts";
 import type { ProjectScopedServerSettingKey, ServerSettings } from "./settings.ts";
 
-export const T3_PROJECT_FILE_NAME = "houston.json";
+export const HOUSTON_PROJECT_FILE_NAME = "houston.json";
 
 export const HOUSTON_PROJECT_FILE_SCHEMA_URL = "https://example.com/schema/houston.json";
 
@@ -22,7 +22,7 @@ const trimmedNonEmpty = (annotations: { readonly description: string }, maxLengt
   return encoded.pipe(Schema.decodeTo(encoded, SchemaTransformation.trim()));
 };
 
-export const T3ProjectFileScript = Schema.Struct({
+export const HoustonProjectFileScript = Schema.Struct({
   name: trimmedNonEmpty({
     description: "Display name for the script, shown in the Houston scripts menu.",
   }),
@@ -67,9 +67,9 @@ export const T3ProjectFileScript = Schema.Struct({
 }).annotate({
   description: "A project script that team members can import into Houston.",
 });
-export type T3ProjectFileScript = typeof T3ProjectFileScript.Type;
+export type HoustonProjectFileScript = typeof HoustonProjectFileScript.Type;
 
-export const T3ProjectFile = Schema.Struct({
+export const HoustonProjectFile = Schema.Struct({
   $schema: Schema.optionalKey(
     Schema.String.annotate({
       description: `URL of the JSON Schema for this file, typically "${HOUSTON_PROJECT_FILE_SCHEMA_URL}".`,
@@ -97,7 +97,7 @@ export const T3ProjectFile = Schema.Struct({
     }),
   ),
   scripts: Schema.optionalKey(
-    Schema.Array(T3ProjectFileScript)
+    Schema.Array(HoustonProjectFileScript)
       .annotate({
         description: "Project scripts shared with everyone who opens this repository in Houston.",
       })
@@ -108,7 +108,7 @@ export const T3ProjectFile = Schema.Struct({
   description:
     "Checked-in project configuration for Houston (houston.json at the repository root). See https://github.com/theogmiguel/houston for documentation.",
 });
-export type T3ProjectFile = typeof T3ProjectFile.Type;
+export type HoustonProjectFile = typeof HoustonProjectFile.Type;
 
 /** Keys must be nullable in ServerSettings so both environment and project overrides can inherit houston.json. */
 export const PROJECT_FILE_BACKED_SETTINGS = {
@@ -118,12 +118,12 @@ export const PROJECT_FILE_BACKED_SETTINGS = {
   // providerInstances overrides individual fields, so it cannot use whole-setting file inheritance.
   readonly [K in ProjectScopedServerSettingKey & keyof ServerSettings]?: {
     readonly field: {
-      readonly [F in keyof T3ProjectFile]: T3ProjectFile[F] extends
+      readonly [F in keyof HoustonProjectFile]: HoustonProjectFile[F] extends
         | Exclude<ServerSettings[K], null>
         | undefined
         ? F
         : never;
-    }[keyof T3ProjectFile];
+    }[keyof HoustonProjectFile];
     readonly builtIn: Exclude<ServerSettings[K], null>;
   };
 };

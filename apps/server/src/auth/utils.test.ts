@@ -135,7 +135,7 @@ describe("session cookie isolation", () => {
       mode: "web",
       port: 8080,
       host: "0.0.0.0",
-      instanceKey: "/srv/t3",
+      instanceKey: "/srv/houston",
       environmentId: "environment-one",
       development: false,
     });
@@ -143,7 +143,7 @@ describe("session cookie isolation", () => {
       mode: "web",
       port: 9090,
       host: "app.example.com",
-      instanceKey: "/srv/t3",
+      instanceKey: "/srv/houston",
       environmentId: "environment-one",
       development: false,
     });

@@ -100,6 +100,7 @@ describe("terminatePosixOwnedProcessTree", () => {
       const currentPidSibling = writeSibling(`houston-acp-${process.pid}-bbbb`, "0");
       const liveForeignSibling = writeSibling(`houston-acp-${liveForeignPid}-cccc`, "0");
       const stalePopulated = writeSibling(`houston-acp-${deadPid}-dddd`, "1");
+      const staleLegacyEmpty = writeSibling(`houston-acp-${deadPid}-ffff`, "0");
       const unrelated = writeSibling("other-lease", "0");
       const isProcessAlive = (pid: number) => pid === process.pid || pid === liveForeignPid;
       try {
@@ -112,6 +113,7 @@ describe("terminatePosixOwnedProcessTree", () => {
           },
         });
         expect(NodeFS.existsSync(staleEmpty)).toBe(false);
+        expect(NodeFS.existsSync(staleLegacyEmpty)).toBe(false);
         expect(NodeFS.existsSync(currentPidSibling)).toBe(true);
         expect(NodeFS.existsSync(liveForeignSibling)).toBe(true);
         expect(NodeFS.existsSync(stalePopulated)).toBe(true);

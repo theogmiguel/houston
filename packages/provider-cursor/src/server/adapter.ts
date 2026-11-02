@@ -52,7 +52,7 @@ import {
   hasCursorSkillMention,
   rewriteCursorSkillMentions,
 } from "./skills.ts";
-import { t3OrchestrationPrompt } from "@houston-app/provider-core/server/orchestrationInstructions";
+import { houstonOrchestrationPrompt } from "@houston-app/provider-core/server/orchestrationInstructions";
 import { buildRuntimeInstructions } from "@houston-app/provider-core/server/runtimeInstructions";
 import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
 import { makeProviderFailure } from "@houston-app/provider-core/server/failure";
@@ -2292,7 +2292,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                 .map((skill) => skill.name),
             );
           }
-          const userText = t3OrchestrationPrompt({
+          const userText = houstonOrchestrationPrompt({
             prompt: yield* providerMessageTextWithAttachmentPaths({
               text:
                 cursorSkillNames === undefined
@@ -2302,7 +2302,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               resolveAttachmentPath: host.resolveAttachmentPath,
               resolveExtractedTextPath: host.resolveExtractedTextPath,
             }),
-            hasT3Mcp: mcpServers !== undefined,
+            hasHoustonMcp: mcpServers !== undefined,
             hasDeviceTools,
             orchestrationDelivered: delivered.orchestration,
             deviceInstructionsDelivered: delivered.device,

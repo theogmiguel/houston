@@ -10,7 +10,7 @@ import {
   type ThreadContextRecord,
 } from "@houston-app/contracts";
 
-const CONTEXT_PROTOCOL = "t3-context:";
+const CONTEXT_PROTOCOL = "houston-context:";
 const COMPOSER_CONTEXT_HREF_PREFIX = `${CONTEXT_PROTOCOL}//v1/`;
 const CONTEXT_KIND_PATTERN = /^[a-z][a-z0-9-]{0,39}$/;
 const CONTEXT_ID_PATTERN = /^[a-z0-9_-]{1,128}$/i;
@@ -113,7 +113,7 @@ export function collectComposerContextReferences(
   text: string,
 ): ComposerContextReferenceOccurrence[] {
   const occurrences: ComposerContextReferenceOccurrence[] = [];
-  if (!text.includes("](t3-context:")) return occurrences;
+  if (!text.includes("](houston-context:")) return occurrences;
   for (const match of text.matchAll(CONTEXT_LINK)) {
     const parsed = parseComposerContextHref(match[3]!);
     if (!parsed) continue;

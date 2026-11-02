@@ -95,7 +95,7 @@ describe("houston/no-raw-mcp-registration", () => {
   rule.invalid(
     "reports McpServer.resource and McpServer.prompt",
     `
-      export const resource = McpServer.resource({ uri: "t3://x", name: "x", content: "x" });
+      export const resource = McpServer.resource({ uri: "houston://x", name: "x", content: "x" });
       export const prompt = McpServer.prompt({ name: "x", content: () => "x" });
     `,
   );

@@ -56,7 +56,7 @@ export function ComposerPendingAnnotationChips(props: {
             data-annotation-chip="citation"
             className="inline-flex h-6 max-w-[300px] items-center gap-1.5 rounded-(--r-ctl) border border-(--border) bg-(--field) ps-2 pe-0.5 text-xs text-(--t2)"
           >
-            <QuoteIcon aria-hidden="true" className="size-3 shrink-0 text-(--t3)" />
+            <QuoteIcon aria-hidden="true" className="size-3 shrink-0 text-(--houston)" />
             <button
               type="button"
               aria-label={`Edit citation comment: ${label}`}
@@ -68,7 +68,7 @@ export function ComposerPendingAnnotationChips(props: {
             <button
               type="button"
               aria-label="Remove citation"
-              className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-(--r-badge) text-(--t3) outline-none hover:bg-(--hover) hover:text-(--t1) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-(--r-badge) text-(--houston) outline-none hover:bg-(--hover) hover:text-(--t1) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
               onClick={() => props.onRemoveCitation(chip)}
             >
               <XIcon aria-hidden="true" className="size-3" />
@@ -84,12 +84,12 @@ export function ComposerPendingAnnotationChips(props: {
             data-annotation-chip="preview"
             className="inline-flex h-6 max-w-[300px] items-center gap-1.5 rounded-(--r-ctl) border border-(--border) bg-(--field) ps-2 pe-0.5 text-xs text-(--t2)"
           >
-            <ImageIcon aria-hidden="true" className="size-3 shrink-0 text-(--t3)" />
+            <ImageIcon aria-hidden="true" className="size-3 shrink-0 text-(--houston)" />
             <span className="min-w-0 truncate text-(--t1)">{label}</span>
             <button
               type="button"
               aria-label="Remove preview annotation"
-              className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-(--r-badge) text-(--t3) outline-none hover:bg-(--hover) hover:text-(--t1) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-(--r-badge) text-(--houston) outline-none hover:bg-(--hover) hover:text-(--t1) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
               onClick={() => props.onRemovePreviewAnnotation(chip)}
             >
               <XIcon aria-hidden="true" className="size-3" />

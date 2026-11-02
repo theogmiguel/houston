@@ -322,7 +322,7 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
           <BackgroundWorktreeSetupChip snapshot={backgroundWorktreeSetup} />
         ) : null}
         {!shimmer && !compacting && !isPreparingWorktree ? (
-          <span className="text-callout text-(--t3)">Esc to interrupt</span>
+          <span className="text-callout text-(--houston)">Esc to interrupt</span>
         ) : null}
       </div>
     </div>
@@ -542,7 +542,7 @@ export function LiveWorkEntryTimelineRow({
       {thoughtLine ? (
         <WorkLogRow
           icon={
-            <span className="flex size-3.5 items-center justify-center text-(--t3)">
+            <span className="flex size-3.5 items-center justify-center text-(--houston)">
               <ToolActivityIconView
                 icon={undefined}
                 fallbackName="brain"
@@ -637,9 +637,9 @@ function WorkGroupHeader(props: {
       onClick={props.onToggle}
       icon={
         props.expanded ? (
-          <ChevronDownIcon aria-hidden className="size-3.5 shrink-0 text-(--t3)" />
+          <ChevronDownIcon aria-hidden className="size-3.5 shrink-0 text-(--houston)" />
         ) : (
-          <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 text-(--t3)" />
+          <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 text-(--houston)" />
         )
       }
       label={<span className="block truncate text-body text-(--t2)">{props.label}</span>}

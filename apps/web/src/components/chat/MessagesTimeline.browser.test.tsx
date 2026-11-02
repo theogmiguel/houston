@@ -496,22 +496,22 @@ describe("MessagesTimeline messages", () => {
 
   it("renders unsafe user HTML as inert source text", async () => {
     const source =
-      '<script>globalThis.__t3Xss = 1</script><img src="x" onerror="globalThis.__t3Xss = 2">';
+      '<script>globalThis.__houstonXss = 1</script><img src="x" onerror="globalThis.__houstonXss = 2">';
     await using screen = await renderTimeline([message(source)]);
     expect(screen.text()).toContain(source);
     expect(screen.container.querySelector("script, img")).toBeNull();
-    expect((globalThis as { __t3Xss?: number }).__t3Xss).toBeUndefined();
+    expect((globalThis as { __houstonXss?: number }).__houstonXss).toBeUndefined();
   });
 
   it("renders sanitized raw HTML in assistant messages", async () => {
     await using screen = await renderTimeline([
       message(
         [
-          '<details onclick="globalThis.__t3Xss = 1">',
+          '<details onclick="globalThis.__houstonXss = 1">',
           "<summary>Safe details</summary>",
-          "<script>globalThis.__t3Xss = 2</script>",
-          '<img src="x" onerror="globalThis.__t3Xss = 3">',
-          '<a href="javascript:globalThis.__t3Xss = 4">Unsafe link</a>',
+          "<script>globalThis.__houstonXss = 2</script>",
+          '<img src="x" onerror="globalThis.__houstonXss = 3">',
+          '<a href="javascript:globalThis.__houstonXss = 4">Unsafe link</a>',
           "</details>",
         ].join(""),
         { role: "assistant" },
@@ -524,7 +524,7 @@ describe("MessagesTimeline messages", () => {
     expect(screen.container.querySelector("script, [onclick], [onerror]")).toBeNull();
     expect(screen.container.innerHTML).not.toContain("javascript:");
     await click(screen.button("Safe details"));
-    expect((globalThis as { __t3Xss?: number }).__t3Xss).toBeUndefined();
+    expect((globalThis as { __houstonXss?: number }).__houstonXss).toBeUndefined();
   });
 });
 

@@ -43,7 +43,7 @@ export class ThreadTitleRegenerationService extends Context.Service<
       | ThreadManagementService.ThreadManagementProviderInstanceDisabledError
     >;
   }
->()("houston/orchestration-v2/ThreadTitleRegenerationService") {}
+>()("@houston-app/cli/orchestration-v2/ThreadTitleRegenerationService") {}
 
 const make = Effect.gen(function* () {
   const threads = yield* ThreadManagementService.ThreadManagementService;

@@ -215,7 +215,7 @@ function startServer() {
       mode: "desktop",
       noBrowser: true,
       port,
-      t3Home: home,
+      houstonHome: home,
       host: "127.0.0.1",
       desktopBootstrapToken: bootstrap,
       tailscaleServeEnabled: false,
@@ -252,7 +252,7 @@ try {
     body: new URLSearchParams({
       grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
       subject_token: bootstrap,
-      subject_token_type: "urn:t3:params:oauth:token-type:environment-bootstrap",
+      subject_token_type: "urn:houston:params:oauth:token-type:environment-bootstrap",
       requested_token_type: "urn:ietf:params:oauth:token-type:access_token",
     }),
   });

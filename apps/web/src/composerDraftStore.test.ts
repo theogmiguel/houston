@@ -705,7 +705,7 @@ describe("composerDraftStore context persistence", () => {
     store.addTerminalContexts(threadRef, [terminal]);
     store.addPreviewAnnotation(threadRef, annotation);
     const terminalLink = formatTerminalContextReference(terminal);
-    const prompt = `Inspect ${terminalLink}. Apply [Retry note](t3-context://v1/preview-annotation/preview-annotation_retry-note). Compare ${terminalLink} again.`;
+    const prompt = `Inspect ${terminalLink}. Apply [Retry note](houston-context://v1/preview-annotation/preview-annotation_retry-note). Compare ${terminalLink} again.`;
     store.setPrompt(threadRef, prompt);
     let state = useComposerDraftStore.getState();
     const merge = useComposerDraftStore.persist.getOptions().merge!;
@@ -743,7 +743,7 @@ describe("composerDraftStore thread contexts", () => {
     expect(draft?.threadContexts).toEqual([attached]);
     expect(attached.label).toBe("Fix login flow");
     expect(draft?.prompt).toBe(
-      `Compare with [${attached.label}](t3-context://v1/thread/${attached.contextId}) `,
+      `Compare with [${attached.label}](houston-context://v1/thread/${attached.contextId}) `,
     );
 
     const merge = useComposerDraftStore.persist.getOptions().merge!;
@@ -777,7 +777,7 @@ describe("composerDraftStore environment contexts", () => {
     expect(draft?.environmentContexts).toEqual([vps]);
     expect(vps.label).toBe("Hetzner vps");
     expect(draft?.prompt).toBe(
-      `Run it on [${vps.label}](t3-context://v1/environment/${vps.contextId}) `,
+      `Run it on [${vps.label}](houston-context://v1/environment/${vps.contextId}) `,
     );
 
     const merge = useComposerDraftStore.persist.getOptions().merge!;
@@ -2229,7 +2229,7 @@ describe("composerDraftStore inline context references", () => {
     text: "Why?",
     diff: "const x = 1;",
   };
-  const reviewLink = "[b.ts L4](t3-context://v1/review-comment/review-comment_rc-1)";
+  const reviewLink = "[b.ts L4](houston-context://v1/review-comment/review-comment_rc-1)";
   const annotation = {
     id: "ann-1",
     pageUrl: "http://localhost:3000/",
@@ -2242,7 +2242,8 @@ describe("composerDraftStore inline context references", () => {
     screenshot: null,
     createdAt: "2026-01-01T00:00:00.000Z",
   };
-  const annotationLink = "[Bigger](t3-context://v1/preview-annotation/preview-annotation_ann-1)";
+  const annotationLink =
+    "[Bigger](houston-context://v1/preview-annotation/preview-annotation_ann-1)";
 
   beforeEach(() => {
     resetComposerDraftStore();
@@ -2288,7 +2289,7 @@ describe("composerDraftStore inline context references", () => {
     store.setContextInsertionHandler(threadRef, null);
     store.addReviewComment(threadRef, { ...reviewComment, id: "rc-2" });
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe(
-      "look [b.ts L4](t3-context://v1/review-comment/review-comment_rc-2) ",
+      "look [b.ts L4](houston-context://v1/review-comment/review-comment_rc-2) ",
     );
   });
 
@@ -2302,7 +2303,7 @@ describe("composerDraftStore inline context references", () => {
         .getState()
         .setPrompt(
           threadRef,
-          `before [${reference.label}](t3-context://v1/${reference.kind}/${reference.contextId}) after`,
+          `before [${reference.label}](houston-context://v1/${reference.kind}/${reference.contextId}) after`,
         );
       return true;
     });
@@ -2330,8 +2331,8 @@ describe("composerDraftStore inline context references", () => {
 describe("composerDraftStore attachment references", () => {
   const threadId = ThreadId.make("thread-attachment-refs");
   const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
-  const fileLink = "[notes.txt](t3-context://v1/file/file_file-1)";
-  const imageLink = "[shot.png](t3-context://v1/image/image_img-1)";
+  const fileLink = "[notes.txt](houston-context://v1/file/file_file-1)";
+  const imageLink = "[shot.png](houston-context://v1/image/image_img-1)";
 
   beforeEach(() => {
     resetComposerDraftStore();
@@ -2386,7 +2387,7 @@ describe("composerDraftStore attachment references", () => {
 
   it("moves a needs-reattach marker's chip to the re-picked file", () => {
     const store = useComposerDraftStore.getState();
-    store.setPrompt(threadRef, "see [notes.txt](t3-context://v1/file/file_marker-1) ok");
+    store.setPrompt(threadRef, "see [notes.txt](houston-context://v1/file/file_marker-1) ok");
     store.addFiles(threadRef, [
       {
         type: "file",
@@ -2410,7 +2411,7 @@ describe("composerDraftStore attachment references", () => {
     const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
     expect(acceptedIds).toEqual([]);
     expect(draft?.files.map((file) => file.id)).toEqual(["fresh-1"]);
-    expect(draft?.prompt).toBe("see [notes.txt](t3-context://v1/file/file_fresh-1) ok");
+    expect(draft?.prompt).toBe("see [notes.txt](houston-context://v1/file/file_fresh-1) ok");
   });
 
   it.each(["old.file:1", "file-1"])(
@@ -2420,7 +2421,7 @@ describe("composerDraftStore attachment references", () => {
         {
           draftsByThreadKey: {
             [threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]: {
-              prompt: `before [notes.txt](t3-context://v1/file/${id}) after`,
+              prompt: `before [notes.txt](houston-context://v1/file/${id}) after`,
               attachments: [],
               files: [{ id, name: "notes.txt", mimeType: "text/plain", sizeBytes: 3 }],
             },
@@ -2430,7 +2431,7 @@ describe("composerDraftStore attachment references", () => {
       );
       useComposerDraftStore.setState(merged);
       const draft = draftFor(threadId, TEST_ENVIRONMENT_ID)!;
-      expect(draft.prompt.match(/t3-context:/g)).toHaveLength(1);
+      expect(draft.prompt.match(/houston-context:/g)).toHaveLength(1);
       expect(draft.prompt).not.toContain(`/file/${id})`);
       useComposerDraftStore.getState().removeFile(threadRef, id);
       expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("before after");
@@ -2468,7 +2469,7 @@ describe("composerDraftStore attachment references", () => {
       {
         draftsByThreadKey: {
           [threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]: {
-            prompt: "see ![shot.png](t3-context://v1/image/img-1) after",
+            prompt: "see ![shot.png](houston-context://v1/image/img-1) after",
             attachments: [
               {
                 id: "img-1",
@@ -2484,13 +2485,13 @@ describe("composerDraftStore attachment references", () => {
       useComposerDraftStore.getInitialState(),
     );
     expect(merged.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.prompt).toBe(
-      "see ![shot.png](t3-context://v1/image/image_img-1) after",
+      "see ![shot.png](houston-context://v1/image/image_img-1) after",
     );
   });
 
   it("preserves canonical references when another producer ID matches their namespace", () => {
     const prompt =
-      "![x.png](t3-context://v1/image/image_x) ![image_x.png](t3-context://v1/image/image_image_x)";
+      "![x.png](houston-context://v1/image/image_x) ![image_x.png](houston-context://v1/image/image_image_x)";
     const merged = useComposerDraftStore.persist.getOptions().merge!(
       {
         draftsByThreadKey: {

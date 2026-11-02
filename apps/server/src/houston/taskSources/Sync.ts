@@ -78,7 +78,7 @@ export class HoustonTaskSourceSync extends Context.Service<
       input: HoustonTaskSourceConflictResolveInput,
     ) => Effect.Effect<HoustonTaskSourceLink, HoustonTaskSourceError>;
   }
->()("houston/houston/taskSources/Sync/HoustonTaskSourceSync") {}
+>()("@houston-app/cli/houston/taskSources/Sync/HoustonTaskSourceSync") {}
 
 const encodeBody = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const bodyHash = (record: RemoteRecord) =>

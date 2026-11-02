@@ -155,7 +155,7 @@ describe("Muse SDK host", () => {
         require("node:readline").createInterface({ input: process.stdin }).on("line", async line => {
           const frame = JSON.parse(line);
           if (!("id" in frame)) return;
-          let result = { schema: { version: 1, fingerprint: "t3-native-fixture" }, grantedCapabilities: [] };
+          let result = { schema: { version: 1, fingerprint: "houston-native-fixture" }, grantedCapabilities: [] };
           if (frame.method === "fixture/exit") {
             const holder = spawn(process.execPath, ["-e", ${JSON.stringify(holderSource)}], {
               detached: true, stdio: ["ignore", 1, 2, "ipc"]

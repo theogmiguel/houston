@@ -21,17 +21,17 @@ describe("findProjectForChangeRequest", () => {
   it("matches a nested GitLab group by the whole path below the host", () => {
     const projects = [
       project({
-        canonicalKey: "gitlab.com/t3tools/platform/houston",
+        canonicalKey: "gitlab.com/houston/platform/houston",
         provider: SourceControlProviderKind.make("gitlab"),
-        displayName: "t3tools/platform/houston",
-        owner: "t3tools",
+        displayName: "houston/platform/houston",
+        owner: "houston",
         name: "houston",
       }),
     ];
     expect(
       findProjectForChangeRequest(projects, {
         host: "gitlab.com",
-        repository: "t3tools/platform/houston",
+        repository: "houston/platform/houston",
         number: 42,
       }),
     ).toBe(projects[0]);

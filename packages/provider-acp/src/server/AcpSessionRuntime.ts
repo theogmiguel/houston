@@ -316,7 +316,8 @@ export function resolveLinuxCgroupTargetCommand(
   return undefined;
 }
 
-const STALE_ACP_CGROUP_SIBLING = /^houston-acp-(\d+)-/;
+// Leases created before the `houston-acp-` prefix carry `houston-acp-`; a crash can leave either behind.
+const STALE_ACP_CGROUP_SIBLING = /^(?:houston|houston)-acp-(\d+)-/;
 
 export interface SweepStaleLinuxCgroupSiblingsOptions {
   readonly currentPid?: number;
@@ -1898,7 +1899,8 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
       meta !== null &&
       typeof meta === "object" &&
       !Array.isArray(meta) &&
-      (meta as { readonly t3SessionLoadReady?: unknown }).t3SessionLoadReady === "replay_idle";
+      (meta as { readonly houstonSessionLoadReady?: unknown }).houstonSessionLoadReady ===
+        "replay_idle";
     const extractedModelConfigId = extractModelConfigId(sessionSetupResult);
     const nextModelConfigId =
       extractedModelConfigId ?? (syntheticReplayIdle ? current.modelConfigId : undefined);

@@ -17,7 +17,7 @@ export class RemoteOpenTargets extends Context.Service<
   {
     readonly resolveTargets: () => Effect.Effect<ReadonlyArray<RemoteOpenTarget>>;
   }
->()("houston/environment/RemoteOpenTargets") {}
+>()("@houston-app/cli/environment/RemoteOpenTargets") {}
 
 /** @public */
 export const make = Effect.gen(function* () {

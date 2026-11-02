@@ -29,7 +29,7 @@ export class DatabaseStorage extends Context.Service<
     /** Current file accounting, re-published after each maintenance pass. Null until first read. */
     readonly status: Stream.Stream<DatabaseStorageStatus | null>;
   }
->()("houston/persistence/DatabaseStorage") {}
+>()("@houston-app/cli/persistence/DatabaseStorage") {}
 
 // Deleted events have newer retained replacements; old cursors replay to the same state.
 const make = Effect.gen(function* () {
@@ -40,7 +40,7 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const statusRef = yield* SubscriptionRef.make<DatabaseStorageStatus | null>(null);
 
-  // The notice shows host-shell quoting verbatim; desktop needs its launcher because t3 is absent from PATH.
+  // The notice shows host-shell quoting verbatim; desktop needs its launcher because houston is absent from PATH.
   const { command: compactCommand } = yield* resolveHostCliCommand("doctor", [
     "--base-dir",
     config.baseDir,

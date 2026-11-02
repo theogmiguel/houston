@@ -59,7 +59,7 @@ import * as OpenCodeRuntime from "../OpenCodeRuntime.ts";
 import { readableProviderErrorMessage } from "../providerErrorMessage.ts";
 import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
 import { buildRuntimeInstructions } from "@houston-app/provider-core/server/runtimeInstructions";
-import { t3OrchestrationSystemPrompt } from "@houston-app/provider-core/server/orchestrationInstructions";
+import { houstonOrchestrationSystemPrompt } from "@houston-app/provider-core/server/orchestrationInstructions";
 import { SKILL_MENTION_PATTERN } from "@houston-app/shared/composerInlineTokens";
 import * as KeyedLock from "@houston-app/shared/KeyedLock";
 import {
@@ -351,7 +351,7 @@ interface PendingRequest {
 const rule = (action: string, effect: Rule["effect"]): Rule => ({ action, resource: "*", effect });
 
 /** OpenCode hides tools for names over 64 chars and rejects names over 100; hash long thread IDs. */
-export const t3McpServerName = Effect.fn("t3McpServerName")(function* (threadId: string) {
+export const houstonMcpServerName = Effect.fn("houstonMcpServerName")(function* (threadId: string) {
   const name = `houston-${threadId.replaceAll(/[^a-zA-Z0-9_-]/g, "_")}`;
   if (name.length <= 64) return name;
   const crypto = yield* Crypto.Crypto;
@@ -692,7 +692,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
   const crypto = yield* Crypto.Crypto;
   const driver = OPENCODE_PROVIDER;
   const mcpServerNameFor = (threadId: string) =>
-    t3McpServerName(threadId).pipe(Effect.provideService(Crypto.Crypto, crypto));
+    houstonMcpServerName(threadId).pipe(Effect.provideService(Crypto.Crypto, crypto));
 
   const borrow = Effect.gen(function* () {
     const lent = yield* Deferred.make<
@@ -3117,7 +3117,10 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       }
       const instructions = [
         buildRuntimeInstructions({ harness: "OpenCode", model: turnInput.modelSelection.model }),
-        t3OrchestrationSystemPrompt(mcpAvailable, mcpSession?.capabilities?.has("device") === true),
+        houstonOrchestrationSystemPrompt(
+          mcpAvailable,
+          mcpSession?.capabilities?.has("device") === true,
+        ),
       ]
         .filter((part) => part !== undefined && part.length > 0)
         .join("\n\n");

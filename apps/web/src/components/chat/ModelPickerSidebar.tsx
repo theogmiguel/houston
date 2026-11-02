@@ -128,7 +128,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                 className={cn(
                   "relative isolate flex w-full cursor-pointer items-center gap-1.75 rounded-md px-2 text-left text-xs text-(--t2) transition-colors hover:bg-(--hover) hover:text-(--t1) focus-visible:bg-(--hover) focus-visible:text-(--t1) focus-visible:outline-none aria-pressed:bg-(--sel) aria-pressed:text-(--t1)",
                   reason === null ? "h-7" : "items-start py-1",
-                  isDisabled && "cursor-not-allowed text-(--t3) hover:bg-transparent",
+                  isDisabled && "cursor-not-allowed text-(--houston) hover:bg-transparent",
                 )}
                 data-provider-accent-color={entry.accentColor}
                 onClick={() => !isDisabled && handleSelect(entry.instanceId)}
@@ -168,7 +168,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   <span className="truncate">{entry.displayName}</span>
                   {reason !== null ? (
                     <small
-                      className="truncate text-(--t3) text-2xs"
+                      className="truncate text-(--houston) text-2xs"
                       data-model-picker-provider-reason="true"
                     >
                       {reason}

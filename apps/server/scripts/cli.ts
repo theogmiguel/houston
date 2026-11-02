@@ -184,7 +184,7 @@ const publishCmd = Command.make(
       const path = yield* Path.Path;
       const fs = yield* FileSystem.FileSystem;
       const packagesDir = path.resolve(config.packagesDir);
-      const launcherTarball = path.join(packagesDir, "t3.tgz");
+      const launcherTarball = path.join(packagesDir, "houston.tgz");
       if (!(yield* fs.exists(launcherTarball))) {
         return yield* new ServerCliBuildAssetMissingError({ assetPath: launcherTarball });
       }
@@ -193,7 +193,7 @@ const publishCmd = Command.make(
       if (config.provenance) args.push("--provenance");
       if (config.dryRun) args.push("--dry-run");
       const spawnCommand = yield* resolveSpawnCommand("npm", [...args, launcherTarball]);
-      yield* Effect.log(`[cli] npm ${args.join(" ")} t3.tgz`);
+      yield* Effect.log(`[cli] npm ${args.join(" ")} houston.tgz`);
       yield* runCommand(
         ChildProcess.make(spawnCommand.command, spawnCommand.args, {
           cwd: packagesDir,
@@ -203,7 +203,7 @@ const publishCmd = Command.make(
         }),
       );
     }),
-).pipe(Command.withDescription("Publish the t3 launcher to npm."));
+).pipe(Command.withDescription("Publish the houston launcher to npm."));
 
 const cli = Command.make("cli").pipe(
   Command.withDescription("Houston server build & publish CLI."),

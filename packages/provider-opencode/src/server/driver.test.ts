@@ -466,7 +466,7 @@ it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
   () =>
     Effect.gen(function* () {
       const root = NodeFS.realpathSync(
-        NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-opencode-update-")),
+        NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-opencode-update-")),
       );
       const v2Prefix = NodePath.join(root, "v2");
       const v1Prefix = NodePath.join(root, "v1");
@@ -548,7 +548,7 @@ it.layer(layerUpdate)("OpenCodeDriver updates", (it) => {
     () =>
       Effect.gen(function* () {
         const root = NodeFS.realpathSync(
-          NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-opencode-driver-update-")),
+          NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-opencode-driver-update-")),
         );
         const binaryPath = npmGlobalInstall(NodePath.join(root, "v1"), ["opencode-ai"], "opencode");
         const instance = yield* OpenCodeDriver.create({

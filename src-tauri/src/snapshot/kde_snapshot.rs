@@ -20,7 +20,7 @@ const MARKER: &str = "X-Houston-Capture-Helper=true";
 const RUN_TIMEOUT: Duration = Duration::from_secs(20);
 /// Written by earlier releases under the previous application identifier.
 const LEGACY_EXECUTABLE_DIR: &str = "t3code";
-const LEGACY_EXECUTABLE: &str = "t3-kde-snap-shot";
+const LEGACY_EXECUTABLE: &str = "houston-kde-snap-shot";
 const LEGACY_DESKTOP_FILE: &str = "com.t3tools.T3Code.KdeCapture.desktop";
 
 #[derive(Debug, Clone, Serialize)]

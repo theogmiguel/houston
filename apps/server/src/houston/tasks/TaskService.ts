@@ -122,7 +122,7 @@ export class HoustonTaskService extends Context.Service<
       input: HoustonTaskSettingsSetInput,
     ) => Effect.Effect<HoustonTaskSettings, HoustonTaskError>;
   }
->()("houston/houston/tasks/TaskService/HoustonTaskService") {}
+>()("@houston-app/cli/houston/tasks/TaskService/HoustonTaskService") {}
 
 interface InitiativeRow {
   readonly id: number;

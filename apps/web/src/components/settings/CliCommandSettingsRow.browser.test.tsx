@@ -7,16 +7,16 @@ import { act, render, stubGlobal } from "../../../test/render";
 import { desktopCliCommandStateAtom } from "../../state/desktopCliCommand";
 import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
 
-it("blocks installation behind another t3 without blocking removal of our installation", async () => {
+it("blocks installation behind another houston without blocking removal of our installation", async () => {
   const state: DesktopCliCommandState = {
     supported: true,
     installedPath: null,
     onPath: false,
-    launcherPath: "/home/test/.t3/bin/t3",
+    launcherPath: "/home/test/.houston/bin/houston",
   };
   const getState = vi.fn(async (): Promise<DesktopCliCommandState> => ({
     ...state,
-    shadowedBy: "/usr/local/bin/t3",
+    shadowedBy: "/usr/local/bin/houston",
   }));
   const uninstall = vi.fn(async () => state);
   using _bridge = stubGlobal("hostBridge", {
@@ -40,8 +40,8 @@ it("blocks installation behind another t3 without blocking removal of our instal
 
   getState.mockResolvedValue({
     ...state,
-    installedPath: "/home/test/.local/bin/t3",
-    shadowedBy: "/usr/local/bin/t3",
+    installedPath: "/home/test/.local/bin/houston",
+    shadowedBy: "/usr/local/bin/houston",
   });
   await act(() => registry.refresh(desktopCliCommandStateAtom));
   const remove = screen.getByRole("button", { name: "Remove" });

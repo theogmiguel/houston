@@ -82,7 +82,7 @@ export class HoustonSlackIntake extends Context.Service<
     /** Started requests that hold a working slot. */
     readonly working: Effect.Effect<number>;
   }
->()("houston/houston/slack/Intake/HoustonSlackIntake") {}
+>()("@houston-app/cli/houston/slack/Intake/HoustonSlackIntake") {}
 
 const isObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);

@@ -28,7 +28,7 @@ export class NightShiftCi extends Context.Service<
       number: number,
     ) => Effect.Effect<ReadonlyArray<CiCheck>, string>;
   }
->()("houston/houston/nightShift/landing/Ports/NightShiftCi") {}
+>()("@houston-app/cli/houston/nightShift/landing/Ports/NightShiftCi") {}
 
 /** The project's merge queue, as landing enqueues into it and the push guard reads it. */
 export class NightShiftLandingQueue extends Context.Service<
@@ -45,7 +45,7 @@ export class NightShiftLandingQueue extends Context.Service<
     }) => Effect.Effect<void, string>;
     readonly dequeue: (projectId: ProjectId, number: number) => Effect.Effect<void, string>;
   }
->()("houston/houston/nightShift/landing/Ports/NightShiftLandingQueue") {}
+>()("@houston-app/cli/houston/nightShift/landing/Ports/NightShiftLandingQueue") {}
 
 const STATUS: Record<string, CiCheck["status"]> = {
   success: "passed",

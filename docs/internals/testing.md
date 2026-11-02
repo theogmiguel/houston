@@ -7,7 +7,7 @@ What the suites are, where new tests go, and how to read a failure. Commands and
 
 | Layer                | Location                                                                            | Runner                                                                   |
 | -------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Server               | `*.test.ts` beside the code under `apps/server/src`; Houston's under `src/houston/` | `pnpm --filter houston exec vp test run <files>`                         |
+| Server               | `*.test.ts` beside the code under `apps/server/src`; Houston's under `src/houston/` | `pnpm --filter @houston-app/cli exec vp test run <files>`                |
 | Contracts and shared | `packages/contracts/src`, `packages/shared/src`                                     | `pnpm --filter @houston-app/contracts --filter @houston-app/shared test` |
 | Renderer             | `*.test.ts(x)` beside the code under `apps/web/src`                                 | the package's `test` script                                              |
 | Host                 | unit tests in `src-tauri/src`                                                       | `cargo test` in `src-tauri`                                              |

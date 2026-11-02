@@ -96,7 +96,7 @@ echo "[dev] building the v2 web renderer."
 (cd "$ROOT" && npx -y pnpm@12.14.0 --filter @houston-app/web build)
 
 echo "[dev] building the v2 server."
-(cd "$ROOT" && npx -y pnpm@12.14.0 --filter houston build:bundle)
+(cd "$ROOT" && npx -y pnpm@12.14.0 --filter @houston-app/cli build:bundle)
 
 echo "[dev] building the app (debug)…"
 (cd "$ROOT/src-tauri" && cargo build)

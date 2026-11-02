@@ -285,7 +285,7 @@ export class PullRequestService extends Context.Service<
       options?: { readonly notifyReaders?: boolean },
     ) => Effect.Effect<void>;
   }
->()("houston/pullRequest/PullRequestService") {}
+>()("@houston-app/cli/pullRequest/PullRequestService") {}
 
 const VERDICT_LABELS: Record<PullRequestReviewVerdict, string> = {
   comment: "review",
@@ -342,7 +342,7 @@ interface WorkspaceProjects {
 const sharedProjectReads = Context.Reference<{
   open: boolean;
   readonly reads: Map<string, Effect.Effect<WorkspaceProjects, PullRequestError>>;
-} | null>("t3/PullRequestService/sharedProjectReads", { defaultValue: () => null });
+} | null>("houston/PullRequestService/sharedProjectReads", { defaultValue: () => null });
 
 interface RepositoryBatch {
   readonly key: string;

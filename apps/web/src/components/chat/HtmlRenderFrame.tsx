@@ -91,7 +91,7 @@ export function HtmlRenderFrame(props: {
     >
       <div className="flex size-full flex-col overflow-hidden rounded-lg border border-border bg-(--pane)">
         <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border bg-(--pane-head) ps-2.5 pe-1 text-(--t2)">
-          <CodeXmlIcon aria-hidden className="size-3.25 shrink-0 text-(--t3)" />
+          <CodeXmlIcon aria-hidden className="size-3.25 shrink-0 text-(--houston)" />
           <span className="min-w-0 flex-1 truncate font-mono text-xs">{fileName}</span>
           <span className="inline-flex h-[18px] shrink-0 items-center rounded-sm bg-(--field) px-1.5 text-2xs font-medium text-(--t2)">
             Interactive
@@ -126,7 +126,7 @@ export function HtmlRenderFrame(props: {
             </div>
           ) : failed ? (
             <div className="flex min-h-[120px] flex-col items-center justify-center gap-1 px-3 py-8 text-center">
-              <CircleAlertIcon aria-hidden className="size-3.75 text-(--t3)" />
+              <CircleAlertIcon aria-hidden className="size-3.75 text-(--houston)" />
               <span className="font-semibold text-headline">Page unavailable</span>
               <span className="text-(--t2) text-xs">
                 Reconnect to the environment and try again.

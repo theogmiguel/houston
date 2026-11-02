@@ -44,7 +44,7 @@ Before cloning, ask the user which version, device, and surface the bug happened
 on. The bug may have happened on another machine, a remote server, the mobile app,
 or an older build they have since updated. Check their answer against local facts
 where they apply: the server version in the context file, or \`serverVersion\` from
-\`<origin>/.well-known/t3/environment\` when a local server is running. If neither
+\`<origin>/.well-known/houston/environment\` when a local server is running. If neither
 the user nor the machine can tell you the version, say it is unknown. Do not guess.
 
 Clone the repo at the release tag for that version (\`v\` followed by the version,
@@ -302,7 +302,7 @@ ${input.entry.kind === "app" ? IN_APP_SECTION : ""}${input.sourceClone === undef
 - Logs dir: ${input.paths.logsDir}
 - Service log (systemd/launchd service installs only): ${input.paths.serviceLogPath}
 - Desktop backend logs (glob; one file per backend plus rotated copies; written only when a backend crashes or fails to start): ${input.paths.desktopBackendLogGlob}
--  T3CONNECT  tunnel log (ndjson; what the server logged about its cloudflared connector, with rotated copies \`.1\` and \`.2\`): ${input.paths.relayClientLogPath}
+-  Houston Connect  tunnel log (ndjson; what the server logged about its cloudflared connector, with rotated copies \`.1\` and \`.2\`): ${input.paths.relayClientLogPath}
 - Server trace (ndjson): ${input.paths.serverTracePath}
 - Provider event log: ${input.paths.providerEventLogPath}
 - Terminal logs: ${input.paths.terminalLogsDir}

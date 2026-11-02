@@ -196,7 +196,7 @@ export interface ReadinessLedgerShape {
 }
 
 export class ReadinessLedger extends Context.Service<ReadinessLedger, ReadinessLedgerShape>()(
-  "houston/houston/providerReadiness/ReadinessLedger",
+  "@houston-app/cli/houston/providerReadiness/ReadinessLedger",
 ) {}
 
 interface Slot {

@@ -70,7 +70,7 @@ export class ServerSelfUpdate extends Context.Service<
       onHandoffAccepted?: () => Effect.Effect<void>,
     ) => Effect.Effect<never, ServerSelfUpdateError>;
   }
->()("houston/cloud/selfUpdate/ServerSelfUpdate") {}
+>()("@houston-app/cli/cloud/selfUpdate/ServerSelfUpdate") {}
 
 /**
  * A server starting from the runtime its launcher settled on means runtimes left by earlier

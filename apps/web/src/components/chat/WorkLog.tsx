@@ -60,7 +60,7 @@ function WorkLogLine({ icon, label, trailing, wrapLabel }: RowContent) {
     >
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {icon ? (
-          <span className="flex size-3.5 shrink-0 items-center justify-center text-(--t3) [&_svg]:size-3.5">
+          <span className="flex size-3.5 shrink-0 items-center justify-center text-(--houston) [&_svg]:size-3.5">
             {icon}
           </span>
         ) : null}

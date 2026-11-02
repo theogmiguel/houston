@@ -103,7 +103,7 @@ const withDescriptorServer = <A, E, R>(
   Effect.acquireUseRelease(
     Effect.callback<NodeHttp.Server>((resume) => {
       const server = NodeHttp.createServer((request, response) => {
-        if (request.url === "/.well-known/t3/environment") {
+        if (request.url === "/.well-known/houston/environment") {
           response.writeHead(200, { "content-type": "application/json" });
           response.end(JSON.stringify(descriptor));
           return;
@@ -137,7 +137,7 @@ describe("houston pair", () => {
               if (command.args[0] === "serve") {
                 const target = command.args.at(-1)!;
                 const descriptor = yield* Effect.promise(async () =>
-                  (await fetch(new URL("/.well-known/t3/environment", target))).json(),
+                  (await fetch(new URL("/.well-known/houston/environment", target))).json(),
                 );
                 expect(descriptor).toEqual(testDescriptor);
                 serving = true;
@@ -178,7 +178,7 @@ describe("houston pair", () => {
                 if (String(input).startsWith(origin)) return fetch(input, init);
                 assert.equal(
                   String(input),
-                  "https://pair-test.tail.ts.net/.well-known/t3/environment",
+                  "https://pair-test.tail.ts.net/.well-known/houston/environment",
                 );
                 return serving
                   ? Response.json(testDescriptor)

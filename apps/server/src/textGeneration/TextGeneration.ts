@@ -36,7 +36,7 @@ export type {
 } from "@houston-app/provider-core/server/textGeneration";
 
 export class TextGeneration extends Context.Service<TextGeneration, ProviderTextGeneration>()(
-  "houston/textGeneration/TextGeneration",
+  "@houston-app/cli/textGeneration/TextGeneration",
 ) {}
 
 type TextGenerationOp =

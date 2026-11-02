@@ -108,7 +108,7 @@ interface AntigravityInstallationService {
 export class AntigravityInstallation extends Context.Service<
   AntigravityInstallation,
   AntigravityInstallationService
->()("houston/provider/AntigravityInstallation") {
+>()("@houston-app/cli/provider/AntigravityInstallation") {
   static readonly layer = Layer.effect(
     AntigravityInstallation,
     Effect.gen(function* () {
