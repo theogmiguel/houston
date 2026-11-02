@@ -1,7 +1,6 @@
 6 apps/web/src/components/device/DeviceToolsPanel.tsx
 1 apps/web/src/components/DiffPanel.tsx
 1 apps/web/src/components/settings/AcpRegistrySearchStep.tsx
-2 apps/web/src/components/settings/BackgroundActivitySettings.tsx
 11 apps/web/src/components/settings/DiagnosticsSettings.tsx
 2 apps/web/src/components/settings/SnapShotSettings.tsx
 1 apps/web/src/components/settings/ThemeSearchSection.tsx
