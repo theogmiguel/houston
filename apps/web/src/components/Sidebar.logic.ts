@@ -16,10 +16,7 @@ import {
   type ThreadSearchShell,
 } from "@t3tools/client-runtime/state/thread-search";
 import { foldSearchQuery, rankSearchItems, scoreThreadSearch } from "@t3tools/shared/paletteSearch";
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 import {
   isListedThreadLineage,
   type ContextMenuItem,
@@ -595,13 +592,6 @@ export function isSidebarHiddenThread(thread: Pick<SidebarThreadSummary, "lineag
   return !isListedThreadLineage(thread.lineage);
 }
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-export function isSidebarHiddenThread(thread: Pick<SidebarThreadSummary, "lineage">): boolean {
-  return !isListedThreadLineage(thread.lineage);
-}
-
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 // Subagent and side-chat threads have no sidebar row, so an open one is represented by
 // its nearest listed ancestor. A broken chain (missing parent, cycle,
 // other environment) resolves to the thread itself, which then matches no row.
@@ -686,20 +676,6 @@ export interface ThreadStatusPill {
   state: ThreadState;
 }
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
-  "Pending Approval": 5,
-  "Needs you": 4,
-  Failed: 3.5,
-  Running: 3,
-  Connecting: 3,
-  Waiting: 2.5,
-  "Plan Ready": 2,
-  Ready: 1,
-};
-
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 type ThreadStatusInput = Pick<
   SidebarThreadSummary,
   | "hasActionableProposedPlan"

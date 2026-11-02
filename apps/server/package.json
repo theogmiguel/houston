@@ -1,11 +1,6 @@
 {
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   "name": "houston",
   "version": "0.19.10",
-=======
-  "name": "t3",
-  "version": "0.1.6",
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -644,7 +644,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
       </Button>
       {pairingDenial !== undefined ? (
         <ManagedControl reason={pairingDenial}>
-          <Button size="xs" variant="default" disabled>
+          <Button size="sm" variant="ghost" disabled>
             <PlusIcon className="size-3" />
             Create link
           </Button>
@@ -662,27 +662,16 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
           }
         }}
       >
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-        <DialogTrigger
-          render={
-            <Button size="sm" variant="ghost">
-              <PlusIcon className="size-3" />
-              Create link
-            </Button>
-          }
-        />
-=======
         {pairingDenial === undefined ? (
           <DialogTrigger
             render={
-              <Button size="xs" variant="default">
+              <Button size="sm" variant="ghost">
                 <PlusIcon className="size-3" />
                 Create link
               </Button>
             }
           />
         ) : null}
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         <DialogPopup className="max-w-md">
           <DialogHeader>
             <DialogTitle>Create pairing link</DialogTitle>

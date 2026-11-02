@@ -81,23 +81,15 @@ export const runDefaultServerCommand = Effect.fn("server.runDefaultServerCommand
 });
 
 export const startCommand = Command.make("start", { ...sharedServerCommandFlags }).pipe(
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   Command.withDescription("Run the Houston server."),
-=======
-  Command.withDescription("Same as `t3`."),
   Command.unlisted,
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   Command.withHandler((flags) => runServerCommand(flags, { rejectRunningServer: true })),
 );
 
 export const serveCommand = Command.make("serve", { ...sharedServerCommandFlags }).pipe(
-  Command.withShortDescription("Run T3 Code in this terminal, with no browser."),
+  Command.withShortDescription("Run Houston in this terminal, with no browser."),
   Command.withDescription(
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-    "Run the Houston server without opening a browser and print headless pairing details.",
-=======
-    "Run T3 Code in this terminal without opening a browser, and print pairing details. The background service runs this. To set up access from your other devices, run `t3 up`.",
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+    "Run the Houston server in this terminal without opening a browser, and print pairing details. The background service runs this. To set up access from your other devices, run `houston up`.",
   ),
   Command.withHandler((flags) =>
     runServerCommand(flags, {

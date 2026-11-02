@@ -989,17 +989,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
               break;
             }
             case "missing": {
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
               // A 404 only proves no projection row exists yet: a draft's launch may
               // still create the thread, and deletions arrive as `deletedAt` or an event.
               // The socket subscription stays the only deletion authority.
               break;
-=======
-              yield* setDeleted();
-              // A 404 also means "not created yet". Only a delete event may outlive this mount.
-              if (resumeCache?.owner === owner) resumeCache.snapshot = undefined;
-              return yield* Effect.never;
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
             }
             case "unavailable": {
               break;

@@ -202,11 +202,7 @@ export const readForkHistoryItems = Effect.fn(
   ];
 });
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 export function summarizeDeltaItem(item: OrchestrationV2TurnItem): string | null {
-=======
-function summarizeDeltaItem(item: OrchestrationV2TurnItem): string | null {
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   switch (item.type) {
     case "user_message":
       return `- User: ${compactText(item.text)}`;
@@ -248,17 +244,10 @@ function makeForkDeltaSummary(input: {
 
 const SIDE_CHAT_CONTEXT_MAX_CHARS = 8_000;
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-/** `digest` holds `summarizeDeltaItem` lines for parent items after the fork point, oldest first. */
-export function makeSideChatContext(input: {
-  readonly parentThreadId: ThreadId;
-  readonly digest: ReadonlyArray<string>;
-=======
 /** Oldest first; raw parent items are summarized only until the context cap is reached. */
 export function makeSideChatContext(input: {
   readonly parentThreadId: ThreadId;
   readonly digest: ReadonlyArray<string | OrchestrationV2TurnItem>;
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 }): string {
   const framing =
     "You are in a side chat beside the main thread. The main thread may still be running in the same worktree. Answer the user's questions; do not continue or redo the main thread's task.";
@@ -266,13 +255,6 @@ export function makeSideChatContext(input: {
   const truncated = "- Earlier items truncated.";
   const footer = `Use t3_thread_read on thread ${input.parentThreadId} to see the main thread's live state.`;
   const kept: Array<string> = [];
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-  // The cap covers the whole block, so the fixed lines are reserved before any digest line.
-  let remaining =
-    SIDE_CHAT_CONTEXT_MAX_CHARS - [framing, "", header, truncated, "", footer].join("\n").length;
-  for (const line of input.digest.toReversed()) {
-    if (line.length + 1 > remaining) break;
-=======
   let omitted = false;
   // The cap covers the whole block, so the fixed lines are reserved before any digest line.
   let remaining =
@@ -285,19 +267,12 @@ export function makeSideChatContext(input: {
       omitted = true;
       break;
     }
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     kept.unshift(line);
     remaining -= line.length + 1;
   }
   return [
     framing,
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-    ...(kept.length === 0
-      ? []
-      : ["", header, ...(kept.length < input.digest.length ? [truncated] : []), ...kept]),
-=======
     ...(kept.length === 0 ? [] : ["", header, ...(omitted ? [truncated] : []), ...kept]),
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     "",
     footer,
   ].join("\n");
@@ -618,14 +593,7 @@ const makeContextHandoffService = Effect.fn("orchestrationV2.ContextHandoffServi
         summaryMessageId: null,
         summaryText: makeSideChatContext({
           parentThreadId: input.parentThreadId,
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-          digest: input.parentItems.flatMap((item) => {
-            const line = summarizeDeltaItem(item);
-            return line === null ? [] : [line];
-          }),
-=======
           digest: input.parentItems,
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         }),
         createdByProviderInstanceId: null,
         createdAt: input.createdAt,

@@ -1206,18 +1206,9 @@ describe("EnvironmentRegistry", () => {
 
   it.effect("applies overlapping platform snapshots in order", () =>
     Effect.gen(function* () {
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-      const shadowedTarget = new BearerConnectionTarget({
-        environmentId: TARGET.environmentId,
-        label: "Shadowed fallback environment",
-        connectionId: "shadowed-fallback-connection",
-      });
-      const harness = yield* makeHarness([shadowedTarget]);
-=======
       const started = yield* Deferred.make<void>();
       const resume = yield* Deferred.make<void>();
       const harness = yield* makeHarness([TARGET]);
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
       const permissions = yield* makePullRequestRoutingPermissions({
         read: Effect.succeed([
           { environmentId: TARGET.environmentId, connectionKey: "saved", permission: "read-write" },
@@ -1225,15 +1216,6 @@ describe("EnvironmentRegistry", () => {
         write: () =>
           Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(resume))),
       });
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-      const shadowedEntry = {
-        target: shadowedTarget,
-        profile: Option.some(fallbackProfile(shadowedTarget)),
-        enabled: true,
-      };
-      yield* permissions.set(shadowedEntry, "read-write");
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 
       yield* Effect.gen(function* () {
         const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
@@ -1248,24 +1230,10 @@ describe("EnvironmentRegistry", () => {
         yield* Fiber.join(installing);
         yield* Fiber.join(removing);
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-        expect(
-          (yield* SubscriptionRef.get(registry.entries)).get(TARGET.environmentId)?.target,
-        ).toEqual(TARGET);
-        expect(hasRoutes(yield* Ref.get(harness.storedTargets), TARGET.environmentId)).toBe(false);
-
-        yield* registry.register(fallbackRegistration(shadowedTarget));
-
-        expect(
-          (yield* SubscriptionRef.get(registry.entries)).get(TARGET.environmentId)?.target,
-        ).toEqual(TARGET);
-        expect(hasRoutes(yield* Ref.get(harness.storedTargets), TARGET.environmentId)).toBe(false);
-=======
         expect((yield* SubscriptionRef.get(registry.entries)).has(TARGET.environmentId)).toBe(
           false,
         );
         expect(yield* registrySpanNames(registry.reconcilePlatform([]))).toEqual([]);
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
       }).pipe(
         Effect.provide(harness.layer),
         Effect.provideService(PullRequestRoutingPermissions, permissions),
@@ -1288,9 +1256,10 @@ describe("EnvironmentRegistry", () => {
         const shadowedTarget =
           registration._tag === "BearerConnectionRegistration"
             ? registration.target
-            : new RelayConnectionTarget({
+            : new BearerConnectionTarget({
                 environmentId: target.environmentId,
-                label: "Shadowed relay environment",
+                label: "Shadowed fallback environment",
+                connectionId: "shadowed-fallback-connection",
               });
         let failRemoval = true;
         const harness = yield* makeHarness(
@@ -1325,7 +1294,7 @@ describe("EnvironmentRegistry", () => {
           profile:
             registration._tag === "BearerConnectionRegistration"
               ? Option.some(registration.profile)
-              : Option.none(),
+              : Option.some(fallbackProfile(shadowedTarget)),
           enabled: true,
         };
         yield* permissions.set(shadowedEntry, "read-write");
@@ -1355,12 +1324,13 @@ describe("EnvironmentRegistry", () => {
           }
 
           yield* registry.register(
-            new RelayConnectionRegistration({
-              target: new RelayConnectionTarget({
+            fallbackRegistration(
+              new BearerConnectionTarget({
                 environmentId: target.environmentId,
-                label: "Shadowed relay environment",
+                label: "Shadowed fallback environment",
+                connectionId: "shadowed-fallback-connection",
               }),
-            }),
+            ),
           );
 
           expect(

@@ -28,14 +28,6 @@ function providerModelPickerNaturalWidth(picker: HTMLElement): number {
   // A label with its own max width, such as a long model name, never grows past it.
   const labelMaxWidth = label ? Number.parseFloat(getComputedStyle(label).maxWidth) : Number.NaN;
   const hiddenLabelWidth =
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-    label && !labelIsCollapsed ? Math.max(0, label.scrollWidth - label.clientWidth) : 0;
-  // In the icon-only form the label is out of flow; add its text width back, minus the
-  // provider icon the label form does not draw.
-  const iconOnly = picker.dataset.chatProviderModelPickerIconOnly === "true";
-  const icon = picker.querySelector<HTMLElement>("[data-chat-provider-model-picker-icon]");
-  const iconWidth = iconOnly && icon ? elementOuterWidth(icon) : 0;
-=======
     label && !labelIsCollapsed
       ? Math.max(
           0,
@@ -45,7 +37,11 @@ function providerModelPickerNaturalWidth(picker: HTMLElement): number {
           ) - label.clientWidth,
         )
       : 0;
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+  // In the icon-only form the label is out of flow; add its text width back, minus the
+  // provider icon the label form does not draw.
+  const iconOnly = picker.dataset.chatProviderModelPickerIconOnly === "true";
+  const icon = picker.querySelector<HTMLElement>("[data-chat-provider-model-picker-icon]");
+  const iconWidth = iconOnly && icon ? elementOuterWidth(icon) : 0;
   const maxWidth = Number.parseFloat(style.maxWidth);
   const naturalWidth = Math.min(
     renderedWidth + hiddenLabelWidth - iconWidth,

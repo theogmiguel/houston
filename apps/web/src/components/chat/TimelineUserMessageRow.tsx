@@ -827,14 +827,8 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       ) : null}
       <div
         className={cn(
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
           "relative min-w-0 max-w-[82%] rounded-(--r-group) border border-border bg-card text-prose leading-5 text-foreground",
           mediaAboveText && "rounded-tr-(--r-badge)",
-=======
-          "relative min-w-0 max-w-[80%] rounded-2xl text-message-foreground",
-          (mediaAboveText || row.groupedWithPrevious) && "rounded-tr-md",
-          row.groupedWithNext && "rounded-br-md",
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
           BUBBLE_CHIP_CLASS_NAME,
           !folded && !mediaOnly && !fileCardsOnly && !audioOnly && "px-3.5 py-2.5",
           folded && expanded && "w-full",
@@ -996,7 +990,6 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       </div>
       <UserMessageProjectedStatus row={row} />
       {!folded || expanded ? (
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
         <div className="flex w-full max-w-[82%] items-center justify-end pe-1 text-callout text-(--t3) tabular-nums">
           <div className="flex shrink-0 items-center gap-2">
             {folded && senderThreadId ? (
@@ -1042,16 +1035,6 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               )}
             </div>
           </div>
-=======
-        <div
-          className={cn(
-            "flex w-full max-w-[80%] justify-end pe-1",
-            floatActions && "@min-[37rem]:hidden",
-            ACTIONS_REVEAL_CLASS_NAME,
-          )}
-        >
-          {messageActions}
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         </div>
       ) : null}
     </div>

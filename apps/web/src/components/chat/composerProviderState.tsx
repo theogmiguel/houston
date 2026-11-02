@@ -16,12 +16,18 @@ import {
   normalizeModelSlug,
 } from "@t3tools/shared/model";
 
+import type { EffortDisplay } from "@t3tools/contracts/settings";
+import type { ReactNode } from "react";
+
 import type { DraftId } from "../../composerDraftStore";
 import { getProviderModelCapabilities } from "../../providerModels";
+import type { ComposerControlSize } from "./ComposerControl";
 import {
   getReasoningTraitStep,
   type PromptUltrathink,
-  type TraitsSelectionInput,
+  shouldRenderTraitsControls,
+  TraitsMenuContent,
+  TraitsPicker,
 } from "./TraitsPicker";
 
 type ComposerProviderStateInput = {
@@ -44,7 +50,7 @@ type ComposerProviderState = {
   modelPickerIconClassName?: string;
 };
 
-type ComposerTraitsTarget = {
+type TraitsRenderInput = {
   provider: ProviderDriverKind;
   instanceId: ProviderInstanceId;
   threadRef?: ScopedThreadRef | undefined;
@@ -56,7 +62,6 @@ type ComposerTraitsTarget = {
   promptUltrathink: PromptUltrathink;
   onPromptEdit: (edit: (prompt: string) => string) => void;
   planModeEnabled: boolean;
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   size?: ComposerControlSize;
   hidden?: boolean;
   triggerClassName?: string;
@@ -66,8 +71,6 @@ type ComposerTraitsTarget = {
   extraMenuContent?: ReactNode;
   extraMenuOwnsModeShortcut?: boolean;
   extraMenuHint?: string;
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 };
 
 export function getComposerPromptInjectionState(prompt: string): ComposerPromptInjectionState {
@@ -209,7 +212,6 @@ export function getComposerReasoningStep(input: {
   };
 }
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 function renderTraitsControl(
   Component: typeof TraitsMenuContent | typeof TraitsPicker,
   input: TraitsRenderInput,
@@ -280,24 +282,13 @@ function renderTraitsControl(
       {...(extraMenuOwnsModeShortcut ? { extraMenuOwnsModeShortcut } : {})}
       {...(extraMenuHint ? { extraMenuHint } : {})}
     />
-=======
-/**
- * The composer's traits input with the model's implicit defaults applied, so a pick writes what
- * the composer would send. Null without a draft or thread to persist to.
- */
-export function resolveComposerTraitsInput(
-  input: ComposerTraitsTarget,
-): TraitsSelectionInput | null {
-  const { threadRef, draftId, ...rest } = input;
-  const { selections } = resolveComposerOptionSelections(
-    input.models,
-    input.model,
-    input.provider,
-    input.modelOptions,
-    input.planModeEnabled,
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   );
-  const persistence = threadRef ? { threadRef } : draftId ? { draftId } : null;
-  if (!persistence) return null;
-  return { ...rest, ...persistence, modelOptions: selections };
+}
+
+export function renderProviderTraitsMenuContent(input: TraitsRenderInput): ReactNode {
+  return renderTraitsControl(TraitsMenuContent, input);
+}
+
+export function renderProviderTraitsPicker(input: TraitsRenderInput): ReactNode {
+  return renderTraitsControl(TraitsPicker, input);
 }

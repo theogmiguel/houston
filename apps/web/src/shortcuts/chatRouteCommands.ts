@@ -119,7 +119,6 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
 
   const startNewLocal: CommandHandler = (event) => {
     claim(event);
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
     const grid = readRouteGrid();
     if (grid !== null) {
       void openGridDraft(
@@ -131,13 +130,10 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
       });
       return;
     }
-    void startNewThreadFromContext(readThreadContext());
-=======
     // With no current or open project, such as when every project is archived, pick one.
     void startNewThreadFromContext(readThreadContext()).then((started) => {
       if (!started) openCommandPalette({ open: "new-thread-in" });
     });
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   };
 
   const previewCommand =

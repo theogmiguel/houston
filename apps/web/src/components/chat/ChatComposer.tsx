@@ -237,33 +237,18 @@ import { importComposerThreadAttachment } from "./composerThreadImport";
 import { observeResize } from "~/lib/observeResize";
 
 const isEnvironmentRequestInvalidError = Schema.is(EnvironmentRequestInvalidError);
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 import { stackedThreadToast, toastManager } from "../ui/toast";
-import { ArrowUpIcon, PlayIcon } from "lucide-react";
-=======
-import { toastManager } from "../ui/toast";
-import { BuildingIcon, PlayIcon } from "lucide-react";
+import { ArrowUpIcon, BuildingIcon, PlayIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { useManagedPolicy } from "../../state/managedPolicy";
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 import { proposedPlanTitle } from "@t3tools/shared/proposedPlanText";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import { tickTextContent } from "~/lib/tickTextContent";
 import { hasProviderSetup } from "./ProviderStatusBanner";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-import {
-  isVideoAttachment,
-  type ChatMessage,
-  type SessionPhase,
-  type Thread,
-  type ThreadShell,
-} from "../../types";
-import type { PaneDensity } from "../../grid/density";
-=======
 import { isVideoAttachment, type SessionPhase, type Thread, type ThreadShell } from "../../types";
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+import type { PaneDensity } from "../../grid/density";
 import { type ComposerPromptHistoryPosition } from "./composerPromptHistory";
 import type { PendingUserInputDraftAnswer } from "@t3tools/client-runtime/state/pending-user-input";
 import type { ThreadStatusPill } from "../Sidebar.logic";
@@ -395,13 +380,9 @@ export interface ChatComposerProps {
   activeThreadId: ThreadId | null;
   activeThread: Thread | undefined;
   activeThreadShell: ThreadShell | null;
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   /** The thread's status as the sidebar derives it; the footer names a blocked turn. */
   threadStatusPill?: ThreadStatusPill | null;
-  promptHistoryMessages: ReadonlyArray<ChatMessage>;
-=======
   promptHistoryEntries: ReadonlyArray<TimelineEntry>;
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   forceExpandedOnMobile: boolean;
   /** A grid pane's density; glance keeps the composer on one line until focused. */
   paneDensity?: PaneDensity | undefined;
@@ -562,12 +543,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onMultipleModelSelectionsChange: setMultipleModelSelections,
     activeThreadId,
     activeThread,
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
     threadStatusPill = null,
-    promptHistoryMessages,
-=======
     promptHistoryEntries,
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     forceExpandedOnMobile,
     paneDensity,
     activeTurnStartedAt,
@@ -3433,15 +3410,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 {composerSuggestionsVisible && composerMenuItems.length === 0
                   ? isComposerMenuLoading
                     ? composerTriggerKind === "pull-request"
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
                       ? "Finding pull request…"
-                      : "Searching workspace files…"
-=======
-                      ? "Finding pull request..."
                       : composerTriggerKind === "skill" || composerTriggerKind === "slash-command"
-                        ? "Searching workspace skills..."
-                        : "Searching workspace files..."
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+                        ? "Searching workspace skills…"
+                        : "Searching workspace files…"
                     : composerMenuEmptyState
                   : ""}
               </div>

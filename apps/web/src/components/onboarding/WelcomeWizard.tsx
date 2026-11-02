@@ -56,19 +56,8 @@ import { newProjectId, randomUUID } from "../../lib/utils";
 import { agentSessionImport } from "../../state/agentSessions";
 import { readProjects, waitForProject } from "../../state/entities";
 import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
+import { managedInstanceLocks } from "../../state/managedPolicy";
 import { resolveOnboardingSetup } from "../../onboarding/targetEnvironment.logic";
-=======
-import {
-  managedInstanceLocks,
-  managedTelemetryOffMessage,
-  usePrimaryManagedPolicy,
-} from "../../state/managedPolicy";
-import {
-  isOnboardingRelayEnvironment,
-  resolveOnboardingSetup,
-} from "../../onboarding/targetEnvironment.logic";
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 import { useProjectScans } from "../../onboarding/useProjectScans";
 import { projectEnvironment } from "../../state/projects";
 import { serverEnvironment } from "../../state/server";
@@ -321,14 +310,6 @@ function ConnectionStep({
   readonly onPaired: (environmentId: EnvironmentId) => void;
 }) {
   const { environments } = useEnvironments();
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
-  const telemetryOff = managedTelemetryOffMessage(usePrimaryManagedPolicy());
-  const cloudEnabled = hasCloudPublicConfig();
-  const directEnvironments = environments.filter(
-    (environment) => !cloudEnabled || !isOnboardingRelayEnvironment(environment),
-  );
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   const [pairingOpen, setPairingOpen] = useState(expandPairingInitially);
   const [isPairing, setIsPairing] = useState(false);
   const { ready, skippedIds } = resolveOnboardingSetup(environments, selectedIds);
@@ -439,25 +420,7 @@ function ConnectionStep({
           {skippedLabels.length === 1 ? "it" : "them"} up later from Settings.
         </p>
       ) : null}
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
       <div className="mt-6 flex flex-col-reverse gap-4 sm:flex-row sm:items-center sm:justify-end sm:gap-6">
-=======
-      <div className="mt-6 flex flex-col-reverse gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-        <p className="min-w-0 text-xs leading-relaxed text-muted-foreground">
-          {telemetryOff ?? "T3 Code collects anonymous usage data to help us improve it."} To read
-          more about how your data is used{telemetryOff === undefined ? " and how to opt out" : ""},
-          see our{" "}
-          <a
-            className="underline underline-offset-2 hover:text-foreground"
-            href={PRIVACY_POLICY_URL}
-            target="_blank"
-            rel="noreferrer noopener"
-          >
-            privacy policy
-          </a>
-          .
-        </p>
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         <Button
           className="shrink-0 self-end"
           ref={continueRef}
@@ -575,13 +538,9 @@ function PairingForm({
             </p>
             <CommandBlock command="houston pair" className="mt-2" />
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
               Start Houston first, or run <code className="font-mono">houston serve</code> (install the CLI from{" "}
               <a className="underline" href="https://github.com/theogmiguel/houston/releases">GitHub releases</a>). Add{" "}
               <code className="font-mono">--tailscale</code> to use your tailnet.
-=======
-              On a tailnet, run <code className="font-mono">npx t3 pair --tailscale</code> instead.
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
             </p>
           </CollapsiblePanel>
         </Collapsible>

@@ -250,16 +250,11 @@ export class ServerSettingsService extends Context.Service<
     /** Subscribe before reading a snapshot to retain changes before lazy stream startup. */
     readonly subscribeChanges: Effect.Effect<Stream.Stream<ServerSettings>, never, Scope.Scope>;
   }
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 >()("houston/serverSettings/ServerSettingsService") {
-  static readonly layerTest = (overrides: DeepPartial<ServerSettings> = {}) => layerTest(overrides);
-=======
->()("t3/serverSettings/ServerSettingsService") {
   static readonly layerTest = (
     overrides: DeepPartial<ServerSettings> = {},
     managedPolicy?: ManagedPolicySummary,
   ) => layerTest(overrides, managedPolicy);
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 }
 
 const makeTest = Effect.fn("serverSettings.makeTest")(function* (

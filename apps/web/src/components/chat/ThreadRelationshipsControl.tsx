@@ -45,12 +45,6 @@ import * as DateTime from "effect/DateTime";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ChevronDownIcon,
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
-  CornerLeftUpIcon,
-  GitForkIcon,
-  MessagesSquareIcon,
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   MoreHorizontalIcon,
   PlusIcon,
   SquareIcon,
@@ -623,16 +617,6 @@ export function ThreadRelationshipsPanel(props: {
       (isParent && threadId === parentRef?.threadId
         ? (node?.thread?.activityRunStatus ?? parentNativeStatus)
         : undefined) ?? threadRelationshipRowStatus(graph, { threadId, edge });
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
-    const RelationshipIcon = isParent
-      ? CornerLeftUpIcon
-      : isSubagent
-        ? BotIcon
-        : node?.thread?.lineage.sideChat === true
-          ? MessagesSquareIcon
-          : GitForkIcon;
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     const relationship =
       node?.thread?.lineage.sideChat === true && !isParent
         ? "Side chat"
@@ -672,13 +656,9 @@ export function ThreadRelationshipsPanel(props: {
       ? "group-hover:opacity-0 group-focus-within:opacity-0 pointer-coarse:opacity-0 [@media(hover:none)]:opacity-0"
       : "";
     const project = projects.find((project) => project.id === node?.thread?.projectId);
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
     const relationshipHint = node?.missing
       ? "This related thread is unavailable"
       : `Open ${relationship.toLowerCase()} in this chat`;
-=======
-    const relationshipHint = `Open ${relationship.toLowerCase()} in this chat`;
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     const RelationshipPopup = agent ? ThreadHoverCardPopup : TooltipPopup;
     const relationshipTooltip = agent ? (
       <SubagentTooltipContent
@@ -700,8 +680,7 @@ export function ThreadRelationshipsPanel(props: {
         childProject={project}
       />
     ) : (
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-      relationshipHint
+      <LineageTooltipContent title={threadTitle} hint={relationshipHint} />
     );
     const relationshipContent = (
       <>
@@ -709,27 +688,6 @@ export function ThreadRelationshipsPanel(props: {
           <span className="shrink-0 truncate">{relationship}</span>
           <span className="min-w-0 truncate text-muted-foreground">{threadTitle}</span>
         </span>
-=======
-      <LineageTooltipContent title={threadTitle} hint={relationshipHint} />
-    );
-    const relationshipContent = (
-      <>
-        <ThreadRelationshipIcon
-          driver={isSubagent && !isParent ? providerDriver : undefined}
-          provider={provider}
-          providerEntries={providerEntries}
-          fallbackIcon={RelationshipIcon}
-          status={rowStatus}
-        />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-left text-sm font-medium leading-4 text-foreground/85">
-            {threadTitle}
-          </span>
-        </span>
-        {agent ? null : (
-          <ArrowRightIcon className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-        )}
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         {agent && !failed && (deriveSubagentElapsedMs(agent, 0) !== null || canStopWorkflow) ? (
           <span
             className={`shrink-0 text-2xs font-normal tabular-nums text-muted-foreground ${canStopWorkflow ? "min-w-6 text-end" : ""} ${trailingVisibilityClass}`}
@@ -758,10 +716,7 @@ export function ThreadRelationshipsPanel(props: {
               size="sm"
               variant="ghost"
               part={workflowGroup ? "primary" : "row"}
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
               disabled={node?.missing === true}
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
               onClick={() => openThread(threadId)}
             />
           }
@@ -779,17 +734,9 @@ export function ThreadRelationshipsPanel(props: {
           providerInstanceId={agent.providerInstanceId}
           provider={provider}
           providers={providers}
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-          driver={providerDriver}
-          onOpenThread={(memberThreadId) => openThread(memberThreadId as ThreadId)}
-          isThreadAvailable={(memberThreadId) =>
-            graph.nodes.get(memberThreadId as ThreadId)?.missing === false
-          }
-=======
           providerEntries={providerEntries}
           driver={providerDriver}
           onOpenThread={(memberThreadId) => openThread(memberThreadId as ThreadId)}
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
           onStop={canStopWorkflow ? () => void stopWorkflow(agent.id) : undefined}
           stopping={stoppingId === agent.id}
           stopDisabled={stoppingId !== null}
@@ -798,11 +745,7 @@ export function ThreadRelationshipsPanel(props: {
       );
     }
     return (
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
       <li key={threadId} className="group relative flex min-h-7 items-center rounded-lg">
-=======
-      <li key={threadId} className="group relative flex h-8 items-center rounded-lg">
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         {isMergeTarget ? (
           <div className={THREAD_DETAILS_PANEL_SPLIT_GROUP_CLASS}>
             <Tooltip>
@@ -814,10 +757,7 @@ export function ThreadRelationshipsPanel(props: {
                     variant="ghost"
                     part="primary"
                     aria-label={`${threadTitle} ${threadRelationshipStatusLabel(rowStatus)}`}
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
                     disabled={node?.missing === true}
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
                     onClick={() => openThread(threadId)}
                   />
                 }
@@ -901,17 +841,6 @@ export function ThreadRelationshipsPanel(props: {
         <ThreadDetailsSection
           headingId="thread-details-lineage-heading"
           title={runningCount > 0 ? `Lineage · ${runningCount} running` : "Lineage"}
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
-          // A lone "Previous agents" row names itself; the heading returns for status or actions.
-          showHeading={
-            runningCount > 0 ||
-            canDetach ||
-            related.length > 0 ||
-            active.length > 0 ||
-            delegatedFrom !== undefined
-          }
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
           data-thread-relationships-panel
           actions={
             canDetach ? (

@@ -224,11 +224,8 @@ export function BranchToolbarBranchSelector({
           input: { cwd: branchCwd },
         }),
   );
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   const panelBaseRef = branchStatusQuery.data?.branchChanges?.baseRef ?? null;
-=======
   const trimmedBranchQuery = branchQuery.trim();
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   const branchRefState = usePaginatedBranches({
     environmentId,
     cwd: branchCwd,
@@ -720,7 +717,6 @@ export function BranchToolbarBranchSelector({
             className="min-w-0 flex-1 max-w-full active:scale-100"
             disabled={isInitialBranchesLoadPending || isBranchActionPending}
           >
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
             {displayMode === "panel" ? (
               <ThreadDetailsRowContent
                 label={
@@ -748,17 +744,6 @@ export function BranchToolbarBranchSelector({
                 </ComposerContextLabel>
               </>
             )}
-=======
-            <GitBranchIcon
-              className={cn(
-                "size-3 shrink-0",
-                displayMode === "panel" && THREAD_DETAILS_PANEL_ICON_CLASS,
-              )}
-            />
-            <ComposerContextLabel displayMode={displayMode}>
-              <MiddleTruncate value={triggerLabel} variant="cap-aligned" className="w-full" />
-            </ComposerContextLabel>
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
           </ComboboxTrigger>
         </span>
         {displayMode === "panel" && prNumber !== undefined && prUrl !== undefined ? (

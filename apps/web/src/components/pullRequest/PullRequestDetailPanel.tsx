@@ -436,11 +436,7 @@ export function PullRequestDetailPanel({
   // Each tab restores the condensed state its own scrolling left behind.
   const [condensedByTab, setCondensedByTab] = useState<Partial<Record<DetailTab, boolean>>>({});
   const condensed = condensedByTab[tab] ?? false;
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-  const scrollerByTab = useRef<Partial<Record<DetailTab, HTMLDivElement | null>>>({});
-=======
-  const scrollerByTab = useRef<Partial<Record<PullRequestDetailTab, HTMLElement | null>>>({});
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+  const scrollerByTab = useRef<Partial<Record<DetailTab, HTMLElement | null>>>({});
   // Fresh ref callbacks would detach and reattach every scroller on each render.
   const [scrollerRefs] = useState(() => ({
     summary: (node: HTMLElement | null) => {
@@ -458,13 +454,8 @@ export function PullRequestDetailPanel({
   // Save the target before collapse: the browser may clamp scrollTop as the viewport grows,
   // so applying a delta afterward would compensate twice.
   const compensationRef = useRef<{
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
     tab: DetailTab;
-    scroller: HTMLDivElement;
-=======
-    tab: PullRequestDetailTab;
     scroller: HTMLElement;
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     target: number;
   } | null>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores the scroller's scrollTop before paint after the header condenses

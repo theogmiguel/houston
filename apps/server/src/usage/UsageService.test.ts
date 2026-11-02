@@ -72,11 +72,8 @@ function claudeLine(
   id: number,
   outputTokens: number,
   model = "claude-fable-5",
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-  timestamp = "2026-08-01T10:00:00Z",
-=======
   sessionId = "session-1",
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+  timestamp = "2026-08-01T10:00:00Z",
 ): string {
   return `${JSON.stringify({
     type: "assistant",
@@ -2756,7 +2753,6 @@ describe("UsageService", () => {
     Effect.gen(function* () {
       yield* TestClock.setTime(Date.parse("2026-08-12T00:00:00Z"));
       const { transcript, settings, home } = yield* setup;
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
       // The saved-usage cache keeps 92 days counted from the real clock, so the
       // transcript date must move with it instead of being a fixed calendar day.
       const dayMs = 24 * 60 * 60 * 1000;
@@ -2769,14 +2765,10 @@ describe("UsageService", () => {
         sinceDay: usageDay(-1),
         untilDay: usageDay(1),
       };
-=======
-      // Saved usage is pruned after the retention window, so pin "now" near the write.
-      yield* TestClock.setTime(Date.parse("2026-08-15T00:00:00Z"));
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
       yield* Effect.promise(async () => {
         await NodeFSP.writeFile(
           transcript,
-          claudeLine(1, 5, undefined, isoAt(writtenAtMs)),
+          claudeLine(1, 5, undefined, undefined, isoAt(writtenAtMs)),
         );
         const lastWrite = writtenAtMs / 1000;
         await NodeFSP.utimes(transcript, lastWrite, lastWrite);

@@ -2,13 +2,9 @@
 
 **Local-first mission control for CLI coding agents on Linux and Windows.**
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 Houston runs coding agents in persistent threads served by a detached local server. Agent
 runs continue when the window closes, and agents can delegate work to other threads through
 the server's orchestration tools.
-=======
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, Google Antigravity, and fx. If they're set up on your computer, T3 Code can control them.
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 
 [Download Houston](https://github.com/theogmiguel/houston/releases) ·
 [Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md)
@@ -19,7 +15,6 @@ Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCod
 
 ## Why Houston
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 - **Persistent sessions.** Closing the desktop app detaches from the server without stopping
   running agents. Supported agents can resume saved conversations after a restart.
 - **Real terminals.** Every pane is a PTY rendered by Houston's terminal engine. Input goes
@@ -39,18 +34,6 @@ Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCod
   turns findings into fix tasks.
 - **Local control plane.** Houston has no account, hosted control plane or telemetry. Session
   state remains local, and secrets managed by Houston use the operating system keychain.
-=======
-> [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, Grok Build, OpenCode, Antigravity, and fx. Install and authenticate at least one provider before use:
->
-> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
-> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
-> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
-> - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
-> - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
-> - fx: install [fx](https://fx.sh) and run `fx login` on the machine running the T3 Code server ([setup guide](./docs/user/providers-fx.md))
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 
 ## Supported agent CLIs
 

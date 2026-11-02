@@ -513,11 +513,7 @@
     "@noble/hashes": "catalog:",
     "@t3tools/contracts": "workspace:*",
     "effect": "catalog:",
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
     "ffi-rs": "1.3.2",
-    "jose": "catalog:",
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     "mdast-util-directive": "catalog:",
     "mdast-util-to-hast": "^13.2.1",
     "micromark-extension-directive": "catalog:",

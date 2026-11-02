@@ -216,10 +216,7 @@ describe("houston server command safety", () => {
   );
 });
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 describe("houston app", () => {
-=======
-describe("t3 app", () => {
   it.live.each(["permissions", "owner", "symlink", "missing owner"] as const)(
     "rejects unsafe %s on the socket directory before sending",
     (unsafe) =>
@@ -274,7 +271,6 @@ describe("t3 app", () => {
       }),
   );
 
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   it.effect("uses T3CODE_HOME or --base-dir and sends the default or explicit path", () =>
     withTempDirectory("t3-app-command-test-", (root) =>
       Effect.gen(function* () {

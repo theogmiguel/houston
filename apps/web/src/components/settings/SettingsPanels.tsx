@@ -27,7 +27,6 @@ import { resolvePastedPath } from "@t3tools/shared/path";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
-import { AboutVersionTitle } from "./AboutVersionTitle";
 import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
 import { MobileAppSettingsRow } from "./MobileAppSettingsRow";
 import { openDesktopUpdateReleaseNotes } from "../desktopUpdate.toast";
@@ -36,6 +35,7 @@ import { T3AppIcon } from "../T3AppIcon";
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
+  getDesktopUpdateDisabledReason,
   getDesktopUpdateInstallConfirmationMessage,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
@@ -73,7 +73,7 @@ import { ensureLocalApi, readLocalApi } from "../../localApi";
 import { isMacPlatform } from "../../lib/utils";
 import { useEnvironmentProviders, useEnvironments } from "../../state/environments";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
-import { Button } from "../ui/button";
+import { Button, InlineButton } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
 import {
   NumberField,
@@ -86,6 +86,8 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { Switch } from "../ui/switch";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { ScopedSwitch } from "./ScopedSwitch";
+import { showAnchoredCopySuccessToast } from "../ui/anchoredCopyToast";
+import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -142,18 +144,47 @@ const QUIT_CONFIRMATION_MODE_LABELS: Record<QuitConfirmationMode, string> = {
 };
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 function AboutVersionTitle() {
+  const copyButtonRef = useRef<HTMLButtonElement>(null);
+  const { copyToClipboard } = useCopyToClipboard<void>({
+    target: "version",
+    onCopy: () => showAnchoredCopySuccessToast(copyButtonRef),
+    onError: (error) => {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not copy version",
+          description: error.message,
+        }),
+      );
+    },
+  });
   return (
     <span className="inline-flex items-center gap-2">
       <T3AppIcon className="size-8 shrink-0 rounded-md" />
-      <span>Houston {APP_VERSION}</span>
+      <span className="inline-flex items-baseline gap-1.5">
+        Houston
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <InlineButton
+                ref={copyButtonRef}
+                tone="muted"
+                className="font-mono text-2xs"
+                aria-label={`Copy version ${APP_VERSION}`}
+                onClick={() => copyToClipboard(APP_VERSION, undefined)}
+              >
+                {APP_VERSION}
+              </InlineButton>
+            }
+          />
+          <TooltipPopup>Copy version</TooltipPopup>
+        </Tooltip>
+      </span>
     </span>
   );
 }
 
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 function AboutVersionSection() {
   const updateState = useDesktopUpdateState();
   const [switchChannel, setSwitchChannel] = useState<DesktopUpdateChannel | null>(null);
@@ -302,13 +333,9 @@ function AboutVersionSection() {
   const description =
     action === "download" || action === "install"
       ? "Update available."
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-      : "Current version of the application.";
-  const releaseNotesUrl = getDesktopUpdateReleaseUrl(APP_VERSION);
-=======
       : (getDesktopUpdateDisabledReason(updateState, updatesDenial) ??
         "Current version of the application.");
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+  const releaseNotesUrl = getDesktopUpdateReleaseUrl(APP_VERSION);
 
   return (
     <>
@@ -1606,6 +1633,7 @@ export function ThreadsSettingsPanel() {
             className="w-full sm:w-72"
             value={mixedAddProjectBaseDirectory ? "" : settings.addProjectBaseDirectory}
             onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
+            normalizeDraft={resolvePastedPath}
             placeholder={mixedAddProjectBaseDirectory ? "Mixed" : "~/"}
             spellCheck={false}
             aria-label="Add project base directory"
@@ -1645,51 +1673,7 @@ export function ThreadsSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
       <ProjectDefaultsSettings category="general" extraRows={extraNewThreadRows} />
-=======
-      <SettingsSection id="new-projects" title="New projects">
-        <SettingsRow
-          serverScoped
-          settingKeys={["addProjectBaseDirectory"]}
-          {...searchableSetting("add-project-starts-in")}
-          description='Leave empty to use "~/" when the Add Project browser opens.'
-          resetAction={
-            settings.addProjectBaseDirectory !==
-            DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
-              <SettingResetButton
-                label="add project base directory"
-                onClick={() =>
-                  updateSettings({
-                    addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <DraftInput
-              size="sm"
-              className="w-full sm:w-72"
-              value={mixedAddProjectBaseDirectory ? "" : settings.addProjectBaseDirectory}
-              onCommit={(next) => updateSettings({ addProjectBaseDirectory: next })}
-              normalizeDraft={resolvePastedPath}
-              placeholder={mixedAddProjectBaseDirectory ? "Mixed" : "~/"}
-              spellCheck={false}
-              aria-label="Add project base directory"
-            />
-          }
-        />
-      </SettingsSection>
-
-      <ProjectDefaultsSettings category="general" />
-
-      {!isProjectScope ? (
-        <SettingsSection id="snooze" title="Snooze">
-          <SnoozePresetsRow />
-        </SettingsSection>
-      ) : null}
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 
       <SettingsSection id="usage-limits" title="Usage limits">
         <SettingsRow
@@ -1711,11 +1695,7 @@ export function ThreadsSettingsPanel() {
         <SettingsRow
           serverScoped
           {...searchableSetting("snooze-limited-threads")}
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
           description="Hold usage-limit stops until reset. Pair with resume to continue when it returns."
-=======
-          description="Snooze threads until their usage limits reset. Enable auto-resume to continue the agent after the reset."
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
           settingKeys={["snoozeLimitedThreads"]}
           control={
             <ScopedSwitch
@@ -2116,26 +2096,6 @@ export function AboutSettingsPanel() {
 
       <SettingsSection id="legal" title="Legal">
         <SettingsRow
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
-          {...searchableSetting("privacy-policy")}
-          description={
-            telemetryOff === undefined
-              ? "How we handle your data, including the anonymous usage data T3 Code collects."
-              : `How we handle your data. ${telemetryOff}`
-          }
-          control={
-            <Button
-              render={<a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer noopener" />}
-              size="sm"
-              variant="outline"
-            >
-              View policy
-            </Button>
-          }
-        />
-        <SettingsRow
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
           {...searchableSetting("open-source-licenses")}
           description="Notices for dependencies, assets, and optional tools used by Houston."
           control={

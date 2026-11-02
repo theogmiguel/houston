@@ -1337,12 +1337,8 @@ export const CODEX_THREAD_CONFIG = {
 // T3 waits can block for an hour; keep Codex's MCP timeout above that.
 const CODEX_T3_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 export function codexThreadRuntimeParams(input: {
-=======
-function codexThreadRuntimeParams(input: {
   readonly threadId: ThreadId | null;
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
   readonly modelSelection?: { readonly model: string };
   readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
@@ -1367,7 +1363,10 @@ function codexThreadRuntimeParams(input: {
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
     config: {
       ...CODEX_THREAD_CONFIG,
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
+      // One app-server serves many threads, so the id goes in per-thread shell config, not its env.
+      ...(input.threadId === null
+        ? {}
+        : { [`shell_environment_policy.set.${PortScanner.AGENT_THREAD_ENV}`]: input.threadId }),
       // Houston: the read-only sandbox does not cover MCP tool calls, so a read-only run
       // replaces every configured MCP server with Houston's own, when it holds a credential.
       ...(isReadOnlySandbox(input.runtimePolicy)
@@ -1376,24 +1375,6 @@ function codexThreadRuntimeParams(input: {
           ? {}
           : // Override only T3's server so launch-argument MCP servers survive.
             { "mcp_servers.t3-code": t3Server }),
-=======
-      // One app-server serves many threads, so the id goes in per-thread shell config, not its env.
-      ...(input.threadId === null
-        ? {}
-        : { [`shell_environment_policy.set.${PortScanner.AGENT_THREAD_ENV}`]: input.threadId }),
-      ...(mcpSession === undefined
-        ? {}
-        : {
-            // Override only T3's server so launch-argument MCP servers survive.
-            "mcp_servers.t3-code": {
-              url: mcpSession.endpoint,
-              tool_timeout_sec: CODEX_T3_MCP_TOOL_TIMEOUT_SEC,
-              http_headers: {
-                Authorization: mcpSession.authorizationHeader,
-              },
-            },
-          }),
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     },
   };
 }

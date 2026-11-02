@@ -420,16 +420,12 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     Option.fromUndefinedOr(env.host),
     Option.fromUndefinedOr(bootstrap?.host),
   );
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   // A background service exists to be reached from other devices, so it
   // listens on private networks unless `service.env` sets `T3CODE_HOST`.
   // Clients then learn its LAN address and prefer it over loopback.
-=======
-  // Private networks only, so clients learn a LAN address and prefer it over
-  // T3 Connect. `t3 service install` writes T3CODE_LAN=false for a new
-  // service; one installed before T3CODE_LAN existed keeps listening.
+  // `houston service install` writes T3CODE_LAN=false for a new service; one
+  // installed before T3CODE_LAN existed keeps listening.
   const lan = resolveOptionPrecedence(normalizedFlags.lan, Option.fromUndefinedOr(env.lan));
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   const privateNetworkOnly =
     Option.isNone(explicitHost) &&
     mode === "web" &&

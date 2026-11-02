@@ -13,17 +13,11 @@ daemon, not a text file you hand-edit.
 
 ## Pass through to terminal
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 Settings ▸ Shortcuts has a **Pass through to terminal** toggle (off by default). With it
 off, a focused pane still receives Houston's remappable chords as Houston shortcuts
 first. Turn it on and a focused pane gets those same chords sent to the process running
 in it instead of acting on them in Houston. The prefix key (below) is the exception: it
 stays with Houston either way, so the keyboard always has a way out of a terminal.
-=======
-When a thread has queued messages, `mod+Shift+Enter` sends the first one as a steer
-while a turn is running, or as a new turn when the thread is stopped. Change it under
-**Queue: Send First Queued Message** in Keybindings.
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 
 This does not cover the terminal-native clipboard and find actions. `Ctrl+C` copies when
 there is a selection and otherwise reaches the PTY as an interrupt. `Ctrl+Shift+C` always
@@ -34,15 +28,7 @@ There's a related master switch, **Enable shortcuts**, also in this section: tur
 off stops Houston from acting on any of its own chords at all (your overrides are kept,
 just not dispatched).
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 ## The prefix key
-=======
-In the model picker, press Left in an empty search field or Shift+Tab to reach
-the provider list. Use Up/Down to move and Enter to choose. Right returns to
-model search. Right at the end of the search moves to the highlighted model's effort
-levels, and Left comes back. Choosing a model keeps the picker open on its effort. `mod+shift+up` and `mod+shift+down` switch providers directly and clear the
-search. These provider shortcuts can also be changed in Settings.
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 
 With a terminal focused, every key reaches the agent, so the single-key shortcuts below
 (`t`, `]`, `1`–`9`, …) do not fire. The **prefix key**, `Ctrl+Space` by default, is the
@@ -162,100 +148,6 @@ restores the panel's previous width. In branch search, **Enter** creates a new b
 from the default base; **Ctrl+Enter** creates its worktree in a new pane. These local
 review and search shortcuts are separate from the terminal prefix key.
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 `Ctrl+F` in Changes or a pull request's **Files** opens find in the diff (see
 [Changes](changes.md#reviewing-a-diff)). It answers only while focus is inside the diff, so
 it never takes `Ctrl+F` from a focused terminal, and it can be rebound on its own.
-=======
-Project scripts use `script.{id}.run`, such as `script.test.run`.
-
-## Key syntax
-
-Join modifiers and a key with `+`, such as `mod+shift+d` or `ctrl+l`.
-`mod` means Command on macOS and Control elsewhere. Other modifiers are
-`cmd` / `meta`, `ctrl` / `control`, `alt` / `option`, and `shift`.
-
-## When conditions
-
-Available context keys are `terminalFocus`, `terminalOpen`, `previewFocus`,
-`previewOpen`, `modelPickerOpen`, `usagePageOpen`, `composerFocus`, `draftThreadRoute`,
-`turnRunning`, `editableFocus`, `isWeb`, and `isDesktop`.
-`draftThreadRoute` is true on a draft thread, including a restored draft, until it is first sent.
-`editableFocus` is true while a text field, the composer, or another editor has
-the keyboard. `isWeb` is true in a browser tab. `isDesktop` is true in the
-desktop app. Unknown keys evaluate to `false`.
-
-`mod+1` through `mod+9` jump to the first nine threads, and to models while the
-model picker is open. The thread jumps do not run while the model picker is open.
-Those defaults use `isDesktop` so they do not steal the
-browser's tab-switch shortcuts. Remove that condition in Settings if you want
-the same jumps in a browser.
-
-Combine keys with `!` for not, `&&` for and, `||` for or, and parentheses:
-
-```json
-{ "key": "mod+j", "command": "terminal.toggle", "when": "terminalOpen && !terminalFocus" }
-```
-
-## Find in the current thread
-
-`chat.find` searches conversation messages and proposed plans in the active thread. Entering a
-query searches the entire thread, including older messages. Thread search requires server support;
-update an older server to enable it. Select **Retry** if a search fails. It defaults to
-`mod+f` outside terminals and previews. Press **Enter** or **Shift+Enter** to move between matches,
-and **Escape** to close find.
-
-## Precedence
-
-The last rule whose key and condition both match wins, even if it belongs to a
-different command. Put a more specific rule after a general one when they share
-a shortcut.
-
-## Commands with special behavior
-
-`thread.stop` interrupts the running turn in the focused thread. It has no default
-shortcut; assign one in **Settings → Keybindings**.
-
-`thread.undo` (`mod+z` by default) reverses the actions shown in the notice at the
-bottom of the sidebar, such as unpin, settle, snooze, archive, or discarding a
-draft. Consecutive
-actions of the same kind undo together. The notice remains available for five
-seconds after the latest action. Right after an action, the shortcut works even
-in a text field such as the composer. Once you type or press another key, the
-field gets its own undo back. Terminals always keep their native shortcut.
-
-`navigation.back` (`mod+[` by default) and `navigation.forward` (`mod+]`) move
-through the pages you have visited, like a browser's back and forward buttons.
-
-`chat.new` may ask you to choose a project when there is more than one.
-`chat.newLocal` skips that chooser. Both use your
-[new-thread defaults](./thread-sidebar.md#start-a-thread). `chat.newWithoutProject`
-(`mod+alt+n`) starts a thread [without a project](./thread-sidebar.md#start-without-a-project).
-
-## Reserved shortcuts
-
-In the desktop app, `mod+w` closes the focused terminal or the active right-panel
-tab. When nothing remains to close, it does nothing; it never closes the window. In a browser, `mod+w`
-closes the browser tab; rebind `rightPanel.close` and `terminal.close` to an available
-shortcut such as `alt+w`.
-
-`mod+shift+t` reopens the last closed tab across the app, including files,
-diffs, pull requests, browsers, and devices, in the order you closed them.
-A browser opens in a fresh session without its old page history. Incognito tabs
-can reopen until you reload or quit the app. This shortcut does not undo deleted work.
-Browsers also use it to reopen browser tabs; choose another binding in Settings
-if the browser takes it first.
-
-Many defaults include `!terminalFocus` so they do not intercept terminal input.
-Keep that condition when remapping them if you want the same behavior.
-
-## Desktop quit shortcut
-
-Use `Cmd+Q` on macOS or `Ctrl+Q` on Windows and Linux. In the default **Hold** mode,
-hold for 1.2 seconds or press twice within 500 milliseconds. Holding requires
-keyboard repeat; if repeat is disabled, use two presses or the application menu.
-
-Change **Settings → General → Confirmations → Quit shortcut** to **Direct** for a
-single press or **Double press** for two presses only. Choosing **Quit** from the
-application menu always quits immediately.
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb

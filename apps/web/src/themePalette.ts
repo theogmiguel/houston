@@ -403,7 +403,6 @@ function legacyThemeMode(theme: ThemePreference): ThemeAppearance | null {
   return theme === LEGACY_T3_CHAT_DARK_THEME_ID ? "dark" : null;
 }
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 // index.css paints Houston's Paper and Graphite roles over the shared palette,
 // so a theme editor preview and the page agree before a custom theme applies.
 const STANDARD_WEB_THEME_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> = {
@@ -427,22 +426,6 @@ const STANDARD_WEB_THEME_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> =
     messageSurface: "#2d2d30",
     terminalBackground: "#0f0f11",
   },
-=======
-export function getStandardThemeColors(appearance: ThemeAppearance): ThemeColors {
-  if (appearance === "dark") {
-    return (standardDarkThemeColors ??= decodeThemeColors({
-      ...T3_CODE_DARK_THEME_COLORS,
-      canvas: "#000000",
-    }));
-  }
-  return (standardLightThemeColors ??= decodeThemeColors(T3_CODE_LIGHT_THEME_COLORS));
-}
-
-// index.css paints the light bubble a step darker than the shared palette mobile uses.
-const STANDARD_WEB_PAINTED_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> = {
-  light: { messageSurface: "#ebebed" },
-  dark: { canvas: "#000000", messageSurface: "#1e1e1e" },
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 };
 
 export function getStandardThemeColors(appearance: ThemeAppearance): ThemeColors {

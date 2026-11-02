@@ -32,23 +32,11 @@ Download the current release from
 - **Linux**: an `.AppImage` and a `.deb`.
 - **Windows**: an NSIS installer (`.exe`).
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 On Linux, choose the package matching your architecture. For an AppImage, make the file
 executable and launch it. Install a `.deb` with your package manager. On Windows, run the
 `Houston_<version>_x64-setup.exe` installer and launch Houston from the Start menu.
 SmartScreen may warn because the installer has no Authenticode signature; its updater
 signature verifies Houston updates and does not replace Windows code signing.
-=======
-| Task                                             | Command                                                                 |
-| ------------------------------------------------ | ----------------------------------------------------------------------- |
-| Start the server and open the web app            | `t3`                                                                    |
-| Start the server without a browser               | `t3 serve`                                                              |
-| Use it from your other devices                   | `t3 up` ([details](./remote-access.md))                                 |
-| Keep it running in the background (macOS, Linux) | `t3 service install` ([details](./background-service.md))               |
-| Move to the newest release                       | `t3 update`                                                             |
-| Reclaim database space                           | `t3 doctor` ([details](./background-service.md#reclaim-database-space)) |
-| Remove it again                                  | `t3 uninstall`                                                          |
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 
 Windows installers have been published since v0.14.0; older releases contain Linux
 packages only.
@@ -101,20 +89,9 @@ also delete an empty file or object that Houston created.
 
 ### Installing the CLIs
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 Houston does not install agent CLIs for you. Install at least one from its vendor; the
 commands below come from each vendor's own install guide, and Houston can spawn a CLI
 once its command is on your PATH.
-=======
-When a provider CLI is behind its latest release, its provider card shows the
-available version. **Update now** runs the installer that owns the CLI
-(Homebrew, or a global npm, pnpm, Yarn, Bun, Volta, or Vite+ install), or the
-CLI's own update command when T3 Code cannot tell. Update a CLI installed with
-mise through mise. Cursor and Antigravity update with T3 Code. Homebrew and
-Chocolatey installs compare against the version their package manager offers,
-which can trail the npm release; update Claude installed with Chocolatey
-through Chocolatey.
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 
 - **Claude Code** ([install guide](https://code.claude.com/docs/en/setup)):
   `curl -fsSL https://claude.ai/install.sh | bash` on macOS, Linux and WSL, or
@@ -146,7 +123,6 @@ install Git for Windows to provide Git Bash for Claude lifecycle hooks, then ena
 Claude hook in Settings ▸ Agents ▸ Claude. If Git Bash is unavailable, Claude reports a
 hook error instead of reporting status.
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 Houston also registers itself as an MCP server in `~/.claude.json` (or under
 `$CLAUDE_CONFIG_DIR` if you've set that), so agents in Claude Code panes can spawn and
 talk to other panes. There is currently no automatic way to remove this MCP entry; remove
@@ -300,11 +276,3 @@ agent-to-agent orchestration, and installing hooks for a provider — each skipp
 of the three screens reappears once its condition is already met, and there is no stored
 "onboarding complete" flag: removing your last workspace later puts you back on the same
 "No workspaces yet" screen.
-=======
-- [Working with threads](./thread-sidebar.md): start tasks and organize parallel work.
-- [Permission modes](./permission-modes.md): choose when agents ask before acting.
-- [Remote access](./remote-access.md): connect from another device.
-- [Running in the background](./background-service.md): keep a Linux or macOS host available.
-- [Updating T3 Code](./updating.md): update the app and connected servers.
-- [Managed policy](./managed-policy.md): configure T3 Code for everyone on a machine.
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb

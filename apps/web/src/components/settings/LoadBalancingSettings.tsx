@@ -8,13 +8,8 @@ import {
 import type { EnvironmentPresentation } from "~/state/environments";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 import { EnvironmentRow, environmentTransportLabel } from "./EnvironmentRow";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
-=======
-import { EnvironmentRow, EnvironmentTransportLabel } from "./EnvironmentRow";
-import { FoldedSettingsSection } from "./FoldedSettingsSection";
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 import { searchableSetting } from "./settingsSearch";
 
 const preferences = [
@@ -65,7 +60,6 @@ export function LoadBalancingSettings({
     ? summarizeLoadPreferences(environments, settings.loadBalancingWeights)
     : null;
   return (
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
     <SettingsSection id={id} title="Routing">
       <SettingsRow
         title="Load balancing"
@@ -92,56 +86,6 @@ export function LoadBalancingSettings({
               kind={resolveEnvironmentMachineKind(environment.serverConfig)}
               label={environment.label}
               subtitle={environmentTransportLabel(environment)}
-=======
-    <FoldedSettingsSection
-      id={id}
-      title={title}
-      summary={
-        settings.loadBalancingEnabled
-          ? summarizeLoadPreferences(environments, settings.loadBalancingWeights)
-          : "Off"
-      }
-      control={
-        <Switch
-          aria-label="Automatically balance load"
-          checked={settings.loadBalancingEnabled}
-          disabled={!settingsHydrated}
-          onCheckedChange={(loadBalancingEnabled) => updateClientSettings({ loadBalancingEnabled })}
-        />
-      }
-    >
-      <p className="px-3 py-2.5 text-xs text-muted-foreground sm:px-4">
-        New threads in shared projects start on the machine with the most free CPU and memory,
-        weighted by each machine's preference.
-      </p>
-      {environments.map((environment) => (
-        <EnvironmentRow
-          key={environment.environmentId}
-          kind={resolveEnvironmentMachineKind(environment.serverConfig)}
-          label={environment.label}
-          subtitle={<EnvironmentTransportLabel environment={environment} />}
-        >
-          <Select
-            items={preferences}
-            value={loadPreferenceForWeight(
-              settings.loadBalancingWeights[environment.environmentId],
-            )}
-            disabled={!settingsHydrated || !settings.loadBalancingEnabled}
-            onValueChange={(value) => {
-              if (value === null) return;
-              updateClientSettings({
-                loadBalancingWeights: {
-                  ...settings.loadBalancingWeights,
-                  [environment.environmentId]: value,
-                },
-              });
-            }}
-          >
-            <SelectTrigger
-              size="xs"
-              className="w-32"
-              aria-label={`${environment.label} load preference`}
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
             >
               <Select
                 items={preferences}

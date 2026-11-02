@@ -221,7 +221,8 @@ const installFromArchive = Effect.fn("cloud.pinned_runtime.install_archive")(fun
     .writeFile(archivePath, archive)
     .pipe(
       Effect.mapError(
-        (cause) => new PinnedRuntimeInstallError({ step: "writing the houston release archive", cause }),
+        (cause) =>
+          new PinnedRuntimeInstallError({ step: "writing the houston release archive", cause }),
       ),
     );
   input.onProgress?.({ stage: "extract" });
@@ -394,11 +395,8 @@ export function launcherOwnsVersionsDir(
   return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-/** The executable a `houston.cmd` shim written by the install script or `houston update` runs. */
-=======
 /**
- * `t3 update` repoints the launcher it was started through, which may be on neither PATH nor the
+ * `houston update` repoints the launcher it was started through, which may be on neither PATH nor the
  * default bin dir. Unrecorded, the next prune would remove the runtime it now points at.
  */
 export const recordPinnedRuntimeLauncher = Effect.fn("cloud.pinned_runtime.record_launcher")(
@@ -418,8 +416,7 @@ export const recordPinnedRuntimeLauncher = Effect.fn("cloud.pinned_runtime.recor
   },
 );
 
-/** The executable a `t3.cmd` shim written by the install script or `t3 update` runs. */
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+/** The executable a `houston.cmd` shim written by the install script or `houston update` runs. */
 export const windowsShimTarget = (contents: string) => /^"([^"]+)"/m.exec(contents)?.[1];
 
 /** Where the `houston` launchers written by the install scripts and `houston update` point. */

@@ -140,13 +140,9 @@ class RepositoryIdentityCacheKey extends Data.Class<{
 const resolveRepositoryIdentityCacheKey = Effect.fn("RepositoryIdentityResolver.resolveCacheKey")(
   function* (cwd: string) {
     const processRunner = yield* ProcessRunner.ProcessRunner;
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-    const env = gitSpawnEnv(process.env, yield* HostProcess.Platform);
-=======
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const env = explicitBareRepositoryEnv(process.env, yield* HostProcess.Platform);
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+    const env = gitSpawnEnv(process.env, yield* HostProcess.Platform);
 
     // `git -C` cannot enter a missing folder or a file, so every probe below would fail.
     const isFolder = yield* fileSystem.stat(cwd).pipe(

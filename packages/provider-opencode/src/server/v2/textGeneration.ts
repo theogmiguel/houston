@@ -112,22 +112,11 @@ const runOnServer = Effect.fn("Opencode2TextGeneration.runOnServer")(function* (
     ),
     Effect.forkScoped,
   );
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-  const session = yield* client.session.create({
-    title: `Houston ${input.operation}`,
-    location: Location.PublicRef.make({ directory: AbsolutePath.make(input.cwd) }),
-    model: Model.Ref.make({
-      providerID: Provider.ID.make(parsed.providerID),
-      id: Model.ID.make(parsed.modelID),
-      ...(variant === undefined ? {} : { variant: Model.VariantID.make(variant) }),
-    }),
-    permissions: GENERATION_PERMISSIONS,
-=======
   // The limit covers creating the session and sending the prompt as well, since
   // either request can stall while the event stream stays connected.
   const generate = Effect.gen(function* () {
     const session = yield* client.session.create({
-      title: `T3 Code ${input.operation}`,
+      title: `Houston ${input.operation}`,
       location: Location.PublicRef.make({ directory: AbsolutePath.make(input.cwd) }),
       model: Model.Ref.make({
         providerID: Provider.ID.make(parsed.providerID),
@@ -153,7 +142,6 @@ const runOnServer = Effect.fn("Opencode2TextGeneration.runOnServer")(function* (
       ...(images.length === 0 ? {} : { files: images }),
     });
     return yield* Deferred.await(outcome);
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   });
   const result = yield* generate.pipe(
     Effect.timeoutOrElse({

@@ -4,11 +4,7 @@ import {
   type AssistantCitation,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 import { MessageSquarePlusIcon } from "lucide-react";
-=======
-import { QuoteIcon } from "lucide-react";
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 import { use, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {

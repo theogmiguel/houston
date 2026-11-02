@@ -56,28 +56,29 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
     }).pipe(Effect.scoped),
   );
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-  it.effect("names this install's launcher when houston is not on PATH", () =>
-=======
-  it.effect("keeps the arguments, so root runs setup on the same T3 home", () =>
+  it.effect("keeps the arguments, so root runs setup on the same Houston home", () =>
     Effect.gen(function* () {
-      const args = ["--base-dir", "/srv/t3 home"];
+      const args = ["--base-dir", "/srv/houston home"];
       expect(
         yield* rootCommand({
           node: "/home/theo/.local/node/bin/node",
-          entry: "/home/theo/.local/lib/node_modules/t3/dist/bin.mjs",
+          entry: "/home/theo/.local/lib/node_modules/houston/dist/bin.mjs",
           path: yield* pathWithT3,
           args,
         }),
-      ).toBe(`sudo env "PATH=$PATH" t3 browser setup --base-dir '/srv/t3 home'`);
+      ).toBe(`sudo env "PATH=$PATH" houston browser setup --base-dir '/srv/houston home'`);
       expect(
-        yield* rootCommand({ node: "/opt/t3/t3", entry: "/opt/t3/t3", executable: true, args }),
-      ).toBe("sudo /opt/t3/t3 browser setup --base-dir '/srv/t3 home'");
+        yield* rootCommand({
+          node: "/opt/t3/houston",
+          entry: "/opt/t3/houston",
+          executable: true,
+          args,
+        }),
+      ).toBe("sudo /opt/t3/houston browser setup --base-dir '/srv/houston home'");
     }).pipe(Effect.scoped),
   );
 
-  it.effect("names this install's launcher when t3 is not on PATH", () =>
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+  it.effect("names this install's launcher when houston is not on PATH", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -93,20 +94,16 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
 
       expect(yield* rootCommand(desktop)).toBe(`sudo '${shim}' browser setup`);
 
-      // An unrelated `t3` on PATH, such as an older npm global, is another install's CLI.
+      // An unrelated `houston` on PATH, such as an older npm global, is another install's CLI.
       expect(yield* rootCommand({ ...desktop, path: yield* pathWithT3 })).toBe(
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-        'sudo env "PATH=$PATH" houston browser setup',
-=======
         `sudo '${shim}' browser setup`,
       );
 
-      // The link the app installs onto PATH leads to its own launcher, so plain `t3` is right.
+      // The link the app installs onto PATH leads to its own launcher, so plain `houston` is right.
       const linked = yield* fs.makeTempDirectoryScoped();
-      yield* fs.symlink(shim, path.join(linked, "t3"));
+      yield* fs.symlink(shim, path.join(linked, "houston"));
       expect(yield* rootCommand({ ...desktop, path: linked })).toBe(
-        'sudo env "PATH=$PATH" t3 browser setup',
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+        'sudo env "PATH=$PATH" houston browser setup',
       );
 
       expect(
@@ -134,7 +131,10 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
       yield* fs.writeFileString(shim, "@echo off\r\n");
       const hostCommand = (platform: NodeJS.Platform, env: Record<string, string>) =>
         resolveHostCliCommand("doctor", ["--base-dir", "C:\\Users\\Jane Doe\\.t3"]).pipe(
-          Effect.provideService(HostProcess.ExecutablePath, "C:\\Program Files\\T3 Code\\houston.exe"),
+          Effect.provideService(
+            HostProcess.ExecutablePath,
+            "C:\\Program Files\\T3 Code\\houston.exe",
+          ),
           Effect.provideService(HostProcess.Arguments, [
             "C:\\Program Files\\T3 Code\\houston.exe",
             "C:\\Program Files\\T3 Code\\resources\\app.asar\\apps\\server\\dist\\bin.mjs",

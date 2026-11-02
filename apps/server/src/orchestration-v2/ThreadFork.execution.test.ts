@@ -1,11 +1,8 @@
 import { assert, it } from "@effect/vitest";
 import {
   CheckpointId,
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
   CheckpointRef,
   CheckpointScopeId,
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   CommandId,
   EventId,
   MessageId,
@@ -871,8 +868,6 @@ const askSideChat = (threadId: ThreadId, commandId: string) =>
     });
   });
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
 it.effect("resolves an explicit checkpoint fork to its source run", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -928,7 +923,6 @@ it.effect("resolves an explicit checkpoint fork to its source run", () =>
   }).pipe(Effect.provide(forkCases[0]!.layer)),
 );
 
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 it.effect("a side chat of an idle parent still starts with the framing note", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -944,9 +938,6 @@ it.effect("a side chat of an idle parent still starts with the framing note", ()
       stable: true,
     });
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-    yield* forkSideChat("side-chat-idle-fork", parentId, sideChatId);
-=======
     const reads: Array<string> = [];
     const recordReads: Statement.Transformer = (statement) => {
       const [query] = statement.compile();
@@ -963,7 +954,6 @@ it.effect("a side chat of an idle parent still starts with the framing note", ()
           query.includes("FROM orchestration_v2_projection_context_transfers"),
       ),
     );
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     yield* askSideChat(sideChatId, "side-chat-idle-first-message");
 
     const started = yield* orchestrator.getThreadProjection(sideChatId);

@@ -65,21 +65,16 @@ export function DiffCommentAnnotation({
         contentEditable={false}
         onPointerDown={(event) => event.stopPropagation()}
       >
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
         <MessageCircle
           className="size-3.5 h-5 shrink-0 text-(--accent-ink)/70"
           aria-hidden="true"
         />
-        <p className="min-w-0 flex-1 whitespace-pre-wrap text-sm leading-5">{displayedText}</p>
-=======
-        <MessageCircle className="size-3.5 h-5 shrink-0 text-primary/70" aria-hidden="true" />
         <p
           className="min-w-0 flex-1 whitespace-pre-wrap text-sm leading-5"
           dir={textDirection(displayedText)}
         >
           {displayedText}
         </p>
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         {onDelete ? (
           <span className="-my-1 -mr-1 flex shrink-0 opacity-0 transition-opacity group-hover/comment:opacity-100 focus-within:opacity-100 max-sm:opacity-100">
             <Button

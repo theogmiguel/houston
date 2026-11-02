@@ -319,12 +319,7 @@ export function presentThreadShell(
       thread.pendingRuntimeRequest !== null &&
       thread.pendingRuntimeRequest.kind !== "user_input" &&
       thread.pendingRuntimeRequest.kind !== "auth_refresh",
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
     hasPendingUserInput: shellHasPendingUserInput(thread),
-=======
-    // Async questions count too, so a thread with any open question leaves Working.
-    hasPendingUserInput: thread.pendingRuntimeRequest?.kind === "user_input",
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     pendingSubagentRequest,
     hasActionableProposedPlan: thread.hasActionableProposedPlan,
     pendingBackgroundTasks: thread.pendingBackgroundTasks ?? [],

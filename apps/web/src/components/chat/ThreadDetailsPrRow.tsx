@@ -378,7 +378,6 @@ export function ThreadDetailsPrRow({
   const rowLabel = detail === null ? label : `#${number} ${detail.title}`;
   return (
     <>
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
       <ThreadDetailsRow>
         <Tooltip>
           <TooltipTrigger
@@ -389,19 +388,6 @@ export function ThreadDetailsPrRow({
                 aria-label={openAriaLabel}
                 onClick={onOpen}
                 onAuxClick={onOpen}
-=======
-      {detail !== null && (showChecks || trailingAction !== null || watching) ? (
-        <div className="pb-1.5">
-          {openRow(detail.title, "row", true)}
-          <div className="mt-1.5 flex h-5 min-w-0 items-center gap-0.5 ps-9 pe-2.5 text-xs text-muted-foreground">
-            <span className="me-1 shrink-0 tabular-nums">#{number}</span>
-            {showChecks && checksRollup !== null ? (
-              <PullRequestChecksPopover
-                checksState={checksRollup}
-                checks={detail.checks}
-                variant="count"
-                render={<ThreadDetailsControl part="meta" />}
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
               />
             }
           >

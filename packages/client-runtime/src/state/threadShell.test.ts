@@ -181,11 +181,7 @@ describe("v2 thread shell lists", () => {
     const disposeNavigation = registry.mount(threads.navigationThreadShellsAtom);
     const withRequest = (
       kind: "user_input" | "command",
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
       options: { readonly blocking?: boolean; readonly settled?: boolean } = {},
-=======
-      options: { readonly blocking?: boolean } = {},
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     ) =>
       registry.set(snapshotAtom(environmentId), {
         ...v2ShellSnapshot,
@@ -193,10 +189,7 @@ describe("v2 thread shell lists", () => {
           root,
           {
             ...sideChat,
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
             ...(options.settled ? { status: "completed" as const, activityRunStatus: null } : {}),
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
             pendingRuntimeRequest: {
               ...request,
               kind,
@@ -213,15 +206,11 @@ describe("v2 thread shell lists", () => {
       root.id,
     ]);
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
     // An async question waits while the side chat works, like its own row's indicator.
     withRequest("user_input", { blocking: false });
     expect(registry.get(parent)?.pendingSubagentRequest).toBeNull();
     expect(registry.get(inputs)).toEqual([]);
     withRequest("user_input", { blocking: false, settled: true });
-=======
-    withRequest("user_input", { blocking: false });
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     expect(registry.get(parent)?.pendingSubagentRequest).toBe("user_input");
 
     withRequest("command");

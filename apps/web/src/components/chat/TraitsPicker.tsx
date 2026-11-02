@@ -16,6 +16,7 @@ import {
   type ScopedThreadRef,
   type ServerProviderModel,
 } from "@t3tools/contracts";
+import type { EffortDisplay } from "@t3tools/contracts/settings";
 import {
   buildProviderOptionSelectionsFromDescriptors,
   getProviderOptionCurrentLabel,
@@ -23,7 +24,6 @@ import {
   isClaudeUltrathinkPrompt,
   normalizeModelSlug,
 } from "@t3tools/shared/model";
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 import { memo, type ReactNode, useRef } from "react";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import {
@@ -33,10 +33,6 @@ import {
   GaugeIcon,
   ZapIcon,
 } from "lucide-react";
-=======
-import { memo } from "react";
-import { GaugeIcon } from "lucide-react";
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 import {
   Menu,
   MenuGroup,
@@ -56,6 +52,8 @@ import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ComposerControl, ComposerControlIcon, type ComposerControlSize } from "./ComposerControl";
+import { useComposerMenuProps } from "./composerEventScope";
+import { EffortGlyph, resolveEffortGlyph } from "./EffortGlyph";
 import { useComposerMenuState } from "./useComposerMenuState";
 
 type ProviderOptions = ReadonlyArray<ProviderOptionSelection>;
@@ -252,6 +250,18 @@ export function getTraitsSectionVisibility(input: {
   };
 }
 
+export function shouldRenderTraitsControls(input: {
+  provider: ProviderDriverKind;
+  models: ReadonlyArray<ServerProviderModel>;
+  model: string | null | undefined;
+  promptUltrathink?: PromptUltrathink | undefined;
+  modelOptions: ProviderOptions | null | undefined;
+  allowPromptInjectedEffort?: boolean;
+  planModeEnabled: boolean;
+}): boolean {
+  return getTraitsSectionVisibility(input).hasAnyControls;
+}
+
 /**
  * `modelOptions` must already carry the composer's implicit defaults (see
  * `withImplicitFastModeDefault`) so the persisted selection matches what the
@@ -316,7 +326,6 @@ export interface TraitsMenuContentProps {
   allowPromptInjectedEffort?: boolean;
   planModeEnabled: boolean;
   triggerClassName?: string;
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   isComposerOwned?: boolean;
   keybindings?: ResolvedKeybindingsConfig;
   /** Composer chips name the effort level unless the user picked bars. */
@@ -416,8 +425,6 @@ function TraitsReadOnlyRow(props: { icon?: ReactNode; label: string; value: stri
       <span className="shrink-0 text-(--t3)">{props.value}</span>
     </div>
   );
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 }
 
 export type TraitsSelectionInput = TraitsMenuContentProps & TraitsPersistence;
@@ -434,13 +441,7 @@ export function useTraitsSelection({
   reportedModelSelection,
   allowPromptInjectedEffort = true,
   planModeEnabled,
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-  isComposerOwned,
-  keybindings,
-  size = "sm",
-=======
   triggerClassName: _triggerClassName,
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   ...persistence
 }: TraitsSelectionInput) {
   const modelSelection =
@@ -504,30 +505,83 @@ export function useTraitsSelection({
 export const ULTRATHINK_IN_BODY_NOTE =
   'Your prompt contains "ultrathink" in the text. Remove it to change this option.';
 
-const TraitsMenuContent = memo(function TraitsMenuContentImpl(props: TraitsSelectionInput) {
-  const traits = useTraitsSelection(props);
+export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
+  provider,
+  instanceId,
+  models,
+  model,
+  promptUltrathink,
+  onPromptEdit,
+  modelOptions,
+  reportedModelSelection,
+  allowPromptInjectedEffort = true,
+  planModeEnabled,
+  isComposerOwned,
+  keybindings,
+  size = "sm",
+  ...persistence
+}: TraitsMenuContentProps & TraitsPersistence) {
+  const modelSelection =
+    instanceId && model ? { instanceId, model, options: modelOptions ?? [] } : null;
+  const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);
+  const updateModelOptions = (nextOptions: ProviderOptions | undefined) => {
+    if ("onModelOptionsChange" in persistence) {
+      persistence.onModelOptionsChange(nextOptions);
+      return;
+    }
+    const threadTarget = persistence.threadRef ?? persistence.draftId;
+    if (!threadTarget) {
+      return;
+    }
+    setProviderModelOptions(threadTarget, provider, nextOptions, {
+      ...(instanceId ? { instanceId } : {}),
+      model,
+      persistSticky: true,
+    });
+  };
+  const selected = getTraitsSectionVisibility({
+    provider,
+    models,
+    model,
+    promptUltrathink,
+    modelOptions,
+    allowPromptInjectedEffort,
+    planModeEnabled,
+  });
   const {
     descriptors,
     selectDescriptors,
     primarySelectDescriptor,
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
     contextWindowDescriptor,
     contextWindowTokens,
     fastModeDescriptor,
     thinkingDescriptor,
     ultrathinkPromptControlled,
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     ultrathinkInBodyText,
     hasAnyControls,
     modelIsUnavailable,
-  } = traits;
+  } = selected;
+  const updateDescriptors = (nextDescriptors: ReadonlyArray<ProviderOptionDescriptor>) => {
+    updateModelOptions(buildProviderOptionSelectionsFromDescriptors(nextDescriptors));
+  };
+
+  const handleSelectChange = (
+    descriptor: Extract<ProviderOptionDescriptor, { type: "select" }>,
+    value: string,
+  ) => {
+    // Whether a pick applies, and the options it writes, do not depend on the prompt text.
+    const change = getTraitSelectChange(selected, descriptor, "", value);
+    if (!change) return;
+    onPromptEdit?.(
+      (prompt) => getTraitSelectChange(selected, descriptor, prompt, value)?.prompt ?? prompt,
+    );
+    if ("modelOptions" in change) updateModelOptions(change.modelOptions);
+  };
 
   const effortDescriptor =
     selectDescriptors.find(
       (descriptor) =>
-        descriptor.id === primarySelectDescriptor?.id &&
-        REASONING_SELECT_DESCRIPTOR_IDS.has(descriptor.id),
+        descriptor.id === primarySelectDescriptor?.id && isReasoningSelect(descriptor),
     ) ?? null;
   const effortOptions =
     effortDescriptor?.options.filter(
@@ -567,7 +621,11 @@ const TraitsMenuContent = memo(function TraitsMenuContentImpl(props: TraitsSelec
     return (
       <>
         {descriptors.map((descriptor, index) => {
-          const value = traits.currentLabel(descriptor);
+          const value = getProviderOptionCurrentLabel(
+            descriptor,
+            modelSelection,
+            reportedModelSelection,
+          );
           if (!value) return null;
           return (
             <div key={descriptor.id}>
@@ -619,7 +677,6 @@ const TraitsMenuContent = memo(function TraitsMenuContentImpl(props: TraitsSelec
 
   return (
     <>
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
       {effortDescriptor && effortOptions.length > 1 ? (
         <div>
           <TraitsSectionHeader label={effortDescriptor.label} shortcut={effortShortcut} />
@@ -732,76 +789,10 @@ const TraitsMenuContent = memo(function TraitsMenuContentImpl(props: TraitsSelec
           </MenuGroup>
         </div>
       ) : null}
-=======
-      {selectDescriptors.map((descriptor, index) => (
-        <div key={descriptor.id}>
-          {index > 0 ? <MenuDivider /> : null}
-          <MenuGroup>
-            <div className="px-2 pt-1.5 pb-1 font-medium text-muted-foreground text-xs">
-              {descriptor.label}
-            </div>
-            {ultrathinkInBodyText && descriptor.id === primarySelectDescriptor?.id ? (
-              <div className="px-2 pb-1.5 text-muted-foreground/80 text-xs">
-                {ULTRATHINK_IN_BODY_NOTE}
-              </div>
-            ) : null}
-            <MenuRadioGroup
-              value={traits.selectValue(descriptor)}
-              onValueChange={(value) => traits.changeSelect(descriptor, value)}
-            >
-              {selectableProviderOptionChoices(descriptor).map((option) => (
-                <MenuRadioItem
-                  key={option.id}
-                  value={option.id}
-                  hideIndicator
-                  closeOnClick
-                  disabled={ultrathinkInBodyText && descriptor.id === primarySelectDescriptor?.id}
-                >
-                  <span className="flex w-full min-w-0 flex-col">
-                    <span className="flex min-w-0 items-center gap-1">
-                      <span className="min-w-0 truncate">{option.label}</span>
-                      {option.isDefault ? <DefaultBadge /> : null}
-                    </span>
-                    {option.description ? (
-                      <span className="max-w-56 text-pretty text-muted-foreground/80 text-xs">
-                        {option.description}
-                      </span>
-                    ) : null}
-                  </span>
-                </MenuRadioItem>
-              ))}
-            </MenuRadioGroup>
-          </MenuGroup>
-        </div>
-      ))}
-      {booleanDescriptors.map((descriptor, index) => (
-        <div key={descriptor.id}>
-          {index > 0 || selectDescriptors.length > 0 ? <MenuDivider /> : null}
-          <MenuGroup>
-            <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">
-              {descriptor.label}
-            </div>
-            <MenuRadioGroup
-              value={descriptor.currentValue === true ? "on" : "off"}
-              onValueChange={(value) => traits.changeBoolean(descriptor.id, value === "on")}
-            >
-              {(["on", "off"] as const).map((value) => (
-                <MenuRadioItem key={value} value={value} hideIndicator closeOnClick>
-                  <span className="flex w-full min-w-0 items-center justify-between gap-3">
-                    <span>{value === "on" ? "On" : "Off"}</span>
-                  </span>
-                </MenuRadioItem>
-              ))}
-            </MenuRadioGroup>
-          </MenuGroup>
-        </div>
-      ))}
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     </>
   );
 });
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 function ResponsiveEffortLabel(props: { label: string; responsive: boolean }) {
   const full = shortEffortLabel(props.label);
   const compact = shortEffortLabel(props.label, true);
@@ -889,35 +880,16 @@ export const TraitsPicker = memo(function TraitsPicker({
       planModeEnabled,
     })
   ) {
-=======
-export const TraitsPicker = memo(function TraitsPicker({
-  size = "sm",
-  hidden = false,
-  disabled = false,
-  ...props
-}: TraitsSelectionInput & {
-  size?: ComposerControlSize;
-  hidden?: boolean;
-  disabled?: boolean;
-}) {
-  const [isMenuOpen, setIsMenuOpen] = useComposerMenuState(hidden || disabled);
-  const traits = useTraitsSelection(props);
-  if (!traits.hasAnyControls) {
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     return null;
   }
   const { label: triggerLabel } = buildTraitsTriggerDisplay({
-    provider: props.provider,
-    descriptors: traits.descriptors,
-    primarySelectDescriptorId: traits.primarySelectDescriptor?.id ?? null,
-    ultrathinkPromptControlled: traits.ultrathinkPromptControlled,
-    modelSelection:
-      props.instanceId && props.model
-        ? { instanceId: props.instanceId, model: props.model, options: props.modelOptions ?? [] }
-        : null,
-    reportedModelSelection: props.reportedModelSelection,
+    provider,
+    descriptors,
+    primarySelectDescriptorId: primarySelectDescriptor?.id ?? null,
+    ultrathinkPromptControlled,
+    modelSelection: instanceId && model ? { instanceId, model, options: modelOptions ?? [] } : null,
+    reportedModelSelection,
   });
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   const isCodexStyle = provider === "codex";
   // In the composer the glyph has no word, so the tooltip and label name the control.
   const triggerDescription = isComposerOwned
@@ -926,7 +898,7 @@ export const TraitsPicker = memo(function TraitsPicker({
   const effortGlyph =
     isComposerOwned &&
     primarySelectDescriptor &&
-    REASONING_SELECT_DESCRIPTOR_IDS.has(primarySelectDescriptor.id)
+    isReasoningSelect(primarySelectDescriptor)
       ? resolveEffortGlyph(
           primarySelectDescriptor,
           ultrathinkPromptControlled
@@ -949,9 +921,6 @@ export const TraitsPicker = memo(function TraitsPicker({
   ) : isComposerOwned ? (
     triggerLabel
   ) : null;
-=======
-  const isCodexStyle = props.provider === "codex";
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 
   return (
     <Menu
@@ -973,22 +942,17 @@ export const TraitsPicker = memo(function TraitsPicker({
                     isCodexStyle
                       ? "min-w-0 max-w-40 shrink justify-start overflow-hidden whitespace-nowrap sm:max-w-48"
                       : "shrink-0 whitespace-nowrap",
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
                     triggerClassName,
                     traitsSplitTriggerClassName(split),
                     // The word is muted next to the model name and brightens like it on hover.
                     effortWord !== null &&
                       "text-muted-foreground hover:text-foreground data-pressed:text-foreground data-popup-open:text-foreground",
-=======
-                    props.triggerClassName,
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
                   )}
                 />
               }
             />
           }
         >
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
           {effortGlyph ? (
             <span className="flex items-center gap-1.5">
               <EffortGlyph count={effortGlyph.count} filled={effortGlyph.filled} size={size} />
@@ -1024,9 +988,6 @@ export const TraitsPicker = memo(function TraitsPicker({
               />
             </>
           ) : isCodexStyle ? (
-=======
-          {isCodexStyle ? (
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
             <span
               className={cn(
                 "flex min-w-0 w-full items-center",
@@ -1047,7 +1008,6 @@ export const TraitsPicker = memo(function TraitsPicker({
         </TooltipTrigger>
         <TooltipPopup side="top">{triggerLabel}</TooltipPopup>
       </Tooltip>
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
       <MenuPopup
         align="start"
         className="w-[300px]"
@@ -1080,10 +1040,6 @@ export const TraitsPicker = memo(function TraitsPicker({
             </div>
           </>
         ) : null}
-=======
-      <MenuPopup align="start">
-        <TraitsMenuContent {...props} />
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
       </MenuPopup>
     </Menu>
   );

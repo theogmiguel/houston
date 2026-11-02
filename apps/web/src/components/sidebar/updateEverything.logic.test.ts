@@ -69,6 +69,7 @@ describe("collectServerUpdateTargets", () => {
         machine("manual", "0.0.40", undefined),
       ],
       "0.0.50",
+      true,
     );
 
     expect(targets.map((target) => [target.serverLabel, target.targetVersion])).toEqual([
@@ -106,18 +107,8 @@ describe("collectServerUpdateTargets", () => {
       // A desktop app updates from its own feed, whatever track this app is on.
       managed("desktop-no-nightly", { mode: "auto", allowNightly: false }, "desktop-managed"),
     ];
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-    const waits = (releaseArchivesPublished: boolean) =>
-      collectServerUpdateTargets(
-        hosts,
-        "0.1.5-nightly.20261029.3873",
-        releaseArchivesPublished,
-      ).waitForPublished.map((target) => target.serverLabel);
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
-
     expect(
-      collectServerUpdateTargets(machines, "0.0.50").skipped.map((entry) => [
+      collectServerUpdateTargets(machines, "0.0.50", true).skipped.map((entry) => [
         entry.label,
         entry.reason,
       ]),
@@ -132,8 +123,27 @@ describe("collectServerUpdateTargets", () => {
           },
         })),
         "0.0.50-nightly.20261028.1",
+        true,
       ).skipped.map((entry) => entry.label),
     ).toEqual(["off", "no-nightly"]);
+  });
+
+  it("waits for a published server release only for hosts that install from npm or may lack archives", () => {
+    const hosts = [
+      machine("archive-service", "0.0.41-nightly.20260914.1700", "boot-service"),
+      machine("npm-service", "0.0.41-nightly.20260914.1699", "boot-service"),
+      machine("legacy-respawn", "0.1.4-nightly.20261027.3796", "respawn"),
+      machine("desktop", "0.1.4-nightly.20261027.3796", "desktop-managed"),
+    ];
+    const waits = (releaseArchivesPublished: boolean) =>
+      collectServerUpdateTargets(
+        hosts,
+        "0.1.5-nightly.20261029.3873",
+        releaseArchivesPublished,
+      ).waitForPublished.map((target) => target.serverLabel);
+
+    expect(waits(true)).toEqual(["npm-service", "legacy-respawn"]);
+    expect(waits(false)).toEqual(["archive-service", "npm-service", "legacy-respawn"]);
   });
 });
 

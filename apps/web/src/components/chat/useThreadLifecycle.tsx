@@ -488,14 +488,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
       return;
     }
     if (activeThreadRef && openSideChatTab(activeThreadRef, shell)) return;
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
     openThread(threadRef);
-=======
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(threadRef),
-    });
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   };
   const onOpenRelatedThreadStable = useStableCallback(onOpenRelatedThread);
   const childThreadInputs = useChildThreadInputs(activeThreadRef);

@@ -291,33 +291,12 @@ export function SourceControlWritingSettingsSection() {
           ) : null}
         </SettingsRow>
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
         <AdvancedSettings
           targetIds={[
             searchableSetting("follow-change-request-templates").id,
             searchableSetting("source-control-writer-model").id,
           ]}
         >
-=======
-      <SettingsRow
-        serverScoped
-        settingKeys={["reviewGuidesEnabled"]}
-        mixed={mixedReviewGuidesEnabled}
-        {...searchableSetting("review-guides")}
-        description="Add a Guide tab to pull requests. An agent explains the changes and points out decisions that need review."
-        control={
-          <Switch
-            mixed={mixedReviewGuidesEnabled}
-            checked={mixedReviewGuidesEnabled ? false : settings.reviewGuidesEnabled}
-            onCheckedChange={(checked) => updateSettings({ reviewGuidesEnabled: Boolean(checked) })}
-            aria-label="Review guides"
-          />
-        }
-      />
-
-      {settings.reviewGuidesEnabled || mixedReviewGuidesEnabled ? (
-        <>
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
           <SettingsRow
             serverScoped
             settingKeys={["sourceControlWritingStyle"]}
@@ -359,7 +338,7 @@ export function SourceControlWritingSettingsSection() {
             serverScoped
             settingKeys={["sourceControlWriterModelSelection"]}
             {...searchableSetting("source-control-writer-model")}
-            description="Model for source control text and branch or bookmark names. Off uses the environment's text generation model."
+            description="Model for source control text and branch or bookmark names. When disabled, use the text generation model configured for this environment."
             control={
               !hasServerTargets ? (
                 <span className="text-sm text-muted-foreground">
@@ -467,7 +446,7 @@ export function SourceControlWritingSettingsSection() {
           settingKeys={["reviewGuidesEnabled"]}
           mixed={mixedReviewGuidesEnabled}
           {...searchableSetting("review-guides")}
-          description="Adds a Guide tab to pull requests: an agent writes a tour of the change, stop by stop, with the calls a maintainer should make."
+          description="Add a Guide tab to pull requests. An agent explains the changes and points out decisions that need review."
           control={
             <Switch
               mixed={mixedReviewGuidesEnabled}
@@ -583,7 +562,6 @@ export function SourceControlWritingSettingsSection() {
               }
             />
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
             <SettingsRow
               serverScoped
               settingKeys={["reviewGuideInstructions"]}
@@ -594,61 +572,6 @@ export function SourceControlWritingSettingsSection() {
                   <SettingResetButton
                     label="review guide instructions"
                     onClick={() => updateSettings({ reviewGuideInstructions: "" })}
-=======
-        <SettingsRow
-          serverScoped
-          settingKeys={["sourceControlWriterModelSelection"]}
-          {...searchableSetting("source-control-writer-model")}
-          description="Model for source control text and branch or bookmark names. When disabled, use the text generation model configured for this environment."
-          control={
-            !hasServerTargets ? (
-              <span className="text-sm text-muted-foreground">
-                Connect an environment to choose its source control writer model.
-              </span>
-            ) : (
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                {usesDedicatedModel && !canEnableDedicatedModel ? (
-                  <span className="text-sm text-muted-foreground">
-                    No text generation providers available.
-                  </span>
-                ) : null}
-                {usesDedicatedModel && canEnableDedicatedModel ? (
-                  <ProviderModelPicker
-                    environmentId={environmentId}
-                    activeInstanceId={activeSelection.instanceId}
-                    model={activeSelection.model}
-                    lockedProvider={null}
-                    instanceEntries={instanceEntries}
-                    modelOptionsByInstance={modelOptionsByInstance}
-                    triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                    triggerAriaLabel="Source control writer model"
-                    {...(mixedWriterModel ? { triggerLabel: "Mixed" } : {})}
-                    {...(environmentId
-                      ? {
-                          onOpenProviderSetup: (instanceId: ProviderInstanceId) => {
-                            void navigate({
-                              to: "/settings/providers",
-                              search: { environmentId, instanceId },
-                            });
-                          },
-                        }
-                      : {})}
-                    getModelDisabledReason={writerModelDisabledReason}
-                    onInstanceModelChange={(instanceId, model) => {
-                      const reason = writerModelDisabledReason(instanceId, model);
-                      if (reason) {
-                        toastManager.add({
-                          type: "error",
-                          title: "Source control writer model not saved",
-                          description: reason,
-                        });
-                        return;
-                      }
-                      updateSettings({
-                        sourceControlWriterModelSelection: createModelSelection(instanceId, model),
-                      });
-                    }}
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
                   />
                 ) : null
               }

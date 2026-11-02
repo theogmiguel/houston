@@ -240,7 +240,6 @@ export function remarkThoughtPreview(fallback: string) {
   };
 }
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 const TOOL_ACTION_LABEL: Partial<Record<ReturnType<typeof toolGroupAction>, string>> = {
   read: "Read",
   edit: "Edited",
@@ -327,7 +326,5 @@ export function workEntryToolParts(
     ...(counted.deletions !== undefined ? { deletions: counted.deletions } : {}),
   };
 }
-=======
 export const THOUGHT_PREVIEW_PLUGINS: PluggableList = [[remarkThoughtPreview, "Thought"]];
 export const THINKING_PREVIEW_PLUGINS: PluggableList = [[remarkThoughtPreview, "Thinking"]];
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb

@@ -243,37 +243,6 @@ function ProviderCommandArguments({
     >
       {rows.length > 0 ? (
         <div className="mt-3 min-w-0 space-y-2 pb-2">
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-          {rows.map((argument, index) => (
-            <div key={argument.id} className="flex min-w-0 items-center gap-1.5">
-              <DraftInput
-                size="compact"
-                font="mono"
-                value={argument.value}
-                onCommit={(next) =>
-                  updateArguments(
-                    rows.map((current) =>
-                      current.id === argument.id ? { ...current, value: next } : current,
-                    ),
-                  )
-                }
-                aria-label={`Argument ${index + 1}`}
-                spellCheck={false}
-              />
-              <Button
-                type="button"
-                size="icon-micro"
-                variant="ghost-destructive"
-                onClick={() =>
-                  updateArguments(rows.filter((current) => current.id !== argument.id))
-                }
-                aria-label={`Remove argument ${index + 1}`}
-              >
-                <XIcon />
-              </Button>
-            </div>
-          ))}
-=======
           {rows.map((argument, index) =>
             managedReason !== undefined ? (
               <code key={argument.id} className="block min-w-0 truncate text-xs">
@@ -282,7 +251,7 @@ function ProviderCommandArguments({
             ) : (
               <div key={argument.id} className="flex min-w-0 items-center gap-1.5">
                 <DraftInput
-                  size="sm"
+                  size="compact"
                   font="mono"
                   value={argument.value}
                   onCommit={(next) =>
@@ -309,7 +278,6 @@ function ProviderCommandArguments({
               </div>
             ),
           )}
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         </div>
       ) : null}
     </SettingsRow>

@@ -9,7 +9,6 @@ import {
   UsageProviderKind,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
 import {
   formatDuration,
   formatResetsIn,
@@ -181,28 +180,14 @@ function WindowBar({
 }
 
 export function LimitWindows({
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
-  driver,
-  accentColor,
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   windows,
   now,
   compact = false,
 }: {
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
-  readonly driver: ServerProvider["driver"];
-  readonly accentColor?: string | undefined;
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   readonly windows: ReadonlyArray<ServerProviderUsageWindow>;
   readonly now: number;
   readonly compact?: boolean;
 }) {
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
-  const color = normalizeProviderAccentColor(accentColor) ?? barColor(driver);
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   return (
     <div
       className={

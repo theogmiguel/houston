@@ -118,13 +118,8 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
                   ref={permissionsChipRef}
                   data-composer-shortcut="composer.mode"
                   size={size}
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
                   // Mirrors the effort chip's trailing pe-1 so both gaps around the bars match.
                   className={cn("ps-1.5", boardControlClassName)}
-=======
-                  // Mirrors the model trigger's trailing pe-1 so the gaps on both sides of the chip match.
-                  className="ps-1.5"
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
                   aria-label={`Permissions: ${runtimeModeOption.label}`}
                 />
               }
@@ -221,11 +216,7 @@ export function ComposerPermissionsSection(props: {
               onPointerLeave={() => setPreviewMode(null)}
               onFocus={() => setPreviewMode(option.mode)}
               onBlur={() => setPreviewMode(null)}
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-              className="flex h-6 flex-1 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none data-checked:bg-input/72 data-checked:text-foreground data-highlighted:text-foreground not-data-checked:data-highlighted:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-=======
-              className="flex h-6 flex-1 cursor-pointer items-center justify-center text-muted-foreground outline-none first:rounded-l-md last:rounded-r-md data-disabled:cursor-not-allowed data-disabled:opacity-40 data-checked:bg-input/72 data-checked:text-foreground data-highlighted:text-foreground not-data-checked:data-highlighted:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+              className="flex h-6 flex-1 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none data-disabled:cursor-not-allowed data-disabled:opacity-40 data-checked:bg-input/72 data-checked:text-foreground data-highlighted:text-foreground not-data-checked:data-highlighted:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
             >
               <OptionIcon aria-hidden="true" className="size-3.5" />
             </MenuPrimitive.RadioItem>
@@ -246,10 +237,9 @@ export function ComposerPermissionsSection(props: {
               : "text-muted-foreground"
           }
         >
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
           {shown.label}.
         </span>{" "}
-        <span className="text-muted-foreground">{shown.description}</span>
+        <span className="text-muted-foreground">{shown.disabledReason ?? shown.description}</span>
       </div>
     </div>
   );
@@ -286,14 +276,6 @@ export function ComposerPermissionsPicker(props: {
             </button>
           );
         })}
-=======
-          {shown.label}
-        </span>
-        {/* Two lines reserved so the menu does not shift while you preview modes. */}
-        <span className="min-h-8 text-muted-foreground text-xs leading-4">
-          {shown.disabledReason ?? shown.description}
-        </span>
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
       </div>
     </div>
   );

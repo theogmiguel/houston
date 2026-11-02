@@ -109,7 +109,6 @@ export function resolveMessageDispatchIntent(
   return mode;
 }
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 // Houston (AD-040): an automatic send resolves as upstream's steer did, never meeting the refusal
 // meant for explicit steers: steer, else interrupt and restart, else queue.
 export function resolveAutomaticSteer(
@@ -128,8 +127,6 @@ export function resolveAutomaticSteer(
     : { type: "steer_active", targetRunId: run.id };
 }
 
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 /** A run that still owns the thread's provider turn. */
 export function isActiveRun(run: OrchestrationV2Run): boolean {
   return (

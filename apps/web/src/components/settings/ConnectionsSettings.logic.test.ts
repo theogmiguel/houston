@@ -2,11 +2,8 @@ import type { DesktopWslState } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
   applyWslEnableSelection,
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   resolveShareablePairDeviceUrl,
-=======
   resolveTailscaleServeBaseUrl,
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   selectQrEndpointOption,
   togglePairingScopeSelection,
 } from "./ConnectionsSettings.logic";

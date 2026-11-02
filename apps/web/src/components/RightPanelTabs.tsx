@@ -698,7 +698,6 @@ function SurfaceIcon({
   }
 }
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 /** What a side chat tab's mark shows and its title's accessible name says. */
 function sideChatTabState(
   shell: EnvironmentThreadShell | null,
@@ -714,21 +713,6 @@ function sideChatTabState(
 }
 
 // The running mark spins with the thread; attention marks stay static.
-=======
-/** What a side chat tab's dot shows and its title's accessible name says. */
-function sideChatTabState(shell: EnvironmentThreadShell | null) {
-  if (shell === null) return null;
-  if (shell.hasPendingApprovals || shell.pendingSubagentRequest === "approval") {
-    return "needs approval";
-  }
-  if (shell.hasPendingUserInput || shell.pendingSubagentRequest === "user_input") {
-    return "needs input";
-  }
-  return threadRuntimeIsActive(shell.runtime) ? "running" : null;
-}
-
-// Static dots: a side chat tab can stay open for a whole run.
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 function SideChatTabIcon(props: { environmentId: EnvironmentId | null; threadId: ThreadId }) {
   const state = sideChatTabState(
     useQuietThreadShell(
@@ -740,20 +724,11 @@ function SideChatTabIcon(props: { environmentId: EnvironmentId | null; threadId:
       <MessagesSquare className="size-3 shrink-0" />
       {state === null ? null : (
         <span
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
           className={cn("absolute -top-1 -right-1", threadStateTextClass(state.state))}
           aria-hidden
         >
           <ThreadStateGlyph state={state.state} className="size-2.5" />
         </span>
-=======
-          className={cn(
-            "absolute -top-0.5 -right-0.5 size-1.5 rounded-full",
-            state === "running" ? "bg-muted-foreground" : "bg-info",
-          )}
-          aria-hidden
-        />
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
       )}
     </>
   );
@@ -1007,11 +982,7 @@ function RightPanelTab(
                   if (surface.kind === "device" && props.canRename) onStartRename(surface.id);
                 }}
                 className="cursor-pointer flex min-w-0 items-center"
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
                 aria-label={sideChatState === null ? undefined : `${title}, ${sideChatState.label}`}
-=======
-                aria-label={sideChatState === null ? undefined : `${title}, ${sideChatState}`}
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
                 onClick={() => onActivate(surface)}
               >
                 <span className="truncate">{title}</span>
@@ -1192,10 +1163,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     ...(props.onAddSideChat
       ? [
           {
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
             kind: "side-chat",
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
             label: "Side chat",
             icon: MessagesSquare,
             shortcut: "S",

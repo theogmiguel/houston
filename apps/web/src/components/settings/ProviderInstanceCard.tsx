@@ -770,8 +770,6 @@ export function ProviderInstanceCard({
   const displayName =
     instance.displayName?.trim() || driverOption?.label || String(instance.driver);
   const accentColor = normalizeProviderAccentColor(instance.accentColor);
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
   const managedPolicy = useManagedPolicy(environmentId);
   const instanceLocks = managedInstanceLocks(managedPolicy, instance.driver);
   const managedDriverReason = isManagedDriverAllowed(managedPolicy, instance.driver)
@@ -780,26 +778,6 @@ export function ProviderInstanceCard({
         managedPolicy?.organization,
         driverOption?.label ?? String(instance.driver),
       );
-  const { copyToClipboard } = useCopyToClipboard<{ providerName: string }>({
-    onCopy: ({ providerName }) => {
-      toastManager.add({
-        type: "success",
-        title: `${providerName} update command copied`,
-        description: "Run it in a terminal when you are ready to update.",
-      });
-    },
-    onError: (error, { providerName }) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: `Could not copy ${providerName} update command`,
-          description: error.message,
-        }),
-      );
-    },
-  });
-
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   const driverKind: ProviderDriverKind | null = isProviderDriverKind(instance.driver)
     ? instance.driver
     : null;
@@ -1146,17 +1124,6 @@ export function ProviderInstanceCard({
               />
             </span>
           ) : null}
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-          <Switch
-            checked={enabled}
-            disabled={readOnly || (projectOverride !== undefined && !canWriteSettings)}
-            onCheckedChange={(checked) => updateEnabled(Boolean(checked))}
-            aria-label={`Enable ${displayName}`}
-          />
-          {onSelect ? (
-            <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground/70" />
-          ) : null}
-=======
           {/* The policy refuses switching it on; switching it off stays the user's call. */}
           <ManagedControl reason={enabled ? undefined : managedDriverReason}>
             <Switch
@@ -1166,7 +1133,9 @@ export function ProviderInstanceCard({
               aria-label={`Enable ${displayName}`}
             />
           </ManagedControl>
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+          {onSelect ? (
+            <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground/70" />
+          ) : null}
         </span>
       </div>
     );

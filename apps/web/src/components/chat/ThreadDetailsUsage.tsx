@@ -19,7 +19,6 @@ import { useNowMinute } from "../../hooks/useNowMinute";
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "../../lib/contextWindow";
 import { cn } from "../../lib/utils";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
-import { usageRemainingTone } from "../usage/usageRemaining";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { formatContextWindowCompactionMessage } from "./ContextWindowMeter.logic";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
@@ -60,17 +59,12 @@ export function ThreadDetailsUsage({
   const notice = limitsNotice(limits);
 
   return (
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-    <ThreadDetailsSection headingId="thread-details-usage-heading" title="Usage">
-      <div className="grid grid-cols-[minmax(0,auto)_minmax(3rem,1fr)_auto] gap-x-3 text-xs">
-=======
     <ThreadDetailsSection
       headingId="thread-details-usage-heading"
       title="Usage limits"
       showHeading={false}
     >
       <div className="grid grid-cols-[auto_minmax(3rem,1fr)_auto] gap-x-3 text-xs">
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         {notice ? (
           <UsageRow
             label="Limits"
@@ -179,42 +173,6 @@ function LimitRow({
   );
 }
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-function ContextRow({
-  usage,
-  spaced,
-}: {
-  readonly usage: ContextWindowSnapshot;
-  readonly spaced: boolean;
-}) {
-  const maxTokens = usage.maxTokens ?? null;
-  const left =
-    maxTokens !== null && usage.usedPercentage !== null
-      ? Math.round(100 - Math.max(0, Math.min(100, usage.usedPercentage)))
-      : null;
-  const used = formatContextWindowTokens(usage.usedTokens);
-  return (
-    <UsageRow
-      label="Context"
-      left={left}
-      className={cn(spaced && "mt-1")}
-      tooltip={
-        <>
-          {left !== null ? <span className="text-foreground">Context: {left}% left</span> : null}
-          <span className={left !== null ? "text-muted-foreground" : "text-foreground"}>
-            {maxTokens !== null
-              ? `${used} of ${formatContextWindowTokens(maxTokens)} tokens used`
-              : `${used} tokens used`}
-          </span>
-        </>
-      }
-      value={left === null ? used : undefined}
-    />
-  );
-}
-
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 /** One label, hairline, and value row; the whole row opens the details tooltip. */
 function UsageRow({
   label,
@@ -222,13 +180,9 @@ function UsageRow({
   tone,
   tick = null,
   value,
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-  className,
-=======
   ariaValue = value,
   tooltip,
   muted = false,
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 }: {
   readonly label: string;
   /** Bar fill from 0 to 100. Null hides the bar. */
@@ -239,45 +193,23 @@ function UsageRow({
   readonly value: string;
   readonly ariaValue?: string;
   readonly tooltip: ReactNode;
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-  /** Replaces the percentage when there is none. */
-  readonly value?: string | undefined;
-  readonly className?: string | undefined;
-}) {
-  const tone = left === null ? null : usageRemainingTone(left);
-=======
   readonly muted?: boolean;
 }) {
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <div
             tabIndex={0}
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-            aria-label={`${label}: ${value ?? `${left}% left`}`}
-            className={cn(
-              "col-span-3 grid min-h-7 cursor-default grid-cols-subgrid items-center rounded-md px-2 py-0.5 outline-none hover:bg-[var(--hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:bg-[var(--hover)]",
-              className,
-            )}
-=======
             aria-label={`${label}: ${ariaValue}`}
             className="col-span-3 grid h-6 cursor-default grid-cols-subgrid items-center rounded-lg px-2.5 outline-none hover:bg-black/[0.035] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:bg-black/[0.035] dark:hover:bg-white/[0.08] dark:data-popup-open:bg-white/[0.08]"
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
           />
         }
       >
         <span className="max-w-28 truncate text-muted-foreground">{label}</span>
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-        {left !== null ? (
-          <span className="relative h-1 rounded-full bg-muted-foreground/25">
-            {left > 0 ? (
-=======
         {fill !== null ? (
           <span className="relative h-[3px] rounded-full bg-muted-foreground/30 dark:bg-muted-foreground/20">
             {fill > 0 ? (
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
               <span
                 className={cn(
                   "absolute inset-y-0 left-0 rounded-full",
@@ -298,13 +230,6 @@ function UsageRow({
         <span
           className={cn(
             // Text-only rows span the bar column so they never widen the shared value column.
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-            "text-end tabular-nums",
-            left === null && "col-span-2",
-            tone === "low" || tone === "empty"
-              ? "font-emphasis text-foreground"
-              : "font-medium text-muted-foreground",
-=======
             "text-end font-medium tabular-nums",
             fill === null && "col-span-2",
             tone === "error"
@@ -314,7 +239,6 @@ function UsageRow({
                 : fill === null
                   ? "text-muted-foreground"
                   : "text-foreground/80",
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
           )}
         >
           {value}

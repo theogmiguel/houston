@@ -38,9 +38,6 @@ describe("worktree cleanup inheritance", () => {
 });
 
 describe("settingInheritanceLayers", () => {
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-  it("shows the checkout's houston.json as a layer for file-backed keys", () => {
-=======
   it("identifies the background activity profile supplied by each layer", () => {
     const settings = {
       ...DEFAULT_SERVER_SETTINGS,
@@ -66,8 +63,7 @@ describe("settingInheritanceLayers", () => {
     ]);
   });
 
-  it("shows the checkout's t3.json as a layer for file-backed keys", () => {
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+  it("shows the checkout's houston.json as a layer for file-backed keys", () => {
     const file = { defaultThreadEnvMode: "worktree" as const };
     const fromFile = settingInheritanceLayers(
       {

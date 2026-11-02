@@ -88,25 +88,6 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
             token: input.bearerToken,
           },
         })),
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
-    authorizeDpop:
-      options?.authorizeDpop ??
-      ((input) =>
-        Effect.succeed({
-          environmentId: input.expectedEnvironmentId,
-          label: "Authorized relay environment",
-          httpBaseUrl: ENDPOINT.httpBaseUrl,
-          socketUrl: "wss://authorized.example.test/ws?wsTicket=dpop",
-          httpAuthorization: {
-            _tag: "Dpop" as const,
-            accessToken: "dpop-access-token",
-            expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
-          },
-        })),
-    authorizeDpopHttp: () => Effect.die("unused"),
-    renewDpopBeforeExpiry: () => Effect.die("unused"),
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   });
   const ssh = ClientCapabilities.SshEnvironmentGateway.of({
     provision: () => Effect.die("unused"),

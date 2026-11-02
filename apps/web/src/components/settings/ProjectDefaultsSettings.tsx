@@ -53,7 +53,6 @@ function isWorktreeSubmodules(value: string | null): value is WorktreeSubmodules
   return value !== null && (WORKTREE_SUBMODULES_OPTIONS as readonly string[]).includes(value);
 }
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 export function ProjectDefaultsSettings({
   category,
   extraRows,
@@ -61,11 +60,7 @@ export function ProjectDefaultsSettings({
   category: ProjectSettingsCategory;
   extraRows?: ReactNode;
 }) {
-  const { scope, target, connectedEnvironments } = useSettingsScope();
-=======
-export function ProjectDefaultsSettings({ category }: { category: ProjectSettingsCategory }) {
   const { scope, target, targets, connectedEnvironments } = useSettingsScope();
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   const settings = useScopedSettings();
   const clientSettings = useClientSettings();
   const updateSettings = useUpdateScopedSettings();

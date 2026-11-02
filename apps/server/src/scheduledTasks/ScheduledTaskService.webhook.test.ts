@@ -3,16 +3,11 @@ import * as NodeCrypto from "node:crypto";
 
 import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-import { ScheduledTaskUpsertInput, SecretRequestError } from "@t3tools/contracts";
-=======
 import {
   type ManagedPolicyDocument,
   ScheduledTaskUpsertInput,
-  ScheduledTaskWebhookDeliveryId,
   SecretRequestError,
 } from "@t3tools/contracts";
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
@@ -240,14 +235,7 @@ const withService = <A, E>(
             : Effect.succeed(value);
         },
       }),
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
-      Layer.succeed(
-        ScheduledTaskService.ScheduledTaskWebhookOrigin,
-        Effect.succeed({ relayHookBaseUrl: options.relayHookBaseUrl ?? null }),
-      ),
       ManagedPolicy.layerTest(options.policy),
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     );
     return yield* Effect.gen(function* () {
       const service = yield* ScheduledTaskService.ScheduledTaskService;
@@ -1064,64 +1052,6 @@ it.effect("guards bad-signature floods separately from valid run admission", () 
   ),
 );
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
-it.effect("start failures release both replay keys and relay claims for redelivery", () =>
-  withService(
-    ({ service, sql, launches }) =>
-      Effect.gen(function* () {
-        const { task } = yield* service.upsert(
-          yield* webhookTaskInput({
-            schedule: { type: "webhook", dedupe: { replayKey: "{{body}}" } },
-          }),
-        );
-        const request = requestFor(task, { relayDeliveryId: "failed-start" });
-        yield* waitForSpan(
-          service.triggerWebhook(request),
-          "ScheduledTaskService.runWebhookDelivery",
-        );
-        yield* Queue.take(launches);
-        assert.equal((yield* sql`SELECT * FROM scheduled_task_webhook_replay_keys`).length, 0);
-        assert.equal((yield* sql`SELECT * FROM scheduled_task_webhook_relay_deliveries`).length, 0);
-        const retry = yield* waitForSpan(
-          service.triggerWebhook(request),
-          "ScheduledTaskService.runWebhookDelivery",
-        );
-        assert.equal(retry._tag === "accepted" && retry.outcome, "accepted");
-        yield* Queue.take(launches);
-        assert.equal((yield* service.list()).tasks[0]!.lastRunStatus, "succeeded");
-      }),
-    { failLaunches: { remaining: 1 } },
-  ),
-);
-
-it.effect("a start failure releases the relay claim when the task row is replaced mid-run", () =>
-  Effect.gen(function* () {
-    const gate = yield* Deferred.make<void>();
-    yield* withService(
-      ({ service, sql, launches }) =>
-        Effect.gen(function* () {
-          const { task } = yield* service.upsert(yield* webhookTaskInput());
-          const request = requestFor(task, { relayDeliveryId: "replaced-mid-run" });
-          const first = yield* waitForSpan(
-            service.triggerWebhook(request),
-            "ScheduledTaskService.runWebhookDelivery",
-          ).pipe(Effect.forkChild);
-          yield* Queue.take(launches);
-          // A same-id recreate while the launch is out: the stored row is no longer this run's.
-          yield* sql`UPDATE scheduled_tasks SET last_run_status = 'never', last_run_at = NULL`;
-          yield* Deferred.succeed(gate, undefined);
-          yield* Fiber.join(first);
-          const retry = yield* service.triggerWebhook(request);
-          assert.equal(retry._tag === "accepted" && retry.outcome, "accepted");
-          yield* Queue.take(launches);
-        }),
-      { gate, failLaunches: { remaining: 1 } },
-    );
-  }),
-);
-
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 it.effect("main retention keeps fifty runs and preserves filtered and dedupe buckets", () =>
   withService(({ service, sql, launches }) =>
     Effect.gen(function* () {
@@ -1270,8 +1200,6 @@ it.effect.each([119_000, 120_000])(
   },
 );
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
 it.effect("oversized coalesced windows stay within the suppression bucket's limit", () => {
   const workers = new Map<string, Effect.Effect<void>>();
   return withService(
@@ -1306,169 +1234,6 @@ it.effect("oversized coalesced windows stay within the suppression bucket's limi
   );
 });
 
-it.effect.each([1, 11])(
-  "keeps relay claims for %i coalesced updates after their window closes",
-  (count) => {
-    const workers = new Map<string, Effect.Effect<void>>();
-    return withService(
-      ({ service, sql, launches }) =>
-        Effect.gen(function* () {
-          const { task } = yield* service.upsert(
-            yield* webhookTaskInput({
-              prompt: "{{body.value}}",
-              schedule: {
-                type: "webhook",
-                dedupe: { coalesceKey: "{{body.group}}", coalesceWindowSeconds: 10 },
-              },
-            }),
-          );
-          const request = (value: number) => {
-            const bodyText = JSON.stringify({ group: "B", value });
-            return requestFor(task, {
-              relayDeliveryId: `coalesced-relay-${value}`,
-              bodyText,
-              body: new TextEncoder().encode(bodyText),
-            });
-          };
-          yield* service.triggerWebhook(request(0));
-          for (let i = 1; i <= count; i++) {
-            const result = yield* service.triggerWebhook(request(i));
-            assert.equal(result._tag === "accepted" && result.outcome, "coalesced");
-          }
-          assert.equal(
-            (yield* sql`SELECT 1 FROM scheduled_task_webhook_relay_deliveries`).length,
-            count + 1,
-          );
-          yield* TestClock.adjust("10 seconds");
-          yield* drainPendingDispatch(workers);
-          assert.include((yield* Queue.take(launches)).initialMessage!.text, `>${count}<`);
-          const retry = yield* service.triggerWebhook(request(count));
-          assert.equal(retry._tag === "accepted" && retry.outcome, "duplicate");
-          assert.equal((yield* sql`SELECT 1 FROM scheduled_task_webhook_pending`).length, 0);
-          assert.equal((yield* service.list()).tasks[0]!.runCount, 1);
-          assert.equal(yield* Queue.size(launches), 0);
-        }),
-      { workers },
-    );
-  },
-);
-
-it.effect("failed windows release every member's replay key and relay claim", () => {
-  const workers = new Map<string, Effect.Effect<void>>();
-  return withService(
-    ({ service, sql, launches }) =>
-      Effect.gen(function* () {
-        const { task } = yield* service.upsert(
-          yield* webhookTaskInput({
-            prompt: "{{body.value}}",
-            schedule: {
-              type: "webhook",
-              dedupe: {
-                replayKey: "{{headers.delivery-id}}",
-                coalesceKey: "{{body.group}}",
-                coalesceWindowSeconds: 10,
-              },
-            },
-          }),
-        );
-        const request = (id: string) => {
-          const bodyText = JSON.stringify({ group: "same", value: id });
-          return requestFor(task, {
-            bodyText,
-            body: new TextEncoder().encode(bodyText),
-            headers: { "delivery-id": id },
-            relayDeliveryId: id,
-          });
-        };
-        yield* service.triggerWebhook(request("A"));
-        for (let i = 0; i < 12; i++) yield* service.triggerWebhook(request(`B${i}`));
-        assert.equal(
-          (yield* sql`SELECT 1 FROM scheduled_task_webhook_relay_deliveries`).length,
-          13,
-        );
-        yield* TestClock.adjust("10 seconds");
-        yield* drainPendingDispatch(workers);
-        yield* Queue.take(launches);
-        assert.equal((yield* sql`SELECT 1 FROM scheduled_task_webhook_replay_keys`).length, 0);
-        assert.equal((yield* sql`SELECT 1 FROM scheduled_task_webhook_relay_deliveries`).length, 0);
-        const retry = yield* service.triggerWebhook(request("B11"));
-        assert.equal(retry._tag === "accepted" && retry.outcome, "accepted");
-        yield* TestClock.adjust("10 seconds");
-        yield* drainPendingDispatch(workers);
-        assert.include((yield* Queue.take(launches)).initialMessage!.text, "B11");
-        assert.equal((yield* service.list()).tasks[0]!.runCount, 2);
-      }),
-    { workers, failLaunches: { remaining: 1 } },
-  );
-});
-
-it.effect(
-  "recovery finishes failed-window claim cleanup without counting the attempt twice",
-  () => {
-    const workers = new Map<string, Effect.Effect<void>>();
-    return withService(
-      ({ service, sql, launches }) =>
-        Effect.gen(function* () {
-          const { task } = yield* service.upsert(
-            yield* webhookTaskInput({
-              schedule: {
-                type: "webhook",
-                dedupe: {
-                  replayKey: "{{headers.delivery-id}}",
-                  coalesceKey: "{{body}}",
-                  coalesceWindowSeconds: 10,
-                },
-              },
-            }),
-          );
-          const request = (id: string) =>
-            requestFor(task, { headers: { "delivery-id": id }, relayDeliveryId: id });
-          yield* service.triggerWebhook(request("A"));
-          yield* service.triggerWebhook(request("B"));
-          yield* sql`CREATE TRIGGER fail_claim_cleanup BEFORE DELETE ON scheduled_task_webhook_relay_deliveries
-      BEGIN SELECT RAISE(FAIL, 'cleanup unavailable'); END`;
-          yield* TestClock.adjust("10 seconds");
-          yield* drainPendingDispatch(workers);
-          yield* Queue.take(launches);
-          assert.equal((yield* service.list()).tasks[0]!.runCount, 1);
-          assert.equal(
-            (yield* sql<{ state: string }>`SELECT state FROM scheduled_task_webhook_pending`)[0]!
-              .state,
-            "failed",
-          );
-          yield* sql`DROP TRIGGER fail_claim_cleanup`;
-          const restartedWorkers = new Map<string, Effect.Effect<void>>();
-          yield* withService(
-            ({ service: restarted, launches: restartedLaunches }) =>
-              Effect.gen(function* () {
-                yield* drainPendingDispatch(restartedWorkers);
-                assert.equal(yield* Queue.size(restartedLaunches), 0);
-                assert.equal((yield* restarted.list()).tasks[0]!.runCount, 1);
-                assert.equal((yield* sql`SELECT 1 FROM scheduled_task_webhook_pending`).length, 0);
-                assert.equal(
-                  (yield* sql`SELECT 1 FROM scheduled_task_webhook_replay_keys`).length,
-                  0,
-                );
-                assert.equal(
-                  (yield* sql`SELECT 1 FROM scheduled_task_webhook_relay_deliveries`).length,
-                  0,
-                );
-                const retry = yield* restarted.triggerWebhook(request("B"));
-                assert.equal(retry._tag === "accepted" && retry.outcome, "accepted");
-                yield* TestClock.adjust("10 seconds");
-                yield* drainPendingDispatch(restartedWorkers);
-                yield* Queue.take(restartedLaunches);
-                assert.equal((yield* restarted.list()).tasks[0]!.runCount, 2);
-              }),
-            { sql, workers: restartedWorkers },
-          );
-        }),
-      { workers, failLaunches: { remaining: 1 } },
-    );
-  },
-);
-
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 it.effect("dispatches an overdue window exactly once after its deadline passed while stopped", () =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;

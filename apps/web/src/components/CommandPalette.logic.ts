@@ -373,25 +373,6 @@ export function buildProjectActionItems(input: {
   shortcutCommand?: KeybindingCommand;
   pin?: (project: CommandPaletteProject) => CommandPaletteItemPin | null;
 }): CommandPaletteActionItem[] {
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-  return input.projects.map((project) => ({
-    kind: "action",
-    value: `${input.valuePrefix}:${project.environmentId}:${project.id}`,
-    searchTerms: [
-      project.displayName,
-      project.title,
-      project.workspaceRoot,
-      ...(input.searchTerms?.(project) ?? []),
-    ],
-    title: project.displayName,
-    description: input.renderDescription?.(project) ?? project.workspaceRoot,
-    icon: null,
-    ...(input.shortcutCommand !== undefined ? { shortcutCommand: input.shortcutCommand } : {}),
-    run: async () => {
-      await input.runProject(project);
-    },
-  }));
-=======
   return input.projects.map((project) => {
     const pin = input.pin?.(project) ?? null;
     return {
@@ -405,7 +386,7 @@ export function buildProjectActionItems(input: {
       ],
       title: project.displayName,
       description: input.renderDescription?.(project) ?? project.workspaceRoot,
-      icon: input.icon(project),
+      icon: null,
       ...(input.shortcutCommand !== undefined ? { shortcutCommand: input.shortcutCommand } : {}),
       ...(pin ? { pin } : {}),
       run: async () => {
@@ -413,7 +394,6 @@ export function buildProjectActionItems(input: {
       },
     };
   });
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 }
 
 export type BuildThreadActionItemsThread = Pick<

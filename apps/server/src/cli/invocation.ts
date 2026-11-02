@@ -67,7 +67,9 @@ export const resolveServerInstallation = Effect.gen(function* () {
   const path = yield* Path.Path;
   const platform = yield* HostProcess.Platform;
   const entry = yield* fs.realPath(yield* resolveEntryPath);
-  const match = /^(.*)\/lib\/node_modules\/houston\/(?:dist\/bin\.mjs|bin\/houston\.mjs)$/.exec(entry);
+  const match = /^(.*)\/lib\/node_modules\/houston\/(?:dist\/bin\.mjs|bin\/houston\.mjs)$/.exec(
+    entry,
+  );
   if (!match) {
     const runner = detectCliRunner(entry);
     return runner === null
@@ -143,11 +145,7 @@ const resolveInstallLauncher = Effect.gen(function* () {
 });
 
 /**
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
- * Uses `houston` on PATH, the originating package runner, or this install's absolute launcher path.
-=======
- * Uses this install's `t3` on PATH, the originating runner, or its absolute launcher path.
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+ * Uses this install's `houston` on PATH, the originating runner, or its absolute launcher path.
  * Arguments are quoted for POSIX shells or PowerShell on Windows.
  */
 export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand")(function* (
@@ -158,12 +156,8 @@ export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand
   const withArgs = (prefix: string) =>
     [prefix, ...args.map((arg) => hostShellWord(platform, arg))].join(" ");
   const command = yield* resolveCliCommand(subcommand);
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   if (command !== `houston ${subcommand}`) return { command: withArgs(command), launcher: false };
-  if (yield* isCommandAvailable("houston")) return { command: withArgs(command), launcher: false };
-=======
-  if (command !== `t3 ${subcommand}`) return { command: withArgs(command), launcher: false };
-  const onPath = yield* resolveCommandPath("t3");
+  const onPath = yield* resolveCommandPath("houston");
   if (onPath !== null) {
     const shim = (yield* HostProcess.Environment).T3CODE_CLI_PATH?.trim();
     const fs = yield* FileSystem.FileSystem;
@@ -173,7 +167,6 @@ export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand
       return { command: withArgs(command), launcher: false };
     }
   }
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   const launcher = yield* resolveInstallLauncher;
   if (Option.isNone(launcher)) return { command: withArgs(command), launcher: false };
   // PowerShell runs a quoted path only through the call operator.

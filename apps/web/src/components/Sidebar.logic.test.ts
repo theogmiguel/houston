@@ -531,7 +531,6 @@ describe("resolveThreadStatusPill", () => {
   });
 });
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 describe("thread state vocabulary", () => {
   const stateThread = (overrides: Record<string, unknown>) => ({
     hasActionableProposedPlan: false,
@@ -588,21 +587,6 @@ describe("thread state vocabulary", () => {
   });
 });
 
-describe("resolveProjectStatusIndicator", () => {
-  it("ranks waiting below active work and above plan-ready", () => {
-    const waiting = { label: "Waiting" as const, state: "running" as const };
-
-    expect(
-      resolveProjectStatusIndicator([waiting, { label: "Running", state: "running" }]),
-    ).toMatchObject({ label: "Running" });
-    expect(
-      resolveProjectStatusIndicator([{ label: "Plan Ready", state: "needs" }, waiting]),
-    ).toMatchObject({ label: "Waiting" });
-  });
-});
-
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 function makeProject(overrides: Partial<Project> = {}): Project {
   const { defaultModelSelection, ...rest } = overrides;
   return {

@@ -3464,13 +3464,8 @@ export const layer = Layer.unwrap(
           return httpEffect;
         }).pipe(
           Effect.provide(
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-            layerWsRpc(session, clientAnalyticsProps, serverBrowser).pipe(
-              Layer.provideMerge(HoustonRpcSerialization.layerJsonWithoutEcho),
-=======
             layerWsRpc(session, clientAnalyticsProps, serverBrowser, reportProfiles).pipe(
-              Layer.provideMerge(RpcSerialization.layerJson),
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+              Layer.provideMerge(HoustonRpcSerialization.layerJsonWithoutEcho),
               // Handler-context reporters see only request defects, not server-wide defects.
               Layer.provide(DefectReporter.layer),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),

@@ -389,8 +389,6 @@ export function routesAfterRemoving(
   });
 }
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
 /**
  * A dragged route order shows until the saved routes catch up with it. It is
  * stale, and returns null, once the saved order matches it or the saved routes
@@ -407,11 +405,6 @@ export function pendingRouteOrder(
   return pending.some((id, index) => id !== savedIds[index]) ? pending : null;
 }
 
-export function removedWithRelay(entry: ConnectionCatalogEntry): boolean {
-  return routesAfterRemoving(connectionRoutes(entry), RELAY_ROUTE_ID).length === 0;
-}
-
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 export function sshTargetKey(target: DesktopSshEnvironmentTarget): string {
   return JSON.stringify([target.alias, target.hostname, target.username, target.port]);
 }

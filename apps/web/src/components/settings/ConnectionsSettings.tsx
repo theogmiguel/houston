@@ -13,11 +13,7 @@ import {
   type DesktopServerExposureState,
   type DesktopWslState,
   type EnvironmentId,
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
   managedCapabilityDenial,
-  resolveEnvironmentMachineKind,
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
@@ -727,7 +723,6 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     void applyWslSettingChange(() => desktopBridge.setWslOnly(change.nextValue));
   };
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   const renderAuthorizedClients = ({
     showPairingLinks = true,
     showClientSessions = true,
@@ -735,170 +730,6 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     showPairingLinks?: boolean;
     showClientSessions?: boolean;
   } = {}) => (
-=======
-  const renderWslRow = () => {
-    if (!desktopWslState) {
-      if (
-        isWslSettingsRowVisible({ state: null, error: desktopWslError }) &&
-        canManageLocalBackend
-      ) {
-        return (
-          <SettingsRow
-            {...searchableSetting("wsl-backend")}
-            description="Couldn't load the WSL backend state."
-            status={<span className="block text-destructive">{desktopWslError}</span>}
-            control={
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={loadWslState}
-                disabled={isLoadingWslState}
-              >
-                {isLoadingWslState ? "Retrying…" : "Retry"}
-              </Button>
-            }
-          />
-        );
-      }
-      return null;
-    }
-    if (!isWslSettingsRowVisible({ state: desktopWslState, error: desktopWslError })) {
-      return null;
-    }
-    if (!desktopWslState.available) {
-      return (
-        <SettingsRow
-          {...searchableSetting("wsl-backend")}
-          description="WSL is unavailable, so Windows is running instead. Turn WSL off to clear this preference."
-          status={
-            desktopWslError ? (
-              <span className="block text-destructive">{desktopWslError}</span>
-            ) : null
-          }
-          control={
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={isUpdatingWslBackend}
-              onClick={() => handleSelectWslMode(BACKEND_VALUE_WSL_OFF)}
-            >
-              Switch to Windows
-            </Button>
-          }
-        />
-      );
-    }
-    const defaultDistroName =
-      desktopWslState.distros.find((distro) => distro.isDefault)?.name ?? null;
-    const selectValue = !desktopWslState.enabled
-      ? BACKEND_VALUE_WSL_OFF
-      : (desktopWslState.distro ?? defaultDistroName ?? BACKEND_VALUE_DEFAULT_WSL);
-    const selectLabel =
-      selectValue === BACKEND_VALUE_WSL_OFF
-        ? "Off"
-        : selectValue === BACKEND_VALUE_DEFAULT_WSL
-          ? "Default distro"
-          : selectValue;
-    return (
-      <>
-        <SettingsRow
-          {...searchableSetting("wsl-backend")}
-          description="Run the selected WSL distro alongside Windows. Projects remain on their current filesystem."
-          status={
-            desktopWslError ? (
-              <span className="block text-destructive">{desktopWslError}</span>
-            ) : desktopWslState.preflightError ? (
-              <span className="block text-destructive">
-                WSL backend couldn't start: {desktopWslState.preflightError}
-              </span>
-            ) : null
-          }
-          control={
-            <Select
-              value={selectValue}
-              onValueChange={(value) => {
-                if (typeof value !== "string") return;
-                handleSelectWslMode(value);
-              }}
-            >
-              <SelectTrigger
-                size="sm"
-                className="w-full sm:w-56"
-                aria-label="WSL backend"
-                disabled={isUpdatingWslBackend}
-              >
-                <SelectValue>{selectLabel}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value={BACKEND_VALUE_WSL_OFF}>
-                  Off
-                </SelectItem>
-                {desktopWslState.distros.length === 0 ? (
-                  <SelectItem hideIndicator value={BACKEND_VALUE_DEFAULT_WSL}>
-                    Default distro
-                  </SelectItem>
-                ) : (
-                  desktopWslState.distros.map((distro) => (
-                    <SelectItem hideIndicator key={distro.name} value={distro.name}>
-                      {distro.name}
-                      {distro.isDefault ? " (default)" : ""}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectPopup>
-            </Select>
-          }
-        />
-        {desktopWslState.enabled ? (
-          <SettingsRow
-            title="WSL only"
-            description="Run only the WSL backend. T3 Code restarts when this changes."
-            className="bg-muted/20 pl-7 sm:pl-8"
-            control={
-              <Switch
-                checked={desktopWslState.wslOnly}
-                disabled={isUpdatingWslBackend}
-                onCheckedChange={(checked) => handleToggleWslOnly(checked)}
-                aria-label="Run WSL only"
-              />
-            }
-          />
-        ) : null}
-      </>
-    );
-  };
-
-  const renderTailscaleRow = () => (
-    <SettingsRow
-      title={searchableSetting("tailscale-https").title}
-      description={
-        tailscaleHttpsEndpoint
-          ? tailscaleHttpsEndpoint.status === "available"
-            ? tailscaleHttpsEndpoint.httpBaseUrl
-            : "Use Tailscale Serve to expose this backend through a MagicDNS HTTPS URL."
-          : missingTailscaleEndpointDescription(desktopServerExposureState)
-      }
-      control={
-        tailscaleHttpsEndpoint ? (
-          <Switch
-            checked={tailscaleHttpsEndpoint.status === "available"}
-            disabled={isUpdatingTailscaleServe}
-            onCheckedChange={(checked) => {
-              if (checked) {
-                handleStartTailscaleServeSetup(tailscaleHttpsEndpoint);
-                return;
-              }
-              handleStartTailscaleServeDisable(tailscaleHttpsEndpoint);
-            }}
-            aria-label="Enable Tailscale HTTPS"
-          />
-        ) : null
-      }
-      managed={tailscaleHttpsEndpoint?.status === "available" ? undefined : remoteClientsDenial}
-    />
-  );
-  const renderAuthorizedClients = () => (
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     <>
       {desktopAccessManagementError ? (
         <div className={ITEM_ROW_CLASSNAME}>
@@ -956,7 +787,6 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
           <span className="block text-destructive">{desktopServerExposureError}</span>
         ) : null
       }
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
       control={
         <Switch
           checked={
@@ -973,10 +803,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
           aria-label="Network access"
         />
       }
-=======
-      control={renderNetworkAccessToggle()}
       managed={isLocalBackendNetworkAccessible ? undefined : remoteClientsDenial}
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     />
   );
   const renderTailscaleRow = () => (
@@ -1003,6 +830,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
           aria-label="Tailscale HTTPS"
         />
       }
+      managed={tailscaleHttpsEndpoint?.status === "available" ? undefined : remoteClientsDenial}
     />
   );
   const renderWslBackendRow = () => {
@@ -1114,61 +942,17 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     <>
       {primaryEnvironmentId !== null ? (
         <>
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
           <SettingsSection {...searchableSetting("connections-environment")} title="This machine">
+            {primaryManagedPolicy ? (
+              <div className="px-3.5 py-2">
+                <ManagedByOrganization policy={primaryManagedPolicy} />
+              </div>
+            ) : null}
             {renderEnvironmentIconRow()}
             {renderNetworkAccessRow()}
             {renderTailscaleRow()}
             {renderWslBackendRow()}
             {renderEndpointRows()}
-=======
-          <SettingsSection
-            {...searchableSetting("connections-environment")}
-            title={
-              primaryEnvironment?.label ?? (desktopBridge ? "This machine" : "Primary environment")
-            }
-            icon={
-              <EnvironmentMachineIcon
-                aria-hidden
-                kind={
-                  primaryServerConfig
-                    ? resolveEnvironmentMachineKind(primaryServerConfig)
-                    : "desktop"
-                }
-                className="size-4"
-              />
-            }
-            headerAction={
-              primaryEnvironmentId !== null ? (
-                <Menu>
-                  <MenuTrigger
-                    render={
-                      <Button
-                        type="button"
-                        variant="ghost-muted"
-                        size="icon-xs"
-                        aria-label="More actions for this machine"
-                      />
-                    }
-                  >
-                    <EllipsisIcon className="size-3.5" />
-                  </MenuTrigger>
-                  <MenuPopup align="end">
-                    <EnvironmentIconMenu
-                      environmentId={primaryEnvironmentId}
-                      serverConfig={primaryServerConfig}
-                    />
-                  </MenuPopup>
-                </Menu>
-              ) : null
-            }
-          >
-            {primaryManagedPolicy ? (
-              <div className="px-3 py-2 sm:px-4">
-                <ManagedByOrganization policy={primaryManagedPolicy} />
-              </div>
-            ) : null}
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
             {canManageLocalBackend ? (
               <SettingsRow
                 title="Version"
@@ -1604,7 +1388,6 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
           />
         ))}
       </SettingsSection>
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
       <div className="flex justify-center px-1">
         <AddEnvironmentDialog
           open={addBackendDialogOpen}
@@ -1613,18 +1396,6 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
           savedEnvironments={savedEnvironments}
           onOpenChange={handleAddBackendDialogOpenChange}
           onErrorChange={setSavedBackendError}
-=======
-      {hasCloudPublicConfig() ? (
-        <RemoveT3ConnectEnvironmentDialog
-          environmentLabel={pendingT3ConnectRemoval?.label ?? null}
-          environmentId={pendingT3ConnectRemoval?.environmentId ?? null}
-          onCancel={() => setPendingT3ConnectRemoval(null)}
-          onConfirm={() => {
-            if (!pendingT3ConnectRemoval) return;
-            setPendingT3ConnectRemoval(null);
-            void removeSavedBackend(pendingT3ConnectRemoval);
-          }}
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         />
       </div>
       {peerLinkHosts.map((environment, index) => (

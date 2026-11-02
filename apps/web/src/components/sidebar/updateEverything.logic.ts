@@ -66,32 +66,25 @@ export interface SkippedMachine {
   readonly reason: string;
 }
 
+/** Boot services before this build installed the server from npm, not from release archives. */
+const RELEASE_ARCHIVE_SELF_UPDATE_SINCE = "0.0.41-nightly.20260914.1700";
+
 /** Skip current and app-hosted servers; the latter update with the app and would relaunch mid-run.
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
  * Desktop-managed servers use their own feed. `waitForPublished` lists targets whose
  * `houston@<targetVersion>` server release must be published first. `releaseArchivesPublished` means the version came from the
  * desktop feed: its GitHub Release goes public with the CLI archives that boot services download. */
-=======
- * Desktop-managed servers use their own feed. Each server's updater checks that it can install the
- * release before it restarts, so no registry precheck runs here. */
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 export function collectServerUpdateTargets(
   machines: ReadonlyArray<UpdateEverythingMachine>,
   targetVersion: string,
+  releaseArchivesPublished: boolean,
 ): {
   readonly targets: ServerUpdateTarget[];
   readonly skipped: SkippedMachine[];
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
   readonly waitForPublished: ServerUpdateTarget[];
 } {
   const targets: ServerUpdateTarget[] = [];
   const skipped: SkippedMachine[] = [];
   const waitForPublished: ServerUpdateTarget[] = [];
-=======
-} {
-  const targets: ServerUpdateTarget[] = [];
-  const skipped: SkippedMachine[] = [];
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   for (const machine of machines) {
     const config = machine.serverConfig;
     if (machine.hostedByThisApp) continue;
@@ -143,7 +136,6 @@ export function collectServerUpdateTargets(
       targetVersion,
     };
     targets.push(target);
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
     if (
       selfUpdate !== "desktop-managed" &&
       (!releaseArchivesPublished ||
@@ -154,10 +146,6 @@ export function collectServerUpdateTargets(
     }
   }
   return { targets, skipped, waitForPublished };
-=======
-  }
-  return { targets, skipped };
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 }
 
 function unavailableReason(machine: UpdateEverythingMachine): string | null {

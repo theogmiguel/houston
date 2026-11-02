@@ -414,11 +414,8 @@ export const layer = Layer.effect(
     const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
     const secretRequests = yield* SecretRequests.SecretRequests;
     const scheduler = yield* Scheduler.Scheduler;
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
     // Houston: a task one of its features owns runs through that feature; absent, none is claimed.
     const houstonRunner = yield* Effect.serviceOption(HoustonScheduledTaskRunner);
-=======
-    const readWebhookOrigin = yield* ScheduledTaskWebhookOrigin;
     const managedPolicy = yield* ManagedPolicy.ManagedPolicy;
     const webhookPolicyOrganization = ManagedPolicy.deniedBy(managedPolicy, "webhookTasks");
     // Existing webhook tasks stay stored but report why they do not run.
@@ -430,7 +427,6 @@ export const layer = Layer.effect(
       webhookPolicyBlock !== undefined && task.schedule.type === "webhook"
         ? { ...task, blockedByPolicy: webhookPolicyBlock }
         : task;
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     const webhookPermits = yield* Ref.make<ReadonlyMap<ScheduledTaskId, Semaphore.Semaphore>>(
       new Map(),
     );
@@ -491,16 +487,9 @@ export const layer = Layer.effect(
 
     const listRows = Effect.fn("ScheduledTaskService.listRows")(function* () {
       const rows = yield* selectAllRows();
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-      return yield* Effect.forEach(rows, (row) => decodeRow(row), { concurrency: 1 });
-=======
-      const origin = yield* readWebhookOrigin;
-      return yield* Effect.forEach(
-        rows,
-        (row) => decodeRow(row, origin).pipe(Effect.map(withPolicy)),
-        { concurrency: 1 },
-      );
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+      return yield* Effect.forEach(rows, (row) => decodeRow(row).pipe(Effect.map(withPolicy)), {
+        concurrency: 1,
+      });
     });
 
     const getRows = (id: ScheduledTaskId) =>
@@ -540,11 +529,7 @@ export const layer = Layer.effect(
       );
       const row = rows[0];
       if (row === undefined) return null;
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-      return yield* decodeRow(row);
-=======
-      return withPolicy(yield* decodeRow(row, yield* readWebhookOrigin));
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+      return withPolicy(yield* decodeRow(row));
     });
 
     const findWebhookCredentials = (id: ScheduledTaskId) =>
@@ -950,12 +935,10 @@ export const layer = Layer.effect(
         const lastRunError = runSucceeded ? null : errorMessage(result.cause);
         const threadId = runSucceeded ? result.value : null;
         // One transaction, so an edit cannot land between reading the schedule and
-        // writing the next run computed from it. The origin is read first: it reads
-        // files, and the transaction holds SQLite's writer lock.
-        const origin = yield* readWebhookOrigin;
+        // writing the next run computed from it.
         const record = Effect.gen(function* () {
           const [row] = yield* getRows(task.id);
-          const current = row === undefined ? null : yield* decodeRow(row, origin);
+          const current = row === undefined ? null : yield* decodeRow(row);
           const scheduleSource = current ?? task;
           const completed: ScheduledTask = {
             ...scheduleSource,
@@ -1974,7 +1957,7 @@ export const layer = Layer.effect(
           if (rejectionSlot !== "allowed") {
             if (rejectionSlot === "first_rejected") yield* log("rate_limited");
             yield* observe("rate_limited");
-            return ({ _tag: "rate_limited", outcome: "rate_limited" } as const);
+            return { _tag: "rate_limited", outcome: "rate_limited" } as const;
           }
           if (!task.enabled) {
             yield* log("disabled");
@@ -2027,11 +2010,11 @@ export const layer = Layer.effect(
             }
             yield* refundRejectionSlot;
             yield* observe("filtered");
-            return ({
+            return {
               _tag: "accepted" as const,
               deliveryId,
               outcome: "filtered" as const,
-            });
+            };
           }
 
           const runWindow = (yield* Ref.get(webhookRateWindows)).get(task.id);
@@ -2043,7 +2026,7 @@ export const layer = Layer.effect(
             if ((yield* takeRateSlot(task.id, DateTime.toEpochMillis(now))) === "first_rejected")
               yield* log("rate_limited");
             yield* observe("rate_limited");
-            return ({ _tag: "rate_limited", outcome: "rate_limited" } as const);
+            return { _tag: "rate_limited", outcome: "rate_limited" } as const;
           }
           const reserve = takeRateSlot(task.id, DateTime.toEpochMillis(now)).pipe(
             Effect.flatMap((slot) => (slot === "allowed" ? Effect.void : Effect.fail(slot))),
@@ -2107,7 +2090,7 @@ export const layer = Layer.effect(
             yield* refundRejectionSlot;
             if (deduped.log) yield* log("rate_limited");
             yield* observe(deduped.outcome);
-            return ({ _tag: "rate_limited", outcome: deduped.outcome } as const);
+            return { _tag: "rate_limited", outcome: deduped.outcome } as const;
           }
           if (deduped !== "run") {
             if (deduped !== "coalesced" && deduped !== "coalesced_unlogged")
@@ -2119,8 +2102,7 @@ export const layer = Layer.effect(
                   ? "coalesced"
                   : deduped;
             yield* observe(outcome);
-            if (deduped === "duplicate")
-              return ({ _tag: "accepted", deliveryId, outcome } as const);
+            if (deduped === "duplicate") return { _tag: "accepted", deliveryId, outcome } as const;
             return { _tag: "accepted", deliveryId, outcome } as const;
           }
           const frameId = yield* crypto.randomBytes(6).pipe(
@@ -2139,11 +2121,11 @@ export const layer = Layer.effect(
             });
             yield* releaseReplay(deliveryId);
             yield* observe("prompt_too_long");
-            return ({
+            return {
               _tag: "accepted" as const,
               deliveryId,
               outcome: "prompt_too_long" as const,
-            });
+            };
           }
           // Bound the deliveries one task holds, so steady traffic to a stuck
           // task cannot pile up parked fibers.
@@ -2194,19 +2176,19 @@ export const layer = Layer.effect(
             yield* release;
             if (admitted.log) yield* log("rate_limited");
             yield* observe(admitted.outcome);
-            return ({
+            return {
               _tag: "rate_limited",
               outcome: admitted.outcome,
-            } as const);
+            } as const;
           }
           if (admitted === "duplicate") {
             yield* release;
             yield* observe("duplicate");
-            return ({
+            return {
               _tag: "accepted",
               deliveryId,
               outcome: "duplicate",
-            } as const);
+            } as const;
           }
           yield* observe("accepted");
           const permit = yield* webhookPermit(task.id);

@@ -1,12 +1,3 @@
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/reactivity";
-import { expect, it, vi } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
-
-const state = vi.hoisted(() => ({ projection: null as unknown, commandSucceeds: false }));
-=======
 import * as DateTime from "effect/DateTime";
 import { EnvironmentId, NodeId, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -19,7 +10,6 @@ const state = vi.hoisted(() => ({
   commandSucceeds: false,
   relatedShells: [] as unknown[],
 }));
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 
 vi.mock(import("@effect/atom-react"), async (original) => ({
   ...(await original()),
@@ -31,13 +21,9 @@ vi.mock(import("../../state/entities"), () => ({
   useThreadProjection: ((ref: unknown) =>
     ref === null ? null : { projection: state.projection }) as never,
   useThreadRelationshipShells: (() =>
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-    state.projection === null ? [] : [(state.projection as { thread: unknown }).thread]) as never,
-=======
     state.projection === null
       ? []
       : [(state.projection as { thread: unknown }).thread, ...state.relatedShells]) as never,
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   useProjects: (() => []) as never,
 }));
 vi.mock(import("../../state/environments"), () => ({
@@ -55,11 +41,8 @@ vi.mock(import("../../state/use-atom-command"), () => ({
 }));
 
 import { render } from "../../../test/render";
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
 import { makeThreadProjectionFixture } from "../../test-fixtures";
 import { ToastProvider } from "../ui/toast";
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
 
 const environmentId = EnvironmentId.make("environment");
@@ -67,10 +50,7 @@ const threadId = ThreadId.make("fork");
 
 function setup() {
   state.commandSucceeds = false;
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
   state.relatedShells = [];
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   state.projection = {
     thread: {
       id: threadId,
@@ -87,13 +67,6 @@ function setup() {
   };
 }
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-
-async function runAction(
-  screen: Awaited<ReturnType<typeof render>>,
-  action: "merge" | "disconnect",
-) {
-=======
 it.each([
   ["merge", "Could not merge back"],
   ["disconnect", "Could not disconnect agent session"],
@@ -110,22 +83,12 @@ it.each([
     </ToastProvider>,
   );
 
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   if (action === "merge") {
     await screen.getByRole("button", { name: "Merge back to source conversation" }).click();
   } else {
     await screen.getByRole("button", { name: "More thread actions" }).click();
     await page.getByRole("menuitem", { name: "Disconnect agent session" }).click();
   }
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-}
-
-it.each(["merge", "disconnect"] as const)(
-  "a rejected %s command stays on the fork and clears the busy state",
-  async (action) => {
-    setup();
-    await using screen = await render(
-=======
 
   await expect.element(page.getByText(title, { exact: true })).toBeVisible();
   await expect
@@ -144,62 +107,11 @@ it.each([
   setup();
   await using screen = await render(
     <ToastProvider timeout={0}>
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
       <ThreadRelationshipsPanel
         environmentId={environmentId}
         threadId={threadId}
         showLineage
         showSideChats
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-      />,
-      { router: "/environment/fork" },
-    );
-
-    await runAction(screen, action);
-
-    expect(screen.router?.state.location.pathname).toBe("/environment/fork");
-    await expect
-      .element(
-        screen.getByRole("button", {
-          name: action === "merge" ? "Merge back to source conversation" : "More thread actions",
-        }),
-      )
-      .toBeEnabled();
-  },
-);
-
-it.each(["merge", "disconnect"] as const)(
-  "a successful %s retry after a rejection finishes the action",
-  async (action) => {
-    setup();
-    await using screen = await render(
-      <ThreadRelationshipsPanel
-        environmentId={environmentId}
-        threadId={threadId}
-        showLineage
-        showSideChats
-      />,
-      { router: "/environment/fork" },
-    );
-
-    await runAction(screen, action);
-    expect(screen.router?.state.location.pathname).toBe("/environment/fork");
-
-    state.commandSucceeds = true;
-    await runAction(screen, action);
-
-    const expectedPath = action === "merge" ? "/environment/source" : "/environment/fork";
-    await vi.waitFor(() => {
-      expect(screen.router?.state.location.pathname).toBe(expectedPath);
-    });
-    if (action === "disconnect") {
-      await expect
-        .element(screen.getByRole("button", { name: "More thread actions" }))
-        .toBeEnabled();
-    }
-  },
-);
-=======
       />
     </ToastProvider>,
     { router: "/environment/fork" },
@@ -431,4 +343,3 @@ it("shows a delegated-from thread's full title in its tooltip even when its envi
   await row.click({ force: true });
   expect(screen.router?.state.location.pathname).toBe("/environment/fork");
 });
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb

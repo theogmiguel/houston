@@ -711,7 +711,6 @@ function mayStartSubagentFollowup(
   return command.createdBy === "user" || command.creationSource === "mcp";
 }
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
 // Houston: a queued message's delivery, kept on the message until its run starts. A rerouted
 // steer's follow-up keeps the record the steer had; notifications and completions carry none.
 function queuedMessageDelivery(
@@ -765,8 +764,6 @@ function turnStartDelivery(
     : { delivery: acceptedDelivery({ intent: "steer", route: "ownTurn", rerouted, at: now }) };
 }
 
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
 /** Waiting runs only drain post-terminal output; their agent turn is over and still needs a wake. */
 function isLiveRun(run: OrchestrationV2Run): boolean {
   return run.status === "preparing" || run.status === "starting" || run.status === "running";
@@ -13497,11 +13494,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 (cause) => new OrchestratorProjectionError({ threadId: deletion.threadId, cause }),
               ),
             );
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
           const plan = yield* mapDispatchError(command)(
-=======
-          return yield* mapDispatchError(command)(
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
             planThreadDeletion({
               command: deletion,
               projection,
@@ -13512,10 +13505,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               idAllocator,
             }),
           );
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
           return { projection, plan };
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         });
         // Checked under the thread lock: a message sent since the client looked keeps the thread.
         if (command.onlyIfUnused === true) {
@@ -13530,7 +13520,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             return { events: [], effects: [] };
           }
         }
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
         const deleted = yield* planDeletion(command);
         // Houston: side threads are shown only inside their source; they go with it.
         const sideThreadPlans = yield* Effect.forEach(
@@ -13551,19 +13540,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           }).pipe(Effect.map(({ plan }) => plan)),
         );
         const plans = [deleted.plan, ...sideThreadPlans, ...sideChatPlans];
-=======
-        // The dispatch wrapper holds each side chat's lock, so none can commit after this plan.
-        const plans = [
-          yield* planDeletion(command),
-          ...(yield* Effect.forEach(sideChatIds, (threadId) =>
-            planDeletion({
-              ...command,
-              commandId: CommandId.make(`${command.commandId}:side-chat:${threadId}`),
-              threadId,
-            }),
-          )),
-        ];
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
         return {
           events: plans.flatMap((plan) => plan.events),
           effects: plans.flatMap((plan) => plan.effects),
@@ -13989,10 +13965,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
 
     const plan = yield* dispatchOnce(command, sideChatIds).pipe(
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
       Effect.tap((planned) => refuseAboveRuntimeModeCeiling(command, planned.events)),
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
       Effect.filterOrFail(
         (planned) =>
           planned.events.length > 0 ||
@@ -14000,11 +13973,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           command.type === "thread.interrupt.unresponsive" ||
           command.type === "thread.stop" ||
           command.type === "subagent.stop" ||
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
-          // Closing a share again, or after it ended, is not an error.
-          command.type === "thread.guest-share.close" ||
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
           (command.type === "thread.delete" && command.onlyIfUnused === true),
         (_planned) =>
           new OrchestratorDispatchError({
@@ -14170,7 +14138,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       commandThreadId(command),
       dispatchWithReceiptEffect(command),
     );
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
     // Houston: a send writes to the review's source thread; take its lock first.
     if (command.type === "houston.side-thread.send") {
       const side = yield* projectionStore.getThread(command.sideThreadId).pipe(
@@ -14181,8 +14148,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ? threadDispatch.withLock(side.sourceThreadId, dispatch)
         : dispatch;
     }
-=======
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     // A parent's lock comes before its side chats' locks, so a delete cascade and a side chat
     // fork or command never interleave. A fork from a side chat or onto an existing thread would
     // invert that order; dispatch rejects both, so they skip the source lock.

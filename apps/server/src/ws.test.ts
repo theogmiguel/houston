@@ -596,11 +596,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(HoustonNightShiftService.HoustonNightShiftService)({}),
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
   Layer.mock(SecretResolver.SecretResolver)({}),
-  Layer.mock(GuestShareService.GuestShareService)({}),
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
   Layer.mock(ServerLifecycleEvents.ServerLifecycleEvents)({}),
   Layer.mock(ServerRuntimeStartup.ServerRuntimeStartup)({}),
   Layer.mock(ServerSelfUpdate.ServerSelfUpdate)({}),

@@ -15,7 +15,6 @@ import {
   remainingPercent,
 } from "@t3tools/shared/usageLimits";
 import type { Popover as PopoverPrimitive } from "@base-ui/react/popover";
-import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
 import { AlertTriangleIcon, ExternalLinkIcon, TicketIcon } from "lucide-react";
 import {
   createContext,
@@ -521,10 +520,6 @@ function PoolBar({ pool, now }: { readonly pool: LimitPoolWindow; readonly now: 
               window={member.window}
               reset={restores.get(member.account.key)}
               refillPercent={member.refillPercent}
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-=======
-              color={normalizeProviderAccentColor(member.account.accentColor) ?? color}
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
               now={now}
               index={position + 1}
               showAccountName={pool.columns.length > 1}

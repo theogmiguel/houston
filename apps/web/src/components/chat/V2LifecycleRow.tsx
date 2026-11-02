@@ -233,13 +233,9 @@ function SubagentAvatar({
           displayName={displayName ?? driver}
           accentColor={accentColor}
           acpRegistryIconUrl={iconUrl}
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-          className={cn("z-auto", plain && color.className)}
-=======
           showBadge={showBadge}
           size="compact"
-          className="z-auto"
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+          className={cn("z-auto", plain && color.className)}
           iconClassName="size-3.5"
         />
       ) : (

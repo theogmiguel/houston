@@ -17,7 +17,7 @@ export function FileExplorerPane({
   resizable,
   children,
   storageKey = "t3code.fileExplorerWidth",
-  defaultWidth = 256,
+  defaultWidth = 232,
   defaultWidthFraction,
   minWidth = MIN_WIDTH,
   resizeLabel = "Resize file explorer",
@@ -33,15 +33,9 @@ export function FileExplorerPane({
   const [maxWidth, setMaxWidth] = useState(MAX_WIDTH);
   const [responsiveDefaultWidth, setResponsiveDefaultWidth] = useState(defaultWidth);
   const { width, setWidth, handlers } = useResizableWidth({
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-    storageKey: "t3code.fileExplorerWidth",
-    defaultWidth: 232,
-    minWidth: MIN_WIDTH,
-=======
     storageKey,
     defaultWidth: responsiveDefaultWidth,
     minWidth,
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
     maxWidth,
     edge: "right",
   });
@@ -84,12 +78,8 @@ export function FileExplorerPane({
       {resizable ? (
         <RightPanelResizeHandle
           handlers={handlers}
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
           className="-left-auto -right-1"
-          label="Resize file explorer"
-=======
           label={resizeLabel}
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
           tabIndex={0}
           aria-valuenow={width}
           aria-valuemin={minWidth}

@@ -8,11 +8,8 @@ import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { useUiStateStore } from "../../uiStateStore";
 import { resolveSidebarFolderDot, resolveThreadLastVisitedAt } from "../Sidebar.logic";
 import { Button } from "../ui/button";
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-import { SidebarStatusGlyph } from "./SidebarStatusGlyph";
-=======
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+import { SidebarStatusGlyph } from "./SidebarStatusGlyph";
 
 const FOLDER_GLYPH_STATE = {
   attention: "needs",

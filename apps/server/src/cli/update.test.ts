@@ -60,10 +60,7 @@ it.effect("authenticates each release page until the requested channel is found"
   }),
 );
 
-<<<<<<< 57f5b2527b386f5e6f3426d989d40921b2199f5b
-it.layer(NodeServices.layer)("houston update launcher", (it) => {
-=======
-it.layer(NodeServices.layer)("t3 update under a managed policy", (it) => {
+it.layer(NodeServices.layer)("houston update under a managed policy", (it) => {
   const runWithPolicy = (
     updates: ManagedUpdatesPolicy,
     input: { readonly channel?: "stable" | "nightly"; readonly requestedVersion?: string } = {},
@@ -123,8 +120,7 @@ it.layer(NodeServices.layer)("t3 update under a managed policy", (it) => {
   );
 });
 
-it.layer(NodeServices.layer)("t3 update launcher", (it) => {
->>>>>>> e6e2ab05cceb3f8245e87f8499d4891f27de33cb
+it.layer(NodeServices.layer)("houston update launcher", (it) => {
   it.effect("repoints a symlink that lives in a runtime versions tree", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
