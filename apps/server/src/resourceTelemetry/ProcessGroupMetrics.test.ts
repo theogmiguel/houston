@@ -34,7 +34,7 @@ describe("groupProcesses", () => {
   it("sums each direct child of the server with its whole subtree", () => {
     const totals = groupProcesses([
       process(10, 1, "node", "server"),
-      process(11, 10, "t3-resource-mon", "resource-monitor"),
+      process(11, 10, "houston-resource-mon", "resource-monitor"),
       process(20, 10, "claude"),
       process(21, 20, "bash"),
       process(22, 21, "cargo"),

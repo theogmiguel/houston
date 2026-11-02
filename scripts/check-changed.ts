@@ -99,7 +99,7 @@ const LINTABLE = /\.[cm]?[jt]sx?$/i;
 const TYPECHECK_SOURCE = /\.[cm]?tsx?$/i;
 const TYPECHECK_CONFIG =
   /(^|\/)(?:package\.json|tsconfig[^/]*\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$/;
-const TYPECHECK_ROOTS = ["apps/", "packages/", "scripts/", "oxlint-plugin-t3code/"];
+const TYPECHECK_ROOTS = ["apps/", "packages/", "scripts/", "oxlint-plugin-houston/"];
 
 function packageFor(file: string): string | null {
   let dir = NodePath.dirname(file);

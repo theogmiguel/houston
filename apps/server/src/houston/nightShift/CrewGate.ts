@@ -31,14 +31,14 @@ import { messageId, NightShiftThreads } from "./Threads.ts";
 export type GatedOperation =
   | "delegate_task"
   | "create_threads"
-  | "t3_thread_launch"
+  | "houston_thread_launch"
   | "schedule_task"
   | "delete_scheduled_task"
-  | "t3_environment_link"
+  | "houston_environment_link"
   | "houston_task_execute"
   | "houston_merge_queue_enqueue"
   | "houston_merge_queue_dequeue"
-  | "t3_thread_send"
+  | "houston_thread_send"
   | "run_scheduled_task_now"
   | "houston_task_review";
 
@@ -87,7 +87,7 @@ export interface CrewGateShape {
     readonly callerThreadId: ThreadId;
     readonly operation: GatedOperation;
     readonly delegation?: Delegation | undefined;
-    /** `t3_thread_send`'s target thread. */
+    /** `houston_thread_send`'s target thread. */
     readonly targetThreadId?: ThreadId | undefined;
   }) => Effect.Effect<Admission, string>;
   /** Admits the automatic review a handback of `callerThreadId`'s task run starts. */
@@ -318,14 +318,14 @@ const make = Effect.gen(function* () {
       return yield* refuse(
         run.id,
         "threadSend",
-        `t3_thread_send to ${target} is refused: it is not a live crew thread of run ${run.id}; send only to threads this run delegated`,
+        `houston_thread_send to ${target} is refused: it is not a live crew thread of run ${run.id}; send only to threads this run delegated`,
       );
     }
     if (member.endedAt !== null) {
       return yield* refuse(
         run.id,
         "threadSend",
-        `t3_thread_send to ${target} is refused: its task has ended; start new work with delegate_task`,
+        `houston_thread_send to ${target} is refused: its task has ended; start new work with delegate_task`,
       );
     }
     return admitted(undefined);
@@ -374,7 +374,7 @@ const make = Effect.gen(function* () {
   const admit: CrewGateShape["admit"] = Effect.fn("HoustonCrewGate.admit")(function* (input) {
     const membership = yield* store.liveCrewOf(input.callerThreadId);
     if (membership === undefined) return admitted(input.delegation?.target);
-    if (input.operation === "t3_thread_send") {
+    if (input.operation === "houston_thread_send") {
       return yield* lock.withPermits(1)(sendTo(membership.run, input.targetThreadId));
     }
     if (

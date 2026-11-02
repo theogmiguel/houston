@@ -11,15 +11,15 @@ import * as ResourceTelemetry from "./ResourceTelemetry.ts";
 
 const SAMPLE_INTERVAL = "1 minute";
 
-const residentBytes = Metric.gauge("t3_process_group_resident_bytes", {
+const residentBytes = Metric.gauge("houston_process_group_resident_bytes", {
   description: "Resident memory of the server's processes, summed by group.",
   attributes: { unit: "By" },
 });
-const cpuPercent = Metric.gauge("t3_process_group_cpu_percent", {
+const cpuPercent = Metric.gauge("houston_process_group_cpu_percent", {
   description: "CPU use of the server's processes, summed by group; 100 is one full core.",
   attributes: { unit: "%" },
 });
-const processCount = Metric.gauge("t3_process_group_count", {
+const processCount = Metric.gauge("houston_process_group_count", {
   description: "Processes in each group.",
   attributes: { unit: "{process}" },
 });

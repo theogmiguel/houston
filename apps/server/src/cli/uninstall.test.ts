@@ -12,7 +12,7 @@ it.layer(NodeServices.layer)("houston uninstall launcher", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-uninstall-" });
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "houston-uninstall-" });
       const versionsDir = path.join(root, "runtime/versions");
       const exe = path.join(versionsDir, "1.0.0/houston");
       const otherExe = path.join(root, "other/runtime/versions/1.0.0/t3");
@@ -42,7 +42,7 @@ it.live.runIf(HostProcess.Platform.defaultValue() === "win32")(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-uninstall-" });
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "houston-uninstall-" });
       const runtimeDir = path.join(root, "t3 home %COMSPEC% !COMSPEC! & data", "runtime");
       yield* fs.makeDirectory(path.join(runtimeDir, "versions", "1.0.0"), { recursive: true });
       yield* fs.writeFileString(path.join(runtimeDir, "versions", "1.0.0", "t3.exe"), "");

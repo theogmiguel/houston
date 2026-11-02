@@ -160,7 +160,9 @@ describe("houston pair", () => {
             }),
           );
 
-          const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-pair-ipv6-test-"));
+          const baseDir = NodeFS.mkdtempSync(
+            NodePath.join(NodeOS.tmpdir(), "houston-pair-ipv6-test-"),
+          );
           yield* persistServerRuntimeState({
             path: NodePath.join(baseDir, "userdata", "server-runtime.json"),
             state: yield* makePersistedServerRuntimeState({
@@ -195,7 +197,7 @@ describe("houston pair", () => {
   it.effect("mints a token and prints a QR pairing URL for a live server", () =>
     withDescriptorServer((origin) =>
       Effect.gen(function* () {
-        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-pair-test-"));
+        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-pair-test-"));
         const port = Number(new URL(origin).port);
         const statePath = NodePath.join(baseDir, "userdata", "server-runtime.json");
         yield* persistServerRuntimeState({
@@ -249,7 +251,9 @@ describe("houston pair", () => {
   it.effect("pairs through the recorded dev web URL for dev servers", () =>
     withDescriptorServer((origin) =>
       Effect.gen(function* () {
-        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-pair-dev-test-"));
+        const baseDir = NodeFS.mkdtempSync(
+          NodePath.join(NodeOS.tmpdir(), "houston-pair-dev-test-"),
+        );
         const port = Number(new URL(origin).port);
         const statePath = NodePath.join(baseDir, "dev", "server-runtime.json");
         yield* persistServerRuntimeState({
@@ -270,7 +274,9 @@ describe("houston pair", () => {
   it.effect("refuses --tailscale before turning on Serve when the policy keeps clients local", () =>
     withDescriptorServer((origin) =>
       Effect.gen(function* () {
-        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-pair-policy-test-"));
+        const baseDir = NodeFS.mkdtempSync(
+          NodePath.join(NodeOS.tmpdir(), "houston-pair-policy-test-"),
+        );
         const policyPath = NodePath.join(baseDir, "policy.json");
         NodeFS.writeFileSync(
           policyPath,
@@ -296,7 +302,7 @@ describe("houston pair", () => {
             ),
             Effect.provide(
               ConfigProvider.layer(
-                ConfigProvider.fromEnv({ env: { T3CODE_DEV_MANAGED_POLICY_PATH: policyPath } }),
+                ConfigProvider.fromEnv({ env: { HOUSTON_DEV_MANAGED_POLICY_PATH: policyPath } }),
               ),
             ),
             Effect.flip,
@@ -314,7 +320,9 @@ describe("houston pair", () => {
   it.effect("ignores runtime state whose recorded pid is no longer alive", () =>
     withDescriptorServer((origin) =>
       Effect.gen(function* () {
-        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-pair-pid-test-"));
+        const baseDir = NodeFS.mkdtempSync(
+          NodePath.join(NodeOS.tmpdir(), "houston-pair-pid-test-"),
+        );
         const statePath = NodePath.join(baseDir, "userdata", "server-runtime.json");
         const state = yield* makePersistedServerRuntimeState({
           config: { host: "127.0.0.1", devUrl: undefined },
@@ -342,7 +350,9 @@ describe("houston pair", () => {
   it.effect("does not fall back to the shared home from a linked worktree", () =>
     withDescriptorServer((origin) =>
       Effect.gen(function* () {
-        const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-pair-worktree-test-"));
+        const root = NodeFS.mkdtempSync(
+          NodePath.join(NodeOS.tmpdir(), "houston-pair-worktree-test-"),
+        );
         const worktree = NodePath.join(root, "worktree");
         NodeFS.mkdirSync(worktree);
         NodeFS.writeFileSync(
@@ -362,7 +372,7 @@ describe("houston pair", () => {
           runCli(["pair"]).pipe(
             Effect.provideService(HostProcess.WorkingDirectory, worktree),
             Effect.provide(
-              ConfigProvider.layer(ConfigProvider.fromEnv({ env: { T3CODE_HOME: sharedHome } })),
+              ConfigProvider.layer(ConfigProvider.fromEnv({ env: { HOUSTON_HOME: sharedHome } })),
             ),
             Effect.flip,
           ),
@@ -384,7 +394,7 @@ describe("houston pair", () => {
       (origin) =>
         Effect.gen(function* () {
           const baseDir = NodeFS.mkdtempSync(
-            NodePath.join(NodeOS.tmpdir(), "t3-pair-protocol-test-"),
+            NodePath.join(NodeOS.tmpdir(), "houston-pair-protocol-test-"),
           );
           yield* persistServerRuntimeState({
             path: NodePath.join(baseDir, "userdata", "server-runtime.json"),
@@ -416,7 +426,7 @@ describe("houston pair", () => {
   it.effect("explains a tailnet without HTTPS serve instead of running tailscale serve", () =>
     withDescriptorServer((origin) =>
       Effect.gen(function* () {
-        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-pair-ts-test-"));
+        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-pair-ts-test-"));
         yield* persistServerRuntimeState({
           path: NodePath.join(baseDir, "userdata", "server-runtime.json"),
           state: yield* makePersistedServerRuntimeState({
@@ -473,7 +483,7 @@ describe("auth scope options", () => {
     ({ group, action }) =>
       Effect.gen(function* () {
         const baseDir = NodeFS.mkdtempSync(
-          NodePath.join(NodeOS.tmpdir(), "t3-cli-auth-scopes-test-"),
+          NodePath.join(NodeOS.tmpdir(), "houston-cli-auth-scopes-test-"),
         );
         const output = yield* captureStdout(
           runCli([
@@ -539,7 +549,9 @@ describe("auth pairing create --base-url", () => {
     "rejects %s before issuing a token",
     (baseUrl) =>
       Effect.gen(function* () {
-        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-cli-base-url-test-"));
+        const baseDir = NodeFS.mkdtempSync(
+          NodePath.join(NodeOS.tmpdir(), "houston-cli-base-url-test-"),
+        );
         const error = yield* runCli([
           "auth",
           "pairing",
@@ -571,7 +583,9 @@ describe("auth pairing create --base-url", () => {
     "prints a pair URL for %s",
     (baseUrl) =>
       Effect.gen(function* () {
-        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-cli-base-url-test-"));
+        const baseDir = NodeFS.mkdtempSync(
+          NodePath.join(NodeOS.tmpdir(), "houston-cli-base-url-test-"),
+        );
         const output = yield* captureStdout(
           runCli([
             "auth",
@@ -603,7 +617,7 @@ describe("scripted auth output", () => {
     ].map((command) => ({ command, label: command.join(" ") })),
   )("prints only the result for $label after removing an abandoned upload", ({ command }) =>
     Effect.gen(function* () {
-      const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-cli-quiet-test-"));
+      const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-cli-quiet-test-"));
       const attachmentsDir = NodePath.join(baseDir, "userdata", "attachments");
       NodeFS.mkdirSync(attachmentsDir, { recursive: true });
       // An abandoned upload makes config resolution log that it removed it.

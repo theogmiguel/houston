@@ -176,7 +176,7 @@ const make = Effect.gen(function* () {
   // builds never do: any override a user can set is a way around the policy.
   const devPath =
     telemetryChannel === "dev"
-      ? yield* Config.option(Config.String("T3CODE_DEV_MANAGED_POLICY_PATH")).pipe(
+      ? yield* Config.option(Config.String("HOUSTON_DEV_MANAGED_POLICY_PATH")).pipe(
           Effect.orElseSucceed(() => Option.none<string>()),
         )
       : Option.none<string>();

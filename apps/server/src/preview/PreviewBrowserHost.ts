@@ -10,21 +10,21 @@ export const SETUP_SUBCOMMAND = "browser setup";
 export const NO_SANDBOX_SIGNATURE = "No usable sandbox";
 
 export const sandboxDisabled = (env: Readonly<Record<string, string | undefined>>) =>
-  env.T3CODE_SERVER_BROWSER_SANDBOX === "0";
+  env.HOUSTON_SERVER_BROWSER_SANDBOX === "0";
 
 /** Set on Ubuntu 23.10+: unprivileged user namespaces need an AppArmor profile. */
 const USERNS_RESTRICTION = "/proc/sys/kernel/apparmor_restrict_unprivileged_userns";
-export const APPARMOR_PROFILE_PATH = "/etc/apparmor.d/t3-chrome-headless-shell";
+export const APPARMOR_PROFILE_PATH = "/etc/apparmor.d/houston-chrome-headless-shell";
 
 /** Match Ubuntu's Chrome profile; unconfined adds nothing beyond userns. */
-export const APPARMOR_PROFILE = `# Written by \`houston browser setup\`: lets T3 Code's headless browser use Chrome's sandbox.
+export const APPARMOR_PROFILE = `# Written by \`houston browser setup\`: lets Houston's headless browser use Chrome's sandbox.
 abi <abi/4.0>,
 include <tunables/global>
 
-profile t3-chrome-headless-shell /**/tools/chrome-headless-shell/*/*/chrome-headless-shell flags=(unconfined) {
+profile houston-chrome-headless-shell /**/tools/chrome-headless-shell/*/*/chrome-headless-shell flags=(unconfined) {
   userns,
 
-  include if exists <local/t3-chrome-headless-shell>
+  include if exists <local/houston-chrome-headless-shell>
 }
 `;
 
@@ -73,7 +73,7 @@ export class PreviewBrowserRootError extends Schema.TaggedError<PreviewBrowserRo
   {},
 ) {
   override get message(): string {
-    return "Houston server is running as root; Chrome's sandbox cannot start. Run Houston as a nonroot user. Otherwise set `T3CODE_SERVER_BROWSER_SANDBOX=0` in the Houston server's environment and restart the server; this disables Chrome's sandbox. Manual: `T3CODE_SERVER_BROWSER_SANDBOX=0 houston serve`. Systemd: add `Environment=T3CODE_SERVER_BROWSER_SANDBOX=0` under `[Service]`, reload systemd, then restart the service. `houston browser setup` cannot fix root sandboxing.";
+    return "Houston server is running as root; Chrome's sandbox cannot start. Run Houston as a nonroot user. Otherwise set `HOUSTON_SERVER_BROWSER_SANDBOX=0` in the Houston server's environment and restart the server; this disables Chrome's sandbox. Manual: `HOUSTON_SERVER_BROWSER_SANDBOX=0 houston serve`. Systemd: add `Environment=HOUSTON_SERVER_BROWSER_SANDBOX=0` under `[Service]`, reload systemd, then restart the service. `houston browser setup` cannot fix root sandboxing.";
   }
 }
 

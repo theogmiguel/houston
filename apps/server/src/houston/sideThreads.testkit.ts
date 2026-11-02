@@ -100,7 +100,7 @@ export const ACP_REGISTRY: DoubleSpec = {
 export interface StartedTurn {
   readonly driver: string;
   readonly input: ProviderAdapter.ProviderAdapterV2TurnInput;
-  /** The T3 MCP credential the session held for this thread when the turn started. */
+  /** The Houston MCP credential the session held for this thread when the turn started. */
   readonly mcp: McpProviderSession.McpProviderSessionConfig | undefined;
 }
 
@@ -318,7 +318,7 @@ const finish = (live: Map<string, LiveTurn>, script: Script, cwd: string, messag
     live.delete(messageId);
   });
 
-/** Records which threads were issued a T3 MCP credential; issues a test credential as upstream's testkit does. */
+/** Records which threads were issued a Houston MCP credential; issues a test credential as upstream's testkit does. */
 const recordingMcpRegistry = (log: Log) =>
   Layer.succeed(
     McpSessionRegistry.McpSessionRegistry,
@@ -414,7 +414,7 @@ export const selection = (driver: string, model = "test-model"): ModelSelection 
   model,
 });
 
-/** The orchestration runtime around the doubles, with T3 MCP credentials issued as in production. */
+/** The orchestration runtime around the doubles, with Houston MCP credentials issued as in production. */
 export const harnessLayer = (harness: Harness, options: { readonly databasePath?: string } = {}) =>
   ProviderReplayHarness.layerWithRegistry(
     { name: `side-threads-${harness.name}` },

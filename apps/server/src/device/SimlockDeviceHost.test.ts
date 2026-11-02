@@ -46,7 +46,7 @@ const CATALOG = {
   ],
 };
 
-/** The gateway's HTTP API and T3's agent-device CLI, recording what was asked of them. */
+/** The gateway's HTTP API and Houston's agent-device CLI, recording what was asked of them. */
 const fakePool = (
   options: {
     readonly failOpen?: boolean;
@@ -144,7 +144,7 @@ const fakePool = (
   });
 
 const layer = Layer.mergeAll(
-  ServerConfig.layerTest(process.cwd(), { prefix: "t3-simlock-host-" }),
+  ServerConfig.layerTest(process.cwd(), { prefix: "houston-simlock-host-" }),
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 const makeHost = (

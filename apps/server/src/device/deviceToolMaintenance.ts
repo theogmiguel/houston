@@ -63,7 +63,7 @@ async function withToolMaintenance(root, operation) {
 }
 function pruneTools(root, specs, flat) {
   return withToolMaintenance(root, () => {
-    // Keep installs used by any running helper, including older T3 releases.
+    // Keep installs used by any running helper, including older Houston releases.
     const scan = process.platform === 'win32'
       ? require('node:child_process').spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_Process | Select-Object -ExpandProperty CommandLine'], { encoding: 'utf8', timeout: 10000 })
       : require('node:child_process').spawnSync('ps', ['-ax', '-o', 'command='], { encoding: 'utf8', timeout: 10000 });

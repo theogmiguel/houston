@@ -1171,7 +1171,7 @@ it.effect("a side chat opened during the parent's first turn starts from a diges
     assert.notInclude(handoff!.summaryText, "PARENT_QUEUED_MARKER");
     assert.include(handoff!.summaryText, "- User: PARENT_IMPORTED_MARKER");
     assert.include(handoff!.summaryText, "- User: PARENT_RUNNING_MARKER");
-    assert.include(handoff!.summaryText, `t3_thread_read on thread ${parentId}`);
+    assert.include(handoff!.summaryText, `houston_thread_read on thread ${parentId}`);
     assert.equal(
       started.messages.find((message) => message.role === "user")?.text,
       "What is the main thread doing?",

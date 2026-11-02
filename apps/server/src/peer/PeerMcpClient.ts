@@ -17,7 +17,7 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import * as PeerLinks from "./PeerLinks.ts";
 
-/** The only MCP protocol version a T3 Code `/mcp` registers. */
+/** The only MCP protocol version a Houston `/mcp` registers. */
 const PROTOCOL_VERSION = "2025-06-18";
 
 /** The limits a call carries to the peer: the calling agent's modes here. */
@@ -27,8 +27,8 @@ export interface PeerCallLimits {
 }
 
 /**
- * Calls a linked environment's T3 MCP tools as this environment's outside
- * agent. Each call carries the calling agent's limits in `T3-Mode-Limit`, so
+ * Calls a linked environment's Houston MCP tools as this environment's outside
+ * agent. Each call carries the calling agent's limits in `Houston-Mode-Limit`, so
  * the peer enforces the narrower of those and the link's own access.
  */
 export class PeerMcpClient extends Context.Service<
@@ -127,7 +127,7 @@ const make = Effect.gen(function* () {
         params: {
           protocolVersion: PROTOCOL_VERSION,
           capabilities: {},
-          clientInfo: { name: "t3code-peer", version: "1" },
+          clientInfo: { name: "houston-peer", version: "1" },
         },
       },
       limitHeader,

@@ -264,7 +264,7 @@ it.effect("traces and counts a saved answer without ever recording the value", (
       Effect.map((snapshots) => {
         const found = snapshots.find(
           (snapshot) =>
-            snapshot.id === "t3_secret_refs_consumed_total" &&
+            snapshot.id === "houston_secret_refs_consumed_total" &&
             snapshot.attributes?.result === "used",
         );
         return found?.type === "Counter" ? Number(found.state.count) : 0;

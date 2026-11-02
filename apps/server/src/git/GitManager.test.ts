@@ -229,7 +229,7 @@ function createBareRemote(): Effect.Effect<
   FileSystem.FileSystem | Scope.Scope | GitVcsDriver.GitVcsDriver
 > {
   return Effect.gen(function* () {
-    const remoteDir = yield* makeTempDir("t3code-git-remote-");
+    const remoteDir = yield* makeTempDir("houston-git-remote-");
     yield* runGit(remoteDir, ["init", "--bare"]);
     return remoteDir;
   });
@@ -614,7 +614,7 @@ function makeManager(input?: {
   );
   const textGeneration = createTextGeneration(input?.textGeneration);
   const layerServerConfig = ServerConfig.layerTest(process.cwd(), {
-    prefix: "t3-git-manager-test-",
+    prefix: "houston-git-manager-test-",
   });
 
   const layerServerSettings = ServerSettings.ServerSettingsService.layerTest(input?.serverSettings);
@@ -735,7 +735,7 @@ function makeManager(input?: {
 const asThreadId = (threadId: string) => threadId as ThreadId;
 
 const layerGitManagerTest = GitVcsDriver.layer.pipe(
-  Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-git-manager-test-" })),
+  Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "houston-git-manager-test-" })),
   Layer.provideMerge(VcsProcess.layer),
   Layer.provideMerge(NodeServices.layer),
 );
@@ -745,7 +745,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     "publishes local Git changes during a held PR lookup without caching its old branch",
     () =>
       Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-refresh-status-gh-gate-");
+        const repoDir = yield* makeTempDir("houston-refresh-status-gh-gate-");
         yield* initRepo(repoDir);
         yield* runGit(repoDir, ["checkout", "-b", "release"]);
         const remoteDir = yield* createBareRemote();
@@ -845,7 +845,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("status reports the listed PR whose head is the branch", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       yield* runGit(repoDir, ["checkout", "-b", "feature/status-valid-pr-entry"]);
       const remoteDir = yield* createBareRemote();
@@ -891,7 +891,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("status reports the latest of a branch's closed and merged PRs", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       yield* runGit(repoDir, ["checkout", "-b", "feature/status-lowercase-state"]);
       const remoteDir = yield* createBareRemote();
@@ -941,7 +941,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("status returns an explicit non-repo result for deleted directories", () =>
     Effect.gen(function* () {
-      const rootDir = yield* makeTempDir("t3code-git-manager-missing-dir-");
+      const rootDir = yield* makeTempDir("houston-git-manager-missing-dir-");
       const cwd = NodePath.join(rootDir, "deleted-repo");
       yield* makeDirectory(cwd);
       yield* removePath(cwd);
@@ -969,9 +969,9 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     }),
   );
 
-  it.effect("a git read in flight during a T3 git action does not outlive it", () =>
+  it.effect("a git read in flight during a Houston git action does not outlive it", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -1022,7 +1022,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("branch PR lookup notifies linked threads when draft status changes", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       yield* runGit(repoDir, ["checkout", "-b", "feature/draft-status"]);
       const remoteDir = yield* createBareRemote();
@@ -1078,7 +1078,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("branch PR lookup uses a saved tracked branch without changing checkout", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -1094,7 +1094,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 216,
                 title: "Saved branch PR",
-                url: "https://github.com/pingdotgg/t3code/pull/216",
+                url: "https://github.com/example/houston/pull/216",
                 baseRefName: "main",
                 headRefName: "feature/saved-branch",
                 headSha: "a".repeat(40),
@@ -1114,7 +1114,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(pullRequest).toMatchObject({
         number: 216,
         title: "Saved branch PR",
-        url: "https://github.com/pingdotgg/t3code/pull/216",
+        url: "https://github.com/example/houston/pull/216",
         baseRef: "main",
         headRef: "feature/saved-branch",
         headSha: "a".repeat(40),
@@ -1129,7 +1129,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("branch PR lookup uses the default branch from a non-origin remote", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "upstream", remoteDir]);
@@ -1171,7 +1171,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("branch PR lookup uses the saved name after the local branch is deleted", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -1195,7 +1195,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 217,
                 title: "Deleted local branch PR",
-                url: "https://github.com/pingdotgg/t3code/pull/217",
+                url: "https://github.com/example/houston/pull/217",
                 baseRefName: "main",
                 headRefName: "feature/deleted-local-branch",
                 state: "merged",
@@ -1223,7 +1223,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("branch PR lookup recovers a deleted fork branch from its remote-tracking ref", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const originDir = yield* createBareRemote();
       const forkDir = yield* createBareRemote();
@@ -1292,7 +1292,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("branch PR lookup rejects ambiguous deleted-branch remote refs", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const originDir = yield* createBareRemote();
       const forkDir = yield* createBareRemote();
@@ -1319,7 +1319,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("finds a fork PR for a branch pushed without an upstream", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const originDir = yield* createBareRemote();
       const forkDir = yield* createBareRemote();
@@ -1431,7 +1431,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("prefers an exact fork ref but does not guess between equal refs", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const originDir = yield* createBareRemote();
       const firstForkDir = yield* createBareRemote();
@@ -1506,7 +1506,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("does not guess a fork when an ancestry probe fails", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const originDir = yield* createBareRemote();
       const forkDir = yield* createBareRemote();
@@ -1571,7 +1571,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("finds a fork PR when the remote name contains a slash", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const originDir = yield* createBareRemote();
       const forkDir = yield* createBareRemote();
@@ -1622,7 +1622,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("branch PR lookup does not reuse a cached PR after the remote is repointed", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const originalRemoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", originalRemoteDir]);
@@ -1680,7 +1680,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
   // regression: #8600 settle threads server-side
   it.effect("branch PR lookup propagates provider failures", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -1710,7 +1710,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("status finds a merged PR after its remote branch was deleted", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -1746,7 +1746,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 215,
                 title: "Merged branch was deleted",
-                url: "https://github.com/pingdotgg/t3code/pull/215",
+                url: "https://github.com/example/houston/pull/215",
                 baseRefName: "main",
                 headRefName: "feature/merged-branch-deleted",
                 state: "merged",
@@ -1764,7 +1764,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(status.pr).toEqual({
         number: 215,
         title: "Merged branch was deleted",
-        url: "https://github.com/pingdotgg/t3code/pull/215",
+        url: "https://github.com/example/houston/pull/215",
         baseRef: "main",
         headRef: "feature/merged-branch-deleted",
         state: "merged",
@@ -1808,7 +1808,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("distinguishes Enterprise forks with the same head branch", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const originDir = yield* createBareRemote();
       const forkDir = yield* createBareRemote();
@@ -1878,7 +1878,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     "matches nested-group forks for $remoteUrl/$setUpstream",
     ({ remoteUrl, setUpstream }) =>
       Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        const repoDir = yield* makeTempDir("houston-git-manager-");
         yield* initRepo(repoDir);
         const originDir = yield* createBareRemote();
         const forkDir = yield* createBareRemote();
@@ -1948,7 +1948,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     "status ignores unrelated fork PRs when the current branch tracks the same repository",
     () =>
       Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        const repoDir = yield* makeTempDir("houston-git-manager-");
         yield* initRepo(repoDir);
         const remoteDir = yield* createBareRemote();
         yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -1961,13 +1961,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 {
                   number: 1661,
                   title: "Fork PR from main",
-                  url: "https://github.com/pingdotgg/t3code/pull/1661",
+                  url: "https://github.com/example/houston/pull/1661",
                   baseRefName: "main",
                   headRefName: "main",
                   state: "open",
                   updatedAt: "2026-04-01T15:00:00Z",
                   isCrossRepository: true,
-                  headRepositoryNameWithOwner: "lnieuwenhuis/t3code",
+                  headRepositoryNameWithOwner: "lnieuwenhuis/houston",
                   headRepositoryOwnerLogin: "lnieuwenhuis",
                 },
               ],
@@ -1983,7 +1983,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("status detects cross-repo PRs from the upstream remote URL owner", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const forkDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
@@ -1999,7 +1999,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["add", "fork-pr.txt"]);
       yield* runGit(repoDir, ["commit", "-m", "Fork PR branch"]);
       yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
-      yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-488/statemachine"]);
+      yield* runGit(repoDir, ["checkout", "-b", "houston/pr-488/statemachine"]);
       yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/statemachine"]);
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
@@ -2030,7 +2030,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       });
 
       const status = yield* manager.status({ cwd: repoDir });
-      expect(status.refName).toBe("t3code/pr-488/statemachine");
+      expect(status.refName).toBe("houston/pr-488/statemachine");
       expect(status.pr).toEqual({
         number: 488,
         title: "Rebase this PR on latest main",
@@ -2051,7 +2051,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("status preserves a fork PR whose head is named after the default branch", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const originDir = yield* createBareRemote();
       const forkDir = yield* createBareRemote();
@@ -2060,7 +2060,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["remote", "set-head", "origin", "main"]);
       yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
       yield* runGit(repoDir, ["push", "fork-seed", "main"]);
-      yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-777/main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "houston/pr-777/main"]);
       yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/main"]);
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
@@ -2091,7 +2091,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       });
 
       const status = yield* manager.status({ cwd: repoDir });
-      expect(status.refName).toBe("t3code/pr-777/main");
+      expect(status.refName).toBe("houston/pr-777/main");
       expect(status.pr).toEqual({
         number: 777,
         title: "Fork PR from main",
@@ -2114,7 +2114,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     "status ignores synthetic local branch aliases when the upstream remote name contains slashes",
     () =>
       Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        const repoDir = yield* makeTempDir("houston-git-manager-");
         yield* initRepo(repoDir);
         const originDir = yield* createBareRemote();
         const upstreamDir = yield* createBareRemote();
@@ -2149,7 +2149,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 {
                   number: 1618,
                   title: "Correct PR",
-                  url: "https://github.com/pingdotgg/t3code/pull/1618",
+                  url: "https://github.com/example/houston/pull/1618",
                   baseRefName: "main",
                   headRefName: "effect-atom",
                   state: "open",
@@ -2160,7 +2160,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 {
                   number: 1518,
                   title: "Wrong PR",
-                  url: "https://github.com/pingdotgg/t3code/pull/1518",
+                  url: "https://github.com/example/houston/pull/1518",
                   baseRefName: "main",
                   headRefName: "upstream/effect-atom",
                   state: "open",
@@ -2176,7 +2176,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         expect(status.pr).toEqual({
           number: 1618,
           title: "Correct PR",
-          url: "https://github.com/pingdotgg/t3code/pull/1618",
+          url: "https://github.com/example/houston/pull/1618",
           baseRef: "main",
           headRef: "effect-atom",
           state: "open",
@@ -2194,7 +2194,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("status hides merged PRs on the default branch", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
 
       const { manager } = yield* makeManager({
@@ -2224,7 +2224,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("status does not inherit a merged PR from a feature branch's default upstream", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -2260,7 +2260,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("status finds a PR pushed under the branch's own name despite a default upstream", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -2298,7 +2298,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     "status finds a fork PR pushed under the branch's own name despite a default upstream",
     () =>
       Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        const repoDir = yield* makeTempDir("houston-git-manager-");
         yield* initRepo(repoDir);
         const originDir = yield* createBareRemote();
         const forkDir = yield* createBareRemote();
@@ -2354,7 +2354,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("status prefers open PR when merged PR has newer updatedAt", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       yield* runGit(repoDir, ["checkout", "-b", "feature/status-open-over-merged"]);
 
@@ -2402,7 +2402,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("status keeps the last known PR when a later lookup fails", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       yield* runGit(repoDir, ["checkout", "-b", "feature/pr-sticky"]);
       const remoteDir = yield* createBareRemote();
@@ -2437,7 +2437,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     "status does not reuse a stale PR after the branch is retargeted to a different upstream",
     () =>
       Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        const repoDir = yield* makeTempDir("houston-git-manager-");
         yield* initRepo(repoDir);
         yield* runGit(repoDir, ["checkout", "-b", "feature/pr-retarget"]);
 
@@ -2480,7 +2480,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("creates a commit when working tree is dirty", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "hello\nworld\n");
       let generatedPolicy: TextGeneration.CommitMessageGenerationInput["policy"] = undefined;
@@ -2530,7 +2530,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("includes CLAUDE.md for Claude writers only when it differs from AGENTS.md", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       NodeFS.writeFileSync(NodePath.join(repoDir, "AGENTS.md"), "Use imperative subjects.\n");
       NodeFS.copyFileSync(NodePath.join(repoDir, "AGENTS.md"), NodePath.join(repoDir, "CLAUDE.md"));
@@ -2566,7 +2566,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("falls back when the dedicated source control writer is unavailable", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "hello\nworld\n");
       const missingInstanceId = ProviderInstanceId.make("missing_writer");
@@ -2606,7 +2606,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("uses an explicit project's provider settings for generated commit text", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "hello\nproject\n");
       const projectId = ProjectId.make("project:git-action-settings");
@@ -2644,7 +2644,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("prefers a V2-native thread's project settings over an explicit project", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "hello\nproject\n");
       const projectId = ProjectId.make("project:git-settings");
@@ -2740,7 +2740,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     "a failed generation preserves staging changed while generating (paths: %s)",
     (filePaths) =>
       Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        const repoDir = yield* makeTempDir("houston-git-manager-");
         yield* initRepo(repoDir);
         NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "hello\nstaged\n");
         yield* runGit(repoDir, ["add", "README.md"]);
@@ -2785,7 +2785,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("commits only selected files when filePaths is provided", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       NodeFS.writeFileSync(NodePath.join(repoDir, "a.txt"), "file a\n");
       NodeFS.writeFileSync(NodePath.join(repoDir, "b.txt"), "file b\n");
@@ -2809,7 +2809,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("creates feature branch, commits, and pushes with featureBranch option", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -2875,7 +2875,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     { branch: "fix/name", existingBranches: ["fix/name/child"], expected: "fix/name-2" },
   ])("commits on $expected when $branch has ref namespace collisions", (scenario) =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const mainSha = (yield* runGit(repoDir, ["rev-parse", "main"])).stdout.trim();
       for (const branch of scenario.existingBranches) {
@@ -2915,7 +2915,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     "pushes and creates PR from a no-upstream branch when local commits are ahead of base",
     () =>
       Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        const repoDir = yield* makeTempDir("houston-git-manager-");
         yield* initRepo(repoDir);
         yield* runGit(repoDir, ["checkout", "-b", "feature/no-upstream-pr"]);
         const remoteDir = yield* createBareRemote();
@@ -2964,7 +2964,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("pushes existing commits without committing dirty worktree changes", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       yield* runGit(repoDir, ["checkout", "-b", "feature/push-dirty"]);
       const remoteDir = yield* createBareRemote();
@@ -3003,7 +3003,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("hands the branch base to the host when a failed first push is retried", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -3044,7 +3044,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("create_pr targets the remote default branch when it is not main", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -3093,7 +3093,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("create_pr reports a created PR when the lookup after creation fails", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       yield* runGit(repoDir, ["checkout", "-b", "feature/lookup-after-create"]);
       const remoteDir = yield* createBareRemote();
@@ -3143,7 +3143,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("returns existing PR metadata for commit/push/pr action", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       yield* runGit(repoDir, ["checkout", "-b", "feature/existing-pr"]);
       const remoteDir = yield* createBareRemote();
@@ -3286,8 +3286,8 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
   it.effect("accepts fork PR metadata when origin is the fork checkout remote", () =>
     Effect.sync(() => {
       const headContext = {
-        headBranch: "t3code/git-audit-stability",
-        headRepositoryNameWithOwner: "justsomelegs/t3code",
+        headBranch: "houston/git-audit-stability",
+        headRepositoryNameWithOwner: "justsomelegs/houston",
         headRepositoryOwnerLogin: "justsomelegs",
         isCrossRepository: false,
       };
@@ -3297,13 +3297,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           {
             number: 2284,
             title: "Improve branch mismatch warnings",
-            url: "https://github.com/pingdotgg/t3code/pull/2284",
+            url: "https://github.com/example/houston/pull/2284",
             baseRefName: "main",
-            headRefName: "t3code/git-audit-stability",
+            headRefName: "houston/git-audit-stability",
             state: "open",
             updatedAt: Option.none(),
             isCrossRepository: true,
-            headRepositoryNameWithOwner: "justsomelegs/t3code",
+            headRepositoryNameWithOwner: "justsomelegs/houston",
             headRepositoryOwnerLogin: "justsomelegs",
           },
           headContext,
@@ -3314,7 +3314,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("create_pr sends bounded checks to the model and omits rolled-back runs", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       yield* runGit(repoDir, ["checkout", "-b", "feature/thread-context"]);
       NodeFS.writeFileSync(NodePath.join(repoDir, "thread-context.txt"), "context\n");
@@ -3488,7 +3488,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     "creates a PR against the default branch with a legacy %s base setting",
     (kind) =>
       Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        const repoDir = yield* makeTempDir("houston-git-manager-");
         yield* initRepo(repoDir);
         yield* runGit(repoDir, ["branch", "-m", "main", "trunk"]);
         const remoteDir = yield* createBareRemote();
@@ -3538,7 +3538,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("generates PR content from the created worktree's selected remote base", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const originDir = yield* createBareRemote();
       const upstreamDir = yield* createBareRemote();
@@ -3569,7 +3569,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const driver = yield* GitVcsDriver.GitVcsDriver;
       const fetched = yield* driver.fetchWorktreeBaseCommit({ cwd: repoDir, refName: "stable" });
       expect(fetched).not.toBeNull();
-      const worktreePath = NodePath.join(yield* makeTempDir("t3code-git-worktrees-"), "feature");
+      const worktreePath = NodePath.join(yield* makeTempDir("houston-git-worktrees-"), "feature");
       yield* driver.createWorktree({
         cwd: repoDir,
         path: worktreePath,
@@ -3619,7 +3619,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     "preserves a local worktree PR base that shadows a remote ref, including legacy bases",
     () =>
       Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        const repoDir = yield* makeTempDir("houston-git-manager-");
         yield* initRepo(repoDir);
         const originDir = yield* createBareRemote();
         const upstreamDir = yield* createBareRemote();
@@ -3649,7 +3649,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         yield* runGit(repoDir, ["push", "origin", "refs/heads/upstream/release"]);
 
         const driver = yield* GitVcsDriver.GitVcsDriver;
-        const worktreePath = NodePath.join(yield* makeTempDir("t3code-git-worktrees-"), "feature");
+        const worktreePath = NodePath.join(yield* makeTempDir("houston-git-worktrees-"), "feature");
         yield* driver.createWorktree({
           cwd: repoDir,
           path: worktreePath,
@@ -3675,7 +3675,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         const result = yield* runStackedAction(manager, { cwd: worktreePath, action: "create_pr" });
         expect(result.pr.status).toBe("created");
 
-        // A branch created outside T3 has only gh's legacy short base setting.
+        // A branch created outside Houston has only gh's legacy short base setting.
         yield* runGit(worktreePath, ["checkout", "-b", "feature/legacy-local-base"]);
         yield* runGit(worktreePath, [
           "config",
@@ -3711,7 +3711,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     "generates PR content from branch changes when the remote base advances (%s)",
     (baseBranch) =>
       Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        const repoDir = yield* makeTempDir("houston-git-manager-");
         yield* initRepo(repoDir);
         yield* runGit(repoDir, ["branch", "-m", baseBranch]);
         const remoteDir = yield* createBareRemote();
@@ -3725,7 +3725,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         ]);
 
         const driver = yield* GitVcsDriver.GitVcsDriver;
-        const worktreePath = NodePath.join(yield* makeTempDir("t3code-git-worktrees-"), "feature");
+        const worktreePath = NodePath.join(yield* makeTempDir("houston-git-worktrees-"), "feature");
         yield* driver.createWorktree({
           cwd: repoDir,
           path: worktreePath,
@@ -3737,7 +3737,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         yield* runGit(worktreePath, ["add", "feature.txt"]);
         yield* runGit(worktreePath, ["commit", "-m", "Feature commit"]);
 
-        const peerDir = yield* makeTempDir("t3code-git-peer-");
+        const peerDir = yield* makeTempDir("houston-git-peer-");
         yield* runGit(peerDir, ["clone", remoteDir, "."]);
         yield* runGit(peerDir, ["config", "user.email", "peer@example.com"]);
         yield* runGit(peerDir, ["config", "user.name", "Peer User"]);
@@ -3808,7 +3808,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     "creates a new PR instead of reusing an unrelated fork PR with the same head branch",
     () =>
       Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        const repoDir = yield* makeTempDir("houston-git-manager-");
         yield* initRepo(repoDir);
         yield* runGit(repoDir, ["checkout", "-b", "feature/no-fork-match"]);
         const remoteDir = yield* createBareRemote();
@@ -3825,12 +3825,12 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 {
                   number: 1661,
                   title: "Fork PR with same branch name",
-                  url: "https://github.com/pingdotgg/t3code/pull/1661",
+                  url: "https://github.com/example/houston/pull/1661",
                   baseRefName: "main",
                   headRefName: "feature/no-fork-match",
                   state: "open",
                   isCrossRepository: true,
-                  headRepositoryNameWithOwner: "lnieuwenhuis/t3code",
+                  headRepositoryNameWithOwner: "lnieuwenhuis/houston",
                   headRepositoryOwnerLogin: "lnieuwenhuis",
                 },
               ],
@@ -3874,7 +3874,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("creates cross-repo PRs with the fork owner selector and default base branch", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const forkDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
@@ -3890,7 +3890,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["add", "changes.txt"]);
       yield* runGit(repoDir, ["commit", "-m", "Feature commit"]);
       yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
-      yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-91/statemachine"]);
+      yield* runGit(repoDir, ["checkout", "-b", "houston/pr-91/statemachine"]);
       yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/statemachine"]);
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
@@ -3945,7 +3945,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("rejects push/pr actions from detached HEAD", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       yield* runGit(repoDir, ["checkout", "--detach", "HEAD"]);
 
@@ -3971,7 +3971,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     ({ mode, repositoryType }) =>
       Effect.gen(function* () {
         const isCrossRepository = repositoryType === "fork";
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        const repoDir = yield* makeTempDir("houston-git-manager-");
         yield* initRepo(repoDir);
         // The checkout is on github.com, which also has a same-named repository,
         // and the pull request is on another host. Clone lookups that fall back
@@ -4059,7 +4059,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     "checks out pull requests with hostless URLs using the default host ($mode, $url)",
     ({ mode, url }) =>
       Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        const repoDir = yield* makeTempDir("houston-git-manager-");
         yield* initRepo(repoDir);
         const originDir = yield* createBareRemote();
         const forkDir = yield* createBareRemote();
@@ -4123,7 +4123,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     syncCheckoutWithPullHead = true,
     gitSpawnGate?: NonNullable<Parameters<typeof makeManager>[0]>["gitSpawnGate"],
   ) {
-    const repoDir = yield* makeTempDir("t3code-git-manager-");
+    const repoDir = yield* makeTempDir("houston-git-manager-");
     yield* initRepo(repoDir);
     const remoteDir = yield* createBareRemote();
     yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -4437,7 +4437,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     "restores same-repository upstream tracking after local PR checkout without a remote ref",
     () =>
       Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        const repoDir = yield* makeTempDir("houston-git-manager-");
         yield* initRepo(repoDir);
         const remoteDir = yield* createBareRemote();
         yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -4495,7 +4495,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     "restores same-repository upstream tracking when provider omits head repository metadata",
     () =>
       Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        const repoDir = yield* makeTempDir("houston-git-manager-");
         yield* initRepo(repoDir);
         const remoteDir = yield* createBareRemote();
         yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -4542,7 +4542,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("prepares a worktree from the head branch when the host has no pull ref", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -4639,7 +4639,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("preserves fork upstream tracking when preparing a worktree PR thread", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const originDir = yield* createBareRemote();
       const forkDir = yield* createBareRemote();
@@ -4701,7 +4701,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("refreshes a reused PR worktree onto the updated pull request head", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -4756,7 +4756,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("resets a clean reused PR worktree onto a force-pushed pull request head", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -4830,7 +4830,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("keeps a reused PR worktree that carries its own commit off the rewritten head", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -4908,7 +4908,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("keeps a dirty reused PR worktree off the rewritten pull request head", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -4992,7 +4992,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     "reuses an existing PR worktree with $padding preceding matching branches (fork: $isCrossRepository)",
     ({ isCrossRepository, padding }) =>
       Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
+        const repoDir = yield* makeTempDir("houston-git-manager-");
         yield* initRepo(repoDir);
         const remoteDir = yield* createBareRemote();
         yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -5003,7 +5003,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           yield* runGit(repoDir, ["push", "fork-seed", "main:pr-pagination"]);
         }
         const headBranch = "pr-pagination";
-        const localBranch = isCrossRepository ? "t3code/pr-78/pr-pagination" : headBranch;
+        const localBranch = isCrossRepository ? "houston/pr-78/pr-pagination" : headBranch;
         yield* runGit(repoDir, ["branch", localBranch]);
         yield* runGit(repoDir, ["push", "origin", `${localBranch}:refs/pull/78/head`]);
         const worktreePath = NodePath.join(repoDir, "existing-pr");
@@ -5065,7 +5065,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("refreshes a reused PR worktree that has no upstream from the pull request ref", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -5126,7 +5126,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("creates a merge request worktree from the host's own head ref", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -5169,7 +5169,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("preserves an unrelated local branch and upstream that share the fork head name", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const originDir = yield* createBareRemote();
       const forkDir = yield* createBareRemote();
@@ -5246,7 +5246,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           "@{upstream}",
         ])).stdout.trim(),
       ).toBe("origin/main");
-      expect(result.branch).toBe("t3code/pr-94/main");
+      expect(result.branch).toBe("houston/pr-94/main");
       expect(result.worktreePath && NodeFS.realpathSync.native(result.worktreePath)).toBe(
         NodeFS.realpathSync.native(mainWorktreePath),
       );
@@ -5272,7 +5272,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("reuses an existing PR worktree and restores fork upstream tracking", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const originDir = yield* createBareRemote();
       const forkDir = yield* createBareRemote();
@@ -5294,7 +5294,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         "worktree",
         "add",
         "-b",
-        "t3code/pr-83/feature/pr-reused-fork",
+        "houston/pr-83/feature/pr-reused-fork",
         worktreePath,
         "feature/pr-reused-fork",
       ]);
@@ -5331,7 +5331,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(result.worktreePath && NodeFS.realpathSync.native(result.worktreePath)).toBe(
         NodeFS.realpathSync.native(worktreePath),
       );
-      expect(result.branch).toBe("t3code/pr-83/feature/pr-reused-fork");
+      expect(result.branch).toBe("houston/pr-83/feature/pr-reused-fork");
       expect((yield* runGit(worktreePath, ["branch", "--show-current"])).stdout.trim()).toBe(
         result.branch,
       );
@@ -5343,7 +5343,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("does not fail PR worktree prep when setup terminal startup fails", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       const remoteDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
@@ -5395,7 +5395,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("rejects worktree prep when the PR head branch is checked out in the main repo", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       yield* runGit(repoDir, ["checkout", "-b", "feature/pr-root-only"]);
 
@@ -5427,7 +5427,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
   it.effect("create_pr preserves dirty work on an already pushed branch", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("houston-git-manager-");
       yield* initRepo(repoDir);
       yield* runGit(repoDir, ["checkout", "-b", "feature/pr-only-follow-up"]);
       const remoteDir = yield* createBareRemote();

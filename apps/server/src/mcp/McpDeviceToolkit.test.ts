@@ -135,7 +135,7 @@ const layerDeviceServiceMock = Layer.mock(DeviceService.DeviceService)({
   screenshot: () => Effect.succeed({ device, png }),
   close: () => Effect.void,
   testHost: () => Effect.die("not used"),
-  // As for an EAS device, agent-device knows the device by a different id than T3.
+  // As for an EAS device, agent-device knows the device by a different id than Houston.
   agentTarget: () =>
     Effect.succeed({
       agentDeviceId: "SIM-UDID",
@@ -151,7 +151,9 @@ const layerTest = McpHttpServer.layerDeviceToolkit.pipe(
   Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
   Layer.provideMerge(layerDeviceServiceMock),
   Layer.provide(layerProjectsMock),
-  Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-device-toolkit-test-" })),
+  Layer.provide(
+    ServerConfig.layerTest(process.cwd(), { prefix: "houston-mcp-device-toolkit-test-" }),
+  ),
   Layer.provide(NodeServices.layer),
 );
 
@@ -173,7 +175,7 @@ it.effect("registers the device tools and returns the screenshot as image conten
         agentDevice: { command: string; targetArgs: ReadonlyArray<string>; session: string };
         quickStart: string;
       };
-      // Callers that pass the target flags, like test-t3-mobile's pair-client.sh, keep working.
+      // Callers that pass the target flags, like test-houston-mobile's pair-client.sh, keep working.
       expect(openedContent.agentDevice).toMatchObject({
         targetArgs: [
           "--platform",
@@ -190,7 +192,7 @@ it.effect("registers the device tools and returns the screenshot as image conten
       expect(openedContent.quickStart).toContain(
         `${openedContent.agentDevice.command} snapshot -i`,
       );
-      // The launcher selects the device by agent-device's id for it, not T3's.
+      // The launcher selects the device by agent-device's id for it, not Houston's.
       expect(openedContent.agentDevice.command).toBe(
         "/state/device/targets/thread-device/--platform_ios_--udid_SIM-UDID_--config_/host.json_--session_thread-device/agent-device",
       );
@@ -277,7 +279,7 @@ it.effect("rejects unavailable agent access before booting or opening a device",
         Layer.provide(layerUnavailable),
         Layer.provide(layerProjectsMock),
         Layer.provide(
-          ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-device-toolkit-test-" }),
+          ServerConfig.layerTest(process.cwd(), { prefix: "houston-mcp-device-toolkit-test-" }),
         ),
         Layer.provide(NodeServices.layer),
       ),
@@ -421,7 +423,7 @@ describe("device targeting across hosts", () => {
           Layer.provide(layerDevices),
           Layer.provide(layerProjectsMock),
           Layer.provide(
-            ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-device-toolkit-test-" }),
+            ServerConfig.layerTest(process.cwd(), { prefix: "houston-mcp-device-toolkit-test-" }),
           ),
           Layer.provide(NodeServices.layer),
         ),

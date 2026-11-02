@@ -641,7 +641,7 @@ fn server_command(
     };
     cmd.arg("--bootstrap-fd")
         .arg("0")
-        .env("T3CODE_DESKTOP_DETACHED", "1")
+        .env("HOUSTON_DESKTOP_DETACHED", "1")
         .stdin(Stdio::piped())
         .stdout(log)
         .stderr(stderr);

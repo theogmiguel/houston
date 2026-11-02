@@ -145,7 +145,7 @@ const withTempDirectory = <A, E, R>(
 
 describe("houston server command safety", () => {
   it.effect("rejects unknown command words without creating a home or project", () =>
-    withTempDirectory("t3-cli-unknown-", (root) =>
+    withTempDirectory("houston-cli-unknown-", (root) =>
       Effect.gen(function* () {
         const baseDir = NodePath.join(root, "home");
         for (const word of [
@@ -169,7 +169,7 @@ describe("houston server command safety", () => {
   );
 
   it.effect("refuses manual startup over a live server before creating directories", () =>
-    withTempDirectory("t3-cli-running-", (root) =>
+    withTempDirectory("houston-cli-running-", (root) =>
       Effect.gen(function* () {
         const baseDir = NodePath.join(root, "home");
         const stateDir = NodePath.join(baseDir, "userdata");
@@ -197,7 +197,7 @@ describe("houston server command safety", () => {
           [newDirectory],
           ["start", newDirectory],
         ]) {
-          const error = yield* runCli(args, { T3CODE_HOME: baseDir }).pipe(
+          const error = yield* runCli(args, { HOUSTON_HOME: baseDir }).pipe(
             Effect.provideService(
               HostProcess.Platform,
               args[0] === "C:new-project" ? "win32" : platform,
@@ -224,7 +224,7 @@ describe("houston app", () => {
         const platform = yield* HostProcess.Platform;
         if (platform === "win32") return;
         yield* withTempDirectory(
-          "t3-app-unsafe-",
+          "houston-app-unsafe-",
           (root) =>
             Effect.gen(function* () {
               const previousTmpdir = process.env.TMPDIR;
@@ -271,16 +271,16 @@ describe("houston app", () => {
       }),
   );
 
-  it.effect("uses T3CODE_HOME or --base-dir and sends the default or explicit path", () =>
-    withTempDirectory("t3-app-command-test-", (root) =>
+  it.effect("uses HOUSTON_HOME or --base-dir and sends the default or explicit path", () =>
+    withTempDirectory("houston-app-command-test-", (root) =>
       Effect.gen(function* () {
-        const baseDir = NodePath.join(root, "t3-home");
+        const baseDir = NodePath.join(root, "houston-home");
         const explicitPath = NodePath.join(root, "project");
         const platform = yield* HostProcess.Platform;
         const workingDirectory = yield* HostProcess.WorkingDirectory;
         const desktop = yield* fakeDesktop({ baseDir });
 
-        yield* runCli(["app"], { T3CODE_HOME: baseDir });
+        yield* runCli(["app"], { HOUSTON_HOME: baseDir });
         yield* runCli(["app", explicitPath, "--base-dir", baseDir]);
 
         expect(desktop.received.map((request) => request.workspaceRoot)).toEqual([
@@ -293,7 +293,7 @@ describe("houston app", () => {
   );
 
   it.effect("prefers the installed desktop app when a dev desktop is also running", () =>
-    withTempDirectory("t3-app-preferred-test-", (root) =>
+    withTempDirectory("houston-app-preferred-test-", (root) =>
       Effect.gen(function* () {
         const baseDir = NodePath.join(root, ".houston", "v2");
         const desktop = yield* fakeDesktop({ baseDir });
@@ -308,13 +308,13 @@ describe("houston app", () => {
   );
 
   it.effect("finds the dev desktop when the default desktop socket is absent", () =>
-    withTempDirectory("t3-app-dev-test-", (root) =>
+    withTempDirectory("houston-app-dev-test-", (root) =>
       Effect.gen(function* () {
         const baseDir = NodePath.join(root, ".houston", "v2");
         const development = yield* fakeDesktop({ baseDir, stateSubdirectory: "dev" });
 
         yield* runCli(["app"]);
-        yield* runCli(["app"], { T3CODE_HOME: "   " });
+        yield* runCli(["app"], { HOUSTON_HOME: "   " });
 
         expect(development.received).toHaveLength(2);
         expect(yield* pathExists(baseDir)).toBe(false);
@@ -322,14 +322,14 @@ describe("houston app", () => {
     ),
   );
 
-  it.effect("never searches a dev state directory for an explicit T3 home", () =>
-    withTempDirectory("t3-app-explicit-test-", (root) =>
+  it.effect("never searches a dev state directory for an explicit Houston home", () =>
+    withTempDirectory("houston-app-explicit-test-", (root) =>
       Effect.gen(function* () {
         const baseDir = NodePath.join(root, ".houston", "v2");
         const development = yield* fakeDesktop({ baseDir, stateSubdirectory: "dev" });
 
         const flagError = yield* runCli(["app", "--base-dir", baseDir]).pipe(Effect.flip);
-        const envError = yield* runCli(["app"], { T3CODE_HOME: baseDir }).pipe(Effect.flip);
+        const envError = yield* runCli(["app"], { HOUSTON_HOME: baseDir }).pipe(Effect.flip);
 
         expect(flagError).toMatchObject({ _tag: "DesktopAppUnreachableError" });
         expect(envError).toMatchObject({ _tag: "DesktopAppUnreachableError" });
@@ -341,7 +341,7 @@ describe("houston app", () => {
   it.effect.each(["failure", "invalid"] as const)(
     "never falls back after the default desktop sends a %s response",
     (responseKind) =>
-      withTempDirectory("t3-app-response-test-", (root) =>
+      withTempDirectory("houston-app-response-test-", (root) =>
         Effect.gen(function* () {
           const baseDir = NodePath.join(root, ".houston", "v2");
           const desktop = yield* fakeDesktop({

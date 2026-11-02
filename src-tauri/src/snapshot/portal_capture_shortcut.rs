@@ -167,7 +167,7 @@ async fn request(
 fn shortcut_id(trigger: &str) -> String {
     let digest = Sha256::digest(trigger.as_bytes());
     format!(
-        "t3-snap-shot-{}",
+        "houston-snap-shot-{}",
         digest
             .iter()
             .take(8)

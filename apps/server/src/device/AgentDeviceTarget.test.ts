@@ -22,7 +22,7 @@ import {
 
 const exec = NodeUtil.promisify(NodeChildProcess.execFile);
 
-/** A loopback port that accepts connections until the scope closes, like T3's device connection. */
+/** A loopback port that accepts connections until the scope closes, like Houston's device connection. */
 const listeningPort = Effect.acquireRelease(
   Effect.promise(
     () =>
@@ -41,10 +41,10 @@ describe("host-bound agent commands", () => {
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const temp = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-target-" });
+        const temp = yield* fs.makeTempDirectoryScoped({ prefix: "houston-device-target-" });
         const dir = path.join(temp, "quotes '\" $HOME `literal`");
         yield* fs.makeDirectory(dir);
-        const desktopApp = path.join(dir, "T3 Code");
+        const desktopApp = path.join(dir, "Houston");
         // Dropping Node mode after checking it forces each hop to set it independently.
         yield* fs.writeFileString(
           desktopApp,
@@ -89,7 +89,7 @@ exec '${process.execPath.replaceAll("'", "'\"'\"'")}' "$@"
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-bound-" });
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-device-bound-" });
       const entryPath = path.join(dir, "cli.mjs");
       yield* fs.writeFileString(entryPath, "console.log(JSON.stringify(process.argv.slice(2)));");
       const target = [
@@ -100,12 +100,12 @@ exec '${process.execPath.replaceAll("'", "'\"'\"'")}' "$@"
         "--config",
         "/h.json",
         "--session",
-        "t3-a",
+        "houston-a",
       ];
       const command = yield* bindAgentDeviceLauncher({
         entryPath,
         stateDir: dir,
-        session: "t3-a",
+        session: "houston-a",
         targetArgs: target,
       });
       const shared = yield* ensureAgentDeviceShim({ entryPath, stateDir: dir });
@@ -153,12 +153,12 @@ exec '${process.execPath.replaceAll("'", "'\"'\"'")}' "$@"
       }
       expect(
         yield* Effect.promise(() =>
-          launch(shared, ["snapshot", "--config=/h.json", "--session=t3-a"]),
+          launch(shared, ["snapshot", "--config=/h.json", "--session=houston-a"]),
         ),
-      ).toEqual(["snapshot", "--config=/h.json", "--session=t3-a"]);
+      ).toEqual(["snapshot", "--config=/h.json", "--session=houston-a"]);
       yield* Effect.promise(() =>
         expect(
-          launch(shared, ["fill", "@e5", "--", "--config", "/h.json", "--session", "t3-a"]),
+          launch(shared, ["fill", "@e5", "--", "--config", "/h.json", "--session", "houston-a"]),
         ).rejects.toThrow("Call device_open first"),
       );
       for (const args of [["help", "gesture"], ["open", "--help"], ["record", "-h"], []]) {
@@ -181,13 +181,13 @@ exec '${process.execPath.replaceAll("'", "'\"'\"'")}' "$@"
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-commands-" });
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-device-commands-" });
       const entryPath = path.join(dir, "cli.mjs");
       yield* fs.writeFileString(entryPath, "console.log(JSON.stringify(process.argv.slice(2)));");
       const command = yield* bindAgentDeviceLauncher({
         entryPath,
         stateDir: dir,
-        session: "t3-a",
+        session: "houston-a",
         targetArgs: [
           "--platform",
           "ios",
@@ -196,7 +196,7 @@ exec '${process.execPath.replaceAll("'", "'\"'\"'")}' "$@"
           "--config",
           "/h.json",
           "--session",
-          "t3-a",
+          "houston-a",
         ],
       });
       const launch = (args: ReadonlyArray<string>) =>
@@ -212,7 +212,7 @@ exec '${process.execPath.replaceAll("'", "'\"'\"'")}' "$@"
         "--config",
         "/h.json",
         "--session",
-        "t3-a",
+        "houston-a",
       ]);
       // The command is found past leading flags and their values, in either form.
       for (const config of [["--config", "/o.json"], ["--config=/o.json"]]) {
@@ -220,7 +220,7 @@ exec '${process.execPath.replaceAll("'", "'\"'\"'")}' "$@"
           ...config,
           "connection",
           "--session",
-          "t3-a",
+          "houston-a",
         ]);
         // device status reads claims on the machine it runs on, which is not the device's host.
         yield* Effect.promise(() =>
@@ -272,11 +272,11 @@ exec '${process.execPath.replaceAll("'", "'\"'\"'")}' "$@"
     expect(agentDeviceCloseOutcome(result(null, "", true))).toBe("timed-out");
   });
 
-  it.live("stops before agent-device when T3's device connection is down", () =>
+  it.live("stops before agent-device when Houston's device connection is down", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-endpoint-" });
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-device-endpoint-" });
       const entryPath = path.join(dir, "cli.mjs");
       yield* fs.writeFileString(entryPath, "console.log(JSON.stringify(process.argv.slice(2)));");
       const configPath = path.join(dir, "host.json");
@@ -298,8 +298,8 @@ exec '${process.execPath.replaceAll("'", "'\"'\"'")}' "$@"
       const command = yield* bindAgentDeviceLauncher({
         entryPath,
         stateDir: dir,
-        session: "t3-a",
-        targetArgs: ["--config", configPath, "--session", "t3-a"],
+        session: "houston-a",
+        targetArgs: ["--config", configPath, "--session", "houston-a"],
       });
       const launch = (args: ReadonlyArray<string>) =>
         exec(process.execPath, [
@@ -327,10 +327,10 @@ exec '${process.execPath.replaceAll("'", "'\"'\"'")}' "$@"
           "--config",
           configPath,
           "--session",
-          "t3-a",
+          "houston-a",
         ]);
       }
-      // cdp talks to Metro, not to T3's connection, so it still runs.
+      // cdp talks to Metro, not to Houston's connection, so it still runs.
       expect(
         JSON.parse((yield* Effect.promise(() => launch(["cdp", "target", "list"]))).stdout),
       ).toEqual(["cdp", "target", "list"]);
@@ -346,14 +346,14 @@ exec '${process.execPath.replaceAll("'", "'\"'\"'")}' "$@"
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-prune-" });
+      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-device-prune-" });
       const entryPath = path.join(stateDir, "cli.mjs");
       const shared = yield* ensureAgentDeviceShim({ entryPath, stateDir });
       const bind = (session: string) =>
         bindAgentDeviceLauncher({ entryPath, stateDir, session, targetArgs: [] });
-      const kept = yield* bind("t3-open");
-      const ended = yield* bind("t3-closed");
-      yield* pruneAgentDeviceLaunchers({ stateDir, live: new Set(["t3-open"]) });
+      const kept = yield* bind("houston-open");
+      const ended = yield* bind("houston-closed");
+      yield* pruneAgentDeviceLaunchers({ stateDir, live: new Set(["houston-open"]) });
       expect(yield* fs.exists(kept)).toBe(true);
       expect(yield* fs.exists(path.dirname(ended))).toBe(false);
       expect(yield* fs.exists(shared)).toBe(true);
@@ -373,15 +373,15 @@ exec '${process.execPath.replaceAll("'", "'\"'\"'")}' "$@"
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-stale-" });
+        const dir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-device-stale-" });
         const runtime = path.join(dir, "old-node");
         yield* fs.writeFileString(runtime, "#!/bin/sh\nexit 0\n");
         yield* fs.chmod(runtime, 0o755);
         const command = yield* bindAgentDeviceLauncher({
           entryPath: path.join(dir, "cli.mjs"),
           stateDir: dir,
-          session: "t3-a",
-          targetArgs: ["--config", "/h.json", "--session", "t3-a"],
+          session: "houston-a",
+          targetArgs: ["--config", "/h.json", "--session", "houston-a"],
         }).pipe(Effect.provideService(HostProcess.ExecutablePath, runtime));
         yield* fs.remove(runtime);
         yield* Effect.promise(() =>
@@ -401,7 +401,7 @@ exec '${process.execPath.replaceAll("'", "'\"'\"'")}' "$@"
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const temp = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-target-" });
+      const temp = yield* fs.makeTempDirectoryScoped({ prefix: "houston-device-target-" });
       const platform = yield* HostProcess.Platform;
       const dir = path.join(
         temp,

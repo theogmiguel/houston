@@ -18,7 +18,7 @@ interface VitestJsonReport {
 
 const serverDir = NodeURL.fileURLToPath(new URL("..", import.meta.url));
 const weightsPath = NodePath.join(serverDir, "src/testUtils/shardWeights.json");
-const reportDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-server-test-report-"));
+const reportDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-server-test-report-"));
 const reportPath = NodePath.join(reportDir, "report.json");
 
 // `node --run` finds the package's vp; failed tests still report durations, so ignore exit status.

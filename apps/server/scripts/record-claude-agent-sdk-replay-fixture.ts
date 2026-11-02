@@ -306,7 +306,7 @@ function readArgValue(name: string): string | undefined {
 }
 
 function selectedQueryMode(defaultMode: ClaudeRecordingQueryMode): ClaudeRecordingQueryMode {
-  const raw = readArgValue("--query-mode") ?? process.env.T3_CLAUDE_REPLAY_QUERY_MODE;
+  const raw = readArgValue("--query-mode") ?? process.env.HOUSTON_CLAUDE_REPLAY_QUERY_MODE;
   if (raw === undefined) {
     return defaultMode;
   }
@@ -328,7 +328,8 @@ function selectedQueryMode(defaultMode: ClaudeRecordingQueryMode): ClaudeRecordi
   );
 }
 
-const scenario = readArgValue("--scenario") ?? process.env.T3_CLAUDE_REPLAY_SCENARIO ?? "simple";
+const scenario =
+  readArgValue("--scenario") ?? process.env.HOUSTON_CLAUDE_REPLAY_SCENARIO ?? "simple";
 const recording = CLAUDE_RECORDINGS[scenario as keyof typeof CLAUDE_RECORDINGS];
 const encodeUnknownJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -372,13 +373,13 @@ function runFileSystem<A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem>)
 }
 
 function selectedPrompts(): ReadonlyArray<string> {
-  if (process.env.T3_CLAUDE_REPLAY_PROMPTS !== undefined) {
-    return process.env.T3_CLAUDE_REPLAY_PROMPTS.split("\n---\n").filter(
+  if (process.env.HOUSTON_CLAUDE_REPLAY_PROMPTS !== undefined) {
+    return process.env.HOUSTON_CLAUDE_REPLAY_PROMPTS.split("\n---\n").filter(
       (prompt) => prompt.length > 0,
     );
   }
-  if (process.env.T3_CLAUDE_REPLAY_PROMPT !== undefined) {
-    return [process.env.T3_CLAUDE_REPLAY_PROMPT];
+  if (process.env.HOUSTON_CLAUDE_REPLAY_PROMPT !== undefined) {
+    return [process.env.HOUSTON_CLAUDE_REPLAY_PROMPT];
   }
   return recording.prompts;
 }
@@ -425,11 +426,11 @@ async function makeToolCallReadOnlyRecordingWorkspace(): Promise<string> {
 }
 
 const cwd =
-  process.env.T3_CLAUDE_REPLAY_CWD ??
+  process.env.HOUSTON_CLAUDE_REPLAY_CWD ??
   (scenario === "tool_call_read_only"
     ? await makeToolCallReadOnlyRecordingWorkspace()
     : await makeCheckpointWorkspace(`claude-agent-sdk-record-${scenario}`));
-const shouldRemoveCwd = process.env.T3_CLAUDE_REPLAY_CWD === undefined;
+const shouldRemoveCwd = process.env.HOUSTON_CLAUDE_REPLAY_CWD === undefined;
 
 const expectedAbsentWorkspacePaths =
   "expectedAbsentWorkspacePaths" in recording ? recording.expectedAbsentWorkspacePaths : [];
@@ -497,12 +498,12 @@ try {
     prompts,
     modelSelection: {
       ...CLAUDE_MODEL_SELECTION,
-      model: process.env.T3_CLAUDE_REPLAY_MODEL ?? CLAUDE_MODEL_SELECTION.model,
+      model: process.env.HOUSTON_CLAUDE_REPLAY_MODEL ?? CLAUDE_MODEL_SELECTION.model,
     },
     cwd,
-    ...(process.env.T3_CLAUDE_REPLAY_SESSION_ID === undefined
+    ...(process.env.HOUSTON_CLAUDE_REPLAY_SESSION_ID === undefined
       ? {}
-      : { sessionId: process.env.T3_CLAUDE_REPLAY_SESSION_ID }),
+      : { sessionId: process.env.HOUSTON_CLAUDE_REPLAY_SESSION_ID }),
     queryMode,
     ...("enableTools" in recording && recording.enableTools === true ? { enableTools: true } : {}),
     ...(queryPolicy.tools === undefined ? {} : { tools: queryPolicy.tools }),

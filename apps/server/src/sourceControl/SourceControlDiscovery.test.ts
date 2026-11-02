@@ -81,7 +81,7 @@ const layerDiscovery = (runProcess = run) =>
     Layer.provideMerge(Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({})),
     Layer.provideMerge(Layer.mock(VcsProcess.VcsProcess)({ run: runProcess })),
     Layer.provideMerge(
-      ServerConfig.layerTest(process.cwd(), { prefix: "t3-source-control-discovery-" }),
+      ServerConfig.layerTest(process.cwd(), { prefix: "houston-source-control-discovery-" }),
     ),
     Layer.provideMerge(NodeServices.layer),
   );

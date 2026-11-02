@@ -12,7 +12,7 @@ import * as ScheduledTaskService from "./ScheduledTaskService.ts";
 
 export const WEBHOOK_MAX_BODY_BYTES = 1024 * 1024;
 
-const WEBHOOK_OUTCOME_HEADER = "x-t3-hook-outcome";
+const WEBHOOK_OUTCOME_HEADER = "x-houston-hook-outcome";
 
 const json = (
   status: number,

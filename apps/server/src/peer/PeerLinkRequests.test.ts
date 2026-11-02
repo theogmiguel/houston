@@ -167,7 +167,7 @@ const makeLaptop = Effect.gen(function* () {
     Layer.provide(Layer.mock(ThreadLaunch.ThreadLaunchService)({})),
     Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
     Layer.provide(
-      ServerConfig.layerTest(process.cwd(), { prefix: "t3-peer-link-requests-" }).pipe(
+      ServerConfig.layerTest(process.cwd(), { prefix: "houston-peer-link-requests-" }).pipe(
         Layer.provide(NodeServices.layer),
       ),
     ),
@@ -186,7 +186,7 @@ const makeLaptop = Effect.gen(function* () {
     sql: Context.get(database, SqlClient.SqlClient),
     call: (args: Record<string, unknown>, callScope = scope) =>
       server
-        .callTool({ name: "t3_environment_link", arguments: args })
+        .callTool({ name: "houston_environment_link", arguments: args })
         .pipe(
           Effect.provideService(McpInvocationContext.McpInvocationContext, callScope),
           Effect.provideService(McpSchema.McpServerClient, mcpClient),

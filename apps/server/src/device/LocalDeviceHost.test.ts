@@ -43,7 +43,7 @@ const agentFixture = Effect.fn("agentFixture")(function* (
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-agent-start-" });
+  const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-device-agent-start-" });
   const hub = { running: true, spawnFails: false };
   const stateDir = agentDeviceStateDir(path, path.join(baseDir, "userdata"));
   const daemonHealthy = yield* Ref.make(true);
@@ -520,7 +520,7 @@ it.effect.each([
 it.effect("keeps local Android and iOS available without ffmpeg", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-ffmpeg-" });
+    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-device-ffmpeg-" });
     yield* fs.makeDirectory(`${baseDir}/bin`);
     yield* fs.writeFileString(`${baseDir}/bin/xcrun`, "#!/bin/sh\nexit 0\n");
     yield* fs.chmod(`${baseDir}/bin/xcrun`, 0o755);
@@ -572,7 +572,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-consent-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-device-consent-" });
       const host = yield* LocalDeviceHost.make().pipe(
         Effect.provide(Layer.mergeAll(ServerConfig.layerTest(baseDir, baseDir), NetService.layer)),
         Effect.provideService(HostProcess.Environment, { HOME: baseDir, PATH: "" }),

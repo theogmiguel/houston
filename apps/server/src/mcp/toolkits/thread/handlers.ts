@@ -126,7 +126,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       };
     }),
   ),
-  t3_thread_search: McpToolAccess.reads((input) =>
+  houston_thread_search: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
       const { caller } = yield* readCaller();
       const scope = yield* McpInvocationContext.McpInvocationContext;
@@ -142,7 +142,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       };
     }),
   ),
-  t3_thread_transfer: McpToolAccess.either(
+  houston_thread_transfer: McpToolAccess.either(
     (input) => input.action === "status",
     McpToolAccess.reads((input) =>
       Effect.gen(function* () {
@@ -199,7 +199,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
         }),
     ),
   ),
-  t3_thread_configure: McpToolAccess.either(
+  houston_thread_configure: McpToolAccess.either(
     (input) => input.modelSelection === undefined,
     McpToolAccess.reads((input) =>
       Effect.gen(function* () {
@@ -229,7 +229,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       }),
     ),
   ),
-  t3_pending_request: McpToolAccess.either(
+  houston_pending_request: McpToolAccess.either(
     (input) => input.action !== "respond",
     McpToolAccess.reads((input) =>
       Effect.gen(function* () {
@@ -267,7 +267,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       }),
     ),
   ),
-  t3_queue: McpToolAccess.either(
+  houston_queue: McpToolAccess.either(
     (input) => input.action === "list" || input.action === "read",
     McpToolAccess.reads((input) =>
       Effect.gen(function* () {
@@ -335,7 +335,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       }),
     ),
   ),
-  t3_thread_organize: writesThread((input) =>
+  houston_thread_organize: writesThread((input) =>
     Effect.gen(function* () {
       const { threads, projection, caller } = yield* readThread(input.threadId);
       const common = { commandId: yield* newCommandId(), threadId: projection.thread.id };

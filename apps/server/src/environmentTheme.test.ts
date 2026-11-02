@@ -45,7 +45,7 @@ const withEnvironmentThemes = <A, E>(
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-environment-theme-" });
+    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-environment-theme-" });
     const themesDir = path.join(baseDir, "userdata", "themes");
     yield* fs.makeDirectory(themesDir, { recursive: true });
     for (const [filename, contents] of Object.entries(seeds)) {

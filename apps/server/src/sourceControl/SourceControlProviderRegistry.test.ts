@@ -155,7 +155,7 @@ function makeRegistry(input: {
           ? Layer.mock(ServerSettings.ServerSettingsService)(input.settings)
           : ServerSettings.ServerSettingsService.layerTest(),
         ServerConfig.layerTest(process.cwd(), {
-          prefix: "t3-source-control-registry-test-",
+          prefix: "houston-source-control-registry-test-",
         }).pipe(Layer.provide(NodeServices.layer)),
       ),
     ),

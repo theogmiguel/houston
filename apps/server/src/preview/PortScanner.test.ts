@@ -609,7 +609,7 @@ effectIt.effect("rechecks the socket owner before stopping a Linux server withou
 });
 
 effectIt.effect.each(["linux", "darwin", "win32"] as const)(
-  "reads no listeners on %s while T3CODE_PORT_DISCOVERY=0, and still probes configured URLs",
+  "reads no listeners on %s while HOUSTON_PORT_DISCOVERY=0, and still probes configured URLs",
   (platform) => {
     const configuredUrl = `http://localhost:${LSOF_TEST_PORT}/docs`;
     const commands: string[] = [];
@@ -636,7 +636,7 @@ effectIt.effect.each(["linux", "darwin", "win32"] as const)(
             },
           }),
           Layer.succeed(HostProcess.Platform, platform),
-          Layer.succeed(HostProcess.Environment, { T3CODE_PORT_DISCOVERY: "0" }),
+          Layer.succeed(HostProcess.Environment, { HOUSTON_PORT_DISCOVERY: "0" }),
           FetchHttpClient.layer.pipe(
             Layer.provide(
               Layer.succeed(FetchHttpClient.Fetch, (input) => {

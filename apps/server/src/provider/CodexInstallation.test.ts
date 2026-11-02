@@ -43,7 +43,7 @@ const makeHarness = Effect.fn("test.makeCodexInstallation")(function* (
 ) {
   const fs = yield* FileSystem.FileSystem;
   const baseDir =
-    input.baseDir ?? (yield* fs.makeTempDirectoryScoped({ prefix: "t3-codex-install-test-" }));
+    input.baseDir ?? (yield* fs.makeTempDirectoryScoped({ prefix: "houstonx-install-test-" }));
   const localDirectory = `${baseDir}/local`;
   const localBinaryPath = `${localDirectory}/codex${input.platform === "win32" ? ".exe" : ""}`;
   const probeLog = `${baseDir}/local-probes.txt`;
@@ -235,7 +235,7 @@ it.effect("rechecks a cached local executable when the shared manifest policy ch
       compatibility: [
         {
           driver: "codex",
-          t3CodeRange: ">=0.0.42",
+          houstonCodeRange: ">=0.0.42",
           ranges: [
             { range: ">=0.156.1", status: "supported" },
             { range: "<0.156.1", status: "broken" },
@@ -413,7 +413,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-codex-install-test-" });
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "houstonx-install-test-" });
       const baseDir = `${directory}/not-a-directory`;
       yield* fs.writeFileString(baseDir, "existing file");
       const h = yield* makeHarness({ baseDir });

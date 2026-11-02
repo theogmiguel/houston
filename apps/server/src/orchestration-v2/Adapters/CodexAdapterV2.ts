@@ -780,7 +780,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
         { kind: "untrusted" as const, value: entry.text },
       ]),
     );
-    const t3Context =
+    const houstonContext =
       input.hasT3Mcp === true
         ? buildCodexAdditionalContext(
             { model: input.modelSelection.model, reasoningEffort: effort ?? undefined },
@@ -791,9 +791,9 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
           )
         : undefined;
     const additionalContext =
-      t3Context === undefined && Object.keys(appContext).length === 0
+      houstonContext === undefined && Object.keys(appContext).length === 0
         ? undefined
-        : { ...t3Context, ...appContext };
+        : { ...houstonContext, ...appContext };
     return yield* decodeCodexTurnStartParamsWithCollaborationMode({
       threadId: input.nativeThreadId,
       input: input.codexInput,
@@ -1337,8 +1337,8 @@ export const CODEX_THREAD_CONFIG = {
   mcp_optional_startup_grace_ms: 10_000,
 } as const;
 
-// T3 waits can block for an hour; keep Codex's MCP timeout above that.
-const CODEX_T3_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
+// Houston waits can block for an hour; keep Codex's MCP timeout above that.
+const CODEX_HOUSTON_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
 
 export function codexThreadRuntimeParams(input: {
   readonly threadId: ThreadId | null;
@@ -1351,12 +1351,12 @@ export function codexThreadRuntimeParams(input: {
   readonly config: Readonly<Record<string, Schema.Json>>;
 } {
   const { mcpSession } = input;
-  const t3Server =
+  const houstonServer =
     mcpSession === undefined
       ? undefined
       : {
           url: mcpSession.endpoint,
-          tool_timeout_sec: CODEX_T3_MCP_TOOL_TIMEOUT_SEC,
+          tool_timeout_sec: CODEX_HOUSTON_MCP_TOOL_TIMEOUT_SEC,
           http_headers: {
             Authorization: mcpSession.authorizationHeader,
           },
@@ -1373,11 +1373,11 @@ export function codexThreadRuntimeParams(input: {
       // Houston: the read-only sandbox does not cover MCP tool calls, so a read-only run
       // replaces every configured MCP server with Houston's own, when it holds a credential.
       ...(isReadOnlySandbox(input.runtimePolicy)
-        ? { mcp_servers: t3Server === undefined ? {} : { "t3-code": t3Server } }
-        : t3Server === undefined
+        ? { mcp_servers: houstonServer === undefined ? {} : { houston: houstonServer } }
+        : houstonServer === undefined
           ? {}
-          : // Override only T3's server so launch-argument MCP servers survive.
-            { "mcp_servers.t3-code": t3Server }),
+          : // Override only Houston's server so launch-argument MCP servers survive.
+            { "mcp_servers.houston": houstonServer }),
     },
   };
 }
@@ -1776,7 +1776,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               return yield* new ProviderSetupError({
                 instanceId: adapterOptions.instanceId,
                 operation: "runtime",
-                detail: `Codex ${version} does not work with this T3 Code release. Update Codex to ${target}, then retry.`,
+                detail: `Codex ${version} does not work with this Houston release. Update Codex to ${target}, then retry.`,
               });
             }
             yield* client.notify("initialized", undefined);

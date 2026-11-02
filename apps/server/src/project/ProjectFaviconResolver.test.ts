@@ -8,13 +8,13 @@ import { TestClock } from "effect/testing";
 
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
-import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
+import * as HoustonProjectFileLoader from "./HoustonProjectFileLoader.ts";
 
 const layerTest = Layer.empty.pipe(
   Layer.provideMerge(
     ProjectFaviconResolver.layer.pipe(
       Layer.provide(WorkspacePaths.layer),
-      Layer.provide(T3ProjectFileLoader.layer),
+      Layer.provide(HoustonProjectFileLoader.layer),
     ),
   ),
   Layer.provideMerge(NodeServices.layer),
@@ -23,7 +23,7 @@ const layerTest = Layer.empty.pipe(
 const makeTempDir = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   return yield* fileSystem.makeTempDirectoryScoped({
-    prefix: "t3code-project-favicon-",
+    prefix: "houston-project-favicon-",
   });
 });
 
@@ -43,7 +43,7 @@ const writeTextFile = Effect.fn("writeTextFile")(function* (
 
 const makeResolverWithFileSystem = (fileSystem: FileSystem.FileSystem) =>
   ProjectFaviconResolver.make.pipe(
-    Effect.provide([WorkspacePaths.layer, T3ProjectFileLoader.layer]),
+    Effect.provide([WorkspacePaths.layer, HoustonProjectFileLoader.layer]),
     Effect.provideService(FileSystem.FileSystem, fileSystem),
   );
 

@@ -156,7 +156,7 @@ const openFxSession = Effect.fn("openFxSession")(function* (input: {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const replayDir = yield* fileSystem.makeTempDirectoryScoped({
-    prefix: `t3-fx-${input.scenario}-`,
+    prefix: `houston-fx-${input.scenario}-`,
   });
   const statusPath = path.join(replayDir, "status.json");
   const transcript = yield* decodeAcpReplayTranscript(
@@ -296,7 +296,7 @@ describe("FxAdapterV2", () => {
         ...initialize,
         outbound("session/load"),
         answer("session/load", fxSession({ model: NAMED_MODEL, modes: FX_0_0_13_MODES })),
-        // Config id `model`, never fx's `provider`, and never T3's "default".
+        // Config id `model`, never fx's `provider`, and never Houston's "default".
         ...setConfig(
           "model",
           FX_DEFAULT_MODEL,

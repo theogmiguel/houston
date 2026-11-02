@@ -53,7 +53,7 @@ import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdap
 import { makeProviderFailure } from "@houston-app/provider-core/server/failure";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
-import { HoustonReadOnlyThreads, mayHoldT3Tools } from "../houston/sideThreads.ts";
+import { HoustonReadOnlyThreads, mayHoldHoustonTools } from "../houston/sideThreads.ts";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_IDLE_PIN_MS = 4 * 60 * 60 * 1000;
@@ -452,8 +452,8 @@ export const layerWithOptions = (
           : mcpPrepareLock.withLock(
               threadId,
               Effect.gen(function* () {
-                // Houston: a side thread gets no T3 MCP tools; they act outside its sandbox.
-                if (!(yield* mayHoldT3Tools(projectionStore.getThread(threadId)))) {
+                // Houston: a side thread gets no Houston MCP tools; they act outside its sandbox.
+                if (!(yield* mayHoldHoustonTools(projectionStore.getThread(threadId)))) {
                   yield* mcpSessionRegistry.revokeThread(threadId);
                   yield* mcpSessions.clear(threadId);
                   return { mcpCredentialId: undefined, issued: false };
@@ -2015,7 +2015,7 @@ export const layerWithOptions = (
                   }
                   // Some providers can block before a run subscriber exists
                   // (project trust, login, or session-switch hooks). Persist
-                  // their runless request artifacts directly so the normal T3
+                  // their runless request artifacts directly so the normal Houston
                   // request UI can answer them and unblock session setup.
                   const threadId = sessionScopedRuntimeRequestThreadId(event);
                   if (threadId !== undefined) {

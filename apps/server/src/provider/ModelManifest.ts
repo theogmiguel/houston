@@ -23,7 +23,7 @@ import { ProviderCompatibilityPolicy } from "./providerCompatibility.ts";
 import * as ModelCatalog from "@houston-app/provider-core/server/ModelCatalog";
 
 const MODEL_MANIFEST_URL =
-  "https://raw.githubusercontent.com/pingdotgg/t3code/main/apps/server/src/provider/model-manifest.json";
+  "https://raw.githubusercontent.com/theogmiguel/houston/main/apps/server/src/provider/model-manifest.json";
 
 const MANIFEST_TTL_MS = 60 * 60 * 1000;
 

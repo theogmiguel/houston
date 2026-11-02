@@ -1081,7 +1081,7 @@ describe("a side thread's limits", () => {
     ),
   );
 
-  it.effect("a side thread gets no T3 tools", () =>
+  it.effect("a side thread gets no Houston tools", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const harness = yield* makeHarness("side-no-tools");

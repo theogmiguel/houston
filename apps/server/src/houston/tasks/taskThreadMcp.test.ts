@@ -1,4 +1,4 @@
-// A task's planner or reviewer keeps a T3 MCP credential only to submit: the credential reaches
+// A task's planner or reviewer keeps a Houston MCP credential only to submit: the credential reaches
 // the two submit tools and nothing else, and its read-only run loads no user MCP server.
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -77,9 +77,9 @@ const PlanSubmit = Tool.make("houston_task_plan_submit", {
 });
 const MixedToolkit = Toolkit.make(
   OrchestratorToolkit.tools.delegate_task,
-  OrchestratorToolkit.tools.t3_thread_send,
-  OrchestratorToolkit.tools.t3_thread_read,
-  ProjectToolkit.tools.t3_project_update,
+  OrchestratorToolkit.tools.houston_thread_send,
+  OrchestratorToolkit.tools.houston_thread_read,
+  ProjectToolkit.tools.houston_project_update,
   PlanSubmit,
 );
 
@@ -98,9 +98,9 @@ const layerMixedTools = (calls: Array<string>) => {
     MixedToolkit,
     McpToolAccess.toLayer(MixedToolkit, {
       delegate_task: record("delegate_task"),
-      t3_thread_send: record("t3_thread_send"),
-      t3_thread_read: record("t3_thread_read"),
-      t3_project_update: record("t3_project_update"),
+      houston_thread_send: record("houston_thread_send"),
+      houston_thread_read: record("houston_thread_read"),
+      houston_project_update: record("houston_project_update"),
       houston_task_plan_submit: McpToolAccess.reads(() =>
         Effect.sync(() => calls.push("houston_task_plan_submit")).pipe(Effect.as({ ok: true })),
       ),
@@ -138,13 +138,13 @@ const textOf = (result: unknown) =>
 
 const OTHER_TOOLS: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
   ["delegate_task", { task: "Write the code", target: {} }],
-  ["t3_thread_send", { threadId: "thread-other", message: "go" }],
-  ["t3_thread_read", { threadId: "thread-other" }],
-  ["t3_project_update", { projectId: "project-1", title: "Renamed" }],
+  ["houston_thread_send", { threadId: "thread-other", message: "go" }],
+  ["houston_thread_read", { threadId: "thread-other" }],
+  ["houston_project_update", { projectId: "project-1", title: "Renamed" }],
 ];
 
 describe("a planner's credential reaches only the submit tools", () => {
-  it.effect("every other T3 tool is refused before it runs; the submit runs", () => {
+  it.effect("every other Houston tool is refused before it runs; the submit runs", () => {
     const calls: Array<string> = [];
     return Effect.gen(function* () {
       const call = callAs(scopeOf(new Set(["houston-task-submit"])));
@@ -200,7 +200,7 @@ describe("the submit-only guard is on the MCP call path", () => {
             });
           const serverLayer = Layer.effectDiscard(
             Effect.all([
-              addDirect("t3_thread_send", false),
+              addDirect("houston_thread_send", false),
               addDirect("html_preview", true),
               addDirect("houston_task_plan_submit", false),
             ]),
@@ -259,7 +259,7 @@ describe("the submit-only guard is on the MCP call path", () => {
               .pipe(Effect.flatMap((response) => response.text));
 
           for (const [id, name] of [
-            [2, "t3_thread_send"],
+            [2, "houston_thread_send"],
             [3, "html_preview"],
           ] as const) {
             const text = yield* call(id, name);
@@ -334,9 +334,9 @@ describe("a planner's run loads no user MCP server", () => {
       mcpSession: SESSION,
       runtimePolicy: READ_ONLY_POLICY,
     });
-    assert.deepEqual(Object.keys(params.config.mcp_servers as object), ["t3-code"]);
+    assert.deepEqual(Object.keys(params.config.mcp_servers as object), ["houston"]);
     const houston = (params.config.mcp_servers as Record<string, Record<string, unknown>>)[
-      "t3-code"
+      "houston"
     ];
     assert.strictEqual(houston?.url, SESSION.endpoint);
     assert.deepEqual(houston?.http_headers, { Authorization: SESSION.authorizationHeader });
@@ -357,7 +357,7 @@ describe("a planner's run loads no user MCP server", () => {
       }),
       permissionMode: "dontAsk",
       mcpServers: {
-        "t3-code": {
+        houston: {
           type: "http",
           url: SESSION.endpoint,
           headers: { Authorization: SESSION.authorizationHeader },
@@ -366,7 +366,7 @@ describe("a planner's run loads no user MCP server", () => {
       strictMcpConfig: true,
     });
     assert.isTrue(options.strictMcpConfig);
-    assert.deepEqual(Object.keys(options.mcpServers ?? {}), ["t3-code"]);
+    assert.deepEqual(Object.keys(options.mcpServers ?? {}), ["houston"]);
     assert.isUndefined(options.extraArgs?.["mcp-config"]);
   });
 });
@@ -400,40 +400,40 @@ describe("a planner's and a reviewer's run may call its own submit tool", () => 
           houstonTaskSubmitTool: tool,
         }).allowedTools ?? []),
       ];
-      assert.include(allowedTools, `mcp__t3-code__${tool}`, tool);
-      assert.notInclude(allowedTools, `mcp__t3-code__${other}`, tool);
-      assert.notInclude(allowedTools, "mcp__t3-code__*", tool);
+      assert.include(allowedTools, `mcp__houston__${tool}`, tool);
+      assert.notInclude(allowedTools, `mcp__houston__${other}`, tool);
+      assert.notInclude(allowedTools, "mcp__houston__*", tool);
     }
     const allowedTools = [
       ...(claudeMcpQueryOverrides({ mcpSession: SESSION, readOnlySandbox: true }).allowedTools ??
         []),
     ];
-    for (const tool of SUBMIT_TOOLS) assert.notInclude(allowedTools, `mcp__t3-code__${tool}`);
+    for (const tool of SUBMIT_TOOLS) assert.notInclude(allowedTools, `mcp__houston__${tool}`);
   });
 
   it("OpenCode: a read-only run allows exactly the role's submit tool after the deny", () => {
     for (const tool of SUBMIT_TOOLS) {
       const other = SUBMIT_TOOLS.find((candidate) => candidate !== tool);
       const rules = openCodePermissionRules({ ...READ_ONLY_POLICY, houstonTaskSubmitTool: tool });
-      assert.strictEqual(openCodeAction(rules, `t3-code_${tool}`), "allow", tool);
-      assert.strictEqual(openCodeAction(rules, `t3-code_${other}`), "deny", tool);
-      assert.strictEqual(openCodeAction(rules, "t3-code_delegate_task"), "deny", tool);
+      assert.strictEqual(openCodeAction(rules, `houston_${tool}`), "allow", tool);
+      assert.strictEqual(openCodeAction(rules, `houston_${other}`), "deny", tool);
+      assert.strictEqual(openCodeAction(rules, "houston_delegate_task"), "deny", tool);
       assert.strictEqual(openCodeAction(rules, "edit"), "deny", tool);
 
       const v2 = sessionRules(
         { ...READ_ONLY_POLICY, houstonTaskSubmitTool: tool },
         [],
         [],
-        "t3-code-task-plan-1",
+        "houston-task-plan-1",
       );
-      assert.strictEqual(openCodeV2Effect(v2, `t3-code-task-plan-1_${tool}`), "allow", tool);
-      assert.strictEqual(openCodeV2Effect(v2, `t3-code-task-plan-1_${other}`), "deny", tool);
-      assert.strictEqual(openCodeV2Effect(v2, "t3-code-task-plan-1_delegate_task"), "deny", tool);
+      assert.strictEqual(openCodeV2Effect(v2, `houston-task-plan-1_${tool}`), "allow", tool);
+      assert.strictEqual(openCodeV2Effect(v2, `houston-task-plan-1_${other}`), "deny", tool);
+      assert.strictEqual(openCodeV2Effect(v2, "houston-task-plan-1_delegate_task"), "deny", tool);
       assert.strictEqual(openCodeV2Effect(v2, "edit"), "deny", tool);
     }
     const plain = openCodePermissionRules(READ_ONLY_POLICY);
     for (const tool of SUBMIT_TOOLS) {
-      assert.strictEqual(openCodeAction(plain, `t3-code_${tool}`), "deny");
+      assert.strictEqual(openCodeAction(plain, `houston_${tool}`), "deny");
     }
   });
 });

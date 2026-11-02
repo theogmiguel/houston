@@ -206,7 +206,7 @@ it.effect("shares the turn and full-thread diff budget across real Git batches",
     const path = yield* Path.Path;
     const process = yield* VcsProcess.VcsProcess;
     const store = yield* CheckpointStore.CheckpointStore;
-    const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-diff-aggregate-" });
+    const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "houston-diff-aggregate-" });
     const git = (args: ReadonlyArray<string>, env?: NodeJS.ProcessEnv) =>
       process.run({
         operation: "CheckpointDiffQuery.test.git",

@@ -28,7 +28,7 @@ const openDeletedTempFiles = () =>
 it.effect.skipIf(HostProcess.Platform.defaultValue() !== "linux")(
   "keeps a write transaction's statement journal off the temp directory",
   () => {
-    const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sqlite-temp-"));
+    const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-sqlite-temp-"));
     const persistence = SqlitePersistence.layerFromPath(
       NodePath.join(tempDir, "state.sqlite"),
     ).pipe(Layer.provide(NodeServices.layer));
@@ -57,7 +57,7 @@ it.effect.skipIf(HostProcess.Platform.defaultValue() !== "linux")(
 );
 
 it.effect("drops planner statistics a database already has", () => {
-  const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sqlite-stats-"));
+  const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-sqlite-stats-"));
   const dbPath = NodePath.join(tempDir, "state.sqlite");
   const persistence = () =>
     SqlitePersistence.layerFromPath(dbPath).pipe(Layer.provide(NodeServices.layer));

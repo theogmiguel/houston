@@ -15,7 +15,7 @@ describe("userFacingDispatchErrorMessage", () => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-database-error-" });
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "houston-database-error-" });
       const cause = yield* Effect.void.pipe(
         Effect.provide(
           NodeSqliteClient.layer({ filename: path.join(directory, "missing", "state.sqlite") }),

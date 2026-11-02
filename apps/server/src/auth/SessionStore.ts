@@ -59,7 +59,7 @@ export interface VerifiedSession {
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
   readonly proofKeyThumbprint?: string;
   readonly runtimeModeCeiling?: RuntimeMode;
-  /** An MCP client that is another T3 Code environment's peer link. */
+  /** An MCP client that is another Houston environment's peer link. */
   readonly peerLink?: true;
 }
 

@@ -95,7 +95,7 @@ const defaultClaudeSettings: ClaudeSettings = Schema.decodeSync(ClaudeSettings)(
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 const defaultCodexSettings: CodexSettings = Schema.decodeSync(CodexSettings)({});
 
-process.env.T3CODE_CURSOR_ENABLED = "1";
+process.env.HOUSTON_CURSOR_ENABLED = "1";
 
 const encoder = new TextEncoder();
 const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
@@ -225,7 +225,7 @@ function layerMockSpawner(
 const writeFakeCodexCli = Effect.fn("writeFakeCodexCli")(function* (script: string) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-fake-codex-" });
+  const directory = yield* fs.makeTempDirectoryScoped({ prefix: "houston-fake-codex-" });
   const binaryPath = path.join(directory, "codex");
   yield* fs.writeFileString(binaryPath, `#!/bin/sh\n${script}\n`);
   yield* fs.chmod(binaryPath, 0o755);
@@ -480,7 +480,7 @@ it.layer(
       Effect.gen(function* () {
         if ((yield* HostProcess.Platform) === "win32") return;
         const codexHome = yield* FileSystem.FileSystem.pipe(
-          Effect.flatMap((fs) => fs.makeTempDirectoryScoped({ prefix: "t3-codex-home-" })),
+          Effect.flatMap((fs) => fs.makeTempDirectoryScoped({ prefix: "houstonx-home-" })),
         );
         const { binaryPath } = yield* writeFakeCodexCli(
           [
@@ -1140,7 +1140,7 @@ it.layer(
           }).pipe(
             Effect.provide(
               ServerConfig.layerTest(process.cwd(), {
-                prefix: "t3-pi-model-cache-",
+                prefix: "houston-pi-model-cache-",
               }).pipe(Layer.provideMerge(NodeServices.layer)),
             ),
           ),
@@ -1276,7 +1276,7 @@ it.layer(
         }).pipe(
           Effect.provide(
             ServerConfig.layerTest(process.cwd(), {
-              prefix: "t3-codex-retired-model-cache-",
+              prefix: "houstonx-retired-model-cache-",
             }).pipe(Layer.provideMerge(NodeServices.layer)),
           ),
         ),
@@ -1545,7 +1545,7 @@ it.layer(
               Layer.provideMerge(layerInstanceRegistry),
               Layer.provideMerge(
                 ServerConfig.layerTest(process.cwd(), {
-                  prefix: "t3-provider-registry-shared-workspace-scan-",
+                  prefix: "houston-provider-registry-shared-workspace-scan-",
                 }),
               ),
               Layer.provideMerge(NodeServices.layer),
@@ -1641,7 +1641,7 @@ it.layer(
             Layer.provideMerge(layerInstanceRegistry),
             Layer.provideMerge(
               ServerConfig.layerTest(process.cwd(), {
-                prefix: "t3-provider-registry-unhealthy-workspace-",
+                prefix: "houston-provider-registry-unhealthy-workspace-",
               }),
             ),
             Layer.provideMerge(NodeServices.layer),
@@ -1762,7 +1762,7 @@ it.layer(
             Layer.provideMerge(instanceRegistryLayer),
             Layer.provideMerge(
               ServerConfig.layerTest(process.cwd(), {
-                prefix: "t3-provider-registry-shared-refresh-",
+                prefix: "houston-provider-registry-shared-refresh-",
               }),
             ),
             Layer.provideMerge(NodeServices.layer),
@@ -1869,7 +1869,7 @@ it.layer(
             Layer.provideMerge(layerInstanceRegistry),
             Layer.provideMerge(
               ServerConfig.layerTest(process.cwd(), {
-                prefix: "t3-provider-registry-merged-persist-",
+                prefix: "houston-provider-registry-merged-persist-",
               }),
             ),
             Layer.provideMerge(layerBackgroundPolicyAlwaysRun),
@@ -1998,7 +1998,7 @@ it.layer(
               Layer.provideMerge(layerInstanceRegistry),
               Layer.provideMerge(
                 ServerConfig.layerTest(process.cwd(), {
-                  prefix: "t3-provider-registry-opencode-authoritative-persist-",
+                  prefix: "houston-provider-registry-opencode-authoritative-persist-",
                 }),
               ),
               Layer.provideMerge(NodeServices.layer),
@@ -2102,7 +2102,7 @@ it.layer(
             Layer.provideMerge(layerInstanceRegistry),
             Layer.provideMerge(
               ServerConfig.layerTest(process.cwd(), {
-                prefix: "t3-provider-registry-refresh-failure-",
+                prefix: "houston-provider-registry-refresh-failure-",
               }),
             ),
             Layer.provideMerge(layerBackgroundPolicyAlwaysRun),
@@ -2127,8 +2127,8 @@ it.layer(
 
     it.effect("re-probes when settings change the codex binaryPath", () =>
       Effect.gen(function* () {
-        const firstMissing = `t3code_codex_first_`;
-        const secondMissing = `t3code_codex_second_`;
+        const firstMissing = `houston_codex_first_`;
+        const secondMissing = `houston_codex_second_`;
         const spawnedCommands: Array<string> = [];
         const secondProbeStarted = yield* Deferred.make<void>();
         const releaseSecondProbe = yield* Deferred.make<void>();
@@ -2168,7 +2168,7 @@ it.layer(
           Layer.provideMerge(ServerSecretStore.layer),
           Layer.provideMerge(
             ServerConfig.layerTest(process.cwd(), {
-              prefix: "t3-provider-registry-",
+              prefix: "houston-provider-registry-",
             }),
           ),
           Layer.provideMerge(layerTestHttpClient),
@@ -2286,7 +2286,7 @@ it.layer(
           Layer.provideMerge(ServerSecretStore.layer),
           Layer.provideMerge(
             ServerConfig.layerTest(process.cwd(), {
-              prefix: "t3-provider-registry-",
+              prefix: "houston-provider-registry-",
             }),
           ),
           Layer.provideMerge(layerTestHttpClient),
@@ -2395,7 +2395,7 @@ it.layer(
             Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
           ),
           Layer.provideMerge(
-            ServerConfig.layerTest(process.cwd(), { prefix: "t3-provider-registry-" }),
+            ServerConfig.layerTest(process.cwd(), { prefix: "houston-provider-registry-" }),
           ),
           Layer.provideMerge(layerTestHttpClient),
           Layer.provideMerge(
@@ -2593,7 +2593,7 @@ it.layer(
           const fileSystem = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
           const configDir = yield* fileSystem.makeTempDirectoryScoped({
-            prefix: "t3-claude-settings-",
+            prefix: "houston-claude-settings-",
           });
           yield* fileSystem.writeFileString(
             path.join(configDir, "settings.json"),

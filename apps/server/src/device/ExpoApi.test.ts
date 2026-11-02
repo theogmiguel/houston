@@ -21,7 +21,7 @@ describe("Expo credentials", () => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-expo-home-" });
+      const home = yield* fs.makeTempDirectoryScoped({ prefix: "houston-expo-home-" });
       yield* fs.makeDirectory(path.join(home, ".expo"));
       yield* fs.writeFileString(
         path.join(home, ".expo", "state.json"),

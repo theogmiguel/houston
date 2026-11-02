@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it } from "vite-plus/test";
 // node and the OS tools, and sinks on 127.0.0.1 that this file owns.
 const BIN = NodeURL.fileURLToPath(new URL("../bin.ts", import.meta.url));
 const SERVER_DIR = NodePath.dirname(NodePath.dirname(BIN));
-// oxlint-disable-next-line t3code/no-global-process-runtime -- picks the spawn and kill strategy for a real child process.
+// oxlint-disable-next-line houston/no-global-process-runtime -- picks the spawn and kill strategy for a real child process.
 const IS_WINDOWS = process.platform === "win32";
 // The server evaluates its whole module graph from source; a cold start takes about 10 s.
 const READY_TIMEOUT_MS = 90_000;
@@ -62,7 +62,7 @@ function killTree(pid: number | undefined): void {
 }
 
 const sleep = (ms: number) =>
-  // oxlint-disable-next-line t3code/no-real-time-wait-in-tests -- the server is another process on the real clock.
+  // oxlint-disable-next-line houston/no-real-time-wait-in-tests -- the server is another process on the real clock.
   new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitFor(what: string, check: () => boolean | Promise<boolean>, timeoutMs: number) {
@@ -169,14 +169,18 @@ async function startSink(
 }
 
 function desktopToken(secret: string): string {
-  // oxlint-disable-next-line t3code/no-wall-clock-in-tests -- the server checks the credential against its own clock.
+  // oxlint-disable-next-line houston/no-wall-clock-in-tests -- the server checks the credential against its own clock.
   const window = Math.floor(Date.now() / WINDOW_MS);
   return NodeCrypto.createHmac("sha256", secret)
     .update(`t3-desktop-bootstrap:${window}`)
     .digest("hex");
 }
 
-function envelope(port: number, t3Home: string | undefined, extra: Record<string, unknown> = {}) {
+function envelope(
+  port: number,
+  t3Home: string | undefined,
+  extra: Record<string, unknown> = {},
+) {
   const secret = `secret-${port}`;
   return {
     mode: "desktop",
@@ -197,7 +201,7 @@ function spawnServer(options: {
   readonly args?: ReadonlyArray<string>;
   readonly env: NodeJS.ProcessEnv;
   readonly envelope?: Record<string, unknown>;
-  // false: the host names the envelope's fd through T3CODE_BOOTSTRAP_FD in `env` instead.
+  // false: the host names the envelope's fd through HOUSTON_BOOTSTRAP_FD in `env` instead.
   readonly bootstrapFlag?: boolean;
 }): Server {
   const child = NodeChildProcess.spawn(
@@ -340,7 +344,10 @@ describe("houston server entrypoint", () => {
         ["", "   ", undefined].map(async (t3Home) => {
           const root = makeSandbox();
           const port = await freePort();
-          const server = spawnServer({ env: sandboxEnv(root), envelope: envelope(port, t3Home) });
+          const server = spawnServer({
+            env: sandboxEnv(root),
+            envelope: envelope(port, t3Home),
+          });
           expect(await exitCode(server), `t3Home ${JSON.stringify(t3Home)}`).toBe(64);
           expect(server.output.join("")).toContain("t3Home");
           expect(NodeFS.existsSync(NodePath.join(root, ".t3"))).toBe(false);
@@ -355,12 +362,12 @@ describe("houston server entrypoint", () => {
     async () => {
       // `warns` names the one ignored source; a blank source is not an override.
       const rows = [
-        { name: "T3CODE_HOME", home: "x", warns: "T3CODE_HOME" },
+        { name: "HOUSTON_HOME", home: "x", warns: "HOUSTON_HOME" },
         { name: "--base-dir", baseDir: "x", warns: "--base-dir" },
-        { name: "T3CODE_BOOTSTRAP_FD", home: "x", envFd: true, warns: "T3CODE_HOME" },
+        { name: "HOUSTON_BOOTSTRAP_FD", home: "x", envFd: true, warns: "HOUSTON_HOME" },
         { name: "alone" },
         // Whitespace: the config provider reads an empty variable as unset.
-        { name: "blank T3CODE_HOME", home: "   " },
+        { name: "blank HOUSTON_HOME", home: "   " },
         { name: "blank --base-dir", baseDir: "   " },
       ] as const satisfies ReadonlyArray<{
         readonly name: string;
@@ -379,8 +386,8 @@ describe("houston server entrypoint", () => {
           const server = spawnServer({
             args: "baseDir" in row ? ["--base-dir", resolve(row.baseDir)] : [],
             env: sandboxEnv(root, {
-              ...("home" in row ? { T3CODE_HOME: resolve(row.home) } : {}),
-              ...("envFd" in row ? { T3CODE_BOOTSTRAP_FD: "0" } : {}),
+              ...("home" in row ? { HOUSTON_HOME: resolve(row.home) } : {}),
+              ...("envFd" in row ? { HOUSTON_BOOTSTRAP_FD: "0" } : {}),
             }),
             envelope: envelope(port, base),
             bootstrapFlag: !("envFd" in row),
@@ -434,9 +441,9 @@ describe("houston server entrypoint", () => {
       const port = await freePort();
       const server = spawnServer({
         env: sandboxEnv(root, {
-          T3CODE_TELEMETRY_ENABLED: "true",
-          T3CODE_POSTHOG_HOST: sink.url,
-          T3CODE_POSTHOG_KEY: "phc_houston_test",
+          HOUSTON_TELEMETRY_ENABLED: "true",
+          HOUSTON_POSTHOG_HOST: sink.url,
+          HOUSTON_POSTHOG_KEY: "phc_houston_test",
         }),
         envelope: envelope(port, base),
       });
@@ -474,10 +481,10 @@ describe("houston server entrypoint", () => {
           const server = spawnServer({
             args: command,
             env: sandboxEnv(root, {
-              T3CODE_OTLP_TRACES_URL: `${sink.url}/env/v1/traces`,
-              T3CODE_OTLP_METRICS_URL: `${sink.url}/env/v1/metrics`,
-              T3CODE_OTLP_LOGS_URL: `${sink.url}/env/v1/logs`,
-              T3CODE_OTLP_EXPORT_INTERVAL_MS: "500",
+              HOUSTON_OTLP_TRACES_URL: `${sink.url}/env/v1/traces`,
+              HOUSTON_OTLP_METRICS_URL: `${sink.url}/env/v1/metrics`,
+              HOUSTON_OTLP_LOGS_URL: `${sink.url}/env/v1/logs`,
+              HOUSTON_OTLP_EXPORT_INTERVAL_MS: "500",
               OTEL_EXPORTER_OTLP_ENDPOINT: `${sink.url}/otel`,
               OTEL_METRIC_EXPORT_INTERVAL: "500",
               OTEL_BSP_SCHEDULE_DELAY: "500",
@@ -513,10 +520,10 @@ describe("houston server entrypoint", () => {
       const server = spawnServer({
         env: sandboxEnv(root, {
           NODE_EXTRA_CA_CERTS: caFile,
-          T3CODE_TELEMETRY_ENABLED: "true",
-          T3CODE_RELAY_CLIENT_OTLP_TRACES_URL: `${sink.url}/v1/traces`,
-          T3CODE_RELAY_CLIENT_OTLP_TRACES_DATASET: "houston-test",
-          T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN: "houston-test-token",
+          HOUSTON_TELEMETRY_ENABLED: "true",
+          HOUSTON_RELAY_CLIENT_OTLP_TRACES_URL: `${sink.url}/v1/traces`,
+          HOUSTON_RELAY_CLIENT_OTLP_TRACES_DATASET: "houston-test",
+          HOUSTON_RELAY_CLIENT_OTLP_TRACES_TOKEN: "houston-test-token",
         }),
         envelope: hosted,
       });
@@ -543,7 +550,7 @@ describe("houston server entrypoint", () => {
       const port = await freePort();
       const server = spawnServer({
         env: sandboxEnv(root, {
-          T3CODE_TRACE_FILE: NodePath.join(elsewhere, "server.trace.ndjson"),
+          HOUSTON_TRACE_FILE: NodePath.join(elsewhere, "server.trace.ndjson"),
         }),
         envelope: envelope(port, base),
       });
@@ -555,7 +562,7 @@ describe("houston server entrypoint", () => {
       expect(
         NodeFS.existsSync(NodePath.join(base, "userdata", "logs", "server.trace.ndjson")),
       ).toBe(true);
-      const warnings = lines(server).filter((line) => line.includes("T3CODE_TRACE_FILE"));
+      const warnings = lines(server).filter((line) => line.includes("HOUSTON_TRACE_FILE"));
       expect(warnings, server.output.join("")).toHaveLength(1);
       expect(warnings[0]).toContain("houston: ignoring");
     },
@@ -681,7 +688,7 @@ describe("houston server entrypoint", () => {
         JSON.stringify(envelope(port, base)),
       ],
       {
-        env: sandboxEnv(root, detached ? { T3CODE_DESKTOP_DETACHED: "1" } : {}),
+        env: sandboxEnv(root, detached ? { HOUSTON_DESKTOP_DETACHED: "1" } : {}),
         stdio: ["pipe", "pipe", "inherit"],
         windowsHide: true,
       },

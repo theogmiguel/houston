@@ -9,7 +9,9 @@ use serde::Serialize;
 use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::OwnedValue;
 
-pub const GNOME_CAPTURE_UUID: &str = "t3-snap-shot@t3tools";
+pub const GNOME_CAPTURE_UUID: &str = "houston-snap-shot@houston";
+/// Installed by earlier releases; removed once so GNOME cannot load a second copy.
+const LEGACY_GNOME_CAPTURE_UUID: &str = "t3-snap-shot@t3tools";
 const SHELL: &str = "org.gnome.Shell";
 const SHELL_PATH: &str = "/org/gnome/Shell";
 const EXTENSIONS: &str = "org.gnome.Shell.Extensions";
@@ -51,7 +53,18 @@ impl GnomeCaptureSetup {
         }
     }
 
+    /// Idempotent: an earlier release's extension directory no longer matches the
+    /// bundled metadata, so removing it leaves GNOME with only the current one.
+    fn remove_legacy_extension(&self) {
+        let legacy = self
+            .data_home
+            .join("gnome-shell/extensions")
+            .join(LEGACY_GNOME_CAPTURE_UUID);
+        let _ = std::fs::remove_dir_all(legacy);
+    }
+
     fn query(&self) -> Result<CaptureExtensionState, String> {
+        self.remove_legacy_extension();
         let connection = Connection::session()
             .map_err(|error| format!("Could not connect to GNOME: {error}"))?;
         let properties = Proxy::new(
@@ -150,6 +163,7 @@ impl GnomeCaptureSetup {
     }
 
     pub fn perform(&self, action: &str) -> Result<(), String> {
+        self.remove_legacy_extension();
         match action {
             "install-extension" => {
                 if !self.bundle.join("metadata.json").is_file() {
@@ -195,6 +209,26 @@ struct ExtensionInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn removes_the_previous_extension_directory_once() {
+        let root = tempfile::tempdir().unwrap();
+        let legacy = root
+            .path()
+            .join("gnome-shell/extensions")
+            .join(LEGACY_GNOME_CAPTURE_UUID);
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("metadata.json"), "{}").unwrap();
+        let setup = GnomeCaptureSetup::new(
+            root.path().join("missing-bundle"),
+            root.path().to_path_buf(),
+        );
+
+        setup.remove_legacy_extension();
+        setup.remove_legacy_extension();
+
+        assert!(!legacy.exists());
+    }
 
     #[test]
     fn a_missing_bundle_reports_unsupported_without_touching_the_session() {

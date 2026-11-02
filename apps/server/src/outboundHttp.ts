@@ -39,7 +39,7 @@ type TypeOfServiceSocket = {
 // Bundled undici calls this from a socket callback without catching. On macOS,
 // EINVAL after a peer reset must not exit the server over an optional QoS hint.
 export function ignoreMacosTypeOfServiceEinval(
-  // oxlint-disable-next-line t3code/no-global-process-runtime -- Runs before ACP dispatch without loading the Effect graph.
+  // oxlint-disable-next-line houston/no-global-process-runtime -- Runs before ACP dispatch without loading the Effect graph.
   platform = process.platform,
   socketPrototype: TypeOfServiceSocket = NodeNet.Socket.prototype as TypeOfServiceSocket,
 ): void {

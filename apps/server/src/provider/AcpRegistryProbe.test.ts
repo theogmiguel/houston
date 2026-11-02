@@ -340,8 +340,8 @@ describe("ACP Registry probe", () => {
             args: [mockAgentPath],
             env: {
               ...process.env,
-              T3_ACP_SESSION_LIFECYCLE: "1",
-              T3_ACP_AUTH_METHOD_ID: "mock-login",
+              HOUSTON_ACP_SESSION_LIFECYCLE: "1",
+              HOUSTON_ACP_AUTH_METHOD_ID: "mock-login",
             },
           },
         }),

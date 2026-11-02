@@ -40,7 +40,7 @@ type AgentBehaviour = "answers" | "silent";
 const writeFakeGrokCli = (agent: AgentBehaviour) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-grok-teardown-" });
+    const dir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-grok-teardown-" });
     const pidsPath = NodePath.join(dir, "agent-pids");
     const grokPath = writeFakeCli({
       directory: dir,

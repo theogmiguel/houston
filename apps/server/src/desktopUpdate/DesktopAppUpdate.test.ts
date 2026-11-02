@@ -64,7 +64,7 @@ const makeHarness = Effect.fn("test.make_desktop_app_update_harness")(function* 
   options: HarnessOptions = {},
 ) {
   const fs = yield* FileSystem.FileSystem;
-  const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-desktop-app-update-test-" });
+  const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-desktop-app-update-test-" });
   const requestIdDeferred = yield* Deferred.make<string>();
   const baseConfig = yield* ServerConfig.ServerConfig.pipe(
     Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),

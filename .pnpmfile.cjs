@@ -12,7 +12,7 @@ module.exports = {
       return pkg;
     },
     updateConfig(config) {
-      // oxlint-disable-next-line t3code/no-global-process-runtime -- pnpm loads this file before any Effect runtime exists.
+      // oxlint-disable-next-line houston/no-global-process-runtime -- pnpm loads this file before any Effect runtime exists.
       if (process.platform !== "win32") return config;
       return {
         ...config,

@@ -27,7 +27,7 @@ import * as McpSessionRegistry from "../../../mcp/McpSessionRegistry.ts";
 import { liveThreadShell } from "../../../mcp/McpToolAccess.testkit.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ServerSettings from "../../../serverSettings.ts";
-import { mayHoldT3Tools, SIDE_THREAD_READ_ONLY } from "../../sideThreads.ts";
+import { mayHoldHoustonTools, SIDE_THREAD_READ_ONLY } from "../../sideThreads.ts";
 import {
   createProject,
   entryOf,
@@ -671,7 +671,10 @@ describe("agents enqueue into their own project's queue", () => {
             const id = `thread-${kind}`;
             const scope = harness.caller(id, projectId, undefined, { side: side(kind) });
             // Offered no tool: the session manager issues a side thread no MCP credential.
-            assert.isFalse(yield* mayHoldT3Tools(Effect.succeed(harness.shells.get(id)!)), kind);
+            assert.isFalse(
+              yield* mayHoldHoustonTools(Effect.succeed(harness.shells.get(id)!)),
+              kind,
+            );
 
             const requests = github.requests.length;
             for (const [name, args] of [

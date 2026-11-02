@@ -58,7 +58,7 @@ const withFakeSystemd = <A, E>(
   }: { readonly oomPolicy?: boolean; readonly stopFails?: boolean } = {},
 ) =>
   Effect.gen(function* () {
-    const bin = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-agent-scope-"));
+    const bin = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-agent-scope-"));
     for (const name of ["systemd-run", "systemctl", "agent"]) {
       NodeFS.writeFileSync(NodePath.join(bin, name), "", { mode: 0o755 });
     }
@@ -121,7 +121,7 @@ const withFakeSystemd = <A, E>(
   }).pipe(
     Effect.scoped,
     Effect.provide(
-      ServerConfig.layerTest(process.cwd(), { prefix: "t3-agent-scope-" }).pipe(
+      ServerConfig.layerTest(process.cwd(), { prefix: "houston-agent-scope-" }).pipe(
         Layer.provideMerge(NodeServices.layer),
       ),
     ),
@@ -287,7 +287,7 @@ describe("AgentScope service", () => {
             "--user",
             "set-property",
             "--runtime",
-            "app-t3code-agents.slice",
+            "app-houston-agents.slice",
             expect.stringMatching(/^MemoryHigh=\d+$/),
             expect.stringMatching(/^MemoryMax=\d+$/),
           ],
@@ -295,7 +295,7 @@ describe("AgentScope service", () => {
             "--user",
             "set-property",
             "--runtime",
-            "app-t3code.slice",
+            "app-houston.slice",
             "CPUWeight=10",
             "IOWeight=10",
             "TasksMax=25%",
@@ -320,7 +320,7 @@ describe("AgentScope service", () => {
           name: "terminal",
           survivesRestart: true,
         });
-        expect(sliceOf(terminal)).toBe("app-t3code-agents.slice");
+        expect(sliceOf(terminal)).toBe("app-houston-agents.slice");
         expect(calls.filter(([, verb]) => verb === "stop")).toHaveLength(1);
       }),
     ),

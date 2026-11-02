@@ -37,11 +37,18 @@ import {
 const BOOT_SERVICE_NAME = "houston";
 export const BOOT_SERVICE_UNIT_FILE = `${BOOT_SERVICE_NAME}.service`;
 // `.service` suffix keeps the label distinct from the desktop app's bundle id
-// (com.t3tools.t3code), so launchd and TCC records never collide.
+// (dev.houston.desktop), so launchd and TCC records never collide.
 export const BOOT_SERVICE_LAUNCHD_LABEL = "com.houston.server.service";
 export const BOOT_SERVICE_PLIST_FILE = `${BOOT_SERVICE_LAUNCHD_LABEL}.plist`;
-const BOOT_SERVICE_UNIT_ENV = "T3_BOOT_SERVICE_UNIT";
+const BOOT_SERVICE_UNIT_ENV = "HOUSTON_BOOT_SERVICE_UNIT";
 export const BOOT_SERVICE_LOG_FILE = "boot-service.log";
+// Persisted by earlier releases; a one-time install or uninstall removes them so the
+// old service cannot keep starting beside the current one.
+export const LEGACY_BOOT_SERVICE_UNIT_FILE = "t3code.service";
+export const LEGACY_BOOT_SERVICE_LAUNCHD_LABELS = [
+  "com.t3tools.t3code.service",
+  "com.t3tools.t3code",
+] as const;
 
 /** systemd expands `%` specifiers, including in unquoted append-log paths. */
 function escapeSystemdSpecifiers(value: string): string {
@@ -65,9 +72,9 @@ const unescapeXmlText = (value: string) =>
   value.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
 
 export function bootServiceBaseDirOf(contents: string): string | undefined {
-  const systemd = /^Environment=T3CODE_HOME=(.*)$/m.exec(contents)?.[1];
+  const systemd = /^Environment=HOUSTON_HOME=(.*)$/m.exec(contents)?.[1];
   if (systemd !== undefined) return unquoteSystemdValue(systemd.trim());
-  const plist = /<key>T3CODE_HOME<\/key>\s*<string>([^<]*)<\/string>/.exec(contents)?.[1];
+  const plist = /<key>HOUSTON_HOME<\/key>\s*<string>([^<]*)<\/string>/.exec(contents)?.[1];
   return plist === undefined ? undefined : unescapeXmlText(plist);
 }
 
@@ -102,7 +109,7 @@ export function renderBootServiceUnit(plan: BootServicePlan): string {
     "[Service]",
     "Type=simple",
     "WorkingDirectory=%h",
-    `Environment=T3CODE_HOME=${quoteSystemdValue(plan.baseDir)}`,
+    `Environment=HOUSTON_HOME=${quoteSystemdValue(plan.baseDir)}`,
     `Environment=${BOOT_SERVICE_UNIT_ENV}=${BOOT_SERVICE_UNIT_FILE}`,
     `ExecStart=${plan.program.map(quoteSystemdValue).join(" ")}`,
     // Let the launcher mark an explicit stop before it signals the server.
@@ -159,7 +166,7 @@ export function renderBootServicePlist(
     `  <dict>`,
     `    <key>PATH</key>`,
     `    <string>${escapeXmlText(options.environmentPath)}</string>`,
-    `    <key>T3CODE_HOME</key>`,
+    `    <key>HOUSTON_HOME</key>`,
     `    <string>${escapeXmlText(plan.baseDir)}</string>`,
     `    <key>${BOOT_SERVICE_UNIT_ENV}</key>`,
     `    <string>${BOOT_SERVICE_PLIST_FILE}</string>`,
@@ -616,6 +623,64 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       : Effect.succeed(detectedManager),
   );
 
+  const legacyLaunchdPlistPaths = LEGACY_BOOT_SERVICE_LAUNCHD_LABELS.map((label) =>
+    path.join(homeDir, "Library", "LaunchAgents", `${label}.plist`),
+  );
+  const legacySystemdUnitPath = path.join(
+    homeDir,
+    ".config",
+    "systemd",
+    "user",
+    LEGACY_BOOT_SERVICE_UNIT_FILE,
+  );
+  // Idempotent: removes an earlier release's unit and launches so upgrading does not
+  // leave two services serving the same base directory.
+  const removeLegacyBootService = Effect.fn("cloud.boot_service.remove_legacy")(function* (
+    manager: BootServiceManager,
+  ) {
+    if (manager.kind === "launchd") {
+      for (const [index, label] of LEGACY_BOOT_SERVICE_LAUNCHD_LABELS.entries()) {
+        const plistPath = legacyLaunchdPlistPaths[index]!;
+        if (!(yield* fs.exists(plistPath))) continue;
+        yield* runSteps([
+          {
+            step: "unloading the previous launch agent",
+            command: "launchctl",
+            args: ["bootout", "--wait", `gui/${uid}/${label}`],
+            optional: true,
+          },
+        ]);
+        yield* fs
+          .remove(plistPath, { force: true })
+          .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
+      }
+      return;
+    }
+    if (!(yield* fs.exists(legacySystemdUnitPath))) return;
+    yield* runSteps([
+      {
+        step: "disabling the previous service",
+        command: "systemctl",
+        args: ["--user", "disable", "--now", LEGACY_BOOT_SERVICE_UNIT_FILE],
+        optional: true,
+      },
+    ]);
+    yield* fs
+      .remove(legacySystemdUnitPath, { force: true })
+      .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
+    yield* fs
+      .remove(`${legacySystemdUnitPath}.d`, { recursive: true, force: true })
+      .pipe(Effect.ignore);
+    yield* runSteps([
+      {
+        step: "reloading systemd user units",
+        command: "systemctl",
+        args: ["--user", "daemon-reload"],
+        optional: true,
+      },
+    ]);
+  });
+
   const logFailure = (error: { readonly message: string }) =>
     DateTime.now.pipe(
       Effect.flatMap((now) =>
@@ -733,6 +798,11 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     if (manager.kind === "systemd") {
       yield* requireSystemdPrerequisites.pipe(Effect.tapError(logFailure));
     }
+    yield* removeLegacyBootService(manager).pipe(
+      Effect.mapError((cause) =>
+        cause._tag === "PlatformError" ? new BootServiceInstallError({ cause }) : cause,
+      ),
+    );
 
     yield* ensurePinnedRuntimeInstalled({
       baseDir: input.baseDir,
@@ -965,9 +1035,32 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       !(yield* fs
         .exists(unitPath)
         .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause }))))
-    )
-      return false;
+    ) {
+      const legacyExists =
+        manager.kind === "launchd"
+          ? yield* Effect.gen(function* () {
+              for (const plistPath of legacyLaunchdPlistPaths) {
+                if (yield* fs.exists(plistPath)) return true;
+              }
+              return false;
+            }).pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })))
+          : yield* fs
+              .exists(legacySystemdUnitPath)
+              .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
+      if (!legacyExists) return false;
+      yield* removeLegacyBootService(manager).pipe(
+        Effect.mapError((cause) =>
+          cause._tag === "PlatformError" ? new BootServiceInstallError({ cause }) : cause,
+        ),
+      );
+      return true;
+    }
     yield* runSteps(manager.deactivate);
+    yield* removeLegacyBootService(manager).pipe(
+      Effect.mapError((cause) =>
+        cause._tag === "PlatformError" ? new BootServiceInstallError({ cause }) : cause,
+      ),
+    );
     yield* fs
       .remove(unitPath)
       .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));

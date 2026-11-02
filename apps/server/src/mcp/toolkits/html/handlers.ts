@@ -20,7 +20,7 @@ const toFailure = (error: { readonly _tag: string; readonly message: string }) =
   });
 
 const handlers = {
-  // Local-file access limits this host browser to T3-launched agents.
+  // Local-file access limits this host browser to Houston-launched agents.
   html_preview: McpToolAccess.readsAsCaller((input) =>
     Effect.gen(function* () {
       const htmlRender = yield* HtmlRender.HtmlRender;

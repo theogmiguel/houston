@@ -373,7 +373,7 @@ function providerConstraints(
   return constraints;
 }
 
-/** t3_thread_launch keeps a selection as given, so it can hold options its model does not have. */
+/** houston_thread_launch keeps a selection as given, so it can hold options its model does not have. */
 function knownOptions(
   options: ReadonlyArray<ProviderOptionSelection> | undefined,
   descriptors: ReadonlyArray<ProviderOptionDescriptor> | undefined,
@@ -3129,7 +3129,7 @@ const make = Effect.gen(function* () {
         yield* crewGate
           .admit({
             callerThreadId: scope.thread.threadId,
-            operation: "t3_thread_send",
+            operation: "houston_thread_send",
             targetThreadId: input.threadId,
           })
           .pipe(Effect.mapError(crewGateFailure));

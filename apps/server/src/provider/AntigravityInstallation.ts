@@ -357,7 +357,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
       function* (executable: AntigravityExecutable, expectedVersion: string) {
         const validationScope = yield* Effect.scope;
         const profileDirectory = yield* Effect.acquireRelease(
-          fs.makeTempDirectory({ prefix: "t3-antigravity-validate-" }),
+          fs.makeTempDirectory({ prefix: "houston-antigravity-validate-" }),
           (directory) =>
             fs.remove(directory, { recursive: true, force: true }).pipe(
               // Windows may retain DLL handles briefly after taskkill returns.

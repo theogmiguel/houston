@@ -65,7 +65,7 @@ const runSnapshots = (provider: string) =>
     Effect.map((snapshots) =>
       snapshots.filter(
         (snapshot) =>
-          snapshot.id.startsWith("t3_run") && snapshot.attributes?.["provider"] === provider,
+          snapshot.id.startsWith("houston_run") && snapshot.attributes?.["provider"] === provider,
       ),
     ),
   );
@@ -92,7 +92,7 @@ describe("makeRunOutcomeRecorder", () => {
 
       const snapshots = yield* runSnapshots("p1");
       const byId = (id: string) => snapshots.find((snapshot) => snapshot.id === id);
-      const counter = byId("t3_runs_total");
+      const counter = byId("houston_runs_total");
       assert.strictEqual(counter?.type === "Counter" ? counter.state.count : undefined, 1);
       assert.deepStrictEqual(counter?.attributes, {
         provider: "p1",
@@ -104,8 +104,8 @@ describe("makeRunOutcomeRecorder", () => {
         const snapshot = byId(id);
         return snapshot?.type === "Histogram" ? snapshot.state.sum : undefined;
       };
-      assert.strictEqual(histogramSum("t3_run_queue_wait"), 30_000);
-      assert.strictEqual(histogramSum("t3_run_duration"), 600_000);
+      assert.strictEqual(histogramSum("houston_run_queue_wait"), 30_000);
+      assert.strictEqual(histogramSum("houston_run_duration"), 600_000);
     }),
   );
 
@@ -274,7 +274,7 @@ describe("EventSink run outcomes", () => {
         assert.strictEqual(terminalEvents.length, 1);
         assert.strictEqual(unrelatedEvents.length, 1);
         const counter = (yield* runSnapshots("p-sink")).find(
-          (snapshot) => snapshot.id === "t3_runs_total",
+          (snapshot) => snapshot.id === "houston_runs_total",
         );
         assert.strictEqual(counter?.type === "Counter" ? counter.state.count : undefined, 1);
         assert.strictEqual(counter?.attributes?.["delegated"], "true");

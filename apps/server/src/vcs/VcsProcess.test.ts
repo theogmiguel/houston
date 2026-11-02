@@ -55,7 +55,7 @@ describe("VcsProcess.run", () => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-index-lock-" });
+      const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "houston-index-lock-" });
       const git = (args: readonly string[]) =>
         run({ operation: "test.checkpoint.restore", command: "git", cwd, args });
       yield* git(["init"]);
@@ -134,7 +134,7 @@ describe("VcsProcess.run", () => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-index-lock-locale-" });
+      const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "houston-index-lock-locale-" });
       const hostLocale = {
         LANG: "pt_BR.UTF-8",
         LC_ALL: "pt_BR.UTF-8",
@@ -381,7 +381,7 @@ describe("VcsProcess.run", () => {
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-vcs-bare-" });
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "houston-vcs-bare-" });
       yield* fileSystem.makeDirectory(path.join(cwd, "objects", "info"), { recursive: true });
       yield* fileSystem.makeDirectory(path.join(cwd, "refs", "heads"), { recursive: true });
       yield* fileSystem.writeFileString(path.join(cwd, "HEAD"), "ref: refs/heads/main\n");
@@ -482,7 +482,7 @@ describe("VcsProcess.run", () => {
       const secretArgument = "--token=super-secret-token";
       const error = yield* run({
         operation: "test.spawn",
-        command: "definitely-not-a-t3code-executable",
+        command: "definitely-not-a-houston-executable",
         args: [secretArgument],
         cwd: process.cwd(),
       }).pipe(Effect.flip);
@@ -490,7 +490,7 @@ describe("VcsProcess.run", () => {
       expect(error).toBeInstanceOf(VcsProcessSpawnError);
       expect(error).toMatchObject({
         operation: "test.spawn",
-        command: "definitely-not-a-t3code-executable",
+        command: "definitely-not-a-houston-executable",
         argumentCount: 1,
       });
       expect(error).toHaveProperty("cause");

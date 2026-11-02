@@ -445,7 +445,7 @@ pub fn edit_capture_config(
 mod tests {
     use super::*;
 
-    const APP: &str = "com.t3tools.T3Code";
+    const APP: &str = "dev.houston.desktop";
 
     fn binding() -> String {
         capture_config_binding(CaptureConfigFormat::Niri, APP, "Ctrl+Shift+2").unwrap()
@@ -503,7 +503,7 @@ mod tests {
     #[test]
     fn replaces_and_removes_only_this_apps_binding() {
         let other =
-            capture_config_binding(CaptureConfigFormat::Niri, "com.t3tools.Other", "Ctrl+Alt+4")
+            capture_config_binding(CaptureConfigFormat::Niri, "dev.houston.other", "Ctrl+Alt+4")
                 .unwrap();
         let before = format!("binds {{\n    {}\n    {other}\n}}\n", binding());
         let result = edit_capture_config(
@@ -605,7 +605,7 @@ mod tests {
     fn refuses_to_guess_complex_lua() {
         for source in [
             "return {}",
-            "--[[\nhl.bind(\"CTRL + SHIFT + 2\", hl.dsp.global(\"com.t3tools.T3Code:capture-window\"))\n]]",
+            "--[[\nhl.bind(\"CTRL + SHIFT + 2\", hl.dsp.global(\"dev.houston.desktop:capture-window\"))\n]]",
         ] {
             assert!(edit_capture_config(
                 source,

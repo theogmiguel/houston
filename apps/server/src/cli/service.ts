@@ -98,8 +98,8 @@ export const reconcileService = Effect.fn("cli.service.reconcile")(function* (op
   if (status.supported && !status.installed) {
     // A new service listens on this machine only, until `houston up` opens the local network.
     const { entries } = yield* readServiceEnv(baseDir);
-    if (entries.T3CODE_LAN === undefined && entries.T3CODE_HOST === undefined) {
-      yield* writeServiceEnv(baseDir, { T3CODE_LAN: "false" });
+    if (entries.HOUSTON_LAN === undefined && entries.HOUSTON_HOST === undefined) {
+      yield* writeServiceEnv(baseDir, { HOUSTON_LAN: "false" });
     }
   }
   if (
@@ -334,7 +334,7 @@ const serviceProtectCommand = Command.make("protect", {
     Effect.gen(function* () {
       const unsupported = "Service protection needs Linux with systemd.";
       if ((yield* HostProcess.Platform) !== "linux") return yield* Console.log(unsupported);
-      // Before resolving config, which creates T3 directories that root would then own.
+      // Before resolving config, which creates Houston directories that root would then own.
       if ((yield* HostProcess.UserId) === 0) {
         return yield* Console.log(
           "Run `houston service protect` as the user that runs Houston, without sudo. It asks for sudo when it needs root.",

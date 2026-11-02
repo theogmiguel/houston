@@ -99,10 +99,10 @@ it.live.each(
         const ambient = {
           CODEX_HOME: "/user/.codex",
           ACCESS_TOKEN: "ambient-bearer",
-          T3CODE_HOME: path.join(sharedHome, "wrong-server-home"),
+          HOUSTON_HOME: path.join(sharedHome, "wrong-server-home"),
           OPENAI_API_KEY: "dummy-global-key",
           OPENAI_BASE_URL: "https://user-proxy.test",
-          T3CODE_CODEX_LAUNCH_ARGS: "--config model_provider=global-proxy",
+          HOUSTON_CODEX_LAUNCH_ARGS: "--config model_provider=global-proxy",
           PATH: process.env.PATH,
           SystemRoot: process.env.SystemRoot,
         };
@@ -152,7 +152,7 @@ it.live.each(
           assert.isUndefined(effective.environment.ACCESS_TOKEN);
           assert.isUndefined(effective.environment.OPENAI_API_KEY);
           assert.isUndefined(effective.environment.OPENAI_BASE_URL);
-          assert.isUndefined(effective.environment.T3CODE_CODEX_LAUNCH_ARGS);
+          assert.isUndefined(effective.environment.HOUSTON_CODEX_LAUNCH_ARGS);
           const args = codexAppServerArgs(effective.config.launchArgs);
           assert.include(args, 'model_provider="openai_token_sharing"');
           const provider = args.find((arg) =>
@@ -208,7 +208,7 @@ it.live.each(
             const refused = yield* runHelper;
             assert.equal(refused.code, 1);
             assert.equal(refused.stdout, "");
-            assert.isFalse(yield* fs.exists(ambient.T3CODE_HOME));
+            assert.isFalse(yield* fs.exists(ambient.HOUSTON_HOME));
           }
           assert.include(args, "features.api_key_model_discovery=true");
           assert.include(args, "features.multi_agent=false");
@@ -286,7 +286,7 @@ it.live.each(
       Effect.scoped,
       Effect.provide(
         ServerConfig.layerTest(process.cwd(), {
-          prefix: "t3-managed-runtime-",
+          prefix: "houston-managed-runtime-",
         }).pipe(Layer.provideMerge(NodeServices.layer)),
       ),
     ),

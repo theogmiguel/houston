@@ -16,7 +16,7 @@ import * as HostProcess from "@houston-app/shared/HostProcess";
 export const CLAUDE_SYNTHETIC_MODEL = "<synthetic>";
 
 /**
- * T3 Code writes one record per assistant *content block*, and every one of those records repeats
+ * Houston writes one record per assistant *content block*, and every one of those records repeats
  * the same complete `usage` object for the parent message. Summing them overcounts by roughly
  * 2.4x on a real workload, so the caller must drop repeats by `dedupeKey` and keep the first.
  */

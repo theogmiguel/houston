@@ -749,10 +749,10 @@ describe("the crew gate", () => {
       const gate = yield* CrewGate.HoustonCrewGate;
       const operations = [
         ["create_threads", CrewGate.STARTS_ONLY_THROUGH_DELEGATION],
-        ["t3_thread_launch", CrewGate.STARTS_ONLY_THROUGH_DELEGATION],
+        ["houston_thread_launch", CrewGate.STARTS_ONLY_THROUGH_DELEGATION],
         ["schedule_task", CrewGate.STARTS_ONLY_THROUGH_DELEGATION],
         ["delete_scheduled_task", CrewGate.STARTS_ONLY_THROUGH_DELEGATION],
-        ["t3_environment_link", CrewGate.STARTS_ONLY_THROUGH_DELEGATION],
+        ["houston_environment_link", CrewGate.STARTS_ONLY_THROUGH_DELEGATION],
         ["houston_task_execute", CrewGate.STARTS_ONLY_THROUGH_DELEGATION],
         ["houston_merge_queue_enqueue", CrewGate.NIGHT_SHIFT_ENQUEUES],
         ["houston_merge_queue_dequeue", CrewGate.NIGHT_SHIFT_ENQUEUES],
@@ -834,8 +834,8 @@ describe("the crew gate", () => {
 
       // The two upstream handlers outside the service ask the gate before any other work.
       for (const [file, operation] of [
-        ["../../mcp/toolkits/project/handlers.ts", "t3_thread_launch"],
-        ["../../mcp/toolkits/orchestrator/handlers.ts", "t3_environment_link"],
+        ["../../mcp/toolkits/project/handlers.ts", "houston_thread_launch"],
+        ["../../mcp/toolkits/orchestrator/handlers.ts", "houston_environment_link"],
       ] as const) {
         const source = NodeFS.readFileSync(new URL(file, import.meta.url), "utf8");
         const handler = source.slice(source.indexOf(`${operation}: McpToolAccess`));
@@ -906,7 +906,7 @@ describe("the crew gate", () => {
           threadId: OUTSIDER,
           message: "Start something.",
         } as never),
-        "t3_thread_send",
+        "houston_thread_send",
         OUTSIDER,
         "not a live crew thread",
       );
@@ -915,7 +915,7 @@ describe("the crew gate", () => {
           threadId: ThreadId.make(finished.childThreadId!),
           message: "One more thing.",
         } as never),
-        "t3_thread_send",
+        "houston_thread_send",
         finished.childThreadId!,
         "ended",
         "delegate_task",
@@ -925,7 +925,7 @@ describe("the crew gate", () => {
           threadId: ORCHESTRATOR,
           message: "Report.",
         } as never),
-        "t3_thread_send",
+        "houston_thread_send",
         ORCHESTRATOR,
       );
       // Outside every live run a send is not gated.

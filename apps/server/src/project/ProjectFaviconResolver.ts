@@ -12,7 +12,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
-import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
+import * as HoustonProjectFileLoader from "./HoustonProjectFileLoader.ts";
 
 const FAVICON_CACHE_CAPACITY = 512;
 const FAVICON_POSITIVE_CACHE_TTL = Duration.minutes(10);
@@ -140,7 +140,7 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
-  const projectFileLoader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
+  const projectFileLoader = yield* HoustonProjectFileLoader.HoustonProjectFileLoader;
 
   const resolveIconHref = (href: string): ReadonlyArray<string> => {
     const clean = href.replace(/^\//, "");

@@ -25,7 +25,7 @@ import { appendUserInputAttachmentPaths } from "./userInputAttachments.ts";
 vi.mock("node:child_process", { spy: true });
 
 const layer = Layer.merge(
-  ServerConfig.layerTest(process.cwd(), { prefix: "t3-answer-paths-" }),
+  ServerConfig.layerTest(process.cwd(), { prefix: "houston-answer-paths-" }),
   DocumentText.layer,
 ).pipe(Layer.provideMerge(NodeServices.layer));
 const attachment = {

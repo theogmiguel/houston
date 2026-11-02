@@ -81,7 +81,7 @@ describe("terminatePosixOwnedProcessTree", () => {
     ).toHaveLength(2);
   });
 
-  it.live("sweeps empty t3-acp sibling leases owned by dead pids only", () =>
+  it.live("sweeps empty houston-acp sibling leases owned by dead pids only", () =>
     Effect.sync(() => {
       const scratchRoot = NodePath.join(process.cwd(), "tmp");
       NodeFS.mkdirSync(scratchRoot, { recursive: true });
@@ -96,10 +96,10 @@ describe("terminatePosixOwnedProcessTree", () => {
       };
       const deadPid = 2_147_483_646;
       const liveForeignPid = 2_147_483_645;
-      const staleEmpty = writeSibling(`t3-acp-${deadPid}-aaaa`, "0");
-      const currentPidSibling = writeSibling(`t3-acp-${process.pid}-bbbb`, "0");
-      const liveForeignSibling = writeSibling(`t3-acp-${liveForeignPid}-cccc`, "0");
-      const stalePopulated = writeSibling(`t3-acp-${deadPid}-dddd`, "1");
+      const staleEmpty = writeSibling(`houston-acp-${deadPid}-aaaa`, "0");
+      const currentPidSibling = writeSibling(`houston-acp-${process.pid}-bbbb`, "0");
+      const liveForeignSibling = writeSibling(`houston-acp-${liveForeignPid}-cccc`, "0");
+      const stalePopulated = writeSibling(`houston-acp-${deadPid}-dddd`, "1");
       const unrelated = writeSibling("other-lease", "0");
       const isProcessAlive = (pid: number) => pid === process.pid || pid === liveForeignPid;
       try {
@@ -116,7 +116,7 @@ describe("terminatePosixOwnedProcessTree", () => {
         expect(NodeFS.existsSync(liveForeignSibling)).toBe(true);
         expect(NodeFS.existsSync(stalePopulated)).toBe(true);
         expect(NodeFS.existsSync(unrelated)).toBe(true);
-        writeSibling(`t3-acp-${deadPid}-eeee`, null);
+        writeSibling(`houston-acp-${deadPid}-eeee`, null);
         AcpSessionRuntime.sweepStaleLinuxCgroupSiblings(parent, {
           isProcessAlive,
           readPopulated: (path) => populatedByPath.get(path),
@@ -125,7 +125,7 @@ describe("terminatePosixOwnedProcessTree", () => {
             NodeFS.rmdirSync(path);
           },
         });
-        expect(NodeFS.existsSync(NodePath.join(parent, `t3-acp-${deadPid}-eeee`))).toBe(true);
+        expect(NodeFS.existsSync(NodePath.join(parent, `houston-acp-${deadPid}-eeee`))).toBe(true);
         expect(NodeFS.existsSync(currentPidSibling)).toBe(true);
       } finally {
         NodeFS.rmSync(parent, { recursive: true, force: true });
@@ -141,7 +141,7 @@ describe("terminatePosixOwnedProcessTree", () => {
       const scratchRoot = NodePath.join(process.cwd(), "tmp");
       NodeFS.mkdirSync(scratchRoot, { recursive: true });
       const scratch = NodeFS.mkdtempSync(NodePath.join(scratchRoot, "acp-cgroup-wrapper-"));
-      const linkedNode = NodePath.join(scratch, "T3 Code AppImage 'quoted'");
+      const linkedNode = NodePath.join(scratch, "Houston AppImage 'quoted'");
       const bareGrok = NodePath.join(scratch, "grok");
       const relativeBin = NodePath.join(scratch, "relative-bin");
       const directoryBin = NodePath.join(scratch, "directory-bin");
@@ -182,7 +182,7 @@ describe("terminatePosixOwnedProcessTree", () => {
         "fs.writeFileSync(process.argv[1], JSON.stringify({",
         "  args: process.argv.slice(2),",
         "  electron: process.env.ELECTRON_RUN_AS_NODE,",
-        "  wrapper: process.env.T3_ACP_CGROUP_WRAPPER,",
+        "  wrapper: process.env.HOUSTON_ACP_CGROUP_WRAPPER,",
         "}));",
       ].join("\n");
       const wrapped = AcpSessionRuntime.wrapCommandForLinuxCgroup(lease, linkedNode, [
@@ -199,7 +199,7 @@ describe("terminatePosixOwnedProcessTree", () => {
           env: {
             ...process.env,
             ELECTRON_RUN_AS_NODE: "1",
-            T3_ACP_CGROUP_WRAPPER: "1",
+            HOUSTON_ACP_CGROUP_WRAPPER: "1",
           },
         });
         expect(result.status, result.stderr).toBe(0);
@@ -239,7 +239,7 @@ describe("terminatePosixOwnedProcessTree", () => {
     try {
       const wrapped = AcpSessionRuntime.wrapCommandForLinuxCgroup(lease, "/bin/sh", [
         "-c",
-        'printf "%s\\n" "$0" "$1" "$2" "$3" "${ELECTRON_RUN_AS_NODE-}" "${T3_ACP_CGROUP_WRAPPER-}" > "$4"',
+        'printf "%s\\n" "$0" "$1" "$2" "$3" "${ELECTRON_RUN_AS_NODE-}" "${HOUSTON_ACP_CGROUP_WRAPPER-}" > "$4"',
         "packaged-target",
         "space value",
         "single'quote",
@@ -251,7 +251,7 @@ describe("terminatePosixOwnedProcessTree", () => {
         env: {
           ...process.env,
           ELECTRON_RUN_AS_NODE: "1",
-          T3_ACP_CGROUP_WRAPPER: "1",
+          HOUSTON_ACP_CGROUP_WRAPPER: "1",
         },
       });
       expect(result.status, result.stderr).toBe(0);
@@ -276,7 +276,7 @@ describe("terminatePosixOwnedProcessTree", () => {
 
       const missingTarget = AcpSessionRuntime.wrapCommandForLinuxCgroup(
         lease,
-        "/nonexistent-t3-probe",
+        "/nonexistent-houston-probe",
         [],
       );
       const missingTargetResult = NodeChildProcess.spawnSync(
@@ -293,7 +293,7 @@ describe("terminatePosixOwnedProcessTree", () => {
       });
       if ((missingTargetBash.error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") {
         expect(missingTargetBash.status, missingTargetBash.stderr).toBe(125);
-        expect(missingTargetBash.stderr).toContain("/nonexistent-t3-probe");
+        expect(missingTargetBash.stderr).toContain("/nonexistent-houston-probe");
       }
     } finally {
       packagedExecPath.mockRestore();
@@ -317,8 +317,8 @@ describe("terminatePosixOwnedProcessTree", () => {
     const lease: AcpSessionRuntime.AcpLinuxCgroupLease = {
       contains: () => true,
       exists: () => true,
-      path: "/test/t3-acp-root",
-      relativePath: "/test/t3-acp-root",
+      path: "/test/houston-acp-root",
+      relativePath: "/test/houston-acp-root",
       kill: () => undefined,
       populated: () => true,
       remove: () => undefined,
@@ -575,37 +575,39 @@ describe("terminatePosixOwnedProcessTree", () => {
     }),
   );
 
-  it.live("re-admits a still-owned child after PID reuse and never signals the T3 session", () =>
-    Effect.gen(function* () {
-      const reused = identity(110, 100, 110, 110, "reused");
-      const fixture = makeController({
-        processes: [
-          server(),
-          identity(100, process.pid, 100, 100),
-          identity(110, 100, 110, 110, "owned"),
-          identity(120, 100, 120, process.pid),
-        ],
-        onProcess: (processes, pid) => {
-          if (pid === 110) processes.set(110, reused);
-          else processes.delete(pid);
-        },
-      });
+  it.live(
+    "re-admits a still-owned child after PID reuse and never signals the Houston session",
+    () =>
+      Effect.gen(function* () {
+        const reused = identity(110, 100, 110, 110, "reused");
+        const fixture = makeController({
+          processes: [
+            server(),
+            identity(100, process.pid, 100, 100),
+            identity(110, 100, 110, 110, "owned"),
+            identity(120, 100, 120, process.pid),
+          ],
+          onProcess: (processes, pid) => {
+            if (pid === 110) processes.set(110, reused);
+            else processes.delete(pid);
+          },
+        });
 
-      const result = yield* Effect.exit(
-        AcpSessionRuntime.terminatePosixOwnedProcessTree({
-          controller: fixture.controller,
-          grace: 0,
-          rootPid: 100,
-        }),
-      );
+        const result = yield* Effect.exit(
+          AcpSessionRuntime.terminatePosixOwnedProcessTree({
+            controller: fixture.controller,
+            grace: 0,
+            rootPid: 100,
+          }),
+        );
 
-      expect(Exit.isFailure(result)).toBe(true);
-      expect(fixture.processes.get(110)).toEqual(reused);
-      expect(
-        fixture.signals.filter((entry) => entry.startsWith("process:110:")).length,
-      ).toBeGreaterThan(0);
-      expect(fixture.signals.some((entry) => entry.includes(":120:"))).toBe(false);
-    }),
+        expect(Exit.isFailure(result)).toBe(true);
+        expect(fixture.processes.get(110)).toEqual(reused);
+        expect(
+          fixture.signals.filter((entry) => entry.startsWith("process:110:")).length,
+        ).toBeGreaterThan(0);
+        expect(fixture.signals.some((entry) => entry.includes(":120:"))).toBe(false);
+      }),
   );
 
   it.live("does not treat zombie residual entries as teardown survivors", () =>

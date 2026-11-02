@@ -36,8 +36,8 @@ const SCREENSHOT: &str = "org.freedesktop.portal.Screenshot";
 const REQUEST: &str = "org.freedesktop.portal.Request";
 const KWIN: &str = "org.kde.KWin.ScreenShot2";
 const KWIN_PATH: &str = "/org/kde/KWin/ScreenShot2";
-const EXTENSION: &str = "org.gnome.Shell.Extensions.T3SnapShot";
-const EXTENSION_PATH: &str = "/org/gnome/Shell/Extensions/T3SnapShot";
+const EXTENSION: &str = "org.gnome.Shell.Extensions.HoustonSnapShot";
+const EXTENSION_PATH: &str = "/org/gnome/Shell/Extensions/HoustonSnapShot";
 const SCREENSHOT_TIMEOUT: Duration = Duration::from_secs(120);
 const WAYLAND_PAIR_MESSAGE: &str = "Modifier-pair shortcuts aren't available in this Wayland session. Choose another shortcut or use Take snapshot from the command palette.";
 
@@ -334,7 +334,10 @@ impl SnapShotPlatform for LinuxPlatform {
             }
             "kde" => super::kde_snapshot::capture(
                 &KdeCapturePaths {
-                    bundle: paths.state_dir.join("kde-capture").join("t3-kde-snap-shot"),
+                    bundle: paths
+                        .state_dir
+                        .join("kde-capture")
+                        .join("houston-kde-snap-shot"),
                     data_home: paths.data_home.clone(),
                 },
                 options,
@@ -480,7 +483,10 @@ impl SnapShotPlatform for LinuxPlatform {
         let backend = self.backend().unwrap_or_default();
         if backend == "kde" {
             let state = KdeCaptureSetup::new(KdeCapturePaths {
-                bundle: paths.state_dir.join("kde-capture").join("t3-kde-snap-shot"),
+                bundle: paths
+                    .state_dir
+                    .join("kde-capture")
+                    .join("houston-kde-snap-shot"),
                 data_home: paths.data_home.clone(),
             })
             .state();
@@ -587,7 +593,10 @@ impl SnapShotPlatform for LinuxPlatform {
                 );
             }
             return KdeCaptureSetup::new(KdeCapturePaths {
-                bundle: paths.state_dir.join("kde-capture").join("t3-kde-snap-shot"),
+                bundle: paths
+                    .state_dir
+                    .join("kde-capture")
+                    .join("houston-kde-snap-shot"),
                 data_home: paths.data_home.clone(),
             })
             .perform(action);

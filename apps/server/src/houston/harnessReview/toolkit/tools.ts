@@ -1,5 +1,5 @@
 // houston_defect_report: an agent in a project thread records a suspected defect; nothing leaves
-// the machine. A side thread, harness review threads included, holds no T3 MCP credential.
+// the machine. A side thread, harness review threads included, holds no Houston MCP credential.
 import { OrchestratorMcpFailure } from "@houston-app/contracts";
 import {
   HoustonDefectReportResult,

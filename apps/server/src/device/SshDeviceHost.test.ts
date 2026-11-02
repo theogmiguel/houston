@@ -164,7 +164,7 @@ it.effect("preserves installed status after probes and cleans failed agent activ
     expect((yield* host.summary).agentDeviceInstalled).toBe(true);
     // Close releases agent sessions through the forwarded daemon.
     const agentReady = yield* host.current;
-    yield* agentReady!.releaseAgentSession!("t3-session", "device");
+    yield* agentReady!.releaseAgentSession!("houston-session", "device");
     expect(releases).toEqual(["Bearer fixture"]);
     yield* host.stopAgent;
     expect(forwards).toBe(1);

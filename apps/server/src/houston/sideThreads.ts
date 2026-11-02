@@ -138,8 +138,8 @@ export function sentReviewText(input: {
 export const isSideThread = (thread: Pick<OrchestrationV2AppThread, "side">) =>
   thread.side !== undefined;
 
-/** Whether a thread may hold T3 MCP tools; a thread that cannot be read gets none. */
-export const mayHoldT3Tools = <E, R>(
+/** Whether a thread may hold Houston MCP tools; a thread that cannot be read gets none. */
+export const mayHoldHoustonTools = <E, R>(
   thread: Effect.Effect<Pick<OrchestrationV2AppThread, "side">, E, R>,
 ) =>
   thread.pipe(

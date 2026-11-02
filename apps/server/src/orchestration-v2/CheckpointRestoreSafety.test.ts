@@ -38,7 +38,7 @@ it.effect.each([
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const parent = yield* fs.makeTempDirectoryScoped({ prefix: "t3-v2-restore-" });
+    const parent = yield* fs.makeTempDirectoryScoped({ prefix: "houston-v2-restore-" });
     const cwd = path.join(parent, "worktree");
     const nested = path.join(cwd, "nested");
     const sibling = path.join(parent, "worktree2");
@@ -186,7 +186,9 @@ it.effect("lets rollback recreate a worktree storage cleanup removed", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const parent = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-v2-restore-removed-" });
+    const parent = yield* fileSystem.makeTempDirectoryScoped({
+      prefix: "houston-v2-restore-removed-",
+    });
     const worktreePath = path.join(parent, "worktree");
     const isolated = yield* isCheckpointRestoreIsolated(
       { id: ThreadId.make("restore-removed"), worktreePath },
@@ -215,7 +217,7 @@ it.effect.each([
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const worktreePath = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "t3-v2-restore-side-chat-",
+        prefix: "houston-v2-restore-side-chat-",
       });
       const parentId = ThreadId.make("restore-side-chat-parent");
       const sideChat = {

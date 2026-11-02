@@ -73,7 +73,7 @@ function writeMessage(value: unknown): void {
 }
 
 function runnerOptions(): RemoteT3RunnerOptions {
-  const devRemoteEntry = process.env.HOUSTON_DEV_REMOTE_T3_SERVER_ENTRY_PATH?.trim();
+  const devRemoteEntry = process.env.HOUSTON_DEV_REMOTE_SERVER_ENTRY_PATH?.trim();
   if (devRemoteEntry) {
     return {
       nodeScriptPath: devRemoteEntry,

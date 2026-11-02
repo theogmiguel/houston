@@ -37,7 +37,7 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
-import { layerNoReadOnlyThreads, mayHoldT3Tools, reviewPrompt } from "./sideThreads.ts";
+import { layerNoReadOnlyThreads, mayHoldHoustonTools, reviewPrompt } from "./sideThreads.ts";
 import {
   makeHarness,
   runWith,
@@ -386,13 +386,13 @@ describe("the server's side-thread policy", () => {
   );
 });
 
-describe("the T3 tool guard", () => {
-  it.effect("a thread whose read fails gets no T3 tools", () =>
+describe("the Houston tool guard", () => {
+  it.effect("a thread whose read fails gets no Houston tools", () =>
     Effect.gen(function* () {
       const side = { kind: "aside", sourceThreadId: "source", sourceRunId: "run:1" } as never;
-      assert.isTrue(yield* mayHoldT3Tools(Effect.succeed({})));
-      assert.isFalse(yield* mayHoldT3Tools(Effect.succeed({ side })));
-      assert.isFalse(yield* mayHoldT3Tools(Effect.fail("projection read failed")));
+      assert.isTrue(yield* mayHoldHoustonTools(Effect.succeed({})));
+      assert.isFalse(yield* mayHoldHoustonTools(Effect.succeed({ side })));
+      assert.isFalse(yield* mayHoldHoustonTools(Effect.fail("projection read failed")));
     }),
   );
 });

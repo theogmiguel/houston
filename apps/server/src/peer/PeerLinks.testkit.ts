@@ -77,7 +77,9 @@ export const servePeer = <E, R>(
       Layer.provide(Sqlite.layerMemory),
       Layer.provideMerge(ServerSecretStore.layer),
       Layer.provideMerge(ServerEnvironment.layerIdentity),
-      Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-peer-link-peer-" })),
+      Layer.provideMerge(
+        ServerConfig.layerTest(process.cwd(), { prefix: "houston-peer-link-peer-" }),
+      ),
       Layer.provideMerge(NodeServices.layer),
       Layer.fresh,
       Layer.build,
@@ -170,7 +172,7 @@ export const layerLinkingEnvironment = (
         getDescriptor: Effect.succeed(descriptor),
       }),
     ),
-    Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-peer-link-here-" })),
+    Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "houston-peer-link-here-" })),
     Layer.provideMerge(NodeServices.layer),
     Layer.fresh,
   );

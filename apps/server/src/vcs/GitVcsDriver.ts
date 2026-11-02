@@ -369,7 +369,7 @@ export class GitVcsDriver extends Context.Service<
       key: string,
     ) => Effect.Effect<string | null, GitCommandError>;
     /**
-     * The branch, named as on the host, that T3 recorded `branch` was cut from. Null when none
+     * The branch, named as on the host, that Houston recorded `branch` was cut from. Null when none
      * was recorded.
      */
     readonly readBranchBase: (
@@ -941,14 +941,14 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       ];
       const { gitCommonDir, indexPath, headExists } = yield* resolveCaptureRepository(input.cwd);
       const indexId = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
-      const tempIndexPath = path.join(gitCommonDir, `t3-checkpoint-index-${indexId}`);
+      const tempIndexPath = path.join(gitCommonDir, `houston-checkpoint-index-${indexId}`);
       const commitEnv: NodeJS.ProcessEnv = {
         ...process.env,
         GIT_INDEX_FILE: tempIndexPath,
         GIT_AUTHOR_NAME: "Houston",
-        GIT_AUTHOR_EMAIL: "t3code@users.noreply.github.com",
+        GIT_AUTHOR_EMAIL: "houston@users.noreply.github.com",
         GIT_COMMITTER_NAME: "Houston",
-        GIT_COMMITTER_EMAIL: "t3code@users.noreply.github.com",
+        GIT_COMMITTER_EMAIL: "houston@users.noreply.github.com",
       };
 
       const cleanupTempIndex = Effect.forEach(
