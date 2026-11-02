@@ -26,7 +26,9 @@ const DESKTOP_SETTINGS_FILE: &str = "desktop-settings.json";
 const DEFAULT_TAILSCALE_PORT: u16 = 443;
 const PREFERRED_PORT: u16 = 3773;
 const LAST_PROBED_PORT: u16 = 3809;
-const READY_TIMEOUT: Duration = Duration::from_secs(60);
+// A large state database can take over a minute to become ready, so a shorter
+// window would show the recovery screen while the server is still starting.
+const READY_TIMEOUT: Duration = Duration::from_secs(180);
 const READY_POLL: Duration = Duration::from_millis(250);
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 const TOKEN_WINDOW_MS: u128 = 12 * 60 * 60 * 1000;
@@ -1340,6 +1342,15 @@ mod tests {
         assert_eq!(
             runtime_path(Path::new("/home/u/.houston-dev/v2")),
             PathBuf::from("/home/u/.houston-dev/v2/userdata/server-runtime.json")
+        );
+    }
+
+    #[test]
+    fn a_slow_start_gets_three_minutes_before_recovery() {
+        assert!(
+            READY_TIMEOUT >= Duration::from_secs(180),
+            "a large state database can take over a minute to become ready, \
+             so the readiness window must stay above 180s; got {READY_TIMEOUT:?}"
         );
     }
 
