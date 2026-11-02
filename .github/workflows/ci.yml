@@ -223,7 +223,7 @@ jobs:
           filter: blob:none
       - uses: ./.github/actions/setup
       - name: Workspace package tests (web, server and scripts excluded)
-        run: pnpm -r --no-bail --no-sort --filter "!@houston-app/web" --filter "!houston" --filter "!@houston-app/scripts" test
+        run: pnpm -r --no-bail --no-sort --filter "!@houston-app/web" --filter "!@houston-app/cli" --filter "!@houston-app/scripts" test
       - name: Script tests (the licence generator and the style guard)
         run: node --test scripts/gen-third-party-licenses.test.mjs scripts/check-web-style.test.mjs
       - name: Report job timing
