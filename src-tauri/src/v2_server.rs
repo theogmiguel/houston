@@ -1,6 +1,6 @@
 //! Host for the v2 TypeScript server: detached spawn, discovery through its
 //! runtime record, a keychain-held desktop secret, the bearer exchange and the
-//! `desktopBridge` shim upstream's web app expects.
+//! `hostBridge` shim the web app expects.
 
 use std::fs;
 use std::io::Write;
@@ -146,7 +146,7 @@ fn validate_settings(settings: &DesktopSettings) -> Result<(), String> {
     Ok(())
 }
 
-/// The host side of `desktopBridge.getServerExposureState`.
+/// The host side of `hostBridge.getServerExposureState`.
 pub fn exposure_state(settings: &DesktopSettings, running: Option<&RunningServer>) -> Value {
     let local = running.and_then(|running| local_ipv4().map(|ip| (ip, running.port)));
     let endpoint = match (&settings.exposure_mode[..], local.as_ref(), running) {
@@ -273,7 +273,7 @@ fn endpoint(spec: EndpointSpec) -> Value {
     })
 }
 
-/// The `desktopBridge.getAdvertisedEndpoints` list: loopback first, then the
+/// The `hostBridge.getAdvertisedEndpoints` list: loopback first, then the
 /// LAN address when exposed, then Tailscale when its CLI answers.
 pub fn advertised_endpoints(settings: &DesktopSettings, running: Option<&RunningServer>) -> Value {
     let Some(running) = running else {
@@ -896,7 +896,7 @@ impl V2Host {
         }
     }
 
-    /// Bootstrap payload read by upstream's `desktopBridge.getLocalEnvironmentBootstraps`.
+    /// Bootstrap payload read by upstream's `hostBridge.getLocalEnvironmentBootstraps`.
     pub fn bootstrap_list(&self) -> Result<Value, String> {
         let running = self
             .running()

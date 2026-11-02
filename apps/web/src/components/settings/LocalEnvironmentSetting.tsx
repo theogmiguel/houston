@@ -20,7 +20,7 @@ import { searchableSetting } from "./settingsSearch";
 
 // Toggling relaunches desktop; the switch reflects startup state.
 export function LocalEnvironmentSetting() {
-  const setEnabled = window.desktopBridge?.setLocalEnvironmentEnabled;
+  const setEnabled = window.hostBridge?.setLocalEnvironmentEnabled;
   const [enabled] = useState(() => !isLocalEnvironmentDisabled());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);

@@ -2,7 +2,7 @@ import {
   DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER,
   EnvironmentId,
   ThreadId,
-  type DesktopPreviewBridge,
+  type HostPreviewBridge,
 } from "@houston-app/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -19,7 +19,7 @@ const {
 } = vi.hoisted(() => {
   const events: string[] = [];
   return {
-    captureScreenshot: vi.fn<DesktopPreviewBridge["captureScreenshot"]>(),
+    captureScreenshot: vi.fn<HostPreviewBridge["captureScreenshot"]>(),
     clientSettings: { browserRecordingFrameRate: 30 as 30 | 60 },
     events,
     getDisplayMedia: vi.fn(),
@@ -37,37 +37,28 @@ const {
       sizeBytes: 0,
       createdAt: "2026-06-26T00:00:00.000Z",
     })),
-    startScreencast: vi.fn<DesktopPreviewBridge["recording"]["startScreencast"]>(async (_tabId) => {
+    startScreencast: vi.fn<HostPreviewBridge["recording"]["startScreencast"]>(async (_tabId) => {
       events.push("start-screencast");
     }),
     stopScreencast: vi.fn(async () => undefined),
   };
 });
 
-vi.mock(import("~/components/preview/previewBridge"), async (original) => {
-  vi.stubGlobal("window", {
-    desktopBridge: {
-      preview: {
-        captureScreenshot,
-        recording: {
-          onFrame: vi.fn(),
-          save,
-          startScreencast: async (tabId: string) => {
-            const result = await startScreencast(tabId);
-            if (result === undefined) requestDisplayMediaCapture(tabId);
-            return result;
-          },
-          stopScreencast,
-        },
+vi.mock(import("~/components/preview/previewBridge"), () => ({
+  previewBridge: {
+    captureScreenshot,
+    recording: {
+      onFrame: vi.fn(),
+      save,
+      startScreencast: async (tabId: string) => {
+        const result = await startScreencast(tabId);
+        if (result === undefined) requestDisplayMediaCapture(tabId);
+        return result;
       },
+      stopScreencast,
     },
-  });
-  try {
-    return await original();
-  } finally {
-    vi.unstubAllGlobals();
-  }
-});
+  } as never,
+}));
 
 vi.mock("~/rpc/atomRegistry", () => ({
   appAtomRegistry: { set: registrySet },

@@ -34,7 +34,7 @@ import {
 } from "@houston-app/shared/usageMerge";
 
 import { cn } from "../../lib/utils";
-import { isElectron } from "../../env";
+import { isDesktopHost } from "../../env";
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { resolveHour12 } from "../../timestampFormat";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
@@ -434,7 +434,7 @@ export function UsagePage() {
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
-      <WorkspacePageHeader electron={isElectron}>
+      <WorkspacePageHeader desktop={isDesktopHost}>
         <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="min-w-0">
           <WorkspaceBreadcrumbItem current>
             <h1 className="truncate">Usage</h1>

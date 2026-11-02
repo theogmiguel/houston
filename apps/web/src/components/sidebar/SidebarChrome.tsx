@@ -34,9 +34,9 @@ import { observeResize } from "~/lib/observeResize";
  * window controls and the top bar of the pane beside it.
  */
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
-  isElectron,
+  isDesktopHost,
 }: {
-  isElectron: boolean;
+  isDesktopHost: boolean;
 }) {
   const stageLabel = useEnvironmentStageLabel();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
@@ -50,7 +50,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
       data-tauri-drag-region="deep"
       className={cn(
         "relative flex h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center gap-2 px-2",
-        isElectron && "drag-region",
+        isDesktopHost && "drag-region",
       )}
     >
       <div className="relative z-10 flex h-9 min-w-0 flex-1 items-center gap-2 overflow-hidden">

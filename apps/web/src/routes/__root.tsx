@@ -36,7 +36,7 @@ import { Button } from "../components/ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { StandalonePage, StandalonePageHeader } from "../components/ui/standalone-page";
 import { AnchoredToastProvider, ToastProvider } from "../components/ui/toast";
-import { isElectron } from "../env";
+import { isDesktopHost } from "../env";
 import { cn } from "../lib/utils";
 import { useClientSettings } from "../hooks/useSettings";
 import {
@@ -188,7 +188,7 @@ function RootRouteBranch() {
         {primaryEnvironmentAuthenticated || localEnvironmentDisabled ? (
           <DesktopWebLinkCoordinator />
         ) : null}
-        {isElectron ? <RunningThreadKeepAlive /> : null}
+        {isDesktopHost ? <RunningThreadKeepAlive /> : null}
         <SshPasswordPromptDialog />
         <SnapShotCoordinator />
         <ReopenClosedViewShortcut />

@@ -1,4 +1,4 @@
-import type { DesktopBridge, DesktopUpdateState } from "@houston-app/contracts";
+import type { HostBridge, DesktopUpdateState } from "@houston-app/contracts";
 import { ArrowRightIcon } from "lucide-react";
 
 import {
@@ -7,7 +7,7 @@ import {
 } from "./desktopUpdate.logic";
 import { toastManager } from "./ui/toast";
 
-type DesktopUpdateShell = Pick<DesktopBridge, "openExternal">;
+type DesktopUpdateShell = Pick<HostBridge, "openExternal">;
 
 export async function openDesktopUpdateReleaseNotes(
   shell: DesktopUpdateShell | undefined,

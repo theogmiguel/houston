@@ -88,11 +88,11 @@ function SwitchPlan({
       connected: environment.connection.phase === "connected",
       databaseMigration: environment.serverConfig?.environment.databaseMigration,
     })),
-    window.desktopBridge?.getLocalEnvironmentBootstraps().length ?? 0,
+    window.hostBridge?.getLocalEnvironmentBootstraps().length ?? 0,
   );
 
   const run = async () => {
-    const bridge = window.desktopBridge;
+    const bridge = window.hostBridge;
     if (!bridge) return;
     // Stay open while the feed is checked; the run's own progress takes over after.
     setChecking(true);

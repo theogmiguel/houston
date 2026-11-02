@@ -10,8 +10,8 @@ export function createLocalApi(): LocalApi {
   return {
     dialogs: {
       pickFolder: async (options) => {
-        if (!window.desktopBridge) return null;
-        return window.desktopBridge.pickFolder(options);
+        if (!window.hostBridge) return null;
+        return window.hostBridge.pickFolder(options);
       },
       confirm: async (message, options?: ConfirmDialogOptions) => {
         return requestConfirmDialog(message, options) ?? false;
@@ -19,8 +19,8 @@ export function createLocalApi(): LocalApi {
     },
     shell: {
       openExternal: async (url) => {
-        if (window.desktopBridge) {
-          const opened = await window.desktopBridge.openExternal(url);
+        if (window.hostBridge) {
+          const opened = await window.hostBridge.openExternal(url);
           if (!opened) {
             throw new Error("Unable to open link.");
           }
@@ -30,10 +30,10 @@ export function createLocalApi(): LocalApi {
         window.open(url, "_blank", "noopener,noreferrer");
       },
       openSystemSettings: async (pane) => {
-        if (!window.desktopBridge) {
+        if (!window.hostBridge) {
           throw new Error("Unable to open System Settings.");
         }
-        const opened = await window.desktopBridge.openSystemSettings(pane);
+        const opened = await window.hostBridge.openSystemSettings(pane);
         if (!opened) {
           throw new Error("Unable to open System Settings.");
         }
@@ -44,28 +44,28 @@ export function createLocalApi(): LocalApi {
         items: readonly ContextMenuItem<T>[],
         position?: { x: number; y: number },
       ): Promise<T | null> => {
-        if (window.desktopBridge) {
-          return window.desktopBridge.showContextMenu(items, position) as Promise<T | null>;
+        if (window.hostBridge) {
+          return window.hostBridge.showContextMenu(items, position) as Promise<T | null>;
         }
         return showContextMenuFallback(items, position);
       },
       // Unlike native menus, the DOM fallback needs dismissal when underlying state disappears.
       close: async () => {
-        if (!window.desktopBridge) {
+        if (!window.hostBridge) {
           dismissContextMenu();
         }
       },
     },
     persistence: {
       getClientSettings: async () => {
-        if (window.desktopBridge) {
-          return window.desktopBridge.getClientSettings();
+        if (window.hostBridge) {
+          return window.hostBridge.getClientSettings();
         }
         return readBrowserClientSettings();
       },
       setClientSettings: async (settings) => {
-        if (window.desktopBridge) {
-          return window.desktopBridge.setClientSettings(settings);
+        if (window.hostBridge) {
+          return window.hostBridge.setClientSettings(settings);
         }
         writeBrowserClientSettings(settings);
       },

@@ -2,12 +2,12 @@ import { createAssetEnvironmentAtoms } from "@houston-app/client-runtime/state/a
 import { Atom } from "effect/reactivity";
 
 import { connectionAtomRuntime } from "../connection/runtime";
-import { isElectron } from "../env";
+import { isDesktopHost } from "../env";
 import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
 import { environmentSession } from "./session";
 
 const localMediaEnvironment = Atom.make((get) => {
-  if (!isElectron) return null;
+  if (!isDesktopHost) return null;
   const environmentId = get(primaryEnvironmentIdAtom);
   if (environmentId === null) return null;
   const connection = get(environmentSession.preparedConnectionValueAtom(environmentId));

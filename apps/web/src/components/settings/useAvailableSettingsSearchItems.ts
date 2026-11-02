@@ -1,6 +1,6 @@
 import { AuthEnvironmentMaintainScope } from "@houston-app/contracts";
 
-import { isElectron } from "~/env";
+import { isDesktopHost } from "~/env";
 import { isLocalEnvironmentDisabled } from "~/localEnvironment";
 import { desktopWslStateAtom } from "~/state/desktopWslState";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
@@ -45,7 +45,7 @@ export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch
   const localEnvironmentDisabled = isLocalEnvironmentDisabled() === true;
   const canManageLocalBackend = !localEnvironmentDisabled && canMaintain;
   const desktopWsl = useEnvironmentQuery(
-    isElectron && canManageLocalBackend ? desktopWslStateAtom : null,
+    isDesktopHost && canManageLocalBackend ? desktopWslStateAtom : null,
   );
   const wslSettingsRowVisible =
     isWslSettingsRowVisible({ state: desktopWsl.data, error: desktopWsl.error }) === true;

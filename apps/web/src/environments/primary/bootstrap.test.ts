@@ -59,7 +59,7 @@ describe("environmentBootstrap", () => {
       history: {
         replaceState: vi.fn(),
       },
-      desktopBridge: {
+      hostBridge: {
         getLocalEnvironmentEnabled: () => true,
         getLocalEnvironmentBootstraps: () => [
           {

@@ -1,8 +1,8 @@
-// Installed before the first renderer script. Upstream's web app expects the
-// Electron preload's `window.desktopBridge`; this shim supplies the parts a
-// Tauri host can serve now, returning an explicit safe value for the rest.
+// Installed before the first renderer script. The web app expects the host
+// bridge at `window.hostBridge`; this shim supplies the parts a Tauri host can
+// serve now, returning an explicit safe value for the rest.
 (function () {
-  if (window.desktopBridge) return;
+  if (window.hostBridge) return;
 
   var bootstrap = window.__HOUSTON_V2_BOOTSTRAP__ || [];
   var status = window.__HOUSTON_V2_STATUS__ || {};
@@ -219,7 +219,8 @@
       return platform;
     },
     setNotificationBadge: function (badge) {
-      var count = badge && typeof badge.count === "number" ? Math.max(0, Math.floor(badge.count)) : 0;
+      var count =
+        badge && typeof badge.count === "number" ? Math.max(0, Math.floor(badge.count)) : 0;
       return invoke("window_set_badge_count", { count: count }).catch(noop);
     },
     onNotificationBadgeClear: function (listener) {
@@ -409,10 +410,12 @@
       });
     },
     setWslDistro: function (distro) {
-      return invoke("v2_wsl_set_distro", { distro: distro == null ? null : distro }).then(function (state) {
-        wslState = state;
-        return state;
-      });
+      return invoke("v2_wsl_set_distro", { distro: distro == null ? null : distro }).then(
+        function (state) {
+          wslState = state;
+          return state;
+        },
+      );
     },
     setWslOnly: function (enabled) {
       return invoke("v2_wsl_set_only", { enabled: !!enabled }).then(function (state) {
@@ -600,5 +603,5 @@
   listen("v2-window-zoom", function (factor) {
     if (typeof factor === "number" && isFinite(factor) && factor > 0) zoomFactor = factor;
   });
-  window.desktopBridge = bridge;
+  window.hostBridge = bridge;
 })();

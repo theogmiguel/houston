@@ -118,7 +118,7 @@ it.each(["system", "app"] as const)(
       pullRequestLinksOpenInApp: true,
       browserLinkTarget,
     });
-    using _desktop = stubGlobal("desktopBridge", undefined);
+    using _desktop = stubGlobal("hostBridge", undefined);
     await using screen = await render(
       <AppAtomRegistryProvider>
         <ToastProvider>

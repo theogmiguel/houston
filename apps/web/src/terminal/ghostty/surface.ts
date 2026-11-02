@@ -323,7 +323,7 @@ export function isTerminalCopyShortcut(
   return isMacPlatform(platform) ? event.metaKey : event.ctrlKey;
 }
 
-/** Primes native and Electron menu copy from the focused textarea; canvas has no DOM selection. */
+/** Primes native and desktop menu copy from the focused textarea; canvas has no DOM selection. */
 export function primeTerminalCopyInput(
   input: Pick<HTMLTextAreaElement, "value" | "select">,
   selection: string,

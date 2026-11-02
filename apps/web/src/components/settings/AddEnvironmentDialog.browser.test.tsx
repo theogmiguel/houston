@@ -62,7 +62,7 @@ function Owner() {
 
 function setup() {
   mocks.connectSshEnvironment.mockClear();
-  return stubGlobal("desktopBridge", {});
+  return stubGlobal("hostBridge", {});
 }
 
 const remoteCard = () => page.getByRole("button", { name: /Remote link/ });

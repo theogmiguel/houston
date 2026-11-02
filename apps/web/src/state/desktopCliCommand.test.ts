@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it, vi } from "vite-plus/test";
 import { desktopCliCommandStateAtom } from "./desktopCliCommand";
 
 const getState = vi.fn<() => Promise<DesktopCliCommandState>>();
-vi.stubGlobal("window", { desktopBridge: { cliCommand: { getState } } });
+vi.stubGlobal("window", { hostBridge: { cliCommand: { getState } } });
 
 describe("desktopCliCommandStateAtom", () => {
   afterAll(() => {

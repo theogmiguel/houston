@@ -102,7 +102,7 @@ fn updater_error(
     }
 }
 
-/// Emitted after every v2 update state transition, for `desktopBridge.onUpdateState`.
+/// Emitted after every v2 update state transition, for `hostBridge.onUpdateState`.
 pub const V2_UPDATE_EVENT: &str = "v2-update://state";
 const V2_UPDATE_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 

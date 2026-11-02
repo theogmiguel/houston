@@ -1,7 +1,7 @@
 import type { ConnectionTarget } from "@houston-app/client-runtime/connection";
 import {
   PRIMARY_LOCAL_ENVIRONMENT_ID,
-  type DesktopBridge,
+  type HostBridge,
   type DesktopEnvironmentBootstrap,
 } from "@houston-app/contracts";
 
@@ -43,7 +43,7 @@ export interface DesktopSecondaryBootstrapsReader {
 
 /** Empty reads clear the snapshot; failed reads retain platform registrations. */
 export function createDesktopSecondaryBootstrapsReader(
-  resolveBridge: () => Pick<DesktopBridge, "getLocalEnvironmentBootstraps"> | undefined,
+  resolveBridge: () => Pick<HostBridge, "getLocalEnvironmentBootstraps"> | undefined,
 ): DesktopSecondaryBootstrapsReader {
   let snapshot: ReadonlyArray<DesktopEnvironmentBootstrap> = [];
 
@@ -90,7 +90,7 @@ export function createDesktopSecondaryBootstrapsReader(
 }
 
 const desktopSecondaryBootstrapsReader = createDesktopSecondaryBootstrapsReader(
-  () => window.desktopBridge,
+  () => window.hostBridge,
 );
 
 export function readDesktopSecondaryBootstrapsResult(): DesktopSecondaryBootstrapsRead {

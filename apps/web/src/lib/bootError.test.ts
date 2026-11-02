@@ -1,5 +1,5 @@
 import type {
-  DesktopBridge,
+  HostBridge,
   DesktopCliCommandState,
   DesktopUpdateState,
 } from "@houston-app/contracts";
@@ -13,7 +13,7 @@ import {
 } from "./bootError";
 
 const desktopWith = (getState: () => Promise<DesktopCliCommandState>) =>
-  ({ cliCommand: { getState } }) as unknown as DesktopBridge;
+  ({ cliCommand: { getState } }) as unknown as HostBridge;
 
 const notOnPath = (launcherPath: string | null): DesktopCliCommandState => ({
   supported: launcherPath !== null,
@@ -52,7 +52,7 @@ describe("resolveTriageCommand", () => {
   it("falls back to the installed houston CLI without a usable desktop launcher", async () => {
     using _warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await expect(resolveTriageCommand(undefined)).resolves.toBe("houston triage");
-    await expect(resolveTriageCommand({} as DesktopBridge)).resolves.toBe("houston triage");
+    await expect(resolveTriageCommand({} as HostBridge)).resolves.toBe("houston triage");
     await expect(resolveTriageCommand(desktopWith(async () => notOnPath(null)))).resolves.toBe(
       "houston triage",
     );

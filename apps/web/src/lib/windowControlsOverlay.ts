@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-import { isElectron } from "~/env";
+import { isDesktopHost } from "~/env";
 
 import { isMacPlatform, isWindowsPlatform } from "./utils";
 
@@ -68,7 +68,7 @@ function subscribeTitlebarArea(listener: () => void): () => void {
 }
 
 function getNativeTitlebarHeight(): number {
-  if (isElectron && isMacPlatform(navigator.platform)) return MACOS_TITLEBAR_HEIGHT;
+  if (isDesktopHost && isMacPlatform(navigator.platform)) return MACOS_TITLEBAR_HEIGHT;
   const overlay = getWindowControlsOverlay();
   return overlay?.visible ? overlay.getTitlebarAreaRect().bottom : 0;
 }

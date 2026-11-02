@@ -35,7 +35,7 @@ import {
   squashAtomCommandFailure,
 } from "@houston-app/client-runtime/state/runtime";
 
-import { isElectron } from "../../env";
+import { isDesktopHost } from "../../env";
 import { useOpenInPreferredEditor } from "../../editorPreferences";
 import { formatShortcutLabel } from "../../keybindings";
 import { cn } from "../../lib/utils";
@@ -1350,7 +1350,7 @@ function KeybindingsToolbarMenu({
           <FileJsonIcon className="size-3.5" />
           Open keybindings.json
         </MenuItem>
-        {!isElectron ? (
+        {!isDesktopHost ? (
           <div className="flex items-start gap-2 px-2 py-1.5 text-xs leading-4 text-muted-foreground">
             <TriangleAlertIcon className="mt-px size-3.5 shrink-0 text-warning" />
             {BROWSER_KEYBINDING_NOTICE}

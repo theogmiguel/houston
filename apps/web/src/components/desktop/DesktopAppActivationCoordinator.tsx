@@ -25,7 +25,7 @@ export function DesktopAppActivationCoordinator() {
   });
   const openThread = useNewThreadHandler();
   const queueRef = useRef(Promise.resolve());
-  const activation = window.desktopBridge?.appActivation;
+  const activation = window.hostBridge?.appActivation;
   const shellHasSnapshot = useEnvironmentShellHasSnapshot(
     primaryEnvironment?.environmentId ?? null,
   );

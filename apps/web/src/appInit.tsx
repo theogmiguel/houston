@@ -5,7 +5,6 @@ import * as Schema from "effect/Schema";
 
 import { applyAppearanceContrast } from "./appearanceContrast";
 import { applyAppearanceFontVariables, TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "./appearanceFonts";
-import { startElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { startBrowserProfileReporting } from "./browser/BrowserProfileReporter";
 import { ensureThreadInGrid } from "./grid/ensureThreadInGrid";
 import { startPreviewTitleRecording } from "./browserHistoryStore";
@@ -24,7 +23,7 @@ import { startThreadNotifications } from "./components/ThreadNotificationCoordin
 import { startGuideRunNotifications } from "./components/pullRequest/guide/PullRequestGuideRunCoordinator";
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "./branding";
 import { resolveServerBackedAppDisplayName } from "./branding.logic";
-import { hasNativeBrowserHost, isElectron } from "./env";
+import { isDesktopHost } from "./env";
 import {
   subscribeComposerDraftModelReconciliation,
   subscribeDraftThreadPromotion,
@@ -170,10 +169,11 @@ export function startAppServices(): AppRouter {
   // Ahead of the history: the provider auth code must leave the address before anything reads it.
   startProviderAuthDelivery();
 
-  // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
-  const router = getRouter(isElectron ? createHashHistory() : createBrowserHistory());
+  // The desktop host loads the app from a file-backed shell, so hash history avoids path
+  // resolution issues.
+  const router = getRouter(isDesktopHost ? createHashHistory() : createBrowserHistory());
 
-  if (isElectron) {
+  if (isDesktopHost) {
     syncDocumentElectronPlatformClasses(navigator.platform);
     syncDocumentWindowControlsOverlayClass();
   }
@@ -181,7 +181,7 @@ export function startAppServices(): AppRouter {
     document.documentElement.classList.add("tauri");
   }
 
-  installDesktopPasteAsText(window.desktopBridge, window);
+  installDesktopPasteAsText(window.hostBridge, window);
 
   startClientAppearance();
   startDocumentTitle();
@@ -190,7 +190,6 @@ export function startAppServices(): AppRouter {
   startDefaultThemeAdoption();
   startModelPreferencesMigration();
   startAgentOpenedPreviews();
-  if (hasNativeBrowserHost) startElectronBrowserHost();
   startPreviewTitleRecording();
   startBrowserProfileReporting();
   installChatRouteCommands(router);
@@ -223,7 +222,7 @@ export function startAppServices(): AppRouter {
   startPermissionUpdateNotices(router);
   startThreadNotifications(appAtomRegistry, router);
   startGuideRunNotifications(appAtomRegistry, router);
-  if (isElectron) startDesktopUpdateLaunchNotice();
+  if (isDesktopHost) startDesktopUpdateLaunchNotice();
 
   return router;
 }

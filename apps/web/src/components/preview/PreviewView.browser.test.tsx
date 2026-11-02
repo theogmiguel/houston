@@ -144,11 +144,6 @@ vi.mock(import("./usePreviewSession"), async (original) => ({
   usePreviewSession: () => {},
 }));
 
-vi.mock(import("~/browser/previewRuntime"), async (original) => ({
-  ...(await original()),
-  useRendersServerTabNatively: () => mocks.nativeServerTab,
-}));
-
 vi.mock(import("~/browser/browserViewportActions"), { spy: true });
 
 import { useComposerDraftStore } from "~/composerDraftStore";
@@ -289,13 +284,13 @@ describe("PreviewView", () => {
   it("focuses and selects the address from forwarded desktop actions only while visible", async () => {
     setup();
     using stack = new DisposableStack();
-    const previousBridge = window.desktopBridge;
+    const previousBridge = window.hostBridge;
     stack.defer(() => {
-      if (previousBridge) window.desktopBridge = previousBridge;
-      else delete window.desktopBridge;
+      if (previousBridge) window.hostBridge = previousBridge;
+      else delete window.hostBridge;
     });
     const listeners = new Set<(action: string) => void>();
-    window.desktopBridge = {
+    window.hostBridge = {
       getWindowZoomFactor: () => 1,
       onMenuAction: (listener: (action: string) => void) => {
         listeners.add(listener);
@@ -303,7 +298,7 @@ describe("PreviewView", () => {
           listeners.delete(listener);
         };
       },
-    } as NonNullable<typeof window.desktopBridge>;
+    } as NonNullable<typeof window.hostBridge>;
     await using screen = await render(view());
     const address = page.getByRole("textbox");
     const input = address.element() as HTMLInputElement;

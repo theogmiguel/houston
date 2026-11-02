@@ -146,7 +146,7 @@ import {
   resolveMarkdownFileHostPath,
 } from "../markdownFileHostPath";
 import { isMarkdownFileLinkLabel } from "@houston-app/shared/markdownLinks";
-import { isElectron } from "../env";
+import { isDesktopHost } from "../env";
 import { readLocalApi } from "../localApi";
 import { cn } from "../lib/utils";
 import { resolveRemoteOpenState, useRemoteOpenResolution } from "../remoteOpen";
@@ -617,7 +617,7 @@ function useChatMarkdownState({
               target,
               sshTarget: null,
               remoteOpenTargets: undefined,
-              isDesktopRenderer: window.desktopBridge !== undefined,
+              isDesktopRenderer: window.hostBridge !== undefined,
             }).mode !== "local-exec"
           ) {
             description = `The file was not found on ${target.label} at ${error.checkedPath ?? error.resource.path}.`;
@@ -1200,7 +1200,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
               }) !== "app"
             ) {
               // Open desktop Alt-clicks before Chromium downloads them so link routers can read the held key.
-              if (isElectron && event.altKey) {
+              if (isDesktopHost && event.altKey) {
                 event.preventDefault();
                 event.stopPropagation();
                 void readLocalApi()

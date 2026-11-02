@@ -141,7 +141,7 @@ describe("project snapshot readiness", () => {
 
 it("expects a primary environment only on desktops with the local environment enabled", () => {
   const desktop = (enabled: boolean) => {
-    vi.stubGlobal("window", { desktopBridge: { getLocalEnvironmentEnabled: () => enabled } });
+    vi.stubGlobal("window", { hostBridge: { getLocalEnvironmentEnabled: () => enabled } });
     try {
       return expectsPrimaryEnvironment();
     } finally {

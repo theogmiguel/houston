@@ -59,7 +59,7 @@ import {
   DeviceHubSetupStatus,
   deviceHubReadiness,
 } from "~/components/device/DeviceSetup";
-import { isElectron } from "../../env";
+import { isDesktopHost } from "../../env";
 
 import { Badge } from "../ui/badge";
 import {
@@ -1568,8 +1568,8 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
           }
           onRefreshSource={() => refreshImportSource(importSession.source.id)}
           onCheckFullDiskAccess={
-            window.desktopBridge
-              ? () => window.desktopBridge!.checkSystemPermission("full-disk-access")
+            window.hostBridge
+              ? () => window.hostBridge!.checkSystemPermission("full-disk-access")
               : undefined
           }
           onOpenFullDiskAccessSettings={async () => {
@@ -1591,7 +1591,7 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
 }
 
 export function BrowserSettingsPanel() {
-  const desktopOnly = !isElectron;
+  const desktopOnly = !isDesktopHost;
   const desktopOnlyMessage = desktopOnly ? "Only available in the desktop app." : undefined;
 
   return (

@@ -4,7 +4,7 @@ export function readDesktopPrimaryBearerToken(): Promise<string | null> {
   if (typeof window === "undefined") {
     return Promise.resolve(null);
   }
-  const bridge = window.desktopBridge;
+  const bridge = window.hostBridge;
   if (!bridge) {
     return Promise.resolve(null);
   }

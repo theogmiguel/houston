@@ -6,10 +6,6 @@ import type {
 import { isLoopbackHost, normalizePreviewUrl } from "@houston-app/shared/preview";
 import { isLocalLoopbackHost, isPrivateNetworkHost } from "@houston-app/shared/hostClassification";
 
-import type { ConnectionTarget } from "@houston-app/client-runtime/connection";
-
-import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
-import { hasNativeBrowserHost } from "~/env";
 import { readPreparedConnection } from "~/state/session";
 
 export { normalizeHostname, isLocalLoopbackHost } from "@houston-app/shared/hostClassification";
@@ -58,18 +54,11 @@ const resolveEnvironmentPortTarget = (
   };
 };
 
-// Desktop renders primary and WSL tabs locally; loopback servers require localhost even for LAN backends.
-const reachesEnvironmentLoopback = (target: ConnectionTarget): boolean =>
-  hasNativeBrowserHost &&
-  (target._tag === "PrimaryConnectionTarget" || isDesktopLocalConnectionTarget(target));
-
 export function resolveDiscoveredServerUrl(environmentId: EnvironmentId, rawUrl: string): string {
   try {
     const normalizedUrl = normalizePreviewUrl(rawUrl);
     const parsed = new URL(normalizedUrl);
     if (!isLoopbackHost(parsed.hostname)) return normalizedUrl;
-    const target = readPreparedConnection(environmentId)?.target;
-    if (target && reachesEnvironmentLoopback(target)) return normalizedUrl;
     return resolveEnvironmentPortTarget(
       environmentId,
       {

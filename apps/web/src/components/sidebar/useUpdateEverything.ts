@@ -3,7 +3,7 @@ import { PROVIDER_DISPLAY_NAMES } from "@houston-app/contracts";
 
 import { APP_VERSION } from "~/branding";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
-import { isElectron } from "~/env";
+import { isDesktopHost } from "~/env";
 import { useEnvironments } from "~/state/environments";
 import { useReleasePublished } from "~/state/releasePublication";
 import { environmentIdsKey } from "~/state/environmentAtomList";
@@ -41,7 +41,7 @@ export function isHostedByThisApp(
   environment: ReturnType<typeof useEnvironments>["environments"][number],
 ) {
   return (
-    isElectron &&
+    isDesktopHost &&
     (environment.entry.target._tag === "PrimaryConnectionTarget" ||
       isDesktopLocalConnectionTarget(environment.entry.target))
   );

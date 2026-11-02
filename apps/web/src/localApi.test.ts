@@ -53,7 +53,7 @@ beforeEach(() => {
       value: globalThis,
     });
   }
-  Reflect.deleteProperty(testWindow(), "desktopBridge");
+  Reflect.deleteProperty(testWindow(), "hostBridge");
   Object.defineProperty(testWindow(), "localStorage", {
     configurable: true,
     value: createLocalStorageStub(),
