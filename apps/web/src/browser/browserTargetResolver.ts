@@ -9,7 +9,7 @@ import { isLocalLoopbackHost, isPrivateNetworkHost } from "@t3tools/shared/hostC
 import type { ConnectionTarget } from "@t3tools/client-runtime/connection";
 
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
-import { isElectron } from "~/env";
+import { hasNativeBrowserHost } from "~/env";
 import { readPreparedConnection } from "~/state/session";
 
 export { normalizeHostname, isLocalLoopbackHost } from "@t3tools/shared/hostClassification";
@@ -60,7 +60,7 @@ const resolveEnvironmentPortTarget = (
 
 // Desktop renders primary and WSL tabs locally; loopback servers require localhost even for LAN backends.
 const reachesEnvironmentLoopback = (target: ConnectionTarget): boolean =>
-  isElectron &&
+  hasNativeBrowserHost &&
   (target._tag === "PrimaryConnectionTarget" || isDesktopLocalConnectionTarget(target));
 
 export function resolveDiscoveredServerUrl(environmentId: EnvironmentId, rawUrl: string): string {

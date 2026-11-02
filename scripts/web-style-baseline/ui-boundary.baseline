@@ -198,7 +198,7 @@
 9 apps/web/src/components/files/PdfViewer.tsx
 8 apps/web/src/components/files/PreviewImageContent.tsx
 6 apps/web/src/components/files/ProjectFilePicker.tsx
-12 apps/web/src/components/files/ProjectFileTree.tsx
+10 apps/web/src/components/files/ProjectFileTree.tsx
 1 apps/web/src/components/files/ReadOnlySourcePreview.tsx
 44 apps/web/src/components/files/VirtualTablePreview.tsx
 195 apps/web/src/components/GitActionsControl.tsx

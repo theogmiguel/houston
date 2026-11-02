@@ -1,13 +1,17 @@
 import { EnvironmentId, type ProjectEntry } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import "~/index.css";
+
 import { COMPOSER_MENTION_DRAG_TYPE } from "~/components/chat/composerMentionDrag";
 import { render } from "../../../test/render";
 import FileBrowserPanel from "./FileBrowserPanel";
+import { FileExplorerPane } from "./FileExplorerPane";
 
 const entries: readonly ProjectEntry[] = [
   { path: "src", kind: "directory" },
   { path: "README.md", kind: "file" },
+  { path: "docker-compose.private.override.yml", kind: "file" },
 ];
 const loadingDirectories: ReadonlySet<string> = new Set();
 const directory = {
@@ -39,6 +43,34 @@ function findTreeRow(path: string): HTMLElement | null {
 }
 
 describe("FileBrowserPanel", () => {
+  it("stays inside its explorer column when a file preview shares the row", async () => {
+    await using _screen = await render(
+      <div className="flex" style={{ width: 400 }}>
+        <FileExplorerPane resizable>
+          <FileBrowserPanel
+            environmentId={EnvironmentId.make("env-files")}
+            cwd="/repo"
+            projectName="repo"
+            selectedPath="README.md"
+            selectedPathRevealId={0}
+            onOpenFile={() => {}}
+            workspaceMutationId={null}
+          />
+        </FileExplorerPane>
+        <div className="min-w-0 flex-1" data-file-preview-content />
+      </div>,
+    );
+    const explorer = document.querySelector<HTMLElement>('aside[aria-label="File explorer"]');
+    const panel = document.querySelector<HTMLElement>("[data-file-browser-panel]");
+    expect(explorer).not.toBeNull();
+    expect(panel).not.toBeNull();
+    // The panel must be able to shrink to its column instead of overflowing it.
+    expect(getComputedStyle(panel!).minWidth).toBe("0px");
+    expect(panel!.getBoundingClientRect().width).toBeLessThanOrEqual(
+      explorer!.getBoundingClientRect().width + 1,
+    );
+  });
+
   it("dragging a file row carries a composer mention without opening it, and dragend releases it", async () => {
     const onOpenFile = vi.fn();
     await using _screen = await render(

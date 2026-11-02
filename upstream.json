@@ -405,7 +405,15 @@
     "apps/web/src/components/settings/RedactedSensitiveText.browser.test.tsx",
     "apps/web/src/themeReveal.ts",
     "apps/web/src/themeReveal.test.ts",
-    "apps/web/src/components/sidebar/SidebarThemeReveal.browser.test.tsx"
+    "apps/web/src/components/sidebar/SidebarThemeReveal.browser.test.tsx",
+    "apps/web/src/browser/ServerBrowserSurface.browser.test.tsx",
+    "apps/web/src/browser/previewRuntime.test.ts",
+    "apps/web/src/components/files/ProjectFileTree.browser.test.tsx",
+    "apps/web/src/env.test.ts",
+    "apps/web/src/grid/ensureThreadInGrid.ts",
+    "apps/web/src/grid/ensureThreadInGrid.test.ts",
+    "apps/web/src/components/files/ProjectFileTree.tsx",
+    "apps/web/src/grid/gridStore.ts"
   ],
   "removed": [
     "apps/web/src/legalLinks.ts",
@@ -1259,6 +1267,20 @@
     "apps/web/src/components/grid/GridSidebar.redesign.browser.test.tsx": "the New grid menu is a Menu, so its rows are menuitems",
     "apps/web/src/hooks/useTheme.ts": "theme switches reveal the new palette as a circle from the clicked control",
     "apps/web/src/components/CommandPaletteThemeItems.tsx": "theme commands reveal from the window centre",
-    "apps/web/src/shortcuts/commandPaletteCommands.ts": "the appearance shortcut reveals from the window centre"
+    "apps/web/src/shortcuts/commandPaletteCommands.ts": "the appearance shortcut reveals from the window centre",
+    "apps/web/src/appInit.tsx": "native browser host detection and grid placement wiring",
+    "apps/web/src/browser/ElectronBrowserHost.tsx": "the Tauri host has no native webview",
+    "apps/web/src/browser/ServerBrowserSurface.tsx": "stable input handlers, a first measurement and a StrictMode-safe frame cap",
+    "apps/web/src/browser/browserTargetResolver.ts": "native browser host detection",
+    "apps/web/src/browser/previewRuntime.ts": "native browser host detection",
+    "apps/web/src/components/ThreadRouteView.tsx": "a standalone thread joins its workspace's grid",
+    "apps/web/src/components/files/FileBrowserPanel.browser.test.tsx": "file explorer overflow regression test",
+    "apps/web/src/components/files/FileBrowserPanel.tsx": "the file explorer shrinks inside its column",
+    "apps/web/src/components/files/FileExplorerPane.tsx": "the file explorer clips overflow",
+    "apps/web/src/components/preview/previewBridge.ts": "the Tauri bridge's preview members are no-ops",
+    "apps/web/src/components/preview/usePreviewSession.ts": "native browser host detection",
+    "apps/web/src/composerDraftStore.ts": "a promoted draft's thread joins a grid",
+    "apps/web/src/env.ts": "native browser host detection",
+    "apps/web/src/previewStateStore.ts": "native browser host detection"
   }
 }

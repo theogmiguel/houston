@@ -39,7 +39,7 @@ export function FileExplorerPane({
       }}
       aria-label="File explorer"
       className={cn(
-        "relative flex min-h-0 min-w-0 shrink-0 bg-background",
+        "relative flex min-h-0 min-w-0 shrink-0 overflow-hidden bg-background",
         resizable ? "border-r border-border" : "flex-1",
       )}
       style={
