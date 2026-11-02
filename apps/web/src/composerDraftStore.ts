@@ -4488,6 +4488,13 @@ export function subscribeDraftThreadPromotion(input: {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly threadRefsAtom: Atom.Atom<ReadonlyArray<ScopedThreadRef>>;
   readonly threadShellAtom: (ref: ScopedThreadRef) => Atom.Atom<DraftPromotionShell | null>;
+  /** A draft's reserved thread just appeared on the server; place it before the send settles. */
+  readonly onThreadArrived?: (input: {
+    readonly draftId: DraftId;
+    readonly environmentId: EnvironmentId;
+    readonly projectId: ProjectId;
+    readonly threadId: ThreadId;
+  }) => void;
 }): () => void {
   // Only the promotion slices: prompt edits replace the store state on every keystroke.
   const promotionSlices = (state: ComposerDraftStoreState) => ({
@@ -4511,7 +4518,7 @@ export function subscribeDraftThreadPromotion(input: {
   const milestonesAtom = Atom.make((get) => {
     const state = get(draftsAtom);
     const threadKeys = get(threadKeysAtom);
-    const arrived: Array<readonly [DraftId, ScopedThreadRef]> = [];
+    const arrived: Array<readonly [DraftId, ScopedThreadRef, DraftThreadState]> = [];
     const owned: Array<readonly [DraftId, ScopedThreadRef]> = [];
     for (const [draftId, draftThread] of Object.entries(state.draftThreadsByThreadKey)) {
       const ref =
@@ -4519,7 +4526,7 @@ export function subscribeDraftThreadPromotion(input: {
       const threadKey = scopedThreadKey(ref);
       if (!threadKeys.has(threadKey)) continue;
       if (!draftThread.promotedTo) {
-        arrived.push([DraftId.make(draftId), ref]);
+        arrived.push([DraftId.make(draftId), ref, draftThread]);
         continue;
       }
       const target = resolveDraftPromotionNavigationTarget({
@@ -4537,8 +4544,14 @@ export function subscribeDraftThreadPromotion(input: {
     milestonesAtom,
     ({ arrived, owned }) => {
       const store = composerDraftStore.getState();
-      for (const [draftId, ref] of arrived) {
+      for (const [draftId, ref, draftThread] of arrived) {
         store.markDraftThreadPromoting(draftId, ref);
+        input.onThreadArrived?.({
+          draftId,
+          environmentId: draftThread.environmentId,
+          projectId: draftThread.projectId,
+          threadId: ref.threadId,
+        });
       }
       for (const [draftId, ref] of owned) {
         if (finalizing.has(draftId)) continue;

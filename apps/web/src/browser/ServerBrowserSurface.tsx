@@ -26,6 +26,7 @@ import {
   type MouseEvent,
   type PointerEvent,
   type Ref,
+  useCallback,
   useEffect,
   useEffectEvent,
   useImperativeHandle,
@@ -220,13 +221,14 @@ export function ServerBrowserSurface(props: {
   const controlChanged = useEffectEvent((next: PreviewStreamControl | null) => onControl?.(next));
   const popupOpened = useEffectEvent((popupTabId: string) => onPopup?.(popupTabId));
   const [cap, setCap] = useState<{ width: number; height: number } | null>(null);
+  const capRef = useRef<{ width: number; height: number } | null>(null);
 
-  // Keep clearInput stable: a new identity reconnects the stream.
-  const send = (input: PreviewStreamInput) => {
+  // Keep clearInput stable: a new identity reconnects the stream on every render.
+  const send = useCallback((input: PreviewStreamInput) => {
     clientRef.current?.send(input);
-  };
+  }, []);
 
-  const clearInput = () => {
+  const clearInput = useCallback(() => {
     if (inputFrameRef.current !== null) cancelAnimationFrame(inputFrameRef.current);
     inputFrameRef.current = null;
     pendingMoveRef.current = pendingWheelRef.current = null;
@@ -237,7 +239,7 @@ export function ServerBrowserSurface(props: {
     keySentRef.current = false;
     if (inputRef.current) inputRef.current.value = INPUT_SENTINEL;
     inputRef.current?.blur();
-  };
+  }, []);
 
   const flushInput = () => {
     if (inputFrameRef.current !== null) cancelAnimationFrame(inputFrameRef.current);
@@ -330,14 +332,17 @@ export function ServerBrowserSurface(props: {
       const ratio = window.devicePixelRatio || 1;
       const width = Math.round(size.width * ratio);
       const height = Math.round(size.height * ratio);
-      setCap((current) =>
-        current !== null && current.width >= width && current.height >= height
-          ? current
-          : {
-              width: Math.max(width, current?.width ?? 0),
-              height: Math.max(height, current?.height ?? 0),
-            },
-      );
+      setCap((current) => {
+        const next =
+          current !== null && current.width >= width && current.height >= height
+            ? current
+            : {
+                width: Math.max(width, current?.width ?? 0),
+                height: Math.max(height, current?.height ?? 0),
+              };
+        capRef.current = next;
+        return next;
+      });
     };
     const measure = () => {
       timer = null;
@@ -345,7 +350,15 @@ export function ServerBrowserSurface(props: {
       if (rect.width < 1 || rect.height < 1) return;
       const size = { width: Math.round(rect.width), height: Math.round(rect.height) };
       const previous = sizeRef.current;
-      if (previous?.width === size.width && previous.height === size.height) return;
+      // StrictMode replays this effect: the ref keeps the size while the cleanup cancels the
+      // cap timer, so an unchanged size must still grow a cap that never arrived.
+      if (
+        previous?.width === size.width &&
+        previous.height === size.height &&
+        capRef.current !== null
+      ) {
+        return;
+      }
       sizeRef.current = size;
       if (followSize) clientRef.current?.send({ type: "resize", ...size });
       // Growing the cap reconnects the stream; wait until resizing settles.
@@ -356,6 +369,9 @@ export function ServerBrowserSurface(props: {
       if (timer !== null) return;
       timer = setTimeout(measure, sizeRef.current === null ? 0 : RESIZE_THROTTLE_MS);
     });
+    // A surface mounted inside a hidden (or not yet laid out) panel can miss the observer's
+    // first delivery; take the measurement now so the stream is not left waiting on `cap`.
+    measure();
     return () => {
       stopObserving();
       if (timer !== null) clearTimeout(timer);

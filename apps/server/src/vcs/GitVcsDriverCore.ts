@@ -114,6 +114,25 @@ const STATUS_UPSTREAM_REFRESH_ENV = Object.freeze({
   SSH_ASKPASS_REQUIRE: "never",
 } satisfies NodeJS.ProcessEnv);
 const DEFAULT_BASE_BRANCH_CANDIDATES = ["main", "master"] as const;
+// Long-lived names a branch can be cut from when it recorded no base and tracks no upstream.
+const LONG_LIVED_BASE_BRANCH_NAMES = new Set([
+  "main",
+  "master",
+  "develop",
+  "dev",
+  "trunk",
+  "next",
+  "beta",
+  "alpha",
+  "staging",
+  "production",
+  "prod",
+]);
+const isLongLivedBaseBranchName = (name: string, defaultBranch: string | null): boolean =>
+  name === defaultBranch ||
+  LONG_LIVED_BASE_BRANCH_NAMES.has(name) ||
+  /^v\d+(?:\.\d+)*$/.test(name) ||
+  /^(?:release|releases|hotfix|support)\//.test(name);
 const GIT_LIST_BRANCHES_DEFAULT_LIMIT = 100;
 const NON_REPOSITORY_STATUS_DETAILS = Object.freeze<GitVcsDriver.GitStatusDetails>({
   isRepo: false,
@@ -1845,57 +1864,211 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     return { baseRef: comparisonRef.slice("refs/remotes/".length), comparisonRef };
   });
 
-  const resolveBaseBranchForNoUpstream = Effect.fn("resolveBaseBranchForNoUpstream")(function* (
+  const readCommitTimestamp = (cwd: string, sha: string) =>
+    executeGit("GitVcsDriver.readCommitTimestamp", cwd, ["show", "-s", "--format=%ct", sha], {
+      allowNonZeroExit: true,
+    }).pipe(
+      Effect.map((result) => {
+        const parsed = Number.parseInt(result.stdout.trim(), 10);
+        return Number.isFinite(parsed) ? parsed : 0;
+      }),
+      Effect.orElseSucceed(() => 0),
+    );
+
+  const resolveBaseBranchRef = Effect.fn("resolveBaseBranchRef")(function* (
     cwd: string,
     refName: string,
-    options?: {
-      readonly allowRemoteOfCurrent?: boolean;
-      readonly knownOriginDefaultBranch?: string | null;
-    },
-  ) {
-    const configuredBaseRef = yield* readConfigValue(cwd, `branch.${refName}.t3-merge-base-ref`);
-    if (
-      configuredBaseRef?.startsWith("refs/heads/") ||
-      configuredBaseRef?.startsWith("refs/remotes/")
-    ) {
-      const base = yield* resolveComparisonBaseRef(cwd, configuredBaseRef);
-      if (base !== null) {
-        const shortRef = configuredBaseRef.replace(/^refs\/remotes\//, "");
-        return {
-          ...base,
-          baseRef: (yield* branchExists(cwd, shortRef)) ? configuredBaseRef : shortRef,
-        };
-      }
-    }
-
-    const configuredBaseBranch = (yield* readBranchBase(cwd, refName)) ?? "";
-    const configuredBase = yield* resolveComparisonBaseRef(cwd, configuredBaseBranch);
-    if (
-      configuredBase !== null &&
-      configuredBaseBranch.includes("/") &&
-      !configuredBaseBranch.startsWith("refs/") &&
-      (yield* branchExists(cwd, configuredBaseBranch))
-    ) {
-      const comparisonRef = `refs/heads/${configuredBaseBranch}`;
-      return { baseRef: comparisonRef, comparisonRef };
-    }
-    if (configuredBase !== null) return configuredBase;
-
+    options?: GitVcsDriver.GitResolveBaseBranchOptions,
+  ): Effect.fn.Return<GitVcsDriver.GitResolvedBaseBranch | null, GitCommandError> {
+    const remoteNames = yield* listRemoteNames(cwd).pipe(Effect.orElseSucceed(() => []));
+    const remoteNamesLongestFirst = remoteNames.toSorted(
+      (left, right) => right.length - left.length,
+    );
     const primaryRemoteName = yield* resolvePrimaryRemoteName(cwd).pipe(
       Effect.orElseSucceed(() => null),
     );
+
+    const toResolvedBase = (
+      baseRef: string,
+      comparisonRef: string,
+    ): GitVcsDriver.GitResolvedBaseBranch => {
+      if (comparisonRef.startsWith("refs/heads/")) {
+        return {
+          baseRef,
+          comparisonRef,
+          branchName: comparisonRef.slice("refs/heads/".length),
+        };
+      }
+      if (comparisonRef.startsWith("refs/remotes/")) {
+        const parsed = parseRemoteRefWithRemoteNames(
+          comparisonRef.slice("refs/remotes/".length),
+          remoteNamesLongestFirst,
+        );
+        if (parsed !== null) return { baseRef, comparisonRef, branchName: parsed.branchName };
+      }
+      return { baseRef, comparisonRef, branchName: baseRef };
+    };
+
+    const resolveNamedBase = Effect.fn("resolveNamedBase")(function* (name: string) {
+      if (name.length === 0) return null;
+      if (name.startsWith("refs/heads/") || name.startsWith("refs/remotes/")) {
+        const resolved = yield* resolveComparisonBaseRef(cwd, name);
+        return resolved === null ? null : toResolvedBase(name, resolved.comparisonRef);
+      }
+      const comparison = yield* resolveComparisonBaseRef(cwd, name);
+      if (comparison !== null) {
+        // A local branch that shares a slash-named remote ref's name is the intended base.
+        const localExists = name.includes("/") && (yield* branchExists(cwd, name));
+        return toResolvedBase(name, localExists ? `refs/heads/${name}` : comparison.comparisonRef);
+      }
+      if (
+        primaryRemoteName !== null &&
+        (yield* remoteBranchExists({
+          cwd,
+          remoteName: primaryRemoteName,
+          refName: name,
+        }))
+      ) {
+        return toResolvedBase(
+          `${primaryRemoteName}/${name}`,
+          `refs/remotes/${primaryRemoteName}/${name}`,
+        );
+      }
+      if (yield* branchExists(cwd, name)) {
+        return toResolvedBase(name, `refs/heads/${name}`);
+      }
+      return null;
+    });
+
+    // 1. The branch's own upstream, unless it is this branch's published copy.
+    if (options?.allowUpstream !== false) {
+      const tracked = yield* resolveTrackedRemoteBaseRef(cwd, refName);
+      if (tracked !== null) {
+        const parsed = parseRemoteRefWithRemoteNames(tracked.baseRef, remoteNamesLongestFirst);
+        const isOwnPublishedCopy =
+          parsed !== null &&
+          primaryRemoteName !== null &&
+          parsed.remoteName === primaryRemoteName &&
+          parsed.branchName === refName;
+        if (!isOwnPublishedCopy) return toResolvedBase(tracked.baseRef, tracked.comparisonRef);
+      }
+    }
+
+    // 2. The base recorded when the volume or worktree was created.
+    const recordedRef = yield* readConfigValue(cwd, `branch.${refName}.t3-merge-base-ref`);
+    if (recordedRef?.startsWith("refs/heads/") || recordedRef?.startsWith("refs/remotes/")) {
+      const recordedBase = yield* resolveComparisonBaseRef(cwd, recordedRef);
+      if (recordedBase !== null) {
+        const shortRef = recordedRef.replace(/^refs\/remotes\//, "");
+        return toResolvedBase(
+          (yield* branchExists(cwd, shortRef)) ? recordedRef : shortRef,
+          recordedBase.comparisonRef,
+        );
+      }
+    }
+    const recordedBranch = yield* readConfigValue(cwd, branchBaseConfigKey(refName));
+    if (recordedBranch) {
+      const recordedBase = yield* resolveNamedBase(recordedBranch);
+      if (recordedBase !== null) return recordedBase;
+    }
+
+    // 3. An open change request's base, handed in by the caller or recorded by the host tool.
+    const changeRequestBase =
+      options?.knownChangeRequestBase ??
+      (yield* readConfigValue(cwd, legacyBranchBaseConfigKey(refName)));
+    if (changeRequestBase) {
+      const resolvedChangeRequestBase = yield* resolveNamedBase(changeRequestBase);
+      if (resolvedChangeRequestBase !== null) return resolvedChangeRequestBase;
+    }
+
+    // 4. The nearest remote long-lived branch by merge-base.
+    const defaultBranch =
+      options?.knownOriginDefaultBranch !== undefined
+        ? options.knownOriginDefaultBranch
+        : primaryRemoteName === null
+          ? null
+          : yield* resolveDefaultBranchName(cwd, primaryRemoteName).pipe(
+              Effect.orElseSucceed(() => null),
+            );
+    const isCurrentDefaultBranch =
+      defaultBranch !== null
+        ? refName === defaultBranch
+        : refName === "main" || refName === "master";
+    if (primaryRemoteName !== null && !isCurrentDefaultBranch) {
+      const listing = yield* executeGit(
+        "GitVcsDriver.resolveBaseBranchRef.remoteBranches",
+        cwd,
+        ["for-each-ref", "--format=%(refname:short)", `refs/remotes/${primaryRemoteName}`],
+        { allowNonZeroExit: true },
+      );
+      if (listing.exitCode === 0) {
+        const candidates: string[] = [];
+        for (const line of listing.stdout.split("\n")) {
+          const ref = line.trim();
+          if (ref.length === 0) continue;
+          const parsed = parseRemoteRefWithRemoteNames(ref, remoteNamesLongestFirst);
+          if (parsed === null) continue;
+          if (parsed.branchName === refName || parsed.branchName === "HEAD") continue;
+          if (!isLongLivedBaseBranchName(parsed.branchName, defaultBranch)) continue;
+          candidates.push(parsed.branchName);
+        }
+
+        let best: { candidate: string; distance: number; mergedAt: number } | null = null;
+        for (const candidate of candidates) {
+          const mergeBase = yield* executeGit(
+            "GitVcsDriver.resolveBaseBranchRef.mergeBase",
+            cwd,
+            [
+              "merge-base",
+              "--end-of-options",
+              `refs/remotes/${primaryRemoteName}/${candidate}`,
+              "HEAD",
+            ],
+            { allowNonZeroExit: true },
+          );
+          const mergeBaseSha = mergeBase.stdout.trim();
+          if (mergeBase.exitCode !== 0 || mergeBaseSha.length === 0) continue;
+          const counted = yield* executeGit(
+            "GitVcsDriver.resolveBaseBranchRef.distance",
+            cwd,
+            ["rev-list", "--count", `${mergeBaseSha}..HEAD`],
+            { allowNonZeroExit: true },
+          );
+          const distance = Number.parseInt(counted.stdout.trim(), 10);
+          if (counted.exitCode !== 0 || !Number.isFinite(distance)) continue;
+          const mergedAt = yield* readCommitTimestamp(cwd, mergeBaseSha);
+          if (
+            best === null ||
+            distance < best.distance ||
+            (distance === best.distance &&
+              (mergedAt > best.mergedAt ||
+                (mergedAt === best.mergedAt && candidate.localeCompare(best.candidate) < 0)))
+          ) {
+            best = { candidate, distance, mergedAt };
+          }
+        }
+        if (best !== null) {
+          return toResolvedBase(
+            `${primaryRemoteName}/${best.candidate}`,
+            `refs/remotes/${primaryRemoteName}/${best.candidate}`,
+          );
+        }
+      }
+    }
+
+    // 5. The default branch.
     const candidates = [
-      Effect.succeed(configuredBaseBranch),
       primaryRemoteName === null
-        ? Effect.succeed(null)
+        ? null
         : primaryRemoteName === "origin" && options?.knownOriginDefaultBranch != null
-          ? Effect.succeed(options.knownOriginDefaultBranch)
-          : resolveDefaultBranchName(cwd, primaryRemoteName),
-      ...DEFAULT_BASE_BRANCH_CANDIDATES.map(Effect.succeed),
+          ? options.knownOriginDefaultBranch
+          : yield* resolveDefaultBranchName(cwd, primaryRemoteName).pipe(
+              Effect.orElseSucceed(() => null),
+            ),
+      ...DEFAULT_BASE_BRANCH_CANDIDATES,
     ];
 
-    for (const readCandidate of candidates) {
-      const candidate = yield* readCandidate;
+    for (const candidate of candidates) {
       if (!candidate) {
         continue;
       }
@@ -1913,7 +2086,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       if (normalizedCandidate === refName) {
         if (options?.allowRemoteOfCurrent) {
           const trackedRemoteBase = yield* resolveTrackedRemoteBaseRef(cwd, refName);
-          if (trackedRemoteBase !== null) return trackedRemoteBase;
+          if (trackedRemoteBase !== null) {
+            return toResolvedBase(trackedRemoteBase.baseRef, trackedRemoteBase.comparisonRef);
+          }
           if (
             primaryRemoteName &&
             (yield* remoteBranchExists({
@@ -1922,10 +2097,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               refName: normalizedCandidate,
             }))
           ) {
-            return {
-              baseRef: `${primaryRemoteName}/${normalizedCandidate}`,
-              comparisonRef: `refs/remotes/${primaryRemoteName}/${normalizedCandidate}`,
-            };
+            return toResolvedBase(
+              `${primaryRemoteName}/${normalizedCandidate}`,
+              `refs/remotes/${primaryRemoteName}/${normalizedCandidate}`,
+            );
           }
         }
         continue;
@@ -1939,14 +2114,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           refName: normalizedCandidate,
         }))
       ) {
-        return {
-          baseRef: `${primaryRemoteName}/${normalizedCandidate}`,
-          comparisonRef: `refs/remotes/${primaryRemoteName}/${normalizedCandidate}`,
-        };
+        return toResolvedBase(
+          `${primaryRemoteName}/${normalizedCandidate}`,
+          `refs/remotes/${primaryRemoteName}/${normalizedCandidate}`,
+        );
       }
 
       if (yield* branchExists(cwd, normalizedCandidate)) {
-        return { baseRef: normalizedCandidate, comparisonRef: `refs/heads/${normalizedCandidate}` };
+        return toResolvedBase(normalizedCandidate, `refs/heads/${normalizedCandidate}`);
       }
     }
 
@@ -1958,7 +2133,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     refName: string,
     options?: { readonly knownOriginDefaultBranch: string | null },
   ) {
-    const base = yield* resolveBaseBranchForNoUpstream(cwd, refName, options);
+    const base = yield* resolveBaseBranchRef(cwd, refName, options);
     if (!base) {
       return 0;
     }
@@ -2666,7 +2841,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         };
       }
 
-      const comparableBaseBranch = yield* resolveBaseBranchForNoUpstream(cwd, branch).pipe(
+      const comparableBaseBranch = yield* resolveBaseBranchRef(cwd, branch).pipe(
         Effect.orElseSucceed(() => null),
       );
       if (comparableBaseBranch) {
@@ -3110,7 +3285,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
                 : explicitBaseRef,
           })
         : branch
-          ? yield* resolveBaseBranchForNoUpstream(cwd, branch, {
+          ? yield* resolveBaseBranchRef(cwd, branch, {
               allowRemoteOfCurrent: true,
               knownOriginDefaultBranch,
             }).pipe(Effect.orElseSucceed(() => null))
@@ -4223,9 +4398,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
                 Effect.flatMap((contents) => {
                   const file = parseT3ProjectFile(contents);
                   return file === null
-                    ? Effect.logWarning("houston.json is invalid; initializing submodules recursively", {
-                        worktreePath,
-                      }).pipe(Effect.as(null))
+                    ? Effect.logWarning(
+                        "houston.json is invalid; initializing submodules recursively",
+                        {
+                          worktreePath,
+                        },
+                      ).pipe(Effect.as(null))
                     : Effect.succeed(file);
                 }),
                 Effect.orElseSucceed(() => null),
@@ -4986,6 +5164,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     getReviewDiffFileContents,
     readConfigValue,
     readBranchBase,
+    resolveBaseBranch: resolveBaseBranchRef,
     resolveBranchName,
     listRefs,
     createWorktree: Effect.fnUntraced(function* (input, options) {

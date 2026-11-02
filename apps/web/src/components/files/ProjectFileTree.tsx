@@ -1,7 +1,9 @@
 import type { ProjectEntry } from "@t3tools/contracts";
-import { ChevronDown, ChevronRight, File as FileIcon, Folder } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { type DragEvent, type KeyboardEvent, type MouseEvent, useRef } from "react";
 
+import { PierreEntryIcon } from "~/components/chat/PierreEntryIcon";
+import { useTheme } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
 
 import { type ProjectFileTreeRow } from "./projectFileTreeRows";
@@ -39,6 +41,7 @@ export function ProjectFileTree({
   onEntryDragEnd,
 }: ProjectFileTreeProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const { resolvedTheme } = useTheme();
   const selectedVisible = rows.some((row) => row.entry.path === selectedPath);
   const firstFile = rows.find((row) => row.entry.kind === "file")?.entry.path ?? null;
 
@@ -126,20 +129,15 @@ export function ProjectFileTree({
                 )
               ) : null}
             </span>
-            {directory ? (
-              <Folder
-                className="size-[13px] shrink-0 text-[var(--t2)]"
-                strokeWidth={1.7}
-                aria-hidden
-              />
-            ) : (
-              <FileIcon
-                className="size-[13px] shrink-0 text-[var(--t2)]"
-                strokeWidth={1.7}
-                aria-hidden
-              />
-            )}
-            <span className="min-w-0 flex-1 truncate">{entry.path.slice(entry.path.lastIndexOf("/") + 1)}</span>
+            <PierreEntryIcon
+              pathValue={entry.path}
+              kind={directory ? "directory" : "file"}
+              theme={resolvedTheme}
+              className="size-[13px]"
+            />
+            <span className="min-w-0 flex-1 truncate">
+              {entry.path.slice(entry.path.lastIndexOf("/") + 1)}
+            </span>
           </button>
         );
       })}

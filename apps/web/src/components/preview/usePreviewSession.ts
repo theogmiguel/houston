@@ -14,7 +14,7 @@ import {
   readThreadPreviewState,
   reconcilePreviewServerSessions,
 } from "~/previewStateStore";
-import { isElectron } from "~/env";
+import { hasNativeBrowserHost } from "~/env";
 import { previewEnvironment } from "~/state/preview";
 
 class PreviewSessionThreadKeyParseError extends Schema.TaggedError<PreviewSessionThreadKeyParseError>()(
@@ -141,7 +141,7 @@ const desktopHostedPreviewSyncAtom = Atom.family((environmentId: EnvironmentId) 
 
 export function useDesktopHostedPreviewSessions(environmentId: EnvironmentId | null): void {
   useAtomValue(
-    isElectron && environmentId !== null
+    hasNativeBrowserHost && environmentId !== null
       ? desktopHostedPreviewSyncAtom(environmentId)
       : inactiveAtom,
   );

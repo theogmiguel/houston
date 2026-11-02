@@ -117,7 +117,12 @@ export default function FileBrowserPanel({
     { environmentId, cwd: hostFolder ? null : cwd, query: query.slice(0, 256) },
     200,
   );
-  const entries = buildTreeEntries(directoryEntries, pathSearch.entries, pathSearch.isPending, query);
+  const entries = buildTreeEntries(
+    directoryEntries,
+    pathSearch.entries,
+    pathSearch.isPending,
+    query,
+  );
   const directoryPaths = expandableDirectoryPaths(entries);
   const rows = projectFileTreeRows(entries, expandedPaths, query);
   const allDirectoriesExpanded =
@@ -283,7 +288,7 @@ export default function FileBrowserPanel({
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col bg-background"
+      className="flex min-h-0 min-w-0 flex-1 flex-col bg-background"
       data-file-browser-panel={`${environmentId}:${cwd}`}
       onDragEnd={() => dragMention.handleDragEnd(() => {})}
     >
@@ -352,10 +357,7 @@ export default function FileBrowserPanel({
         </div>
       ) : null}
       {loading && !hasNoSearchMatches ? (
-        <div
-          role="status"
-          className="px-3 py-1 text-xs text-muted-foreground"
-        >
+        <div role="status" className="px-3 py-1 text-xs text-muted-foreground">
           Loading files…
         </div>
       ) : null}

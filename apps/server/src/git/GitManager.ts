@@ -1984,45 +1984,15 @@ export const make = Effect.gen(function* () {
   const resolvePrBase = Effect.fn("resolvePrBase")(function* (
     cwd: string,
     branch: string,
-    upstreamRef: string | null,
-    headContext: Pick<BranchHeadContext, "isCrossRepository" | "remoteName">,
+    headContext: Pick<BranchHeadContext, "isCrossRepository">,
   ) {
-    const configuredRef = yield* gitCore.readConfigValue(cwd, `branch.${branch}.t3-merge-base-ref`);
-    if (configuredRef?.startsWith("refs/heads/") || configuredRef?.startsWith("refs/remotes/")) {
-      const configuredBranch = yield* gitCore.resolveBranchName(cwd, configuredRef);
-      if (configuredBranch) return { baseBranch: configuredBranch, baseRef: configuredRef };
-    }
-
-    const configured = yield* gitCore.readBranchBase(cwd, branch);
-    if (configured) {
-      const localRef = configured.startsWith("refs/") ? configured : `refs/heads/${configured}`;
-      const localBranch = yield* gitCore.resolveBranchName(cwd, localRef);
-      if (localBranch) {
-        const shadowsRemote =
-          configured.includes("/") &&
-          !configured.startsWith("refs/") &&
-          (yield* gitCore.resolveBranchName(cwd, `refs/remotes/${configured}`)) !== null;
-        return {
-          baseBranch: localBranch,
-          baseRef: configured.startsWith("refs/") || shadowsRemote ? localRef : localBranch,
-        };
-      }
-      if (configured.includes("/") && !configured.startsWith("refs/")) {
-        const remoteRef = `refs/remotes/${configured}`;
-        const remoteBranch = yield* gitCore.resolveBranchName(cwd, remoteRef);
-        if (remoteBranch) return { baseBranch: remoteBranch, baseRef: remoteRef };
-      }
-      const configuredBranch = yield* gitCore.resolveBranchName(cwd, configured);
-      if (configuredBranch) return { baseBranch: configuredBranch, baseRef: configuredBranch };
-    }
-
-    if (upstreamRef && !headContext.isCrossRepository) {
-      const upstreamBranch = extractBranchNameFromRemoteRef(upstreamRef, {
-        remoteName: headContext.remoteName,
-      });
-      if (upstreamBranch.length > 0 && upstreamBranch !== branch) {
-        return { baseBranch: upstreamBranch, baseRef: upstreamBranch };
-      }
+    // The same resolver the Changes card and the diff panel use: upstream or recorded base,
+    // then a known change request, the nearest remote long-lived branch, then the default.
+    const resolved = yield* gitCore
+      .resolveBaseBranch(cwd, branch, { allowUpstream: !headContext.isCrossRepository })
+      .pipe(Effect.orElseSucceed(() => null));
+    if (resolved !== null) {
+      return { baseBranch: resolved.branchName, baseRef: resolved.comparisonRef };
     }
 
     const defaultFromProvider = yield* sourceControlProvider(cwd).pipe(
@@ -2274,12 +2244,7 @@ export const make = Effect.gen(function* () {
       };
     }
 
-    const { baseBranch, baseRef } = yield* resolvePrBase(
-      cwd,
-      branch,
-      details.upstreamRef,
-      headContext,
-    );
+    const { baseBranch, baseRef } = yield* resolvePrBase(cwd, branch, headContext);
     yield* emit({
       kind: "phase_started",
       phase: "pr",

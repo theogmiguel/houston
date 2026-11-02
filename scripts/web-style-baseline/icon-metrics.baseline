@@ -1,7 +1,7 @@
 1 apps/web/src/components/chat/TraitsPicker.tsx
 1 apps/web/src/components/desktopUpdate.toast.tsx
 1 apps/web/src/components/files/FileBrowserPanel.tsx
-4 apps/web/src/components/files/ProjectFileTree.tsx
+2 apps/web/src/components/files/ProjectFileTree.tsx
 8 apps/web/src/components/preview/PreviewChromeRow.tsx
 1 apps/web/src/components/settings/SourceControlAppSignInSettings.tsx
 2 apps/web/src/components/sidebar/DesktopUpdateStatusIcon.tsx
