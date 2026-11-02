@@ -91,7 +91,7 @@
   "scripts/build-server-archive.mjs": 6,
   "scripts/check-web-style.mjs": 3,
   "scripts/check-web-style.test.mjs": 2,
-  "scripts/ci/lint-ratchet.mjs": 2,
+  "scripts/ci/lint-ratchet.mjs": 1,
   "scripts/ci/lint-ratchet.test.mjs": 2,
   "scripts/gen-third-party-licenses.mjs": 5,
   "scripts/gen-third-party-licenses.test.mjs": 2,

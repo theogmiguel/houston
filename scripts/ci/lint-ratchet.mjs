@@ -65,22 +65,26 @@ export function formatRegression({ file, count, allowed, diagnostics }) {
   return `${file} has ${count} lint error(s), baseline allows ${allowed}; fix the new errors (or lower the count and run --update):\n${lines.join("\n")}`;
 }
 
+const VP_BIN = NodePath.join(REPO_ROOT, "node_modules/vite-plus/bin/vp");
+
 function runLint(files) {
+  if (!NodeFS.existsSync(VP_BIN)) {
+    throw new Error(`lint-ratchet: ${VP_BIN} is missing; run pnpm install first`);
+  }
+  // No shell: paths reach vp as plain arguments, and `--` keeps a path that starts with a dash from being read as an option.
   const args = [
-    "exec",
-    "vp",
+    VP_BIN,
     "lint",
     "--report-unused-disable-directives",
     "--format",
     "json",
     "--no-error-on-unmatched-pattern",
-    ...files,
+    ...(files.length > 0 ? ["--", ...files] : []),
   ];
-  const result = NodeChildProcess.spawnSync("pnpm", args, {
+  const result = NodeChildProcess.spawnSync(process.execPath, args, {
     cwd: REPO_ROOT,
     encoding: "utf8",
     maxBuffer: MAX_REPORT_BYTES,
-    shell: process.platform === "win32",
   });
   // Oxlint exits 1 when it reports errors, which is the normal state here; only a missing report is a failure.
   const start = result.stdout.indexOf("{");
