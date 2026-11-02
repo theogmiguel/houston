@@ -77,9 +77,9 @@ jobs:
           fetch-depth: 2
       - uses: dtolnay/rust-toolchain@stable
       - uses: ./.github/actions/setup
-      # The tree carries pre-existing format and lint findings, so the gate
-      # ratchets on the paths this change touches instead of blocking day one.
-      - name: Format and lint the changed files
+      # The tree carries pre-existing format findings, so the gate checks the paths this change
+      # touches instead of blocking day one.
+      - name: Format the changed files
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: |
@@ -93,13 +93,12 @@ jobs:
           fi
           mapfile -t files < <(git diff --name-only --diff-filter=ACMR "${range[@]}" | grep -vE '^handoff/' || true)
           mapfile -t formattable < <(printf '%s\n' "${files[@]}" | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|mts|cts|json|jsonc|css|html?|md|ya?ml)$' || true)
-          mapfile -t lintable < <(printf '%s\n' "${files[@]}" | grep -E '\.[cm]?[jt]sx?$' || true)
           if [ "${#formattable[@]}" -gt 0 ]; then
             pnpm exec vp fmt --check --no-error-on-unmatched-pattern "${formattable[@]}"
           fi
-          if [ "${#lintable[@]}" -gt 0 ]; then
-            pnpm exec vp lint --report-unused-disable-directives --no-error-on-unmatched-pattern "${lintable[@]}"
-          fi
+      # Whole tree, about 16 s: a file may not exceed its error count in scripts/lint-baseline.json.
+      - name: Lint ratchet
+        run: node scripts/ci/lint-ratchet.mjs
       - name: Validate workflow syntax and reusable workflow contracts
         run: |
           tool_dir="$RUNNER_TEMP/actionlint"
