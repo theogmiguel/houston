@@ -15,7 +15,7 @@ const exec = NodeUtil.promisify(NodeChildProcess.execFile);
 
 describe.each([false, true])("device tool cleanup, flat=%s", (flat) => {
   it("keeps current, previous, active and incomplete installs, pruning unused completed versions", async () => {
-    const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-tool-cleanup-"));
+    const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "houston-tool-cleanup-"));
     const name = "expo-device-hub";
     const directory = (version: string) =>
       flat ? NodePath.join(root, `${name}@${version}`) : NodePath.join(root, name, version);
@@ -53,7 +53,7 @@ describe.each([false, true])("device tool cleanup, flat=%s", (flat) => {
   });
 
   it("keeps every install when the process scan fails", async () => {
-    const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-tool-scan-"));
+    const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "houston-tool-scan-"));
     try {
       for (const version of ["0.1.0", "0.2.0", "0.3.0"]) {
         const dir = flat
@@ -78,7 +78,7 @@ describe.each([false, true])("device tool cleanup, flat=%s", (flat) => {
   });
 
   it("does not prune before the required version has completed installation", async () => {
-    const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-tool-cleanup-"));
+    const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "houston-tool-cleanup-"));
     try {
       const dir = flat
         ? NodePath.join(root, "expo-device-hub@0.1.0")
@@ -129,7 +129,7 @@ it.effect("maintenance failures retain safe context and the original process res
 );
 
 it("serializes competing maintenance processes after reclaiming a stale lock", async () => {
-  const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-tool-contention-"));
+  const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "houston-tool-contention-"));
   try {
     const lock = NodePath.join(root, ".maintenance-lock");
     await NodeFSP.mkdir(lock);

@@ -87,16 +87,16 @@ it.layer(NodeServices.layer)("houston base dir", (it) => {
       }
       expect(yield* fs.exists(path.join(home, ".houston", "v2"))).toBe(false);
 
-      // Unhosted: --base-dir then T3CODE_HOME then the desktop app's ~/.houston/v2.
+      // Unhosted: --base-dir then HOUSTON_HOME then the desktop app's ~/.houston/v2.
       const flagDir = path.join(home, "b");
       const envDir = path.join(home, "h");
       const byFlag = yield* resolveServerConfig(webFlags(Option.some(flagDir)), Option.none()).pipe(
-        withEnv({ T3CODE_HOME: envDir }),
+        withEnv({ HOUSTON_HOME: envDir }),
         Effect.provideService(HostProcess.HomeDirectory, home),
       );
       expect(byFlag.baseDir).toBe(flagDir);
       const byEnv = yield* resolveServerConfig(webFlags(Option.none()), Option.none()).pipe(
-        withEnv({ T3CODE_HOME: envDir }),
+        withEnv({ HOUSTON_HOME: envDir }),
         Effect.provideService(HostProcess.HomeDirectory, home),
       );
       expect(byEnv.baseDir).toBe(envDir);
@@ -114,7 +114,7 @@ it.layer(NodeServices.layer)("houston base dir", (it) => {
       expect(
         yield* isHostedLaunch({ ...flags, bootstrapFd: Option.some(3) }).pipe(withEnv({})),
       ).toBe(true);
-      expect(yield* isHostedLaunch(flags).pipe(withEnv({ T3CODE_BOOTSTRAP_FD: "3" }))).toBe(true);
+      expect(yield* isHostedLaunch(flags).pipe(withEnv({ HOUSTON_BOOTSTRAP_FD: "3" }))).toBe(true);
       // The base dir's name decides nothing.
       expect(yield* isHostedLaunch(webFlags(Option.some("/x/v2"))).pipe(withEnv({}))).toBe(false);
     }),

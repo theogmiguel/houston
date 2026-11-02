@@ -19,10 +19,10 @@ import { withoutTelemetry } from "./noTelemetry.ts";
 
 type Signal = "traces" | "metrics" | "logs";
 type UrlKey = "otlpTracesUrl" | "otlpMetricsUrl" | "otlpLogsUrl";
-type Source = "t3code-env" | "otel-env" | "envelope" | "settings";
+type Source = "houston-env" | "otel-env" | "envelope" | "settings";
 
 const SIGNALS: ReadonlyArray<Signal> = ["traces", "metrics", "logs"];
-const SOURCES: ReadonlyArray<Source> = ["t3code-env", "otel-env", "envelope", "settings"];
+const SOURCES: ReadonlyArray<Source> = ["houston-env", "otel-env", "envelope", "settings"];
 const SINK = "http://127.0.0.1:9/v1";
 
 const capitalized = (signal: Signal) => `${signal[0]!.toUpperCase()}${signal.slice(1)}`;
@@ -54,7 +54,7 @@ const resolveWith = Effect.fn(function* (sources: ReadonlyArray<[Source, Signal]
   const settingsUrls: Record<string, string> = {};
   for (const [source, signal] of sources) {
     const url = `${SINK}/${signal}`;
-    if (source === "t3code-env") env[`T3CODE_OTLP_${signal.toUpperCase()}_URL`] = url;
+    if (source === "houston-env") env[`HOUSTON_OTLP_${signal.toUpperCase()}_URL`] = url;
     if (source === "otel-env") env[`OTEL_EXPORTER_OTLP_${signal.toUpperCase()}_ENDPOINT`] = url;
     if (source === "envelope") envelopeUrls[`otlp${capitalized(signal)}Url`] = url;
     if (source === "settings") settingsUrls[`otlp${capitalized(signal)}Url`] = url;

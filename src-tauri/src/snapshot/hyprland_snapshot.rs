@@ -15,7 +15,10 @@ use super::platform::{
     Bounds, CaptureFeedback, CaptureOptions, CaptureOutput, PlatformPaths, WindowMetadata,
 };
 
-pub const HYPRLAND_CAPTURE_EXECUTABLE: &str = "t3-hyprland-snap-shot";
+pub const HYPRLAND_CAPTURE_EXECUTABLE: &str = "houston-hyprland-snap-shot";
+/// Written by earlier releases; moved once when the current helper is absent.
+const LEGACY_HELPER_DIR: &str = "t3code";
+const LEGACY_HELPER: &str = "t3-hyprland-snap-shot";
 const RUN_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Debug, Clone, Serialize)]
@@ -38,7 +41,7 @@ fn state(status: &str, message: &str, feedback: Option<bool>) -> CaptureHelperSt
 pub fn capture_executable(paths: &PlatformPaths) -> PathBuf {
     paths
         .data_home
-        .join("t3code")
+        .join("houston")
         .join("hyprland-capture")
         .join(HYPRLAND_CAPTURE_EXECUTABLE)
 }
@@ -174,7 +177,38 @@ impl HyprlandCaptureSetup {
         ))
     }
 
+    /// Idempotent: moves an earlier release's helper to the current path when the
+    /// current one does not exist, then drops the leftover.
+    fn migrate_legacy(&self) -> Result<(), String> {
+        let executable = capture_executable(&self.paths);
+        let legacy = self
+            .paths
+            .data_home
+            .join(LEGACY_HELPER_DIR)
+            .join("hyprland-capture")
+            .join(LEGACY_HELPER);
+        if !legacy.is_file() {
+            return Ok(());
+        }
+        if executable.exists() {
+            let _ = fs::remove_file(&legacy);
+            return Ok(());
+        }
+        if let Some(directory) = executable.parent() {
+            fs::create_dir_all(directory)
+                .map_err(|error| format!("creating {}: {error}", directory.display()))?;
+        }
+        fs::rename(&legacy, &executable).map_err(|error| {
+            format!(
+                "moving {} to {}: {error}",
+                legacy.display(),
+                executable.display()
+            )
+        })
+    }
+
     pub fn perform(&self, action: &str) -> Result<(), String> {
+        self.migrate_legacy()?;
         let executable = capture_executable(&self.paths);
         let directory = executable
             .parent()
@@ -395,6 +429,30 @@ mod tests {
             fs::read_to_string(capture_executable(&paths)).unwrap(),
             helper_script()
         );
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn moves_the_previous_helper_once() {
+        let home = test_home("hyprland-legacy-helper-test");
+        let paths = helper_paths(&home);
+        let legacy = paths
+            .data_home
+            .join(LEGACY_HELPER_DIR)
+            .join("hyprland-capture")
+            .join(LEGACY_HELPER);
+        write_executable(&legacy, "old helper");
+        let setup = HyprlandCaptureSetup::new(paths.clone());
+
+        setup.migrate_legacy().unwrap();
+        setup.migrate_legacy().unwrap();
+
+        assert_eq!(
+            fs::read_to_string(capture_executable(&paths)).unwrap(),
+            "old helper"
+        );
+        assert!(!legacy.exists());
         let _ = fs::remove_dir_all(home);
     }
 

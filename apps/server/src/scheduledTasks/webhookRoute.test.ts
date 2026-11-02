@@ -80,7 +80,7 @@ describe("webhook route", () => {
       try {
         const response = await handler(post("/api/hooks/id/tok", "{}"));
         expect(response.status).toBe(status);
-        expect(response.headers.get("x-t3-hook-outcome")).toBe(outcome);
+        expect(response.headers.get("x-houston-hook-outcome")).toBe(outcome);
         if (status === 429) expect(await response.json()).toEqual({ error: outcome });
       } finally {
         await dispose();
@@ -139,7 +139,7 @@ describe("webhook route", () => {
       );
       expect(response.status).toBe(405);
       expect(response.headers.get("allow")).toBe("GET, POST, PUT, PATCH");
-      expect(response.headers.get("x-t3-hook-outcome")).toBe("method_not_allowed");
+      expect(response.headers.get("x-houston-hook-outcome")).toBe("method_not_allowed");
       expect(calls).toBe(0);
       const get = await handler(new Request("http://env.local/api/hooks/id/tok"));
       expect(get.status).toBe(202);

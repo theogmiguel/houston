@@ -1189,7 +1189,7 @@ describe("a planner's and a reviewer's credential is scoped to their submit", ()
               const turn = harness.doubles.log.started.find(
                 (started) => started.input.threadId === threadId,
               );
-              assert.isDefined(turn?.mcp, `thread ${threadId} holds a T3 MCP credential`);
+              assert.isDefined(turn?.mcp, `thread ${threadId} holds a Houston MCP credential`);
               return [...(turn?.mcp?.capabilities ?? [])];
             };
             assert.deepEqual(scopeOf(planned.planning?.threadId), ["houston-task-submit"]);

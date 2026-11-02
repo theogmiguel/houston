@@ -88,7 +88,7 @@ export function DevReplayHost() {
   const replayFromConsole = useEffectEvent(replay);
   const listScenarios = useEffectEvent(() => scenarios.map((scenario) => scenario.slug));
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- exposes the console API on window and listens for the hidden window hotkey
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- exposes the console API on window and listens for the hidden window hotkey
   useEffect(() => {
     window.t3dev = {
       replayScenarios: () => listScenarios(),

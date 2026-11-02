@@ -16,7 +16,7 @@ it.effect("reports the version the running server recorded, not the CLI's", () =
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const statePath = path.join(
-      yield* fs.makeTempDirectoryScoped({ prefix: "t3-triage-" }),
+      yield* fs.makeTempDirectoryScoped({ prefix: "houston-triage-" }),
       "server-runtime.json",
     );
     const state = yield* makePersistedServerRuntimeState({

@@ -563,7 +563,7 @@ describe("UsageService", () => {
               home,
               settings,
               hostname,
-              environment: override === undefined ? {} : { T3CODE_HOST_ID: override },
+              environment: override === undefined ? {} : { HOUSTON_HOST_ID: override },
             }),
           ),
         );
@@ -2924,7 +2924,7 @@ describe("UsageService", () => {
       );
 
       let orphanedAt: number | undefined;
-      // oxlint-disable-next-line t3code/no-polling-loop-in-tests -- Fixed-count scheduler interruption matrix; each iteration exercises a different interruption point.
+      // oxlint-disable-next-line houston/no-polling-loop-in-tests -- Fixed-count scheduler interruption matrix; each iteration exercises a different interruption point.
       for (let interruptAt = 1; interruptAt <= 31; interruptAt += 1) {
         const tasks: Array<() => void> = [];
         const dispatcher: Scheduler.SchedulerDispatcher = {

@@ -198,7 +198,7 @@ describe("server browser element refs", () => {
     expect(tree.match(/\/url: data:text\/plain,…$/gm)).toHaveLength(8);
     expect(tree).toContain("/url: data:,…");
     expect(tree).toContain("/url: https://example.com/data:report,2026");
-    expect(tree).toMatch(/link "data:text\/plain,label" \[ref=t3-/);
+    expect(tree).toMatch(/link "data:text\/plain,label" \[ref=houston-/);
     expect(tree).not.toMatch(/PAYLOAD|tail|charset|\u2028/);
     expect(tree).toContain('/url: "\\"data:text/plain,relative"');
   });
@@ -380,7 +380,7 @@ describe("server browser drag", () => {
       void settled.then(() => (finished = true));
       // Two macrotask turns: Node reports a rejection nobody observed after the first.
       for (let turn = 0; turn < 2; turn++) {
-        // oxlint-disable-next-line t3code/no-real-time-wait-in-tests -- Node emits unhandledRejection only between macrotasks; no promise can mark that point.
+        // oxlint-disable-next-line houston/no-real-time-wait-in-tests -- Node emits unhandledRejection only between macrotasks; no promise can mark that point.
         await new Promise((resolve) => setImmediate(resolve));
       }
       expect(finished).toBe(false);

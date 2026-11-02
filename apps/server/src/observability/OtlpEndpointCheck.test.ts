@@ -55,7 +55,7 @@ const checkWith = (
       const config = yield* ServerConfig.ServerConfig;
       return ServerConfig.make({ ...config, ...overrides });
     }),
-  ).pipe(Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-otlp-check-" })));
+  ).pipe(Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "houston-otlp-check-" })));
   const layer = OtlpEndpointCheck.layer.pipe(
     Layer.provide(httpClientLayer ?? Layer.succeed(HttpClient.HttpClient, httpClient)),
     Layer.provide(configLayer),
@@ -71,7 +71,7 @@ const check = (input: Parameters<OtlpEndpointCheck.OtlpEndpointCheck["Service"][
   });
 
 describe("OtlpEndpointCheck", () => {
-  it.effect("keeps T3 credentials paired with each running signal endpoint", () => {
+  it.effect("keeps Houston credentials paired with each running signal endpoint", () => {
     const signalExport = { ...DEFAULT_SIGNAL_EXPORT, headers: { "x-api-key": "secret" } };
     const { requests, layer } = checkWith(200, {
       otlpTracesUrl: "https://collector.example.com/v1/traces",

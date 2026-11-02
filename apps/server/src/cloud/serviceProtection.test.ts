@@ -18,7 +18,7 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as ServiceProtection from "./serviceProtection.ts";
 
 const temporaryDirectory = () =>
-  NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-service-protection-"));
+  NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-service-protection-"));
 
 describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("renderPrivilegedScript", () => {
   it("writes and removes only its drop-ins and gives running main processes their score", () => {
@@ -38,10 +38,13 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("renderPrivileg
         "[Service]\nMemoryLow=2G\nOOMScoreAdjust=-900\n",
       );
       expect(theo.managerDefaults.path).toBe(
-        "/home/theo/.config/systemd/user.conf.d/90-t3code-protect.conf",
+        "/home/theo/.config/systemd/user.conf.d/90-houston-protect.conf",
       );
       expect(theo.oomUnits).toEqual(["user@1000.service", "tailscaled.service", "ssh.service"]);
 
+      const legacyDropIn = NodePath.join(systemUnitDir, "user.slice.d", "90-t3code-protect.conf");
+      NodeFS.mkdirSync(NodePath.dirname(legacyDropIn), { recursive: true });
+      NodeFS.writeFileSync(legacyDropIn, "[Slice]\nMemoryLow=1G\n");
       const unrelated = NodePath.join(systemUnitDir, "ssh.service.d", "50-admin.conf");
       NodeFS.mkdirSync(NodePath.dirname(unrelated), { recursive: true });
       NodeFS.writeFileSync(unrelated, "[Service]\nNice=1\n");
@@ -79,9 +82,10 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("renderPrivileg
         expect(result.status).toBe(0);
       };
       const exists = (unit: string) =>
-        NodeFS.existsSync(NodePath.join(systemUnitDir, `${unit}.d`, "90-t3code-protect.conf"));
+        NodeFS.existsSync(NodePath.join(systemUnitDir, `${unit}.d`, "90-houston-protect.conf"));
 
       runScript(theo, "apply");
+      expect(NodeFS.existsSync(legacyDropIn)).toBe(false);
       runScript(plan(1001, []), "apply");
       for (const { path, contents } of theo.system) {
         expect(NodeFS.readFileSync(path, "utf8")).toBe(contents);
@@ -233,7 +237,7 @@ it.effect("counts memory.min as protection and names the first cgroup that grant
     "user-1000.slice",
     "user@1000.service",
     "app.slice",
-    "t3code.service",
+    "houston.service",
   ];
   const write = (depth: number, file: string, value: string) => {
     const directory = NodePath.join(root, ...controlGroup.slice(0, depth));

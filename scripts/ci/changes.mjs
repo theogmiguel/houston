@@ -30,20 +30,20 @@ const SERVER_PATHS = [
   /^apps\/server\//,
   /^packages\//,
   /^scripts\//,
-  /^oxlint-plugin-t3code\//,
+  /^oxlint-plugin-houston\//,
   /^vite\.config\.ts$/,
 ];
 const WEB_PATHS = [
   /^apps\/web\//,
   /^packages\//,
   /^scripts\//,
-  /^oxlint-plugin-t3code\//,
+  /^oxlint-plugin-houston\//,
   /^vite\.config\.ts$/,
 ];
 const PACKAGE_PATHS = [
   /^packages\//,
   /^scripts\//,
-  /^oxlint-plugin-t3code\//,
+  /^oxlint-plugin-houston\//,
   /^vite\.config\.ts$/,
 ];
 const NATIVE_PATHS = [

@@ -315,25 +315,25 @@ describe("filterComposerPullRequestMatches", () => {
     {
       number: 7,
       projectId: "project-1",
-      repository: "t3tools/t3code",
+      repository: "example/houston",
       updatedAt: "2026-09-01T12:00:00.000Z",
     },
     {
       number: 8987,
       projectId: "project-1",
-      repository: "T3Tools/T3Code",
+      repository: "Example/Houston",
       updatedAt: "2026-09-03T12:00:00.000Z",
     },
     {
       number: 27,
       projectId: "project-1",
-      repository: "t3tools/t3code",
+      repository: "example/houston",
       updatedAt: "2026-09-02T12:00:00.000Z",
     },
     {
       number: 27,
       projectId: "project-1",
-      repository: "t3tools/t3code",
+      repository: "example/houston",
       updatedAt: "2026-09-01T13:00:00.000Z",
     },
     {
@@ -349,7 +349,7 @@ describe("filterComposerPullRequestMatches", () => {
       filterComposerPullRequestMatches({
         entries,
         projectId: "project-1",
-        repository: "t3tools/t3code",
+        repository: "example/houston",
         query: "7",
         limit: 10,
       }).map((entry) => entry.number),
@@ -360,19 +360,19 @@ describe("filterComposerPullRequestMatches", () => {
     const exact = {
       number: 7,
       projectId: "project-1",
-      repository: "t3tools/t3code",
+      repository: "example/houston",
       updatedAt: "2020-01-01T00:00:00.000Z",
     };
     const newerSubstringMatches = Array.from({ length: 12 }, (_unused, index) => ({
       number: 700 + index,
       projectId: "project-1",
-      repository: "t3tools/t3code",
+      repository: "example/houston",
       updatedAt: `2026-09-${String(index + 1).padStart(2, "0")}T12:00:00.000Z`,
     }));
     const matches = filterComposerPullRequestMatches({
       entries: [...newerSubstringMatches, exact],
       projectId: "project-1",
-      repository: "t3tools/t3code",
+      repository: "example/houston",
       query: "7",
       limit: 10,
     });

@@ -16,7 +16,7 @@ it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
   it.effect("finds a name among the refs of every namespace", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
-      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-ref-named-" });
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "houston-ref-named-" });
       const workflow = yield* GitWorkflowService.GitWorkflowService;
       const driver = yield* GitVcsDriver.GitVcsDriver;
       for (const args of [
@@ -46,7 +46,7 @@ it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
           Layer.provideMerge(GitVcsDriver.layer),
           Layer.provideMerge(VcsProcess.layer),
           Layer.provideMerge(
-            ServerConfig.layerTest(process.cwd(), { prefix: "t3-ref-named-" }).pipe(
+            ServerConfig.layerTest(process.cwd(), { prefix: "houston-ref-named-" }).pipe(
               Layer.provide(NodeServices.layer),
             ),
           ),

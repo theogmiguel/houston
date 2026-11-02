@@ -479,7 +479,7 @@ const boxToolkitLayer = (thread: BoxThread) => {
     Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
     Layer.provide(Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({})),
     Layer.provide(
-      ServerConfig.layerTest(process.cwd(), { prefix: "t3-remote-delegation-box-" }).pipe(
+      ServerConfig.layerTest(process.cwd(), { prefix: "houston-remote-delegation-box-" }).pipe(
         Layer.provide(NodeServices.layer),
       ),
     ),
@@ -1653,7 +1653,7 @@ it.effect("stopping the parent stops follow-up work on a task there that has its
       });
 
       // The parent sends the thread there a follow-up, which starts a run there.
-      const sent = yield* a.call("t3_thread_send", {
+      const sent = yield* a.call("houston_thread_send", {
         environmentId: box.environmentId,
         threadId: delegated.remoteChild.threadId,
         message: "Now run the slow suite too.",
@@ -1709,7 +1709,7 @@ it.effect("a delayed Stop acknowledgement leaves a newer Stop owed", () =>
       });
       yield* Deferred.await(thread.stopStarted);
       // Work starts after the first Stop landed there, but before its acknowledgement returns.
-      yield* a.call("t3_thread_send", {
+      yield* a.call("houston_thread_send", {
         environmentId: box.environmentId,
         threadId: delegated.remoteChild.threadId,
         message: "Run another check.",

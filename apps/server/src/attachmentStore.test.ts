@@ -79,7 +79,7 @@ describe("attachmentStore", () => {
 
   it("plans pending attachment claims with direct filename lookups", () => {
     const attachmentsDir = NodeFS.mkdtempSync(
-      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-claim-"),
+      NodePath.join(NodeOS.tmpdir(), "houston-attachment-claim-"),
     );
     try {
       const uuid = "00000000-0000-4000-8000-000000000001";
@@ -108,7 +108,7 @@ describe("attachmentStore", () => {
 
   it("rejects thread-owned attachments even when thread segments collide", () => {
     const attachmentsDir = NodeFS.mkdtempSync(
-      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-ownership-"),
+      NodePath.join(NodeOS.tmpdir(), "houston-attachment-ownership-"),
     );
     try {
       const attachmentId = "a-b-00000000-0000-4000-8000-000000000003";
@@ -125,7 +125,7 @@ describe("attachmentStore", () => {
 
   it("removes expired pending and partial files without touching thread attachments", () => {
     const attachmentsDir = NodeFS.mkdtempSync(
-      NodePath.join(NodeOS.tmpdir(), "t3code-attachment-sweep-"),
+      NodePath.join(NodeOS.tmpdir(), "houston-attachment-sweep-"),
     );
     try {
       const now = 1_800_000_000_000;
@@ -158,7 +158,7 @@ describe("threadHtmlRenderAttachmentIds", () => {
     const own = createAttachmentId("thread-a", "html")!;
     const other = createAttachmentId("thread-b", "html")!;
     const render = (attachmentId: string, extra = {}) => ({
-      toolName: "mcp__t3-code__html_render",
+      toolName: "mcp__houston__html_render",
       output: [
         {
           type: "text",
@@ -171,7 +171,7 @@ describe("threadHtmlRenderAttachmentIds", () => {
         render(own),
         render(other),
         render(createAttachmentId("thread-a", "html")!, { isError: true }),
-        { toolName: "mcp__t3-code__html_preview", output: render(own).output },
+        { toolName: "mcp__houston__html_preview", output: render(own).output },
       ]),
     ).toEqual([own]);
   });

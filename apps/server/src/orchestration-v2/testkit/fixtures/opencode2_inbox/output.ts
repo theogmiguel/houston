@@ -58,6 +58,6 @@ export function assertOpenCode2InboxOutput(
   assert.deepEqual([shell?.status, shell?.runId], ["completed", first?.id]);
 
   for (const turn of [...turnOf(first), ...turnOf(queued)]) {
-    assert.match(turn.nativeTurnRef?.nativeId ?? "", /^msg_t3_turn_/);
+    assert.match(turn.nativeTurnRef?.nativeId ?? "", /^msg_houston_turn_/);
   }
 }

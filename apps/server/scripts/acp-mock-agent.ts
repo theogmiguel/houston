@@ -16,62 +16,64 @@ import type * as AcpCompat from "effect-acp/compat";
 
 import { beginAcpMockPrompt } from "./acpMockCancellationState.ts";
 
-const requestLogPath = process.env.T3_ACP_REQUEST_LOG_PATH;
-const antigravityProfile = process.env.T3_ACP_ANTIGRAVITY === "1";
+const requestLogPath = process.env.HOUSTON_ACP_REQUEST_LOG_PATH;
+const antigravityProfile = process.env.HOUSTON_ACP_ANTIGRAVITY === "1";
 // GitHub Copilot CLI advertises URL-shaped session mode ids.
-const copilotModesProfile = process.env.T3_ACP_COPILOT_MODES === "1";
+const copilotModesProfile = process.env.HOUSTON_ACP_COPILOT_MODES === "1";
 const copilotModeId = (name: string) =>
   `https://agentclientprotocol.com/protocol/session-modes#${name}`;
-const modeOptionCategory = process.env.T3_ACP_MODE_OPTION_CATEGORY ?? "mode";
-const emitToolCalls = process.env.T3_ACP_EMIT_TOOL_CALLS === "1";
+const modeOptionCategory = process.env.HOUSTON_ACP_MODE_OPTION_CATEGORY ?? "mode";
+const emitToolCalls = process.env.HOUSTON_ACP_EMIT_TOOL_CALLS === "1";
 const emitInterleavedAssistantToolCalls =
-  process.env.T3_ACP_EMIT_INTERLEAVED_ASSISTANT_TOOL_CALLS === "1";
-const emitV2Fidelity = process.env.T3_ACP_EMIT_V2_FIDELITY === "1";
-const emitNotice = process.env.T3_ACP_EMIT_NOTICE === "1";
-const vibeRetryOutcome = process.env.T3_ACP_VIBE_RETRY_OUTCOME;
-const emitGenericToolPlaceholders = process.env.T3_ACP_EMIT_GENERIC_TOOL_PLACEHOLDERS === "1";
+  process.env.HOUSTON_ACP_EMIT_INTERLEAVED_ASSISTANT_TOOL_CALLS === "1";
+const emitV2Fidelity = process.env.HOUSTON_ACP_EMIT_V2_FIDELITY === "1";
+const emitNotice = process.env.HOUSTON_ACP_EMIT_NOTICE === "1";
+const vibeRetryOutcome = process.env.HOUSTON_ACP_VIBE_RETRY_OUTCOME;
+const emitGenericToolPlaceholders = process.env.HOUSTON_ACP_EMIT_GENERIC_TOOL_PLACEHOLDERS === "1";
 const emitInTurnTaskOutputThenLateDuplicate =
-  process.env.T3_ACP_EMIT_IN_TURN_TASKOUTPUT_THEN_LATE_DUPLICATE === "1";
+  process.env.HOUSTON_ACP_EMIT_IN_TURN_TASKOUTPUT_THEN_LATE_DUPLICATE === "1";
 const emitBackgroundToolDuringAnswer =
-  process.env.T3_ACP_EMIT_BACKGROUND_TOOL_DURING_ANSWER === "1";
+  process.env.HOUSTON_ACP_EMIT_BACKGROUND_TOOL_DURING_ANSWER === "1";
 const emitMcpToolApprovalElicitation =
-  process.env.T3_ACP_EMIT_MCP_TOOL_APPROVAL_ELICITATION === "1";
-const grokKillTaskShape = process.env.T3_ACP_GROK_KILL_TASK_SHAPE;
-const emitGrokBackgroundTaskPoll = process.env.T3_ACP_GROK_BACKGROUND_TASK_COMPLETION === "poll";
-const emitForeignSessionUpdates = process.env.T3_ACP_EMIT_FOREIGN_SESSION_UPDATES === "1";
-const omitInitializeModelState = process.env.T3_ACP_OMIT_INITIALIZE_MODEL_STATE === "1";
-const completeFirstPromptOnCancel = process.env.T3_ACP_COMPLETE_FIRST_PROMPT_ON_CANCEL === "1";
-const floodStderr = process.env.T3_ACP_FLOOD_STDERR === "1";
-const hangPromptForever = process.env.T3_ACP_HANG_PROMPT_FOREVER === "1";
-const emitTrackedToolCallKindThenHang = process.env.T3_ACP_EMIT_TRACKED_TOOL_CALL_KIND_THEN_HANG;
-const clientFsProbePath = process.env.T3_ACP_CLIENT_FS_PROBE_PATH;
-const clientFsProbeLogPath = process.env.T3_ACP_CLIENT_FS_PROBE_LOG_PATH;
+  process.env.HOUSTON_ACP_EMIT_MCP_TOOL_APPROVAL_ELICITATION === "1";
+const grokKillTaskShape = process.env.HOUSTON_ACP_GROK_KILL_TASK_SHAPE;
+const emitGrokBackgroundTaskPoll =
+  process.env.HOUSTON_ACP_GROK_BACKGROUND_TASK_COMPLETION === "poll";
+const emitForeignSessionUpdates = process.env.HOUSTON_ACP_EMIT_FOREIGN_SESSION_UPDATES === "1";
+const omitInitializeModelState = process.env.HOUSTON_ACP_OMIT_INITIALIZE_MODEL_STATE === "1";
+const completeFirstPromptOnCancel = process.env.HOUSTON_ACP_COMPLETE_FIRST_PROMPT_ON_CANCEL === "1";
+const floodStderr = process.env.HOUSTON_ACP_FLOOD_STDERR === "1";
+const hangPromptForever = process.env.HOUSTON_ACP_HANG_PROMPT_FOREVER === "1";
+const emitTrackedToolCallKindThenHang =
+  process.env.HOUSTON_ACP_EMIT_TRACKED_TOOL_CALL_KIND_THEN_HANG;
+const clientFsProbePath = process.env.HOUSTON_ACP_CLIENT_FS_PROBE_PATH;
+const clientFsProbeLogPath = process.env.HOUSTON_ACP_CLIENT_FS_PROBE_LOG_PATH;
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
-const emitEmptySuccessfulBash = process.env.T3_ACP_EMIT_EMPTY_SUCCESSFUL_BASH === "1";
+const emitEmptySuccessfulBash = process.env.HOUSTON_ACP_EMIT_EMPTY_SUCCESSFUL_BASH === "1";
 const emitEmptySuccessfulBashThenHang =
-  process.env.T3_ACP_EMIT_EMPTY_SUCCESSFUL_BASH_THEN_HANG === "1";
-const failLoadSession = process.env.T3_ACP_FAIL_LOAD_SESSION === "1";
+  process.env.HOUSTON_ACP_EMIT_EMPTY_SUCCESSFUL_BASH_THEN_HANG === "1";
+const failLoadSession = process.env.HOUSTON_ACP_FAIL_LOAD_SESSION === "1";
 const failLoadSessionAfterConfigReplay =
-  process.env.T3_ACP_FAIL_LOAD_SESSION_AFTER_CONFIG_REPLAY === "1";
-const emitLoadReplay = process.env.T3_ACP_EMIT_LOAD_REPLAY === "1";
-const failPrompt = process.env.T3_ACP_FAIL_PROMPT === "1";
-const failPromptOrdinal = Number(process.env.T3_ACP_FAIL_PROMPT_ORDINAL);
+  process.env.HOUSTON_ACP_FAIL_LOAD_SESSION_AFTER_CONFIG_REPLAY === "1";
+const emitLoadReplay = process.env.HOUSTON_ACP_EMIT_LOAD_REPLAY === "1";
+const failPrompt = process.env.HOUSTON_ACP_FAIL_PROMPT === "1";
+const failPromptOrdinal = Number(process.env.HOUSTON_ACP_FAIL_PROMPT_ORDINAL);
 const compactionPromptOrdinals = new Set(
-  (process.env.T3_ACP_COMPACTION_PROMPT_ORDINALS ?? "").split(",").map(Number),
+  (process.env.HOUSTON_ACP_COMPACTION_PROMPT_ORDINALS ?? "").split(",").map(Number),
 );
-const failSetModeConfigOption = process.env.T3_ACP_FAIL_SET_MODE_CONFIG_OPTION === "1";
-const emitEmptyDefaultAgentOption = process.env.T3_ACP_EMIT_EMPTY_DEFAULT_AGENT_OPTION === "1";
-const promptResponseText = process.env.T3_ACP_PROMPT_RESPONSE_TEXT;
-const promptDelayMs = Number(process.env.T3_ACP_PROMPT_DELAY_MS ?? "0");
-const terminalOutputBytes = Number(process.env.T3_ACP_EMIT_TERMINAL_OUTPUT_BYTES ?? "0");
-const supportsSessionLifecycle = process.env.T3_ACP_SESSION_LIFECYCLE === "1";
-const supportsAcpMcp = process.env.T3_ACP_MCP_ACP === "1";
-const supportsHttpMcp = process.env.T3_ACP_MCP_HTTP === "1";
-const supportsV2Management = process.env.T3_ACP_V2_MANAGEMENT === "1";
-const advertisedAuthMethodId = process.env.T3_ACP_AUTH_METHOD_ID?.trim();
+const failSetModeConfigOption = process.env.HOUSTON_ACP_FAIL_SET_MODE_CONFIG_OPTION === "1";
+const emitEmptyDefaultAgentOption = process.env.HOUSTON_ACP_EMIT_EMPTY_DEFAULT_AGENT_OPTION === "1";
+const promptResponseText = process.env.HOUSTON_ACP_PROMPT_RESPONSE_TEXT;
+const promptDelayMs = Number(process.env.HOUSTON_ACP_PROMPT_DELAY_MS ?? "0");
+const terminalOutputBytes = Number(process.env.HOUSTON_ACP_EMIT_TERMINAL_OUTPUT_BYTES ?? "0");
+const supportsSessionLifecycle = process.env.HOUSTON_ACP_SESSION_LIFECYCLE === "1";
+const supportsAcpMcp = process.env.HOUSTON_ACP_MCP_ACP === "1";
+const supportsHttpMcp = process.env.HOUSTON_ACP_MCP_HTTP === "1";
+const supportsV2Management = process.env.HOUSTON_ACP_V2_MANAGEMENT === "1";
+const advertisedAuthMethodId = process.env.HOUSTON_ACP_AUTH_METHOD_ID?.trim();
 const initializeAuthMethodId =
   advertisedAuthMethodId ?? (supportsSessionLifecycle ? "test" : undefined);
-const requiresAuthentication = process.env.T3_ACP_REQUIRE_AUTH === "1";
+const requiresAuthentication = process.env.HOUSTON_ACP_REQUIRE_AUTH === "1";
 const permissionOptionIds = {
   allowOnce: "allow-once",
   allowAlways: "allow-always",
@@ -512,7 +514,7 @@ const program = Effect.gen(function* () {
       parameterizedModelPicker = request.capabilities?._meta?.parameterizedModelPicker === true;
       return {
         protocolVersion: 2,
-        info: { name: "t3-acp-mock-agent", version: "0.0.0" },
+        info: { name: "houston-acp-mock-agent", version: "0.0.0" },
         ...(omitInitializeModelState ? {} : { _meta: { modelState: modelState() } }),
         capabilities: {
           session: {
@@ -811,7 +813,7 @@ const program = Effect.gen(function* () {
       const requestedSessionId = String(request.sessionId ?? sessionId);
       beginAcpMockPrompt(cancelledSessions, requestedSessionId);
       promptCount += 1;
-      const idleError = process.env.T3_ACP_IDLE_ERROR;
+      const idleError = process.env.HOUSTON_ACP_IDLE_ERROR;
       if (idleError === "grok-background" && promptCount === 1) {
         // The structured completion lands before the prompt settles, so it is buffered.
         const taskId = "call-idle-error-background";
@@ -1223,11 +1225,11 @@ const program = Effect.gen(function* () {
             rawOutput: {
               action: {
                 type: "search",
-                query: "t3 code",
+                query: "houston",
                 sources: [
-                  { type: "url", url: "https://t3.codes" },
-                  { type: "url", url: "https://t3.codes" },
-                  { type: "url", url: "https://github.com/pingdotgg/t3code" },
+                  { type: "url", url: "https://example.com" },
+                  { type: "url", url: "https://example.com" },
+                  { type: "url", url: "https://github.com/example/houston" },
                 ],
               },
               id: "grok-web-search",
@@ -1237,15 +1239,15 @@ const program = Effect.gen(function* () {
           {
             sessionUpdate: "tool_call_update",
             toolCallId: "grok-web-fetch",
-            title: "Fetch: https://t3.codes",
+            title: "Fetch: https://example.com",
             kind: "fetch",
             status: "completed",
-            rawInput: { variant: "WebFetch", url: "https://t3.codes" },
+            rawInput: { variant: "WebFetch", url: "https://example.com" },
             rawOutput: {
               type: "WebFetch",
-              Content: { url: "https://t3.codes", content: "T3 Code page" },
+              Content: { url: "https://example.com", content: "Houston page" },
             },
-            content: [{ type: "content", content: { type: "text", text: "T3 Code page" } }],
+            content: [{ type: "content", content: { type: "text", text: "Houston page" } }],
           },
           {
             sessionUpdate: "tool_call_update",
@@ -1841,8 +1843,8 @@ const program = Effect.gen(function* () {
   yield* agent.handleUnknownExtRequest((method, params) => {
     if (method === "_test/environment") {
       return Effect.succeed({
-        inherited: process.env.T3_ACP_RUNTIME_AMBIENT === "sentinel",
-        explicit: process.env.T3_ACP_RUNTIME_EXPLICIT === "kept",
+        inherited: process.env.HOUSTON_ACP_RUNTIME_AMBIENT === "sentinel",
+        explicit: process.env.HOUSTON_ACP_RUNTIME_EXPLICIT === "kept",
       });
     }
     if (method === "_test/finish-cancel") {

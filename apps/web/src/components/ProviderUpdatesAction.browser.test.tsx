@@ -87,7 +87,7 @@ function session(
       policy: "remote-reachable",
       bootstrapMethods: ["one-time-token"],
       sessionMethods: ["bearer-access-token"],
-      sessionCookieName: "t3_session",
+      sessionCookieName: "houston_session",
     },
   });
 }

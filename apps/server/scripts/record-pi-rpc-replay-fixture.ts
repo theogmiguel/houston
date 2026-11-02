@@ -52,7 +52,7 @@ if (fixture === undefined || variant === undefined) {
   throw new Error(`Pass --scenario with a fixture that registers Pi: ${names.join(", ")}`);
 }
 
-const piBinary = process.env.T3_PI_BIN ?? "pi";
+const piBinary = process.env.HOUSTON_PI_BIN ?? "pi";
 const [modelProvider, ...modelId] = variant.modelSelection.model.split("/");
 const launchArgs = `--provider ${modelProvider} --model ${modelId.join("/")} ${HERMETIC_LAUNCH_ARGS}`;
 const home = process.env.HOME ?? "";
@@ -205,7 +205,7 @@ const record = Effect.gen(function* () {
     path.join(workspace, ".pi", "settings.json"),
     encodeJson(WORKSPACE_PI_SETTINGS),
   );
-  const sessionDir = yield* fs.makeTempDirectory({ prefix: `t3-pi-record-sessions-` });
+  const sessionDir = yield* fs.makeTempDirectory({ prefix: `houston-pi-record-sessions-` });
   yield* Effect.addFinalizer(() =>
     Effect.all([
       fs.remove(workspace, { recursive: true, force: true }),

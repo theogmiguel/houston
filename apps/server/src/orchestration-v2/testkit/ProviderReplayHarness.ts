@@ -90,7 +90,7 @@ export function makeReplayServerConfig(
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const baseDir = yield* fs.makeTempDirectory({
-      prefix: `t3-orchestration-v2-replay-${safeScenario}-`,
+      prefix: `houston-orchestration-v2-replay-${safeScenario}-`,
     });
     const stateDir = path.join(baseDir, "userdata");
     const logsDir = path.join(stateDir, "logs");
@@ -208,7 +208,7 @@ export function runOrchestratorV2ProviderReplayScenario<
     readonly runContinuationWorker?: boolean;
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
-    /** Houston: issue T3 MCP credentials as the server does, through this registry. */
+    /** Houston: issue Houston MCP credentials as the server does, through this registry. */
     readonly configureMcp?: boolean;
     readonly mcpSessionRegistry?: Layer.Layer<McpSessionRegistry.McpSessionRegistry>;
     readonly managedPolicy?: ManagedPolicyDocument;
@@ -254,7 +254,7 @@ export function layerProviderReplay<Transcript extends ProviderReplayTranscript,
     readonly runContinuationWorker?: boolean;
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
-    /** Houston: issue T3 MCP credentials as the server does, through this registry. */
+    /** Houston: issue Houston MCP credentials as the server does, through this registry. */
     readonly configureMcp?: boolean;
     readonly mcpSessionRegistry?: Layer.Layer<McpSessionRegistry.McpSessionRegistry>;
     readonly managedPolicy?: ManagedPolicyDocument;
@@ -294,7 +294,7 @@ export function layerWithRegistry<Error>(
     readonly runContinuationWorker?: boolean;
     readonly recoverOnStartup?: boolean;
     readonly continueThreadsAfterServerUpdate?: boolean;
-    /** Houston: issue T3 MCP credentials as the server does, through this registry. */
+    /** Houston: issue Houston MCP credentials as the server does, through this registry. */
     readonly configureMcp?: boolean;
     readonly mcpSessionRegistry?: Layer.Layer<McpSessionRegistry.McpSessionRegistry>;
     /** Houston: the planners and reviewers that run read-only; none when absent. */

@@ -326,8 +326,8 @@ describe("read-only runs per family", () => {
       for (const tool of ["Read", "Glob", "Grep"]) assert.include(options.allowedTools ?? [], tool);
       assert.isUndefined(options.allowDangerouslySkipPermissions);
       assert.isFalse(
-        Object.keys(options.mcpServers ?? {}).includes("t3-code"),
-        "a side thread's query carries no T3 MCP server",
+        Object.keys(options.mcpServers ?? {}).includes("houston"),
+        "a side thread's query carries no Houston MCP server",
       );
     }).pipe(Effect.scoped),
   );

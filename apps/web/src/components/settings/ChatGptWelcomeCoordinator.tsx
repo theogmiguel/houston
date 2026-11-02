@@ -14,7 +14,7 @@ import {
 } from "../ui/dialog";
 import { ChatGptUsageButton } from "./ChatGptUsageButton";
 
-const STORAGE_KEY = "t3:chatgpt-sharing-welcome:v1";
+const STORAGE_KEY = "houston:chatgpt-sharing-welcome:v1";
 function readAcknowledgedProfiles(): string[] {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");

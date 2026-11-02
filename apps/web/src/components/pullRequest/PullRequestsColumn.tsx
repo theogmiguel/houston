@@ -38,7 +38,7 @@ function ExpandableSearch({
   onFocusWithin?: (focused: boolean) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses the search input DOM node when the topbar search opens
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- focuses the search input DOM node when the topbar search opens
   useEffect(() => {
     if (!open) return;
     containerRef.current?.querySelector("input")?.focus();
@@ -114,7 +114,7 @@ export function PullRequestsColumn({
   const contentArea = workspaceAreaProps("pull-requests", 1, "Pull requests");
   const markerRef = useRef<HTMLDivElement | null>(null);
   const [condensed, setCondensed] = useState(false);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- IntersectionObserver on the scroll marker condenses the topbar
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- IntersectionObserver on the scroll marker condenses the topbar
   useEffect(() => {
     const marker = markerRef.current;
     if (!marker) return;
@@ -129,7 +129,7 @@ export function PullRequestsColumn({
   const [searchOpen, setSearchOpen] = useState(false);
   const topbarSearchRef = useRef<HTMLDivElement | null>(null);
   const searchExpanded = searchOpen || searchValue.length > 0;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window keydown listener focuses the visible search input on Cmd/Ctrl+F
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- window keydown listener focuses the visible search input on Cmd/Ctrl+F
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
@@ -146,7 +146,7 @@ export function PullRequestsColumn({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [condensed]);
   if (!condensed && searchOpen) setSearchOpen(false);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- moves DOM focus to the in-flow search when the topbar search it was typed in unmounts
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- moves DOM focus to the in-flow search when the topbar search it was typed in unmounts
   useEffect(() => {
     if (condensed) return;
     if (!topbarSearchFocusedRef.current) return;

@@ -25,7 +25,7 @@ const legacyPermissionEnvironmentsAtom = Atom.make((get) =>
 ).pipe(Atom.withLabel("web-legacy-permission-environments"));
 
 const dismissalKey = (environmentId: EnvironmentId) =>
-  `t3code:permission-update:v1:${environmentId}`;
+  `houston:permission-update:v1:${environmentId}`;
 
 function showPermissionNotice(
   router: AnyRouter,

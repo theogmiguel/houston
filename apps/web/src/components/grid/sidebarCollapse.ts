@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 
 /** Grid collapse survives a reload, like the shelves' expansion. */
-export const COLLAPSED_GRIDS_STORAGE_KEY = "t3code:sidebar:collapsed-grids";
+export const COLLAPSED_GRIDS_STORAGE_KEY = "houston:sidebar:collapsed-grids";
 
 const EMPTY_COLLAPSED_KEYS: ReadonlyArray<string> = [];
 

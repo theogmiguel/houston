@@ -41,7 +41,7 @@ const PeerHttpApi = HttpApi.make(EnvironmentHttpApi.identifier)
   .annotateMerge(EnvironmentHttpApi.annotations);
 
 /** The redirect registered for a link. Nothing ever listens there: the code comes back in the response. */
-const LINK_REDIRECT_URI = "http://127.0.0.1/t3code-peer-link";
+const LINK_REDIRECT_URI = "http://127.0.0.1/houston-peer-link";
 /**
  * How long a peer's descriptor may take before a route counts as unreachable.
  * A tailnet or relayed route to a machine that is waking up takes longer.
@@ -74,7 +74,7 @@ export class PeerLinks extends Context.Service<
     readonly link: (input: PeerLinkCreateInput) => Effect.Effect<PeerLink, PeerLinkError>;
     /**
      * The environment answering at `url`, or nothing when it is not a usable
-     * address or does not answer as T3 Code. Sends no credential.
+     * address or does not answer as Houston. Sends no credential.
      */
     readonly describe: (
       url: string,
@@ -195,7 +195,7 @@ const make = Effect.gen(function* () {
       Effect.provideService(HttpClient.HttpClient, peerHttpClient),
     );
 
-  /** The environment answering at `origin`, or nothing when it does not answer as T3 Code. */
+  /** The environment answering at `origin`, or nothing when it does not answer as Houston. */
   const describe = (origin: string) =>
     clientFor(origin).pipe(
       Effect.flatMap((client) => client.metadata.descriptor()),
@@ -398,7 +398,7 @@ const make = Effect.gen(function* () {
     const descriptor = yield* describe(primary);
     if (Option.isNone(descriptor)) {
       return yield* new PeerLinkError({
-        reason: "not_a_t3_environment",
+        reason: "not_a_houston_environment",
         message: `Nothing at ${primary} answered as a Houston environment.`,
       });
     }
@@ -546,7 +546,7 @@ const make = Effect.gen(function* () {
       if (Option.isNone(row)) {
         return yield* new PeerLinkError({
           reason: "unknown_link",
-          message: `This environment is not linked to ${environmentId}. t3_environment_links lists the linked ones.`,
+          message: `This environment is not linked to ${environmentId}. houston_environment_links lists the linked ones.`,
         });
       }
       const link = yield* toLink(row.value);

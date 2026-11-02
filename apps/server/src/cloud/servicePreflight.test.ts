@@ -39,7 +39,7 @@ it.layer(NodeServices.layer)("service preflight database", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const databasePath = path.join(
-        yield* fs.makeTempDirectoryScoped({ prefix: "t3-preflight-" }),
+        yield* fs.makeTempDirectoryScoped({ prefix: "houston-preflight-" }),
         "state.sqlite",
       );
       const db = new NodeSqlite.DatabaseSync(databasePath);

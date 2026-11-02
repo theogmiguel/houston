@@ -66,7 +66,7 @@ export function AgentCursorMark(props: {
   const [inactiveSequence, setInactiveSequence] = useState<number | null>(null);
   const active = inactiveSequence !== sequence;
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer fades the agent cursor after each move or click
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- timer fades the agent cursor after each move or click
   useEffect(() => {
     const timeout = window.setTimeout(() => setInactiveSequence(sequence), CURSOR_ACTIVE_MS);
     return () => window.clearTimeout(timeout);

@@ -4,7 +4,7 @@ import { serializeComposerFileLink } from "@houston-app/shared/composerTrigger";
 
 export const TRIAGE_PLAYBOOK = `# Houston triage playbook
 
-You are a support engineer for Houston (https://github.com/pingdotgg/t3code), working
+You are a support engineer for Houston (https://github.com/theogmiguel/houston), working
 inside a coding-agent session on the machine of a user whose install is misbehaving:
 crashes, auth failures, broken setups, slow launches, or anything else. Your job is to
 find out what went wrong, unblock the user if you can, and turn what you learned into
@@ -34,7 +34,7 @@ gives the local server's version when the server recorded one.
 
 ## 3. Check for a newer playbook
 
-Fetch https://raw.githubusercontent.com/pingdotgg/t3code/main/.github/triage/PLAYBOOK.md.
+Fetch https://raw.githubusercontent.com/theogmiguel/houston/main/.github/triage/PLAYBOOK.md.
 If it is reachable and its content differs from this text, follow that version
 instead of this one. The user may be on an old release with an old copy.
 
@@ -52,7 +52,7 @@ such as \`v0.0.42\`), into the source cache directory named in the context file,
 one subdirectory per commit hash:
 
     git clone --depth 1 --filter=blob:none --branch <release-tag> \\
-      https://github.com/pingdotgg/t3code <source-cache-dir>/<hash>
+      https://github.com/theogmiguel/houston <source-cache-dir>/<hash>
 
 If the tag does not exist (nightly builds), clone \`main\` instead, and treat file
 and line references as approximate: the user's build may not match \`main\`
@@ -97,7 +97,7 @@ comes from this repo's \`main\` branch.
 
 ## 6. Check upstream
 
-Search existing issues in pingdotgg/t3code (use \`gh\`, or the public GitHub search
+Search existing issues in theogmiguel/houston (use \`gh\`, or the public GitHub search
 API if \`gh\` is missing or not logged in). Then check whether the problem is already
 fixed in a release newer than the version the bug happened on: compare versions,
 read release notes and recent commits touching the relevant code.
@@ -128,10 +128,10 @@ of \`main\` for that work, never the tag-pinned diagnosis clone.
 - Show the user the complete final issue text and get an explicit yes before
   posting. Never post without it.
 - Note at the end of the issue which model and agent produced it.
-- Post with \`gh issue create --repo pingdotgg/t3code --label via-triage\` only
-  if \`gh api repos/pingdotgg/t3code --jq .permissions.triage\` prints \`true\`.
+- Post with \`gh issue create --repo theogmiguel/houston --label via-triage\` only
+  if \`gh api repos/theogmiguel/houston --jq .permissions.triage\` prints \`true\`.
 - Otherwise, or if \`gh\` is not authenticated, build a prefilled
-  https://github.com/pingdotgg/t3code/issues/new?template=via-triage.yml URL.
+  https://github.com/theogmiguel/houston/issues/new?template=via-triage.yml URL.
   The form applies the label whoever submits it. Add \`title\` plus one
   URL-encoded query parameter per form field id: \`what-happened\`, \`diagnosis\`,
   \`steps\`, \`version\`, \`environment\`, \`evidence\`, \`related\`, \`workaround\` and
@@ -292,7 +292,7 @@ ${entry.before}
 - OS: ${input.os}
 - Node: ${input.nodeVersion}
 ${entry.after === undefined ? "" : `${entry.after}\n`}- Server process: ${input.server}
-- Repo: https://github.com/pingdotgg/t3code
+- Repo: https://github.com/theogmiguel/houston
 ${input.entry.kind === "app" ? IN_APP_SECTION : ""}${input.sourceClone === undefined ? "" : sourceSection(input.sourceClone)}
 ## Paths
 
@@ -302,7 +302,7 @@ ${input.entry.kind === "app" ? IN_APP_SECTION : ""}${input.sourceClone === undef
 - Logs dir: ${input.paths.logsDir}
 - Service log (systemd/launchd service installs only): ${input.paths.serviceLogPath}
 - Desktop backend logs (glob; one file per backend plus rotated copies; written only when a backend crashes or fails to start): ${input.paths.desktopBackendLogGlob}
-- T3 Connect tunnel log (ndjson; what the server logged about its cloudflared connector, with rotated copies \`.1\` and \`.2\`): ${input.paths.relayClientLogPath}
+-  T3CONNECT  tunnel log (ndjson; what the server logged about its cloudflared connector, with rotated copies \`.1\` and \`.2\`): ${input.paths.relayClientLogPath}
 - Server trace (ndjson): ${input.paths.serverTracePath}
 - Provider event log: ${input.paths.providerEventLogPath}
 - Terminal logs: ${input.paths.terminalLogsDir}

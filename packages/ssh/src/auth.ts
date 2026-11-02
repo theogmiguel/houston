@@ -63,7 +63,7 @@ export interface SshChildEnvironmentOptions {
   readonly authSecret?: string | null;
 }
 
-const SSH_ASKPASS_DIR_NAME = "t3code-ssh-askpass";
+const SSH_ASKPASS_DIR_NAME = "houston-ssh-askpass";
 
 function joinSshAskpassPath(
   directory: string,
@@ -75,14 +75,14 @@ function joinSshAskpassPath(
 }
 
 const ASKPASS_POSIX_SCRIPT = `#!/bin/sh
-# Invoked by ssh via SSH_ASKPASS when T3 Code re-runs ssh with a cached password
+# Invoked by ssh via SSH_ASKPASS when Houston re-runs ssh with a cached password
 # from the renderer's in-app prompt. We never expose a native dialog here - if
-# T3_SSH_AUTH_SECRET is missing, that's a caller bug and we fail loudly.
-if [ "\${T3_SSH_AUTH_SECRET+x}" = "x" ]; then
-  printf "%s\\n" "$T3_SSH_AUTH_SECRET"
+# HOUSTON_SSH_AUTH_SECRET is missing, that's a caller bug and we fail loudly.
+if [ "\${HOUSTON_SSH_AUTH_SECRET+x}" = "x" ]; then
+  printf "%s\\n" "$HOUSTON_SSH_AUTH_SECRET"
   exit 0
 fi
-printf 'Houston ssh-askpass invoked without T3_SSH_AUTH_SECRET.\\n' >&2
+printf 'Houston ssh-askpass invoked without HOUSTON_SSH_AUTH_SECRET.\\n' >&2
 exit 1
 `;
 
@@ -90,15 +90,15 @@ const ASKPASS_WINDOWS_LAUNCHER_SCRIPT = `@echo off\r
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0ssh-askpass.ps1" %*\r
 `;
 
-const ASKPASS_WINDOWS_SCRIPT = `# Invoked by ssh via SSH_ASKPASS (through ssh-askpass.cmd) when T3 Code re-runs\r
+const ASKPASS_WINDOWS_SCRIPT = `# Invoked by ssh via SSH_ASKPASS (through ssh-askpass.cmd) when Houston re-runs\r
 # ssh with a cached password from the renderer's in-app prompt. We never expose\r
-# a native dialog here - if T3_SSH_AUTH_SECRET is missing, that's a caller bug\r
+# a native dialog here - if HOUSTON_SSH_AUTH_SECRET is missing, that's a caller bug\r
 # and we fail loudly.\r
-if ($null -ne $env:T3_SSH_AUTH_SECRET) {\r
-  [Console]::Out.WriteLine($env:T3_SSH_AUTH_SECRET)\r
+if ($null -ne $env:HOUSTON_SSH_AUTH_SECRET) {\r
+  [Console]::Out.WriteLine($env:HOUSTON_SSH_AUTH_SECRET)\r
   exit 0\r
 }\r
-[Console]::Error.WriteLine("Houston ssh-askpass invoked without T3_SSH_AUTH_SECRET.")\r
+[Console]::Error.WriteLine("Houston ssh-askpass invoked without HOUSTON_SSH_AUTH_SECRET.")\r
 exit 1\r
 `;
 
@@ -190,7 +190,7 @@ const ensureDefaultSshAskpassHelpers = Effect.fn("ssh/auth.ensureDefaultSshAskpa
       }
     }
     runtimeDirectory ??= yield* fs.realPath(
-      yield* fs.makeTempDirectory({ prefix: "t3code-ssh-runtime-" }),
+      yield* fs.makeTempDirectory({ prefix: "houston-ssh-runtime-" }),
     );
     const launcherPath = yield* ensureSshAskpassHelpers({
       directory: path.join(runtimeDirectory, SSH_ASKPASS_DIR_NAME),
@@ -230,8 +230,8 @@ export const buildSshChildEnvironment = Effect.fn("ssh/auth.buildSshChildEnviron
     ...baseEnv,
     SSH_ASKPASS: sshAskpass,
     SSH_ASKPASS_REQUIRE: "force",
-    ...(input.authSecret === undefined ? {} : { T3_SSH_AUTH_SECRET: input.authSecret ?? "" }),
-    ...(platform === "win32" || baseEnv.DISPLAY || hostDisplay ? {} : { DISPLAY: "t3code" }),
+    ...(input.authSecret === undefined ? {} : { HOUSTON_SSH_AUTH_SECRET: input.authSecret ?? "" }),
+    ...(platform === "win32" || baseEnv.DISPLAY || hostDisplay ? {} : { DISPLAY: "houston" }),
   };
 });
 

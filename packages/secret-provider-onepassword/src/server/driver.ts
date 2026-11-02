@@ -52,7 +52,7 @@ const readTogether = Effect.fn("OnePasswordDriver.readTogether")(function* (
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const separator = `__t3-secret-${yield* (yield* Crypto.Crypto).randomUUIDv4()}__`;
-  const templatePath = yield* fileSystem.makeTempFileScoped({ prefix: "t3code-op-inject-" });
+  const templatePath = yield* fileSystem.makeTempFileScoped({ prefix: "houston-op-inject-" });
   yield* fileSystem.writeFileString(
     templatePath,
     references.map((reference) => `{{ ${reference} }}${separator}`).join(""),

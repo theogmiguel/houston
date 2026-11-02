@@ -666,10 +666,10 @@ export function openCodePermissionRules(
     if (recordString(access, "type") === "fullAccess") {
       rules.push({ permission: "external_directory", pattern: "*", action: "allow" });
     }
-    // Houston: a task planner or reviewer may call its own submit, and no other T3 tool.
+    // Houston: a task planner or reviewer may call its own submit, and no other Houston tool.
     if (runtimePolicy.houstonTaskSubmitTool !== undefined) {
       rules.push({
-        permission: `t3-code_${runtimePolicy.houstonTaskSubmitTool}`,
+        permission: `houston_${runtimePolicy.houstonTaskSubmitTool}`,
         pattern: "*",
         action: "allow",
       });
@@ -977,7 +977,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
         if (hasT3Mcp) {
           yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", () =>
             client.mcp.add({
-              name: "t3-code",
+              name: "houston",
               config: {
                 type: "remote",
                 url: mcpSession.endpoint,

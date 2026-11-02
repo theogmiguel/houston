@@ -42,7 +42,7 @@ const injectShortReads = Effect.fn("injectShortReads")(function* (target: string
   yield* Effect.addFinalizer(() => Effect.sync(() => open.mockImplementation(native.open)));
 });
 
-const UNKNOWN_WORKSPACE_PREFIX = "t3code-unknown-workspace-";
+const UNKNOWN_WORKSPACE_PREFIX = "houston-unknown-workspace-";
 const layerKnownWorkspacesTest = Layer.mock(KnownWorkspaces.KnownWorkspaces)({
   assertContains: (cwd) =>
     cwd.includes(UNKNOWN_WORKSPACE_PREFIX)
@@ -63,7 +63,7 @@ const layerTest = Layer.empty.pipe(
   Layer.provideMerge(VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer))),
   Layer.provideMerge(
     ServerConfig.ServerConfig.layerTest(process.cwd(), {
-      prefix: "t3-workspace-files-test-",
+      prefix: "houston-workspace-files-test-",
     }),
   ),
   Layer.provideMerge(NodeServices.layer),
@@ -72,7 +72,7 @@ const layerTest = Layer.empty.pipe(
 const makeTempDir = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   return yield* fileSystem.makeTempDirectoryScoped({
-    prefix: "t3code-workspace-files-",
+    prefix: "houston-workspace-files-",
   });
 });
 

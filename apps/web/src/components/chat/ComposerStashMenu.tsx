@@ -123,7 +123,7 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
     }
   });
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes capture-phase pointerdown and keydown listeners for outside close and keyboard navigation
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- subscribes capture-phase pointerdown and keydown listeners for outside close and keyboard navigation
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => closeOnOutsidePointer(event);
     const onKeyDown = (event: KeyboardEvent) => handleKeyDown(event);

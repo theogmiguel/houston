@@ -1,5 +1,5 @@
 // houston_defect_report through upstream's MCP server: a project thread reports into its project;
-// a review thread holds no T3 tool. Defects and projects are real (the harness kit); only the
+// a review thread holds no Houston tool. Defects and projects are real (the harness kit); only the
 // caller thread lookup is a double.
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
@@ -19,7 +19,7 @@ import * as McpHttpServer from "../../../mcp/McpHttpServer.ts";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import { liveThreadShell } from "../../../mcp/McpToolAccess.testkit.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
-import { mayHoldT3Tools } from "../../sideThreads.ts";
+import { mayHoldHoustonTools } from "../../sideThreads.ts";
 import {
   HoustonDefects,
   HoustonHarnessService,
@@ -149,9 +149,9 @@ describe("the defect toolkit", () => {
               assert.isTrue(invalid.isError);
               assert.include(invalid.text, "120");
 
-              // A review thread: read-only and given no T3 MCP credential at all.
+              // A review thread: read-only and given no Houston MCP credential at all.
               const review = { kind: "harnessReview" as const, reviewId: 1 };
-              assert.isFalse(yield* mayHoldT3Tools(Effect.succeed({ side: review })));
+              assert.isFalse(yield* mayHoldHoustonTools(Effect.succeed({ side: review })));
               const refused = yield* call(caller("harness-review:1", review), {
                 title: "a review thread reports",
                 destination: "houston",

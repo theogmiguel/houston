@@ -38,7 +38,7 @@ const makeDriver = (stderr: string) =>
         ),
       ),
     ),
-    Effect.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-git-gitfile-test-" })),
+    Effect.provide(ServerConfig.layerTest(process.cwd(), { prefix: "houston-git-gitfile-test-" })),
   );
 
 describe("a worktree whose gitdir is gone", () => {
@@ -46,7 +46,7 @@ describe("a worktree whose gitdir is gone", () => {
     Effect.scoped(
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
-        const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-git-gitfile-" });
+        const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "houston-git-gitfile-" });
         const driver = yield* makeDriver(stderr);
 
         const local = yield* driver.statusDetailsLocal(cwd);

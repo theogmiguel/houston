@@ -90,8 +90,8 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
     it.effect("uses the shared home for continuation and the shadow home for runtime", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;
-        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const sharedHome = yield* makeTempDir("houston-codex-shared-");
+        const shadowRoot = yield* makeTempDir("houston-codex-shadow-root-");
         const shadowHome = path.join(shadowRoot, "shadow");
 
         const layout = yield* resolveCodexHomeLayout(
@@ -118,8 +118,8 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
         Effect.gen(function* () {
           const fileSystem = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
-          const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-          const shadowHome = yield* makeTempDir("t3code-codex-shadow-");
+          const sharedHome = yield* makeTempDir("houston-codex-shared-");
+          const shadowHome = yield* makeTempDir("houston-codex-shadow-");
           const sharedMetadata = path.join(sharedHome, ".DS_Store");
           const shadowMetadata = path.join(shadowHome, ".DS_Store");
 
@@ -157,8 +157,8 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
         Effect.gen(function* () {
           const fileSystem = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
-          const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-          const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+          const sharedHome = yield* makeTempDir("houston-codex-shared-");
+          const shadowRoot = yield* makeTempDir("houston-codex-shadow-root-");
           const shadowHome = path.join(shadowRoot, "shadow");
 
           yield* fileSystem.makeDirectory(path.join(sharedHome, "sessions"));
@@ -218,8 +218,8 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
         Effect.gen(function* () {
           const fileSystem = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
-          const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-          const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+          const sharedHome = yield* makeTempDir("houston-codex-shared-");
+          const shadowRoot = yield* makeTempDir("houston-codex-shadow-root-");
           const shadowHome = path.join(shadowRoot, "shadow");
           const sharedLock = path.join(sharedHome, ".sqlite-maintenance.lock");
           const shadowLock = path.join(shadowHome, ".sqlite-maintenance.lock");
@@ -246,8 +246,8 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
         Effect.gen(function* () {
           const fileSystem = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
-          const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-          const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+          const sharedHome = yield* makeTempDir("houston-codex-shared-");
+          const shadowRoot = yield* makeTempDir("houston-codex-shadow-root-");
           const shadowHome = path.join(shadowRoot, "shadow");
           const sharedLocks = path.join(sharedHome, "mcp-oauth-locks");
           const shadowLocks = path.join(shadowHome, "mcp-oauth-locks");
@@ -280,8 +280,8 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
         Effect.gen(function* () {
           const fileSystem = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
-          const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-          const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+          const sharedHome = yield* makeTempDir("houston-codex-shared-");
+          const shadowRoot = yield* makeTempDir("houston-codex-shadow-root-");
           const shadowHome = path.join(shadowRoot, "shadow");
           const shadowLocks = path.join(shadowHome, "thread-writer-locks");
           const threadLock = path.join(shadowLocks, "019a0000-0000-7000-8000-000000000000.lock");
@@ -314,8 +314,8 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
         Effect.gen(function* () {
           const fileSystem = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
-          const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-          const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+          const sharedHome = yield* makeTempDir("houston-codex-shared-");
+          const shadowRoot = yield* makeTempDir("houston-codex-shadow-root-");
           const shadowHome = path.join(shadowRoot, "shadow");
 
           yield* fileSystem.makeDirectory(path.join(sharedHome, "log"));
@@ -356,7 +356,7 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
 
     it.effect("rejects shadow homes that point at the shared home", () =>
       Effect.gen(function* () {
-        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
+        const sharedHome = yield* makeTempDir("houston-codex-shared-");
         const layout = yield* resolveCodexHomeLayout(
           decodeCodexSettings({
             homePath: sharedHome,
@@ -382,8 +382,8 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
       () =>
         Effect.gen(function* () {
           const path = yield* Path.Path;
-          const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-          const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+          const sharedHome = yield* makeTempDir("houston-codex-shared-");
+          const shadowRoot = yield* makeTempDir("houston-codex-shadow-root-");
           const shadowHome = path.join(shadowRoot, "shadow");
           yield* writeTextFile(path.join(sharedHome, "config.toml"), 'model = "gpt-5-codex"\n');
           yield* writeTextFile(path.join(shadowHome, "config.toml"), 'model = "local"\n');
@@ -414,8 +414,8 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const sharedHome = yield* makeTempDir("houston-codex-shared-");
+        const shadowRoot = yield* makeTempDir("houston-codex-shadow-root-");
         const shadowHome = path.join(shadowRoot, "shadow");
         const layout = yield* resolveCodexHomeLayout(
           decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
@@ -437,8 +437,8 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const sharedHome = yield* makeTempDir("houston-codex-shared-");
+        const shadowRoot = yield* makeTempDir("houston-codex-shadow-root-");
         const shadowHome = path.join(shadowRoot, "shadow");
         yield* writeTextFile(path.join(sharedHome, "config.toml"), 'model = "gpt-5-codex"\n');
         const layout = yield* resolveCodexHomeLayout(
@@ -461,8 +461,8 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const sharedHome = yield* makeTempDir("houston-codex-shared-");
+        const shadowRoot = yield* makeTempDir("houston-codex-shadow-root-");
         const shadowHome = path.join(shadowRoot, "shadow");
         yield* writeTextFile(path.join(sharedHome, "config.toml"), 'model = "gpt-5-codex"\n');
         yield* writeTextFile(path.join(sharedHome, "sessions", "first.jsonl"), "first\n");
@@ -491,8 +491,8 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const sharedHome = yield* makeTempDir("houston-codex-shared-");
+        const shadowRoot = yield* makeTempDir("houston-codex-shadow-root-");
         const shadowHome = path.join(shadowRoot, "shadow");
         const shadowConfig = path.join(shadowHome, "config.toml");
         yield* writeTextFile(path.join(sharedHome, "config.toml"), 'model = "gpt-5-codex"\n');
@@ -522,8 +522,8 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const sharedHome = yield* makeTempDir("houston-codex-shared-");
+        const shadowRoot = yield* makeTempDir("houston-codex-shadow-root-");
         const shadowHome = path.join(shadowRoot, "shadow");
         const sharedConfig = path.join(sharedHome, "config.toml");
         const shadowConfig = path.join(shadowHome, "config.toml");
@@ -551,8 +551,8 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
         Effect.gen(function* () {
           const fileSystem = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
-          const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-          const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+          const sharedHome = yield* makeTempDir("houston-codex-shared-");
+          const shadowRoot = yield* makeTempDir("houston-codex-shadow-root-");
           const shadowHome = path.join(shadowRoot, "shadow");
           const layout = yield* resolveCodexHomeLayout(
             decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
@@ -574,8 +574,8 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
     it.effect("refuses a shared file by name when the win32 hard link fails", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;
-        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const sharedHome = yield* makeTempDir("houston-codex-shared-");
+        const shadowRoot = yield* makeTempDir("houston-codex-shadow-root-");
         const shadowHome = path.join(shadowRoot, "shadow");
         yield* writeTextFile(path.join(sharedHome, "config.toml"), 'model = "gpt-5-codex"\n');
         const layout = yield* resolveCodexHomeLayout(
@@ -597,8 +597,8 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const sharedHome = yield* makeTempDir("houston-codex-shared-");
+        const shadowRoot = yield* makeTempDir("houston-codex-shadow-root-");
         const shadowHome = path.join(shadowRoot, "shadow");
         const layout = yield* resolveCodexHomeLayout(
           decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
@@ -623,8 +623,8 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
         Effect.gen(function* () {
           const fileSystem = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
-          const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-          const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+          const sharedHome = yield* makeTempDir("houston-codex-shared-");
+          const shadowRoot = yield* makeTempDir("houston-codex-shadow-root-");
           const shadowHome = path.join(shadowRoot, "shadow");
           yield* writeTextFile(path.join(sharedHome, "config.toml"), 'model = "gpt-5-codex"\n');
           const layout = yield* resolveCodexHomeLayout(
@@ -648,9 +648,9 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
-        const staleRoot = yield* makeTempDir("t3code-codex-stale-");
-        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const sharedHome = yield* makeTempDir("houston-codex-shared-");
+        const staleRoot = yield* makeTempDir("houston-codex-stale-");
+        const shadowRoot = yield* makeTempDir("houston-codex-shadow-root-");
         const shadowHome = path.join(shadowRoot, "shadow");
         const staleSessions = path.join(staleRoot, "sessions");
         yield* writeTextFile(path.join(staleSessions, "old.jsonl"), "old\n");

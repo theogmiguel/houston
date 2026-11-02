@@ -37,7 +37,12 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
-const DATABASE_NAME = "t3code:connection-runtime";
+import {
+  CONNECTION_DATABASE_NAME,
+  ensureLegacyConnectionDatabaseMigrated,
+} from "../lib/legacyStorageMigration";
+
+const DATABASE_NAME = CONNECTION_DATABASE_NAME;
 const DATABASE_VERSION = 4;
 const CATALOG_STORE_NAME = "catalog";
 const SHELL_STORE_NAME = "shell";
@@ -116,34 +121,36 @@ const openDatabase = Effect.fn("web.connectionStorage.openDatabase")(function* (
       );
       return;
     }
-    try {
-      const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
-      request.addEventListener("upgradeneeded", () => {
-        if (!request.result.objectStoreNames.contains(CATALOG_STORE_NAME)) {
-          request.result.createObjectStore(CATALOG_STORE_NAME);
-        }
-        if (!request.result.objectStoreNames.contains(SHELL_STORE_NAME)) {
-          request.result.createObjectStore(SHELL_STORE_NAME);
-        }
-        if (!request.result.objectStoreNames.contains(THREAD_STORE_NAME)) {
-          request.result.createObjectStore(THREAD_STORE_NAME);
-        }
-        if (!request.result.objectStoreNames.contains(SERVER_CONFIG_STORE_NAME)) {
-          request.result.createObjectStore(SERVER_CONFIG_STORE_NAME);
-        }
-        if (!request.result.objectStoreNames.contains(VCS_REFS_STORE_NAME)) {
-          request.result.createObjectStore(VCS_REFS_STORE_NAME);
-        }
-      });
-      request.addEventListener("error", () => {
-        resume(Effect.fail(catalogError("open", request.error ?? "Unknown IndexedDB error")));
-      });
-      request.addEventListener("success", () => {
-        resume(Effect.succeed(request.result));
-      });
-    } catch (cause) {
-      resume(Effect.fail(catalogError("open", cause)));
-    }
+    void ensureLegacyConnectionDatabaseMigrated().then(() => {
+      try {
+        const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
+        request.addEventListener("upgradeneeded", () => {
+          if (!request.result.objectStoreNames.contains(CATALOG_STORE_NAME)) {
+            request.result.createObjectStore(CATALOG_STORE_NAME);
+          }
+          if (!request.result.objectStoreNames.contains(SHELL_STORE_NAME)) {
+            request.result.createObjectStore(SHELL_STORE_NAME);
+          }
+          if (!request.result.objectStoreNames.contains(THREAD_STORE_NAME)) {
+            request.result.createObjectStore(THREAD_STORE_NAME);
+          }
+          if (!request.result.objectStoreNames.contains(SERVER_CONFIG_STORE_NAME)) {
+            request.result.createObjectStore(SERVER_CONFIG_STORE_NAME);
+          }
+          if (!request.result.objectStoreNames.contains(VCS_REFS_STORE_NAME)) {
+            request.result.createObjectStore(VCS_REFS_STORE_NAME);
+          }
+        });
+        request.addEventListener("error", () => {
+          resume(Effect.fail(catalogError("open", request.error ?? "Unknown IndexedDB error")));
+        });
+        request.addEventListener("success", () => {
+          resume(Effect.succeed(request.result));
+        });
+      } catch (cause) {
+        resume(Effect.fail(catalogError("open", cause)));
+      }
+    });
   });
 });
 
@@ -490,8 +497,8 @@ export const makeCatalogStore = Effect.fn("web.connectionStorage.makeCatalogStor
 
 // The stored names predate the rename and stay, so a tab still on an older version and an
 // updated one read and revoke the same grants.
-const PULL_REQUEST_ROUTING_KEY_PREFIX = "t3code:github-routing:";
-const PULL_REQUEST_ROUTING_CHANGED = "t3code:github-routing-changed";
+const PULL_REQUEST_ROUTING_KEY_PREFIX = "houston:github-routing:";
+const PULL_REQUEST_ROUTING_CHANGED = "houston:github-routing-changed";
 const isStoredPullRequestRoutingPermission = Schema.is(StoredPullRequestRoutingPermission);
 const encodeStoredPullRequestRoutingPermission = Schema.encodeSync(
   Schema.fromJsonString(StoredPullRequestRoutingPermission),

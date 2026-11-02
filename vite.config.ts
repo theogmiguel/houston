@@ -88,7 +88,7 @@ const taskCacheConfig = {
 export default defineConfig({
   run: {
     cache: taskCacheConfig,
-    tasks: cachedTestTasks(process.env.T3_CACHED_TESTS),
+    tasks: cachedTestTasks(process.env.HOUSTON_CACHED_TESTS),
   },
   resolve: {
     alias: {
@@ -175,8 +175,8 @@ export default defineConfig({
       "apps/mobile/ios/**",
       "apps/mobile/uniwind-types.d.ts",
       // Vendored and generated C.
-      "apps/mobile/modules/t3-highlights/Vendor/**",
-      "apps/mobile/modules/t3-highlights/cpp/generated/**",
+      "apps/mobile/modules/houston-highlights/Vendor/**",
+      "apps/mobile/modules/houston-highlights/cpp/generated/**",
       "*.icon/**",
     ],
     sortPackageJson: {},
@@ -208,7 +208,7 @@ export default defineConfig({
       "apps/mobile/uniwind-types.d.ts",
     ],
     plugins: ["eslint", "oxc", "react", "unicorn", "typescript"],
-    jsPlugins: ["./oxlint-plugin-t3code/index.ts", "@shadcn/lint"],
+    jsPlugins: ["./oxlint-plugin-houston/index.ts", "@shadcn/lint"],
     settings: {
       shadcn: { ui: "~/components/ui" },
     },
@@ -280,25 +280,25 @@ export default defineConfig({
         "error",
         { paths: [...RESTRICTED_IMPORT_PATHS, RESTRICTED_PULL_REQUEST_GLYPH_IMPORTS] },
       ],
-      "t3code/no-global-process-runtime": "error",
-      "t3code/no-inline-schema-compile": "error",
-      "t3code/no-low-value-comments": "error",
-      "t3code/no-manual-effect-runtime-in-tests": "error",
-      "t3code/no-native-title-tooltip": "error",
+      "houston/no-global-process-runtime": "error",
+      "houston/no-inline-schema-compile": "error",
+      "houston/no-low-value-comments": "error",
+      "houston/no-manual-effect-runtime-in-tests": "error",
+      "houston/no-native-title-tooltip": "error",
       // Test files only (the rule checks the filename).
-      "t3code/no-polling-loop-in-tests": "error",
-      "t3code/no-raw-mcp-registration": "error",
-      "t3code/no-real-time-wait-in-tests": "error",
-      "t3code/no-test-in-loop": "error",
-      "t3code/no-test-timeout-or-unreasoned-skip": "error",
-      "t3code/no-rpc-permission-bypass": ["error", { allowRawClientAccess: true }],
-      "t3code/no-unscoped-has": "error",
-      "t3code/no-wall-clock-in-tests": "error",
-      "t3code/namespace-node-imports": "error",
-      "t3code/prefer-catch-tags": "error",
-      "t3code/prefer-effect-fn": "error",
-      "t3code/require-centered-scroll-gutter": "error",
-      "t3code/require-suppression-reason": "error",
+      "houston/no-polling-loop-in-tests": "error",
+      "houston/no-raw-mcp-registration": "error",
+      "houston/no-real-time-wait-in-tests": "error",
+      "houston/no-test-in-loop": "error",
+      "houston/no-test-timeout-or-unreasoned-skip": "error",
+      "houston/no-rpc-permission-bypass": ["error", { allowRawClientAccess: true }],
+      "houston/no-unscoped-has": "error",
+      "houston/no-wall-clock-in-tests": "error",
+      "houston/namespace-node-imports": "error",
+      "houston/prefer-catch-tags": "error",
+      "houston/prefer-effect-fn": "error",
+      "houston/require-centered-scroll-gutter": "error",
+      "houston/require-suppression-reason": "error",
     },
     overrides: [
       {
@@ -307,23 +307,23 @@ export default defineConfig({
           "**/{test,tests,testkit,testing,fixtures,integration}/**",
           "packages/provider-testing/**",
         ],
-        rules: { "t3code/prefer-effect-fn": "off" },
+        rules: { "houston/prefer-effect-fn": "off" },
       },
       {
         files: ["apps/web/**/*.test.{ts,tsx}"],
-        rules: { "t3code/require-disposable-render": "error" },
+        rules: { "houston/require-disposable-render": "error" },
       },
       {
         files: ["apps/web/src/**/*.browser.test.{ts,tsx}"],
-        rules: { "t3code/no-frame-waits-in-browser-tests": "error" },
+        rules: { "houston/no-frame-waits-in-browser-tests": "error" },
       },
       {
         files: ["apps/**/src/**", "packages/**/src/**"],
-        rules: { "t3code/no-dom-test-environment": "error" },
+        rules: { "houston/no-dom-test-environment": "error" },
       },
       {
         files: ["packages/client-runtime/src/state/**", "apps/{web,mobile,desktop}/src/**"],
-        rules: { "t3code/no-rpc-permission-bypass": ["error", { allowRawClientAccess: false }] },
+        rules: { "houston/no-rpc-permission-bypass": ["error", { allowRawClientAccess: false }] },
       },
       {
         files: [
@@ -331,7 +331,7 @@ export default defineConfig({
           "packages/client-runtime/src/state/vcsAction.ts",
         ],
         rules: {
-          "t3code/no-rpc-permission-bypass": [
+          "houston/no-rpc-permission-bypass": [
             "error",
             { allowGuardInstallation: true, allowRawClientAccess: false },
           ],
@@ -344,34 +344,34 @@ export default defineConfig({
           "apps/web/src/components/device/DevicePhoneViewport.tsx",
           "apps/web/src/components/device/DeviceDuoViewport.tsx",
         ],
-        rules: { "t3code/no-rpc-permission-bypass": ["error", { allowRawClientAccess: true }] },
+        rules: { "houston/no-rpc-permission-bypass": ["error", { allowRawClientAccess: true }] },
       },
       {
         files: ["packages/client-runtime/src/connection/outdatedHostUpdate.ts"],
-        rules: { "t3code/no-rpc-permission-bypass": "off" },
+        rules: { "houston/no-rpc-permission-bypass": "off" },
       },
       {
         files: [
           "packages/client-runtime/src/rpc/**",
           "**/*.{test,spec}.{ts,tsx,js,jsx,mts,cts,mjs,cjs}",
         ],
-        rules: { "t3code/no-rpc-permission-bypass": "off" },
+        rules: { "houston/no-rpc-permission-bypass": "off" },
       },
       {
         files: ["packages/shared/src/HostProcess.ts"],
-        rules: { "t3code/no-global-process-runtime": "off" },
+        rules: { "houston/no-global-process-runtime": "off" },
       },
       {
         // The `t3` npm launcher is published as plain, dependency-free Node.
         files: ["scripts/npm-launcher/**"],
         rules: {
-          "t3code/no-global-process-runtime": "off",
-          "t3code/namespace-node-imports": "off",
+          "houston/no-global-process-runtime": "off",
+          "houston/namespace-node-imports": "off",
         },
       },
       {
         files: ["apps/server/src/mcp/McpHttpServer.ts"],
-        rules: { "t3code/no-raw-mcp-registration": "off" },
+        rules: { "houston/no-raw-mcp-registration": "off" },
       },
       {
         files: ["apps/web/src/**"],
@@ -453,8 +453,8 @@ export default defineConfig({
       {
         files: ["apps/mobile/src/**"],
         rules: {
-          "t3code/no-mobile-uniwind-theme-escape-hatches": "error",
-          "t3code/require-registered-list-scroll": "error",
+          "houston/no-mobile-uniwind-theme-escape-hatches": "error",
+          "houston/require-registered-list-scroll": "error",
         },
       },
       {
@@ -464,12 +464,12 @@ export default defineConfig({
           "apps/mobile/src/components/ui/AppSymbol.ios.tsx",
           "apps/mobile/src/features/pull-requests/pullRequestGlyphs.ts",
         ],
-        rules: { "t3code/no-mobile-pull-request-glyph-literals": "error" },
+        rules: { "houston/no-mobile-pull-request-glyph-literals": "error" },
       },
       {
         files: ["apps/mobile/src/**"],
         excludeFiles: ["**/*.test.{ts,tsx}"],
-        rules: { "t3code/no-ambiguous-detail-navigation": "error" },
+        rules: { "houston/no-ambiguous-detail-navigation": "error" },
       },
       {
         // Raw ResizeObserver state commits miss the paint; observeResize flushes derived layout together.
@@ -478,7 +478,7 @@ export default defineConfig({
           "apps/web/src/lib/observeResize.ts",
           "**/*.{test,spec}.{ts,tsx,js,jsx,mts,cts,mjs,cjs}",
         ],
-        rules: { "t3code/no-raw-resize-observer": "error" },
+        rules: { "houston/no-raw-resize-observer": "error" },
       },
       {
         files: ["apps/web/src/**"],
@@ -486,7 +486,7 @@ export default defineConfig({
       },
       {
         files: ["apps/web/src/**"],
-        rules: { "t3code/no-outset-state-indicators": "error" },
+        rules: { "houston/no-outset-state-indicators": "error" },
       },
       {
         files: ["apps/*/src/**", "packages/*/src/**"],
@@ -497,7 +497,7 @@ export default defineConfig({
           // Real user quotes stay verbatim.
           "apps/marketing/src/lib/tweets.ts",
         ],
-        rules: { "t3code/no-em-dash-copy": "error" },
+        rules: { "houston/no-em-dash-copy": "error" },
       },
       {
         files: ["apps/web/src/**"],
@@ -572,7 +572,7 @@ export default defineConfig({
           "react/set-state-in-render": "error",
           "react/static-components": "error",
           "react/unsupported-syntax": "error",
-          "t3code/no-manual-memo": "error",
+          "houston/no-manual-memo": "error",
         },
       },
       {
@@ -584,22 +584,22 @@ export default defineConfig({
           "packages/shared/src/**",
         ],
         excludeFiles: ["**/*.test.ts", "**/*.test.tsx"],
-        rules: { "t3code/no-hermes-unsupported-apis": "error" },
+        rules: { "houston/no-hermes-unsupported-apis": "error" },
       },
       {
         // Directives hide bailouts from mobile's compiler-coverage check; retain hooks until its allowlist is empty.
         files: ["apps/mobile/src/**/*.{ts,tsx}"],
-        rules: { "t3code/no-manual-memo": ["error", { allowMemoHooks: true }] },
+        rules: { "houston/no-manual-memo": ["error", { allowMemoHooks: true }] },
       },
       {
         files: ["apps/web/src/**", "apps/mobile/src/**", "packages/*/src/**"],
-        rules: { "t3code/no-unreasoned-state-sync": "error" },
+        rules: { "houston/no-unreasoned-state-sync": "error" },
       },
       {
         // React Compiler caches use* functions only if they call a hook.
         files: ["apps/web/src/**/*.{ts,tsx}", "apps/mobile/src/**/*.{ts,tsx}"],
         excludeFiles: ["**/*.test.ts", "**/*.test.tsx"],
-        rules: { "t3code/no-hookless-use-function": "error" },
+        rules: { "houston/no-hookless-use-function": "error" },
       },
       {
         files: [
@@ -620,13 +620,13 @@ export default defineConfig({
           "apps/mobile/src/features/threads/ThreadSettingsSheet.tsx",
           "apps/mobile/src/features/threads/thread-list-v2-items.tsx",
           "apps/mobile/src/lib/useMobileNavigationTheme.ts",
-          "apps/mobile/src/native/T3ComposerEditor.ios.tsx",
-          "apps/mobile/src/native/T3ComposerEditor.native.tsx",
+          "apps/mobile/src/native/HoustonComposerEditor.ios.tsx",
+          "apps/mobile/src/native/HoustonComposerEditor.native.tsx",
           "apps/mobile/src/native/SelectableMarkdownText.tsx",
           "apps/mobile/src/native/useEnrichedLinkVariants.ts",
         ],
         rules: {
-          "t3code/no-mobile-uniwind-theme-escape-hatches": ["error", { allowUniwindTheme: true }],
+          "houston/no-mobile-uniwind-theme-escape-hatches": ["error", { allowUniwindTheme: true }],
         },
       },
     ],

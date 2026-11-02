@@ -10,7 +10,7 @@ function relaunchWhileRestarting(environmentId: EnvironmentId) {
   vi.useFakeTimers({ now });
   const store = new Map([
     [
-      "t3code:update-everything-result:v1",
+      "houston:update-everything-result:v1",
       JSON.stringify({
         savedAt: now,
         localVersion: null,

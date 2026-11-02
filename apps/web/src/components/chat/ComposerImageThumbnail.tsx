@@ -28,7 +28,7 @@ export const ComposerImageThumbnail = memo(function ComposerImageThumbnail({
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const src = preview.file === file ? preview.src : readComposerImageThumbnail(file);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- owns the local blob URL and decodes its replacement before swapping the visible image
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- owns the local blob URL and decodes its replacement before swapping the visible image
   useLayoutEffect(() => {
     let disposed = false;
     let localUrl: string | undefined;

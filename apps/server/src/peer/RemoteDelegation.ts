@@ -150,7 +150,7 @@ const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => undefined),
     );
     // The project's own identity is a one-minute cache that reads blank when
-    // cold, so resolve it here, as the other side's t3_project_list does.
+    // cold, so resolve it here, as the other side's houston_project_list does.
     const key =
       here === undefined
         ? undefined
@@ -164,8 +164,8 @@ const make = Effect.gen(function* () {
     const matches: Array<{ readonly id: ProjectId; readonly title: string }> = [];
     let cursor: number | null = 0;
     while (cursor !== null) {
-      const listed: Tool.Success<typeof ProjectToolkit.tools.t3_project_list> =
-        yield* forwarding.call(scope, ProjectToolkit.tools.t3_project_list, environmentId, {
+      const listed: Tool.Success<typeof ProjectToolkit.tools.houston_project_list> =
+        yield* forwarding.call(scope, ProjectToolkit.tools.houston_project_list, environmentId, {
           cursor,
           limit: 100,
         });
@@ -179,7 +179,7 @@ const make = Effect.gen(function* () {
       code: "invalid_request",
       message:
         matches.length === 0
-          ? `No project there has this repository (${key}). Pass target.projectId; t3_project_list with this environmentId lists them. To bring the repository there, use t3_project_clone and then t3_project_create with this environmentId.`
+          ? `No project there has this repository (${key}). Pass target.projectId; houston_project_list with this environmentId lists them. To bring the repository there, use houston_project_clone and then houston_project_create with this environmentId.`
           : `Several projects there have this repository: ${matches.map((project) => `${project.title} (${project.id})`).join(", ")}. Pass target.projectId.`,
     });
   });
@@ -216,7 +216,7 @@ const make = Effect.gen(function* () {
         return yield* new OrchestratorMcpFailure({
           code: "invalid_request",
           message:
-            'A task in a linked environment runs in that project\'s checkout; isolation "worktree" is not supported there. Omit isolation, or use t3_thread_launch with environmentId and a worktree workspaceStrategy.',
+            'A task in a linked environment runs in that project\'s checkout; isolation "worktree" is not supported there. Omit isolation, or use houston_thread_launch with environmentId and a worktree workspaceStrategy.',
         });
       }
       // The provider and model inherit as they do for a task here. Another
@@ -260,7 +260,7 @@ const make = Effect.gen(function* () {
       const task = taskPrompt(input);
       const launched = yield* forwarding.call(
         scope,
-        ProjectToolkit.tools.t3_thread_launch,
+        ProjectToolkit.tools.houston_thread_launch,
         target.environmentId,
         {
           projectId,

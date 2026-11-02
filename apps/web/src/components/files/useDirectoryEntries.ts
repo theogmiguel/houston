@@ -105,7 +105,7 @@ export function useDirectoryEntries(environmentId: EnvironmentId, cwd: string) {
     return startRequest(directoryPath, refresh);
   };
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts the root directory read on mount and marks the hook inactive so late reads are ignored
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- starts the root directory read on mount and marks the hook inactive so late reads are ignored
   useEffect(() => {
     active.current = true;
     if (!requests.current.has("") && !loaded.current.has("")) void startRequest("", false);

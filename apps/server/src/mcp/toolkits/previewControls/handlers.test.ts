@@ -54,7 +54,7 @@ it.effect.each([
       const manager = yield* Preview.make.pipe(
         Effect.provide(
           Layer.merge(
-            ServerConfig.layerTest(process.cwd(), { prefix: "t3-preview-controls-" }).pipe(
+            ServerConfig.layerTest(process.cwd(), { prefix: "houston-preview-controls-" }).pipe(
               Layer.provide(NodeServices.layer),
             ),
             NodeCrypto.layer,
@@ -79,10 +79,10 @@ it.effect.each([
         ),
       );
       const listed = yield* toolkit
-        .handle("t3_preview_list", {})
+        .handle("houston_preview_list", {})
         .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(layerDependencies));
       const closed = yield* toolkit
-        .handle("t3_preview_close", { tabId: tab.tabId })
+        .handle("houston_preview_close", { tabId: tab.tabId })
         .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(layerDependencies));
       if (projectAccess) {
         expect(listed.at(-1)?.result).toMatchObject({ sessions: [tab], nextCursor: null });

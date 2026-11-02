@@ -100,7 +100,7 @@ describe("workspaceRelativeFilePath", () => {
   // regression: #9309 POSIX paths compare case-sensitively, Windows paths do not
   it.each([
     ["/Repo/Project/src/main.ts", "/repo/project", null],
-    ["C:/USERS/mike/t3code/main.ts", "c:/users/MIKE/t3code", "main.ts"],
+    ["C:/USERS/mike/houston/main.ts", "c:/users/MIKE/houston", "main.ts"],
     ["/repo/project-two/a.ts", "/repo/project", null],
     // regression: #16354 a `..` that leaves the root is a host path, not a workspace path
     ["/repo/project/../other/notes.md", "/repo/project", null],

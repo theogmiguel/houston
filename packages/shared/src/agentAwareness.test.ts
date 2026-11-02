@@ -14,7 +14,7 @@ import { projectThreadAwarenessV2 } from "./agentAwareness.ts";
 const NOW = "2026-05-22T12:00:00.000Z";
 
 const project = {
-  title: "t3code",
+  title: "houston",
 } satisfies Pick<Project, "title">;
 
 describe("projectThreadAwarenessV2", () => {

@@ -37,7 +37,7 @@ it("falls back to main when the server's version has no tag", () => {
 });
 
 const TestLayer = GitVcsDriver.layer.pipe(
-  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-triage-service-" })),
+  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "houston-triage-service-" })),
   Layer.provideMerge(VcsProcess.layer),
   Layer.provideMerge(NodeServices.layer),
 );

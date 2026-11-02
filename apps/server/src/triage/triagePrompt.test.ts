@@ -44,7 +44,7 @@ it("context file labels the CLI version as the CLI's, not the user's build", () 
 it("in-app context warns the agent off its own server and points at the clone in progress", () => {
   const context = buildTriageContext({
     ...contextInput,
-    entry: { kind: "app", client: "T3 Code Desktop version 0.1.1 on macos" },
+    entry: { kind: "app", client: "Houston Desktop version 0.1.1 on macos" },
     server: "running (pid 42, version 0.1.1); this session runs inside it",
     sourceClone: {
       _tag: "cloning",
@@ -55,7 +55,7 @@ it("in-app context warns the agent off its own server and points at the clone in
     },
   });
   assert.notInclude(context, "Triage CLI version");
-  assert.include(context, "- Started from: T3 Code Desktop version 0.1.1 on macos (");
+  assert.include(context, "- Started from: Houston Desktop version 0.1.1 on macos (");
   assert.include(context, "## This session runs inside Houston");
   assert.include(context, "/home/u/.t3/source/abc123  (v0.1.1, commit abc123)");
   assert.include(context, "Wait for it instead of\ncloning again.");

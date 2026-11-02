@@ -164,7 +164,7 @@ export const simlockIdentity = Effect.fn("SimlockDeviceHost.identity")(function*
     );
 });
 
-/** T3's own agent-device CLI, installed on first use. */
+/** Houston's own agent-device CLI, installed on first use. */
 export type AgentDeviceCli = Effect.Effect<
   { readonly nodePath: string; readonly entryPath: string },
   DeviceHost.DeviceHostError | NodeRuntimeUnavailableError
@@ -245,7 +245,7 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
     ),
   );
 
-  /** Runs T3's own agent-device CLI against the lease's session; its failure message is the reason. */
+  /** Runs Houston's own agent-device CLI against the lease's session; its failure message is the reason. */
   const agentDevice = Effect.fn("SimlockDeviceHost.agentDevice")(function* (
     lease: Pick<Lease, "session" | "configPath">,
     args: ReadonlyArray<string>,
@@ -426,7 +426,7 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
       });
     }
     const suffix = (yield* Random.nextIntBetween(0, 0xffffff)).toString(16).padStart(6, "0");
-    const session = `t3-${suffix}`;
+    const session = `houston-${suffix}`;
     const dir = path.join(hostDir, suffix);
     const configPath = path.join(dir, "agent-device.json");
     yield* writeAgentDeviceConfig(configPath, {

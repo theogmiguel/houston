@@ -23,7 +23,7 @@ import {
 import type * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 
 export const FX_DRIVER_KIND = ProviderDriverKind.make("fx");
-/** T3's slug for "Default": the model `fx status` reports, never an fx model id. */
+/** Houston's slug for "Default": the model `fx status` reports, never an fx model id. */
 export const FX_DEFAULT_MODEL_SLUG = "default";
 const FX_MODEL_CONFIG_ID = "model";
 const FX_MODE_CONFIG_ID = "mode";

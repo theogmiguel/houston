@@ -48,7 +48,7 @@ function layerGrokProviderAdapterRegistryReplay(
       const replayGate = options.replayGate;
       const replayDir = yield* fileSystem
         .makeTempDirectory({
-          prefix: `t3-orchestration-v2-grok-replay-${transcript.scenario}-`,
+          prefix: `houston-orchestration-v2-grok-replay-${transcript.scenario}-`,
         })
         .pipe(Effect.orDie);
       const statusPath = path.join(replayDir, "status.json");

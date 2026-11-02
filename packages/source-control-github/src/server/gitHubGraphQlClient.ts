@@ -17,7 +17,7 @@ import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
 
 const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 /** Added to the answer, never sent: names the credential an errored answer was given to. */
-const CREDENTIAL_SOURCE_HEADER = "x-t3code-credential-source";
+const CREDENTIAL_SOURCE_HEADER = "x-houston-credential-source";
 const isCredentialSource = Schema.is(GitHubCredentials.GitHubCredentialSource);
 
 /** One client serves all hosts; each call must supply its target. */

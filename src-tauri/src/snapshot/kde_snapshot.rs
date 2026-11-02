@@ -1,5 +1,5 @@
 //! KDE's installed capture helper. Mirrors upstream `KdeSnapShot.ts`. Houston
-//! does not bundle `t3-kde-snap-shot`, so setup reports the missing bundle and
+//! does not bundle `houston-kde-snap-shot`, so setup reports the missing bundle and
 //! capture asks for setup instead of pretending to work.
 
 use std::fs;
@@ -14,10 +14,14 @@ use super::linux_capture_session::read_portal_png;
 use super::native_capture_feedback::NativeCaptureFeedback;
 use super::platform::{Bounds, CaptureFeedback, CaptureOptions, CaptureOutput, WindowMetadata};
 
-pub const KDE_CAPTURE_EXECUTABLE: &str = "t3-kde-snap-shot";
-const DESKTOP_FILE: &str = "com.t3tools.T3Code.KdeCapture.desktop";
-const MARKER: &str = "X-T3Code-Capture-Helper=true";
+pub const KDE_CAPTURE_EXECUTABLE: &str = "houston-kde-snap-shot";
+const DESKTOP_FILE: &str = "dev.houston.desktop.KdeCapture.desktop";
+const MARKER: &str = "X-Houston-Capture-Helper=true";
 const RUN_TIMEOUT: Duration = Duration::from_secs(20);
+/// Written by earlier releases under the previous application identifier.
+const LEGACY_EXECUTABLE_DIR: &str = "t3code";
+const LEGACY_EXECUTABLE: &str = "t3-kde-snap-shot";
+const LEGACY_DESKTOP_FILE: &str = "com.t3tools.T3Code.KdeCapture.desktop";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,7 +50,7 @@ fn installed(paths: &KdeCapturePaths) -> (PathBuf, PathBuf) {
     (
         paths
             .data_home
-            .join("t3code")
+            .join("houston")
             .join("kde-capture")
             .join(KDE_CAPTURE_EXECUTABLE),
         paths.data_home.join("applications").join(DESKTOP_FILE),
@@ -184,7 +188,60 @@ impl KdeCaptureSetup {
         ))
     }
 
+    /// Idempotent: moves an earlier release's helper and desktop entry to the current
+    /// paths when the current ones do not exist, then drops the leftovers.
+    fn migrate_legacy(&self) -> Result<(), String> {
+        let (executable, desktop) = installed(&self.paths);
+        let legacy_executable = self
+            .paths
+            .data_home
+            .join(LEGACY_EXECUTABLE_DIR)
+            .join("kde-capture")
+            .join(LEGACY_EXECUTABLE);
+        let legacy_desktop = self
+            .paths
+            .data_home
+            .join("applications")
+            .join(LEGACY_DESKTOP_FILE);
+        if legacy_executable.is_file() {
+            if !executable.exists() {
+                if let Some(directory) = executable.parent() {
+                    fs::create_dir_all(directory)
+                        .map_err(|error| format!("creating {}: {error}", directory.display()))?;
+                }
+                fs::rename(&legacy_executable, &executable).map_err(|error| {
+                    format!(
+                        "moving {} to {}: {error}",
+                        legacy_executable.display(),
+                        executable.display()
+                    )
+                })?;
+            } else {
+                let _ = fs::remove_file(&legacy_executable);
+            }
+        }
+        if legacy_desktop.is_file() {
+            if !desktop.exists() {
+                if let Some(directory) = desktop.parent() {
+                    fs::create_dir_all(directory)
+                        .map_err(|error| format!("creating {}: {error}", directory.display()))?;
+                }
+                fs::rename(&legacy_desktop, &desktop).map_err(|error| {
+                    format!(
+                        "moving {} to {}: {error}",
+                        legacy_desktop.display(),
+                        desktop.display()
+                    )
+                })?;
+            } else {
+                let _ = fs::remove_file(&legacy_desktop);
+            }
+        }
+        Ok(())
+    }
+
     pub fn perform(&self, action: &str) -> Result<(), String> {
+        self.migrate_legacy()?;
         let (executable, desktop) = installed(&self.paths);
         let entry = regular_file(&desktop)?;
         if let Some(entry) = entry.as_ref() {
@@ -332,6 +389,35 @@ pub fn capture(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn moves_the_previous_helper_and_desktop_entry_once() {
+        let root = tempfile::tempdir().unwrap();
+        let data_home = root.path().to_path_buf();
+        let paths = KdeCapturePaths {
+            bundle: root.path().join("missing-bundle"),
+            data_home: data_home.clone(),
+        };
+        let legacy_executable = data_home
+            .join(LEGACY_EXECUTABLE_DIR)
+            .join("kde-capture")
+            .join(LEGACY_EXECUTABLE);
+        let legacy_desktop = data_home.join("applications").join(LEGACY_DESKTOP_FILE);
+        fs::create_dir_all(legacy_executable.parent().unwrap()).unwrap();
+        fs::create_dir_all(legacy_desktop.parent().unwrap()).unwrap();
+        fs::write(&legacy_executable, b"helper").unwrap();
+        fs::write(&legacy_desktop, b"desktop").unwrap();
+        let setup = KdeCaptureSetup::new(paths.clone());
+        let (executable, desktop) = installed(&paths);
+
+        setup.migrate_legacy().unwrap();
+        setup.migrate_legacy().unwrap();
+
+        assert_eq!(fs::read(&executable).unwrap(), b"helper");
+        assert_eq!(fs::read(&desktop).unwrap(), b"desktop");
+        assert!(!legacy_executable.exists());
+        assert!(!legacy_desktop.exists());
+    }
 
     #[test]
     fn desktop_entry_quotes_the_exec_path() {

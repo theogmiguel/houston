@@ -1,7 +1,7 @@
 packages:
   - apps/server
   - apps/web
-  - oxlint-plugin-t3code
+  - oxlint-plugin-houston
   - packages/*
   - scripts
 

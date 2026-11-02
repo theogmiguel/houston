@@ -27,7 +27,7 @@ const CLAUDE_PROVIDER = "claudeAgent" as const;
 const PROTOCOL = "claude-agent-sdk.query" as const;
 const MODEL_SELECTION = {
   instanceId: ProviderInstanceId.make(CLAUDE_PROVIDER),
-  model: process.env.T3_CLAUDE_REPLAY_MODEL ?? "claude-sonnet-4-6",
+  model: process.env.HOUSTON_CLAUDE_REPLAY_MODEL ?? "claude-sonnet-4-6",
 } as const;
 const SOURCE_PROMPT =
   "For this fork-local rollback fixture, respond with exactly: fork local source alpha";
@@ -213,7 +213,7 @@ function encodeTranscript(input: {
 
 const outputPath = readArgValue("--out") ?? DEFAULT_OUTPUT;
 const cwd =
-  process.env.T3_CLAUDE_REPLAY_CWD ??
+  process.env.HOUSTON_CLAUDE_REPLAY_CWD ??
   (await makeCheckpointWorkspace(`claude-agent-sdk-record-${SCENARIO}`));
 const cwdRealPath = await Effect.runPromise(
   Effect.gen(function* () {
@@ -227,7 +227,7 @@ const pathFragments = [
   [process.env.HOME ?? "", "/home/replay-user"],
 ] as const;
 const sessionId =
-  process.env.T3_CLAUDE_REPLAY_SESSION_ID ?? (await Effect.runPromise(randomUuidV4));
+  process.env.HOUSTON_CLAUDE_REPLAY_SESSION_ID ?? (await Effect.runPromise(randomUuidV4));
 const entries: Array<ProviderReplayEntry> = [];
 const metadata: Record<string, unknown> = {
   prompts: [SOURCE_PROMPT, FORK_FIRST_PROMPT, FORK_SECOND_PROMPT, FORK_AFTER_ROLLBACK_PROMPT],

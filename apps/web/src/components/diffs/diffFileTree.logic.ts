@@ -7,7 +7,7 @@ import type {
 } from "@pierre/trees";
 
 import { resolveFileDiffPath } from "~/lib/diffRendering";
-import { basenameOfPath, resolvePierreIconForEntry, T3_PIERRE_ICONS } from "~/pierre-icons";
+import { basenameOfPath, resolvePierreIconForEntry, HOUSTON_PIERRE_ICONS } from "~/pierre-icons";
 
 export interface DiffFileTreeEntry {
   readonly path: string;
@@ -50,7 +50,7 @@ export function diffFileTreeModel(paths: ReadonlyArray<string>) {
   const occupiedNames = new Set(paths.flatMap((path) => path.toLowerCase().split("/")));
   const selectionByModelPath = new Map<string, string>();
   const modelBySelectionPath = new Map<string, string>();
-  const byFileName: FileTreeIconConfig["byFileName"] = { ...T3_PIERRE_ICONS.byFileName };
+  const byFileName: FileTreeIconConfig["byFileName"] = { ...HOUSTON_PIERRE_ICONS.byFileName };
   const modelPaths = paths.map((path) => {
     if (!directories.has(`${path}/`)) return path;
     let modelPath = path;
@@ -68,7 +68,10 @@ export function diffFileTreeModel(paths: ReadonlyArray<string>) {
     paths: modelBySelectionPath.size === 0 ? paths : modelPaths,
     selectionPath: (modelPath: string) => selectionByModelPath.get(modelPath) ?? modelPath,
     modelPath: (path: string) => modelBySelectionPath.get(path) ?? path,
-    icons: modelBySelectionPath.size === 0 ? T3_PIERRE_ICONS : { ...T3_PIERRE_ICONS, byFileName },
+    icons:
+      modelBySelectionPath.size === 0
+        ? HOUSTON_PIERRE_ICONS
+        : { ...HOUSTON_PIERRE_ICONS, byFileName },
   };
 }
 

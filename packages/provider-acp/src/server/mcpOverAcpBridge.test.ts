@@ -50,7 +50,7 @@ describe("AcpMcpOverAcpBridge", () => {
         },
       });
 
-      const connected = yield* bridge.connect({ serverId: "t3-code" });
+      const connected = yield* bridge.connect({ serverId: "houston" });
       expect(connected).toEqual({ connectionId: "connection-1" });
       const initialize = yield* bridge
         .message({ connectionId: connected.connectionId, method: "initialize" })
@@ -94,7 +94,7 @@ describe("AcpMcpOverAcpBridge", () => {
           return new Promise<Response>(() => {});
         },
       });
-      const connected = yield* bridge.connect({ serverId: "t3-code" });
+      const connected = yield* bridge.connect({ serverId: "houston" });
       const request = yield* bridge
         .message({ connectionId: connected.connectionId, method: "tools/list" })
         .pipe(Effect.forkChild);
@@ -131,11 +131,11 @@ describe("AcpMcpOverAcpBridge", () => {
           return Promise.resolve(reply(request.id, { tools: [] }));
         },
       });
-      const { connectionId } = yield* bridge.connect({ serverId: "t3-code" });
+      const { connectionId } = yield* bridge.connect({ serverId: "houston" });
       yield* bridge.message({ connectionId, method: "initialize" });
 
       const wait = yield* bridge
-        .message({ connectionId, method: "tools/call", params: { name: "t3_thread_wait" } })
+        .message({ connectionId, method: "tools/call", params: { name: "houston_thread_wait" } })
         .pipe(Effect.forkChild);
       yield* Effect.promise(() => waitStarted.promise);
       expect(yield* bridge.message({ connectionId, method: "tools/list" })).toEqual({ tools: [] });
@@ -161,7 +161,7 @@ describe("AcpMcpOverAcpBridge", () => {
         yield* bridge.message({ connectionId: "missing", method: "tools/list" }).pipe(Effect.flip),
       ).toMatchObject({ _tag: "AcpMcpOverAcpError" });
 
-      const connected = yield* bridge.connect({ serverId: "t3-code" });
+      const connected = yield* bridge.connect({ serverId: "houston" });
       const failure = yield* bridge
         .message({
           connectionId: connected.connectionId,

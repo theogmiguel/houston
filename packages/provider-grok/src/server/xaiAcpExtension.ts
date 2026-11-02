@@ -938,7 +938,7 @@ export interface XAiExitPlanModeResponse {
   readonly feedback?: string;
 }
 
-/** Abandon the native approval gate after T3 captures the plan; implementation uses T3 UI. */
+/** Abandon the native approval gate after Houston captures the plan; implementation uses Houston UI. */
 export function makeXAiExitPlanModeCapturedResponse(feedback?: string): XAiExitPlanModeResponse {
   return {
     outcome: "abandoned",
@@ -1427,7 +1427,7 @@ export const makeXAiPromptCompletionRuntime = Effect.fn("makeXAiPromptCompletion
     let nextPromptFallbackId = 0;
     const allocatePromptFallbackId = Effect.sync(() => {
       nextPromptFallbackId += 1;
-      return `t3-xai-prompt-${nextPromptFallbackId}`;
+      return `houston-xai-prompt-${nextPromptFallbackId}`;
     });
     const pendingXAiPromptCompletionsRef = yield* Ref.make<
       ReadonlyArray<PendingXAiPromptCompletion>

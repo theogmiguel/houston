@@ -9,7 +9,8 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as ProcessRunner from "../processRunner.ts";
 import { BOOT_SERVICE_UNIT_FILE } from "./bootService.ts";
 
-const PROTECT_DROP_IN = "90-t3code-protect.conf";
+const PROTECT_DROP_IN = "90-houston-protect.conf";
+const LEGACY_PROTECT_DROP_IN = "90-t3code-protect.conf";
 const SYSTEM_UNIT_DIR = "/etc/systemd/system";
 export const REMOTE_ACCESS_UNITS = ["tailscaled.service", "ssh.service", "sshd.service"];
 
@@ -97,12 +98,15 @@ export function protectionPlan(input: {
 
 const quoteShell = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
 const directoryOf = (file: string) => file.slice(0, file.lastIndexOf("/"));
+const legacyProtectPath = (file: string) => `${directoryOf(file)}/${LEGACY_PROTECT_DROP_IN}`;
 
 export function renderPrivilegedScript(plan: ProtectionPlan, mode: "apply" | "undo"): string {
   const lines = ["set -e"];
   const remove = (dropIns: ReadonlyArray<DropIn>, indent = "") => {
     for (const { path } of dropIns) {
+      // Earlier releases used this name in the same directory.
       lines.push(
+        `${indent}rm -f ${quoteShell(legacyProtectPath(path))}`,
         `${indent}rm -f ${quoteShell(path)}`,
         `${indent}rmdir ${quoteShell(directoryOf(path))} 2>/dev/null || true`,
       );
@@ -112,9 +116,10 @@ export function renderPrivilegedScript(plan: ProtectionPlan, mode: "apply" | "un
     for (const { path, contents } of plan.system) {
       lines.push(
         `mkdir -p ${quoteShell(directoryOf(path))}`,
-        `cat >${quoteShell(path)} <<'T3CODE_PROTECT'`,
+        `rm -f ${quoteShell(legacyProtectPath(path))}`,
+        `cat >${quoteShell(path)} <<'HOUSTON_PROTECT'`,
         contents.trimEnd(),
-        "T3CODE_PROTECT",
+        "HOUSTON_PROTECT",
       );
     }
   } else {
@@ -221,6 +226,7 @@ const writeDropIns = Effect.fn("ServiceProtection.writeDropIns")(function* (
   const fs = yield* FileSystem.FileSystem;
   for (const { path, contents } of dropIns) {
     yield* fs.makeDirectory(directoryOf(path), { recursive: true });
+    yield* fs.remove(legacyProtectPath(path), { force: true }).pipe(Effect.ignore);
     yield* fs.writeFileString(path, contents);
   }
 }, Effect.mapError(userSettingsError));
@@ -230,6 +236,7 @@ const removeDropIns = Effect.fn("ServiceProtection.removeDropIns")(function* (
 ) {
   const fs = yield* FileSystem.FileSystem;
   for (const { path } of dropIns) {
+    yield* fs.remove(legacyProtectPath(path), { force: true }).pipe(Effect.ignore);
     yield* fs.remove(path, { force: true });
     yield* fs.remove(directoryOf(path)).pipe(Effect.ignore);
   }
@@ -290,7 +297,13 @@ export const installedProtection = Effect.fn("ServiceProtection.installed")(func
   plan: ProtectionPlan,
 ) {
   const fs = yield* FileSystem.FileSystem;
-  const exists = (dropIn: DropIn) => fs.exists(dropIn.path).pipe(Effect.orElseSucceed(() => false));
+  const exists = (dropIn: DropIn) =>
+    fs.exists(dropIn.path).pipe(
+      Effect.flatMap((present) =>
+        present ? Effect.succeed(true) : fs.exists(legacyProtectPath(dropIn.path)),
+      ),
+      Effect.orElseSucceed(() => false),
+    );
   const system = yield* Effect.filter(plan.system, exists);
   const user = yield* Effect.filter(plan.user, exists);
   const managerDefaults = yield* exists(plan.managerDefaults);

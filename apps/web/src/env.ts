@@ -2,5 +2,5 @@
 export const isDesktopHost = typeof window !== "undefined" && window.hostBridge !== undefined;
 
 export const isSecretsFeatureEnabled = ["1", "true"].includes(
-  import.meta.env.T3CODE_FEATURE_SECRETS?.trim().toLowerCase() ?? "",
+  import.meta.env.HOUSTON_FEATURE_SECRETS?.trim().toLowerCase() ?? "",
 );

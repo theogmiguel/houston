@@ -18,7 +18,7 @@ function needsConsoleStdin(input: {
   return (
     input.platform === "win32" &&
     // Set only by the launcher (DesktopCliShim), never for the desktop backend.
-    input.env.T3CODE_DESKTOP_CLI_LAUNCHER === "1" &&
+    input.env.HOUSTON_DESKTOP_CLI_LAUNCHER === "1" &&
     input.stdinMissing &&
     input.stdoutIsConsole
   );
@@ -41,7 +41,7 @@ export function attachConsoleStdin(): number | undefined {
     stdoutIsConsole: NodeTty.isatty(1),
   });
   // The launcher marker must not propagate to child shells or houston processes.
-  delete process.env.T3CODE_DESKTOP_CLI_LAUNCHER;
+  delete process.env.HOUSTON_DESKTOP_CLI_LAUNCHER;
   if (!needed) return undefined;
   let fd: number;
   try {

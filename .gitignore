@@ -53,7 +53,7 @@ __pycache__/
 # Local memory-tool configuration.
 .texas-ranger.toml
 
-# Imported T3 Code tree (v2). node_modules/ and dist/ above already cover every
+# Imported Houston tree (v2). node_modules/ and dist/ above already cover every
 # workspace; these are the remaining build and tool outputs upstream ignores.
 .bun/
 .turbo/

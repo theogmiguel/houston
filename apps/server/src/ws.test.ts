@@ -628,7 +628,7 @@ const layerConfigSources = Layer.mergeAll(
   Layer.provideMerge(Layer.fresh(SqlitePersistence.layerMemory)),
   Layer.provideMerge(
     Layer.fresh(
-      ServerConfigModule.layerTest(process.cwd(), { prefix: "t3-config-subscription-test-" }),
+      ServerConfigModule.layerTest(process.cwd(), { prefix: "houston-config-subscription-test-" }),
     ),
   ),
   Layer.provideMerge(NodeServices.layer),

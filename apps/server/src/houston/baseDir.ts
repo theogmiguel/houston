@@ -45,11 +45,11 @@ const withoutVariable = (provider: ConfigProvider.ConfigProvider, name: string) 
 export const isHostedLaunch = Effect.fn("houston.isHostedLaunch")(function* (flags: {
   readonly bootstrapFd: Option.Option<number>;
 }) {
-  const envBootstrapFd = yield* Config.Int("T3CODE_BOOTSTRAP_FD").pipe(Config.option);
+  const envBootstrapFd = yield* Config.Int("HOUSTON_BOOTSTRAP_FD").pipe(Config.option);
   return Option.isSome(flags.bootstrapFd) || Option.isSome(envBootstrapFd);
 });
 
-/** Hosted, the envelope's `t3Home` is the only base dir; its overrides and `T3CODE_TRACE_FILE` are ignored. */
+/** Hosted, the envelope's `t3Home` is the only base dir; its overrides and `HOUSTON_TRACE_FILE` are ignored. */
 export const withHostedBaseDir = Effect.fn("houston.withHostedBaseDir")(function* <
   Flags extends {
     readonly baseDir: Option.Option<string>;
@@ -60,10 +60,10 @@ export const withHostedBaseDir = Effect.fn("houston.withHostedBaseDir")(function
   R,
 >(flags: Flags, resolve: (flags: Flags) => Effect.Effect<A, E, R>) {
   if (!(yield* isHostedLaunch(flags))) return yield* resolve(flags);
-  const envHome = yield* Config.String("T3CODE_HOME").pipe(Config.option);
+  const envHome = yield* Config.String("HOUSTON_HOME").pipe(Config.option);
   const ignored = [
     ...(nonBlank(flags.baseDir) ? ["--base-dir"] : []),
-    ...(nonBlank(envHome) ? ["T3CODE_HOME"] : []),
+    ...(nonBlank(envHome) ? ["HOUSTON_HOME"] : []),
   ];
   if (ignored.length > 0) {
     yield* Effect.sync(() =>
@@ -73,16 +73,16 @@ export const withHostedBaseDir = Effect.fn("houston.withHostedBaseDir")(function
     );
   }
   // The trace file then stays at its default under the base dir.
-  const envTraceFile = yield* Config.String("T3CODE_TRACE_FILE").pipe(Config.option);
+  const envTraceFile = yield* Config.String("HOUSTON_TRACE_FILE").pipe(Config.option);
   if (nonBlank(envTraceFile)) {
     yield* Effect.sync(() =>
       process.stderr.write(
-        "houston: ignoring T3CODE_TRACE_FILE for a hosted server; its trace file stays under the envelope's t3Home\n",
+        "houston: ignoring HOUSTON_TRACE_FILE for a hosted server; its trace file stays under the envelope's t3Home\n",
       ),
     );
   }
   const provider = yield* ConfigProvider.ConfigProvider;
-  const hidden = withoutVariable(withoutVariable(provider, "T3CODE_HOME"), "T3CODE_TRACE_FILE");
+  const hidden = withoutVariable(withoutVariable(provider, "HOUSTON_HOME"), "HOUSTON_TRACE_FILE");
   return yield* resolve({ ...flags, baseDir: Option.none() }).pipe(
     Effect.provideService(ConfigProvider.ConfigProvider, hidden),
     Effect.provideService(HostedLaunch, true),

@@ -1,4 +1,4 @@
-query T3ExpoViewer {
+query HoustonExpoViewer {
   meActor {
     __typename
     ... on UserActor {
@@ -21,7 +21,7 @@ query T3ExpoViewer {
   }
 }
 
-query T3EasSimulatorAvailability($appId: String!, $filter: [String!]) {
+query HoustonEasSimulatorAvailability($appId: String!, $filter: [String!]) {
   app {
     byId(appId: $appId) {
       ownerAccount {
@@ -32,7 +32,7 @@ query T3EasSimulatorAvailability($appId: String!, $filter: [String!]) {
   }
 }
 
-mutation T3CreateEasSimulatorSession($input: CreateDeviceRunSessionInput!) {
+mutation HoustonCreateEasSimulatorSession($input: CreateDeviceRunSessionInput!) {
   deviceRunSession {
     createDeviceRunSession(deviceRunSessionInput: $input) {
       id
@@ -40,7 +40,7 @@ mutation T3CreateEasSimulatorSession($input: CreateDeviceRunSessionInput!) {
   }
 }
 
-query T3EasSimulatorSession($id: ID!) {
+query HoustonEasSimulatorSession($id: ID!) {
   deviceRunSessions {
     byId(deviceRunSessionId: $id) {
       id
@@ -57,7 +57,7 @@ query T3EasSimulatorSession($id: ID!) {
   }
 }
 
-query T3ActiveEasSimulatorSessions($appId: String!, $filter: DeviceRunSessionFilterInput) {
+query HoustonActiveEasSimulatorSessions($appId: String!, $filter: DeviceRunSessionFilterInput) {
   app {
     byId(appId: $appId) {
       deviceRunSessionsPaginated(first: 50, filter: $filter) {
@@ -73,7 +73,7 @@ query T3ActiveEasSimulatorSessions($appId: String!, $filter: DeviceRunSessionFil
   }
 }
 
-mutation T3StopEasSimulatorSession($id: ID!) {
+mutation HoustonStopEasSimulatorSession($id: ID!) {
   deviceRunSession {
     ensureDeviceRunSessionStopped(deviceRunSessionId: $id) {
       id

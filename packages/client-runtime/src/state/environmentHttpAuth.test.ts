@@ -51,7 +51,7 @@ const AUTH = {
   policy: "remote-reachable",
   bootstrapMethods: ["one-time-token"],
   sessionMethods: ["bearer-access-token"],
-  sessionCookieName: "t3_session",
+  sessionCookieName: "houston_session",
 } satisfies AuthSessionState["auth"];
 const SESSION = {
   authenticated: true,

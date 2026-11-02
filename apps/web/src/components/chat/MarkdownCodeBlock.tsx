@@ -331,7 +331,7 @@ function UncachedShikiCodeBlock({
   const incrementalHighlight = preserveLines
     ? createIncrementalHighlightedDocument(highlighter, language, themeName)
     : null;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- disposes the incremental Shiki highlighter when it is replaced or the block unmounts
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- disposes the incremental Shiki highlighter when it is replaced or the block unmounts
   useEffect(() => () => incrementalHighlight?.dispose(), [incrementalHighlight]);
   const highlighted = (() => {
     const result = (() => {

@@ -24,8 +24,8 @@ import {
 import type * as AcpSessionRuntime from "@houston-app/provider-acp/server/AcpSessionRuntime";
 
 const instanceId = ProviderInstanceId.make("antigravity-auth-test");
-const owner = "t3-auth-session-owner";
-const otherOwner = "t3-auth-session-other";
+const owner = "houston-auth-session-owner";
+const otherOwner = "houston-auth-session-other";
 const authorizationUrl =
   "https://accounts.google.com/o/oauth2/v2/auth?response_type=code&redirect_uri=http%3A%2F%2F127.0.0.1%3A51234%2F&state=test-state";
 const callbackUrl = "http://127.0.0.1:51234/?state=test-state&code=test-code";

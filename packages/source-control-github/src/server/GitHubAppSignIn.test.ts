@@ -512,7 +512,7 @@ describe("GitHubAppAccess", () => {
     });
     return Effect.gen(function* () {
       const access = yield* GitHubAppAccess.GitHubAppAccess;
-      expect(yield* access.reach("github.com", "pingdotgg/t3code")).toBe("covered");
+      expect(yield* access.reach("github.com", "pingdotgg/houston")).toBe("covered");
       expect(yield* access.reach("github.com", "acme/one")).toBe("covered");
       expect(yield* access.reach("github.com", "acme/two")).toBe("not-covered");
       expect(yield* access.reach("github.com", "https://github.com/Acme/One.git")).toBe("covered");
@@ -555,7 +555,7 @@ describe("GitHubAppAccess", () => {
         access
           .credentialFor("github.com", repository)
           .pipe(Effect.map((held) => Redacted.value(held.token)));
-      expect(yield* tokenFor("pingdotgg/t3code")).toBe("ghu_current");
+      expect(yield* tokenFor("pingdotgg/houston")).toBe("ghu_current");
       expect(yield* tokenFor("someone/else")).toBe("gh-token");
     }).pipe(Effect.provide(layer));
   });
@@ -571,7 +571,7 @@ describe("GitHubAppAccess", () => {
     });
     const tokenFor = Effect.flatMap(Effect.service(GitHubAppAccess.GitHubAppAccess), (access) =>
       access
-        .credentialFor("github.com", "pingdotgg/t3code")
+        .credentialFor("github.com", "pingdotgg/houston")
         .pipe(Effect.map((held) => Redacted.value(held.token))),
     );
     return Effect.gen(function* () {

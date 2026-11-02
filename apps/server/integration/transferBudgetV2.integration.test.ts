@@ -454,8 +454,8 @@ it.live("reports V2 thread HTTP and WebSocket transfer budgets", () =>
     const fs = yield* FileSystem.FileSystem;
     const report = formatTransferBudgetReport(runs);
     for (const [path, contents] of [
-      [process.env.T3CODE_TRANSFER_BUDGET_REPORT_PATH, report],
-      [process.env.T3CODE_TRANSFER_BUDGET_RESULT_PATH, formatTransferBudgetResult(runs)],
+      [process.env.HOUSTON_TRANSFER_BUDGET_REPORT_PATH, report],
+      [process.env.HOUSTON_TRANSFER_BUDGET_RESULT_PATH, formatTransferBudgetResult(runs)],
     ])
       if (path && contents) yield* fs.writeFileString(path, contents);
     yield* Effect.log(report);

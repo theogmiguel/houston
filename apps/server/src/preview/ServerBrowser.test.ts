@@ -111,9 +111,9 @@ function makeSession(
       if (method === "Page.createIsolatedWorld") {
         return {
           executionContextId:
-            (input as { worldName?: string }).worldName === "t3-preview-viewport"
+            (input as { worldName?: string }).worldName === "houston-preview-viewport"
               ? 9
-              : (input as { worldName?: string }).worldName === "t3-preview"
+              : (input as { worldName?: string }).worldName === "houston-preview"
                 ? 1
                 : 7,
         };
@@ -383,7 +383,7 @@ const dependencies = Layer.mergeAll(
   }),
   PreviewAgentActivity.layer,
 ).pipe(
-  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-server-browser-" })),
+  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "houston-server-browser-" })),
   Layer.provideMerge(NodeServices.layer),
 );
 const layer = ServerBrowser.layer.pipe(Layer.provideMerge(dependencies));

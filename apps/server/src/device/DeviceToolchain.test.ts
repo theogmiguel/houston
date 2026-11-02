@@ -18,7 +18,7 @@ it.effect("failed installation cleans staging and exposes only a safe failure me
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-install-" });
+    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-device-install-" });
     const result = {
       code: ChildProcessSpawner.ExitCode(1),
       stdout: "",

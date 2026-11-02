@@ -4,7 +4,7 @@
   "compatibility": [
     {
       "driver": "codex",
-      "t3CodeRange": ">=0.0.44",
+      "houstonCodeRange": ">=0.0.44",
       "recommendedRange": ">=0.159.0",
       "ranges": [
         { "range": ">=0.156.0", "status": "supported" },
@@ -14,7 +14,7 @@
     },
     {
       "driver": "codex",
-      "t3CodeRange": ">=0.0.42 <0.0.44",
+      "houstonCodeRange": ">=0.0.42 <0.0.44",
       "recommendedRange": ">=0.156.0",
       "ranges": [
         { "range": ">=0.156.0", "status": "supported" },
@@ -24,7 +24,7 @@
     },
     {
       "driver": "claudeAgent",
-      "t3CodeRange": ">=0.0.42",
+      "houstonCodeRange": ">=0.0.42",
       "recommendedRange": ">=2.1.280",
       "ranges": [
         { "range": ">=2.1.280", "status": "supported" },
@@ -34,7 +34,7 @@
     },
     {
       "driver": "cursor",
-      "t3CodeRange": ">=0.0.42",
+      "houstonCodeRange": ">=0.0.42",
       "recommendedRange": ">=2026.05.09",
       "ranges": [
         { "range": ">=2026.05.09", "status": "supported" },
@@ -43,7 +43,7 @@
     },
     {
       "driver": "grok",
-      "t3CodeRange": ">=0.0.42",
+      "houstonCodeRange": ">=0.0.42",
       "recommendedRange": ">=1.0.13",
       "ranges": [
         { "range": ">=1.0.13", "status": "supported" },
@@ -52,7 +52,7 @@
     },
     {
       "driver": "opencode",
-      "t3CodeRange": ">=0.0.42 <0.0.46",
+      "houstonCodeRange": ">=0.0.42 <0.0.46",
       "recommendedRange": ">=1.14.19 <2.0.0",
       "recommendedVersion": "1.14.19",
       "ranges": [
@@ -63,7 +63,7 @@
     },
     {
       "driver": "opencode",
-      "t3CodeRange": ">=0.0.46",
+      "houstonCodeRange": ">=0.0.46",
       "recommendedRange": ">=2.0.18",
       "ranges": [
         { "range": ">=2.0.18", "status": "supported" },
@@ -74,7 +74,7 @@
     },
     {
       "driver": "antigravity",
-      "t3CodeRange": ">=0.0.42",
+      "houstonCodeRange": ">=0.0.42",
       "recommendedRange": "=1.4.1",
       "ranges": [
         { "range": "=1.4.1", "status": "supported" },
@@ -84,7 +84,7 @@
     },
     {
       "driver": "pi",
-      "t3CodeRange": ">=0.0.46",
+      "houstonCodeRange": ">=0.0.46",
       "recommendedRange": ">=1.0.0",
       "ranges": [
         { "range": ">=0.80.5", "status": "supported" },
@@ -93,7 +93,7 @@
     },
     {
       "driver": "muse",
-      "t3CodeRange": ">=0.0.46",
+      "houstonCodeRange": ">=0.0.46",
       "recommendedRange": ">=1.4.2",
       "ranges": [
         { "range": ">=1.4.2", "status": "supported" },
@@ -102,7 +102,7 @@
     },
     {
       "driver": "fx",
-      "t3CodeRange": ">=0.0.46",
+      "houstonCodeRange": ">=0.0.46",
       "recommendedRange": ">=0.0.13",
       "ranges": [
         { "range": ">=0.0.13", "status": "supported" },

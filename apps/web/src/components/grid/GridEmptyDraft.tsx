@@ -37,7 +37,7 @@ export function GridEmptyDraft({
     draft === null ? null : store.getPromotedDraftRedirect(draft.draftId),
   );
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- creates the empty grid's draft once when the grid mounts
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- creates the empty grid's draft once when the grid mounts
   useEffect(() => {
     if (requestedRef.current) return;
     requestedRef.current = true;
@@ -53,7 +53,7 @@ export function GridEmptyDraft({
     return () => notifyDraftChange(null);
   }, [grid.id, grid.focusedThreadId, createDraft, notifyDraftChange]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- moves a promoted empty-grid draft into the grid store
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- moves a promoted empty-grid draft into the grid store
   useEffect(() => {
     if (draft === null || session !== null || promoted === null || promotedRef.current) return;
     promotedRef.current = true;

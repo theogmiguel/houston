@@ -21,7 +21,7 @@ import {
   serviceStateHasPendingUpdate,
 } from "./serviceProtocol.ts";
 
-it("reads the served T3 home back out of a rendered unit or plist", () => {
+it("reads the served Houston home back out of a rendered unit or plist", () => {
   const plan = (baseDir: string) => ({
     program: [`${baseDir}/runtime/versions/1.2.3/houston`, "__service-launcher"],
     baseDir,
@@ -34,9 +34,9 @@ it("reads the served T3 home back out of a rendered unit or plist", () => {
   ).toBe("/home/theo/.t3");
   expect(
     BootService.bootServiceBaseDirOf(
-      BootService.renderBootServiceUnit(plan("/home/theo/T3 Data/100%")),
+      BootService.renderBootServiceUnit(plan("/home/theo/Houston Data/100%")),
     ),
-  ).toBe("/home/theo/T3 Data/100%");
+  ).toBe("/home/theo/Houston Data/100%");
   expect(
     BootService.bootServiceBaseDirOf(
       BootService.renderBootServicePlist(plan("/Users/theo/a&b"), {
@@ -53,7 +53,7 @@ it("protects the server unit from agents under CPU and memory pressure", () => {
     program: ["/home/theo/.t3/runtime/versions/1.2.3/t3", "__service-launcher"],
     baseDir: "/home/theo/.t3",
     logPath: "/home/theo/.t3/userdata/logs/boot-service.log",
-    unitPath: "/home/theo/.config/systemd/user/t3code.service",
+    unitPath: "/home/theo/.config/systemd/user/houston.service",
   });
   const service = unit.slice(unit.indexOf("[Service]"), unit.indexOf("[Install]"));
   for (const line of [
@@ -68,7 +68,7 @@ it("protects the server unit from agents under CPU and memory pressure", () => {
 });
 
 it.each([
-  ["a unit", '/home/theo/T3 "Data"/100%\\x', BootService.renderBootServiceUnit],
+  ["a unit", '/home/theo/Houston "Data"/100%\\x', BootService.renderBootServiceUnit],
   [
     "a plist",
     "/Users/theo/a&b <c>",
@@ -93,7 +93,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-boot-service-test-" });
+  const home = yield* fs.makeTempDirectoryScoped({ prefix: "houston-boot-service-test-" });
   const baseDir = path.join(home, ".t3");
   const statePath = path.join(baseDir, "runtime", "service-state.json");
   const runtime = pinnedRuntimePaths(path, baseDir, "1.2.3", platform);
@@ -201,7 +201,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
                 ...(environmentPath === undefined || environmentPath === ""
                   ? {}
                   : { PATH: environmentPath }),
-                ...(insideService ? { T3_BOOT_SERVICE_UNIT: "houston.service" } : {}),
+                ...(insideService ? { HOUSTON_BOOT_SERVICE_UNIT: "houston.service" } : {}),
               },
             }),
           ),
@@ -213,6 +213,8 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
     service,
     makeService,
     fs,
+    path,
+    home,
     baseDir,
     statePath,
     commands,
@@ -471,7 +473,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
         const path = yield* Path.Path;
         const envPath = path.join(baseDir, SERVICE_ENV_FILE);
         const envBytes = new TextEncoder().encode(
-          '# user configuration\r\nT3CODE_TOKEN="literal $HOME # token"',
+          '# user configuration\r\nHOUSTON_TOKEN="literal $HOME # token"',
         );
         yield* fs.writeFile(envPath, envBytes);
         yield* service.install();
@@ -602,7 +604,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
       control.active = true;
 
       const fs = yield* FileSystem.FileSystem;
-      const otherHome = yield* fs.makeTempDirectoryScoped({ prefix: "t3-doctor-other-" });
+      const otherHome = yield* fs.makeTempDirectoryScoped({ prefix: "houston-doctor-other-" });
       const other = yield* makeService(undefined, "1.2.3", otherHome);
       commands.length = 0;
       expect(yield* other.withStopped(Effect.sync(() => control.active))).toBe(true);
@@ -610,13 +612,13 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
     }),
   );
 
-  it.effect("restart leaves a service that serves another T3 home alone", () =>
+  it.effect("restart leaves a service that serves another Houston home alone", () =>
     Effect.gen(function* () {
       const { service, fs, commands, makeService } = yield* makeHarness();
       yield* service.install();
       commands.length = 0;
       const path = yield* Path.Path;
-      const otherHome = yield* fs.makeTempDirectoryScoped({ prefix: "t3-other-home-" });
+      const otherHome = yield* fs.makeTempDirectoryScoped({ prefix: "houston-other-home-" });
 
       const other = yield* makeService(undefined, "1.2.3", path.join(otherHome, ".t3"));
       expect(yield* other.restart).toBe("skipped");
@@ -628,8 +630,8 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
     Effect.gen(function* () {
       const { fs, commands, invocations, control, makeService } = yield* makeHarness();
       const path = yield* Path.Path;
-      const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-handoff-" });
-      const baseDir = path.join(home, "T3 Data 100%", "${UNSET}", "$literal");
+      const home = yield* fs.makeTempDirectoryScoped({ prefix: "houston-handoff-" });
+      const baseDir = path.join(home, "Houston Data 100%", "${UNSET}", "$literal");
       const outside = yield* makeService(undefined, "1.2.3", baseDir);
       const plan = yield* outside.install();
       const statePath = path.join(baseDir, "runtime", "service-state.json");
@@ -653,12 +655,12 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
         "--quiet",
         `--property=StandardOutput=append:${plan.logPath}`,
         `--property=StandardError=append:${plan.logPath}`,
-        "--setenv=T3_BOOT_SERVICE_UNIT=",
+        "--setenv=HOUSTON_BOOT_SERVICE_UNIT=",
         pinnedRuntimePaths(path, baseDir, "1.2.4", "linux").entryPath,
         "service",
         "install",
         "--base-dir",
-        path.join(home, "T3 Data 100%", "$${UNSET}", "$$literal"),
+        path.join(home, "Houston Data 100%", "$${UNSET}", "$$literal"),
         "--allow-downgrade",
       ]);
 
@@ -904,6 +906,64 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
       expect(commands).toContain(bootstrap);
       expect(yield* fs.exists(markerPath)).toBe(false);
       expect((yield* service.status).current).toBe(true);
+    }),
+  );
+});
+
+it.layer(NodeServices.layer)("boot service legacy migration", (it) => {
+  it.effect("removes the previous systemd unit and its drop-ins on install", () =>
+    Effect.gen(function* () {
+      const { service, fs, path, home, commands } = yield* makeHarness("linux");
+      const legacyUnit = path.join(home, ".config", "systemd", "user", "t3code.service");
+      const legacyDropIn = path.join(
+        home,
+        ".config",
+        "systemd",
+        "user",
+        "t3code.service.d",
+        "90-t3code-protect.conf",
+      );
+      yield* fs.makeDirectory(path.dirname(legacyDropIn), { recursive: true });
+      yield* fs.writeFileString(legacyUnit, "[Service]\n");
+      yield* fs.writeFileString(legacyDropIn, "[Service]\n");
+
+      yield* service.install();
+
+      expect(commands).toContain("systemctl --user disable --now t3code.service");
+      expect(commands).toContain("systemctl --user daemon-reload");
+      expect(yield* fs.exists(legacyUnit)).toBe(false);
+      expect(yield* fs.exists(path.dirname(legacyDropIn))).toBe(false);
+    }),
+  );
+
+  it.effect("removes the previous launch agent plist on install", () =>
+    Effect.gen(function* () {
+      const { service, fs, path, home, commands } = yield* makeHarness("darwin");
+      const legacyPlist = path.join(
+        home,
+        "Library",
+        "LaunchAgents",
+        "com.t3tools.t3code.service.plist",
+      );
+      yield* fs.makeDirectory(path.dirname(legacyPlist), { recursive: true });
+      yield* fs.writeFileString(legacyPlist, "<plist/>\n");
+
+      yield* service.install();
+
+      expect(commands).toContain("launchctl bootout --wait gui/501/com.t3tools.t3code.service");
+      expect(yield* fs.exists(legacyPlist)).toBe(false);
+    }),
+  );
+
+  it.effect("uninstalls a service that only the previous release installed", () =>
+    Effect.gen(function* () {
+      const { service, fs, path, home } = yield* makeHarness("linux");
+      const legacyUnit = path.join(home, ".config", "systemd", "user", "t3code.service");
+      yield* fs.makeDirectory(path.dirname(legacyUnit), { recursive: true });
+      yield* fs.writeFileString(legacyUnit, "[Service]\n");
+
+      expect(yield* service.uninstall).toBe(true);
+      expect(yield* fs.exists(legacyUnit)).toBe(false);
     }),
   );
 });

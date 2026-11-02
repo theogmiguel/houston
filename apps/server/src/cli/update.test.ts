@@ -96,7 +96,7 @@ it.layer(NodeServices.layer)("houston update under a managed policy", (it) => {
   it.effect("refuses to update when updates are off", () =>
     Effect.gen(function* () {
       const error = yield* runWithPolicy({ mode: "off" });
-      assert.equal(error.message, "Example Corp manages T3 Code updates.");
+      assert.equal(error.message, "Example Corp manages Houston updates.");
     }),
   );
 
@@ -113,7 +113,7 @@ it.layer(NodeServices.layer)("houston update under a managed policy", (it) => {
       for (const error of [byChannel, byVersion]) {
         assert.equal(
           error.message,
-          "Example Corp manages T3 Code updates. Only stable releases can be installed.",
+          "Example Corp manages Houston updates. Only stable releases can be installed.",
         );
       }
     }),
@@ -125,7 +125,7 @@ it.layer(NodeServices.layer)("houston update launcher", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-update-" });
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "houston-update-" });
       const oldExe = path.join(root, "runtime/versions/1.0.0/t3");
       const newExe = path.join(root, "runtime/versions/2.0.0/t3");
       const launcher = path.join(root, "bin/houston");
@@ -160,7 +160,7 @@ it.layer(NodeServices.layer)("houston update launcher", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-update-" });
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "houston-update-" });
       yield* TestClock.setTime(Duration.toMillis(Duration.days(1)));
       for (const version of ["1.0.0", "2.0.0"]) {
         const directory = path.join(root, "runtime/versions", version);
@@ -172,7 +172,7 @@ it.layer(NodeServices.layer)("houston update launcher", (it) => {
       if (recorded !== undefined) {
         yield* fs.writeFileString(path.join(root, "runtime/launchers"), recorded);
       }
-      // A launcher in the T3 home itself, which neither PATH nor the default bin dir reaches.
+      // A launcher in the Houston home itself, which neither PATH nor the default bin dir reaches.
       const launcher = path.join(root, "t3");
       yield* fs.symlink(path.join(root, "runtime/versions/1.0.0/t3"), launcher);
 
@@ -216,7 +216,7 @@ it.layer(NodeServices.layer)("houston update launcher", (it) => {
   const launcherFixture = Effect.fnUntraced(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-update-" });
+    const root = yield* fs.makeTempDirectoryScoped({ prefix: "houston-update-" });
     const oldExe = path.join(root, "runtime/versions/1.0.0/t3");
     const newExe = path.join(root, "runtime/versions/2.0.0/t3");
     const launcher = path.join(root, "t3");
@@ -302,7 +302,7 @@ it.layer(NodeServices.layer)("houston update launcher", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-update-" });
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "houston-update-" });
       const newExe = path.join(root, "runtime/versions/2.0.0/t3");
       const copy = path.join(root, "copy/t3");
       const foreign = path.join(root, "foreign/t3");
@@ -335,7 +335,7 @@ it.layer(NodeServices.layer)("houston update launcher", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-update-" });
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "houston-update-" });
       const launcher = path.join(root, "bin/houston");
       yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
       yield* fs.writeFileString(launcher, "");

@@ -27,7 +27,7 @@ export const git = (cwd: string, args: ReadonlyArray<string>) =>
         cwd,
         maxBuffer: 16 * 1024 * 1024,
         windowsHide: true,
-        // oxlint-disable-next-line t3code/no-global-process-runtime -- TaskGit runs outside the Effect runtime.
+        // oxlint-disable-next-line houston/no-global-process-runtime -- TaskGit runs outside the Effect runtime.
         env: gitSpawnEnv(process.env, process.platform),
       },
       (error, stdout, stderr) => {

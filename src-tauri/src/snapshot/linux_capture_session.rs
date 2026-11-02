@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use super::platform::KeyChord;
 
 pub const HYPRLAND_CAPTURE_ACTION: &str = "capture-window";
-pub const NIRI_CAPTURE_PATH: &str = "/com/t3tools/SnapShot";
-pub const NIRI_CAPTURE_INTERFACE: &str = "com.t3tools.SnapShot";
+pub const NIRI_CAPTURE_PATH: &str = "/dev/houston/SnapShot";
+pub const NIRI_CAPTURE_INTERFACE: &str = "dev.houston.SnapShot";
 
 const MAX_PNG_BYTES: usize = 32 * 1024 * 1024;
 const PNG_HEADER: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];

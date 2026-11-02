@@ -1,6 +1,6 @@
 const REPLAY_WORKSPACE_PLACEHOLDER = "<workspace>";
 const REPLAY_HOME = "/home/replay-user";
-const REPLAY_CHECKOUT = "/home/replay-user/t3code";
+const REPLAY_CHECKOUT = "/home/replay-user/houston";
 const REPLAY_HOSTNAME = "replay-host";
 const REPLAY_VALUES_BY_KEY: Readonly<Record<string, string>> = {
   installationId: "00000000-0000-4000-8000-000000000000",

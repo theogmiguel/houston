@@ -38,14 +38,14 @@ describe("sanitizeLinkedPrompt", () => {
 describe("parseNewThreadLink", () => {
   it("reads a shared prompt with its optional repository and model", () => {
     const result = parseNewThreadLink(
-      "?prompt=Rate+me&repo=https://github.com/pingdotgg/t3code.git&provider=Codex&model=gpt-5",
+      "?prompt=Rate+me&repo=https://github.com/pingdotgg/houston.git&provider=Codex&model=gpt-5",
     );
     expect(result).toEqual({
       ok: true,
       value: {
         kind: "new",
         prompt: { text: "Rate me", hiddenCharacters: 0 },
-        repository: { owner: "pingdotgg", name: "t3code" },
+        repository: { owner: "pingdotgg", name: "houston" },
         provider: "codex",
         model: "gpt-5",
       },
@@ -54,15 +54,15 @@ describe("parseNewThreadLink", () => {
 
   it("reads a pull request link, whose prompt is optional", () => {
     for (const pr of [
-      "pingdotgg/t3code/42",
-      "pingdotgg/t3code%2342",
-      "https://github.com/pingdotgg/t3code/pull/42/files",
+      "pingdotgg/houston/42",
+      "pingdotgg/houston%2342",
+      "https://github.com/pingdotgg/houston/pull/42/files",
     ]) {
       expect(parseNewThreadLink(`?pr=${pr}`)).toEqual({
         ok: true,
         value: {
           kind: "pull-request",
-          pullRequest: { owner: "pingdotgg", name: "t3code", number: 42 },
+          pullRequest: { owner: "pingdotgg", name: "houston", number: 42 },
           prompt: null,
         },
       });
@@ -93,7 +93,7 @@ describe("link round trips", () => {
   it("builds a link that parses back to the same prompt", () => {
     const link = buildNewThreadLink({
       prompt: "Swear count & rating?",
-      repository: { owner: "pingdotgg", name: "t3code" },
+      repository: { owner: "pingdotgg", name: "houston" },
       provider: "claudeAgent",
       model: "opus",
       origin: "https://app.example.test",
@@ -107,8 +107,8 @@ describe("link round trips", () => {
   });
 
   it("maps app scheme and hosted links to in-app paths, and nothing else", () => {
-    expect(promptLinkAppPath("t3code://new?prompt=hi")).toBe("/new?prompt=hi");
-    expect(promptLinkAppPath("t3code-dev://threads/env-1/thread-1")).toBe("/env-1/thread-1");
+    expect(promptLinkAppPath("houston://new?prompt=hi")).toBe("/new?prompt=hi");
+    expect(promptLinkAppPath("houston-dev://threads/env-1/thread-1")).toBe("/env-1/thread-1");
     expect(
       promptLinkAppPath(
         "https://app.example.test/env-1/thread-1?prompt=go",
@@ -120,6 +120,6 @@ describe("link round trips", () => {
     ).toBeNull();
     expect(promptLinkAppPath("https://app.example.test/new?prompt=hi")).toBeNull();
     expect(promptLinkAppPath("https://evil.test/new?prompt=hi")).toBeNull();
-    expect(promptLinkAppPath("t3code://app/index.html")).toBeNull();
+    expect(promptLinkAppPath("houston://app/index.html")).toBeNull();
   });
 });

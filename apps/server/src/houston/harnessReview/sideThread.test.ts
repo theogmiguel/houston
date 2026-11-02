@@ -313,7 +313,7 @@ const workspace = (name: string) => checkpointWorkspace(`harness-families-${name
 describe("the review thread runs read-only", () => {
   it.effect("a review thread runs read-only with no t3 tools", () =>
     Effect.gen(function* () {
-      // Claude: the query opens in dontAsk with read tools only and no T3 MCP server.
+      // Claude: the query opens in dontAsk with read tools only and no Houston MCP server.
       const opened: Array<ClaudeAdapterV2.ClaudeAgentSdkQueryOpenInput> = [];
       const claudeSelection = selection("claudeAgent", "claude-sonnet-4-6");
       const claudeTranscript = yield* ClaudeOrchestratorReplayHarness.decodeTranscript(
@@ -342,7 +342,7 @@ describe("the review thread runs read-only", () => {
       assert.equal(opened[0]!.options.permissionMode, "dontAsk");
       assert.deepEqual(opened[0]!.options.tools, ["Read", "Glob", "Grep"]);
       assert.isUndefined(opened[0]!.options.allowDangerouslySkipPermissions);
-      assert.isFalse(Object.keys(opened[0]!.options.mcpServers ?? {}).includes("t3-code"));
+      assert.isFalse(Object.keys(opened[0]!.options.mcpServers ?? {}).includes("houston"));
 
       // Codex: the recorded read-only turn/start, sandbox read-only with network off, matches.
       const codexCwd = yield* workspace("codex");

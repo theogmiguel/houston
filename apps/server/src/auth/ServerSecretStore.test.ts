@@ -13,7 +13,7 @@ import * as ServerConfig from "../config.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 
 const layerServerConfig = () =>
-  ServerConfig.layerTest(process.cwd(), { prefix: "t3-secret-store-test-" });
+  ServerConfig.layerTest(process.cwd(), { prefix: "houston-secret-store-test-" });
 
 const layerServerSecretStore = () => Layer.provide(ServerSecretStore.layer, layerServerConfig());
 

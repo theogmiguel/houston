@@ -847,7 +847,7 @@ it.effect.each(["shutdown", "close"] as const)(
         stopAgent: Effect.void,
         stop: Effect.void,
       };
-      const launchers = new Set(["t3-from-a-previous-run"]);
+      const launchers = new Set(["houston-from-a-previous-run"]);
       const released: Array<[string, boolean]> = [];
       // Whether the device was still on when each session was released.
       const releasedWhileBooted: Array<boolean> = [];
@@ -1334,7 +1334,7 @@ it.effect("failed manual installation leaves lifecycle state unchanged and can b
 it.effect("reconciles SSH host settings without publishing no-op changes", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-reconcile-" });
+    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-device-reconcile-" });
     const settings = yield* ServerSettings.ServerSettingsService;
     // Each change is acknowledged after reconciliation consumed it, so no-ops are observable.
     const changes = yield* Queue.unbounded<{ value: Settings; done: Deferred.Deferred<void> }>();
@@ -1494,7 +1494,7 @@ it.effect("a failed tool update reports npm's exit code but not its output", () 
     Effect.provide(
       Layer.mergeAll(
         ServerSettings.layerTest({ enableDeviceSupport: true }),
-        ServerConfig.layerTest(process.cwd(), { prefix: "t3-device-update-" }),
+        ServerConfig.layerTest(process.cwd(), { prefix: "houston-device-update-" }),
         NodeCrypto.layer,
         NetService.layer,
       ).pipe(Layer.provideMerge(NodeServices.layer)),

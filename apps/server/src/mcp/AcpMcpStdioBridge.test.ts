@@ -48,8 +48,8 @@ describe("AcpMcpStdioBridge", () => {
     };
     process.env = {
       ...originalEnvironment,
-      T3_ACP_MCP_ENDPOINT: "http://127.0.0.1:1/mcp",
-      T3_ACP_MCP_AUTHORIZATION: "Bearer bridge-test",
+      HOUSTON_ACP_MCP_ENDPOINT: "http://127.0.0.1:1/mcp",
+      HOUSTON_ACP_MCP_AUTHORIZATION: "Bearer bridge-test",
     };
     const structuredContent = { taskId: "task-1", status: "failed" };
     const explanation = { type: "text", text: "The command failed." };
@@ -346,7 +346,7 @@ describe("AcpMcpStdioBridge", () => {
       const fiber = yield* mcpToolSession({
         endpoint: "http://127.0.0.1:1/mcp",
         authorization: "Bearer bridge-test",
-        clientName: "t3-code-acp-cli",
+        clientName: "houston-acp-cli",
         fetchImplementation: pendingFetch(started),
       }).pipe(
         Effect.flatMap((session) => session.call("orchestrator_capabilities", {})),

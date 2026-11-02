@@ -102,7 +102,7 @@ function GridRoute() {
   };
 
   // A grid that leaves the screen must not hand a stale rect to the next one.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the details follow handoff when the route unmounts
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- clears the details follow handoff when the route unmounts
   useEffect(() => () => clearInlineDetailsHandoff(), []);
 
   const focusEmptyComposer = () => {
@@ -122,7 +122,7 @@ function GridRoute() {
     });
   };
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window keydown listener for the grid's T shortcut
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- window keydown listener for the grid's T shortcut
   useEffect(() => {
     if (grid === null) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -140,7 +140,7 @@ function GridRoute() {
   });
 
   // The grid's cells are embedded chats, which leave window shortcuts to the route.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window keydown listener for the focused thread's right panel shortcuts
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- window keydown listener for the focused thread's right panel shortcuts
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
@@ -188,7 +188,7 @@ function GridRoute() {
 
   // A popover card belongs to one cell. Following focus would reopen it over the next
   // thread, so a focus move out of a popover cell turns the grid's details off.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the compact popover when the focused cell changes
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- closes the compact popover when the focused cell changes
   useLayoutEffect(() => {
     const previousThreadId = previousFocusedThreadIdRef.current;
     previousFocusedThreadIdRef.current = focusedThreadId;
@@ -224,12 +224,12 @@ function GridRoute() {
       ? maximizedThreadId
       : null;
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a grid change or a removed cell must not leave another cell maximized
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- a grid change or a removed cell must not leave another cell maximized
   useEffect(() => {
     setMaximizedThreadId(null);
   }, [gridId]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears a maximize whose cell left the tree
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- clears a maximize whose cell left the tree
   useEffect(() => {
     if (maximizedThreadId !== null && effectiveMaximized === null) setMaximizedThreadId(null);
   }, [effectiveMaximized, maximizedThreadId]);

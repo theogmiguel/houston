@@ -223,7 +223,7 @@ export default function FileBrowserPanel({
   };
 
   // Keep expand-all on as newly read folders arrive.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- adds newly loaded directories to the expansion set while expand-all is on
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- adds newly loaded directories to the expansion set while expand-all is on
   useEffect(() => {
     if (!expandAll) return;
     setExpandedPaths((current) => {
@@ -233,7 +233,7 @@ export default function FileBrowserPanel({
     });
   }, [directoryPaths, expandAll]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the selected file's ancestor directories and aborts on cleanup
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- loads the selected file's ancestor directories and aborts on cleanup
   useEffect(() => {
     if (!selectedPath) return;
     const controller = new AbortController();
@@ -244,7 +244,7 @@ export default function FileBrowserPanel({
   }, [load, selectedPath]);
 
   // Reveal a selection made outside the tree by opening its ancestors.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- expands the ancestors of an externally selected path
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- expands the ancestors of an externally selected path
   useEffect(() => {
     if (!selectedPath) return;
     const ancestors = ancestorDirectoryPaths(selectedPath);
@@ -256,7 +256,7 @@ export default function FileBrowserPanel({
     });
   }, [selectedPath]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the selected row into view after the tree re-renders
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- scrolls the selected row into view after the tree re-renders
   useEffect(() => {
     if (!selectedPath) return;
     const row = document.querySelector<HTMLElement>(

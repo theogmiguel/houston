@@ -50,7 +50,7 @@ const acquireListener = Effect.gen(function* () {
   const owned = yield* Effect.acquireRelease(
     io(async () => {
       if (platform === "win32")
-        return { endpoint: `\\\\.\\pipe\\t3-token-${NodeCrypto.randomUUID()}` };
+        return { endpoint: `\\\\.\\pipe\\houston-token-${NodeCrypto.randomUUID()}` };
       if (uid === undefined) throw new Error("Missing IPC owner");
       const acquireDirectory = async (candidate: string) => {
         const parent = await NodeFSP.realpath(candidate);
@@ -64,7 +64,7 @@ const acquireListener = Effect.gen(function* () {
           )
         )
           throw new Error("Untrusted IPC parent");
-        const directory = await NodeFSP.mkdtemp(NodePath.join(parent, "t3-token-"));
+        const directory = await NodeFSP.mkdtemp(NodePath.join(parent, "houston-token-"));
         try {
           await NodeFSP.chmod(directory, 0o700);
           const created = await NodeFSP.lstat(directory);
