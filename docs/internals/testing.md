@@ -5,14 +5,14 @@ What the suites are, where new tests go, and how to read a failure. Commands and
 
 ## Where tests live
 
-| Layer | Location | Runner |
-|---|---|---|
-| Server | `*.test.ts` beside the code under `apps/server/src`; Houston's under `src/houston/` | `pnpm --filter houston exec vp test run <files>` |
-| Contracts and shared | `packages/contracts/src`, `packages/shared/src` | `pnpm --filter @houston-app/contracts --filter @houston-app/shared test` |
-| Renderer | `*.test.ts(x)` beside the code under `apps/web/src` | the package's `test` script |
-| Host | unit tests in `src-tauri/src` | `cargo test` in `src-tauri` |
-| Repository tooling | `scripts/*.test.mjs`, `scripts/test-*.py` | `node --test`, `python3` |
-| Safety | `scripts/check-*.sh`, hermetic, sub-second | each script, from the repository root |
+| Layer                | Location                                                                            | Runner                                                                   |
+| -------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Server               | `*.test.ts` beside the code under `apps/server/src`; Houston's under `src/houston/` | `pnpm --filter houston exec vp test run <files>`                         |
+| Contracts and shared | `packages/contracts/src`, `packages/shared/src`                                     | `pnpm --filter @houston-app/contracts --filter @houston-app/shared test` |
+| Renderer             | `*.test.ts(x)` beside the code under `apps/web/src`                                 | the package's `test` script                                              |
+| Host                 | unit tests in `src-tauri/src`                                                       | `cargo test` in `src-tauri`                                              |
+| Repository tooling   | `scripts/*.test.mjs`, `scripts/test-*.py`                                           | `node --test`, `python3`                                                 |
+| Safety               | `scripts/check-*.sh`, hermetic, sub-second                                          | each script, from the repository root                                    |
 
 Rules:
 
@@ -42,12 +42,12 @@ Rules:
 A known failure mode is believable only through the discriminator that matches it.
 "Re-run standalone" is not universal.
 
-| Shape | Discriminator | Not a discriminator |
-|---|---|---|
-| Wall-clock deadline missed on the first run after a relink | re-run **warm**; cold page-cache cost was measured at 23× (7 s cold vs 310 ms warm, same binary, idle machine) | `--test-threads=1`, running standalone |
-| Empty `tracing` capture buffer only when siblings run | the missing `ensure_permissive_global_default()` call | re-running the one test |
-| `ETXTBSY` from a fixture script (a concurrent spawn forks between its chmod and exec) | `--test-threads=1` reproduces it as a within-binary race | standalone |
-| A full run on a loaded cold machine shows N failures | re-run warm and report **both** numbers — the red one is what lets a reviewer verify the noise | reporting only the green re-run |
+| Shape                                                                                 | Discriminator                                                                                                  | Not a discriminator                    |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Wall-clock deadline missed on the first run after a relink                            | re-run **warm**; cold page-cache cost was measured at 23× (7 s cold vs 310 ms warm, same binary, idle machine) | `--test-threads=1`, running standalone |
+| Empty `tracing` capture buffer only when siblings run                                 | the missing `ensure_permissive_global_default()` call                                                          | re-running the one test                |
+| `ETXTBSY` from a fixture script (a concurrent spawn forks between its chmod and exec) | `--test-threads=1` reproduces it as a within-binary race                                                       | standalone                             |
+| A full run on a loaded cold machine shows N failures                                  | re-run warm and report **both** numbers — the red one is what lets a reviewer verify the noise                 | reporting only the green re-run        |
 
 ## Inverted evidence
 
