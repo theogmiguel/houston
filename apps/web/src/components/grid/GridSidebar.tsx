@@ -1786,7 +1786,7 @@ export function ThreadCard({
           />
         }
       >
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-h-[22px] min-w-0 items-center gap-2">
           {renaming ? (
             <input
               autoFocus
@@ -1829,10 +1829,8 @@ export function ThreadCard({
             >
               <span
                 className={cn(
-                  "min-w-0 flex-1 truncate text-headline leading-4.75",
-                  attention
-                    ? "font-semibold text-foreground"
-                    : "font-medium text-secondary-foreground",
+                  "min-w-0 flex-1 truncate text-headline leading-4.75 text-foreground",
+                  attention ? "font-semibold" : "font-medium",
                 )}
               >
                 <HighlightedText text={thread.title} query={query} />

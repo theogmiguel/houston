@@ -3,7 +3,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
-import { fakeTimers, render } from "../../../test/render";
+import { fakeTimers, render, type Screen } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
 import { ThreadCard } from "./GridSidebar";
 
@@ -45,6 +45,8 @@ function card(
     onOpen?: () => void;
     timeLabel?: string | null;
     tooltipDelay?: number;
+    focused?: boolean;
+    selected?: boolean;
   } = {},
 ) {
   return (
@@ -55,8 +57,8 @@ function card(
         query=""
         providerEntries={new Map()}
         nowIso="2026-01-01T00:00:00.000Z"
-        focused={false}
-        selected={false}
+        focused={overrides.focused ?? false}
+        selected={overrides.selected ?? false}
         dragging={false}
         workspaceTitle="Houston"
         timeLabel={overrides.timeLabel === undefined ? "9:00" : overrides.timeLabel}
@@ -275,4 +277,125 @@ describe("ThreadCard status marks", () => {
     expect(getComputedStyle(circle!).stroke).not.toBe("none");
     expect(getComputedStyle(circle!).stroke).toBe(tokenColor("--warn-ink"));
   });
+});
+
+function classColor(className: string): string {
+  const probe = document.createElement("span");
+  probe.className = className;
+  document.body.append(probe);
+  const color = getComputedStyle(probe).color;
+  probe.remove();
+  return color;
+}
+
+function titleOf(screen: Screen): HTMLElement {
+  const title = screen.container.querySelector("[data-thread-key] [data-card-open] > span");
+  if (!(title instanceof HTMLElement)) {
+    throw new Error("The thread card has no title span.");
+  }
+  return title;
+}
+
+describe("ThreadCard layout and contrast", () => {
+  it("keeps the row's bounding box unchanged while hovered", async () => {
+    await using screen = await render(card(thread()));
+    const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
+    const before = row.getBoundingClientRect();
+
+    await userEvent.hover(row);
+    await expect.element(screen.getByRole("button", { name: /Thread actions for/ })).toBeVisible();
+
+    const during = row.getBoundingClientRect();
+    expect({ left: during.left, top: during.top }).toEqual({ left: before.left, top: before.top });
+    expect({ width: during.width, height: during.height }).toEqual({
+      width: before.width,
+      height: before.height,
+    });
+  });
+
+  it("keeps an idle title at normal contrast instead of the quiet secondary tone", async () => {
+    await using screen = await render(card(thread()));
+    const title = titleOf(screen);
+
+    expect(title.className).toContain("text-foreground");
+    expect(title.className).not.toContain("text-secondary-foreground");
+    expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
+  });
+
+  it("keeps a selected idle title at normal contrast over the selection fill", async () => {
+    await using screen = await render(card(thread(), { selected: true }));
+    const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
+    const title = titleOf(screen);
+
+    expect(row.className).toContain("bg-(--row-current)");
+    expect(title.className).toContain("text-foreground");
+    expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
+  });
+
+  it("keeps a focused idle title at normal contrast over the active fill", async () => {
+    await using screen = await render(card(thread(), { focused: true }));
+    const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
+    const title = titleOf(screen);
+
+    expect(row.className).toContain("bg-(--sidebar-row-active)");
+    expect(title.className).toContain("text-foreground");
+    expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
+  });
+
+  it("keeps an attention title at full contrast and semibold", async () => {
+    await using screen = await render(card(thread({ hasPendingUserInput: true })));
+    const title = titleOf(screen);
+
+    expect(title.className).toContain("font-semibold");
+    expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
+  });
+});
+
+const capturesEnabled = import.meta.env.VITE_HOUSTON_CAPTURES === "1";
+
+describe.skipIf(!capturesEnabled)("ThreadCard captures", () => {
+  it.each(["light", "dark"] as const)(
+    "captures idle, selected and running rows in %s",
+    async (appearance) => {
+      document.documentElement.classList.toggle("dark", appearance === "dark");
+      const container = document.createElement("div");
+      container.className = "flex w-[300px] flex-col gap-px bg-(--sidebar) p-2";
+      await using screen = await render(
+        <>
+          {card(thread({ title: "Review the merge queue" }), {
+            timeLabel: "9:42",
+            tooltipDelay: 60_000,
+          })}
+          {card(
+            thread({
+              title: "Split drawer state from the thread store",
+            }),
+            { timeLabel: "9:12", selected: true, tooltipDelay: 60_000 },
+          )}
+          {card(
+            thread({
+              title: "Port the settings search",
+              runtime: { status: "running" } as never,
+            }),
+            { timeLabel: null, tooltipDelay: 60_000 },
+          )}
+        </>,
+        { container },
+      );
+
+      await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
+      await expect
+        .element(
+          screen.getByRole("button", {
+            name: "Thread actions for Review the merge queue",
+          }),
+        )
+        .toBeVisible();
+      await page.screenshot({
+        element: container,
+        path: `../../../../../.slice/captures/thread-rows-${appearance}.png`,
+      });
+      document.documentElement.classList.remove("dark");
+    },
+  );
 });
