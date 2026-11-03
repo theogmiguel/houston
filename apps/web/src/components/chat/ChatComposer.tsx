@@ -51,7 +51,7 @@ import { isPasteAsTextShortcut } from "@houston-app/client-runtime/text-paste";
 import { serializeComposerFileLink } from "@houston-app/shared/composerTrigger";
 import { folderDropTarget, resolveDroppedFolderPaths } from "./folderDrop";
 import { droppedPathToFile } from "./droppedPathFile";
-import { isEmptyPaste, readHostClipboardImageFile } from "./hostClipboardImage";
+import { isClipboardImagePaste, readHostClipboardImageFile } from "./hostClipboardImage";
 import { splitTransferredFiles } from "./workspaceFileDrop";
 import { pastedPathsConfirmationTitle, transferredPaths } from "../../lib/fileTransfer";
 import { createModelSelection, normalizeModelSlug } from "@houston-app/shared/model";
@@ -2743,7 +2743,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
 
     const readHostClipboardImage = window.hostBridge?.readClipboardImage;
-    if (activeThreadId && readHostClipboardImage && isEmptyPaste(event.clipboardData)) {
+    if (activeThreadId && readHostClipboardImage && isClipboardImagePaste(event.clipboardData)) {
       event.preventDefault();
       event.stopPropagation();
       void readHostClipboardImageFile(readHostClipboardImage)

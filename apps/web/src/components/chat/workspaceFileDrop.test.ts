@@ -37,6 +37,15 @@ describe("splitTransferredFiles", () => {
     ).toEqual({ files: [emptyFile, image], folders: [folder] });
   });
 
+  it("keeps files the engine lists only in the file list", () => {
+    const image = new File(["image"], "pasted-image.png", { type: "image/png" });
+
+    expect(splitTransferredFiles({ files: [image], items: [] })).toEqual({
+      files: [image],
+      folders: [],
+    });
+  });
+
   it("ignores clipboard file items that cannot provide a file", () => {
     expect(
       splitTransferredFiles({

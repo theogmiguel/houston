@@ -53,6 +53,11 @@ export function splitTransferredFiles(
       files.push(file);
     }
   }
+  // WebKitGTK can populate `files` from the pasteboard while its item list stays empty, as it
+  // does for an in-memory clipboard image. `files` is the same union of entries in that case.
+  if (files.length === 0 && folders.length === 0) {
+    return { files: Array.from(dataTransfer.files), folders: [] };
+  }
   return { files, folders };
 }
 

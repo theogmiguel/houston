@@ -1,15 +1,30 @@
 import type { HostClipboardImage } from "@houston-app/contracts";
 
 /**
- * A paste whose `clipboardData` names no files and no text. WebKitGTK reports a clipboard image
- * this way: no types, no files. A paste that carries any text type stays with the editor.
+ * True when the paste holds an image the webview could not hand over as a file: WebKitGTK reports
+ * an empty paste, and a browser's "Copy image" arrives as `text/html` wrapping an `<img>`.
+ * Plain text, or rich text with visible content, stays with the editor.
  */
-export function isEmptyPaste(clipboardData: DataTransfer): boolean {
-  return (
-    clipboardData.files.length === 0 &&
-    !clipboardData.types.includes("text/plain") &&
-    !clipboardData.types.includes("text/html")
-  );
+export function isClipboardImagePaste(clipboardData: DataTransfer): boolean {
+  if (clipboardData.files.length > 0) return false;
+  if (readClipboardText(clipboardData, "text/plain").trim().length > 0) return false;
+  const html = readClipboardText(clipboardData, "text/html");
+  return html.length === 0 || htmlIsOnlyAnImage(html);
+}
+
+/** Some engines throw for a flavor the paste does not advertise instead of returning "". */
+function readClipboardText(clipboardData: DataTransfer, type: string): string {
+  try {
+    return clipboardData.getData(type) || "";
+  } catch {
+    return "";
+  }
+}
+
+/** An image with no text around it, however the source app wraps it in markup. */
+function htmlIsOnlyAnImage(html: string): boolean {
+  if (!/<img\b/i.test(html)) return false;
+  return html.replace(/<[^>]*>/g, "").trim().length === 0;
 }
 
 const EXTENSION_BY_MEDIA_TYPE: Readonly<Record<string, string>> = {
