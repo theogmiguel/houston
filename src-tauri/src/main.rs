@@ -7,6 +7,8 @@ mod app_update;
 mod clipboard;
 mod connection_catalog;
 mod dialog;
+#[cfg(target_os = "linux")]
+mod dropped_paths;
 mod fs;
 mod fs_allowlist;
 mod notifications;
@@ -391,6 +393,10 @@ fn main() {
     builder = builder.manage(Arc::clone(&v2_ssh));
     builder = builder.manage(Arc::clone(&snapshot_host));
     builder = builder.manage(fs_allowlist::AllowedRoots::new());
+    #[cfg(target_os = "linux")]
+    {
+        builder = builder.manage(Arc::new(dropped_paths::DropAllowlist::new()));
+    }
     builder = builder.manage(std::sync::Arc::new(app_update::V2UpdateHandle::new()));
     builder = builder.manage(window::ContextMenuState::default());
     builder = builder.manage(provider_auth::ProviderAuthCallbacks::default());
@@ -677,6 +683,23 @@ fn main() {
             let main_window = window_builder
                 .build()
                 .expect("failed to build the main window");
+
+            // WebKitGTK hands the renderer a uri-list drop with no path-bearing `File`, so the
+            // host watches the same native drop to learn which paths the user actually let go of.
+            #[cfg(target_os = "linux")]
+            {
+                let drop_allowlist = app
+                    .state::<Arc<dropped_paths::DropAllowlist>>()
+                    .inner()
+                    .clone();
+                if let Err(err) =
+                    dropped_paths::observe_native_drops(&main_window, drop_allowlist)
+                {
+                    eprintln!(
+                        "houston-tauri: cannot observe native drops ({err}); dropped paths stay unreadable"
+                    );
+                }
+            }
 
             if let window_state::StartupGeometry::Restore {
                 x,

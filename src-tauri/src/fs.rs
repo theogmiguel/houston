@@ -2051,11 +2051,29 @@ pub struct DroppedPath {
     pub base64: Option<String>,
 }
 
-/// Reads a path named by an OS drop or clipboard URI list. WebKitGTK can deliver a file-manager
-/// drag with no `File` that carries a path, so the renderer has the path and asks the host to read
-/// it; the user's own drop is the grant, and the read is capped and limited to regular files.
+/// Reads a path from an OS drop or clipboard URI list, but only one the host itself saw: a path
+/// recorded from the webview's drag signal or on the system clipboard now. A renderer that names
+/// an arbitrary path reads nothing.
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub async fn fs_read_dropped_path(
+    path: String,
+    allowlist: State<'_, Arc<crate::dropped_paths::DropAllowlist>>,
+    app: tauri::AppHandle,
+) -> Result<DroppedPath, String> {
+    crate::dropped_paths::authorize(&path, allowlist.inner().as_ref(), &app).await?;
+    read_dropped_path(path).await
+}
+
+/// WebView2 exposes no drop to the host, so the read keeps the direct path it had.
+#[cfg(not(target_os = "linux"))]
 #[tauri::command]
 pub async fn fs_read_dropped_path(path: String) -> Result<DroppedPath, String> {
+    read_dropped_path(path).await
+}
+
+/// Reads an authorized file or folder path; the read is capped and limited to regular files.
+async fn read_dropped_path(path: String) -> Result<DroppedPath, String> {
     use base64::Engine;
 
     let file = PathBuf::from(&path);
@@ -4909,7 +4927,7 @@ mod tests {
         let file = root.path().join("notes.md");
         tokio::fs::write(&file, b"# notes").await.unwrap();
 
-        let dropped = super::fs_read_dropped_path(file.to_string_lossy().into_owned())
+        let dropped = super::read_dropped_path(file.to_string_lossy().into_owned())
             .await
             .expect("a regular file is readable");
         assert_eq!(dropped.name, "notes.md");
@@ -4926,7 +4944,7 @@ mod tests {
         let folder = root.path().join("photos");
         tokio::fs::create_dir(&folder).await.unwrap();
 
-        let dropped = super::fs_read_dropped_path(folder.to_string_lossy().into_owned())
+        let dropped = super::read_dropped_path(folder.to_string_lossy().into_owned())
             .await
             .expect("a folder is readable");
         assert_eq!(dropped.name, "photos");
@@ -4945,7 +4963,7 @@ mod tests {
             .await
             .unwrap();
 
-        let error = super::fs_read_dropped_path(file.to_string_lossy().into_owned())
+        let error = super::read_dropped_path(file.to_string_lossy().into_owned())
             .await
             .expect_err("over the cap");
         assert!(
@@ -4959,7 +4977,7 @@ mod tests {
     async fn refuses_a_dropped_path_that_does_not_exist() {
         let root = tempfile::tempdir().unwrap();
         let missing = root.path().join("missing.txt");
-        let error = super::fs_read_dropped_path(missing.to_string_lossy().into_owned())
+        let error = super::read_dropped_path(missing.to_string_lossy().into_owned())
             .await
             .expect_err("missing path");
         assert!(error.contains("missing.txt"), "{error}");
