@@ -1,6 +1,5 @@
 import type { ScopedThreadRef } from "@houston-app/contracts";
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
-import { deriveThreadTitleSeed } from "@houston-app/client-runtime/operations";
 import {
   type AtomCommandResult,
   isAtomCommandInterrupted,
@@ -14,23 +13,19 @@ import { useRightPanelStore } from "../../rightPanelStore";
 import { waitForThreadShell } from "../../state/entities";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 
 /**
- * Starts side chats from `threadRef`, or offers none when it is null. `open` forks the
- * thread's latest stable point, sends `prompt` there, and shows the side chat's tab. It
- * resolves false when the side chat did not start, or another one is still starting.
+ * Starts a read-only aside from `threadRef`, or offers none when it is null. `open` forks
+ * the thread's latest finished turn into a server side thread, sends `prompt` there when
+ * there is one, and shows the aside's tab. The server refuses edit, command and interrupt
+ * requests on a side thread, so an aside never changes the source or stops its run.
  */
 export function useSideChat(input: {
   readonly threadRef: ScopedThreadRef | null;
   readonly onError: (message: string) => void;
 }) {
   const pendingRef = useRef(false);
-  const forkSideChat = useAtomCommand(threadEnvironment.forkSideChat, { reportFailure: false });
-  const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
-  const startThreadTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
-    reportFailure: false,
-  });
+  const startAside = useAtomCommand(threadEnvironment.startAside, { reportFailure: false });
   const reportFailure = (
     failure: Extract<AtomCommandResult<unknown, unknown>, { readonly _tag: "Failure" }>,
     fallback: string,
@@ -41,45 +36,24 @@ export function useSideChat(input: {
   };
   const start = async (threadRef: ScopedThreadRef, prompt: string | undefined) => {
     const targetThreadId = newThreadId();
-    const fork = await forkSideChat({
+    const text = prompt?.trim() ?? "";
+    const aside = await startAside({
       environmentId: threadRef.environmentId,
-      input: { sourceThreadId: threadRef.threadId, targetThreadId, title: "Side chat" },
+      input: {
+        sourceThreadId: threadRef.threadId,
+        asideThreadId: targetThreadId,
+        messageId: newMessageId(),
+        text,
+        attachments: [],
+      },
     });
-    if (fork._tag === "Failure") {
-      reportFailure(fork, "Could not start a side chat.");
+    if (aside._tag === "Failure") {
+      reportFailure(aside, "Could not start an aside.");
       return false;
     }
-    // Drops the empty side chat a failed start leaves behind; one that got its message stays.
-    const discard = () =>
-      void deleteThread({
-        environmentId: threadRef.environmentId,
-        input: { threadId: targetThreadId, onlyIfUnused: true },
-      });
     if (!(await waitForThreadShell(scopeThreadRef(threadRef.environmentId, targetThreadId)))) {
-      input.onError("The side chat was created, but it did not reach this client.");
-      discard();
+      input.onError("The aside was created, but it did not reach this client.");
       return false;
-    }
-    const text = prompt?.trim();
-    // Send before showing the tab: closing a tab whose side chat has no run deletes it.
-    if (text) {
-      // The server asks before edits on a side chat's first turn whatever mode is sent.
-      const turn = await startThreadTurn({
-        environmentId: threadRef.environmentId,
-        input: {
-          threadId: targetThreadId,
-          message: { messageId: newMessageId(), role: "user", text, attachments: [] },
-          titleSeed: deriveThreadTitleSeed({ text, attachments: [] }),
-          runtimeMode: "approval-required",
-          interactionMode: "default",
-          createdAt: new Date().toISOString(),
-        },
-      });
-      if (turn._tag === "Failure") {
-        reportFailure(turn, "Could not send the side chat message.");
-        discard();
-        return false;
-      }
     }
     useRightPanelStore.getState().openSideChat(threadRef, targetThreadId);
     return true;

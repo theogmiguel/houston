@@ -27,6 +27,18 @@ import { resolveAssistantModelAttribution } from "./assistantModelAttribution";
 import { AssistantModelAttributionLine } from "./AssistantModelAttributionLine";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
 import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts";
+import {
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuSub,
+  MenuSubPopup,
+  MenuSubTrigger,
+  MenuTrigger,
+} from "../ui/menu";
+import { MessagesSquareIcon } from "lucide-react";
+import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
+import { SecondOpinionReviewCard } from "./SecondOpinionReviewCard";
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -89,8 +101,97 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             copyStreaming={row.assistantCopyStreaming}
           />
         ) : null}
+        <SecondOpinionCardForRun runId={row.message.runId} />
       </div>
     </>
+  );
+}
+
+/** The read-only review card for the turn the run produced, when one exists. */
+function SecondOpinionCardForRun({ runId }: { readonly runId: RunId | null | undefined }) {
+  const ctx = use(TimelineRowCtx);
+  const review =
+    runId === null || runId === undefined ? undefined : ctx.secondOpinion?.reviews.get(runId);
+  if (review === undefined) return null;
+  return <SecondOpinionReviewCard threadRef={review} />;
+}
+
+/** Asks another provider for a read-only review of this turn. */
+function AssistantSecondOpinionButton({
+  projectedItem,
+}: {
+  readonly projectedItem: NonNullable<Extract<TimelineRow, { kind: "message" }>["projectedItem"]>;
+}) {
+  const ctx = use(TimelineRowCtx);
+  const opinion = ctx.secondOpinion;
+  const runId = projectedItem.item.runId;
+  if (opinion === undefined || runId === null || projectedItem.item.type !== "assistant_message") {
+    return null;
+  }
+  const reviewedInstanceId = ctx.runs.find((run) => run.id === runId)?.providerInstanceId;
+  const reviewedDriver = opinion.entries.find(
+    (entry) => entry.instanceId === reviewedInstanceId,
+  )?.driverKind;
+  const entries = opinion.entries.filter(
+    (entry) => entry.enabled && entry.driverKind !== reviewedDriver && entry.models.length > 0,
+  );
+  if (entries.length === 0) return null;
+
+  return (
+    <Menu>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <MenuTrigger
+              render={
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  aria-label="Request a second opinion"
+                >
+                  <MessagesSquareIcon className="size-3" />
+                </Button>
+              }
+            />
+          }
+        />
+        <TooltipPopup side="top">Second opinion</TooltipPopup>
+      </Tooltip>
+      <MenuPopup align="end" side="top">
+        {entries.map((entry) => (
+          <MenuSub key={entry.instanceId}>
+            <MenuSubTrigger>
+              <ProviderInstanceIcon
+                driverKind={entry.driverKind}
+                displayName={entry.displayName}
+                accentColor={entry.accentColor}
+                className="size-4"
+                iconClassName="size-3.5"
+              />
+              <span className="min-w-0 flex-1 truncate">{entry.displayName}</span>
+            </MenuSubTrigger>
+            <MenuSubPopup>
+              {entry.models.map((model) => (
+                <MenuItem
+                  key={model.slug}
+                  onClick={() =>
+                    void opinion.onRequest({
+                      sourceThreadId: projectedItem.sourceThreadId,
+                      runId,
+                      instanceId: entry.instanceId,
+                      model: model.slug,
+                    })
+                  }
+                >
+                  {model.name}
+                </MenuItem>
+              ))}
+            </MenuSubPopup>
+          </MenuSub>
+        ))}
+      </MenuPopup>
+    </Menu>
   );
 }
 
@@ -215,6 +316,9 @@ function AssistantMessageMeta({
       />
       {projectedItem?.item.type === "assistant_message" ? (
         <AssistantForkButton projectedItem={projectedItem} />
+      ) : null}
+      {projectedItem?.item.type === "assistant_message" ? (
+        <AssistantSecondOpinionButton projectedItem={projectedItem} />
       ) : null}
       {!message.streaming && (
         <Tooltip>

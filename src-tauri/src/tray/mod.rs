@@ -20,6 +20,7 @@ macro_rules! tray_png {
 }
 
 const MENU_ID_OPEN: &str = "tray:open";
+const MENU_ID_NEW_THREAD: &str = "tray:new-thread";
 const MENU_ID_QUIT: &str = "tray:quit";
 const MENU_ID_HEADER: &str = "tray:header";
 const MENU_ID_OVERFLOW: &str = "tray:overflow";
@@ -200,6 +201,13 @@ fn build_items(
                 true,
                 None::<&str>,
             )?),
+            TrayItem::NewThread => Box::new(MenuItem::with_id(
+                app,
+                MENU_ID_NEW_THREAD,
+                "New thread…",
+                true,
+                None::<&str>,
+            )?),
             TrayItem::Separator => Box::new(PredefinedMenuItem::separator(app)?),
             TrayItem::Session { id, label } => Box::new(MenuItem::with_id(
                 app,
@@ -247,6 +255,7 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
     let id = event.id().as_ref();
     match id {
         MENU_ID_OPEN => show_main_window(app),
+        MENU_ID_NEW_THREAD => crate::quick_composer::open(app),
         MENU_ID_QUIT => {
             // The menu may be open while the window is hidden, so show it before
             // the confirmation overlay can appear.

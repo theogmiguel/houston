@@ -27,6 +27,9 @@ import {
   interruptThreadTurn,
   forkSideChat,
   forkThreadFromRun,
+  requestSecondOpinion,
+  sendSideThread,
+  startAside,
   markThreadUnread,
   mergeThreadBack,
   promoteQueuedRun,
@@ -301,6 +304,33 @@ export function createThreadEnvironmentAtoms<R, E>(
       concurrency: {
         mode: "serial",
         key: ({ environmentId, input }) => JSON.stringify([environmentId, input.sourceThreadId]),
+      },
+    }),
+    startAside: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:start-aside",
+      execute: startAside,
+      scheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.sourceThreadId]),
+      },
+    }),
+    requestSecondOpinion: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:request-second-opinion",
+      execute: requestSecondOpinion,
+      scheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.sourceThreadId]),
+      },
+    }),
+    sendSideThread: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:send-side-thread",
+      execute: sendSideThread,
+      scheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.sideThreadId]),
       },
     }),
     mergeBack: createEnvironmentCommand(runtime, {

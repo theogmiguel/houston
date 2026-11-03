@@ -59,6 +59,56 @@ describe("getOnboardingProviderState", () => {
     expect(getOnboardingProviderState({ ...readyCodex, status: "warning" })).toBe("attention");
   });
 
+  it("follows the readiness the server derived from a refused turn", () => {
+    expect(
+      getOnboardingProviderState({
+        ...readyCodex,
+        readiness: {
+          state: "rejected",
+          code: "api_error_403",
+          message: "Refused.",
+          at: "2026-08-23T00:00:00.000Z",
+        },
+      }),
+    ).toBe("attention");
+    expect(
+      getOnboardingProviderState({
+        ...readyCodex,
+        readiness: { state: "signedOut", source: "turn", message: "Sign in again." },
+      }),
+    ).toBe("signIn");
+    expect(
+      getOnboardingProviderState({
+        ...readyCodex,
+        readiness: {
+          state: "outOfUsage",
+          resetsAt: null,
+          message: "Limit reached.",
+          at: "2026-08-23T00:00:00.000Z",
+        },
+      }),
+    ).toBe("attention");
+    expect(
+      getOnboardingProviderState({
+        ...readyCodex,
+        readiness: { state: "notInstalled", reason: "missing", message: "Missing." },
+      }),
+    ).toBe("install");
+    expect(
+      getOnboardingProviderState({
+        ...readyCodex,
+        readiness: { state: "turnedOff", message: "Off." },
+      }),
+    ).toBe("disabled");
+    expect(
+      getOnboardingProviderState({
+        ...readyCodex,
+        auth: { status: "authenticated" },
+        readiness: { state: "ready" },
+      }),
+    ).toBe("ready");
+  });
+
   it("does not offer installation or sign-in for disabled providers", () => {
     expect(getOnboardingProviderState({ ...readyCodex, enabled: false, installed: false })).toBe(
       "disabled",

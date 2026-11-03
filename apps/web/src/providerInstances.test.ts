@@ -13,6 +13,7 @@ import {
   deriveProviderInstanceEntries,
   getDefaultProviderInstanceModel,
   isProviderInstancePickerReady,
+  providerInstanceReadinessReason,
   resolveDefaultProviderModelSelection,
   resolveSelectableProviderInstance,
   shouldShowInstanceBadge,
@@ -70,6 +71,25 @@ describe("isProviderInstancePickerReady", () => {
 
     expect(entry?.status).toBe("ready");
     expect(entry && isProviderInstancePickerReady(entry)).toBe(false);
+  });
+
+  it("keeps a provider with a refused turn listed and says why", () => {
+    const [entry] = deriveProviderInstanceEntries([
+      {
+        ...provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex-work" }),
+        readiness: {
+          state: "rejected",
+          code: "api_error_403",
+          message: "Refused.",
+          at: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    ]);
+
+    expect(entry && isProviderInstancePickerReady(entry)).toBe(false);
+    expect(entry && providerInstanceReadinessReason(entry)).toBe(
+      "Credentials rejected (api_error_403)",
+    );
   });
 });
 

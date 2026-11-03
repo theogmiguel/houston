@@ -3,6 +3,7 @@ import type {
   ServerProviderVersionAdvisory,
   ServerProviderCompatibilityAdvisory,
 } from "@houston-app/contracts";
+import type { ProviderReadiness } from "@houston-app/contracts/houston/providerReadiness";
 
 export const PROVIDER_STATUS_STYLES = {
   disabled: {
@@ -40,8 +41,103 @@ function isAntigravitySignInUnchecked(provider: ServerProvider): boolean {
   );
 }
 
+const RESET_WINDOW_MINUTE_MS = 60_000;
+const RESET_WINDOW_HOUR_MS = 3_600_000;
+const RESET_WINDOW_DAY_MS = 86_400_000;
+
+/** How long until a usage window resets, in words a settings row can carry. */
+export function formatReadinessReset(resetsAt: string, nowMs: number = Date.now()): string | null {
+  const resetMs = Date.parse(resetsAt);
+  if (!Number.isFinite(resetMs)) return null;
+  const remainingMs = resetMs - nowMs;
+  if (remainingMs <= 0) return "Usage is available again.";
+  if (remainingMs < RESET_WINDOW_HOUR_MS) {
+    return `Resets in ${Math.max(1, Math.ceil(remainingMs / RESET_WINDOW_MINUTE_MS))} min.`;
+  }
+  if (remainingMs < RESET_WINDOW_DAY_MS) {
+    const hours = Math.floor(remainingMs / RESET_WINDOW_HOUR_MS);
+    const minutes = Math.floor((remainingMs % RESET_WINDOW_HOUR_MS) / RESET_WINDOW_MINUTE_MS);
+    return minutes === 0 ? `Resets in ${hours} h.` : `Resets in ${hours} h ${minutes} min.`;
+  }
+  return `Resets ${new Date(resetMs).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  })} at ${new Date(resetMs).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  })}.`;
+}
+
+function providerReadinessStateKey(readiness: ProviderReadiness): ProviderStatusKey {
+  switch (readiness.state) {
+    case "turnedOff":
+      return "disabled";
+    case "signedOut":
+      return "warning";
+    case "rejected":
+      return "error";
+    case "outOfUsage":
+      return "warning";
+    case "notInstalled":
+      return readiness.reason === "missing" ? "warning" : "error";
+    case "ready":
+      return "ready";
+  }
+}
+
+/** One action that resolves a provider readiness state, or null when nothing is left to do. */
+export function getProviderReadinessAction(readiness: ProviderReadiness): string | null {
+  switch (readiness.state) {
+    case "notInstalled":
+      return readiness.reason === "missing"
+        ? "Install it, then check again."
+        : "Reinstall or fix the provider, then check again.";
+    case "turnedOff":
+      return "Turn it on in Settings.";
+    case "signedOut":
+      return "Sign in again.";
+    case "rejected":
+      return `Reauthorize the account (${readiness.code}) or use another provider.`;
+    case "outOfUsage":
+      return readiness.resetsAt === null
+        ? "Add usage or use another provider."
+        : (formatReadinessReset(readiness.resetsAt) ?? "Wait for the usage window to reset.");
+    case "ready":
+      return null;
+  }
+}
+
+function getReadinessSummary(readiness: ProviderReadiness): {
+  readonly headline: string;
+  readonly detail: string;
+  readonly action: string | null;
+} | null {
+  if (readiness.state === "ready") return null;
+  const action = getProviderReadinessAction(readiness);
+  const detail = action === null ? readiness.message : `${readiness.message} ${action}`;
+  switch (readiness.state) {
+    case "notInstalled":
+      return {
+        headline: readiness.reason === "missing" ? "Not installed" : "Unavailable",
+        detail,
+        action,
+      };
+    case "turnedOff":
+      return { headline: "Turned off", detail, action };
+    case "signedOut":
+      return { headline: "Signed out", detail, action };
+    case "rejected":
+      return { headline: "Credentials rejected", detail, action };
+    case "outOfUsage":
+      return { headline: "Out of usage", detail, action };
+    default:
+      return null;
+  }
+}
+
 export function getProviderStatusKey(provider: ServerProvider | undefined): ProviderStatusKey {
   if (provider && !provider.enabled) return "disabled";
+  if (provider?.readiness) return providerReadinessStateKey(provider.readiness);
   if (provider && isAntigravitySignInUnchecked(provider)) return "neutral";
   return provider?.status ?? "warning";
 }
@@ -53,6 +149,10 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
       detail: "Waiting for the server to report installation and authentication details.",
     };
   }
+  // Readiness folds a refused turn and a usage window into the same one state the server
+  // publishes; it wins over the probe fields those states would otherwise contradict.
+  const readinessSummary = provider.readiness ? getReadinessSummary(provider.readiness) : null;
+  if (readinessSummary) return readinessSummary;
   if (!provider.enabled || provider.status === "disabled") {
     return {
       headline: "Disabled",

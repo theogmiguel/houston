@@ -15,11 +15,13 @@ import {
   type MessageId,
   type OrchestrationV2TurnItem,
   type RunAttemptId,
+  type ScopedThreadRef,
   type ServerProviderSkill,
   type RunId,
   ThreadId,
 } from "@houston-app/contracts";
-import { parseScopedThreadKey } from "@houston-app/client-runtime/environment";
+import { parseScopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
+import { useThreadShells } from "../../state/entities";
 import { resolveWorkGroupScrollAnchor } from "@houston-app/client-runtime/work-log/scroll-anchor";
 import type { WorkflowOpening } from "@houston-app/client-runtime/state/subagentRuntime";
 import { observeResize } from "~/lib/observeResize";
@@ -278,6 +280,8 @@ interface MessagesTimelineProps {
     readonly sourceThreadId: ThreadId;
     readonly runId: RunId;
   }) => Promise<void>;
+  /** Absent hides the Second opinion action, as in read-only views. */
+  secondOpinion?: Omit<import("./timelineRowContext").SecondOpinionContext, "reviews"> | undefined;
   supportsConversationRollback: boolean;
   threadStartCheckpointReady?: boolean;
   availableRevertTurnCounts?: ReadonlySet<number> | undefined;
@@ -378,6 +382,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   parentThreadLink = null,
   workflowOpening = null,
   onForkFromRun,
+  secondOpinion,
   supportsConversationRollback,
   threadStartCheckpointReady = false,
   availableRevertTurnCounts,
@@ -467,6 +472,22 @@ const ConversationTimeline = memo(function ConversationTimeline({
   }
   const citationThreadRef = parseScopedThreadKey(routeThreadKey);
   const openPullRequest = useOpenPrLink(citationThreadRef ?? undefined);
+  const threadShells = useThreadShells();
+  const secondOpinionReviews = new Map<RunId, ScopedThreadRef>();
+  if (citationThreadRef !== null) {
+    for (const shell of threadShells) {
+      const side = shell.side;
+      if (
+        side?.kind === "secondOpinion" &&
+        shell.environmentId === citationThreadRef.environmentId &&
+        side.sourceThreadId === citationThreadRef.threadId &&
+        shell.archivedAt === null &&
+        shell.deletedAt === null
+      ) {
+        secondOpinionReviews.set(side.sourceRunId, scopeThreadRef(shell.environmentId, shell.id));
+      }
+    }
+  }
   const [minimapStripMap] = useState(() => new Map<string, HTMLSpanElement>());
   const [disclosureToggleSettling, setDisclosureToggleSettling] = useState(false);
   const disclosureAnchorKeyRef = useRef<string | null>(null);
@@ -1057,6 +1078,9 @@ const ConversationTimeline = memo(function ConversationTimeline({
     turnItemSource,
     workflowOpening,
     onForkFromRun,
+    ...(secondOpinion === undefined
+      ? {}
+      : { secondOpinion: { ...secondOpinion, reviews: secondOpinionReviews } }),
     onToggleTurnFold,
     onToggleAttemptFold,
     onToggleWorkGroup,

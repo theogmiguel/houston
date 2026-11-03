@@ -38,6 +38,14 @@ export function isTauriHost(): boolean {
   return tauriCore() !== null;
 }
 
+/** The quick composer is its own always-on-top window; it gets no window chrome. */
+export function isQuickComposerWindow(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.location.hash.replace(/^#/, "").startsWith("/quick-composer")
+  );
+}
+
 async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const core = tauriCore();
   if (core?.invoke === undefined) {

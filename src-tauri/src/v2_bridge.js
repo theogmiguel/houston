@@ -315,6 +315,20 @@
     onTrayFocus: function (listener) {
       return listen("tray://focus-pane", listener);
     },
+    getQuickComposerStatus: function () {
+      return invoke("quick_composer_status").catch(function () {
+        return { enabled: false, shortcut: null, registered: false, reason: null };
+      });
+    },
+    setQuickComposerShortcut: function (shortcut) {
+      return invoke("quick_composer_set_shortcut", { shortcut: shortcut });
+    },
+    openQuickComposer: function () {
+      return invoke("quick_composer_open").catch(noop);
+    },
+    closeQuickComposer: function () {
+      return invoke("quick_composer_close").catch(noop);
+    },
     onWindowHiddenChange: function (listener) {
       return listen("tray://window-hidden", listener);
     },

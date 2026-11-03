@@ -9,6 +9,7 @@ mod fs;
 mod fs_allowlist;
 mod notifications;
 mod provider_auth;
+mod quick_composer;
 mod shell;
 mod shells;
 mod skills;
@@ -178,8 +179,43 @@ fn should_terminate_process(code: i32) -> bool {
 // Per-channel renderer state: without an explicit `data_directory`, Tauri keys the
 // webview's localStorage/cache by the bundle identifier alone, so a dev process
 // silently overwrites the release channel's renderer state.
-fn webview_data_dir_for(state_dir: &std::path::Path) -> std::path::PathBuf {
+pub(crate) fn webview_data_dir_for(state_dir: &std::path::Path) -> std::path::PathBuf {
     state_dir.join("webview")
+}
+
+/// The bootstrap, platform and bridge script every Houston webview needs before the
+/// renderer runs. The quick composer window loads the same app, so it shares this.
+pub(crate) fn v2_initialization_script(app: &tauri::AppHandle) -> String {
+    let host = app.state::<Arc<v2_server::V2Host>>();
+    let snapshot = host
+        .bootstrap_list()
+        .unwrap_or_else(|_| serde_json::json!([]));
+    let status = host.status();
+    let platform = match std::env::consts::OS {
+        "windows" => "win32",
+        "macos" => "darwin",
+        other => other,
+    };
+    format!(
+        "window.__HOUSTON_V2_BOOTSTRAP__ = {};\n\
+         window.__HOUSTON_V2_STATUS__ = {};\n\
+         window.__HOUSTON_V2_PLATFORM__ = {:?};\n\
+         window.__HOUSTON_V2_VERSION__ = {:?};\n\
+         window.__HOUSTON_V2_LOCALE__ = {};\n\
+         window.__HOUSTON_V2_BRANDING__ = {};\n\
+         {}",
+        snapshot,
+        status,
+        platform,
+        env!("CARGO_PKG_VERSION"),
+        serde_json::Value::Null,
+        serde_json::json!({
+            "baseName": "Houston",
+            "stageLabel": "Dev",
+            "displayName": "Houston Dev",
+        }),
+        include_str!("v2_bridge.js"),
+    )
 }
 
 fn main() {
@@ -373,6 +409,8 @@ fn main() {
 
     let tray_host = tray::TrayHost::new(state_dir.clone(), tray::probe());
     builder = builder.manage(Arc::clone(&tray_host));
+    let quick_composer_host = quick_composer::QuickComposerHost::new(state_dir.clone());
+    builder = builder.manage(Arc::clone(&quick_composer_host));
 
     // Windows keys the single-instance mutex on the bundle identifier, so a dev
     // app would refuse to start beside the installed release app. Register it only
@@ -396,6 +434,7 @@ fn main() {
     }
     builder
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         // No `updater:default` permission anywhere: the plugin's own JS commands
         // stay unreachable, and updates run through v2_update_install instead.
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -508,6 +547,10 @@ fn main() {
             tray::tray_state,
             tray::tray_set_keep_in_tray,
             tray::app_quit,
+            quick_composer::quick_composer_status,
+            quick_composer::quick_composer_set_shortcut,
+            quick_composer::quick_composer_open,
+            quick_composer::quick_composer_close,
             wsl::v2::v2_wsl_state,
             wsl::v2::v2_wsl_set_enabled,
             wsl::v2::v2_wsl_set_distro,
@@ -598,36 +641,7 @@ fn main() {
 
             // The window paints before a slow server start instead of waiting behind it;
             // the monitor retries a failed first attempt with backoff.
-            let host = Arc::clone(&v2_host);
-            let snapshot = host
-                .bootstrap_list()
-                .unwrap_or_else(|_| serde_json::json!([]));
-            let status = host.status();
-            let platform = match std::env::consts::OS {
-                "windows" => "win32",
-                "macos" => "darwin",
-                other => other,
-            };
-            let v2_init_script = format!(
-                "window.__HOUSTON_V2_BOOTSTRAP__ = {};\n\
-                 window.__HOUSTON_V2_STATUS__ = {};\n\
-                 window.__HOUSTON_V2_PLATFORM__ = {:?};\n\
-                 window.__HOUSTON_V2_VERSION__ = {:?};\n\
-                 window.__HOUSTON_V2_LOCALE__ = {};\n\
-                 window.__HOUSTON_V2_BRANDING__ = {};\n\
-                 {}",
-                snapshot,
-                status,
-                platform,
-                env!("CARGO_PKG_VERSION"),
-                serde_json::Value::Null,
-                serde_json::json!({
-                    "baseName": "Houston",
-                    "stageLabel": "Dev",
-                    "displayName": "Houston Dev",
-                }),
-                include_str!("v2_bridge.js"),
-            );
+            let v2_init_script = v2_initialization_script(app.handle());
 
             let window_config = app
                 .config()
@@ -715,6 +729,7 @@ fn main() {
             ));
 
             tray::install(app.handle(), &tray_host);
+            quick_composer::register_saved(app.handle(), &quick_composer_host);
             app_menu::install(app.handle()).expect("failed to install the application menu");
 
             let startup_host = Arc::clone(&v2_host);

@@ -13,6 +13,7 @@ import { MorphIcon } from "~/components/MorphIcon";
 import { formatContextWindowTokens } from "~/lib/contextWindow";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { useShortcutModifierState } from "../../shortcutModifierState";
+import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -20,6 +21,7 @@ import { composerFloatingLayerProps } from "./composerEventScope";
 import {
   alternateComposerDispatchAction,
   resolveComposerDispatchMode,
+  type ActiveTurnComposerAction,
 } from "@houston-app/client-runtime/state/composer-dispatch";
 
 interface PendingActionState {
@@ -54,6 +56,7 @@ interface ComposerPrimaryActionsProps {
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
+  onSubmitWithMode?: ((mode: ActiveTurnComposerAction) => void) | undefined;
   compactBeforeSendTokens?: number | null;
   keepFullHistory?: boolean;
   onToggleKeepFullHistory?: () => void;
@@ -170,6 +173,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   onPreviousPendingQuestion,
   onInterrupt,
   onImplementPlanInNewThread,
+  onSubmitWithMode,
   compactBeforeSendTokens = null,
   keepFullHistory = false,
 }: ComposerPrimaryActionsProps) {
@@ -402,5 +406,43 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       <TooltipPopup>{submitTooltip}</TooltipPopup>
     </Tooltip>
   );
+
+  const showDispatchMenu =
+    isRunning && hasSendableContent && !isEditingQueuedMessage && onSubmitWithMode !== undefined;
+  if (showDispatchMenu) {
+    return (
+      <div className="flex items-center gap-0.5" data-chat-composer-send-menu="true">
+        {submit}
+        <Menu>
+          <MenuTrigger
+            render={
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost-muted"
+                aria-label="Send options"
+                onMouseDown={
+                  preserveComposerFocusOnPointerDown ? (event) => event.preventDefault() : undefined
+                }
+              />
+            }
+          >
+            <ChevronDownIcon className="size-3.5" aria-hidden="true" />
+          </MenuTrigger>
+          <MenuPopup align="end" side="top" {...composerFloatingLayerProps}>
+            <MenuItem onClick={() => onSubmitWithMode("queue")}>
+              Queue message
+              {followUpBehavior === "queue" ? <CheckIcon className="ml-auto size-3.5" /> : null}
+            </MenuItem>
+            <MenuItem disabled={!canSteer} onClick={() => onSubmitWithMode("steer")}>
+              Steer message
+              {followUpBehavior === "steer" ? <CheckIcon className="ml-auto size-3.5" /> : null}
+            </MenuItem>
+            <MenuItem onClick={() => onSubmitWithMode("restart")}>Interrupt and send</MenuItem>
+          </MenuPopup>
+        </Menu>
+      </div>
+    );
+  }
   return submit;
 });

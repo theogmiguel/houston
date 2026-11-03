@@ -66,6 +66,7 @@ import {
   type ModelSelection,
   type PreviewAnnotationPayload,
   ProviderInstanceId,
+  type RunId,
   type ServerProvider,
   type ScopedThreadRef,
   type ThreadId,
@@ -287,6 +288,7 @@ import { getTriggerDisplayModelName } from "./chat/providerIconUtils";
 import { resolveScrollToEndClearance } from "./composerFooterLayout";
 import { ChatHeader } from "./chat/ChatHeader";
 import { useSideChat } from "./chat/useSideChat";
+import { useSecondOpinion } from "./chat/useSecondOpinion";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
 import { useOpenFavoriteEditorShortcut } from "./chat/OpenInPickerShortcut";
@@ -2904,6 +2906,29 @@ export default function ChatView(props: ChatViewProps) {
                   )
                 ? "Available once the thread's worktree is set up."
                 : null;
+  // A review reads the thread's finished work, so a side thread cannot itself review.
+  const secondOpinionOffered =
+    isServerThread &&
+    canOperateThread &&
+    activeThread?.side === undefined &&
+    activeThread?.lineage.sideChat !== true &&
+    !isSubagentThread;
+  const secondOpinion = useSecondOpinion({
+    threadRef: secondOpinionOffered ? activeThreadRef : null,
+    onError: (message) => {
+      if (activeThread) setThreadError(activeThread.id, message);
+    },
+  });
+  const requestSecondOpinionStable = useStableCallback(
+    async (input: {
+      readonly sourceThreadId: ThreadId;
+      readonly runId: RunId;
+      readonly instanceId: ProviderInstanceId;
+      readonly model: string;
+    }) => {
+      await secondOpinion.requestReview(input);
+    },
+  );
   const openSideChatStable = useStableCallback(() => void sideChat.open());
   const sendSideChatStable = useStableCallback((prompt: string) => sideChat.open(prompt));
   const { onConfirmRevertStable, onForkFromRunStable, onRevertTimelineTurnStable } =
@@ -3580,6 +3605,14 @@ export default function ChatView(props: ChatViewProps) {
                 {...(embedded
                   ? {}
                   : { onOpenTurnDiff: onOpenTurnDiffStable, onForkFromRun: onForkFromRunStable })}
+                {...(secondOpinionOffered
+                  ? {
+                      secondOpinion: {
+                        entries: providerInstanceEntries,
+                        onRequest: requestSecondOpinionStable,
+                      },
+                    }
+                  : {})}
                 onOpenThread={onOpenRelatedThreadStable}
                 parentThreadLink={parentThreadLink}
                 workflowOpening={workflowOpening}

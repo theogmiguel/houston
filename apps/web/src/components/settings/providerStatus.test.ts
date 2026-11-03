@@ -3,9 +3,10 @@ import {
   ProviderInstanceId,
   type ServerProvider,
 } from "@houston-app/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  formatReadinessReset,
   getProviderSummary,
   getProviderVersionAdvisoryPresentation,
   getProviderStatusKey,
@@ -235,5 +236,103 @@ it("shows compatibility in the version popover even when the installed version i
     updateCommand: null,
     emphasis: "normal",
     targetVersion: null,
+  });
+});
+
+describe("provider readiness", () => {
+  const now = Date.parse("2026-09-22T12:00:00Z");
+
+  it("reports a refused turn instead of the stale authenticated probe", () => {
+    const rejected = {
+      ...provider,
+      readiness: {
+        state: "rejected" as const,
+        code: "api_error_403",
+        message: "This account is not allowed to use the provider.",
+        at: "2026-09-22T11:59:00Z",
+      },
+    };
+    expect(getProviderSummary(rejected)).toEqual({
+      headline: "Credentials rejected",
+      detail:
+        "This account is not allowed to use the provider. Reauthorize the account (api_error_403) or use another provider.",
+      action: "Reauthorize the account (api_error_403) or use another provider.",
+    });
+    expect(getProviderStatusKey(rejected)).toBe("error");
+  });
+
+  it("names the usage window's reset time", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-22T12:00:00.000Z"));
+    const limited = {
+      ...provider,
+      readiness: {
+        state: "outOfUsage" as const,
+        resetsAt: "2026-09-22T15:30:00.000Z",
+        message: "The provider's usage limit was reached.",
+        at: "2026-09-22T11:00:00Z",
+      },
+    };
+    const summary = getProviderSummary(limited);
+    expect(summary.headline).toBe("Out of usage");
+    expect(summary.detail).toContain("Resets in 3 h 30 min.");
+    vi.useRealTimers();
+    expect(getProviderStatusKey(limited)).toBe("warning");
+  });
+
+  it("distinguishes not installed, unusable and turned off", () => {
+    const cases = [
+      {
+        readiness: {
+          state: "notInstalled" as const,
+          reason: "missing" as const,
+          message: "Missing.",
+        },
+        headline: "Not installed",
+        status: "warning",
+      },
+      {
+        readiness: {
+          state: "notInstalled" as const,
+          reason: "unusable" as const,
+          message: "Cannot start.",
+        },
+        headline: "Unavailable",
+        status: "error",
+      },
+      {
+        readiness: { state: "turnedOff" as const, message: "Off." },
+        headline: "Turned off",
+        status: "disabled",
+      },
+      {
+        readiness: {
+          state: "signedOut" as const,
+          source: "turn" as const,
+          message: "Sign in again.",
+        },
+        headline: "Signed out",
+        status: "warning",
+      },
+    ] as const;
+    for (const { readiness, headline, status } of cases) {
+      const candidate = { ...provider, readiness };
+      expect.soft(getProviderSummary(candidate).headline).toBe(headline);
+      expect.soft(getProviderStatusKey(candidate)).toBe(status);
+    }
+  });
+
+  it("falls back to probe fields when the server reports ready", () => {
+    const ready = { ...provider, readiness: { state: "ready" as const } };
+    expect(getProviderSummary(ready)).toEqual({
+      headline: "Authenticated · ChatGPT",
+      detail: null,
+    });
+    expect(getProviderStatusKey(ready)).toBe("ready");
+  });
+
+  it("formats a reset window that already passed", () => {
+    expect(formatReadinessReset("2026-09-22T11:00:00Z", now)).toBe("Usage is available again.");
+    expect(formatReadinessReset("not a date", now)).toBeNull();
   });
 });

@@ -734,6 +734,14 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   ...KEYBINDING_SEARCH_ITEMS,
   {
+    id: "quick-composer-shortcut",
+    title: "Quick composer shortcut",
+    searchTerms: ["global shortcut new thread composer keyboard"],
+    to: "/settings/keybindings",
+    targetId: "quick-composer",
+    desktopOnly: true,
+  },
+  {
     id: "snap-shot-enabled",
     title: "SnapShots",
     searchTerms: ["window capture screenshot"],

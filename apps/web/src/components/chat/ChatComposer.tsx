@@ -2216,6 +2216,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     submitComposer(event, resolveSubmitDispatchMode(event.metaKey || event.ctrlKey));
   };
   const handleSubmitMessageStable = useStableCallback(handleSubmitMessage);
+  const handleSubmitWithMode = (mode: "queue" | "steer" | "restart") => {
+    submitComposer(undefined, mode);
+  };
+  const handleSubmitWithModeStable = useStableCallback(handleSubmitWithMode);
   const submitCitationAndSend = () => {
     submitComposer(undefined, resolveSubmitDispatchMode(false));
   };
@@ -3778,6 +3782,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryActionStable}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryActionStable}
+                    onSubmitWithMode={handleSubmitWithModeStable}
                     compactBeforeSendTokens={props.resumeCompactionTokens}
                     keepFullHistory={props.keepFullHistory}
                     onToggleKeepFullHistory={props.onToggleKeepFullHistory}

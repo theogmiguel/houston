@@ -258,6 +258,34 @@ describe("an aside", () => {
     ),
   );
 
+  it.effect("an empty aside opens its pane without asking the provider anything", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness("aside-empty");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const { source } = yield* sourceWithTurn(context, harness, {
+              threadId: "source",
+              driver: "codex",
+            });
+            const startedBefore = harness.log.started.length;
+            yield* startAside(context, { source, aside: "aside", text: "" });
+            yield* context.settle;
+            const aside = yield* projectionOf(context, "aside");
+            assert.deepInclude(aside.thread.side, { kind: "aside" });
+            assert.lengthOf(aside.runs, 0, "no placeholder turn starts");
+            assert.lengthOf(aside.messages, 0, "no empty message is stored");
+            assert.equal(
+              harness.log.started.slice(startedBefore).length,
+              0,
+              "the provider is not asked anything",
+            );
+          }),
+        );
+      }),
+    ),
+  );
+
   it.effect("an aside never touches the running source", () =>
     Effect.scoped(
       Effect.gen(function* () {

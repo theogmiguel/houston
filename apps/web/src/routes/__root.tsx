@@ -87,7 +87,8 @@ export const Route = createRootRoute({
       authGateState.status === "authenticated" &&
       getDesktopSnapShotBridge() &&
       shouldResumeSnapShotSetupOnStartup() &&
-      location.pathname !== "/settings/snap-shot"
+      location.pathname !== "/settings/snap-shot" &&
+      location.pathname !== "/quick-composer"
     ) {
       throw redirect({ to: "/settings/snap-shot", replace: true });
     }
@@ -143,7 +144,7 @@ function RootRouteBranch() {
     authGateState.status === "hosted-static",
   );
 
-  if (pathname === "/pair" || pathname === "/connect-agent") {
+  if (pathname === "/pair" || pathname === "/connect-agent" || pathname === "/quick-composer") {
     return <Outlet />;
   }
 

@@ -25,6 +25,7 @@ import { useEnvironmentShellHasSnapshot } from "../../state/shell";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import ChatView from "../ChatView";
+import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -55,6 +56,8 @@ export default function SideChatPane(props: {
   const [bringingBack, setBringingBack] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const mergeRun = projection ? resolveLatestMergeBackRun(projection) : null;
+  const side = shell?.side ?? null;
+  const isReadOnlySide = side !== null;
   // A pending merge-back would fail the main thread's queued message, so the server refuses it.
   const bringBackBlockedReason = !canOperate
     ? "This connection cannot change threads."
@@ -126,25 +129,35 @@ export default function SideChatPane(props: {
     <div data-side-chat-pane className="flex h-full min-h-0 flex-col">
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border pr-1 pl-3">
         <span className="min-w-0 flex-1 truncate text-xs font-medium">
-          {shell?.title ?? "Side chat"}
+          {side?.kind === "aside"
+            ? "Aside"
+            : side?.kind === "secondOpinion"
+              ? "Second opinion"
+              : (shell?.title ?? "Side chat")}
         </span>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="xs"
-                aria-disabled={bringBackBlockedReason !== null || bringingBack || undefined}
-                onClick={() => void bringBack()}
-              >
-                Bring back
-              </Button>
-            }
-          />
-          <TooltipPopup side="bottom">
-            {bringBackBlockedReason ?? "Adds this side chat to the main thread's next message."}
-          </TooltipPopup>
-        </Tooltip>
+        {isReadOnlySide ? (
+          <Badge variant="label" size="sm">
+            Read-only
+          </Badge>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  aria-disabled={bringBackBlockedReason !== null || bringingBack || undefined}
+                  onClick={() => void bringBack()}
+                >
+                  Bring back
+                </Button>
+              }
+            />
+            <TooltipPopup side="bottom">
+              {bringBackBlockedReason ?? "Adds this side chat to the main thread's next message."}
+            </TooltipPopup>
+          </Tooltip>
+        )}
         <Button
           variant="ghost"
           size="icon-xs"

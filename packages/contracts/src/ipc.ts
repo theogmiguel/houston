@@ -13,6 +13,7 @@ import { AuthAccessTokenResult, AuthSessionState } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
+import type { KeybindingShortcut } from "./keybindings.ts";
 import type { EditorId } from "./editor.ts";
 import type { PreviewForwardedShortcut } from "./keybindings.ts";
 
@@ -1072,6 +1073,15 @@ export interface DesktopTrayState {
   readonly hidesOnClose: boolean;
 }
 
+export interface DesktopQuickComposerShortcutStatus {
+  readonly enabled: boolean;
+  /** The chord to register, or null when none is configured. */
+  readonly shortcut: KeybindingShortcut | null;
+  readonly registered: boolean;
+  /** Why registration failed, for Settings to name; null when registered or turned off. */
+  readonly reason: string | null;
+}
+
 export interface HostBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getRelayTelemetryEnabled: () => boolean;
@@ -1121,6 +1131,15 @@ export interface HostBridge {
   trayState: () => Promise<DesktopTrayState | null>;
   setKeepInTray: (enabled: boolean) => Promise<DesktopTrayState | null>;
   onTrayFocus: (listener: (threadKey: string) => void) => () => void;
+  /** The quick composer's global shortcut and why it could not be registered. */
+  getQuickComposerStatus: () => Promise<DesktopQuickComposerShortcutStatus>;
+  /** Registers the chord system-wide; null turns the shortcut off. */
+  setQuickComposerShortcut: (
+    shortcut: KeybindingShortcut | null,
+  ) => Promise<DesktopQuickComposerShortcutStatus>;
+  /** Opens the always-on-top quick composer window, or closes it when already visible. */
+  openQuickComposer: () => Promise<void>;
+  closeQuickComposer: () => Promise<void>;
   /** The window was hidden to the tray (`true`) or shown again (`false`). */
   onWindowHiddenChange: (listener: (hidden: boolean) => void) => () => void;
   getClientSettings: () => Promise<ClientSettings | null>;

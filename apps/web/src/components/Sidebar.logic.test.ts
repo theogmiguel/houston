@@ -11,6 +11,8 @@ import {
   getFallbackThreadIdAfterDelete,
   hasUnseenCompletion,
   resolveSidebarRowThreadId,
+  filterSidebarV2VisibleThreads,
+  isSidebarHiddenThread,
   belongsInSidebarWorkingShelf,
   isSidebarEnvironmentDisconnected,
   orderItemsByPreferredIds,
@@ -182,6 +184,34 @@ describe("sidebar thread lineage helpers", () => {
     const loopA = subagentOf("thread-loop-a", ThreadId.make("thread-loop-b"));
     const loopB = subagentOf("thread-loop-b", loopA.id);
     expect(resolveSidebarRowThreadId(loopA.id, environmentId, [loopA, loopB])).toBe(loopA.id);
+  });
+});
+
+describe("sidebar side threads", () => {
+  it("hides a read-only side thread and maps it to its source's row", () => {
+    const environmentId = EnvironmentId.make("environment-side");
+    const source = makeThreadFixture({ id: ThreadId.make("thread-source"), environmentId });
+    const aside = {
+      ...makeThreadFixture({
+        id: ThreadId.make("thread-aside"),
+        environmentId,
+        lineage: {
+          rootThreadId: source.id,
+          parentThreadId: source.id,
+          relationshipToParent: "fork" as const,
+        },
+      }),
+      side: {
+        kind: "aside" as const,
+        sourceThreadId: source.id,
+        sourceRunId: "run-source" as never,
+      },
+    };
+    expect(isSidebarHiddenThread(aside)).toBe(true);
+    expect(resolveSidebarRowThreadId(aside.id, environmentId, [source, aside])).toBe(source.id);
+    expect(
+      filterSidebarV2VisibleThreads([source, aside], null, new Set()).map((thread) => thread.id),
+    ).toEqual([source.id]);
   });
 });
 

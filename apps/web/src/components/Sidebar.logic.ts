@@ -595,8 +595,11 @@ export async function deleteSelectedThreadEntries<
   return { deletedThreadKeys, firstFailure };
 }
 
-export function isSidebarHiddenThread(thread: Pick<SidebarThreadSummary, "lineage">): boolean {
-  return !isListedThreadLineage(thread.lineage);
+/** Subagents, side chats and read-only side threads never get a sidebar row of their own. */
+export function isSidebarHiddenThread(
+  thread: Pick<SidebarThreadSummary, "lineage"> & { readonly side?: unknown },
+): boolean {
+  return thread.side !== undefined || !isListedThreadLineage(thread.lineage);
 }
 
 // Subagent and side-chat threads have no sidebar row, so an open one is represented by
@@ -605,7 +608,9 @@ export function isSidebarHiddenThread(thread: Pick<SidebarThreadSummary, "lineag
 export function resolveSidebarRowThreadId(
   threadId: ThreadId,
   environmentId: EnvironmentId,
-  threads: readonly Pick<SidebarThreadSummary, "id" | "environmentId" | "lineage">[],
+  threads: readonly (Pick<SidebarThreadSummary, "id" | "environmentId" | "lineage"> & {
+    readonly side?: unknown;
+  })[],
 ): ThreadId {
   const findThread = (id: ThreadId) =>
     threads.find((thread) => thread.id === id && thread.environmentId === environmentId);
@@ -626,6 +631,7 @@ export function resolveSidebarRowThreadId(
 export function filterSidebarV2VisibleThreads<
   T extends Pick<SidebarThreadSummary, "archivedAt" | "environmentId" | "id" | "lineage"> & {
     projectId: string;
+    readonly side?: unknown;
   },
 >(
   threads: readonly T[],
@@ -635,6 +641,7 @@ export function filterSidebarV2VisibleThreads<
   return threads.filter(
     (thread) =>
       thread.archivedAt === null &&
+      thread.side === undefined &&
       !isShownUnderParent(
         { environmentId: thread.environmentId, threadId: thread.id },
         thread.lineage,

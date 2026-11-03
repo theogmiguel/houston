@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import {
   ProviderDriverKind,
   ProviderInstanceId,
@@ -112,5 +112,55 @@ describe("compatibility banners", () => {
     expect(getProviderStatusMessage({ ...broken, auth: { status: "unauthenticated" } })).toBe(
       broken.message,
     );
+  });
+});
+
+describe("provider readiness banners", () => {
+  const { compatibilityAdvisory: _compatibility, ...providerWithoutCompatibility } = provider;
+  it("shows a refused turn while the probe still reads ready", () => {
+    const rejected: ServerProvider = {
+      ...providerWithoutCompatibility,
+      status: "ready",
+      readiness: {
+        state: "rejected",
+        code: "subscription_sharing_user_not_eligible",
+        message: "This account cannot share the subscription.",
+        at: "2026-09-22T00:00:00Z",
+      },
+    };
+    expect(shouldShowProviderStatusBanner(rejected, null)).toBe(true);
+    expect(getProviderStatusMessage(rejected)).toContain("Reauthorize the account");
+    expect(getProviderStatusMessage(rejected)).toContain("subscription_sharing_user_not_eligible");
+    expect(shouldShowProviderStatusBanner(rejected, getProviderStatusBannerKey(rejected))).toBe(
+      false,
+    );
+  });
+
+  it("names the reset time when a provider is out of usage", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-22T12:00:00.000Z"));
+    const resetsAt = "2026-09-22T14:00:00.000Z";
+    const limited: ServerProvider = {
+      ...providerWithoutCompatibility,
+      status: "ready",
+      readiness: {
+        state: "outOfUsage",
+        resetsAt,
+        message: "The provider's usage limit was reached.",
+        at: "2026-09-22T00:00:00Z",
+      },
+    };
+    expect(getProviderStatusBannerKey(limited)).not.toBeNull();
+    expect(getProviderStatusMessage(limited)).toContain("Resets in 2 h.");
+    vi.useRealTimers();
+  });
+
+  it("leaves a ready provider with no readiness banner", () => {
+    expect(
+      getProviderStatusBannerKey({
+        ...providerWithoutCompatibility,
+        readiness: { state: "ready" },
+      }),
+    ).toBeNull();
   });
 });

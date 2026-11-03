@@ -76,6 +76,7 @@ pub enum TrayIconState {
 pub enum TrayItem {
     Header(String),
     Open,
+    NewThread,
     Separator,
     Session { id: String, label: String },
     Overflow(String),
@@ -247,6 +248,7 @@ pub fn menu_model(payload: &TrayPayload) -> Vec<TrayItem> {
     let mut items = vec![
         TrayItem::Header(header_text(payload)),
         TrayItem::Open,
+        TrayItem::NewThread,
         TrayItem::Separator,
     ];
 
@@ -457,6 +459,7 @@ mod tests {
             vec![
                 TrayItem::Header("Houston · idle".into()),
                 TrayItem::Open,
+                TrayItem::NewThread,
                 TrayItem::Separator,
                 TrayItem::Quit,
             ]
@@ -481,6 +484,7 @@ mod tests {
             vec![
                 TrayItem::Header("Houston · 1 agent running".into()),
                 TrayItem::Open,
+                TrayItem::NewThread,
                 TrayItem::Separator,
                 TrayItem::Submenu {
                     label: "Agents (1)".into(),

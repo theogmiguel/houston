@@ -38,8 +38,11 @@ import { v2Now, v2Projection, v2ThreadId } from "../state/orchestrationV2TestFix
 import {
   archiveThread,
   interruptThreadTurn,
+  requestSecondOpinion,
   revertThreadCheckpoint,
   resumeThreadQueue,
+  sendSideThread,
+  startAside,
   startThreadTurn,
 } from "./commands.ts";
 
@@ -152,6 +155,72 @@ describe("V2 environment commands", () => {
       expect(commands).toEqual([
         { type: "queued-run.start", commandId: "send-selected", threadId, runId: "selected" },
         { type: "queue.resume", commandId: "resume-queue", threadId },
+      ]);
+    }).pipe(Effect.provide(layerTestCrypto)),
+  );
+
+  it.effect("sends asides, second opinions and side-thread sends as Houston commands", () =>
+    Effect.gen(function* () {
+      const commands: OrchestrationV2Command[] = [];
+      const supervisor = yield* makeSupervisor({ commands, projects: [] });
+      const sourceThreadId = ThreadId.make("source-thread");
+      const asideThreadId = ThreadId.make("aside-thread");
+      const reviewThreadId = ThreadId.make("review-thread");
+      const messageId = MessageId.make("aside-message");
+      const modelSelection = {
+        instanceId: ProviderInstanceId.make("claude"),
+        model: "opus",
+      };
+
+      yield* startAside({
+        commandId: CommandId.make("aside-command"),
+        sourceThreadId,
+        asideThreadId,
+        messageId,
+        text: "Why this file?",
+        attachments: [],
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+      yield* requestSecondOpinion({
+        commandId: CommandId.make("review-command"),
+        sourceThreadId,
+        runId: RunId.make("reviewed-run"),
+        reviewThreadId,
+        modelSelection,
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+      yield* sendSideThread({
+        commandId: CommandId.make("send-command"),
+        sideThreadId: reviewThreadId,
+        runId: RunId.make("review-run"),
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(commands).toEqual([
+        {
+          type: "houston.aside.start",
+          commandId: "aside-command",
+          createdBy: "user",
+          creationSource: "web",
+          sourceThreadId,
+          asideThreadId,
+          messageId,
+          text: "Why this file?",
+          attachments: [],
+        },
+        {
+          type: "houston.second-opinion.request",
+          commandId: "review-command",
+          createdBy: "user",
+          creationSource: "web",
+          sourceThreadId,
+          runId: "reviewed-run",
+          reviewThreadId,
+          modelSelection,
+        },
+        {
+          type: "houston.side-thread.send",
+          commandId: "send-command",
+          sideThreadId: reviewThreadId,
+          runId: "review-run",
+        },
       ]);
     }).pipe(Effect.provide(layerTestCrypto)),
   );

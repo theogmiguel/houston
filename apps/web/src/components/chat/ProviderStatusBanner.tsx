@@ -4,6 +4,7 @@ import { InfoIcon, XIcon } from "lucide-react";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "../ui/alert";
 import { Button, InlineButton } from "../ui/button";
 import { formatProviderDriverKindLabel } from "../../providerModels";
+import { getProviderReadinessAction, getProviderSummary } from "../settings/providerStatus";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 function getIncompatibleVersion(status: ServerProvider) {
@@ -17,6 +18,20 @@ function getIncompatibleVersion(status: ServerProvider) {
 
 export function getProviderStatusBannerKey(status: ServerProvider | null): string | null {
   if (!status || status.status === "disabled") return null;
+  // A refused turn, a usage window or a probe mismatch is a provider state of its own; show
+  // it even while the probe fields still read ready.
+  const readiness = status.readiness;
+  if (readiness !== undefined && readiness.state !== "ready") {
+    const cause =
+      readiness.state === "rejected"
+        ? readiness.code
+        : readiness.state === "outOfUsage"
+          ? `${readiness.resetsAt ?? ""}`
+          : readiness.state === "notInstalled"
+            ? readiness.reason
+            : "";
+    return [status.instanceId, readiness.state, cause, readiness.message].join("\u0000");
+  }
   const incompatible = getIncompatibleVersion(status);
   if (incompatible) {
     return [
@@ -58,6 +73,11 @@ export function hasProviderSetup(status: ServerProvider): boolean {
 }
 
 export function getProviderStatusMessage(status: ServerProvider): string {
+  const readiness = status.readiness;
+  if (readiness !== undefined && readiness.state !== "ready") {
+    const action = getProviderReadinessAction(readiness);
+    return [readiness.message, action].filter(Boolean).join(" ");
+  }
   if (
     status.auth.status !== "unauthenticated" &&
     status.compatibilityAdvisory?.status === "broken" &&
@@ -99,16 +119,21 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   }
 
   const providerName = status.displayName?.trim() || formatProviderDriverKindLabel(status.driver);
+  const readiness = status.readiness;
+  const hasReadinessState = readiness !== undefined && readiness.state !== "ready";
   const isUnauthenticated = status.status === "error" && status.auth.status === "unauthenticated";
   const incompatible = getIncompatibleVersion(status);
-  const title = isUnauthenticated
-    ? `${providerName} is unauthenticated`
-    : incompatible
-      ? `${providerName} ${status.version ?? ""} is ${incompatible.status === "broken" ? "known to be broken" : "unsupported"}`
-      : `${providerName} provider status`;
+  const title = hasReadinessState
+    ? `${providerName}: ${getProviderSummary(status).headline.toLowerCase()}`
+    : isUnauthenticated
+      ? `${providerName} is unauthenticated`
+      : incompatible
+        ? `${providerName} ${status.version ?? ""} is ${incompatible.status === "broken" ? "known to be broken" : "unsupported"}`
+        : `${providerName} provider status`;
   const message = incompatible?.message ?? getProviderStatusMessage(status);
-  const isWarning =
-    incompatible?.status !== "broken" && (status.status === "warning" || incompatible !== null);
+  const isWarning = hasReadinessState
+    ? readiness.state !== "rejected"
+    : incompatible?.status !== "broken" && (status.status === "warning" || incompatible !== null);
 
   return (
     <div className="pointer-events-auto mx-auto w-fit max-w-[calc(100%-2rem)] pt-3">

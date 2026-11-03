@@ -4713,6 +4713,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       sourceThreadId: command.sourceThreadId,
       sourceRunId: sourceRun.id,
     });
+    // An aside with no first message opens its pane on an empty composer; a placeholder turn
+    // would ask the provider to answer nothing.
+    if (command.text.trim().length === 0 && command.attachments.length === 0) return;
     return yield* dispatchMessage(
       {
         type: "message.dispatch",
