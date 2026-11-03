@@ -38,6 +38,9 @@ if (
   } else if (command === "__ssh-bridge") {
     const { runDesktopSshBridge } = await import("./desktopSshBridge.ts");
     await runDesktopSshBridge();
+  } else if (command === "__speech-worker") {
+    const { runSpeechWorker } = await import("./speech/nativeWorker.ts");
+    await runSpeechWorker();
   } else {
     enableCliCompileCache();
     // Windows desktop launches without stdin; attach before reading, except on fast paths using pipes.

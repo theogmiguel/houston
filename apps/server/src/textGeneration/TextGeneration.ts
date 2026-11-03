@@ -33,6 +33,8 @@ export type {
   ReviewGuideGenerationResult,
   ThreadTitleGenerationInput,
   ThreadTitleGenerationResult,
+  TranscriptionPostProcessingInput,
+  TranscriptionPostProcessingResult,
 } from "@houston-app/provider-core/server/textGeneration";
 
 export class TextGeneration extends Context.Service<TextGeneration, ProviderTextGeneration>()(
@@ -44,6 +46,7 @@ type TextGenerationOp =
   | "generatePrContent"
   | "generateBranchName"
   | "generateThreadTitle"
+  | "generateTranscriptionPostProcessing"
   | "generateReviewGuide";
 
 const resolveInstance = (
@@ -140,6 +143,16 @@ export const make = Effect.gen(function* () {
     generateBranchName: Effect.fn("TextGeneration.generateBranchName")(function (input) {
       return generate("generateBranchName", input.modelSelection, (service, modelSelection) =>
         service.generateBranchName({ ...input, modelSelection }),
+      );
+    }),
+    generateTranscriptionPostProcessing: Effect.fn(
+      "TextGeneration.generateTranscriptionPostProcessing",
+    )(function (input) {
+      return generate(
+        "generateTranscriptionPostProcessing",
+        input.modelSelection,
+        (service, modelSelection) =>
+          service.generateTranscriptionPostProcessing({ ...input, modelSelection }),
       );
     }),
     generateReviewGuide: Effect.fn("TextGeneration.generateReviewGuide")(function (input) {

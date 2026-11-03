@@ -27,6 +27,7 @@ Keybindings are stored by the server, so they apply to the environment you are e
 | `Ctrl+W`                        | Close terminal or right-panel tab                                       |
 | `Ctrl+D`                        | Toggle diff (outside a terminal)                                        |
 | `Ctrl+P`                        | File picker                                                             |
+| `Ctrl+Alt+V`                    | Dictate in the composer                                                 |
 | `Ctrl+Shift+F`                  | Project search                                                          |
 | `Ctrl+F`                        | Find in thread                                                          |
 | `Ctrl+U`                        | Usage                                                                   |

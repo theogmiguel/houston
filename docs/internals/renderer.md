@@ -127,16 +127,16 @@ Without a snapshot path, the queue drops its oldest bytes and says so in the pan
 Incoming replay views covering less than half their backing allocation are copied before
 queueing, so a small overlap tail does not retain the entire replay while waiting to drain.
 
-| Constant | Value | Reason |
-|---|---|---|
-| `DEFAULT_CHUNK_BYTES` | 256 KiB | hard ceiling for synchronous parsing, with a yield between chunks |
-| `DEFAULT_MAX_QUEUED_BYTES` | 2 MiB | queue cap |
-| `DEFAULT_DROP_TARGET_FRACTION` | 0.75 | evict to 75 % of the cap so an episode is one hole, not per-frame thrash |
-| `DEFAULT_BATCH_WINDOW_MS` | 4 | a quarter-frame of write batching; small writes bypass it |
-| `BATCH_WINDOW_CLAMP_MS` | 50 | above this the host is treated as clamping timers, and batching latches off |
-| `DEFAULT_WATCHDOG_MS` | 10 000 | unwedges a pane whose engine load hung instead of rejecting |
-| `RESYNC_WINDOW_BYTES` | 8 KiB | resync scan after a drop — the same window the daemon's safe-cut uses |
-| `DEFAULT_NOTICE_INTERVAL_MS` | 2 000 | how often a loss may narrate itself; the cumulative total rides every notice |
+| Constant                       | Value   | Reason                                                                       |
+| ------------------------------ | ------- | ---------------------------------------------------------------------------- |
+| `DEFAULT_CHUNK_BYTES`          | 256 KiB | hard ceiling for synchronous parsing, with a yield between chunks            |
+| `DEFAULT_MAX_QUEUED_BYTES`     | 2 MiB   | queue cap                                                                    |
+| `DEFAULT_DROP_TARGET_FRACTION` | 0.75    | evict to 75 % of the cap so an episode is one hole, not per-frame thrash     |
+| `DEFAULT_BATCH_WINDOW_MS`      | 4       | a quarter-frame of write batching; small writes bypass it                    |
+| `BATCH_WINDOW_CLAMP_MS`        | 50      | above this the host is treated as clamping timers, and batching latches off  |
+| `DEFAULT_WATCHDOG_MS`          | 10 000  | unwedges a pane whose engine load hung instead of rejecting                  |
+| `RESYNC_WINDOW_BYTES`          | 8 KiB   | resync scan after a drop — the same window the daemon's safe-cut uses        |
+| `DEFAULT_NOTICE_INTERVAL_MS`   | 2 000   | how often a loss may narrate itself; the cumulative total rides every notice |
 
 ## Session metadata subscriptions
 
@@ -242,11 +242,11 @@ records that a grid was auto-named from its first session or renamed by the user
 `isAutoNameable` treats a record predating the field as unnamed only when its persisted
 name still matches `/^Grid \d+$/`.
 
-| `localStorage` key | Holds |
-|---|---|
-| `tr-grids:<workspacePath>` | that workspace's `GridMeta[]` |
+| `localStorage` key                    | Holds                                    |
+| ------------------------------------- | ---------------------------------------- |
+| `tr-grids:<workspacePath>`            | that workspace's `GridMeta[]`            |
 | `tr-layout:<workspacePath>::<gridId>` | that grid's `LayoutState { tree, cols }` |
-| `tr-theme`, `tr-chrome-theme` | terminal palette and chrome theme |
+| `tr-theme`, `tr-chrome-theme`         | terminal palette and chrome theme        |
 
 `DEFAULT_GRID_ID` is the fixed string `g-default` and is never minted, so migration is
 deterministic — a second read or a second window cannot mint a different "default" and
@@ -322,12 +322,12 @@ the persisted split tree. Legacy Changes leaves are removed during layout loadin
 without discarding the remaining terminals, browser or editor panes. Keeping its
 width separate from the split tree lets it close without remounting terminals.
 
-| Region | Metric |
-|---|---|
-| Rail | resizable, 200–420px, remembered per user; a drag under 160px collapses it, and `sidebarRail` also hides it — there is no icon-only strip |
-| Topbar | 44px, two columns, drag region; the mode `Segmented` floats at the window's centre |
-| Pane headers | 28px, every pane kind; supported agent panes can show a context ring |
-| Stack tabs | 26px strip |
+| Region       | Metric                                                                                                                                    |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Rail         | resizable, 200–420px, remembered per user; a drag under 160px collapses it, and `sidebarRail` also hides it — there is no icon-only strip |
+| Topbar       | 44px, two columns, drag region; the mode `Segmented` floats at the window's centre                                                        |
+| Pane headers | 28px, every pane kind; supported agent panes can show a context ring                                                                      |
+| Stack tabs   | 26px strip                                                                                                                                |
 
 ## The window background
 
@@ -343,22 +343,22 @@ A surface on the field never puts ink straight onto a photograph. Each one wears
 **coat** — one per-theme colour at one alpha. In Custom there are exactly **four** grounds;
 every element that fills an area is one of them, and nothing else paints a ground:
 
-| Ground | Token | Worn by | Bound |
-|---|---|---|---|
-| The field | nothing paints | the grid's gutters (`--gutter-bg`) | — |
-| Chrome coat | `--custom-chrome-scrim` (`shell`) | rail, titlebar, the corner shoulders, and `--field-plate-bg` under any words on the field | min 60%, proven by `check:css` |
-| Panel coat | `--material-base-bg` (`base`) | every screen that fills a content region edge to edge and is Houston's own chrome: Settings, the Skills/Connections/Routines surfaces, the new-session composer, first run | derived, so it inherits the chrome bound |
-| Pane coat | `--custom-pane-scrim` | the terminals (on their own canvas), and the Changes/Files/Editor/Skills frames | min 5%, deliberately not gated |
+| Ground      | Token                             | Worn by                                                                                                                                                                    | Bound                                    |
+| ----------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| The field   | nothing paints                    | the grid's gutters (`--gutter-bg`)                                                                                                                                         | —                                        |
+| Chrome coat | `--custom-chrome-scrim` (`shell`) | rail, titlebar, the corner shoulders, and `--field-plate-bg` under any words on the field                                                                                  | min 60%, proven by `check:css`           |
+| Panel coat  | `--material-base-bg` (`base`)     | every screen that fills a content region edge to edge and is Houston's own chrome: Settings, the Skills/Connections/Routines surfaces, the new-session composer, first run | derived, so it inherits the chrome bound |
+| Pane coat   | `--custom-pane-scrim`             | the terminals (on their own canvas), and the Changes/Files/Editor/Skills frames                                                                                            | min 5%, deliberately not gated           |
 
 The rule that makes a pane see-through is that **nothing between the field and a pane may
 paint**: a pane's transparency is only ever as deep as what it stands on, so the gutters
 paint nothing in Custom. A coat on the gutters makes
-every pane opaque whatever its own dial says. Which is why the panel coat is worn *only* by
+every pane opaque whatever its own dial says. Which is why the panel coat is worn _only_ by
 a screen with no pane on it.
 
 The corollary is that ink never stands on the field. A screen with words there (the empty
 workspace) wears `--field-plate-bg`, the chrome coat in Custom and transparent in Solid;
-a screen that *fills* the region wears the panel coat instead and needs no plate.
+a screen that _fills_ the region wears the panel coat instead and needs no plate.
 
 The **panel coat is the chrome coat one step heavier** — `min(1, chrome + .12)` on the same
 per-theme triple, not a dial of its own, so the panel and the rail move together as the
@@ -391,7 +391,7 @@ that draws its own pair of corner squares at that surface's concentric radius. T
 **Where the square sits in the stack is the whole difference between the two regions.** On
 the grid it paints over the region's ground and under the panes (`--z-base` against
 `--z-leaf`): it reaches past the gutter by exactly a pane's radius, and the pane's own
-rounded corner leaves the sliver it shows through. On a content region it paints *under* the
+rounded corner leaves the sliver it shows through. On a content region it paints _under_ the
 screen (`z-index: -1`, inside the wrapper's own stacking context), and the screen rounds its
 two left corners to the same `--r-content` — so the arc is **cut out of** the screen's ground
 rather than coated over it. Coating was measurably wrong: the wedge came out as the chrome
@@ -403,7 +403,7 @@ The grid's own pair is suppressed while a content region is open
 (`.grid-region:has(> .content-region)`): the grid's radius is larger, so its square would
 show through the screen's cut and double-coat the corner.
 
-The **fade** is a switch: `fadeStop` is where a ramp into the theme's ground *starts*, so
+The **fade** is a switch: `fadeStop` is where a ramp into the theme's ground _starts_, so
 100 (the default) is no fade and 88 blends the last tenth or so.
 
 ### Why the canvas carries the pane coat, not the frame
@@ -440,7 +440,7 @@ grounds on `#000000` — luminance zero — so any translucency raises the denom
 nothing lowers it again. The pane coat is therefore the one dial with no cap, and the live
 preview beside it is what shows the cost. The same goes for the panes that hold Houston's
 own ink (Changes, Files, Editor, Skills): they inherit the custom ink cuts from the
-`[data-custom='on']` scope, but at the coat's 5% floor the ground *is* the photograph, and no
+`[data-custom='on']` scope, but at the coat's 5% floor the ground _is_ the photograph, and no
 ink cut clears an arbitrary image. The coat is the dial that buys it back.
 
 ## Tauri commands
@@ -471,7 +471,7 @@ execution begins reports an unknown outcome rather than promising no side effect
 Two tiers. Tier 1 is Rust (`src-tauri/src/watchdog/`): a pure transition function
 (`machine.rs`), a three-clock classifier (`clocks.rs`, the only file there allowed to read
 `SystemTime`), and a liveness probe (`probe.rs`) that is an `eval` round trip whose
-*absence* is the signal. Tier 2 is `ui/src/renderer/src/watchdog.ts`.
+_absence_ is the signal. Tier 2 is `ui/src/renderer/src/watchdog.ts`.
 
 Native recovery is opt-in through `HOUSTON_WATCHDOG_RECOVER=1`. A valid, current probe
 nonce and timestamps establish JavaScript liveness; empty native evaluation callbacks do
@@ -510,13 +510,13 @@ confirmation and forced web-process termination. Other
 platforms explicitly withhold focused recovery when native confirmation is unavailable;
 forced termination reports its lack of support and the ladder retries reload only.
 
-| Tier 2 constant | Value |
-|---|---|
-| `T_PAINT_BASE_MS` | 5000 |
-| `PAINT_PROBE_GAP_MS` | 5000 — the wait between a RETURNED probe and the next; a MISSED one re-arms at once |
-| `T_WARN_MS` | 1500 |
-| `DPR_DEBOUNCE_MS` | 250 |
-| `POST_WAKE_MIN_MS` / `MAX_MS` | 8000 / 30000 |
+| Tier 2 constant               | Value                                                                               |
+| ----------------------------- | ----------------------------------------------------------------------------------- |
+| `T_PAINT_BASE_MS`             | 5000                                                                                |
+| `PAINT_PROBE_GAP_MS`          | 5000 — the wait between a RETURNED probe and the next; a MISSED one re-arms at once |
+| `T_WARN_MS`                   | 1500                                                                                |
+| `DPR_DEBOUNCE_MS`             | 250                                                                                 |
+| `POST_WAKE_MIN_MS` / `MAX_MS` | 8000 / 30000                                                                        |
 
 **Tier 2 only reports** — `invoke('wd_paint_report', …)`. It never reloads itself; Rust
 decides recovery. The success path re-arms through `PAINT_PROBE_GAP_MS` rather than from
@@ -565,6 +565,25 @@ The window badge count is updated from top-level, visible panes waiting for inpu
 cleared when a pane is opened. Tauri exposes a badge count on Linux and macOS and an overlay
 icon on Windows. macOS desktop notification delivery is explicitly unsupported.
 
+## Microphone capture
+
+The composer's dictation mic records through `navigator.mediaDevices.getUserMedia({ audio: true })`
+in the WebKitGTK webview. wry leaves `enable-media-stream` off and does not answer the
+`permission-request` signal, so `src-tauri/src/microphone.rs` enables the setting and grants
+audio-only user-media requests whose document origin is the app's own; video and display
+capture are denied. wry registers the custom protocol as a secure origin, so the page gets
+`navigator.mediaDevices` on `tauri://localhost`. macOS needs `NSMicrophoneUsageDescription`
+and the `com.apple.security.device.audio-input` entitlement; WKWebView grants media capture
+through wry's UI delegate. Windows leaves microphone permission to WebView2's own prompt,
+because wry 0.55 handles only clipboard permission requests; a denied OS microphone reaches
+the renderer as the same recording start error as a browser denial.
+
+Audio is transcribed by the server, not the webview, and the native engine runs in a separate
+process: `apps/server/src/speech/native.ts` starts the packaged executable with the hidden
+`__speech-worker` command. The packaged server is a Node single executable, where `import()`
+cannot load a module from the file system, so the worker loads transcribe-cpp through
+`createRequire` while development and tests keep the ESM loader.
+
 ## Testing
 
 `vitest run` from `ui/`, always through **`bun run test`** — bare `bun test` runs Bun's own
@@ -574,7 +593,7 @@ environment and no setup files. Environment is per file, via a
 `// @vitest-environment jsdom` docblock, with Testing Library for component tests; shared
 fixtures live in `src/renderer/src/test/`.
 
-`check:css` runs **after** `build` and loads the *emitted* stylesheet in a real browser,
+`check:css` runs **after** `build` and loads the _emitted_ stylesheet in a real browser,
 because `@theme`/`@layer` resolution only exists post-build. It re-derives the theme list
 and token mapping from source, asserts every `--color-*` token re-resolves per
 `[data-theme]` scope, and gates contrast: ink-on-ground at ≥ 4.5:1 per theme and the focus

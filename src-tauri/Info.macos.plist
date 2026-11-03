@@ -6,6 +6,8 @@
   <string>public.app-category.developer-tools</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Houston uses your microphone for voice dictation in the composer. Audio is transcribed on your own machine.</string>
   <key>NSScreenCaptureUsageDescription</key>
   <string>Houston captures the screen to take SnapShots of windows and panes and attach them to a conversation.</string>
   <key>NSAccessibilityUsageDescription</key>

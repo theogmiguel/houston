@@ -16,6 +16,7 @@ import {
   PanelsTopLeftIcon,
   KeyboardIcon,
   KeyRoundIcon,
+  MicIcon,
   PaletteIcon,
   PlugIcon,
   SearchIcon,
@@ -72,6 +73,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
 > = {
   "/settings/general": Settings2Icon,
   "/settings/diagnostics": WrenchIcon,
+  "/settings/voice": MicIcon,
   "/settings/appearance": PaletteIcon,
   "/settings/chat": MessageSquareTextIcon,
   "/settings/diffs": FileDiffIcon,

@@ -193,7 +193,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       noSessionPersistence: boolean,
     ) {
       const workingDirectory =
-        operation === "generateThreadTitle"
+        operation === "generateThreadTitle" || operation === "generateTranscriptionPostProcessing"
           ? yield* fileSystem
               .makeTempDirectoryScoped({ prefix: "houston-claude-title-" })
               .pipe(
