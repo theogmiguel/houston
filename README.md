@@ -9,57 +9,38 @@ the server's orchestration tools.
 [Download Houston](https://github.com/theogmiguel/houston/releases) ·
 [Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md)
 
-![Houston showing a demonstration workspace with three terminal panes and the Git inspector](.github/assets/houston-grid.webp)
-
-*Demonstration workspace with illustrative terminal output.*
-
 ## Why Houston
 
-- **Persistent sessions.** Closing the desktop app detaches from the server without stopping
-  running agents. Supported agents can resume saved conversations after a restart.
-- **Real terminals.** Every pane is a PTY rendered by Houston's terminal engine. Input goes
-  directly to the hosted CLI; terminal output is not treated as a chat transcript.
-- **Agent orchestration.** An agent can create, message and wait for other panes through a
-  local MCP interface, delegate work in managed Git worktrees and watch pull requests.
-  Child panes and their results stay visible in the orchestrator's roster.
-- **Tasks and review.** Keep a global backlog, start tasks in isolated worktrees and review
-  the result before marking work complete. Optional Slack requests become tasks you accept.
-- **Independent routines.** Scheduled and on-demand routines start fresh agent panes with
-  their own model, effort, permissions and working directory.
-- **Workspace tools.** Source changes, files, an editor, browser panes, SSH connections,
-  reusable skills and provider profiles live alongside the terminal grid. The pane inspector
-  brings Git and pull request actions together with files and browser tools.
-- **Session insights.** Reported agent status and optional notifications help track work.
-  Usage estimates token costs for Claude and Codex; Harness reviews their sessions and
-  turns findings into fix tasks.
+- **Persistent threads.** Closing the desktop app detaches from the server without stopping
+  running agents. Threads and their history survive restarts.
+- **Grids.** Arrange up to six threads side by side; shortcuts, find and actions follow the
+  focused cell.
+- **Agent orchestration.** An agent can start, message and wait for other threads through
+  the server's orchestration tools, and delegate work in managed Git worktrees.
+- **Tasks.** Keep a backlog per project, start tasks in isolated worktrees and review the
+  result before marking work complete. GitHub issues, Notion and Slack requests can feed it.
+- **Workspace tools.** Git changes, files, an editor, a browser and pull requests open in the
+  right panel next to the thread. Pull requests include a local merge queue.
+- **Session insights.** Thread status, notifications and usage estimates help track work.
 - **Local control plane.** Houston has no account, hosted control plane or telemetry. Session
   state remains local, and secrets managed by Houston use the operating system keychain.
 
-## Supported agent CLIs
+## Supported agents
 
-Houston can start and manage these CLIs when their executable is available on `PATH`:
-
-| Provider | Executable |
-|---|---|
-| Claude Code | `claude` |
-| Codex | `codex` |
-| Antigravity | `agy` |
-| OpenCode | `opencode` |
-| ZCode | `zcode` |
-
-Cursor, Grok, Droid, Copilot and Aider are recognised when launched manually in a shell
-pane, but Houston does not start or configure them. Provider installation and authentication remain the
-provider's responsibility; see the [installation guide](docs/user/install.md).
+Houston runs threads with Claude, Codex, Cursor, Grok, fx, OpenCode, Antigravity, Muse Code,
+Pi and agents discovered through the ACP registry, when their executable is installed.
+Provider installation and authentication remain the provider's responsibility; see the
+[installation guide](docs/user/install.md#providers).
 
 ## Install
 
 Download the current release from [GitHub Releases](https://github.com/theogmiguel/houston/releases).
 
-| Platform | Official artifacts | Support baseline |
-|---|---|---|
-| Linux x86_64 | AppImage, `.deb` | glibc 2.35 or newer |
-| Linux ARM64 | AppImage, `.deb` | glibc 2.35 or newer |
-| Windows x86_64 | NSIS `.exe` | Windows 10 or 11 |
+| Platform       | Official artifacts | Support baseline    |
+| -------------- | ------------------ | ------------------- |
+| Linux x86_64   | AppImage, `.deb`   | glibc 2.35 or newer |
+| Linux ARM64    | AppImage, `.deb`   | glibc 2.35 or newer |
+| Windows x86_64 | NSIS `.exe`        | Windows 10 or 11    |
 
 Linux and Windows receive official release packages. Windows support starts with v0.14.0.
 macOS and Windows ARM64 do not have official builds. Alpine, NixOS, BSD and other
@@ -68,8 +49,7 @@ best effort.
 
 The Windows installer is not Authenticode-signed, so SmartScreen may warn on first launch.
 Release artifacts are signed for Houston's updater and verified before installation.
-Some features have platform-specific limits: Windows updates stop running sessions, native
-desktop notifications are Linux-only, and Windows dictation uses Groq. See the
+Some features have platform-specific limits; see the
 [installation guide](docs/user/install.md#platform-differences) for the supported paths.
 
 For source builds, prerequisites and platform-specific commands, follow
@@ -87,8 +67,7 @@ The architecture is documented in [`docs/internals/overview.md`](docs/internals/
 ## Privacy and updates
 
 Local-first does not mean offline. Agent CLIs, Git and GitHub operations, browser and MCP
-integrations, model downloads and optional cloud dictation use their respective network
-services when invoked. Houston has no hosted account or telemetry service. Its background
+integrations and model downloads use their respective network services when invoked. Houston has no hosted account or telemetry service. Its background
 update check queries GitHub, can be disabled, and never installs without an explicit click.
 
 ## Documentation
@@ -97,12 +76,12 @@ The [documentation index](docs/README.md) explains how to read the docs for an i
 release or the current source.
 
 - [Install Houston and configure providers](docs/user/install.md)
-- [Work with panes, grids and workspaces](docs/user/panes-and-grids.md)
-- [Manage tasks and review agent work](docs/user/tasks.md)
+- [Work with threads and grids](docs/user/threads-and-grids.md)
+- [Manage tasks and agent work](docs/user/tasks.md)
 - [Inspect Git changes and pull requests](docs/user/changes.md)
 - [Configure notifications](docs/user/notifications.md)
 - [Inspect token usage and estimated costs](docs/user/usage.md)
-- [Manage MCP and Slack connections](docs/user/connections.md)
+- [Connect machines and task sources](docs/user/connections.md)
 - [Update an installed release](docs/user/updating.md)
 - [Browse the complete documentation index](docs/README.md)
 
