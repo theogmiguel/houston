@@ -37,7 +37,12 @@ it("keeps the open detail panel against the row's right edge and resizes it from
         titlebarControls={null}
         rightPanelOpen
         maximizedAway={false}
+        view="requests"
+        onView={() => {}}
+        queueCount={null}
+        queueParked={false}
         listBody={<p>List</p>}
+        queueBody={<p>Queue</p>}
         scrollRef={createRef<HTMLDivElement>()}
       />
       <PreviewPanelShell

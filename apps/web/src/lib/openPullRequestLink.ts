@@ -111,7 +111,7 @@ export function useOpenChangeRequestLink(
         if (!resolvedThreadRef) {
           void navigate({
             to: "/pull-requests",
-            search: (previous) => ({
+            search: ({ view: _view, ...previous }) => ({
               ...previous,
               involvement: previous.involvement ?? "all",
               state: previous.state ?? "all",

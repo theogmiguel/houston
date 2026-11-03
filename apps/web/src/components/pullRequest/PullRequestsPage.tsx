@@ -74,6 +74,10 @@ import {
 import { pullRequestGroups, pullRequestListEntryId } from "./pullRequestListGroups.logic";
 import { PullRequestListEmptyState } from "./PullRequestListEmptyState";
 import { PullRequestListGhost } from "./PullRequestGhosts";
+import { MergeQueueView } from "./MergeQueueView";
+import { mergeQueueBadges, mergeQueueEntryKey, mergeQueueLineCount } from "./mergeQueue.logic";
+import { useMergeQueueSnapshot, useMergeQueueSnapshots } from "~/state/mergeQueue";
+import { MERGE_QUEUE_PAGE_NOTE } from "../ui/merge-queue-recipes";
 import { type PullRequestRowTarget } from "./PullRequestRow";
 import { PullRequestsUnavailableState } from "./PullRequestsUnavailableState";
 import { RightPanelTabs } from "../RightPanelTabs";
@@ -166,6 +170,37 @@ export function PullRequestsPage() {
     expectedHosts,
     projectsKnown,
   } = usePullRequestScope(search);
+  const view: "requests" | "queue" = search.view === "queue" ? "queue" : "requests";
+  const queueProject = scopedProject ?? scopedProjects[0] ?? null;
+  const queueScope =
+    scopedProjectId === undefined
+      ? projects
+      : projects.filter((project) => project.id === scopedProjectId);
+  const queueTargets =
+    view === "requests"
+      ? queueScope
+          .filter((project) => project.repositoryIdentity != null)
+          .map((project) => ({ environmentId: project.environmentId, projectId: project.id }))
+      : [];
+  const queueProjectSnapshots = useMergeQueueSnapshots(queueTargets);
+  const { snapshot: queueViewSnapshot } = useMergeQueueSnapshot(
+    view === "queue" ? (queueProject?.environmentId ?? null) : null,
+    view === "queue" ? (queueProject?.id ?? null) : null,
+  );
+  const queueBadges = mergeQueueBadges(queueProjectSnapshots);
+  // The queue view shows one project; the Requests list shows every project in scope.
+  const queueCount =
+    view === "queue"
+      ? queueViewSnapshot === null
+        ? null
+        : mergeQueueLineCount(queueViewSnapshot)
+      : queueTargets.length === 0 || queueProjectSnapshots.length === 0
+        ? null
+        : queueBadges.count;
+  const queueParked =
+    view === "queue"
+      ? queueViewSnapshot?.entries.some((entry) => entry.status === "parked") === true
+      : queueBadges.parked;
   const rightPanelRef = capableEnvironments.length === 0 ? null : PULL_REQUESTS_PANEL_REF;
   const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(rightPanelRef);
   const rightPanelState = useRightPanelStore((state) =>
@@ -213,6 +248,7 @@ export function PullRequestsPage() {
       search: (previous: PullRequestsSearch): PullRequestsSearch => {
         const next = { ...previous, ...patch };
         return {
+          ...(next.view ? { view: next.view } : {}),
           involvement: next.involvement ?? previous.involvement,
           state: next.state ?? previous.state,
           ...(next.sort && next.sort !== "ready" ? { sort: next.sort } : {}),
@@ -1098,6 +1134,67 @@ export function PullRequestsPage() {
     });
   };
 
+  const selectedQueueKey =
+    activePullRequestSurface !== null &&
+    queueProject !== null &&
+    activePullRequestSurface.environmentId === queueProject.environmentId
+      ? mergeQueueEntryKey(activePullRequestSurface.projectId, activePullRequestSurface.number)
+      : null;
+  const openQueueSurface = (
+    target: { readonly repository: string; readonly number: number },
+    detailTab: "queue" | "summary",
+  ) => {
+    if (rightPanelRef === null || queueProject === null) return;
+    useRightPanelStore.getState().openPullRequest(rightPanelRef, {
+      environmentId: queueProject.environmentId,
+      projectId: queueProject.id,
+      repository: target.repository,
+      number: target.number,
+      detailTab,
+    });
+    updateSearch({
+      repository: target.repository,
+      number: target.number,
+      selectedProjectId: queueProject.id,
+      selectedEnvironmentId: queueProject.environmentId,
+    });
+  };
+  const queueProjectControl = (
+    <PullRequestCompactFilterMenu
+      label="Merge queue project"
+      value={queueProject ? `${queueProject.environmentId}:${queueProject.id}` : ""}
+      options={scopedProjects.map((project) => ({
+        value: `${project.environmentId}:${project.id}`,
+        label: project.title,
+      }))}
+      onChange={(next) => {
+        const project = scopedProjects.find(
+          (candidate) => `${candidate.environmentId}:${candidate.id}` === next,
+        );
+        if (project)
+          updateListScope({ projectId: project.id, environmentId: project.environmentId });
+      }}
+    />
+  );
+  const queueBody =
+    queueProject === null ? (
+      <p className={MERGE_QUEUE_PAGE_NOTE}>Add a project, and its merge queue appears here.</p>
+    ) : (
+      <MergeQueueView
+        environmentId={queueProject.environmentId}
+        projectId={queueProject.id}
+        selectedKey={selectedQueueKey}
+        projectControl={queueProjectControl}
+        onSelectEntry={(entry) =>
+          openQueueSurface({ repository: entry.repository, number: entry.number }, "queue")
+        }
+        onSelectLog={(row) =>
+          openQueueSurface({ repository: row.repository, number: row.number }, "summary")
+        }
+        onOpenSettings={() => void navigate({ to: "/settings/projects" })}
+      />
+    );
+
   const searchInput = (
     <PullRequestSearchInput
       value={search.q ?? ""}
@@ -1184,6 +1281,7 @@ export function PullRequestsPage() {
       ) : (
         <PullRequestListGroups
           groups={displayGroups}
+          queuePositions={queueBadges.positions}
           environmentLabels={capableEnvironments.length > 1 ? environmentLabels : null}
           query={typedParsed.text}
           selected={selected}
@@ -1311,6 +1409,12 @@ export function PullRequestsPage() {
     />
   );
   const columnProps = {
+    view,
+    onView: (next: "requests" | "queue") =>
+      updateSearch(next === "queue" ? { view: "queue" } : { view: undefined }),
+    queueCount,
+    queueParked,
+    queueBody,
     refreshing,
     onRefresh: () => void refreshFromHost(),
     searchValue: search.q ?? "",

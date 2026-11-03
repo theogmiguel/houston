@@ -47,6 +47,7 @@ import {
   type DesktopWslState,
   type EnvironmentId,
   type FilesystemBrowseResult,
+  type ProjectId,
   type ThreadId,
   SourceControlProviderKind,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
@@ -63,6 +64,7 @@ import {
   FileSearchIcon,
   FolderGit2Icon,
   FolderIcon,
+  PauseIcon,
   EyeOffIcon,
   FolderPlusIcon,
   LayoutGridIcon,
@@ -123,6 +125,11 @@ import { threadEnvironment } from "../state/threads";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
+import {
+  mergeQueueEnvironment,
+  useMergeQueueEntry,
+  useMergeQueueSnapshot,
+} from "../state/mergeQueue";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useScratchProject } from "../hooks/useScratchProject";
@@ -158,7 +165,11 @@ import {
   useCommandPaletteMount,
   useCommandPaletteStore,
 } from "../commandPaletteStore";
-import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
+import {
+  PULL_REQUESTS_PANEL_REF,
+  selectSelectedRightPanelSurface,
+  useRightPanelStore,
+} from "../rightPanelStore";
 import {
   getLatestThreadForProject,
   sortThreads,
@@ -484,6 +495,81 @@ function OpenCommandPaletteDialog(props: {
         ? scopeThreadRef(activeThread.environmentId, activeThread.id)
         : null;
   const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(referenceThreadRef);
+  const selectedPanelSurface = useRightPanelStore((state) =>
+    referenceThreadRef === null
+      ? null
+      : selectSelectedRightPanelSurface(state.byThreadKey, referenceThreadRef),
+  );
+  const queuePullRequest =
+    selectedPanelSurface?.kind === "pull-request" ? selectedPanelSurface : null;
+  // Without an open pull request the queue commands still act on the first project that can have one.
+  const contextualQueueProject =
+    queuePullRequest ??
+    projects.find((project) => project.repositoryIdentity !== undefined) ??
+    null;
+  const queueEnvironmentId = (contextualQueueProject?.environmentId ??
+    null) as EnvironmentId | null;
+  const queueProjectId = (contextualQueueProject?.id ?? null) as ProjectId | null;
+  const { entry: paletteQueueEntry } = useMergeQueueEntry(
+    queueEnvironmentId,
+    queueProjectId,
+    queuePullRequest?.number ?? null,
+  );
+  const { snapshot: paletteQueueSnapshot } = useMergeQueueSnapshot(
+    queueEnvironmentId,
+    queueProjectId,
+  );
+  const enqueueMergeQueue = useAtomCommand(mergeQueueEnvironment.enqueue, {
+    reportFailure: false,
+  });
+  const pauseMergeQueue = useAtomCommand(mergeQueueEnvironment.pause, { reportFailure: false });
+  const addPalettePullRequestToQueue = async () => {
+    if (queuePullRequest === null || queueEnvironmentId === null) return;
+    const result = await enqueueMergeQueue({
+      environmentId: queueEnvironmentId,
+      input: {
+        projectId: queuePullRequest.projectId as ProjectId,
+        pullRequest: queuePullRequest.number,
+      },
+    });
+    if (result._tag === "Failure") {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add({
+        type: "error",
+        title: `Could not add #${queuePullRequest.number} to the merge queue`,
+        description: error instanceof Error ? error.message : "The merge queue refused it.",
+      });
+      return;
+    }
+    toastManager.add({
+      type: "success",
+      title: `Added #${queuePullRequest.number} to the merge queue`,
+    });
+  };
+  const togglePaletteMergeQueuePause = async () => {
+    if (queueEnvironmentId === null) return;
+    const global = paletteQueueSnapshot?.globalPaused === true;
+    const paused = paletteQueueSnapshot?.settings.paused === true;
+    const result = await pauseMergeQueue({
+      environmentId: queueEnvironmentId,
+      input: global
+        ? { paused: false }
+        : queueProjectId === null
+          ? { paused: !paused }
+          : { projectId: queueProjectId, paused: !paused },
+    });
+    if (result._tag === "Failure") {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add({
+        type: "error",
+        title: "Could not change the merge queue pause",
+        description: error instanceof Error ? error.message : "Try again.",
+      });
+      return;
+    }
+    const message = (result.value as { readonly message?: string } | null)?.message;
+    toastManager.add({ type: "success", title: message ?? "Merge queue updated" });
+  };
   const activeThreadServerConfig = useServerConfigs().get(
     activeThread?.environmentId ?? ("" as EnvironmentId),
   );
@@ -1696,6 +1782,60 @@ function OpenCommandPaletteDialog(props: {
         await navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
       },
     });
+    actionItems.push({
+      kind: "action",
+      value: "action:merge-queue-open",
+      searchTerms: ["merge queue", "queue", "land", "merge", "line", "parked"],
+      title: "Open merge queue",
+      icon: <PullRequestGlyph.merged className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await navigate({
+          to: "/pull-requests",
+          search: { ...readPullRequestListPreferences(), view: "queue" },
+        });
+      },
+    });
+    if (queuePullRequest !== null && queueEnvironmentId !== null) {
+      actionItems.push({
+        kind: "action",
+        value: "action:merge-queue-add",
+        searchTerms: ["merge queue", "queue", "add", "land", "merge"],
+        title:
+          paletteQueueEntry === null
+            ? "Add to merge queue"
+            : paletteQueueEntry.position > 0
+              ? `In the merge queue (#${paletteQueueEntry.position})`
+              : "In the merge queue",
+        description: `#${queuePullRequest.number} ${queuePullRequest.repository}`,
+        icon: <PullRequestGlyph.merged className={ITEM_ICON_CLASS} />,
+        disabled: paletteQueueEntry !== null,
+        run: async () => {
+          await addPalettePullRequestToQueue();
+        },
+      });
+    }
+    if (queueProjectId !== null && queueEnvironmentId !== null) {
+      const globalPaused = paletteQueueSnapshot?.globalPaused === true;
+      const paused = paletteQueueSnapshot?.settings.paused === true;
+      actionItems.push({
+        kind: "action",
+        value: "action:merge-queue-pause",
+        searchTerms: ["merge queue", "queue", "pause", "resume", "stop"],
+        title: globalPaused
+          ? "Resume every merge queue"
+          : paused
+            ? "Resume merge queue"
+            : "Pause merge queue",
+        description:
+          queuePullRequest === null
+            ? undefined
+            : `#${queuePullRequest.number} ${queuePullRequest.repository}`,
+        icon: <PauseIcon className={ITEM_ICON_CLASS} />,
+        run: async () => {
+          await togglePaletteMergeQueuePause();
+        },
+      });
+    }
   }
 
   actionItems.push({

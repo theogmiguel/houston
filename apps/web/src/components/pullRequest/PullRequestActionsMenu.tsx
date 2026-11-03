@@ -31,6 +31,7 @@ import { useId, useState } from "react";
 import { shortcutLabelForCommand } from "~/keybindings";
 import { readLocalApi } from "~/localApi";
 import { pullRequestEnvironment } from "~/state/pullRequests";
+import { mergeQueueEnvironment, useMergeQueueEntry } from "~/state/mergeQueue";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { Button } from "../ui/button";
@@ -45,6 +46,7 @@ import {
   MenuShortcut,
   MenuTrigger,
 } from "../ui/menu";
+import { MERGE_QUEUE_MENU_HINT } from "../ui/merge-queue-recipes";
 import { RefreshIcon } from "../ui/refresh-icon";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -162,6 +164,44 @@ export function PullRequestActionsMenu({
   const updatePullRequest = useAtomCommand(pullRequestEnvironment.update, {
     reportFailure: false,
   });
+  const enqueueMergeQueue = useAtomCommand(mergeQueueEnvironment.enqueue, {
+    reportFailure: false,
+  });
+  const { entry: queueEntry, snapshot: queueSnapshot } = useMergeQueueEntry(
+    environmentId,
+    reference.projectId,
+    reference.number,
+  );
+  const queueTail = queueSnapshot?.entries.filter((row) => row.position > 0).at(-1)?.number ?? null;
+  const [enqueueing, setEnqueueing] = useState(false);
+  const addToMergeQueue = async () => {
+    if (enqueueing || queueEntry !== null) return;
+    setEnqueueing(true);
+    const result = await enqueueMergeQueue({
+      environmentId,
+      input: { projectId: reference.projectId, pullRequest: reference.number },
+    });
+    setEnqueueing(false);
+    if (result._tag === "Failure") {
+      toastManager.add({
+        type: "error",
+        title: `Could not add #${reference.number} to the merge queue`,
+        description:
+          squashAtomCommandFailure(result) instanceof Error
+            ? (squashAtomCommandFailure(result) as Error).message
+            : "The merge queue refused it. Try again.",
+      });
+      return;
+    }
+    toastManager.add({
+      type: "success",
+      title: `Added #${reference.number} to the merge queue`,
+      description:
+        result.value.position > 0
+          ? `It is number ${result.value.position} in line.`
+          : "It is behind a parked entry or being fixed.",
+    });
+  };
   const [maintainerEditsChoice, setMaintainerEditsChoice] = useState<MaintainerEditsChoice | null>(
     null,
   );
@@ -284,6 +324,23 @@ export function PullRequestActionsMenu({
             disabled={handoff !== null}
           />
         ) : null}
+        <MenuSeparator />
+        <MenuItem
+          disabled={enqueueing || queueEntry !== null}
+          onClick={() => void addToMergeQueue()}
+        >
+          <PullRequestGlyph.merged className="size-3.5" />
+          {queueEntry === null
+            ? enqueueing
+              ? "Adding to the merge queue…"
+              : "Add to merge queue"
+            : queueEntry.position > 0
+              ? `In the merge queue (#${queueEntry.position})`
+              : "In the merge queue"}
+          {queueEntry === null && queueTail !== null ? (
+            <span className={MERGE_QUEUE_MENU_HINT}>after #{queueTail}</span>
+          ) : null}
+        </MenuItem>
         <MenuSeparator />
         {canEditPullRequestMaintainerEdits(detail) ? (
           <>

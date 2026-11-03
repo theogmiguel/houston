@@ -159,11 +159,12 @@ tier, triage reasons and your Dismiss or Reopen decision in the local Houston da
 ## Merge queue
 
 The **Merge queue** view on the Pull requests page, next to **Requests**, lists the open pull
-requests waiting to merge in the selected workspace, in the order they merge. Agents add their
-pull requests with `pane_pr_enqueue`; you can add one with **Add to merge queue** in its merge
-box or from the command palette (**Add to merge queue** acts on the focused pane's pull
-request, and **Open merge queue** opens the view). The queue needs a GitHub remote; a
-workspace without one, or a pull request from a fork or another repository, is refused.
+requests waiting to merge in the selected project, in the order they merge. Agents add their
+pull requests with `pane_pr_enqueue`; you can add one with **Add to merge queue** in the pull
+request's overflow menu or from the command palette (**Add to merge queue** acts on the pull
+request in the right panel, and **Open merge queue** opens the view). The queue needs a GitHub
+remote; a project without one, or a pull request from a fork or another repository, is
+refused.
 
 Entries merge first in, first out, except that a blocked entry is passed over (see below).
 An entry enqueued with `depends_on` waits behind the pull
@@ -189,8 +190,8 @@ answer for an entry yet (it has not been read, a read failed, its checks are sti
 or GitHub is still computing whether it can merge), the whole queue waits for it, and the
 entries behind it name it as their reason.
 
-Only the entry that goes next can be merged from the queue. Its **Merge** merges the exact
-commit shown, with the repository's allowed merge method (squash when allowed); if the head
+Only the entry that goes next can be merged from the queue. Its **Merge head** merges the
+exact commit shown, with the repository's allowed merge method (squash when allowed); if the head
 moved, the base moved or a gate fails, the merge is refused and nothing merges. If GitHub
 refuses the method, its message is shown unchanged. To merge any other queued pull request,
 **Dequeue** it first, then merge it from its merge box. After a merge the next entry moves up,
@@ -199,7 +200,7 @@ queue holds at most 32 entries.
 
 ### Verification and merging on its own
 
-Set the queue up in **Settings ▸ Workspaces ▸ Merge queue**:
+Set the queue up in **Settings ▸ Projects ▸ Merge queue**:
 
 - **Verification command**: the command that proves a pull request works, such as
   `cargo nextest run`. It is stored in Houston, never read from the repository, so a pull
@@ -217,7 +218,7 @@ time it has run against the limit. A verification holds until the head or the ba
 
 What happens next depends on the policy:
 
-- **Off**: the head shows **Ready**, verified on the base it names. Its **Merge** pushes the
+- **Off**: the head shows **Ready**, verified on the base it names. **Merge head** pushes the
   verified commit to the branch and merges exactly that commit.
 - **On**: Houston pushes and merges the verified head on its own, then verifies the next
   entry. The merge box shows the queue state instead of **Merge**; **Merge now, skipping the
@@ -236,9 +237,9 @@ request, or an agent pane in its worktree, is still open, it gets one message wi
 detail and the entry shows **Fixing**. Otherwise the entry is **Parked** under its own group
 with the reason, and the rail's **Pull requests** item counts it. Either way the queue moves
 on. Pushing a new commit to the branch puts it back in line; **Retry** does so for the same
-commit. **Hand to a new pane** asks which agent to open, with the workspace's default agent
-from Settings ▸ Tasks preselected, then opens it in the pull request's worktree with the
-failure as its prompt. Houston never opens a pane on its own. If GitHub's checks fail on a
+commit. **Hand to a new thread** asks for a model and permissions, then opens a thread in the
+pull request's worktree with the failure as its first message. Houston never opens a thread
+on its own. If GitHub's checks fail on a
 commit Houston pushed, the entry leaves the line the same way.
 
 ### Stacked pull requests
@@ -286,13 +287,13 @@ message and later landings use the merge queue.
 
 **Pause and revert.** **Pause** on the queue view or in Settings, or **Pause merge queue** in
 the command palette, stops pushes and merges at once; entries keep their place and any
-verification they hold. **Pause all** in Settings pauses every workspace's queue on this
+verification they hold. **Pause all** in Settings pauses every project's queue on this
 machine. Every push and merge the queue makes is logged with the old and new
 commits under **Merge history** in Settings. **Revert** on a merge under **Today** opens a
 revert pull request on GitHub; Houston never pushes to the base to undo a merge.
 
 When you come back after the queue merged or parked pull requests on its own, one notice at
-the top of the workspace says how many, with **Review** to open the queue.
+the top of the queue says how many, with **Acknowledge** to dismiss it.
 
 To open Changes automatically after the focused agent stops, enable **Open diff when an agent
 stops** in Settings ▸ Appearance ▸ Panels. Houston opens it when the workspace has changes

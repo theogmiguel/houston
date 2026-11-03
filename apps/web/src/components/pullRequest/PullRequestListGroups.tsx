@@ -42,6 +42,7 @@ function PullRequestGroupHeader({
 
 export function PullRequestListGroups({
   groups,
+  queuePositions,
   environmentLabels,
   query,
   selected,
@@ -55,6 +56,7 @@ export function PullRequestListGroups({
   onCloseSweepStart,
 }: {
   groups: ReadonlyArray<PullRequestGroup<EnvironmentPullRequestEntry>>;
+  queuePositions: ReadonlyMap<string, number>;
   /** Only when rows come from more than one server, so each says which. */
   environmentLabels: ReadonlyMap<EnvironmentId, string> | null;
   query: string;
@@ -94,6 +96,11 @@ export function PullRequestListGroups({
                   matchedElsewhere={
                     query.length > 0 &&
                     scorePullRequestMatch(entry, query) <= MATCHED_ELSEWHERE_SCORE
+                  }
+                  queuePosition={
+                    queuePositions.get(
+                      `${entry.environmentId}:${entry.projectId}:${entry.repository.toLowerCase()}:${entry.number}`,
+                    ) ?? null
                   }
                   selected={
                     selected?.environmentId === entry.environmentId &&

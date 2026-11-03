@@ -40,6 +40,7 @@ import { pullRequestFilterProjects } from "./pullRequestProjectFilter.logic";
 import { pullRequestListEntryId } from "./pullRequestListGroups.logic";
 
 export interface PullRequestsSearch extends PullRequestListPreferences {
+  readonly view?: "requests" | "queue";
   readonly environmentId?: EnvironmentId;
   readonly projectId?: ProjectId;
   readonly host?: string;

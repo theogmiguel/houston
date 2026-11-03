@@ -40,6 +40,7 @@ import {
   SettingsRow,
   SettingsSection,
 } from "./settingsLayout";
+import { MergeQueueSettingsSection } from "./MergeQueueSettingsSection";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { projectGroupTitleNeedsUpdate, SCRATCH_PROJECT_TITLE } from "./ProjectSettingsPanel.logic";
@@ -544,6 +545,21 @@ function ProjectDetail({
           ) : null}
         </SettingsSection>
         <ProjectDefaultsSettings category="project" />
+        {group.memberProjects.map((member) => (
+          <MergeQueueSettingsSection
+            key={`${member.environmentId}:${member.id}`}
+            environmentId={member.environmentId}
+            projectId={member.id}
+            title={
+              group.memberProjects.length > 1
+                ? `Merge queue · ${member.environmentLabel ?? member.environmentId}`
+                : "Merge queue"
+            }
+            environmentLabel={
+              group.memberProjects.length > 1 ? (member.environmentLabel ?? null) : null
+            }
+          />
+        ))}
         <ProjectActionsSettings />
         {hasMultipleCheckouts ? checkoutChoices : null}
         <SettingsSection title="Danger">

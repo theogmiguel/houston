@@ -10,7 +10,12 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { type ClosedViewEntry, useClosedViewStore } from "./closedViewStore";
 import { __setClientSettingsForTests } from "./hooks/useSettings";
 import { readThreadPreviewState, resetPreviewStateForTests } from "./previewStateStore";
-import { planNextReopen, type ReopenOwnerState, reopenClosedView } from "./reopenClosedView";
+import {
+  planNextReopen,
+  pullRequestsSearchForRestore,
+  type ReopenOwnerState,
+  reopenClosedView,
+} from "./reopenClosedView";
 import {
   selectThreadRightPanelState,
   type ThreadRightPanelState,
@@ -196,5 +201,19 @@ describe("planNextReopen", () => {
     );
     expect(plan.drop.map((e) => e.id)).toEqual(dropped);
     expect(plan.restore?.id ?? null).toBe(restored);
+  });
+});
+
+describe("pullRequestsSearchForRestore", () => {
+  it("does not carry another page's view into the pull requests page", () => {
+    const search = pullRequestsSearchForRestore(
+      { view: "projects", involvement: "all", state: "open" } as Parameters<
+        typeof pullRequestsSearchForRestore
+      >[0],
+      null,
+    );
+
+    expect(search).not.toHaveProperty("view");
+    expect(search).toMatchObject({ involvement: "all", state: "open" });
   });
 });
