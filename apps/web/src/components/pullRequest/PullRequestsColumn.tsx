@@ -15,6 +15,7 @@ import {
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { MERGE_QUEUE_COUNT_BADGE, MERGE_QUEUE_COUNT_BADGE_PARKED } from "../ui/merge-queue-recipes";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
 import { PullRequestCompactFilterMenu } from "./PullRequestCompactFilterMenu";
 import type { PullRequestFilterOption } from "./PullRequestListFilters";
@@ -88,7 +89,12 @@ export function PullRequestsColumn({
   titlebarControls,
   rightPanelOpen,
   maximizedAway,
+  view,
+  onView,
+  queueCount,
+  queueParked,
   listBody,
+  queueBody,
   scrollRef,
 }: {
   refreshing: boolean;
@@ -108,7 +114,12 @@ export function PullRequestsColumn({
   titlebarControls: ReactNode;
   rightPanelOpen: boolean;
   maximizedAway: boolean;
+  view: "requests" | "queue";
+  onView: (view: "requests" | "queue") => void;
+  queueCount: number | null;
+  queueParked: boolean;
   listBody: ReactNode;
+  queueBody: ReactNode;
   scrollRef: RefObject<HTMLDivElement | null>;
 }) {
   const contentArea = workspaceAreaProps("pull-requests", 1, "Pull requests");
@@ -179,29 +190,31 @@ export function PullRequestsColumn({
               <h1 className="truncate">Pull requests</h1>
             </WorkspaceBreadcrumbItem>
             {searchExpanded ? null : <WorkspaceBreadcrumbSeparator />}
-            <WorkspaceBreadcrumbItem className="shrink gap-1.5">
-              <PullRequestCompactFilterMenu
-                label="Filter by state"
-                value={state}
-                options={STATE_TABS}
-                onChange={onState}
-                className="shrink-0"
-              />
-              <PullRequestCompactFilterMenu
-                label="Filter by involvement"
-                value={involvement}
-                options={INVOLVEMENT_TABS}
-                onChange={onInvolvement}
-              />
-              {hostMenuOptions.length > 2 ? (
+            {view === "requests" ? (
+              <WorkspaceBreadcrumbItem className="shrink gap-1.5">
                 <PullRequestCompactFilterMenu
-                  label="Filter by host"
-                  value={host ?? ""}
-                  options={hostMenuOptions}
-                  onChange={(next) => onHost(next === "" ? undefined : next)}
+                  label="Filter by state"
+                  value={state}
+                  options={STATE_TABS}
+                  onChange={onState}
+                  className="shrink-0"
                 />
-              ) : null}
-            </WorkspaceBreadcrumbItem>
+                <PullRequestCompactFilterMenu
+                  label="Filter by involvement"
+                  value={involvement}
+                  options={INVOLVEMENT_TABS}
+                  onChange={onInvolvement}
+                />
+                {hostMenuOptions.length > 2 ? (
+                  <PullRequestCompactFilterMenu
+                    label="Filter by host"
+                    value={host ?? ""}
+                    options={hostMenuOptions}
+                    onChange={(next) => onHost(next === "" ? undefined : next)}
+                  />
+                ) : null}
+              </WorkspaceBreadcrumbItem>
+            ) : null}
           </WorkspaceBreadcrumb>
         ) : (
           <WorkspaceBreadcrumb ariaLabel="Pull requests breadcrumb">
@@ -210,8 +223,29 @@ export function PullRequestsColumn({
             </WorkspaceBreadcrumbItem>
           </WorkspaceBreadcrumb>
         )}
+        <ToggleGroup
+          aria-label="Pull request view"
+          variant="segmented"
+          value={[view]}
+          onValueChange={(next) => {
+            const value = next[0];
+            if (value === "requests" || value === "queue") onView(value);
+          }}
+        >
+          <Toggle value="requests">Requests</Toggle>
+          <Toggle value="queue">
+            Merge queue
+            {queueCount === null ? null : (
+              <span
+                className={queueParked ? MERGE_QUEUE_COUNT_BADGE_PARKED : MERGE_QUEUE_COUNT_BADGE}
+              >
+                {queueCount}
+              </span>
+            )}
+          </Toggle>
+        </ToggleGroup>
         <div className="min-w-0 flex-1" />
-        {condensed ? (
+        {condensed && view === "requests" ? (
           <div ref={topbarSearchRef} className="flex shrink items-center gap-1.5">
             <ExpandableSearch
               searchInput={searchInput}
@@ -233,49 +267,55 @@ export function PullRequestsColumn({
         className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto"
       >
         <WorkspacePageContainer width="expanded" className="min-h-full gap-4">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <ToggleGroup
-                aria-label="Pull request involvement"
-                variant="segmented"
-                value={[involvement]}
-                onValueChange={(next) => {
-                  const value = next[0];
-                  if (value) onInvolvement(value as PullRequestInvolvement);
-                }}
-              >
-                {INVOLVEMENT_TABS.map((option) => (
-                  <Toggle key={option.value} value={option.value}>
-                    {option.label}
-                  </Toggle>
-                ))}
-              </ToggleGroup>
-              <div className="min-w-0 flex-1" />
-              {!condensed ? (
-                <PullRequestRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-              ) : null}
-            </div>
-            <div ref={inFlowSearchRef} className="flex flex-wrap items-center gap-2">
-              <div className="min-w-0 basis-full @lg/pr-list:basis-0 @lg/pr-list:flex-1">
-                {searchInput}
+          {view === "queue" ? (
+            queueBody
+          ) : (
+            <>
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <ToggleGroup
+                    aria-label="Pull request involvement"
+                    variant="segmented"
+                    value={[involvement]}
+                    onValueChange={(next) => {
+                      const value = next[0];
+                      if (value) onInvolvement(value as PullRequestInvolvement);
+                    }}
+                  >
+                    {INVOLVEMENT_TABS.map((option) => (
+                      <Toggle key={option.value} value={option.value}>
+                        {option.label}
+                      </Toggle>
+                    ))}
+                  </ToggleGroup>
+                  <div className="min-w-0 flex-1" />
+                  {!condensed ? (
+                    <PullRequestRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                  ) : null}
+                </div>
+                <div ref={inFlowSearchRef} className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-0 basis-full @lg/pr-list:basis-0 @lg/pr-list:flex-1">
+                    {searchInput}
+                  </div>
+                  {sortMenu}
+                  {filtersMenu}
+                  <PullRequestCompactFilterMenu
+                    label="Filter by provider"
+                    outlined
+                    iconOnly={host !== undefined}
+                    triggerIcon={<Plug2Icon aria-hidden className="size-4" />}
+                    triggerLabel="All"
+                    value={host ?? ""}
+                    options={hostMenuOptions}
+                    onChange={(next) => onHost(next === "" ? undefined : next)}
+                  />
+                </div>
+                <div ref={markerRef} aria-hidden className="-mt-3 h-px w-full" />
               </div>
-              {sortMenu}
-              {filtersMenu}
-              <PullRequestCompactFilterMenu
-                label="Filter by provider"
-                outlined
-                iconOnly={host !== undefined}
-                triggerIcon={<Plug2Icon aria-hidden className="size-4" />}
-                triggerLabel="All"
-                value={host ?? ""}
-                options={hostMenuOptions}
-                onChange={(next) => onHost(next === "" ? undefined : next)}
-              />
-            </div>
-            <div ref={markerRef} aria-hidden className="-mt-3 h-px w-full" />
-          </div>
 
-          {listBody}
+              {listBody}
+            </>
+          )}
         </WorkspacePageContainer>
       </div>
     </div>

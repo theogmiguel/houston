@@ -1,7 +1,15 @@
 //! Whether a channel's v1 daemon still runs: its `daemon.json`, read and never written,
-//! names a live process whose image is `houston-core`. Nothing here signals a process.
+//! names a live process whose image is `houston-core`. `stop` signals only that verified pid,
+//! and only after the caller's units did not stop it.
 
+use crate::sys::pid::{self, Signal, SignalOutcome};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+/// `systemctl stop` waits for the unit, so this only needs to outlast a process that is
+/// already on its way out. A daemon that ignores SIGTERM is reported, never SIGKILLed.
+const STOP_TIMEOUT: Duration = Duration::from_secs(5);
+const STOP_POLL: Duration = Duration::from_millis(50);
 
 /// The PID and the `daemon.json` that names it, when that process is v1's daemon.
 pub fn running(channel_dir: &Path) -> Option<(u32, PathBuf)> {
@@ -10,6 +18,45 @@ pub fn running(channel_dir: &Path) -> Option<(u32, PathBuf)> {
     let record: serde_json::Value = serde_json::from_str(&text).ok()?;
     let pid = u32::try_from(record.get("pid")?.as_u64()?).ok()?;
     is_v1_daemon(pid).then_some((pid, path))
+}
+
+/// Stops the daemon named by `daemon.json` when no unit answered. The record and image are
+/// verified as in `running`, and only SIGTERM is sent; v1's supervisor exits once its daemon
+/// is gone, so it is never signalled directly.
+pub fn stop(channel_dir: &Path) -> Result<Option<String>, String> {
+    let Some((pid, record)) = running(channel_dir) else {
+        return Ok(None);
+    };
+    match pid::signal_process_checked(pid, Signal::Term) {
+        Ok(SignalOutcome::Delivered | SignalOutcome::NoSuchProcess) => {}
+        Err(error) => {
+            return Err(format!(
+                "could not stop the Houston 1 daemon (pid {pid}, named by {}): {error}",
+                record.display()
+            ));
+        }
+    }
+    let deadline = Instant::now() + STOP_TIMEOUT;
+    while process_alive(pid) {
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "the Houston 1 daemon (pid {pid}, named by {}) is still running {:?} after \
+                 SIGTERM; quit Houston 1 or stop its unit manually, then restart Houston",
+                record.display(),
+                STOP_TIMEOUT
+            ));
+        }
+        std::thread::sleep(STOP_POLL);
+    }
+    Ok(Some(format!(
+        "stopped the Houston 1 daemon (pid {pid}, named by {}); its supervisor exits when the \
+         daemon it supervises is gone",
+        record.display()
+    )))
+}
+
+fn process_alive(pid: u32) -> bool {
+    pid::process_is_alive(pid) && is_v1_daemon(pid)
 }
 
 /// An image that cannot be read (another user's process) counts as v1's daemon: standing

@@ -519,6 +519,40 @@ const NightShift = Effect.gen(function* () {
   `;
 });
 
+// v2 keeps routines on the generic scheduled-tasks feature, so the night shift and harness review
+// tables are dropped; their ids above stay recorded and unchanged.
+const DropNightShiftAndHarnessReview = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  for (const index of [
+    "idx_houston_harness_reviews_active",
+    "idx_houston_harness_reviews_project",
+    "idx_houston_harness_reviews_thread",
+    "idx_houston_night_runs_live",
+    "idx_houston_night_runs_project",
+    "idx_houston_night_entries_project",
+  ]) {
+    yield* sql`DROP INDEX IF EXISTS ${sql(index)}`;
+  }
+  for (const table of [
+    "houston_harness_settings",
+    "houston_harness_reviews",
+    "houston_harness_findings",
+    "houston_harness_decisions",
+    "houston_harness_finding_tasks",
+    "houston_harness_verifications",
+    "houston_defects",
+    "houston_harness_import",
+    "houston_night_shift_settings",
+    "houston_night_runs",
+    "houston_night_crew",
+    "houston_night_entries",
+    "houston_night_pushes",
+    "houston_night_import",
+  ]) {
+    yield* sql`DROP TABLE IF EXISTS ${sql(table)}`;
+  }
+});
+
 // Task runs: the last thread event they applied, so a restart replays what a crash left unapplied.
 const TaskRunsCursor = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -725,6 +759,7 @@ const houstonMigrationEntries = [
   [7, "HarnessReview", HarnessReview],
   [8, "SlackIntake", SlackIntake],
   [9, "NightShift", NightShift],
+  [10, "DropNightShiftAndHarnessReview", DropNightShiftAndHarnessReview],
 ] as const;
 
 // Ids land in merge order, so a database can record a higher id before a lower one; every

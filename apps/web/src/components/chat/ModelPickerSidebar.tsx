@@ -7,15 +7,31 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import {
   isProviderInstancePickerReady,
+  providerInstanceReadinessReason,
   shouldShowInstanceBadge,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
+import { formatReadinessReset } from "../settings/providerStatus";
+
+/** A usage window's reset time, appended to the shared readiness label when it has one. */
+function readinessReason(entry: ProviderInstanceEntry): string | null {
+  const reason = providerInstanceReadinessReason(entry);
+  const readiness = entry.snapshot.readiness;
+  if (reason === null || readiness?.state !== "outOfUsage" || readiness.resetsAt === null) {
+    return reason;
+  }
+  return `${reason} · ${formatReadinessReset(readiness.resetsAt)}`;
+}
 
 function describeUnavailableInstance(entry: ProviderInstanceEntry): string {
   const label = entry.displayName;
   // An unavailable instance (a driver this build lacks or the policy leaves out) says why instead.
   if ((!entry.enabled && entry.isAvailable) || entry.status === "disabled") {
     return `${label}: Disabled in settings.`;
+  }
+  const readiness = readinessReason(entry);
+  if (readiness !== null) {
+    return `${label}: ${readiness}.`;
   }
   if (entry.status === "ready" && entry.isAvailable) {
     return label;
@@ -30,6 +46,10 @@ function describeUnavailableInstance(entry: ProviderInstanceEntry): string {
 function unavailableInstanceReason(entry: ProviderInstanceEntry): string | null {
   if (!entry.enabled || entry.status === "disabled") {
     return "Disabled";
+  }
+  const readiness = readinessReason(entry);
+  if (readiness !== null) {
+    return readiness;
   }
   if (entry.status === "ready" && entry.isAvailable) {
     return null;

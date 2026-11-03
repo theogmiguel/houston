@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { createPreviewStreamClient, type PreviewStreamControl } from "./serverBrowserStream.ts";
+import {
+  createPreviewStreamClient,
+  previewStreamHostSetupMessage,
+  previewStreamInstallPercent,
+  type PreviewStreamControl,
+} from "./serverBrowserStream.ts";
 
 class FakeSocket extends EventTarget {
   static readonly OPEN = 1;
@@ -163,6 +168,204 @@ describe("preview stream agent pointer", () => {
       x: 140,
       y: 50,
       sequence: 2,
+    });
+  });
+});
+
+describe("preview stream element picking", () => {
+  beforeEach(() => vi.stubGlobal("WebSocket", FakeSocket));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("reports a picked element with its bounds and screenshot", () => {
+    const onPickedElement = vi.fn();
+    const onPickCancelled = vi.fn();
+    createPreviewStreamClient(target, {
+      onFrame: vi.fn(),
+      onPickedElement,
+      onPickCancelled,
+      onViewport: vi.fn(),
+      onConnectedChange: vi.fn(),
+      onUnauthorized: vi.fn(),
+    });
+    const payload = {
+      pageUrl: "https://example.test/",
+      pageTitle: "Example",
+      tagName: "BUTTON",
+      selector: "#go",
+      htmlPreview: '<button id="go">Go</button>',
+      componentName: null,
+      source: null,
+      stack: [],
+      styles: "display: block",
+      pickedAt: "2026-01-01T00:00:00.000Z",
+    };
+    FakeSocket.current.message(
+      JSON.stringify({
+        type: "pickedElement",
+        payload,
+        rect: { x: 1, y: 2, width: 30, height: 40 },
+        screenshot: { dataUrl: "data:image/png;base64,AA==", width: 30, height: 40 },
+      }),
+    );
+    expect(onPickedElement).toHaveBeenCalledExactlyOnceWith({
+      payload,
+      rect: { x: 1, y: 2, width: 30, height: 40 },
+      screenshot: { dataUrl: "data:image/png;base64,AA==", width: 30, height: 40 },
+    });
+    FakeSocket.current.message(JSON.stringify({ type: "pickCancelled" }));
+    expect(onPickCancelled).toHaveBeenCalledOnce();
+  });
+
+  it("ignores a picked element with malformed bounds", () => {
+    const onPickedElement = vi.fn();
+    createPreviewStreamClient(target, {
+      onFrame: vi.fn(),
+      onPickedElement,
+      onViewport: vi.fn(),
+      onConnectedChange: vi.fn(),
+      onUnauthorized: vi.fn(),
+    });
+    FakeSocket.current.message(
+      JSON.stringify({ type: "pickedElement", payload: {}, rect: { x: 1 } }),
+    );
+    expect(onPickedElement).not.toHaveBeenCalled();
+  });
+});
+
+describe("preview stream action confirmation", () => {
+  beforeEach(() => vi.stubGlobal("WebSocket", FakeSocket));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("reports the pending action and lets a denied confirmation reply without control", () => {
+    const onConfirmation = vi.fn();
+    const client = createPreviewStreamClient(target, {
+      onFrame: vi.fn(),
+      onConfirmation,
+      onViewport: vi.fn(),
+      onConnectedChange: vi.fn(),
+      onUnauthorized: vi.fn(),
+    });
+    FakeSocket.current.message(
+      JSON.stringify({
+        type: "control",
+        canOperate: true,
+        controller: "agent",
+        generation: 1,
+        dialog: null,
+      }),
+    );
+    FakeSocket.current.message(
+      JSON.stringify({
+        type: "confirmation",
+        id: "confirm-1",
+        origin: "https://example.test",
+        action: "click",
+        pageUrl: "https://example.test/account",
+        text: null,
+        element: { tagName: "BUTTON", text: "Delete", selector: "#delete" },
+        rect: { x: 1, y: 2, width: 30, height: 40 },
+      }),
+    );
+    expect(onConfirmation).toHaveBeenCalledExactlyOnceWith({
+      id: "confirm-1",
+      origin: "https://example.test",
+      action: "click",
+      pageUrl: "https://example.test/account",
+      text: null,
+      element: { tagName: "BUTTON", text: "Delete", selector: "#delete" },
+      rect: { x: 1, y: 2, width: 30, height: 40 },
+    });
+    expect(
+      client.send({
+        type: "confirmationResponse",
+        id: "confirm-1",
+        approved: false,
+        trust: false,
+      }),
+    ).toBe(true);
+    expect(FakeSocket.current.sent.at(-1)).toBe(
+      JSON.stringify({
+        type: "confirmationResponse",
+        id: "confirm-1",
+        approved: false,
+        trust: false,
+      }),
+    );
+  });
+  describe("preview stream browser install", () => {
+    beforeEach(() => vi.stubGlobal("WebSocket", FakeSocket));
+    afterEach(() => vi.unstubAllGlobals());
+
+    const connectWithSetup = () => {
+      const onHostSetup = vi.fn();
+      const client = createPreviewStreamClient(target, {
+        onFrame: vi.fn(),
+        onViewport: vi.fn(),
+        onConnectedChange: vi.fn(),
+        onUnauthorized: vi.fn(),
+        onHostSetup,
+      });
+      return { client, socket: FakeSocket.current, onHostSetup };
+    };
+
+    const close = (socket: FakeSocket, code: number, reason: string) => {
+      socket.dispatchEvent(Object.assign(new Event("close"), { code, reason }));
+    };
+
+    it("reports download progress and keeps reconnecting while Chrome installs", () => {
+      const { client, socket, onHostSetup } = connectWithSetup();
+      close(
+        socket,
+        4503,
+        JSON.stringify({
+          need: "installing",
+          downloadedBytes: 50_000_000,
+          totalBytes: 126_922_702,
+          unpacking: false,
+        }),
+      );
+      expect(onHostSetup).toHaveBeenCalledWith({
+        need: "installing",
+        downloadedBytes: 50_000_000,
+        totalBytes: 126_922_702,
+        unpacking: false,
+      });
+      expect(previewStreamInstallPercent(onHostSetup.mock.calls[0]![0])).toBe(39);
+      client.stop();
+    });
+
+    it("names a failed install and an unsupported platform", () => {
+      const { client, socket, onHostSetup } = connectWithSetup();
+      close(
+        socket,
+        4503,
+        JSON.stringify({
+          need: "install-failed",
+          detail: "The download from storage.googleapis.com failed.",
+        }),
+      );
+      expect(onHostSetup).toHaveBeenCalledWith({
+        need: "install-failed",
+        detail: "The download from storage.googleapis.com failed.",
+      });
+      expect(previewStreamHostSetupMessage(onHostSetup.mock.calls[0]![0])).toContain(
+        "The download from storage.googleapis.com failed.",
+      );
+      client.stop();
+    });
+
+    it("describes each setup state", () => {
+      expect(
+        previewStreamHostSetupMessage({
+          need: "installing",
+          downloadedBytes: 0,
+          totalBytes: 0,
+          unpacking: true,
+        }),
+      ).toContain("unpacking");
+      expect(
+        previewStreamHostSetupMessage({ need: "unsupported", platform: "linux", arch: "riscv64" }),
+      ).toContain("linux-riscv64");
     });
   });
 });

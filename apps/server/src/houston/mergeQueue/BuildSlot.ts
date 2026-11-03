@@ -1,5 +1,5 @@
 // The server's one verification slot, across projects: two verifications never run at once on
-// this machine. Night shift's port takes the same slot.
+// this machine.
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

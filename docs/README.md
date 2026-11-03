@@ -8,23 +8,26 @@ For an installed build, use the documentation at its version tag from the
 
 ## Using Houston
 
-- [Installing Houston](user/install.md) — requirements, the desktop app, and what Houston
-  installs into each agent CLI (and how to undo it)
-- [Panes and grids](user/panes-and-grids.md) — workspaces, sessions, splits, scrollback
-- [Agent status](user/agent-status.md) — how Houston knows what an agent is doing, and
-  Settings ▸ Agents
-- [Context](user/context.md) — the pane-header indicator that shows context use, which
-  providers it covers, and how to hide it
-- [Tasks](user/tasks.md) — a global local backlog, workspace access, execution and review
-- [MCP servers](user/connections.md) — agent configuration and connection checks in Settings
-- [Changes](user/changes.md) — the git surface
-- [Files, editor and browser panes](user/files-editor-browser.md) — the three non-terminal
-  pane types, and the browser pane's consent model
-- [Usage](user/usage.md) — token and cost figures, and what they do not cover
-- [Keybindings](user/keybindings.md) — what is rebindable, and passing keys through
-- [Appearance](user/appearance.md) — themes, the window background, terminal settings
-- [Notifications](user/notifications.md) — turn completion and input notices, sound and platform limits
-- [Updating Houston](user/updating.md) — the update check, and the signed click that installs
+- [Installing Houston](user/install.md) — requirements, the desktop app, providers and first
+  run
+- [Threads and grids](user/threads-and-grids.md) — projects, threads, grids, the sidebar and
+  agent-to-agent work
+- [The right panel](user/right-panel.md) — Files, Diff, Browser, pull requests, side chat and
+  the browser's consent model
+- [Agent status](user/agent-status.md) — how Houston reports agent state and provider
+  readiness
+- [Context](user/context.md) — where a thread's context use is shown, and what it reads
+- [Tasks](user/tasks.md) — the queue, projects, sources, planning and handback
+- [Settings](user/settings.md) — every settings page and what it controls
+- [Environments and task sources](user/connections.md) — machines, access, Slack, GitHub
+  issues, Notion and secrets
+- [Changes](user/changes.md) — the Git surface, branches, worktrees and stashes
+- [Pull requests](user/pull-requests.md) — requests, review, checks and the merge queue
+- [Usage](user/usage.md) — token, cost and limit figures, and what they do not cover
+- [Keybindings](user/keybindings.md) — defaults, conditions and terminal keys
+- [Appearance](user/appearance.md) — themes, typography, chat and diff settings
+- [Notifications](user/notifications.md) — thread and in-app notices
+- [Updating Houston](user/updating.md) — the update check, and the one-time Houston 1 import
 
 ## Working on Houston
 

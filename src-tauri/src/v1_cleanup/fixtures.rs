@@ -670,6 +670,12 @@ impl FakeDaemon {
     pub fn pid(&self) -> u32 {
         self.0.id()
     }
+
+    /// Signals and reaps the stand-in, as v1's supervisor reaps the daemon it started.
+    pub fn terminate(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
 }
 
 impl Drop for FakeDaemon {

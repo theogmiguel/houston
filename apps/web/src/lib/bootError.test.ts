@@ -1,72 +1,7 @@
-import type {
-  HostBridge,
-  DesktopCliCommandState,
-  DesktopUpdateState,
-} from "@houston-app/contracts";
-import { describe, expect, it, vi } from "vite-plus/test";
+import type { DesktopUpdateState } from "@houston-app/contracts";
+import { describe, expect, it } from "vite-plus/test";
 
-import {
-  type BootErrorEnvironment,
-  buildErrorReport,
-  resolveTriageCommand,
-  updateActionFor,
-} from "./bootError";
-
-const desktopWith = (getState: () => Promise<DesktopCliCommandState>) =>
-  ({ cliCommand: { getState } }) as unknown as HostBridge;
-
-const notOnPath = (launcherPath: string | null): DesktopCliCommandState => ({
-  supported: launcherPath !== null,
-  installedPath: null,
-  onPath: false,
-  launcherPath,
-});
-
-describe("resolveTriageCommand", () => {
-  it("prefers houston on PATH, then the desktop launcher", async () => {
-    const onPath = { ...notOnPath("/home/me/.houston/bin/houston"), onPath: true };
-    await expect(resolveTriageCommand(desktopWith(async () => onPath))).resolves.toBe(
-      "houston triage",
-    );
-    await expect(
-      resolveTriageCommand(desktopWith(async () => notOnPath("/home/me/.houston/bin/houston"))),
-    ).resolves.toBe("/home/me/.houston/bin/houston triage");
-  });
-
-  it("quotes launcher paths for the shell that runs them", async () => {
-    await expect(
-      resolveTriageCommand(
-        desktopWith(async () => notOnPath("/Users/O'Neil/.houston/bin/houston")),
-      ),
-    ).resolves.toBe(`'/Users/O'"'"'Neil/.houston/bin/houston' triage`);
-    await expect(
-      resolveTriageCommand(
-        desktopWith(async () => notOnPath("C:\\Users\\Me\\.houston\\bin\\houston.cmd")),
-      ),
-    ).resolves.toBe("C:\\Users\\Me\\.houston\\bin\\houston.cmd triage");
-    await expect(
-      resolveTriageCommand(
-        desktopWith(async () => notOnPath("C:\\Users\\Jo O'Neil\\.houston\\bin\\houston.cmd")),
-      ),
-    ).resolves.toBe("& 'C:\\Users\\Jo O''Neil\\.houston\\bin\\houston.cmd' triage");
-  });
-
-  it("falls back to the installed houston CLI without a usable desktop launcher", async () => {
-    using _warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    await expect(resolveTriageCommand(undefined)).resolves.toBe("houston triage");
-    await expect(resolveTriageCommand({} as HostBridge)).resolves.toBe("houston triage");
-    await expect(resolveTriageCommand(desktopWith(async () => notOnPath(null)))).resolves.toBe(
-      "houston triage",
-    );
-    const staleWindowsPathEntry = { ...notOnPath(null), supported: true, onPath: true };
-    await expect(
-      resolveTriageCommand(desktopWith(async () => staleWindowsPathEntry)),
-    ).resolves.toBe("houston triage");
-    await expect(
-      resolveTriageCommand(desktopWith(() => Promise.reject(new Error("ipc closed")))),
-    ).resolves.toBe("houston triage");
-  });
-});
+import { type BootErrorEnvironment, buildErrorReport, updateActionFor } from "./bootError";
 
 const environment: BootErrorEnvironment = {
   version: "0.1.3-nightly.20261026.3707",

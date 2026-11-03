@@ -1535,6 +1535,90 @@ async fn read_capture_under(state_dir: &Path, path: &str) -> Result<String, Stri
     Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
 }
 
+/// A capture nobody read within a day is an interrupted paste; the read deletes it on success, so
+/// this retention only bounds crash leftovers instead of leaving screenshots on disk forever.
+const PASTE_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+
+#[tauri::command]
+pub async fn fs_delete_capture(path: String) -> Result<(), String> {
+    let state_dir = crate::sys::paths::config_dir()
+        .map_err(|e| format!("cannot resolve state directory: {e}"))?;
+    delete_capture_under(&state_dir, &path).await
+}
+
+async fn delete_capture_under(state_dir: &Path, path: &str) -> Result<(), String> {
+    let file = capture_path_within(state_dir, "pastes", path)?;
+    match tokio::fs::remove_file(&file).await {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!(
+            "fs_delete_capture: cannot delete {file}: {error}",
+            file = file.display()
+        )),
+    }
+}
+
+/// Runs once at startup. A failed sweep is logged, never fatal: a stale capture costs disk, not
+/// functionality.
+pub(crate) async fn sweep_stale_pastes() {
+    let Ok(state_dir) = crate::sys::paths::config_dir() else {
+        return;
+    };
+    if let Err(error) = sweep_stale_pastes_under(&state_dir, PASTE_RETENTION).await {
+        eprintln!("houston-tauri: could not sweep old pasted captures: {error}");
+    }
+}
+
+async fn sweep_stale_pastes_under(state_dir: &Path, max_age: Duration) -> Result<usize, String> {
+    let pastes = state_dir.join("pastes");
+    let mut read_dir = match tokio::fs::read_dir(&pastes).await {
+        Ok(read_dir) => read_dir,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => {
+            return Err(format!(
+                "cannot read the pastes directory {path}: {error}",
+                path = pastes.display()
+            ))
+        }
+    };
+    let now = std::time::SystemTime::now();
+    let mut removed = 0;
+    while let Some(entry) = read_dir.next_entry().await.map_err(|error| {
+        format!(
+            "cannot list the pastes directory {path}: {error}",
+            path = pastes.display()
+        )
+    })? {
+        let file_name = entry.file_name();
+        if Path::new(&file_name)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            != Some("png")
+        {
+            continue;
+        }
+        let metadata = match entry.metadata().await {
+            Ok(metadata) => metadata,
+            Err(_) => continue,
+        };
+        if !metadata.is_file() {
+            continue;
+        }
+        let old_enough = metadata
+            .modified()
+            .ok()
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age >= max_age);
+        if !old_enough {
+            continue;
+        }
+        if tokio::fs::remove_file(entry.path()).await.is_ok() {
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
 pub(crate) async fn save_bytes_under(
     dir_name: &str,
     ext: &str,
@@ -1953,6 +2037,94 @@ pub async fn fs_copy_dropped_file(
     let file = copy_dropped_file_under_base(&state_dir, &name, &bytes).await?;
     register_allowed_root(&file.to_string_lossy(), state.inner()).await?;
     Ok(file.to_string_lossy().into_owned())
+}
+
+// Matches the renderer's per-file attachment limit; a bigger file is refused here so it never
+// crosses the bridge as base64 first.
+const MAX_DROPPED_FILE_BYTES: u64 = 50 * 1024 * 1024;
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DroppedPath {
+    pub name: String,
+    pub directory: bool,
+    pub base64: Option<String>,
+}
+
+/// Reads a path from an OS drop or clipboard URI list, but only one the host itself saw: a path
+/// recorded from the webview's drag signal or on the system clipboard now. A renderer that names
+/// an arbitrary path reads nothing.
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub async fn fs_read_dropped_path(
+    path: String,
+    allowlist: State<'_, Arc<crate::dropped_paths::DropAllowlist>>,
+    app: tauri::AppHandle,
+) -> Result<DroppedPath, String> {
+    crate::dropped_paths::authorize(&path, allowlist.inner().as_ref(), &app).await?;
+    read_dropped_path(path).await
+}
+
+/// WebView2 exposes no drop to the host, so the read keeps the direct path it had.
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub async fn fs_read_dropped_path(path: String) -> Result<DroppedPath, String> {
+    read_dropped_path(path).await
+}
+
+/// Reads an authorized file or folder path; the read is capped and limited to regular files.
+async fn read_dropped_path(path: String) -> Result<DroppedPath, String> {
+    use base64::Engine;
+
+    let file = PathBuf::from(&path);
+    let metadata = tokio::fs::metadata(&file).await.map_err(|e| {
+        format!("cannot read the dropped path {path:?}: expected a file or folder the user dropped; {e}")
+    })?;
+    let name = file
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_string();
+    if metadata.is_dir() {
+        return Ok(DroppedPath {
+            name,
+            directory: true,
+            base64: None,
+        });
+    }
+    if !metadata.is_file() {
+        return Err(format!(
+            "the dropped path {path:?} is not a regular file or folder (it is {kind}); Houston cannot attach it",
+            kind = describe_file_type(&metadata)
+        ));
+    }
+    if metadata.len() > MAX_DROPPED_FILE_BYTES {
+        return Err(format!(
+            "the dropped file {path:?} is {size} bytes, over the {MAX_DROPPED_FILE_BYTES}-byte attachment limit; it was not read",
+            size = metadata.len()
+        ));
+    }
+
+    use tokio::io::AsyncReadExt;
+    let handle = tokio::fs::File::open(&file)
+        .await
+        .map_err(|e| format!("cannot open the dropped file {path:?}: {e}"))?;
+    let mut bytes = Vec::new();
+    handle
+        .take(MAX_DROPPED_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .await
+        .map_err(|e| format!("cannot read the dropped file {path:?}: {e}"))?;
+    if bytes.len() as u64 > MAX_DROPPED_FILE_BYTES {
+        return Err(format!(
+            "the dropped file {path:?} grew past the {MAX_DROPPED_FILE_BYTES}-byte attachment limit while being read; it was discarded"
+        ));
+    }
+    Ok(DroppedPath {
+        name,
+        directory: false,
+        base64: Some(base64::engine::general_purpose::STANDARD.encode(&bytes)),
+    })
 }
 
 #[cfg(unix)]
@@ -4746,6 +4918,134 @@ mod tests {
             tokio::fs::read(&slot).await.unwrap(),
             b"THE SLOT",
             "must read the real slot's bytes, never a decoy"
+        );
+    }
+    #[tokio::test]
+    async fn reads_a_dropped_file_as_base64_with_its_name() {
+        use base64::Engine;
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("notes.md");
+        tokio::fs::write(&file, b"# notes").await.unwrap();
+
+        let dropped = super::read_dropped_path(file.to_string_lossy().into_owned())
+            .await
+            .expect("a regular file is readable");
+        assert_eq!(dropped.name, "notes.md");
+        assert!(!dropped.directory);
+        assert_eq!(
+            dropped.base64,
+            Some(base64::engine::general_purpose::STANDARD.encode(b"# notes"))
+        );
+    }
+
+    #[tokio::test]
+    async fn reads_a_dropped_folder_without_bytes() {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("photos");
+        tokio::fs::create_dir(&folder).await.unwrap();
+
+        let dropped = super::read_dropped_path(folder.to_string_lossy().into_owned())
+            .await
+            .expect("a folder is readable");
+        assert_eq!(dropped.name, "photos");
+        assert!(dropped.directory);
+        assert_eq!(dropped.base64, None);
+    }
+
+    #[tokio::test]
+    async fn refuses_a_dropped_file_over_the_cap_naming_limit_and_size() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("huge.bin");
+        tokio::fs::File::create(&file)
+            .await
+            .unwrap()
+            .set_len(super::MAX_DROPPED_FILE_BYTES + 1)
+            .await
+            .unwrap();
+
+        let error = super::read_dropped_path(file.to_string_lossy().into_owned())
+            .await
+            .expect_err("over the cap");
+        assert!(
+            error.contains(&super::MAX_DROPPED_FILE_BYTES.to_string()),
+            "{error}"
+        );
+        assert!(error.contains("huge.bin"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn refuses_a_dropped_path_that_does_not_exist() {
+        let root = tempfile::tempdir().unwrap();
+        let missing = root.path().join("missing.txt");
+        let error = super::read_dropped_path(missing.to_string_lossy().into_owned())
+            .await
+            .expect_err("missing path");
+        assert!(error.contains("missing.txt"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn deletes_only_a_capture_directly_under_pastes() {
+        let base = tempfile::tempdir().unwrap();
+        let pastes = base.path().join("pastes");
+        tokio::fs::create_dir_all(&pastes).await.unwrap();
+        let capture = pastes.join("shot.png");
+        tokio::fs::write(&capture, b"png").await.unwrap();
+
+        super::delete_capture_under(base.path(), capture.to_str().unwrap())
+            .await
+            .expect("the capture is deleted");
+        assert!(!capture.exists());
+
+        super::delete_capture_under(base.path(), capture.to_str().unwrap())
+            .await
+            .expect("deleting a missing capture is quiet");
+    }
+
+    #[tokio::test]
+    async fn a_capture_outside_the_pastes_directory_cannot_be_deleted() {
+        let base = tempfile::tempdir().unwrap();
+        let outside = base.path().join("outside.png");
+        tokio::fs::write(&outside, b"png").await.unwrap();
+
+        let error = super::delete_capture_under(base.path(), outside.to_str().unwrap())
+            .await
+            .expect_err("inside pastes only");
+        assert!(error.contains("pastes"), "{error}");
+        assert!(outside.exists());
+    }
+
+    #[tokio::test]
+    async fn sweeps_only_stale_png_captures() {
+        let base = tempfile::tempdir().unwrap();
+        let pastes = base.path().join("pastes");
+        tokio::fs::create_dir_all(&pastes).await.unwrap();
+        let stale = pastes.join("old.png");
+        let fresh = pastes.join("new.png");
+        let other = pastes.join("notes.txt");
+        tokio::fs::write(&stale, b"png").await.unwrap();
+        tokio::fs::write(&fresh, b"png").await.unwrap();
+        tokio::fs::write(&other, b"text").await.unwrap();
+
+        let removed = super::sweep_stale_pastes_under(base.path(), std::time::Duration::ZERO)
+            .await
+            .expect("the sweep runs");
+        assert_eq!(
+            removed, 2,
+            "both PNG captures are stale at a zero retention"
+        );
+        assert!(!stale.exists());
+        assert!(!fresh.exists());
+        assert!(other.exists(), "non-captures are never swept");
+    }
+
+    #[tokio::test]
+    async fn the_sweep_is_quiet_when_the_pastes_directory_does_not_exist() {
+        let base = tempfile::tempdir().unwrap();
+        assert_eq!(
+            super::sweep_stale_pastes_under(base.path(), std::time::Duration::ZERO)
+                .await
+                .unwrap(),
+            0
         );
     }
 }

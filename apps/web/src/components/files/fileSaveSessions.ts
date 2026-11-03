@@ -1,6 +1,15 @@
-import { AuthFilesystemWriteScope, type EnvironmentId } from "@houston-app/contracts";
-import { type AtomCommandResult, runAtomCommand } from "@houston-app/client-runtime/state/runtime";
-import { useEffect } from "react";
+import {
+  AuthFilesystemWriteScope,
+  ProjectWriteFileError,
+  type EnvironmentId,
+} from "@houston-app/contracts";
+import {
+  type AtomCommandResult,
+  runAtomCommand,
+  squashAtomCommandFailure,
+} from "@houston-app/client-runtime/state/runtime";
+import * as Schema from "effect/Schema";
+import { useEffect, useSyncExternalStore } from "react";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { projectEnvironment } from "~/state/projects";
@@ -9,7 +18,9 @@ import { environmentSession, readEnvironmentScope, sessionHasScope } from "~/sta
 import { FileSaveCoordinator } from "./fileSaveCoordinator";
 import {
   confirmProjectFileQueryData,
+  getProjectFileRevision,
   getUnsavedProjectFileQueryData,
+  setProjectFileRevision,
 } from "./projectFilesQueryState";
 
 export interface FileSaveTarget {
@@ -25,10 +36,13 @@ export interface FileSaveSessionDeps {
   readonly canPersist: (target: FileSaveTarget) => boolean;
   /** Calls `onWritable` each time the target environment regains write access. */
   readonly subscribeWritable: (target: FileSaveTarget, onWritable: () => void) => () => void;
+  readonly revision: (target: FileSaveTarget) => string | undefined;
   readonly persist: (
     target: FileSaveTarget,
     contents: string,
+    expectedRevision: string | undefined,
   ) => Promise<AtomCommandResult<unknown, unknown>>;
+  readonly onPersisted: (target: FileSaveTarget, result: unknown) => void;
   readonly confirm: (target: FileSaveTarget, contents: string) => boolean;
   readonly readUnsaved: (target: FileSaveTarget) => string | null;
 }
@@ -68,8 +82,22 @@ export function createFileSaveSessions(deps: FileSaveSessionDeps) {
       onPendingChange: (pending) => {
         for (const listener of listeners.keys()) listener(target.relativePath, pending);
       },
-      persist: (contents) => deps.persist(target, contents),
-      onConfirmed: (contents) => deps.confirm(target, contents),
+      currentRevision: () => deps.revision(target),
+      persist: async (contents, expectedRevision) => {
+        const result = await deps.persist(target, contents, expectedRevision);
+        if (result._tag === "Failure" && expectedRevision !== undefined) {
+          const cause = squashAtomCommandFailure(result);
+          if (isProjectWriteFileError(cause) && cause.failure === "stale_revision") {
+            markFileSaveConflict(target);
+          }
+        }
+        return result;
+      },
+      onConfirmed: (contents) => {
+        clearFileSaveConflict(target);
+        return deps.confirm(target, contents);
+      },
+      onPersisted: (result) => deps.onPersisted(target, result),
       onSettled: () => {
         if (!session.flushingOnRelease) return;
         session.flushingOnRelease = false;
@@ -129,12 +157,20 @@ export function createFileSaveSessions(deps: FileSaveSessionDeps) {
       const session = sessions.get(fileSaveKey(target));
       if (session && session.leases > 0) session.coordinator.change(contents);
     },
+    reset(target: FileSaveTarget, contents: string): void {
+      sessions.get(fileSaveKey(target))?.coordinator.reset(contents);
+    },
+    overwrite(target: FileSaveTarget): void {
+      sessions.get(fileSaveKey(target))?.coordinator.overwrite();
+    },
   };
 }
 
 function fileSaveKey({ environmentId, cwd, relativePath }: FileSaveTarget): string {
   return `${environmentId}\u0000${cwd}\u0000${relativePath}`;
 }
+
+const isProjectWriteFileError = Schema.is(ProjectWriteFileError);
 
 const fileSaveSessions = createFileSaveSessions({
   debounceMs: 500,
@@ -150,11 +186,25 @@ const fileSaveSessions = createFileSaveSessions({
       },
     );
   },
-  persist: ({ environmentId, cwd, relativePath }, contents) =>
+  revision: ({ environmentId, cwd, relativePath }) =>
+    getProjectFileRevision(environmentId, cwd, relativePath),
+  persist: ({ environmentId, cwd, relativePath }, contents, expectedRevision) =>
     runAtomCommand(appAtomRegistry, projectEnvironment.writeFile, {
       environmentId,
-      input: { cwd, relativePath, contents },
+      input: {
+        cwd,
+        relativePath,
+        contents,
+        ...(expectedRevision === undefined ? {} : { expectedRevision }),
+      },
     }),
+  onPersisted: ({ environmentId, cwd, relativePath }, result) => {
+    if (typeof result !== "object" || result === null || !("revision" in result)) return;
+    const revision = result.revision;
+    if (typeof revision === "string" && revision.length > 0) {
+      setProjectFileRevision(environmentId, cwd, relativePath, revision);
+    }
+  },
   confirm: ({ environmentId, cwd, relativePath }, contents) =>
     confirmProjectFileQueryData(environmentId, cwd, relativePath, contents),
   readUnsaved: ({ environmentId, cwd, relativePath }) =>
@@ -175,4 +225,48 @@ export function useFileSaveSession(
 
 export function changeFileSaveSession(target: FileSaveTarget, contents: string): void {
   fileSaveSessions.change(target, contents);
+}
+
+const conflictKeys = new Set<string>();
+const conflictListeners = new Set<() => void>();
+
+function notifyConflictListeners(): void {
+  for (const listener of conflictListeners) listener();
+}
+
+function markFileSaveConflict(target: FileSaveTarget): void {
+  const key = fileSaveKey(target);
+  if (conflictKeys.has(key)) return;
+  conflictKeys.add(key);
+  notifyConflictListeners();
+}
+
+export function clearFileSaveConflict(target: FileSaveTarget): void {
+  if (!conflictKeys.delete(fileSaveKey(target))) return;
+  notifyConflictListeners();
+}
+
+function subscribeFileSaveConflicts(listener: () => void): () => void {
+  conflictListeners.add(listener);
+  return () => conflictListeners.delete(listener);
+}
+
+export function useFileSaveConflict(target: FileSaveTarget): boolean {
+  return useSyncExternalStore(
+    subscribeFileSaveConflicts,
+    () => conflictKeys.has(fileSaveKey(target)),
+    () => false,
+  );
+}
+
+/** Discards the draft in favour of contents another process wrote. */
+export function resetFileSaveSession(target: FileSaveTarget, contents: string): void {
+  clearFileSaveConflict(target);
+  fileSaveSessions.reset(target, contents);
+}
+
+/** Writes the newest draft even though the file changed on disk. */
+export function overwriteFileSaveSession(target: FileSaveTarget): void {
+  clearFileSaveConflict(target);
+  fileSaveSessions.overwrite(target);
 }

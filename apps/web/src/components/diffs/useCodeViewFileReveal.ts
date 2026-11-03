@@ -16,20 +16,41 @@ interface FileRevealHandle {
 export function createCodeViewFileReveal() {
   let viewer: FileRevealHandle | null = null;
   let pending: string | null = null;
+  let pendingLine: { lineNumber: number; side: "additions" | "deletions" } | null = null;
   const flush = () => {
     if (pending === null || viewer === null) return;
     if (!viewer.getInstance() || viewer.getItem(pending) === undefined) return;
-    viewer.scrollTo({ type: "item", id: pending, align: "start" });
+    if (pendingLine === null) {
+      viewer.scrollTo({ type: "item", id: pending, align: "start" });
+    } else {
+      viewer.scrollTo({
+        type: "line",
+        id: pending,
+        lineNumber: pendingLine.lineNumber,
+        side: pendingLine.side,
+        align: "center",
+      });
+    }
     pending = null;
+    pendingLine = null;
   };
   return {
     attach(next: FileRevealHandle | null) {
-      if (viewer !== null && next !== viewer) pending = null;
+      if (viewer !== null && next !== viewer) {
+        pending = null;
+        pendingLine = null;
+      }
       viewer = next;
       flush();
     },
     request(fileKey: string) {
       pending = fileKey;
+      pendingLine = null;
+      flush();
+    },
+    requestLine(fileKey: string, lineNumber: number, side: "additions" | "deletions") {
+      pending = fileKey;
+      pendingLine = { lineNumber, side };
       flush();
     },
     flush,

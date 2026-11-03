@@ -1,3 +1,5 @@
+import { isFileTransfer, transferredPaths } from "../../lib/fileTransfer";
+
 interface WorkspaceFileDragEvent {
   readonly dataTransfer: {
     readonly types: ReadonlyArray<string>;
@@ -8,6 +10,7 @@ interface WorkspaceFileDragEvent {
       webkitGetAsEntry(): { readonly isDirectory: boolean } | null;
     }>;
     dropEffect: string;
+    getData(type: string): string;
   };
   readonly relatedTarget: EventTarget | null;
   readonly currentTarget: {
@@ -19,11 +22,10 @@ interface WorkspaceFileDragEvent {
 interface WorkspaceFileDropHost {
   setDragActive(active: boolean): void;
   addFiles(files: File[]): void;
-  addFolders(folders: File[]): void;
-}
-
-function isFileDrag(event: WorkspaceFileDragEvent): boolean {
-  return event.dataTransfer.types.includes("Files");
+  /** `paths` names the same dropped entries when the drag also carries `text/uri-list`. */
+  addFolders(folders: File[], paths: readonly string[]): void;
+  /** URI-list-only entries: their folder-or-file kind is unknown until the host reads them. */
+  addDroppedPaths?(paths: readonly string[]): void;
 }
 
 function movedWithinDropTarget(event: WorkspaceFileDragEvent): boolean {
@@ -57,30 +59,35 @@ export function splitTransferredFiles(
 export function makeWorkspaceFileDropHandlers(host: WorkspaceFileDropHost) {
   return {
     onDragEnter(event: WorkspaceFileDragEvent) {
-      if (!isFileDrag(event)) return;
+      if (!isFileTransfer(event.dataTransfer)) return;
       event.preventDefault();
       if (movedWithinDropTarget(event)) return;
       host.setDragActive(true);
     },
     onDragOver(event: WorkspaceFileDragEvent) {
-      if (!isFileDrag(event)) return;
+      if (!isFileTransfer(event.dataTransfer)) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
       host.setDragActive(true);
     },
     onDragLeave(event: WorkspaceFileDragEvent) {
-      if (!isFileDrag(event)) return;
+      if (!isFileTransfer(event.dataTransfer)) return;
       event.preventDefault();
       if (movedWithinDropTarget(event)) return;
       host.setDragActive(false);
     },
     onDrop(event: WorkspaceFileDragEvent) {
-      if (!isFileDrag(event)) return;
+      if (!isFileTransfer(event.dataTransfer)) return;
       event.preventDefault();
       host.setDragActive(false);
       const { files, folders } = splitTransferredFiles(event.dataTransfer);
       if (files.length > 0) host.addFiles(files);
-      if (folders.length > 0) host.addFolders(folders);
+      if (folders.length > 0 || files.length > 0) {
+        if (folders.length > 0) host.addFolders(folders, transferredPaths(event.dataTransfer));
+        return;
+      }
+      const paths = transferredPaths(event.dataTransfer);
+      if (paths.length > 0) host.addDroppedPaths?.(paths);
     },
   };
 }

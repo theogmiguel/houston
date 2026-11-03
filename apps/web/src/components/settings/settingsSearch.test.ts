@@ -21,11 +21,6 @@ import {
   type SettingsSearchItem,
 } from "./settingsSearch";
 
-vi.mock("~/env", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("~/env")>()),
-  isSecretsFeatureEnabled: false,
-}));
-
 const ITEMS: ReadonlyArray<SettingsSearchItem> = [
   {
     id: "word-wrap",
@@ -73,9 +68,9 @@ describe("searchSettings", () => {
     }
   });
 
-  it("hides the Secrets page from nav and search while the secrets feature is disabled", () => {
-    expect(SETTINGS_NAV_GROUPS.flatMap((group) => group.paths)).not.toContain("/settings/secrets");
-    expect(searchSettings("1password").map((item) => item.to)).not.toContain("/settings/secrets");
+  it("lists the Secrets page in nav and search", () => {
+    expect(SETTINGS_NAV_GROUPS.flatMap((group) => group.paths)).toContain("/settings/secrets");
+    expect(searchSettings("1password").map((item) => item.to)).toContain("/settings/secrets");
   });
 
   it("matches normalized title substrings", () => {
@@ -104,11 +99,12 @@ describe("searchSettings", () => {
     ).toEqual(["network-access", "connections-environment"]);
   });
 
-  it("hides desktop-only settings from browser search", () => {
-    expect(SETTINGS_SEARCH_ITEMS.some((item) => item.id === "cli-command")).toBe(true);
+  it("has no search entries for removed settings", () => {
+    expect(SETTINGS_SEARCH_ITEMS.some((item) => String(item.id) === "cli-command")).toBe(false);
     expect(searchSettings("houston command").map((item) => item.id)).not.toContain("cli-command");
     expect(searchSettings("wsl")).toEqual([]);
     expect(searchSettings("update track")).toEqual([]);
+    expect(searchSettings("mobile app")).toEqual([]);
   });
 
   it("hides settings whose controls are unavailable", () => {

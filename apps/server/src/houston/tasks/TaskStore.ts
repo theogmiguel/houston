@@ -283,6 +283,7 @@ export const toSummary = (task: TaskRow, inputs: DerivedInputs): HoustonTaskSumm
       runState: openRun?.state ?? null,
     }),
     ready,
+    domainKind: domain?.kind ?? null,
     openRun: openRun === undefined ? null : toRun(openRun),
   };
 };

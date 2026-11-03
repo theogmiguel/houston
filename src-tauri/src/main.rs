@@ -1,17 +1,20 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod app_activation;
 mod app_log;
 mod app_menu;
 mod app_update;
 mod clipboard;
+mod connection_catalog;
 mod dialog;
+#[cfg(target_os = "linux")]
+mod dropped_paths;
 mod fs;
 mod fs_allowlist;
 mod notifications;
 mod provider_auth;
+mod quick_composer;
 mod shell;
-mod shells;
-mod skills;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 mod snapshot;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
@@ -21,7 +24,6 @@ mod sys;
 mod system;
 #[cfg(test)]
 mod test_home;
-mod transfer_open;
 mod tray;
 mod v1_cleanup;
 mod v2_server;
@@ -30,20 +32,11 @@ mod window;
 mod window_state;
 mod wsl;
 
-use shells::ShellEntry;
 #[cfg(debug_assertions)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-#[cfg(debug_assertions)]
 use tauri::webview::PageLoadEvent;
 use tauri::{Emitter, Manager};
-
-#[tauri::command]
-async fn detect_available_shells(
-    cache: tauri::State<'_, shells::ShellsCache>,
-) -> Result<Vec<ShellEntry>, ()> {
-    Ok(shells::detect_available_shells(&cache).await)
-}
 
 const CHANNEL_ENV: &str = crate::sys::paths::CHANNEL_ENV;
 const KNOWN_STANDALONE_FLAGS: &[&str] = &["--print-target"];
@@ -79,8 +72,13 @@ fn reject_unrecognized_args(args: &[String]) -> Result<(), UnrecognizedArgError>
             i += 1;
             continue;
         }
-        // Opening a transfer file with the app passes its path; `transfer_open` reads it.
-        if crate::transfer_open::is_transfer_path(arg) {
+        // `houston <folder>` and a `houston://` deep link both open the running app.
+        if crate::app_activation::is_web_link(arg)
+            || crate::app_activation::is_workspace_argument(
+                arg,
+                &std::env::current_dir().unwrap_or_default(),
+            )
+        {
             i += 1;
             continue;
         }
@@ -179,8 +177,43 @@ fn should_terminate_process(code: i32) -> bool {
 // Per-channel renderer state: without an explicit `data_directory`, Tauri keys the
 // webview's localStorage/cache by the bundle identifier alone, so a dev process
 // silently overwrites the release channel's renderer state.
-fn webview_data_dir_for(state_dir: &std::path::Path) -> std::path::PathBuf {
+pub(crate) fn webview_data_dir_for(state_dir: &std::path::Path) -> std::path::PathBuf {
     state_dir.join("webview")
+}
+
+/// The bootstrap, platform and bridge script every Houston webview needs before the
+/// renderer runs. The quick composer window loads the same app, so it shares this.
+pub(crate) fn v2_initialization_script(app: &tauri::AppHandle) -> String {
+    let host = app.state::<Arc<v2_server::V2Host>>();
+    let snapshot = host
+        .bootstrap_list()
+        .unwrap_or_else(|_| serde_json::json!([]));
+    let status = host.status();
+    let platform = match std::env::consts::OS {
+        "windows" => "win32",
+        "macos" => "darwin",
+        other => other,
+    };
+    format!(
+        "window.__HOUSTON_V2_BOOTSTRAP__ = {};\n\
+         window.__HOUSTON_V2_STATUS__ = {};\n\
+         window.__HOUSTON_V2_PLATFORM__ = {:?};\n\
+         window.__HOUSTON_V2_VERSION__ = {:?};\n\
+         window.__HOUSTON_V2_LOCALE__ = {};\n\
+         window.__HOUSTON_V2_BRANDING__ = {};\n\
+         {}",
+        snapshot,
+        status,
+        platform,
+        env!("CARGO_PKG_VERSION"),
+        serde_json::Value::Null,
+        serde_json::json!({
+            "baseName": "Houston",
+            "stageLabel": crate::app_menu::stage_label(),
+            "displayName": crate::app_menu::display_name(),
+        }),
+        include_str!("v2_bridge.js"),
+    )
 }
 
 fn main() {
@@ -354,24 +387,35 @@ fn main() {
     let wasm_csp_probe_fired = Arc::new(AtomicBool::new(false));
 
     let dbus_id = dbus_id_for(&context.config().identifier, Some(&channel_label));
+    let page_host = Arc::clone(&v2_host);
     let mut builder = tauri::Builder::default();
     builder = builder.manage(Arc::clone(&v2_host));
     builder = builder.manage(Arc::clone(&v2_ssh));
     builder = builder.manage(Arc::clone(&snapshot_host));
     builder = builder.manage(fs_allowlist::AllowedRoots::new());
-    builder = builder.manage(shells::ShellsCache::new());
+    #[cfg(target_os = "linux")]
+    {
+        builder = builder.manage(Arc::new(dropped_paths::DropAllowlist::new()));
+    }
     builder = builder.manage(std::sync::Arc::new(app_update::V2UpdateHandle::new()));
     builder = builder.manage(window::ContextMenuState::default());
     builder = builder.manage(provider_auth::ProviderAuthCallbacks::default());
     builder = builder.manage(app_menu::ZoomState::default());
+    builder = builder.manage(app_menu::QuitConfirmationState::default());
 
-    let launch_transfer = std::env::current_dir()
+    let launch_targets = std::env::current_dir()
         .ok()
-        .and_then(|cwd| transfer_open::file_argument(&args, &cwd));
-    builder = builder.manage(transfer_open::LaunchFile::new(launch_transfer));
+        .map(|cwd| app_activation::launch_targets(&args, &cwd))
+        .unwrap_or_default();
+    builder = builder.manage(app_activation::DeepLinkHost::new(
+        launch_targets.web_links,
+        launch_targets.workspaces,
+    ));
 
     let tray_host = tray::TrayHost::new(state_dir.clone(), tray::probe());
     builder = builder.manage(Arc::clone(&tray_host));
+    let quick_composer_host = quick_composer::QuickComposerHost::new(state_dir.clone());
+    builder = builder.manage(Arc::clone(&quick_composer_host));
 
     // Windows keys the single-instance mutex on the bundle identifier, so a dev
     // app would refuse to start beside the installed release app. Register it only
@@ -382,7 +426,7 @@ fn main() {
             tauri_plugin_single_instance::Builder::new()
                 .dbus_id(dbus_id)
                 .callback(move |app, argv, cwd| {
-                    transfer_open::forward(app, &argv, &cwd);
+                    app_activation::forward(app, &argv, &cwd);
                     eprintln!(
                         "houston-tauri: rejected a second launch on channel \
                          {channel_label:?} (already owned by this instance); focusing the \
@@ -395,20 +439,28 @@ fn main() {
     }
     builder
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         // No `updater:default` permission anywhere: the plugin's own JS commands
         // stay unreachable, and updates run through v2_update_install instead.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            detect_available_shells,
             app_log::system_log_debug,
+            v1_cleanup::v1_cleanup_report,
             app_update::v2_update_state,
             app_update::v2_update_set_channel,
             app_update::v2_update_check,
             app_update::v2_update_download,
             app_update::v2_update_install,
+            app_activation::v2_web_links_set_ready,
+            app_activation::v2_app_activation_set_ready,
+            app_activation::v2_app_activation_complete,
+            connection_catalog::v2_get_connection_catalog,
+            connection_catalog::v2_set_connection_catalog,
             v2_server::v2_local_environment_bootstrap,
             v2_server::v2_local_environment_bearer_token,
             v2_server::v2_server_status,
+            v2_server::v2_server_restart,
+            v2_server::v2_local_environment_invalidate_bearer,
             v2_server::v2_server_exposure_state,
             v2_server::v2_server_set_exposure_mode,
             v2_server::v2_server_set_tailscale_serve,
@@ -447,6 +499,8 @@ fn main() {
             fs::fs_unwatch,
             fs::fs_save_image,
             fs::fs_read_capture,
+            fs::fs_delete_capture,
+            fs::fs_read_dropped_path,
             fs::fs_save_review,
             fs::fs_copy_dropped_file,
             fs::fs_set_window_background,
@@ -457,30 +511,15 @@ fn main() {
             clipboard::clipboard_save_image,
             clipboard::clipboard_read_text,
             dialog::dialog_pick_directory,
-            dialog::dialog_pick_directories,
-            dialog::dialog_pick_file,
-            dialog::dialog_pick_image,
             dialog::dialog_pick_theme_files,
-            dialog::dialog_save_image_url,
-            dialog::dialog_save_transfer,
-            dialog::dialog_pick_transfer,
-            transfer_open::transfer_launch_file,
             shell::shell_open_external,
             shell::shell_show_item_in_folder,
             shell::shell_reveal_item_in_folder,
             shell::shell_open_media_file,
             shell::shell_list_editors,
             shell::shell_open_in_editor,
-            system::system_get_log_path,
-            system::system_third_party_licenses,
-            system::system_get_home_dir,
             system::v2_open_system_settings,
             system::v2_check_system_permission,
-            skills::system_list_skills,
-            skills::system_write_skill,
-            skills::system_delete_skill,
-            skills::system_preview_skill_url,
-            skills::system_install_skill_url,
             window::window_button_layout,
             window::window_close,
             window::window_minimize,
@@ -494,6 +533,7 @@ fn main() {
             window::window_toggle_fullscreen,
             window::window_set_zoom,
             app_menu::window_zoom,
+            app_menu::v2_set_quit_confirmation,
             window::window_focus,
             window::window_set_background_color,
             window::window_start_dragging,
@@ -502,6 +542,10 @@ fn main() {
             tray::tray_state,
             tray::tray_set_keep_in_tray,
             tray::app_quit,
+            quick_composer::quick_composer_status,
+            quick_composer::quick_composer_set_shortcut,
+            quick_composer::quick_composer_open,
+            quick_composer::quick_composer_close,
             wsl::v2::v2_wsl_state,
             wsl::v2::v2_wsl_set_enabled,
             wsl::v2::v2_wsl_set_distro,
@@ -588,56 +632,13 @@ fn main() {
             }
         })
         .setup(move |app| {
+            // Registration shells out to xdg-mime/reg, so it stays off the window's first paint.
+            std::thread::spawn(app_activation::ensure_protocol_registered);
             notifications::start_action_listener(app.handle().clone());
 
-            let host = Arc::clone(&v2_host);
-            match tokio_runtime.block_on(v2_server::ensure_running(&host)) {
-                Ok(running) => eprintln!(
-                    "houston-tauri: v2 server ready at {} (pid {}, {})",
-                    running.origin,
-                    running.pid,
-                    if running.attached {
-                        "attached"
-                    } else {
-                        "spawned detached"
-                    }
-                ),
-                Err(error) => eprintln!(
-                    "houston-tauri: v2 server failed to start: {error}; the window will \
-                     show no local environment"
-                ),
-            }
-            let snapshot = host
-                .bootstrap_list()
-                .unwrap_or_else(|_| serde_json::json!([]));
-            let status = host.status();
-            let monitor = Arc::clone(&host);
-            tokio_runtime.spawn(v2_server::monitor(monitor));
-            let platform = match std::env::consts::OS {
-                "windows" => "win32",
-                "macos" => "darwin",
-                other => other,
-            };
-            let v2_init_script = format!(
-                "window.__HOUSTON_V2_BOOTSTRAP__ = {};\n\
-                 window.__HOUSTON_V2_STATUS__ = {};\n\
-                 window.__HOUSTON_V2_PLATFORM__ = {:?};\n\
-                 window.__HOUSTON_V2_VERSION__ = {:?};\n\
-                 window.__HOUSTON_V2_LOCALE__ = {};\n\
-                 window.__HOUSTON_V2_BRANDING__ = {};\n\
-                 {}",
-                snapshot,
-                status,
-                platform,
-                env!("CARGO_PKG_VERSION"),
-                serde_json::Value::Null,
-                serde_json::json!({
-                    "baseName": "Houston",
-                    "stageLabel": "Dev",
-                    "displayName": "Houston Dev",
-                }),
-                include_str!("v2_bridge.js"),
-            );
+            // The window paints before a slow server start instead of waiting behind it;
+            // the monitor retries a failed first attempt with backoff.
+            let v2_init_script = v2_initialization_script(app.handle());
 
             let window_config = app
                 .config()
@@ -683,6 +684,23 @@ fn main() {
                 .build()
                 .expect("failed to build the main window");
 
+            // WebKitGTK hands the renderer a uri-list drop with no path-bearing `File`, so the
+            // host watches the same native drop to learn which paths the user actually let go of.
+            #[cfg(target_os = "linux")]
+            {
+                let drop_allowlist = app
+                    .state::<Arc<dropped_paths::DropAllowlist>>()
+                    .inner()
+                    .clone();
+                if let Err(err) =
+                    dropped_paths::observe_native_drops(&main_window, drop_allowlist)
+                {
+                    eprintln!(
+                        "houston-tauri: cannot observe native drops ({err}); dropped paths stay unreadable"
+                    );
+                }
+            }
+
             if let window_state::StartupGeometry::Restore {
                 x,
                 y,
@@ -725,7 +743,36 @@ fn main() {
             ));
 
             tray::install(app.handle(), &tray_host);
+            quick_composer::register_saved(app.handle(), &quick_composer_host);
             app_menu::install(app.handle()).expect("failed to install the application menu");
+
+            let startup_host = Arc::clone(&v2_host);
+            let startup_app = app.handle().clone();
+            tokio_runtime.spawn(async move {
+                match v2_server::start_server(&startup_host).await {
+                    Ok(running) => eprintln!(
+                        "houston-tauri: v2 server ready at {} (pid {}, {})",
+                        running.origin,
+                        running.pid,
+                        if running.attached {
+                            "attached"
+                        } else {
+                            "spawned detached"
+                        }
+                    ),
+                    Err(error) => startup_host.record_error(error),
+                }
+                v2_server::publish_snapshot(&startup_app, &startup_host);
+            });
+            let monitor_host = Arc::clone(&v2_host);
+            let monitor_app = app.handle().clone();
+            tokio_runtime.spawn(v2_server::monitor(monitor_host, monitor_app));
+
+            tokio_runtime.spawn(crate::fs::sweep_stale_pastes());
+
+            // A check shortly after start and then every few minutes keeps the
+            // sidebar's update pill current; installing stays an explicit click.
+            app_update::start_auto_update_checks(app.handle().clone());
 
             #[cfg(debug_assertions)]
             if std::env::var("HOUSTON_DEVTOOLS").as_deref() == Ok("1") {
@@ -748,6 +795,12 @@ fn main() {
             Ok(())
         })
         .on_page_load(move |_webview, _payload| {
+            if _webview.label() == "main" && _payload.event() == PageLoadEvent::Finished {
+                // The page's initialization script carries the bootstrap captured at
+                // setup; refresh it once the document exists so a server that started
+                // in the meantime reaches the renderer's synchronous poll.
+                v2_server::publish_snapshot(_webview.app_handle(), &page_host);
+            }
             #[cfg(debug_assertions)]
             if _webview.label() == "main"
                 && _payload.event() == PageLoadEvent::Finished

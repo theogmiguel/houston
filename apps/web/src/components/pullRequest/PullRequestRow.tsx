@@ -12,8 +12,10 @@ import { memo, type RefCallback } from "react";
 import { cn } from "~/lib/utils";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 
+import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
+import { PullRequestChecksUnknown } from "../ui/pull-request-checks-unknown";
 import type { EnvironmentPullRequestEntry } from "./pullRequestList.logic";
 import { openOnHostLabel, showPullRequestLinkContextMenu } from "./pullRequestLinkContextMenu";
 import {
@@ -63,6 +65,9 @@ function PullRequestRowLabels({ labels }: { labels: EnvironmentPullRequestEntry[
 
 const PAGE_ROW_CLASS = "px-2.5 py-2";
 
+// These providers put checks on the row; the others need the request opened.
+const CHECK_STATE_KNOWN_PROVIDERS = new Set(["github", "gitcafe", "gitlab"]);
+
 export type PullRequestRowTarget = Pick<
   EnvironmentPullRequestEntry,
   "environmentId" | "projectId" | "host" | "repository" | "number"
@@ -75,6 +80,7 @@ function PullRequestRowImpl({
   showProvider,
   environmentLabel,
   matchedElsewhere,
+  queuePosition,
   statsKey,
   statsRef,
   onSelect,
@@ -90,6 +96,8 @@ function PullRequestRowImpl({
   showProvider: boolean;
   environmentLabel?: string;
   matchedElsewhere?: boolean;
+  /** Its place in the merge queue, `0` when queued but unranked. */
+  queuePosition?: number | null;
   /** Visibility key for deferred line-count reads. */
   statsKey?: string;
   statsRef?: RefCallback<HTMLDivElement>;
@@ -148,7 +156,11 @@ function PullRequestRowImpl({
           title={entry.title}
           signals={
             <>
-              {entry.checksState === undefined ? null : (
+              {entry.checksState === undefined ? (
+                CHECK_STATE_KNOWN_PROVIDERS.has(entry.provider) ? null : (
+                  <PullRequestChecksUnknown provider={entry.provider} />
+                )
+              ) : (
                 <PullRequestChecksPopover
                   checksState={entry.checksState}
                   environmentId={entry.environmentId}
@@ -161,6 +173,11 @@ function PullRequestRowImpl({
               )}
               {entry.reviewDecision === undefined ? null : (
                 <PullRequestReviewDecisionGlyph decision={entry.reviewDecision} />
+              )}
+              {queuePosition === undefined || queuePosition === null ? null : (
+                <Badge size="sm" variant="info">
+                  {queuePosition > 0 ? `Queue ${queuePosition}` : "Queued"}
+                </Badge>
               )}
             </>
           }

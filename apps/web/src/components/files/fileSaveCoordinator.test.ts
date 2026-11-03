@@ -42,7 +42,7 @@ describe("FileSaveCoordinator", () => {
     firstWrite.resolve(AsyncResult.success(undefined));
     await vi.runAllTimersAsync();
     expect(persist).toHaveBeenCalledTimes(2);
-    expect(persist).toHaveBeenLastCalledWith("latest");
+    expect(persist).toHaveBeenLastCalledWith("latest", undefined);
     expect(onPendingChange.mock.calls.at(-1)).toEqual([false]);
   });
 
@@ -63,7 +63,7 @@ describe("FileSaveCoordinator", () => {
     await vi.runAllTimersAsync();
 
     expect(persist).toHaveBeenCalledOnce();
-    expect(persist).toHaveBeenCalledWith("unsaved");
+    expect(persist).toHaveBeenCalledWith("unsaved", undefined);
   });
 
   it.each([false, true])(
@@ -113,7 +113,7 @@ describe("FileSaveCoordinator", () => {
     await vi.runAllTimersAsync();
 
     expect(persist).toHaveBeenCalledTimes(2);
-    expect(persist).toHaveBeenLastCalledWith("latest");
+    expect(persist).toHaveBeenLastCalledWith("latest", undefined);
   });
 
   it("retries a failed write when the editor closes", async () => {
@@ -137,7 +137,7 @@ describe("FileSaveCoordinator", () => {
     await vi.runAllTimersAsync();
 
     expect(persist).toHaveBeenCalledTimes(2);
-    expect(persist).toHaveBeenLastCalledWith("latest");
+    expect(persist).toHaveBeenLastCalledWith("latest", undefined);
   });
 
   it("leaves the file pending when the latest write fails", async () => {
@@ -157,6 +157,71 @@ describe("FileSaveCoordinator", () => {
     await Promise.resolve();
     expect(onPendingChange).toHaveBeenCalledWith(true);
     expect(onPendingChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it("names the draft's revision and reports the written one", async () => {
+    vi.useFakeTimers();
+    const persist = vi.fn().mockResolvedValue(AsyncResult.success({ revision: "next" }));
+    const onPersisted = vi.fn();
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500,
+      currentRevision: () => "base",
+      persist,
+      onPendingChange: vi.fn(),
+      onConfirmed: vi.fn(),
+      onPersisted,
+    });
+
+    coordinator.change("edit");
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(persist).toHaveBeenCalledWith("edit", "base");
+    expect(onPersisted).toHaveBeenCalledWith({ revision: "next" });
+  });
+
+  it("overwrites without naming a revision after a stale rejection", async () => {
+    vi.useFakeTimers();
+    const persist = vi
+      .fn()
+      .mockResolvedValueOnce(
+        AsyncResult.failure(
+          Cause.fail({ _tag: "ProjectWriteFileError", failure: "stale_revision" }),
+        ),
+      )
+      .mockResolvedValue(AsyncResult.success(undefined));
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500,
+      currentRevision: () => "stale",
+      persist,
+      onPendingChange: vi.fn(),
+      onConfirmed: vi.fn(),
+    });
+
+    coordinator.change("edit");
+    await vi.advanceTimersByTimeAsync(500);
+    coordinator.overwrite();
+    await vi.runAllTimersAsync();
+
+    expect(persist).toHaveBeenLastCalledWith("edit", undefined);
+  });
+
+  it("resets to disk contents without writing", async () => {
+    vi.useFakeTimers();
+    const persist = vi.fn().mockResolvedValue(AsyncResult.success(undefined));
+    const onPendingChange = vi.fn();
+    const coordinator = new FileSaveCoordinator({
+      debounceMs: 500,
+      persist,
+      onPendingChange,
+      onConfirmed: vi.fn(),
+    });
+
+    coordinator.change("draft");
+    coordinator.reset("disk");
+    await vi.runAllTimersAsync();
+
+    expect(persist).not.toHaveBeenCalled();
+    expect(onPendingChange).toHaveBeenLastCalledWith(false);
   });
 
   it("ignores editor changes emitted after disposal", async () => {

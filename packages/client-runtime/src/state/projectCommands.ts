@@ -63,6 +63,10 @@ function writtenFilePaths(
   );
 }
 
+function entryPaths(cwd: string, ...relativePaths: ReadonlyArray<string>) {
+  return new Set(relativePaths.map((path) => resolveWorkspaceFilePath(path, cwd)));
+}
+
 export class ScratchProjectNotLoadedError extends Schema.TaggedError<ScratchProjectNotLoadedError>()(
   "ScratchProjectNotLoadedError",
   { projectId: ProjectId },
@@ -206,6 +210,45 @@ export function createProjectEnvironmentAtoms<R, E>(
       tag: WS_METHODS.projectsCreateFromThread,
       scheduler: projectScheduler,
       concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    createEntry: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:create-entry",
+      tag: WS_METHODS.projectsCreateEntry,
+      scheduler: fileScheduler,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+      execute: (input) =>
+        requestGuarded(WS_METHODS.projectsCreateEntry, input).pipe(
+          Effect.tap(() =>
+            Effect.forEach(entryPaths(input.cwd, input.relativePath), fileMetadata.invalidate),
+          ),
+        ),
+    }),
+    renameEntry: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:rename-entry",
+      tag: WS_METHODS.projectsRenameEntry,
+      scheduler: fileScheduler,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+      execute: (input) =>
+        requestGuarded(WS_METHODS.projectsRenameEntry, input).pipe(
+          Effect.tap(() =>
+            Effect.forEach(
+              entryPaths(input.cwd, input.fromPath, input.toPath),
+              fileMetadata.invalidate,
+            ),
+          ),
+        ),
+    }),
+    deleteEntry: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:delete-entry",
+      tag: WS_METHODS.projectsDeleteEntry,
+      scheduler: fileScheduler,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+      execute: (input) =>
+        requestGuarded(WS_METHODS.projectsDeleteEntry, input).pipe(
+          Effect.tap(() =>
+            Effect.forEach(entryPaths(input.cwd, input.relativePath), fileMetadata.invalidate),
+          ),
+        ),
     }),
     writeFile: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:projects:write-file",

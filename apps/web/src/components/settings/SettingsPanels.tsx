@@ -1,14 +1,12 @@
-import { useAtomValue } from "@effect/atom-react";
 import { NotificationSettings } from "./NotificationSettings";
+import { KeepInTraySetting } from "./TraySettings";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import {
-  type DesktopUpdateChannel,
   IDLE_COMPACTION_MODES,
   globalIdleCompaction,
   managedUpdatesDenial,
-  managedUpdatesMessage,
   ProviderDriverKind,
   type ProviderInstanceId,
   type SidebarProjectGroupingMode,
@@ -20,14 +18,11 @@ import {
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   SidebarProjectSortOrder,
 } from "@houston-app/contracts/settings";
-import { desktopUpdateChannelOf } from "@houston-app/shared/cliRelease";
 import { createModelSelection } from "@houston-app/shared/model";
 import { resolvePastedPath } from "@houston-app/shared/path";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
-import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
-import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
-import { MobileAppSettingsRow } from "./MobileAppSettingsRow";
+import { APP_VERSION } from "../../branding";
 import { openDesktopUpdateReleaseNotes } from "../desktopUpdate.toast";
 import { getDesktopUpdateReleaseUrl } from "../desktopUpdate.logic";
 import { HoustonAppIcon } from "../HoustonAppIcon";
@@ -42,7 +37,6 @@ import {
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { isDesktopHost } from "../../env";
-import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
 import {
   readAppearanceModePreference,
   readThemeHalves,
@@ -70,7 +64,7 @@ import {
 import { providerInstanceEntriesFor } from "../../providerInstances";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import { isMacPlatform } from "../../lib/utils";
-import { useEnvironmentProviders, useEnvironments } from "../../state/environments";
+import { useEnvironmentProviders } from "../../state/environments";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { Button, InlineButton } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
@@ -106,17 +100,11 @@ import {
   SettingsRow,
   SettingsSection,
 } from "./settingsLayout";
+import { Houston1CleanupRow, Houston1ImportSection } from "./Houston1Section";
 import { searchableSetting } from "./settingsSearch";
 import { BackgroundActivitySettingsRow, GitFetchIntervalRow } from "./BackgroundActivitySettings";
 import { PullRequestLinksOpenInAppSetting } from "./IntegrationsSettings";
 import { StorageCleanupSections } from "./StorageSettings";
-import { UpdateTrackSwitchDialog } from "./UpdateTrackSwitchDialog";
-import { environmentIdsKey } from "~/state/environmentAtomList";
-import { environmentSessionStatesAtom } from "~/state/session";
-import { canUpdateServer } from "../ServerUpdateAction";
-import { useUpdateEverythingRun } from "../sidebar/updateEverythingRun";
-import { awaitsTrackSwitch, channelSwitchLabel } from "../sidebar/updateEverything.logic";
-import { isHostedByThisApp } from "../sidebar/useUpdateEverything";
 
 const SIDEBAR_PROJECT_SORT_ORDER_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
@@ -180,45 +168,12 @@ function AboutVersionTitle() {
 
 function AboutVersionSection() {
   const updateState = useDesktopUpdateState();
-  const [switchChannel, setSwitchChannel] = useState<DesktopUpdateChannel | null>(null);
   const [isUpdateActionPending, setIsUpdateActionPending] = useState(false);
-  const { environments } = useEnvironments();
-  const sessionStates = useAtomValue(
-    environmentSessionStatesAtom(
-      environmentIdsKey(environments.map(({ environmentId }) => environmentId)),
-    ),
-  );
-  // A second run would replace the first run's progress and local download.
-  const updateRun = useUpdateEverythingRun();
 
   const hasHostBridge = typeof window !== "undefined" && Boolean(window.hostBridge);
-  const selectedUpdateChannel = updateState?.channel ?? "latest";
   // The desktop updates this machine, whose policy the primary environment reports.
   const primaryPolicy = usePrimaryManagedPolicy();
   const updatesDenial = hasHostBridge ? managedUpdatesDenial(primaryPolicy) : undefined;
-  const nightlyDeniedBy =
-    hasHostBridge && primaryPolicy?.limits?.updates?.allowNightly === false
-      ? primaryPolicy.organization
-      : undefined;
-  const selectedHostedAppChannel = hasHostBridge ? null : HOSTED_APP_CHANNEL;
-  // A switch that failed part way leaves this app or a server on the other track.
-  // With its updater off, a switch cannot move this app, so it is not counted.
-  const appOffTrack =
-    updateState?.enabled !== false && desktopUpdateChannelOf(APP_VERSION) !== selectedUpdateChannel;
-  const unswitchedMachines =
-    (appOffTrack ? 1 : 0) +
-    environments.filter(
-      (environment, index) =>
-        environment.connection.phase === "connected" &&
-        canUpdateServer(sessionStates[index]!) &&
-        awaitsTrackSwitch(
-          {
-            serverConfig: environment.serverConfig,
-            hostedByThisApp: isHostedByThisApp(environment),
-          },
-          selectedUpdateChannel,
-        ),
-    ).length;
 
   const handleButtonClick = async () => {
     const bridge = window.hostBridge;
@@ -318,8 +273,7 @@ function AboutVersionSection() {
   const statusLabel: Record<string, string> = {
     checking: "Checking…",
     downloading: "Downloading…",
-    // Off its track, "up to date" only means no switch is pending; Review moves it.
-    ...(appOffTrack ? {} : { "up-to-date": "Up to Date" }),
+    "up-to-date": "Up to Date",
   };
   const buttonLabel =
     actionLabel[action] ?? statusLabel[updateState?.status ?? ""] ?? "Check for Updates";
@@ -368,93 +322,6 @@ function AboutVersionSection() {
           </div>
         }
       />
-      {hasHostBridge ? (
-        <SettingsRow
-          {...searchableSetting("update-track")}
-          description={
-            nightlyDeniedBy !== undefined ? (
-              `${managedUpdatesMessage(nightlyDeniedBy)} Nightly builds are not available${
-                selectedUpdateChannel === "nightly"
-                  ? "; switch to Stable to keep getting updates."
-                  : "."
-              }`
-            ) : unswitchedMachines > 0 ? (
-              <>
-                {unswitchedMachines === 1
-                  ? "1 machine still runs"
-                  : `${unswitchedMachines} machines still run`}{" "}
-                {channelSwitchLabel(selectedUpdateChannel === "nightly" ? "latest" : "nightly")}.{" "}
-                {/* The dialog moves what it can and says why it skips the rest. */}
-                <Button
-                  size="xs"
-                  variant="link"
-                  disabled={updateRun !== null}
-                  onClick={() => setSwitchChannel(selectedUpdateChannel)}
-                >
-                  Review
-                </Button>
-              </>
-            ) : (
-              "Switches this app and every connected machine whose database the target release supports."
-            )
-          }
-          managed={updatesDenial}
-          control={
-            <Select
-              value={selectedUpdateChannel}
-              onValueChange={(value) => {
-                if (value !== selectedUpdateChannel) {
-                  setSwitchChannel(value as DesktopUpdateChannel);
-                }
-              }}
-            >
-              <SelectTrigger
-                size="sm"
-                className="w-full sm:w-40"
-                aria-label="Update track"
-                disabled={switchChannel !== null || updateRun !== null}
-              >
-                <SelectValue>{channelSwitchLabel(selectedUpdateChannel)}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="latest">
-                  Stable
-                </SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
-      ) : selectedHostedAppChannel ? (
-        <SettingsRow
-          {...searchableSetting("update-track")}
-          description="Switches the hosted app release channel."
-          control={
-            <Select
-              value={selectedHostedAppChannel}
-              onValueChange={(value) => {
-                if (value === selectedHostedAppChannel) return;
-                const channelUrl = buildHostedChannelSelectionUrl({
-                  channel: value as HostedAppChannel,
-                });
-                if (channelUrl !== null) window.location.assign(channelUrl);
-              }}
-            >
-              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Update track">
-                <SelectValue>{HOSTED_APP_CHANNEL_LABEL}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="latest">
-                  Latest
-                </SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
-      ) : null}
-      {hasHostBridge ? <CliCommandSettingsRow /> : null}
-      {switchChannel === null ? null : (
-        <UpdateTrackSwitchDialog channel={switchChannel} onClose={() => setSwitchChannel(null)} />
-      )}
     </>
   );
 }
@@ -682,7 +549,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
-      sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
@@ -829,6 +695,12 @@ export function LegacyFeaturesSection() {
     </SettingsSection>
   );
 }
+
+const QUIT_SHORTCUT_LABELS = {
+  direct: "Direct",
+  hold: "Hold",
+  "double-click": "Press twice",
+} as const;
 
 export function GeneralSettingsPanel() {
   const settings = useScopedSettings();
@@ -1008,6 +880,45 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+        <SettingsRow
+          {...searchableSetting("quit-shortcut")}
+          description="Direct quits immediately. Hold or press twice makes the quit shortcut wait for a second press."
+          resetAction={
+            settings.confirmQuit !== DEFAULT_UNIFIED_SETTINGS.confirmQuit ? (
+              <SettingResetButton
+                label="quit shortcut"
+                onClick={() =>
+                  updateSettings({ confirmQuit: DEFAULT_UNIFIED_SETTINGS.confirmQuit })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.confirmQuit}
+              onValueChange={(value) => {
+                if (value === "direct" || value === "hold" || value === "double-click") {
+                  updateSettings({ confirmQuit: value });
+                }
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Quit shortcut">
+                <SelectValue>{QUIT_SHORTCUT_LABELS[settings.confirmQuit]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {Object.entries(QUIT_SHORTCUT_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} hideIndicator value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+      </SettingsSection>
+
+      <SettingsSection id="background" title="Background">
+        <KeepInTraySetting />
       </SettingsSection>
 
       <SettingsSection id="display" title="Display">
@@ -1833,6 +1744,8 @@ export function MaintenanceSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      <Houston1ImportSection />
+      <Houston1CleanupRow />
       <SettingsSection id="updates" title="Updates">
         <SettingsRow
           serverScoped
@@ -1958,52 +1871,15 @@ export function AboutSettingsPanel() {
             }
           />
         ) : null}
-        {isDesktopHost || HOSTED_APP_CHANNEL ? (
+        {isDesktopHost ? (
           <AboutVersionSection />
         ) : (
-          <>
-            <SettingsRow
-              id={searchableSetting("app-version").id}
-              title={<AboutVersionTitle />}
-              description="Current version of the application."
-              control={
-                <div className="flex items-center gap-2">
-                  <Button size="sm" variant="ghost" disabled>
-                    Release notes
-                  </Button>
-                  <Button size="sm" variant="outline" disabled>
-                    Check for updates
-                  </Button>
-                </div>
-              }
-            />
-            <SettingsRow
-              {...searchableSetting("update-track")}
-              description="Stable gets tested releases. Nightly gets every build."
-              control={
-                <Select value="latest" disabled>
-                  <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Update track">
-                    <SelectValue>Stable</SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup align="end" alignItemWithTrigger={false}>
-                    <SelectItem value="latest">Stable</SelectItem>
-                  </SelectPopup>
-                </Select>
-              }
-            />
-            <SettingsRow
-              {...searchableSetting("cli-command")}
-              title="hs command"
-              description="Use Houston from a terminal: open projects and start threads."
-              control={
-                <Button size="sm" variant="outline" disabled>
-                  Install
-                </Button>
-              }
-            />
-          </>
+          <SettingsRow
+            id={searchableSetting("app-version").id}
+            title={<AboutVersionTitle />}
+            description="Current version of the application."
+          />
         )}
-        <MobileAppSettingsRow />
       </SettingsSection>
 
       <SettingsSection id="legal" title="Legal">

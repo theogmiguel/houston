@@ -1184,7 +1184,10 @@ export const make = Effect.gen(function* () {
     }),
     submitReview: Effect.fn("GitCafePullRequestProvider.submitReview")(function* (input) {
       if (input.comments.length > 0)
-        return yield* failure("submitReview", "GitCafe line comments are not supported yet.");
+        return yield* failure(
+          "submitReview",
+          "GitCafe does not support inline review comments from Houston; the provider reports no inlineComment capability.",
+        );
       const pull = yield* readPull("submitReview", input);
       if (pull.headOid === null)
         return yield* failure("submitReview", "GitCafe has not reported the pull request's head.");

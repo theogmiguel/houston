@@ -135,7 +135,7 @@ export const make = Effect.gen(function* () {
         provider: SourceControlProviderKind.make("azure-devops"),
         operation,
         reason: "failed",
-        detail: "Azure DevOps reviews cannot be written from here yet.",
+        detail: `Azure DevOps does not support ${operation} from Houston; the provider reports no comment, review or reaction write capability.`,
       }),
     );
 

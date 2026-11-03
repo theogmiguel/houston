@@ -52,6 +52,8 @@ export function planNextReopen(
 }
 
 type PullRequestsSearchLike = Partial<PullRequestListPreferences> & {
+  // The search reducer receives every route's params, so another page's `view` can arrive here.
+  view?: unknown;
   repository?: string;
   number?: number;
   selectedProjectId?: ProjectId;
@@ -62,8 +64,9 @@ type PullRequestsSearchLike = Partial<PullRequestListPreferences> & {
 export function pullRequestsSearchForRestore<S extends PullRequestsSearchLike>(
   previous: S,
   selected: RightPanelSurface | null,
-): S & PullRequestListPreferences {
+): Omit<S, "view"> & PullRequestListPreferences {
   const {
+    view: _view,
     repository: _repository,
     number: _number,
     selectedProjectId: _projectId,
@@ -86,7 +89,7 @@ export function pullRequestsSearchForRestore<S extends PullRequestsSearchLike>(
             : { selectedEnvironmentId: selected.environmentId as EnvironmentId }),
         }
       : {}),
-  } as S & PullRequestListPreferences;
+  } as Omit<S, "view"> & PullRequestListPreferences;
 }
 
 export async function reopenClosedView(
@@ -135,6 +138,12 @@ export async function reopenClosedView(
       break;
     case "pull-request":
       panels.openPullRequest(ref, surface);
+      break;
+    case "task":
+      panels.openTask(ref, {
+        environmentId: surface.environmentId,
+        taskKey: surface.taskKey,
+      });
       break;
     case "side-chat":
       panels.openSideChat(ref, surface.threadId);

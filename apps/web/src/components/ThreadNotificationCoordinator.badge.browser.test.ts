@@ -7,6 +7,7 @@ import { Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 
 import { fakeTimers, stubGlobal } from "../../test/render";
+import { gridContainingThread, useGridStore } from "../grid/gridStore";
 
 const state = vi.hoisted(() => ({
   mode: "notifications",
@@ -181,7 +182,7 @@ function shell(overrides: Partial<typeof thread> = {}, ...others: Partial<typeof
 }
 // The mocked modules read `state` and the focus flags, so every test resets them before
 // starting the service.
-function setup() {
+function setup(options: { hostBridge?: Record<string, unknown> } = {}) {
   vi.clearAllMocks();
   const stack = new AsyncDisposableStack();
   registry = AtomRegistry.make();
@@ -198,6 +199,7 @@ function setup() {
   TestNotification.permission = "granted";
   TestNotification.sent = [];
   stack.use(stubGlobal("Notification", TestNotification));
+  if (options.hostBridge) stack.use(stubGlobal("hostBridge", options.hostBridge));
   stack.use(vi.spyOn(window, "focus").mockImplementation(() => undefined));
   stack.use(vi.spyOn(document, "hasFocus").mockImplementation(() => focused));
   stack.use(
@@ -221,6 +223,20 @@ function setup() {
   };
 }
 
+// A notification click lands in the grid that holds the thread, with its cell focused.
+function expectOpenedInGrid(environmentId: string) {
+  const grid = gridContainingThread(
+    useGridStore.getState().grids,
+    EnvironmentId.make(environmentId),
+    "thread" as never,
+  );
+  expect(grid).not.toBeNull();
+  expect(state.navigate).toHaveBeenCalledWith({
+    to: "/grid/$gridId",
+    params: { gridId: grid!.id },
+  });
+}
+
 it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
   "badges %s and clears when notifications are disabled",
   async (flag) => {
@@ -230,10 +246,7 @@ it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
     expect(state.badge).toHaveBeenLastCalledWith(1);
     const notification = TestNotification.sent[0]!;
     notification.dispatchEvent(new Event("click"));
-    expect(state.navigate).toHaveBeenCalledWith({
-      to: "/$environmentId/$threadId",
-      params: { environmentId: EnvironmentId.make("one"), threadId: "thread" },
-    });
+    expectOpenedInGrid("one");
     state.mode = "sound";
     app.changeSettings();
     expect(state.badge).toHaveBeenLastCalledWith(0);
@@ -330,3 +343,35 @@ it.each([false, true])(
     );
   },
 );
+
+it("uses the host notifier for a desktop notice and focuses the thread when it is clicked", async () => {
+  const notifyThread = vi.fn(async () => {});
+  let focus: ((key: string) => void) | undefined;
+  await using app = setup({
+    hostBridge: {
+      notifyThread,
+      notificationsSupported: async () => ({ supported: true, reason: null }),
+      onThreadNotificationFocus: (listener: (key: string) => void) => {
+        focus = listener;
+        return () => {};
+      },
+      onNotificationBadgeClear: () => () => {},
+      revealWindow: async () => {},
+    },
+  });
+  app.start();
+  state.shells.set("one", shell({ hasPendingApprovals: true }));
+
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(notifyThread).toHaveBeenCalledWith({
+    id: "one:thread",
+    title: "Approval needed",
+    body: "Test thread",
+  });
+  expect(TestNotification.sent).toEqual([]);
+
+  focus?.("one:thread");
+  expectOpenedInGrid("one");
+  expect(state.badge).toHaveBeenLastCalledWith(0);
+});

@@ -93,7 +93,8 @@ it.effect(
         WHERE message_id = 'thread:first:old'
       `;
 
-      yield* importer.importPendingTranscripts;
+      const summary = yield* importer.importPendingTranscripts;
+      assert.equal(summary.failedThreadCount, 1);
 
       const later = yield* projections.getThreadProjection(ThreadId.make("thread:later"));
       assert.deepStrictEqual(
@@ -482,6 +483,7 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
       assert.deepStrictEqual(transcriptImport, {
         importedThreadCount: 1,
         importedMessageCount: 2,
+        failedThreadCount: 0,
       });
       const projection = yield* projections.getThreadProjection(threadId);
       assert.equal(projection.thread.title, "Renamed after shell import");

@@ -1,6 +1,6 @@
 import { isMacPlatform } from "./lib/utils";
 
-export type TerminalLinkKind = "url" | "path";
+export type TerminalLinkKind = "url" | "path" | "task";
 
 export interface TerminalLinkMatch {
   kind: TerminalLinkKind;
@@ -27,6 +27,8 @@ export interface WrappedTerminalLinkLine {
 }
 
 const URL_PATTERN = /https?:\/\/[^\s"'`<>]+/giu;
+// A task key is a word: never the suffix of a longer word.
+const TASK_KEY_PATTERN = /(?<![\p{L}\p{M}\p{N}_-])HOU-[1-9][0-9]*(?![\p{L}\p{M}\p{N}_-])/giu;
 // The default PowerShell prompt delimits its unquoted path with `PS ` and `>`.
 const POWERSHELL_PROMPT_PATH_PATTERN = /^PS ((?:[A-Za-z]:[\\/]|\\\\|\/)[^>\r\n]*)>/u;
 // Bare paths start only at a segment boundary: hover detection runs this on
@@ -47,7 +49,7 @@ const SCHEME_URL_PATTERN = /(?<![A-Za-z\d+.-])[+-]?[A-Za-z][A-Za-z\d+.-]+:\/\/[^
 
 function trimClosingDelimiters(value: string, kind: TerminalLinkKind): string {
   let output = value.replace(
-    kind === "path" ? TRAILING_PATH_PUNCTUATION_PATTERN : TRAILING_PUNCTUATION_PATTERN,
+    kind === "url" ? TRAILING_PUNCTUATION_PATTERN : TRAILING_PATH_PUNCTUATION_PATTERN,
     "",
   );
   if (output.length === 0) return output;
@@ -127,11 +129,22 @@ export function extractTerminalLinks(line: string): TerminalLinkMatch[] {
     ...urlMatches,
     ...quotedMatches,
   ]);
-  return [...promptMatches, ...urlMatches, ...quotedMatches, ...pathMatches]
+  // Paths claim their range first, so a key inside a directory name stays one path link.
+  const taskMatches = collectMatches(line, "task", TASK_KEY_PATTERN, [
+    ...promptMatches,
+    ...urlMatches,
+    ...quotedMatches,
+    ...pathMatches,
+  ]);
+  return [...promptMatches, ...urlMatches, ...quotedMatches, ...pathMatches, ...taskMatches]
     .filter(
       (match) => match.kind === "url" || !nonPathRanges.some((range) => overlaps(match, range)),
     )
     .toSorted((a, b) => a.start - b.start);
+}
+
+export function isHoustonTaskKey(value: string): boolean {
+  return /^HOU-[1-9][0-9]*$/u.test(value);
 }
 
 export function isTerminalUrl(value: string): boolean {

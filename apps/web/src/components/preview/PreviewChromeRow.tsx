@@ -5,6 +5,8 @@ import {
   ChevronRight,
   Crosshair,
   ExternalLink,
+  Maximize2,
+  Minimize2,
   MonitorSmartphone,
   PictureInPicture2,
   RotateCw,
@@ -20,6 +22,8 @@ import {
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
+import { PreviewAddressLabel } from "~/components/ui/preview-address-label";
+import { previewAddressSecurity, previewAddressSecurityLabel } from "./previewAddressSecurity";
 
 interface Props {
   url: string;
@@ -47,6 +51,8 @@ interface Props {
   pickActive?: boolean | undefined;
   pickDisabled?: boolean | undefined;
   pickDisabledReason?: string | undefined;
+  onToggleFullScreen?: (() => void) | undefined;
+  fullScreen?: boolean | undefined;
   trailingActions?: ReactNode;
   leadingActions?: ReactNode;
 }
@@ -87,12 +93,15 @@ export function PreviewChromeRow({
   pickActive,
   pickDisabled,
   pickDisabledReason,
+  onToggleFullScreen,
+  fullScreen,
   trailingActions,
   leadingActions,
 }: Props) {
   const [draft, setDraft] = useState(url);
   const [inputFocused, setInputFocused] = useState(false);
   const parts = addressParts(url);
+  const security = previewAddressSecurity(url);
   const showParts = !inputFocused && parts !== null;
 
   const submit = (event?: FormEvent | KeyboardEvent) => {
@@ -176,6 +185,12 @@ export function PreviewChromeRow({
         <div className="relative mx-1 flex h-7 min-w-0 flex-1 items-center rounded-md bg-[var(--field)] px-2.5 font-mono text-xs">
           {showParts ? (
             <span aria-hidden className="pointer-events-none flex min-w-0 items-center truncate">
+              {security ? (
+                <PreviewAddressLabel
+                  label={previewAddressSecurityLabel(security)}
+                  tone={security === "not-secure" ? "warning" : "neutral"}
+                />
+              ) : null}
               <span className="shrink-0 text-[var(--houston)]">{parts.host}</span>
               <span className="truncate text-[var(--t1)]">{parts.path}</span>
             </span>
@@ -248,6 +263,30 @@ export function PreviewChromeRow({
               <MonitorSmartphone className="size-[15px]" />
             </TooltipTrigger>
             <TooltipPopup>{deviceSizeActive ? "Fit the panel" : "Device size"}</TooltipPopup>
+          </Tooltip>
+        ) : null}
+        {onToggleFullScreen ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant={fullScreen ? "secondary" : "ghost"}
+                  size="icon"
+                  className="size-7"
+                  onClick={onToggleFullScreen}
+                  aria-label={fullScreen ? "Exit full screen" : "Full screen"}
+                  aria-pressed={fullScreen ? "true" : "false"}
+                  type="button"
+                />
+              }
+            >
+              {fullScreen ? (
+                <Minimize2 className="size-[15px]" />
+              ) : (
+                <Maximize2 className="size-[15px]" />
+              )}
+            </TooltipTrigger>
+            <TooltipPopup>{fullScreen ? "Exit full screen" : "Full screen"}</TooltipPopup>
           </Tooltip>
         ) : null}
         {onPickElement ? (

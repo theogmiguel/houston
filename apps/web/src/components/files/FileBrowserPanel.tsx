@@ -1,14 +1,20 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import type { EnvironmentId, ProjectEntry } from "@houston-app/contracts";
-import { settlePromise } from "@houston-app/client-runtime/state/runtime";
+import {
+  type EnvironmentId,
+  type ProjectEntry,
+  ProjectFileMutationError,
+} from "@houston-app/contracts";
+import * as Schema from "effect/Schema";
+import { settlePromise, squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
 import { serializeComposerFileLink } from "@houston-app/shared/composerTrigger";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Cause from "effect/Cause";
 import { ChevronsDownUp, ChevronsUpDown } from "lucide";
 import { Search } from "lucide-react";
-import { useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import { Button } from "~/components/ui/button";
+import { requestConfirmDialog } from "~/confirmDialog";
 import { Kbd } from "~/components/ui/kbd";
 import { MorphIcon } from "~/components/MorphIcon";
 import { toastManager } from "~/components/ui/toast";
@@ -19,11 +25,15 @@ import { useStableCallback } from "~/hooks/useStableCallback";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
 import { useFileContextMenu, type FileContextMenuAction } from "~/fileContextMenu";
 import { readLocalApi } from "~/localApi";
+import { projectEnvironment } from "~/state/projects";
+import { vcsEnvironment } from "~/state/vcs";
+import { useAtomCommand } from "~/state/use-atom-command";
+import { useEnvironmentQuery } from "~/state/query";
 
 import { joinHostPath } from "./filePath";
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
 import { loadFileAncestors } from "./loadFileAncestors";
-import { ProjectFileTree } from "./ProjectFileTree";
+import { type FileTreeEditing, ProjectFileTree } from "./ProjectFileTree";
 import {
   ancestorDirectoryPaths,
   expandableDirectoryPaths,
@@ -31,6 +41,8 @@ import {
 } from "./projectFileTreeRows";
 import { useDirectoryEntries } from "./useDirectoryEntries";
 import { useProjectPathSearch } from "~/state/queries";
+
+const isProjectFileMutationError = Schema.is(ProjectFileMutationError);
 
 interface FileBrowserPanelProps {
   environmentId: EnvironmentId;
@@ -113,6 +125,15 @@ export default function FileBrowserPanel({
   const [query, setQuery] = useState("");
   const [expandAll, setExpandAll] = useState(false);
   const [expandedPaths, setExpandedPaths] = useState<ReadonlySet<string>>(() => new Set());
+  const [editing, setEditing] = useState<FileTreeEditing | null>(null);
+  const [editingError, setEditingError] = useState<string | null>(null);
+  const createEntry = useAtomCommand(projectEnvironment.createEntry, { reportFailure: false });
+  const renameEntry = useAtomCommand(projectEnvironment.renameEntry, { reportFailure: false });
+  const deleteEntry = useAtomCommand(projectEnvironment.deleteEntry, { reportFailure: false });
+  const gitStatus = useEnvironmentQuery(
+    hostFolder ? null : vcsEnvironment.status({ environmentId, input: { cwd } }),
+  );
+  const gitFiles = gitStatus.data?.workingTree.files ?? [];
   const pathSearch = useProjectPathSearch(
     { environmentId, cwd: hostFolder ? null : cwd, query: query.slice(0, 256) },
     200,
@@ -128,6 +149,155 @@ export default function FileBrowserPanel({
   const allDirectoriesExpanded =
     directoryPaths.length > 0 && directoryPaths.every((path) => expandedPaths.has(path));
 
+  const submittingRef = useRef(false);
+  const parentPathOf = (path: string) => {
+    const slash = path.lastIndexOf("/");
+    return slash < 0 ? "" : path.slice(0, slash);
+  };
+  const depthOfDirectory = (path: string) =>
+    path === "" ? 0 : (rows.find((row) => row.entry.path === path)?.depth ?? -1) + 1;
+
+  const startCreate = (entry: ProjectEntry | null, kind: "file" | "directory") => {
+    const parentPath =
+      entry === null ? "" : entry.kind === "directory" ? entry.path : parentPathOf(entry.path);
+    if (parentPath !== "" && !expandedPaths.has(parentPath)) {
+      setExpandAll(false);
+      setExpandedPaths((current) => new Set(current).add(parentPath));
+      void load(parentPath);
+    }
+    setEditingError(null);
+    setEditing({
+      mode: "create",
+      path: parentPath,
+      kind,
+      initialValue: "",
+      depth: depthOfDirectory(parentPath),
+    });
+  };
+
+  const startRename = (entry: ProjectEntry) => {
+    setEditingError(null);
+    setEditing({
+      mode: "rename",
+      path: entry.path,
+      kind: entry.kind,
+      initialValue: entry.path.slice(entry.path.lastIndexOf("/") + 1),
+      depth: rows.find((row) => row.entry.path === entry.path)?.depth ?? 0,
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditing(null);
+    setEditingError(null);
+  };
+
+  const validName = (name: string) =>
+    name.length > 0 &&
+    name !== "." &&
+    name !== ".." &&
+    !name.includes("/") &&
+    !name.includes("\\") &&
+    !/[\u0000-\u001f\u007f]/.test(name);
+
+  const submitEdit = async (value: string) => {
+    if (!editing || submittingRef.current) return;
+    if (!validName(value)) {
+      setEditingError("Use a name without slashes or control characters.");
+      return;
+    }
+    const applyEdit = async (edit: NonNullable<typeof editing>) => {
+      if (edit.mode === "create") {
+        const relativePath = edit.path === "" ? value : `${edit.path}/${value}`;
+        const result = await createEntry({
+          environmentId,
+          input: { cwd, relativePath, kind: edit.kind },
+        });
+        if (result._tag === "Failure") {
+          const cause = squashAtomCommandFailure(result);
+          toastManager.add({
+            type: "error",
+            title: `Could not create ${edit.kind === "directory" ? "folder" : "file"}`,
+            description: cause instanceof Error ? cause.message : undefined,
+          });
+          return;
+        }
+        cancelEdit();
+        void load(edit.path, true);
+        if (edit.kind === "file") onOpenFile(panelPath(relativePath));
+        return;
+      }
+      const toPath = parentPathOf(edit.path) === "" ? value : `${parentPathOf(edit.path)}/${value}`;
+      if (toPath === edit.path) {
+        cancelEdit();
+        return;
+      }
+      const result = await renameEntry({
+        environmentId,
+        input: { cwd, fromPath: edit.path, toPath },
+      });
+      if (result._tag === "Failure") {
+        const cause = squashAtomCommandFailure(result);
+        toastManager.add({
+          type: "error",
+          title: "Could not rename entry",
+          description: cause instanceof Error ? cause.message : undefined,
+        });
+        return;
+      }
+      cancelEdit();
+      void load(parentPathOf(edit.path), true);
+    };
+    submittingRef.current = true;
+    try {
+      await applyEdit(editing);
+    } catch (error) {
+      submittingRef.current = false;
+      throw error;
+    }
+    submittingRef.current = false;
+  };
+
+  const requestDelete = async (entry: ProjectEntry) => {
+    const confirmation = requestConfirmDialog(`Move "${entry.path}" to the Trash?`);
+    if (!confirmation || !(await confirmation)) return;
+    const result = await deleteEntry({
+      environmentId,
+      input: { cwd, relativePath: entry.path },
+    });
+    if (result._tag === "Failure") {
+      const cause = squashAtomCommandFailure(result);
+      if (isProjectFileMutationError(cause) && cause.failure === "trash_unavailable") {
+        const permanent = requestConfirmDialog(
+          `${cause.message} Delete "${entry.path}" permanently instead? This cannot be undone.`,
+          { variant: "destructive" },
+        );
+        if (!permanent || !(await permanent)) return;
+        const permanentResult = await deleteEntry({
+          environmentId,
+          input: { cwd, relativePath: entry.path, permanent: true },
+        });
+        if (permanentResult._tag === "Failure") {
+          const permanentCause = squashAtomCommandFailure(permanentResult);
+          toastManager.add({
+            type: "error",
+            title: "Could not delete entry",
+            description: permanentCause instanceof Error ? permanentCause.message : undefined,
+          });
+          return;
+        }
+        void load(parentPathOf(entry.path), true);
+        return;
+      }
+      toastManager.add({
+        type: "error",
+        title: "Could not delete entry",
+        description: cause instanceof Error ? cause.message : undefined,
+      });
+      return;
+    }
+    void load(parentPathOf(entry.path), true);
+  };
+
   const showEntryContextMenu = useStableCallback(
     (entry: ProjectEntry, event: ReactMouseEvent<HTMLElement>) => {
       event.preventDefault();
@@ -141,13 +311,42 @@ export default function FileBrowserPanel({
       void settlePromise(async () => {
         const clicked = await api.contextMenu.show(
           [
+            ...(hostFolder
+              ? []
+              : [
+                  { id: "new-file", label: "New file" },
+                  { id: "new-folder", label: "New folder" },
+                  { id: "rename", label: "Rename" },
+                  {
+                    id: "delete",
+                    label: "Delete",
+                    destructive: true,
+                    separatorBefore: true,
+                  },
+                ]),
             ...fileMenuItems,
-            { id: "copy-mention", label: "Copy mention" },
+            { id: "copy-mention", label: "Copy mention", separatorBefore: true },
             { id: "add-to-chat", label: "Add to chat" },
           ],
           position,
         );
         if (clicked === null) return;
+        if (clicked === "new-file") {
+          startCreate(entry, "file");
+          return;
+        }
+        if (clicked === "new-folder") {
+          startCreate(entry, "directory");
+          return;
+        }
+        if (clicked === "rename") {
+          startRename(entry);
+          return;
+        }
+        if (clicked === "delete") {
+          await requestDelete(entry);
+          return;
+        }
         const isFileMenuAction =
           fileMenuItems.some((item) => item.id === clicked) || clicked.startsWith("editor:");
         if (isFileMenuAction) {
@@ -369,6 +568,13 @@ export default function FileBrowserPanel({
           expandedPaths={expandedPaths}
           selectedPath={selectedPath}
           ariaLabel={`${projectName} files`}
+          gitFiles={gitFiles}
+          editing={editing}
+          editingError={editingError}
+          onStartRename={hostFolder ? undefined : startRename}
+          onDeleteEntry={hostFolder ? undefined : (entry) => void requestDelete(entry)}
+          onEditSubmit={(value) => void submitEdit(value)}
+          onEditCancel={cancelEdit}
           onToggleDirectory={toggleDirectory}
           onOpenFile={(path) => {
             if (dragMention.isDragInProgress()) return;

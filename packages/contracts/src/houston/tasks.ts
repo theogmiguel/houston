@@ -232,6 +232,8 @@ export const HoustonTaskSummary = Schema.Struct({
   acceptanceTotal: NonNegativeInt,
   queue: HoustonTaskQueue,
   ready: Schema.Boolean,
+  /** Null for a task with no domain row; planning needs one of the two kinds. */
+  domainKind: Schema.NullOr(HoustonTaskDomainKind),
   /** The newest run still in flight, of either kind. */
   openRun: Schema.NullOr(HoustonTaskRun),
 });
@@ -378,6 +380,8 @@ export const HoustonTaskSettingsInput = Schema.Struct({
 export type HoustonTaskSettingsInput = typeof HoustonTaskSettingsInput.Type;
 
 export const HoustonTaskImportCounts = Schema.Struct({
+  /** Houston 1 workspaces added as v2 projects before their tasks were copied. */
+  workspaces: Schema.optional(NonNegativeInt),
   tasks: NonNegativeInt,
   acceptance: NonNegativeInt,
   comments: NonNegativeInt,
@@ -395,6 +399,7 @@ export const HoustonTaskImportStatus = Schema.Union([
     state: Schema.Literal("available"),
     source: Schema.String,
     taskCount: NonNegativeInt,
+    workspaceCount: Schema.optional(NonNegativeInt),
   }),
   Schema.Struct({
     state: Schema.Literal("imported"),

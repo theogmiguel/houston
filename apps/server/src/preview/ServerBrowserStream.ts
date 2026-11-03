@@ -22,6 +22,7 @@ import * as Socket from "effect/socket/Socket";
 
 import { authenticateMediaRequest } from "../auth/http.ts";
 import { assetResponseHeaders } from "../http.ts";
+import * as PreviewBrowser from "./PreviewBrowser.ts";
 import * as PreviewBrowserHost from "./PreviewBrowserHost.ts";
 import * as ServerBrowser from "./ServerBrowser.ts";
 
@@ -162,7 +163,10 @@ const makeHandler = Effect.fnUntraced(function* (browser: ServerBrowser.ServerBr
             case "fileChooserClosed":
             case "popup":
             case "pointer":
-            case "probe": {
+            case "probe":
+            case "pickedElement":
+            case "pickCancelled":
+            case "confirmation": {
               const { _tag: type, ...data } = output;
               return write(JSON.stringify({ type, ...data }));
             }
@@ -215,9 +219,23 @@ const hostSetup = (cause: unknown): PreviewStreamHostSetup | undefined =>
     ? { need: "sandbox", command: cause.setupCommand }
     : isLibrariesError(cause)
       ? { need: "libraries", command: cause.setupCommand }
-      : undefined;
+      : isInstallingError(cause)
+        ? {
+            need: "installing",
+            downloadedBytes: cause.downloadedBytes,
+            totalBytes: cause.totalBytes,
+            unpacking: cause.unpacking,
+          }
+        : isInstallError(cause)
+          ? { need: "install-failed", detail: cause.detail.slice(0, 60) }
+          : isUnsupportedError(cause)
+            ? { need: "unsupported", platform: cause.platform, arch: cause.arch }
+            : undefined;
 const isSandboxError = Schema.is(PreviewBrowserHost.PreviewBrowserSandboxError);
 const isLibrariesError = Schema.is(PreviewBrowserHost.PreviewBrowserLibrariesError);
+const isInstallingError = Schema.is(PreviewBrowser.PreviewBrowserInstallingError);
+const isInstallError = Schema.is(PreviewBrowser.PreviewBrowserInstallError);
+const isUnsupportedError = Schema.is(PreviewBrowser.PreviewBrowserUnsupportedError);
 const encodeHostSetup = Schema.encodeSync(Schema.fromJsonString(PreviewStreamHostSetup));
 
 // The request span already covers this download route.

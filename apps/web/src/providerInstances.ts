@@ -45,7 +45,31 @@ export interface ProviderInstanceEntry {
 
 /** Disabled instances may retain ready status until reconciliation. */
 export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boolean {
-  return entry.enabled && entry.isAvailable && entry.status === "ready";
+  const readiness = entry.snapshot.readiness;
+  return (
+    entry.enabled &&
+    entry.isAvailable &&
+    entry.status === "ready" &&
+    (readiness === undefined || readiness.state === "ready")
+  );
+}
+
+/** The provider-level cause an unusable instance keeps listed for, or null when it is usable. */
+export function providerInstanceReadinessReason(entry: ProviderInstanceEntry): string | null {
+  const readiness = entry.snapshot.readiness;
+  if (readiness === undefined || readiness.state === "ready") return null;
+  switch (readiness.state) {
+    case "notInstalled":
+      return readiness.reason === "missing" ? "Not installed" : "Unavailable";
+    case "turnedOff":
+      return "Turned off";
+    case "signedOut":
+      return "Signed out";
+    case "rejected":
+      return `Credentials rejected (${readiness.code})`;
+    case "outOfUsage":
+      return "Out of usage";
+  }
 }
 
 export function isProviderInstancePickerVisible(entry: ProviderInstanceEntry): boolean {

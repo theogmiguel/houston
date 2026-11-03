@@ -35,7 +35,6 @@ const SESSION_MARKERS: &[&str] = &[
     "HOUSTON_SHELL_INTEGRATION_TOKEN_FILE",
     "HOUSTON_TASK",
     "HOUSTON_ROUTINE_RUN",
-    "HOUSTON_NIGHT_RUN_DIR",
     // A pane is not inside the launcher's multiplexer: tmux commands would target its server.
     "TMUX",
     "TMUX_PANE",
@@ -150,7 +149,6 @@ mod tests {
             "HOUSTON_SHELL_INTEGRATION_TOKEN_FILE",
             "HOUSTON_TASK",
             "HOUSTON_ROUTINE_RUN",
-            "HOUSTON_NIGHT_RUN_DIR",
             "ZCODE_HOUSTON_MCP_URL",
             "ZCODE_HOUSTON_MCP_URL_DEV",
             "HOUSTON_CHANNEL",
@@ -158,7 +156,7 @@ mod tests {
             "ZCODE_DISABLE_UPDATE_CHECK",
         ];
         let hits = markers_in(env.iter().map(|s| s.to_string()));
-        assert_eq!(hits.len(), 14, "{hits:?}");
+        assert_eq!(hits.len(), 13, "{hits:?}");
         for kept in [
             "HOUSTON_CHANNEL",
             "HOUSTON_SESSION",

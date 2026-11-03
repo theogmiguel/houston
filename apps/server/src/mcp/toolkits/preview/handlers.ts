@@ -4,6 +4,7 @@ import * as Record from "effect/Record";
 import * as Schema from "effect/Schema";
 import {
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  PREVIEW_CONFIRMATION_TIMEOUT_MS,
   PREVIEW_RECORDING_STOP_TIMEOUT_MS,
   PreviewAutomationRecordingTransferError,
   PreviewAutomationRecordingDesktopUpdateRequiredError,
@@ -233,7 +234,9 @@ const handlers = {
         invokeTargeted<object>(
           action,
           decoded,
-          "timeoutMs" in decoded ? decoded.timeoutMs : undefined,
+          ("timeoutMs" in decoded && typeof decoded.timeoutMs === "number"
+            ? decoded.timeoutMs
+            : 15_000) + PREVIEW_CONFIRMATION_TIMEOUT_MS,
         ),
       ),
     ),

@@ -38,8 +38,6 @@ import * as HoustonTaskStore from "../houston/tasks/TaskStore.ts";
 import * as HoustonTaskSourceStore from "../houston/taskSources/SourceStore.ts";
 import * as HoustonSlackStore from "../houston/slack/Store.ts";
 import * as HoustonMergeQueueStore from "../houston/mergeQueue/Store.ts";
-import * as HoustonHarnessStore from "../houston/harnessReview/Store.ts";
-import * as HoustonNightShiftStore from "../houston/nightShift/Store.ts";
 
 export interface ProjectCreateInput extends ProjectCreatePayload {
   readonly commandId: CommandId;
@@ -177,10 +175,6 @@ export const make = Effect.gen(function* () {
   const houstonSlack = yield* Effect.serviceOption(HoustonSlackStore.HoustonSlackStore);
   const houstonMergeQueue = yield* Effect.serviceOption(
     HoustonMergeQueueStore.HoustonMergeQueueStore,
-  );
-  const houstonHarness = yield* Effect.serviceOption(HoustonHarnessStore.HoustonHarnessStore);
-  const houstonNightShift = yield* Effect.serviceOption(
-    HoustonNightShiftStore.HoustonNightShiftStore,
   );
   const projectLocks = yield* KeyedLock.make<ProjectId>();
   const workspaceLocks = yield* KeyedLock.make<string>();
@@ -542,10 +536,6 @@ export const make = Effect.gen(function* () {
         if (Option.isSome(houstonSlack)) yield* houstonSlack.value.projectRemoved(projectId);
         if (Option.isSome(houstonMergeQueue)) {
           yield* houstonMergeQueue.value.projectRemoved(projectId);
-        }
-        if (Option.isSome(houstonHarness)) yield* houstonHarness.value.projectRemoved(projectId);
-        if (Option.isSome(houstonNightShift)) {
-          yield* houstonNightShift.value.projectRemoved(projectId);
         }
       }
       yield* projectEnrichment.invalidate([existing.value.workspaceRoot]);

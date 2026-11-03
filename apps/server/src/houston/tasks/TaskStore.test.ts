@@ -93,6 +93,7 @@ describe("readiness names an initiative of another project", () => {
       assert.deepEqual((yield* service.get({ id: task.key })).domain.readiness.reasons, [reason]);
       const [summary] = (yield* store.summaries({ scope: { projectId: q } })).summaries;
       assert.strictEqual(summary?.ready, false);
+      assert.strictEqual(summary?.domainKind, "delivery");
     }).pipe(Effect.provide(layerTasks())),
   );
 });

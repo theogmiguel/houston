@@ -1,7 +1,7 @@
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@houston-app/client-runtime/environment";
-import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { isDesktopHost } from "../env";
@@ -14,6 +14,8 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { gridById, useGridStore, workspaceKeyOf } from "../grid/gridStore";
+import { readLastOpenGridId } from "../grid/lastGrid";
 import {
   readProject,
   useAllEnvironmentShellsBootstrapped,
@@ -40,6 +42,7 @@ function IndexDraftLanding() {
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
   const router = useRouter();
+  const navigate = useNavigate();
   // Read at effect time; this page can stay mounted while the router is already navigating away.
   const isStillOnIndex = useEffectEvent(() => router.state.location.pathname === "/");
   const startedAttemptRef = useRef<number | null>(null);
@@ -56,9 +59,25 @@ function IndexDraftLanding() {
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- starts a draft thread in the most recent project and navigates to it while still on the index
   useEffect(() => {
     // Starting a draft after the user has left would replace the page they picked.
-    if (mostRecentProject === null || startedAttemptRef.current === attempt || !isStillOnIndex()) {
+    if (startedAttemptRef.current === attempt || !isStillOnIndex()) return;
+    // Launch returns to the grid last on screen; only a deleted grid or a
+    // closed workspace falls through to a fresh draft.
+    const lastGridId = readLastOpenGridId();
+    const lastGrid =
+      lastGridId === null ? null : gridById(useGridStore.getState().grids, lastGridId);
+    const workspaceOpen =
+      lastGrid !== null &&
+      projects.some(
+        (project) =>
+          project.archivedAt == null &&
+          workspaceKeyOf(project.environmentId, project.id) === lastGrid.workspaceKey,
+      );
+    if (lastGrid !== null && workspaceOpen) {
+      startedAttemptRef.current = attempt;
+      void navigate({ to: "/grid/$gridId", params: { gridId: lastGrid.id }, replace: true });
       return;
     }
+    if (mostRecentProject === null) return;
     const projectRef = scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id);
     if (readProject(projectRef) === null) {
       return;
@@ -73,7 +92,7 @@ function IndexDraftLanding() {
       .catch(() => {
         setStartState((state) => ({ ...state, failed: true }));
       });
-  }, [attempt, handleNewThread, mostRecentProject]);
+  }, [attempt, handleNewThread, mostRecentProject, navigate, projects]);
 
   if (mostRecentProject !== null) {
     return startState.failed ? (

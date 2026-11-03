@@ -27,6 +27,7 @@ import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { observeResize } from "~/lib/observeResize";
+import { readLastOpenGridId } from "../../grid/lastGrid";
 
 /**
  * The rail's brand row: Houston's mark and name, with the sidebar's hide
@@ -96,11 +97,21 @@ export function SidebarBrandWidthProbe({
 }
 
 function SidebarBrand() {
-  return (
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const openGridId = /^\/grid\/([^/]+)/.exec(pathname)?.[1] ?? readLastOpenGridId();
+  const className =
+    "relative z-10 ml-[calc(var(--workspace-controls-left)-0.75rem)] flex h-7 w-fit min-w-0 shrink items-center overflow-hidden rounded-(--control-radius) text-foreground outline-none ring-ring focus-visible:ring-2 focus-visible:ring-inset";
+  // The wordmark returns to the grid last on screen, not to a fresh draft route.
+  return openGridId === null ? (
+    <Link aria-label="Go to threads" className={className} to="/">
+      <SidebarBrandMark />
+    </Link>
+  ) : (
     <Link
       aria-label="Go to threads"
-      className="relative z-10 ml-[calc(var(--workspace-controls-left)-0.75rem)] flex h-7 w-fit min-w-0 shrink items-center overflow-hidden rounded-(--control-radius) text-foreground outline-none ring-ring focus-visible:ring-2 focus-visible:ring-inset"
-      to="/"
+      className={className}
+      to="/grid/$gridId"
+      params={{ gridId: openGridId }}
     >
       <SidebarBrandMark />
     </Link>

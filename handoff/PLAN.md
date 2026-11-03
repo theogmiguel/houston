@@ -84,8 +84,9 @@ Everything under the TypeScript sidecar, in this order:
 5. orchestration-v2 (replaces `pane_*`).
 6. Git, pull requests, worktrees, checkpoints, usage.
 7. MCP toolkits (the orchestration tools agents call).
-8. Server side of the Houston-only features: Night shift, task sources (GitHub, Notion, Slack),
-   WSL. Workspace transfer is dropped from v2. Deferred until the port is complete; each is then ported onto the v2
+8. Server side of the Houston-only features: task sources (GitHub, Notion, Slack), WSL. Workspace
+   transfer is dropped from v2, and so are Night shift and harness review: routines and bots use the
+   generic scheduled-tasks feature. Deferred until the port is complete; each is then ported onto the v2
    stack when its slice starts (see "v1 removal").
 
 Also Augusto's: the decision on PR #363 (close it, or name what v2 reuses from it).
@@ -131,8 +132,9 @@ agents orchestrate through upstream's orchestration-v2.
 
 **The T3 base comes first.** The Houston-only ports were parked and now return one by one on the
 v2 server while the T3 base finishes in the renderer and the bridge: the Tasks agent toolkit
-(#456), merge queue hand-off and stacks (#469), harness review (#450), Slack intake (#459)
-and Night shift (#471). Workspace transfer is dropped (#470 closed). Each parked PR is a draft titled "Parked:" that
+(#456), merge queue hand-off and stacks (#469) and Slack intake (#459). Workspace transfer is dropped (#470
+closed); harness review (#450) and Night shift (#471) are removed from v2, as the generic
+scheduled-tasks feature covers routines and bots. Each parked PR is a draft titled "Parked:" that
 holds its work so far, and a maintainer reviews it before it merges. Houston code already on `v2`
 stays: the server entrypoint, provider status, send intents, reviewed files, aside and second
 opinion, the Tasks backlog store and runs, task sources sync and writeback (#457), and the merge

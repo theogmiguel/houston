@@ -37,6 +37,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { TimestampFormat } from "@houston-app/contracts/settings";
 import { TimelineRowTimestamp } from "./TimelineRowParts";
 import { FoldedMessageHeader, useScheduledTaskTitle } from "./TimelineUserMessageRow";
+import { messageDeliveryPresentation } from "./messageDelivery";
 
 export interface EditQueuedRunRequest {
   readonly runId: RunId;
@@ -286,6 +287,23 @@ export function QueuedRunsControl({
                       </TooltipPopup>
                     </Tooltip>
                   </>
+                ) : null}
+                {item.message?.delivery ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <span
+                          className="flex items-center gap-1 px-1"
+                          data-user-message-delivery={item.message.delivery.state}
+                        />
+                      }
+                    >
+                      {messageDeliveryPresentation(item.message.delivery).label}
+                    </TooltipTrigger>
+                    <TooltipPopup side="top">
+                      {messageDeliveryPresentation(item.message.delivery).detail}
+                    </TooltipPopup>
+                  </Tooltip>
                 ) : null}
                 {item.pending ? (
                   <span className="flex items-center gap-1 px-1">

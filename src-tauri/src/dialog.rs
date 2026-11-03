@@ -36,14 +36,6 @@ where
     })?
 }
 
-fn starting_directory(default_path: &str) -> Option<&str> {
-    if default_path.is_empty() {
-        None
-    } else {
-        Some(default_path)
-    }
-}
-
 fn to_pick_result(command: &str, picked: Option<FilePath>) -> Result<Option<PathBuf>, String> {
     match picked {
         Some(file_path) => file_path
@@ -64,25 +56,6 @@ async fn register_and_return(
     let verbatim = path.to_string_lossy().into_owned();
     register_allowed_root(&verbatim, roots).await?;
     Ok(Some(verbatim))
-}
-
-async fn register_and_return_many(
-    picked: Option<Vec<PathBuf>>,
-    roots: &AllowedRoots,
-) -> Result<Option<Vec<String>>, String> {
-    let Some(paths) = picked else {
-        return Ok(None);
-    };
-    if paths.is_empty() {
-        return Ok(None);
-    }
-    let mut out = Vec::with_capacity(paths.len());
-    for path in paths {
-        let verbatim = path.to_string_lossy().into_owned();
-        register_allowed_root(&verbatim, roots).await?;
-        out.push(verbatim);
-    }
-    Ok(Some(out))
 }
 
 fn to_pick_results(
@@ -108,45 +81,15 @@ fn to_pick_results(
 pub async fn dialog_pick_directory<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AllowedRoots>,
-) -> Result<Option<String>, String> {
-    let picked = await_pick(|cb| {
-        app.dialog()
-            .file()
-            .pick_folder(move |file_path| cb(to_pick_result("dialog_pick_directory", file_path)));
-    })
-    .await?;
-    register_and_return(picked, state.inner()).await
-}
-
-#[tauri::command]
-pub async fn dialog_pick_directories<R: Runtime>(
-    app: AppHandle<R>,
-    state: State<'_, AllowedRoots>,
-) -> Result<Option<Vec<String>>, String> {
-    let picked = await_pick_many(|cb| {
-        app.dialog()
-            .file()
-            .set_title("Choose folders to add as workspaces")
-            .pick_folders(move |file_paths| {
-                cb(to_pick_results("dialog_pick_directories", file_paths))
-            });
-    })
-    .await?;
-    register_and_return_many(picked, state.inner()).await
-}
-
-#[tauri::command]
-pub async fn dialog_pick_file<R: Runtime>(
-    default_path: String,
-    app: AppHandle<R>,
-    state: State<'_, AllowedRoots>,
+    initial_path: Option<String>,
 ) -> Result<Option<String>, String> {
     let picked = await_pick(|cb| {
         let mut builder = app.dialog().file();
-        if let Some(dir) = starting_directory(&default_path) {
+        if let Some(dir) = initial_path.as_deref().filter(|dir| !dir.trim().is_empty()) {
             builder = builder.set_directory(dir);
         }
-        builder.pick_file(move |file_path| cb(to_pick_result("dialog_pick_file", file_path)));
+        builder
+            .pick_folder(move |file_path| cb(to_pick_result("dialog_pick_directory", file_path)));
     })
     .await?;
     register_and_return(picked, state.inner()).await
@@ -205,148 +148,6 @@ pub async fn dialog_pick_theme_files<R: Runtime>(
         files.push(read_theme_file(&path)?);
     }
     Ok(Some(files))
-}
-
-#[tauri::command]
-pub async fn dialog_pick_image<R: Runtime>(app: AppHandle<R>) -> Result<Option<PathBuf>, String> {
-    let picked = await_pick(|cb| {
-        app.dialog()
-            .file()
-            .add_filter("Images", &["png", "jpg", "jpeg", "webp", "gif"])
-            .pick_file(move |file_path| cb(to_pick_result("dialog_pick_image", file_path)));
-    })
-    .await?;
-    Ok(picked)
-}
-
-/// Where to write a workspace transfer file, exactly as the dialog confirmed it (the
-/// renderer appends a missing extension and tells the daemon whether replacing is
-/// confirmed). The daemon writes it, so the path is not added to the file allowlist.
-#[tauri::command]
-pub async fn dialog_save_transfer<R: Runtime>(
-    default_name: String,
-    app: AppHandle<R>,
-) -> Result<Option<String>, String> {
-    let picked = await_pick(|cb| {
-        app.dialog()
-            .file()
-            .set_title("Export workspace transfer")
-            .set_file_name(&default_name)
-            .add_filter(
-                "Houston workspace transfer",
-                &[crate::transfer_open::EXTENSION],
-            )
-            .save_file(move |file_path| cb(to_pick_result("dialog_save_transfer", file_path)));
-    })
-    .await?;
-    Ok(picked.map(|path| path.to_string_lossy().into_owned()))
-}
-
-/// A transfer file to import; the daemon reads it.
-#[tauri::command]
-pub async fn dialog_pick_transfer<R: Runtime>(app: AppHandle<R>) -> Result<Option<String>, String> {
-    let picked = await_pick(|cb| {
-        app.dialog()
-            .file()
-            .set_title("Import workspace transfer")
-            .add_filter(
-                "Houston workspace transfer",
-                &[crate::transfer_open::EXTENSION],
-            )
-            .pick_file(move |file_path| cb(to_pick_result("dialog_pick_transfer", file_path)));
-    })
-    .await?;
-    Ok(picked.map(|path| path.to_string_lossy().into_owned()))
-}
-
-pub const CHAT_IMAGE_MAX_BYTES: u64 = 32 * 1024 * 1024;
-
-pub fn image_default_name(url: &str) -> String {
-    let tail = url
-        .split(['?', '#'])
-        .next()
-        .unwrap_or("")
-        .rsplit('/')
-        .next()
-        .unwrap_or("");
-    let cleaned: String = tail
-        .chars()
-        .filter(|c| {
-            *c != '/' && *c != '\\' && *c != '\0' && !c.is_control() && *c != ':' && *c != '"'
-        })
-        .take(96)
-        .collect();
-    let cleaned = cleaned.trim_matches(['.', ' ']).to_string();
-    if cleaned.is_empty() {
-        "image.png".to_string()
-    } else {
-        cleaned
-    }
-}
-
-fn http_url(url: &str) -> Result<(), String> {
-    let scheme = url.split("://").next().unwrap_or("");
-    if !url.contains("://") || (scheme != "http" && scheme != "https") {
-        return Err(format!(
-            "only http and https images can be saved; got {url:?}. Use Open to hand it to the \
-             browser instead."
-        ));
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn dialog_save_image_url<R: Runtime>(
-    url: String,
-    app: AppHandle<R>,
-) -> Result<Option<String>, String> {
-    http_url(&url)?;
-    let default_name = image_default_name(&url);
-
-    let picked = await_pick(|cb| {
-        app.dialog()
-            .file()
-            .set_title("Save image")
-            .set_file_name(&default_name)
-            .save_file(move |file_path| cb(to_pick_result("dialog_save_image_url", file_path)));
-    })
-    .await?;
-    let Some(path) = picked else {
-        return Ok(None);
-    };
-
-    let response = reqwest::get(&url)
-        .await
-        .map_err(|e| format!("fetching {url}: {e}"))?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "fetching {url}: the server answered {}",
-            response.status()
-        ));
-    }
-    if let Some(len) = response.content_length() {
-        if len > CHAT_IMAGE_MAX_BYTES {
-            return Err(format!(
-                "that image is {len} bytes; the limit is {CHAT_IMAGE_MAX_BYTES} \
-                 (CHAT_IMAGE_MAX_BYTES). Nothing was written."
-            ));
-        }
-    }
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| format!("reading {url}: {e}"))?;
-    if bytes.len() as u64 > CHAT_IMAGE_MAX_BYTES {
-        return Err(format!(
-            "that image is {} bytes; the limit is {CHAT_IMAGE_MAX_BYTES} \
-             (CHAT_IMAGE_MAX_BYTES). Nothing was written.",
-            bytes.len()
-        ));
-    }
-    tokio::fs::write(&path, &bytes)
-        .await
-        .map_err(|e| format!("writing {}: {e}", path.display()))?;
-    Ok(Some(path.to_string_lossy().into_owned()))
 }
 
 #[cfg(test)]
@@ -437,55 +238,6 @@ mod tests {
         assert_eq!(err, "boom");
     }
 
-    #[test]
-    fn starting_directory_treats_an_empty_default_path_as_unset() {
-        assert_eq!(
-            starting_directory(""),
-            None,
-            "an empty default_path (SshConnectModal.tsx:112's pickFile('')) must mean unset, not Some(\"\")"
-        );
-        assert_eq!(starting_directory("/some/dir"), Some("/some/dir"));
-    }
-
-    #[tokio::test]
-    async fn many_registers_every_picked_root_and_returns_them_in_order() {
-        let base = tempdir().unwrap();
-        let a = base.path().join("alpha");
-        let b = base.path().join("beta");
-        std::fs::create_dir_all(&a).unwrap();
-        std::fs::create_dir_all(&b).unwrap();
-
-        let roots = AllowedRoots::new();
-        let returned = register_and_return_many(Some(vec![a.clone(), b.clone()]), &roots)
-            .await
-            .unwrap();
-
-        assert_eq!(
-            returned,
-            Some(vec![
-                a.to_string_lossy().into_owned(),
-                b.to_string_lossy().into_owned()
-            ]),
-            "the picker's order must survive"
-        );
-        let guard = roots.0.lock().unwrap();
-        assert_eq!(guard.len(), 2, "both roots must register, found: {guard:?}");
-    }
-
-    #[tokio::test]
-    async fn many_treats_a_cancel_and_an_empty_selection_alike_and_registers_nothing() {
-        let roots = AllowedRoots::new();
-        assert_eq!(register_and_return_many(None, &roots).await.unwrap(), None);
-        assert_eq!(
-            register_and_return_many(Some(Vec::new()), &roots)
-                .await
-                .unwrap(),
-            None,
-            "an empty selection is not a folder to add"
-        );
-        assert!(roots.0.lock().unwrap().is_empty());
-    }
-
     #[tokio::test]
     async fn await_pick_many_propagates_a_named_error_and_survives_a_dropped_callback() {
         let err = await_pick_many(|cb| cb(Err("boom".to_string())))
@@ -514,64 +266,6 @@ mod tests {
             err.contains("dropped without firing"),
             "error should name what happened: {err}"
         );
-    }
-}
-
-#[cfg(test)]
-mod save_image_tests {
-    use super::*;
-
-    #[test]
-    fn only_http_and_https_are_savable() {
-        assert!(http_url("https://example.test/a.png").is_ok());
-        assert!(http_url("http://example.test/a.png").is_ok());
-        for bad in [
-            "file:///etc/passwd",
-            "data:image/png;base64,AAAA",
-            "ftp://example.test/a.png",
-            "/etc/passwd",
-            "example.test/a.png",
-        ] {
-            let err = http_url(bad).expect_err(bad);
-            assert!(err.contains(bad), "{err}");
-            assert!(err.contains("Open"), "{err}");
-        }
-    }
-
-    #[test]
-    fn the_default_name_is_the_urls_last_segment() {
-        assert_eq!(
-            image_default_name("https://x.test/a/banner_2.png"),
-            "banner_2.png"
-        );
-        assert_eq!(
-            image_default_name("https://x.test/shot.png?w=800#top"),
-            "shot.png"
-        );
-    }
-
-    #[test]
-    fn a_hostile_url_cannot_smuggle_a_path_into_the_name() {
-        assert_eq!(
-            image_default_name("https://x.test/a/../../etc/passwd"),
-            "passwd"
-        );
-        assert!(!image_default_name("https://x.test/a%00b\u{7f}.png").contains('\u{7f}'));
-        for url in [
-            "https://x.test/",
-            "https://x.test/...",
-            "https://x.test",
-            "https://x.test/   ",
-        ] {
-            let name = image_default_name(url);
-            assert!(!name.is_empty(), "{url} -> {name:?}");
-            assert!(!name.chars().all(|c| c == '.'), "{url} -> {name:?}");
-        }
-    }
-
-    #[test]
-    fn the_size_cap_is_the_constant() {
-        assert_eq!(CHAT_IMAGE_MAX_BYTES, 32 * 1024 * 1024);
     }
 }
 

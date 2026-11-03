@@ -3467,6 +3467,9 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           path: "HEAD",
           insertions: 1,
           deletions: 0,
+          staged: false,
+          unstaged: true,
+          status: "modified",
         });
       }),
     );
@@ -3487,9 +3490,30 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const status = yield* driver.statusDetails(cwd);
 
         assert.deepEqual(status.workingTree.files, [
-          { path: "café notes.md", insertions: 1, deletions: 0 },
-          { path: "src/new.ts", insertions: 1, deletions: 0 },
-          { path: "src/old.ts", insertions: 0, deletions: 0 },
+          {
+            path: "café notes.md",
+            insertions: 1,
+            deletions: 0,
+            staged: false,
+            unstaged: true,
+            status: "modified",
+          },
+          {
+            path: "src/new.ts",
+            insertions: 1,
+            deletions: 0,
+            staged: true,
+            unstaged: true,
+            status: "renamed",
+          },
+          {
+            path: "src/old.ts",
+            insertions: 0,
+            deletions: 0,
+            staged: true,
+            unstaged: false,
+            status: "deleted",
+          },
         ]);
         yield* driver.commit(cwd, "Commit selection", "", {
           stage: { filePaths: status.workingTree.files.map((file) => file.path) },
@@ -3517,9 +3541,31 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const status = yield* driver.statusDetails(nestedCwd);
 
         assert.deepEqual(status.workingTree.files, [
-          { path: "nested/new.txt", insertions: 0, deletions: 0 },
-          { path: "nested/tracked.txt", insertions: 1, deletions: 0 },
-          { path: "README.md", insertions: 1, deletions: 0 },
+          {
+            path: "nested/new.txt",
+            insertions: 0,
+            deletions: 0,
+            staged: false,
+            unstaged: false,
+            untracked: true,
+            status: "untracked",
+          },
+          {
+            path: "nested/tracked.txt",
+            insertions: 1,
+            deletions: 0,
+            staged: false,
+            unstaged: true,
+            status: "modified",
+          },
+          {
+            path: "README.md",
+            insertions: 1,
+            deletions: 0,
+            staged: false,
+            unstaged: true,
+            status: "modified",
+          },
         ]);
         // The root is what the paths above are relative to, not the nested cwd, and it keeps
         // the trailing space so the resolved editor target is the file that exists.
@@ -3552,8 +3598,23 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const status = yield* driver.statusDetails(nestedCwd);
 
         assert.deepEqual(status.workingTree.files, [
-          { path: "nested/new.txt", insertions: 0, deletions: 0 },
-          { path: "nested/tracked.txt", insertions: 1, deletions: 0 },
+          {
+            path: "nested/new.txt",
+            insertions: 0,
+            deletions: 0,
+            staged: false,
+            unstaged: false,
+            untracked: true,
+            status: "untracked",
+          },
+          {
+            path: "nested/tracked.txt",
+            insertions: 1,
+            deletions: 0,
+            staged: false,
+            unstaged: true,
+            status: "modified",
+          },
         ]);
         assert.equal(
           NodeFS.realpathSync.native(status.workingTree.rootPath!),
@@ -6267,4 +6328,463 @@ describe("Windows long path configuration", () => {
       );
     }
   });
+});
+
+describe("worktree include", () => {
+  const readWorktreeFile = (worktreePath: string, relativePath: string) =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      return yield* fileSystem.readFileString(path.join(worktreePath, relativePath));
+    });
+
+  it.effect("copies only the ignored files .worktreeinclude lists", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        yield* writeTextFile(cwd, ".gitignore", ".env\nconfig/\nignored.log\n");
+        yield* writeTextFile(cwd, ".worktreeinclude", ".env\nignored.log\n");
+        yield* writeTextFile(cwd, ".env", "SECRET=1\n");
+        yield* writeTextFile(cwd, "ignored.log", "log\n");
+        yield* writeTextFile(cwd, "config/settings.json", "{}\n");
+        const worktreePath = path.join(yield* makeTmpDir("git-worktrees-"), "included");
+
+        yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/include",
+        });
+
+        assert.equal(yield* readWorktreeFile(worktreePath, ".env"), "SECRET=1\n");
+        assert.equal(yield* readWorktreeFile(worktreePath, "ignored.log"), "log\n");
+        assert.isFalse(
+          yield* fileSystem
+            .exists(path.join(worktreePath, "config", "settings.json"))
+            .pipe(Effect.orElseSucceed(() => false)),
+        );
+        assert.equal(yield* readWorktreeFile(worktreePath, "README.md"), "# test\n");
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("skips the copy when .worktreeinclude is absent", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        yield* writeTextFile(cwd, ".gitignore", ".env\n");
+        yield* writeTextFile(cwd, ".env", "SECRET=1\n");
+        const worktreePath = path.join(yield* makeTmpDir("git-worktrees-"), "plain");
+
+        yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/plain",
+        });
+
+        assert.isFalse(
+          yield* fileSystem
+            .exists(path.join(worktreePath, ".env"))
+            .pipe(Effect.orElseSucceed(() => false)),
+        );
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
+});
+
+describe("working-tree actions", () => {
+  it.effect("stages and unstages the named files only", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        yield* writeTextFile(cwd, "a.txt", "a\n");
+        yield* writeTextFile(cwd, "b.txt", "b\n");
+
+        yield* driver.stageFiles(cwd, ["a.txt"]);
+        const staged = yield* driver.statusDetailsLocal(cwd);
+        const a = staged.workingTree.files.find((file) => file.path === "a.txt");
+        const b = staged.workingTree.files.find((file) => file.path === "b.txt");
+        assert.isTrue(a?.staged);
+        assert.isFalse(a?.unstaged);
+        assert.isTrue(b?.untracked);
+        assert.isFalse(b?.staged);
+
+        yield* driver.unstageFiles(cwd, ["a.txt"]);
+        const unstaged = yield* driver.statusDetailsLocal(cwd);
+        const aAfter = unstaged.workingTree.files.find((file) => file.path === "a.txt");
+        // A newly added file has no HEAD copy to return to, so Git leaves it untracked.
+        assert.isTrue(aAfter?.untracked);
+        assert.isFalse(aAfter?.staged);
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("discards staged, unstaged and untracked changes", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        yield* writeTextFile(cwd, "README.md", "# changed\n");
+        yield* driver.stageFiles(cwd, ["README.md"]);
+        yield* writeTextFile(cwd, "README.md", "# staged then changed again\n");
+        yield* writeTextFile(cwd, "scratch.txt", "untracked\n");
+
+        yield* driver.discardFiles(cwd, [
+          { path: "README.md", kind: "staged" },
+          { path: "scratch.txt", kind: "untracked" },
+        ]);
+
+        assert.equal(yield* fileSystem.readFileString(path.join(cwd, "README.md")), "# test\n");
+        assert.isFalse(
+          yield* fileSystem
+            .exists(path.join(cwd, "scratch.txt"))
+            .pipe(Effect.orElseSucceed(() => false)),
+        );
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("keeps tracked and ignored files when discarding a partly untracked directory", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        yield* writeTextFile(cwd, ".gitignore", "*.env\n");
+        yield* writeTextFile(cwd, "pkg/tracked.txt", "tracked\n");
+        yield* git(cwd, ["add", ".gitignore", "pkg/tracked.txt"]);
+        yield* git(cwd, ["commit", "-m", "track pkg"]);
+        yield* writeTextFile(cwd, "pkg/scratch.txt", "untracked\n");
+        yield* writeTextFile(cwd, "pkg/secret.env", "ignored\n");
+
+        yield* driver.discardFiles(cwd, [{ path: "pkg/", kind: "untracked" }]);
+
+        assert.equal(
+          yield* fileSystem.readFileString(path.join(cwd, "pkg", "tracked.txt")),
+          "tracked\n",
+        );
+        assert.equal(
+          yield* fileSystem.readFileString(path.join(cwd, "pkg", "secret.env")),
+          "ignored\n",
+        );
+        assert.isFalse(
+          yield* fileSystem
+            .exists(path.join(cwd, "pkg", "scratch.txt"))
+            .pipe(Effect.orElseSucceed(() => false)),
+        );
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("treats pathspec magic in a discarded path as a literal name", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        yield* writeTextFile(cwd, "other.md", "# other\n");
+        yield* git(cwd, ["add", "other.md"]);
+        yield* git(cwd, ["commit", "-m", "other"]);
+        yield* writeTextFile(cwd, "README.md", "# changed\n");
+        yield* writeTextFile(cwd, "other.md", "# other changed\n");
+
+        yield* driver
+          .discardFiles(cwd, [{ path: ":(glob)*.md", kind: "unstaged" }])
+          .pipe(Effect.ignore);
+
+        assert.equal(yield* fileSystem.readFileString(path.join(cwd, "README.md")), "# changed\n");
+        assert.equal(
+          yield* fileSystem.readFileString(path.join(cwd, "other.md")),
+          "# other changed\n",
+        );
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("refuses a discard path that leaves the worktree", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const failure = yield* driver
+          .discardFiles(cwd, [{ path: "../outside.txt", kind: "unstaged" }])
+          .pipe(Effect.flip);
+        assert.include(failure.detail, "../outside.txt");
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("refuses to discard a path inside .git", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const configPath = path.join(cwd, ".git", "config");
+        const before = yield* fileSystem.readFileString(configPath);
+
+        const failure = yield* driver
+          .discardFiles(cwd, [{ path: ".git/config", kind: "unstaged" }])
+          .pipe(Effect.flip);
+
+        assert.include(failure.detail, ".git/config");
+        assert.include(failure.detail, "Git metadata");
+        assert.equal(yield* fileSystem.readFileString(configPath), before);
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("refuses to delete a tracked file sent down the untracked path", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        yield* writeTextFile(cwd, "README.md", "# changed\n");
+
+        const failure = yield* driver
+          .discardFiles(cwd, [{ path: "README.md", kind: "untracked" }])
+          .pipe(Effect.flip);
+
+        assert.include(failure.detail, "README.md");
+        assert.include(failure.detail, "does not report it as untracked");
+        assert.equal(yield* fileSystem.readFileString(path.join(cwd, "README.md")), "# changed\n");
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect.skipIf(!symlinksSupported)(
+    "refuses an untracked discard reached through a symlinked parent",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cwd = yield* makeTmpDir();
+          yield* initRepoWithCommit(cwd);
+          const outside = yield* makeTmpDir("git-vcs-outside-");
+          yield* writeTextFile(outside, "victim.txt", "keep me\n");
+          yield* fileSystem.symlink(outside, path.join(cwd, "linked-outside"));
+
+          const failure = yield* driver
+            .discardFiles(cwd, [{ path: "linked-outside/victim.txt", kind: "untracked" }])
+            .pipe(Effect.flip);
+
+          assert.include(failure.detail, "linked-outside/victim.txt");
+          assert.include(failure.detail, "symlinked parent");
+          assert.equal(
+            yield* fileSystem.readFileString(path.join(outside, "victim.txt")),
+            "keep me\n",
+          );
+        }),
+      ).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect.skipIf(!symlinksSupported)(
+    "removes an untracked symlink itself without following its target",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cwd = yield* makeTmpDir();
+          yield* initRepoWithCommit(cwd);
+          const outside = yield* makeTmpDir("git-vcs-outside-");
+          yield* writeTextFile(outside, "victim.txt", "keep me\n");
+          const link = path.join(cwd, "alias.txt");
+          yield* fileSystem.symlink(path.join(outside, "victim.txt"), link);
+
+          yield* driver.discardFiles(cwd, [{ path: "alias.txt", kind: "untracked" }]);
+
+          assert.isFalse(yield* fileSystem.exists(link).pipe(Effect.orElseSucceed(() => false)));
+          assert.equal(
+            yield* fileSystem.readFileString(path.join(outside, "victim.txt")),
+            "keep me\n",
+          );
+        }),
+      ).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("amends an unpublished commit and refuses a published one", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const remote = yield* makeTmpDir();
+        yield* git(remote, ["init", "--bare"]);
+        const origin = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(origin);
+        yield* git(origin, ["remote", "add", "origin", remote]);
+        yield* git(origin, ["push", "-u", "origin", `HEAD:refs/heads/${initialBranch}`]);
+        const cwd = yield* makeTmpDir();
+        yield* git(cwd, ["clone", remote, "."]);
+        yield* git(cwd, ["config", "user.email", "test@test.com"]);
+        yield* git(cwd, ["config", "user.name", "Test"]);
+
+        const refused = yield* driver.amendCommit(cwd, "rewritten").pipe(Effect.flip);
+        assert.include(refused.detail, "already contained");
+
+        yield* writeTextFile(cwd, "local.txt", "local\n");
+        yield* git(cwd, ["add", "local.txt"]);
+        yield* git(cwd, ["commit", "-m", "unpublished"]);
+        const amended = yield* driver.amendCommit(cwd, "rewritten subject");
+        assert.equal(yield* git(cwd, ["log", "-1", "--pretty=%s"]), "rewritten subject");
+        assert.match(amended.commitSha, /^[0-9a-f]{40}$/);
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("fetches the primary remote and reports its name", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const remote = yield* makeTmpDir();
+        yield* git(remote, ["init", "--bare"]);
+        const origin = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(origin);
+        yield* git(origin, ["remote", "add", "origin", remote]);
+        yield* git(origin, ["push", "-u", "origin", `HEAD:refs/heads/${initialBranch}`]);
+        const cwd = yield* makeTmpDir();
+        yield* git(cwd, ["clone", remote, "."]);
+        yield* git(cwd, ["config", "user.email", "test@test.com"]);
+        yield* git(cwd, ["config", "user.name", "Test"]);
+
+        yield* writeTextFile(origin, "new.txt", "new\n");
+        yield* git(origin, ["add", "new.txt"]);
+        yield* git(origin, ["commit", "-m", "second"]);
+        yield* git(origin, ["push"]);
+
+        const result = yield* driver.fetchCurrentBranch(cwd);
+        assert.equal(result.remoteName, "origin");
+        assert.isAbove(result.summary.length, 0);
+        assert.equal(
+          yield* git(cwd, ["rev-parse", `refs/remotes/origin/${initialBranch}`]),
+          yield* git(origin, ["rev-parse", "HEAD"]),
+        );
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("reports a paused operation with its conflicted files", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        yield* git(cwd, ["checkout", "-b", "theirs", initialBranch]);
+        yield* writeTextFile(cwd, "README.md", "theirs\n");
+        yield* git(cwd, ["commit", "-am", "theirs"]);
+        yield* git(cwd, ["checkout", initialBranch]);
+        yield* writeTextFile(cwd, "README.md", "ours\n");
+        yield* git(cwd, ["commit", "-am", "ours"]);
+        // A conflicting merge exits non-zero but leaves the operation paused.
+        yield* git(cwd, ["merge", "theirs"]).pipe(Effect.orElseSucceed(() => ""));
+
+        const status = yield* driver.statusDetailsLocal(cwd);
+        assert.equal(status.pausedOperation?.kind, "merge");
+        assert.deepStrictEqual(status.pausedOperation?.conflictedPaths, ["README.md"]);
+        const conflict = status.workingTree.files.find((file) => file.path === "README.md");
+        assert.isTrue(conflict?.conflicted);
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
+});
+
+describe("worktree and stash reads", () => {
+  it.effect("lists the main and linked worktrees with their refs", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const linkedPath = path.join(yield* makeTmpDir("git-worktrees-"), "linked");
+        yield* git(cwd, ["worktree", "add", "-b", "feature/linked", linkedPath]);
+
+        const { worktrees } = yield* driver.listWorktrees(cwd);
+
+        assert.equal(worktrees.length, 2);
+        const main = worktrees[0]!;
+        assert.isTrue(main.isMain);
+        assert.equal(main.refName, initialBranch);
+        assert.equal(NodeFS.realpathSync.native(main.path), NodeFS.realpathSync.native(cwd));
+        const linked = worktrees.find((worktree) => worktree.refName === "feature/linked");
+        assert.isDefined(linked);
+        assert.isFalse(linked!.isMain);
+        assert.equal(
+          NodeFS.realpathSync.native(linked!.path),
+          NodeFS.realpathSync.native(linkedPath),
+        );
+        assert.match(linked!.headSha ?? "", /^[0-9a-f]{40}$/);
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("pushes, lists, pops and drops a stash", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        yield* writeTextFile(cwd, "README.md", "# changed\n");
+
+        const empty = yield* driver.listStashes(cwd);
+        assert.deepEqual(empty.stashes, []);
+
+        const pushed = yield* driver.pushStash(cwd, "work in progress");
+        assert.isTrue(pushed.created);
+        const listed = yield* driver.listStashes(cwd);
+        assert.equal(listed.stashes.length, 1);
+        assert.equal(listed.stashes[0]!.ref, "stash@{0}");
+        assert.match(listed.stashes[0]!.message, /: work in progress$/);
+
+        yield* driver.popStash(cwd, "stash@{0}");
+        assert.equal(yield* fileSystem.readFileString(path.join(cwd, "README.md")), "# changed\n");
+        assert.deepEqual((yield* driver.listStashes(cwd)).stashes, []);
+
+        yield* writeTextFile(cwd, "README.md", "# changed again\n");
+        yield* driver.pushStash(cwd);
+        yield* driver.dropStash(cwd, "stash@{0}");
+        assert.deepEqual((yield* driver.listStashes(cwd)).stashes, []);
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("refuses a stash ref that is not stash@{N}", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const failure = yield* driver.popStash(cwd, "HEAD~1").pipe(Effect.flip);
+        assert.include(failure.detail, "stash@{N}");
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
 });

@@ -141,6 +141,10 @@ export class HoustonTaskSourceStore extends Context.Service<
       provider: HoustonTaskSourceProvider,
     ) => Effect.Effect<PollRow | undefined>;
     readonly linksOf: (taskId: number) => Effect.Effect<ReadonlyArray<HoustonTaskSourceLink>>;
+    /** Every link that carries at least one unresolved conflict, for one project or all. */
+    readonly linksWithConflicts: (
+      projectId?: string,
+    ) => Effect.Effect<ReadonlyArray<HoustonTaskSourceLink>>;
     /** The OS keychain service of a project's tracker token. */
     readonly tokenService: (projectId: string, provider: HoustonTaskSourceProvider) => string;
     /** Whether the keychain holds the token; false when it cannot be read. */
@@ -243,6 +247,24 @@ const make = Effect.gen(function* () {
       Effect.orDie,
     );
 
+  const linksWithConflicts = (projectId?: string) => {
+    const rows =
+      projectId === undefined
+        ? sql<LinkRow>`
+            SELECT * FROM houston_task_source_links
+            ORDER BY project_id, task_id, provider, external_id, source
+          `
+        : sql<LinkRow>`
+            SELECT * FROM houston_task_source_links
+            WHERE project_id = ${projectId}
+            ORDER BY task_id, provider, external_id, source
+          `;
+    return rows.pipe(
+      Effect.map((rows) => rows.map(toLink).filter((link) => link.snapshot.conflicts.length > 0)),
+      Effect.orDie,
+    );
+  };
+
   const forgetCredential = (projectId: string, provider: HoustonTaskSourceProvider) =>
     write(
       Effect.gen(function* () {
@@ -290,6 +312,7 @@ const make = Effect.gen(function* () {
     `.pipe(Effect.orDie),
     pollRow,
     linksOf,
+    linksWithConflicts,
     tokenService,
     hasCredential,
     settingsOf,

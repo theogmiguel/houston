@@ -4,6 +4,7 @@ import * as NodeSqlite from "node:sqlite";
 
 const V1_SCHEMA = `
   CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  CREATE TABLE workspaces (path TEXT PRIMARY KEY, name TEXT NOT NULL, added_at INTEGER NOT NULL);
   CREATE TABLE backlog_tasks (
     id INTEGER PRIMARY KEY, workspace TEXT, number INTEGER NOT NULL UNIQUE,
     title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
@@ -128,6 +129,11 @@ export interface V1Fixture {
   }>;
   readonly blocks?: ReadonlyArray<{ readonly taskId: number; readonly blockedById: number }>;
   readonly runs?: ReadonlyArray<V1RunRow>;
+  readonly workspaces?: ReadonlyArray<{
+    readonly path: string;
+    readonly name: string;
+    readonly addedAtMs: number;
+  }>;
   readonly projects?: ReadonlyArray<{
     readonly id: number;
     readonly workspace: string;
@@ -250,6 +256,10 @@ export const writeV1Database = (
         row.reviewFindings ?? null,
         row.reviewSkippedReason ?? null,
       );
+    }
+    const workspace = db.prepare("INSERT INTO workspaces (path, name, added_at) VALUES (?, ?, ?)");
+    for (const row of fixture.workspaces ?? []) {
+      workspace.run(row.path, row.name, row.addedAtMs);
     }
     const project = db.prepare(
       `INSERT INTO backlog_projects (id, workspace, name, external_url, tracker_description,

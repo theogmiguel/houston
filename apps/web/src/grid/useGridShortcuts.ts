@@ -94,13 +94,7 @@ export function useGridShortcuts(options: GridShortcutsOptions): void {
         return;
       }
 
-      if (
-        !(event.ctrlKey || event.metaKey) ||
-        !event.shiftKey ||
-        event.altKey ||
-        event.key !== "Enter"
-      )
-        return;
+      if (command !== "grid.toggleMaximizedCell") return;
       if (terminalFocus || editableFocus) return;
       const state = useGridStore.getState();
       const grid = state.grids.find((entry) => entry.id === options.gridId);

@@ -1,464 +1,66 @@
 # Changes
 
-## Opening Changes and Pull request
-
-Open the side panel and choose **Changes** or **Pull request**, or press the prefix key followed
-by `D` or `P` in a terminal. Changes shows working tree changes for the panel's checkout;
-Pull request shows the current branch's PR summary and details. Drag the panel edge to
-resize it; double-click the edge to reset the width. Closing the panel leaves your
-terminal sessions running.
-
-The panel uses the selected workspace's checkout. In **All workspaces**, it follows the
-focused terminal's checkout. Reviewing an agent's work can target that run's worktree.
-Check the checkout in the header before acting.
+**Changes** is the Git surface for a thread's checkout. Open it from the right panel's
+**Diff** tab, from the thread header, or with `Ctrl+D`. Drag the panel edge to resize it;
+double-click the edge to reset the width.
 
 ## Comparing changes
 
-Changes lists modified, staged, added,
-deleted, renamed and untracked files, and shows how far your branch is ahead of or
-behind its upstream. Choose **Uncommitted N** for local working-tree changes or **vs <base> N** for the
-branch comparison. Each number counts distinct changed files in that comparison.
-The Changes tab continues to count uncommitted files when you review the branch diff.
-A repository with no upstream, or a detached HEAD, is shown as such rather
-than left blank. Below the files, On this branch lists the commits your upstream does
-not have yet, newest first; View all expands the list. Added and deleted line counts
-follow the staged and unstaged versions separately, including renamed files and
-filenames with non-ASCII characters or control characters. Binary changes have no
-line counts.
+Changes lists modified, staged, added, deleted, renamed and untracked files and shows how
+far the branch is ahead of or behind its upstream. A repository with no upstream, or a
+detached HEAD, says so rather than showing an empty state.
 
-## Reviewing a diff
+Choose a file to see its diff. Diffs are capped in size and truncate rather than growing
+without bound. Paths that look like secrets are excluded or redacted, for you and for an
+agent asked to review the diff.
 
-Selecting a file shows its diff. Diffs are capped in size; a patch beyond the cap is
-truncated rather than left to grow the pane without bound. Certain path patterns (things
-that look like secrets — for example anything with "secrets" in the name) are excluded
-or redacted from the diff Houston builds for review, on the same rules whether the diff
-is read by you or handed to an agent for review. Filename rules also apply to paths
-containing tabs or non-ASCII characters, and to both names of a renamed file.
-Patches whose file names cannot be safely identified are excluded from review and
-checkpoint inspection.
+**Split view** in the diff menu switches between stacked and side-by-side layout; the default
+is set in **Settings ▸ Diffs & pull requests**. Press `/` to focus the filename filter,
+then `J` and `K` to move through matching files while you are not typing in a field.
 
-Each patch retains at most 512 KiB. Combined untracked-file previews stop after
-1,024 files or the patch size limit. A Git command that produces more than 8 MiB
-of output is refused with an error, and commands have a two-minute deadline.
-If a commit, push or other mutation times out, inspect the repository and remote
-before retrying: part of the operation may already have completed.
+To find text in a diff, click into it and press `Ctrl+F`. The find strip counts matches;
+**Enter** and **Shift+Enter** move between them, **Aa** matches case, and `Esc` closes it.
+A count is marked **partial** when a patch was truncated at its size cap.
 
-For a larger review, maximize Changes to keep the file list and diff alongside one
-another. Press `/` to focus the filename filter, then use `J` and `K` to move through
-matching files when you are not typing into a field. **Unified** and **Split** choose the
-diff layout. Press **Esc** to restore the panel's previous width.
+Each file in **Uncommitted** carries a **Viewed** checkbox. The mark belongs to the
+checkout's branch: a new commit that touches the file, or an edit that changes it, clears
+the mark and shows **Changed since viewed** until you mark the new content.
 
-To find text in a diff, click into Changes or a pull request's **Files** and press `Ctrl+F`.
-The find strip counts matches; **Enter** and **Shift+Enter** move to the next and previous
-match, **Aa** matches case, and **Esc** closes it. Find searches only patch text Houston has
-already loaded: in Changes, the selected file's diff, or every expanded file in the side
-panel's list; in **Files**, every file of the pull request, and a match in a collapsed file
-expands it. When a patch was truncated at its size cap, the count is marked **partial**.
-Rebind the chord in **Settings ▸ Shortcuts** under **Find in the focused diff**; in a
-focused terminal, `Ctrl+F` remains terminal search.
+## Staging and committing
 
-Review with agent opens a picker with the five engines Houston can spawn — Claude Code,
-Codex, Antigravity, OpenCode or ZCode — and starts the one you choose in a
-new pane, with the prepared diff as its brief. Nothing is sent until you press Start
-review; Cancel sends nothing at all.
+Stage and unstage individual files or all of them, then commit the staged set. The commit
+dialog accepts a message; leave it empty to generate one. The Git menu's **Commit & push**
+does both in one step. **Amend last commit…** rewrites the most recent commit and needs a
+message; it is refused once that commit is on the branch's upstream.
 
-When a merge, rebase or cherry-pick stops part-way in the checkout, Changes shows a banner
-naming the operation and its conflicted files. **Resolve with agent** opens the same engine
-picker and starts the chosen agent in a new pane in that checkout. Its brief lists the
-conflicted files and the command that continues the operation without opening an editor,
-and tells the agent to run `git diff --check`, never to reset, restore, clean, stash or
-abort, and to report what it resolved. The banner leaves once git no longer reports the
-operation. A paused revert, or a cherry-pick range whose current commit was already made
-by hand, shows no banner.
-
-## Pull requests
-
-Open **Pull requests** from the rail or press the prefix key followed by `R` to browse
-requests for the repository. Filter by state or involvement, search by title, branch,
-author, number or `label:bug`, and sort the results. Open a request to review its status,
-author, source and target branches, and recent activity. Ctrl-click a PR number to open
-it on GitHub.
-
-Use **Summary**, **Timeline** and **Files** to read the description, review discussions
-and inspect changed files. Timeline and Files report their item counts. Reply to review
-comments, resolve discussions, submit a review or send a comment to the orchestrator
-pane. Details also let you edit the title and description, reviewers and labels.
-
-Each file in **Files** carries a **Viewed** toggle. Marks are kept per pull request, so
-files you have already reviewed stay viewed when you reopen the panel. When a viewed
-file's patch changes — after a new push, for example — the file reads unviewed again and
-carries a **Changed since viewed** badge until you review the new version; marking it
-viewed records the new patch. Binary files and mode changes count as changes too. When a
-patch is too large to load in full, the file it cuts off reads **Patch cut off** and its
-Viewed toggle is unavailable, because Houston cannot compare the whole file.
-
-**Hide resolved** and **Hide bots** filter a pull request's discussions and comments; each
-names how many items it applies to, and hidden items collapse to one line with **Show**.
-A comment counts as a bot's when GitHub reports its author as an app. A discussion counts as
-a bot's only until a person replies in it. Both toggles are off by default, and the choice
-is remembered on this device for every pull request. The Timeline already omits resolved
-discussions, so it offers only **Hide bots**.
-
-Merge readiness reports checks, required reviews and conflicts with the base branch.
-Choose squash, merge commit or rebase, and review the stated consequence before
-merging: squash combines the request's commits into one. Actions remain subject to
-GitHub permissions and repository requirements; unavailable actions explain the reason.
-
-For a failing check, **Log** opens its available log tail and **Fix with agent** sends
-the failure context to a selected agent. Checks without an available Actions log say so.
-**Merge when green** requests GitHub auto-merge after the required checks and reviews
-pass. Refresh before reviewing the latest state or retrying a blocked merge.
-
-The additional actions copy `gh pr checkout <number>` or the PR link, update the branch
-from its base, convert it to a draft, or close it after confirmation. **Unlink from this
-pane** removes the local association without closing the request on GitHub. Closed
-requests can be reopened when permitted. If no PR exists, create one for the branch or
-link an existing request by number.
-
-## Review requests
-
-The **Review requests** view on the Pull requests page lists pull requests where GitHub asks
-you to review. Turn the queue on in **Settings ▸ Workspaces ▸ Review requests**:
-
-- **Off** (the default) requests nothing.
-- **Notify** asks GitHub every 2 minutes, through your `gh` login, which pull requests await
-  your review, reads their size and files, and tells you.
-- **Review** also checks out the pull request head in a worktree for medium and large requests
-  and starts the workspace's default agent in it as a read-only review pane. The diff goes to
-  that agent's provider. Houston never approves a pull request or posts anything to GitHub.
-
-A review pane can read the checkout and the diff in its brief and report findings in the pane;
-it cannot edit files or run commands, and the pull request's own agent configuration does not
-load. With **Claude**, Houston starts it with only the Read, Grep and Glob tools, loads user
-settings only (not the project's `.claude/` settings or hooks), and uses Houston's MCP server
-alone (not the project's `.mcp.json`). With **Codex**, it runs in the read-only sandbox with
-approvals off, and the checkout is marked untrusted so Codex skips the project's `.codex/`
-configuration. The pull request's instruction files (such as `CLAUDE.md` or `AGENTS.md`) are
-still read as text, so prefer **Notify** for repositories whose authors you do not trust.
-Antigravity, OpenCode and ZCode have no launch flags that restrict tools or skip project
-configuration, so a workspace whose default task agent is one of them opens no review pane;
-the view says so by name. Pick Claude or Codex as the workspace's start agent in Tasks.
-
-Each row names its repository and number, title, author and one of three tiers. The tier is
-never shown alone: its reasons sit directly under it, such as a migration, a new dependency,
-more than 400 lines or a documentation-only change. A row with no matching local checkout
-says so, because Houston has nowhere to open the review pane. **Dismiss** records your
-decision and **Reopen** withdraws it. A pull request has one row, for its newest head: a new push
-replaces the row and is triaged again. The rail's **Pull requests** item counts new requests. In
-**Review** mode, the review worktree is removed once its pane has exited.
-GitHub rate-limit pauses and credential problems appear as a notice in the view and in
-Settings without dropping the rows.
-
-While the queue is on, Houston runs `gh search prs --review-requested=@me` against GitHub
-about every two minutes and, for a new or updated request, one `gh pr view` for its head,
-files, base branch and check state. Both use your `gh` login; no repository content is sent
-for detection or triage. The queue keeps each request's repository, number, head commit,
-tier, triage reasons and your Dismiss or Reopen decision in the local Houston database.
-
-## Merge queue
-
-The **Merge queue** view on the Pull requests page, next to **Requests**, lists the open pull
-requests waiting to merge in the selected workspace, in the order they merge. Agents add their
-pull requests with `pane_pr_enqueue`; you can add one with **Add to merge queue** in its merge
-box or from the command palette (**Add to merge queue** acts on the focused pane's pull
-request, and **Open merge queue** opens the view). The queue needs a GitHub remote; a
-workspace without one, or a pull request from a fork or another repository, is refused.
-
-Entries merge first in, first out, except that a blocked entry is passed over (see below).
-An entry enqueued with `depends_on` waits behind the pull
-request it depends on. Each row shows its place, one status and one reason. Select a row to
-see its gates:
-
-- **Mergeable**: GitHub's merge requirements, checks and conflicts allow the merge.
-- **No unresolved review threads**.
-- **Reviewer passed**: for a task Slice, the newest reviewer verdict is pass. Other pull
-  requests skip this gate.
-- **Verification**: when the workspace has a verification command, the head passed it on the
-  current base (see below). Without a command this gate does not apply.
-
-Houston re-reads queued pull requests once a minute, sharing the read with pull request
-watches. Until a pull request has been read, or when a read fails, it is Blocked. A pull
-request merged or closed outside the queue leaves it.
-
-The queue works on the entry that goes next: the first one in line that is not Blocked. A
-blocked entry keeps its place while the entries behind it go ahead; once it clears, for
-example when its review threads are resolved or its failing checks are fixed, it goes first
-again. A pull request that depends on a blocked one waits with it. While Houston has no
-answer for an entry yet (it has not been read, a read failed, its checks are still running,
-or GitHub is still computing whether it can merge), the whole queue waits for it, and the
-entries behind it name it as their reason.
-
-Only the entry that goes next can be merged from the queue. Its **Merge** merges the exact
-commit shown, with the repository's allowed merge method (squash when allowed); if the head
-moved, the base moved or a gate fails, the merge is refused and nothing merges. If GitHub
-refuses the method, its message is shown unchanged. To merge any other queued pull request,
-**Dequeue** it first, then merge it from its merge box. After a merge the next entry moves up,
-the merge appears under **Today**, and the worktree cleanup check runs if it is turned on. A
-queue holds at most 32 entries.
-
-### Verification and merging on its own
-
-Set the queue up in **Settings ▸ Workspaces ▸ Merge queue**:
-
-- **Verification command**: the command that proves a pull request works, such as
-  `cargo nextest run`. It is stored in Houston, never read from the repository, so a pull
-  request cannot change its own test.
-- **Time limit**: a run past it counts as failed. 1 to 240 minutes; 30 by default.
-- **Merge when verified**: off by default. It cannot be turned on while the command is empty.
-- **Queue**: shows whether the queue is paused, with **Pause** and **Resume**.
-
-With a command set, Houston verifies the entry that goes next. It fetches the base and the
-pull request's branch from the remote, rebases the branch onto the latest base in a
-temporary worktree under Houston's state directory, runs the command there at lowered priority,
-and removes the worktree. One verification runs at a time on this machine, across every
-workspace; other entries show **Waiting for a slot**. The head shows **Verifying** with the
-time it has run against the limit. A verification holds until the head or the base moves.
-
-What happens next depends on the policy:
-
-- **Off**: the head shows **Ready**, verified on the base it names. Its **Merge** pushes the
-  verified commit to the branch and merges exactly that commit.
-- **On**: Houston pushes and merges the verified head on its own, then verifies the next
-  entry. The merge box shows the queue state instead of **Merge**; **Merge now, skipping the
-  queue** stays in its overflow menu.
-
-**What Houston pushes, and when.** Only when it lands a verified head, and only to a
-`houston/*` branch that Houston itself created for a worktree. It pushes the rebased commit
-with a lease on the commit it verified, so it never overwrites a commit someone pushed
-meanwhile; it never pushes to the base or the default branch. Fetches and pushes use your git
-remote and credentials; merges, reads, reverts, retargets and the hand-off to GitHub's merge
-queue or auto-merge (see below) use `gh`. Nothing else leaves the machine.
-
-**When verification fails.** A rebase conflict names the conflicting files; a failing or
-timed-out command shows the last lines of its output. If the pane that enqueued the pull
-request, or an agent pane in its worktree, is still open, it gets one message with that
-detail and the entry shows **Fixing**. Otherwise the entry is **Parked** under its own group
-with the reason, and the rail's **Pull requests** item counts it. Either way the queue moves
-on. Pushing a new commit to the branch puts it back in line; **Retry** does so for the same
-commit. **Hand to a new pane** asks which agent to open, with the workspace's default agent
-from Settings ▸ Tasks preselected, then opens it in the pull request's worktree with the
-failure as its prompt. Houston never opens a pane on its own. If GitHub's checks fail on a
-commit Houston pushed, the entry leaves the line the same way.
-
-### Stacked pull requests
-
-A pull request built on another one's branch, enqueued with `depends_on` naming it, waits
-behind it. Once the first merges, usually by squash, the second's branch still carries the
-first one's original commits. Houston restacks it at its next verification: it finds the
-newest head of the first pull request that the second one contains, replays only the second
-one's own commits onto the base, and verifies that. When it lands, the restacked commit is
-pushed with the same lease, and a pull request that still targets the first one's branch is
-moved to the base on GitHub first. **Today** lists the restack and the retarget. A chain of
-three or more restacks one pull request at a time, as each lands.
-
-If the branch carries the first pull request's commits but none of the heads Houston saw for
-it, for example because that branch was rewritten before Houston read it, Houston does not
-guess: the entry fails with that reason, and you rebase the branch yourself. A conflict while
-restacking is handled like any other conflict. A `depends_on` that only orders two
-independent branches needs no restack, and GitHub's native stacks are left to GitHub.
-
-### Repositories with GitHub's merge queue or auto-merge
-
-Houston's gates and verification always run first. Then:
-
-- **GitHub's merge queue** on the base branch: Houston adds the verified pull request to
-  GitHub's merge queue instead of merging it. Nothing is pushed for it, because GitHub's merge
-  group tests the real merge; only a restacked branch is pushed first.
-- **Auto-merge** allowed with required checks on the base, whether classic branch
-  protection or a ruleset requires them: Houston pushes the verified commit and turns
-  auto-merge on for exactly that commit, with the repository's merge method.
-
-The queue view's policy line names the path, such as **Hands off to GitHub's merge queue**.
-While GitHub holds the pull request it shows **Watching**, keeps its place, and its detail
-names the commit GitHub has. When GitHub merges it, Houston fetches, tells the other panes the
-base moved and logs the merge, as for its own merges. When GitHub removes it from its merge
-queue, turns auto-merge off or a check fails, the entry fails with GitHub's reason. **Dequeue**
-and **Pause** take the pull request back from GitHub first; a paused entry loses its place in
-GitHub's merge queue and is added again when you resume. Houston learns which path applies
-from the pull request reads it already makes. Checks a ruleset requires count like classic
-required checks: Houston reads the base branch's rules through `gh` (`api.github.com`, or your
-GitHub Enterprise host) at most once an hour per base branch, read-only; a failed read is
-retried after ten minutes. If they cannot be read, Houston keeps merging itself. If GitHub
-hides the path from your account, Houston also merges itself; if
-GitHub then refuses because the branch requires its merge queue, the entry fails with GitHub's
-message and later landings use the merge queue.
-
-**Pause and revert.** **Pause** on the queue view or in Settings, or **Pause merge queue** in
-the command palette, stops pushes and merges at once; entries keep their place and any
-verification they hold. **Pause all** in Settings pauses every workspace's queue on this
-machine. Every push and merge the queue makes is logged with the old and new
-commits under **Merge history** in Settings. **Revert** on a merge under **Today** opens a
-revert pull request on GitHub; Houston never pushes to the base to undo a merge.
-
-When you come back after the queue merged or parked pull requests on its own, one notice at
-the top of the workspace says how many, with **Review** to open the queue.
-
-To open Changes automatically after the focused agent stops, enable **Open diff when an agent
-stops** in Settings ▸ Appearance ▸ Panels. Houston opens it when the workspace has changes
-and you have not interacted with the panel after the agent's turn.
-
-## Staging, committing, pushing
-
-Changes can stage and unstage individual files or all of them, commit the staged set
-with a message you write, and push. Push is its own action, independent of committing —
-a branch that is already ahead with a clean working tree still needs a way to push, so it
-does not require you to make a new commit first. Houston also offers "Commit & push" in
-one step when you want both. None of this happens on its own: every commit and push is a
-button you click, with the message you typed.
-
-Before committing, stage at least one file and write a nonempty message. When commit is
-unavailable, Changes reports the reason, including **Stage files to commit**, **Write a
-message to commit**, or an unavailable connection. **Amend** replaces the most recent
-commit using the staged changes and message. It is refused when that commit is already
-in the branch's upstream; amend only unpublished work.
-
-A branch with no upstream is published by the push itself, which sets the upstream as it
-goes: a brand-new branch does not send you to a terminal first.
-
-## Discarding changes
+Git actions in the Git menu cover **Commit & push**, **Push**, **Fetch** and creating a
+pull request. Push refuses while the working tree is dirty, while the branch is behind its
+upstream, or when the branch has no upstream and no remote. A new branch is published by
+its first push.
 
 Discarding a tracked file's changes, or deleting an untracked file, asks for confirmation
-first and says plainly that it cannot be undone — deleting an untracked file is worded as
-a delete, since git has no copy to fall back to.
+and says it cannot be undone. Untracked files are deleted, not restored.
 
-## Branches, worktrees and checkpoints
+## Branches, worktrees and stashes
 
-Open the current branch name to search or switch branches. The current branch stays
-first; other branches are ordered by their most recent commit, with upstream ahead/behind
-counts and commit age when available. Use arrow keys to choose, **Enter** to switch,
-and **Esc** to close. For a new name, **Enter**
-creates and switches to a branch from the repository's default branch, falling back to
-HEAD when no base is known. **Ctrl+Enter** creates a worktree and opens a Shell pane
-there. Worktree branches use `houston/<slug>`; names are normalized to lowercase ASCII
-letters, digits, hyphens and underscores. If a branch already belongs to a worktree,
-choosing it focuses its known pane or opens a Shell in that checkout.
+**Branches and worktrees…** in the Git menu lists the checkout's local branches, worktrees
+and stashes:
 
-The Git tools menu in the Changes strip opens three lists, each acting on the selected
-workspace:
+- **Branches** marks the current branch. Rename one in place; delete one, with a second
+  confirmation when Git refuses because it is not merged.
+- **Worktrees** lists the checkout's worktrees and prunes registrations whose directory is
+  already gone.
+- **Stashes** saves tracked changes with an optional message, restores one with **Pop**, or
+  drops one after confirmation.
 
-- **Branches** lists local and remote-tracking branches and marks the default. Switch to
-  one, create one off any base (and switch to it in the same step), rename one, or delete
-  one. Deleting a branch whose work is not merged into the current branch asks first and
-  says what would be lost. A branch that another worktree has checked out says so instead
-  of offering the switch.
-- **Worktrees** adds a worktree beside the repository (Houston names its branch
-  `houston/<name>`), removes one, and prunes registrations whose directory is already
-  gone. Before a removal is confirmed, Houston lists what it would interrupt or lose:
-  uncommitted files and how recently the newest changed, commits not on the base branch or
-  on any remote, and the panes working inside the worktree. A check that could not look
-  says why; a worktree with uncommitted changes needs **Force remove**. A new worktree
-  receives the ignored files listed in `.worktreeinclude` and has its declared submodules
-  initialised. "Add as workspace" turns a
-  worktree into a workspace you can open panes in.
-- **Checkpoints** captures the working tree and staging area as a snapshot you can come
-  back to. Inspect shows what a checkpoint would change; Restore replaces the current
-  files and staging with the snapshot (your commits are not moved, and anything newer
-  than the snapshot is lost unless it is committed); Delete removes the snapshot and
-  touches no file. A checkpoint is stored as a hidden git ref in the repository itself.
+A new worktree copies the ignored files listed in `.worktreeinclude` and initialises its
+submodules according to **Settings ▸ Worktrees**.
 
-### Cleaning up worktrees
+## Review with an agent
 
-Worktrees Houston created — from this dialog, or for an agent's delegated work — are listed under **Created by Houston** with their size and what, if
-anything, keeps each one. A worktree you made yourself is never removed by Houston.
+**Review with agent…** opens a new thread with the prepared diff in its composer. Nothing
+is sent until you send that message.
 
-One can go when it is still on the branch Houston created it with, its work is done, it
-has no uncommitted or untracked files, it has no ignored file that a build would not
-recreate, no pane is working inside it, and the grace period has passed. Its work is done
-when its PR is merged with no commit outside the PR, or, for a branch with no PR, when
-every commit has a patch-equivalent in the branch it was created from (or in the default
-branch, for worktrees recorded before Houston kept that base). Squash and cherry-pick
-integration count. For a branch with no PR the grace runs from the first check that finds
-it integrated. **Check** finds out which worktrees can go and measures them. A worktree
-too large to measure in two minutes or two million entries keeps its previous size and
-is not measured again for a day. **Clean now**
-lists only Ready worktrees and the space they free, and asks once; it then removes only the
-ones it listed, together with their branches.
-
-A worktree with no evidence that its work is done — no PR, a PR still open, or commits not
-yet integrated — becomes **Stale** once it is clean, every commit is on a remote, no pane
-is inside it, and nobody has touched it for half of **Remove idle worktrees after**. A
-Stale row shows how long it has been idle and when it will be removed; **Remove…** removes
-it early. Removing a stale worktree keeps its branch.
-
-Removing a worktree deletes its ignored files too. A directory that is ignored as a whole,
-such as `target/` or `node_modules/`, is treated as build output and goes with it. A
-single ignored file, such as `.env` or a local settings file, keeps the worktree until
-you move or delete it, unless it is byte for byte the file at the same path in your
-checkout: a `.worktreeinclude` copy you have not changed can be recreated, so it does not
-keep the worktree. A copy you edited does. On Windows, a junction or symbolic link inside
-the worktree, such as a `node_modules` junction into a shared package store, is removed as
-a link; what it points to is never deleted. A locked worktree, or a folder that is not a
-registered worktree of the repository, is refused rather than deleted.
-
-Otherwise the row says why it stays: the worktree was switched to another branch,
-uncommitted or ignored files, commits outside the PR, commits not yet in the branch it
-came from, the PR's head could not be fetched, a pane inside it, the grace period, a PR
-that is open or was closed without merging, no PR, `gh` unavailable, or a removal that
-failed. Without `gh`, a branch whose
-upstream was deleted, as of your own last `git fetch --prune`, reads "probably
-integrated": Houston cannot tell a merge from a closed PR, so it offers **Remove** and
-leaves the choice to you.
-
-To remove merged or idle worktrees on its own, turn on **Remove worktrees automatically**
-under Settings ▸ Workspaces (off by default). Merged or integrated worktrees are removed
-after **Grace after merge** (1 to 720 hours, 24 by default); idle worktrees are removed
-after **Remove idle worktrees after** (1 to 365 days, 30 by default). Idle cleanup keeps
-the branch. The daemon then checks at start, every 6 hours, and when a pane that created a
-worktree closes; while the setting is off it removes nothing on its own.
-
-Each check runs `gh pr view` once per recorded worktree, which sends that branch's name
-to GitHub through your own `gh`. When the PR's head commit is not in your repository, it
-also fetches that one ref, `refs/pull/<number>/head`, from the remote whose URL is the
-PR's repository, using your own git credentials. Without `gh`, a check sends nothing and
-fetches nothing.
-
-Worktrees of a Bitbucket repository are not checked yet: they stay listed with `gh`
-unavailable, and a check sends nothing to Bitbucket for them.
-
-## Fetching and pulling
-
-Fetch brings remote-tracking branches up to date and reports what changed. Pull is
-fast-forward only: it refuses a branch with no upstream, and it refuses a divergence
-rather than creating a merge commit behind your back.
-
-Push remains independent of GitHub: it needs a configured git remote and credentials,
-not the GitHub CLI.
-
-### Bitbucket Cloud
-
-A workspace whose git remote is on `bitbucket.org` can show its pull request in the same
-tab, read-only: title, state, author, branches, changed lines and files, commits, build
-statuses as checks, approvals and change requests, comments and inline threads. Houston
-does not create, comment on, review or merge Bitbucket pull requests; **Open on
-Bitbucket** opens the pull request's page instead. Linking a pull request by number and
-unlinking it work as they do for GitHub. Bitbucket Data Center and Server are not
-supported.
-
-To turn it on:
-
-1. In your Atlassian account settings, create an API token with the
-   `read:pullrequest:bitbucket` and `read:repository:bitbucket` scopes. Bitbucket makes
-   the token expire within a year; create a new one when it does.
-2. In Settings ▸ Agents ▸ CLIs ▸ Bitbucket Cloud, enter your Atlassian account e-mail and the
-   token, and turn on **Read pull requests on Bitbucket** (off by default).
-
-The token is stored in your OS keychain, never in Houston's settings or logs, and is not
-shown again. **Disconnect** removes it from the keychain. If the keychain is unavailable,
-the tab says so and Houston stores nothing.
-
-While the setting is off, or no token is stored, Houston sends nothing to Bitbucket.
-When it is on, Houston contacts `api.bitbucket.org` over HTTPS only while the Pull
-request tab is open, when you press Refresh and when you link a pull request by number;
-never in the background. Each read sends:
-
-- your Atlassian e-mail and API token, as the request's `Authorization` header;
-- a `User-Agent` header naming Houston and its version (`houston/<version>`);
-- the workspace and repository names, and the pull request number;
-- paging parameters (`pagelen` and Bitbucket's page cursor);
-- to find the branch's own pull request, the local branch name, with the pull request
-  states searched, the sort order and the response fields wanted.
-
-It sends no file content, diff or agent transcript. One refresh makes about six
-requests. Bitbucket allows 1,000 API requests per hour per user, shared with your other
-tools that use the same account; when the limit is reached, the tab says so and Houston
-does not retry.
+When a merge, rebase or cherry-pick stops part-way, Changes shows a banner naming the
+operation and its conflicted files. **Resolve with agent** opens a thread with the conflict
+brief; the banner leaves once Git no longer reports the operation.

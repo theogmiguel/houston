@@ -12,7 +12,7 @@ import type { VisitThreadInput } from "../operations/commands.ts";
 // broadcast to all shell subscribers.
 export const VISIT_DISPATCH_THROTTLE_MS = 10_000;
 
-const IDLE_TRACKER: Atom.Atom<void> = Atom.make(undefined).pipe(
+export const IDLE_THREAD_VISIT_TRACKER: Atom.Atom<void> = Atom.make(undefined).pipe(
   Atom.withLabel("thread-visit-tracker:idle"),
 );
 
@@ -140,5 +140,6 @@ export function createThreadVisitTracker(options: ThreadVisitTrackerOptions) {
       get.subscribe(options.threadShellAtom(ref), onShell, { immediate: true });
     }).pipe(Atom.withLabel(`thread-visit-tracker:${key}`));
   });
-  return (ref: ScopedThreadRef | null) => (ref === null ? IDLE_TRACKER : family(threadKey(ref)));
+  return (ref: ScopedThreadRef | null) =>
+    ref === null ? IDLE_THREAD_VISIT_TRACKER : family(threadKey(ref));
 }

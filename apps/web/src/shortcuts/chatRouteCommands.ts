@@ -1,4 +1,5 @@
-import { AuthPreviewOperateScope, type EnvironmentId } from "@houston-app/contracts";
+import { AuthPreviewOperateScope, type EnvironmentId, type ThreadId } from "@houston-app/contracts";
+import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { AnyRouter } from "@tanstack/react-router";
 
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
@@ -55,7 +56,13 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
   const readRouteTarget = () => resolveThreadRouteTarget(router.state.matches.at(-1)?.params ?? {});
   const readRouteThreadRef = () => {
     const target = readRouteTarget();
-    return target?.kind === "server" ? target.threadRef : null;
+    if (target?.kind === "server") return target.threadRef;
+    // A grid route has no thread params; its focused cell is the active thread,
+    // so preview shortcuts act on the pane the user is looking at.
+    const grid = readRouteGrid();
+    return grid === null || grid.focusedThreadId === null
+      ? null
+      : scopeThreadRef(grid.environmentId as EnvironmentId, grid.focusedThreadId as ThreadId);
   };
   const readPreviewOpen = () => {
     const threadRef = readRouteThreadRef();
@@ -161,13 +168,8 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
           startNewLocal(event);
           return;
         }
-        // The boring sidebar's folders already show the context, so it starts in
-        // the current project like the legacy sidebar did.
-        const { boringSidebarEnabled, legacySidebarEnabled } = getClientSettings();
         const groups = readProjectGroups();
         if (
-          !boringSidebarEnabled &&
-          !legacySidebarEnabled &&
           !shouldCreateNewThreadInCurrentProject(
             false,
             groups.filter((group) => !group.archived).length,

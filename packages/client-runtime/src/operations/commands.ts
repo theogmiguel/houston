@@ -230,6 +230,26 @@ export interface ForkSideChatInput extends CommandMetadata {
   readonly title?: string;
 }
 
+export interface StartAsideInput extends CommandMetadata {
+  readonly sourceThreadId: ThreadId;
+  readonly asideThreadId: ThreadId;
+  readonly messageId: MessageId;
+  readonly text: string;
+  readonly attachments: ReadonlyArray<ChatAttachment>;
+}
+
+export interface RequestSecondOpinionInput extends CommandMetadata {
+  readonly sourceThreadId: ThreadId;
+  readonly runId: RunId;
+  readonly reviewThreadId: ThreadId;
+  readonly modelSelection: ModelSelection;
+}
+
+export interface SendSideThreadInput extends CommandMetadata {
+  readonly sideThreadId: ThreadId;
+  readonly runId: RunId;
+}
+
 export interface MergeThreadBackInput extends CommandMetadata {
   readonly sourceThreadId: ThreadId;
   readonly targetThreadId: ThreadId;
@@ -961,6 +981,51 @@ export const forkSideChat = Effect.fn("EnvironmentCommands.forkSideChat")(functi
     sourcePoint: { type: "latest_stable" },
     sideChat: true,
     ...(input.title === undefined ? {} : { title: input.title }),
+  });
+});
+
+/** Starts a read-only aside beside a source thread; it never interrupts the source's run. */
+export const startAside = Effect.fn("EnvironmentCommands.startAside")(function* (
+  input: StartAsideInput,
+) {
+  return yield* dispatch({
+    type: "houston.aside.start",
+    commandId: yield* allocateCommandId(input),
+    createdBy: "user",
+    creationSource: input.creationSource ?? "web",
+    sourceThreadId: input.sourceThreadId,
+    asideThreadId: input.asideThreadId,
+    messageId: input.messageId,
+    text: input.text,
+    attachments: input.attachments,
+  });
+});
+
+/** Asks another provider for a read-only second opinion on one completed turn. */
+export const requestSecondOpinion = Effect.fn("EnvironmentCommands.requestSecondOpinion")(
+  function* (input: RequestSecondOpinionInput) {
+    return yield* dispatch({
+      type: "houston.second-opinion.request",
+      commandId: yield* allocateCommandId(input),
+      createdBy: "user",
+      creationSource: input.creationSource ?? "web",
+      sourceThreadId: input.sourceThreadId,
+      runId: input.runId,
+      reviewThreadId: input.reviewThreadId,
+      modelSelection: input.modelSelection,
+    });
+  },
+);
+
+/** Sends a finished second opinion into its source thread as the next message. */
+export const sendSideThread = Effect.fn("EnvironmentCommands.sendSideThread")(function* (
+  input: SendSideThreadInput,
+) {
+  return yield* dispatch({
+    type: "houston.side-thread.send",
+    commandId: yield* allocateCommandId(input),
+    sideThreadId: input.sideThreadId,
+    runId: input.runId,
   });
 });
 

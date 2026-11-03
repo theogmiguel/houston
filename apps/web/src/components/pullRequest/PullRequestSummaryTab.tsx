@@ -80,6 +80,7 @@ import { PullRequestMoreReplies } from "./PullRequestMoreReplies";
 import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
 import { PullRequestReactionBar } from "./PullRequestReactions";
 import { PullRequestConversationGhost } from "./PullRequestGhosts";
+import { ReadOnlyNotice } from "../ui/read-only-notice";
 import { sectionCollapseAnchorScrollTop } from "./pullRequestSummaryScroll.logic";
 
 function reviewerKey(login: string): string {
@@ -911,6 +912,13 @@ export function PullRequestSummaryTab({
           />
         ) : (
           <>
+            {!detail.capabilities.comment ? (
+              <ReadOnlyNotice>
+                {sourceControlClients.get(detail.provider).label} does not support writing comments
+                from Houston. Read the conversation here; open the {terminology.singular} on the
+                host to reply.
+              </ReadOnlyNotice>
+            ) : null}
             {detail.commentsTruncated ? (
               <p className="mb-2 rounded-md border border-warning/30 bg-warning-surface px-2 py-1.5 text-xs">
                 This conversation is only partially loaded. {commentCount} comment

@@ -13,6 +13,7 @@ import { AuthAccessTokenResult, AuthSessionState } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
+import type { KeybindingShortcut } from "./keybindings.ts";
 import type { EditorId } from "./editor.ts";
 import type { PreviewForwardedShortcut } from "./keybindings.ts";
 
@@ -338,6 +339,14 @@ export const DesktopCliCommandStateSchema = Schema.Struct({
   launcherPath: Schema.NullOr(Schema.String),
 });
 export type DesktopCliCommandState = typeof DesktopCliCommandStateSchema.Type;
+
+/** What the host's one-time removal of Houston 1's agent-CLI entries did. */
+export const DesktopV1CleanupReportSchema = Schema.Struct({
+  stoodDown: Schema.Boolean,
+  changed: Schema.Array(Schema.String),
+  messages: Schema.Array(Schema.String),
+});
+export type DesktopV1CleanupReport = typeof DesktopV1CleanupReportSchema.Type;
 
 export interface DesktopUpdateActionResult {
   accepted: boolean;
@@ -1025,6 +1034,62 @@ export interface HostClipboardImage {
   readonly base64: string;
 }
 
+/**
+ * A file or folder named by a file-manager drop or clipboard entry. WebKitGTK can deliver such a
+ * drag as `text/uri-list` only, with no `File` that carries a path, so the host reads the path.
+ */
+export interface HostDroppedPath {
+  readonly name: string;
+  readonly directory: boolean;
+  /** Standard base64 of the file bytes; null for a directory. */
+  readonly base64: string | null;
+}
+
+export interface DesktopLocalServerStatus {
+  readonly state: "starting" | "ready" | "error";
+  readonly origin?: string;
+  readonly port?: number;
+  readonly pid?: number;
+  readonly attached?: boolean;
+  readonly baseDir?: string;
+  readonly logPath?: string;
+  readonly error?: string | null;
+  readonly warning?: string | null;
+}
+
+export type DesktopTrayConnection = "connecting" | "ready" | "reconnecting" | "failed";
+export type DesktopTrayStatus = "running" | "idle" | "needsInput" | "unknown" | "done" | "error";
+
+export interface DesktopTraySession {
+  readonly id: string;
+  readonly agent: string;
+  readonly title: string;
+  readonly status: DesktopTrayStatus;
+  readonly needsInput: boolean;
+  readonly workspace: string;
+}
+
+export interface DesktopTrayPayload {
+  readonly connection: DesktopTrayConnection;
+  readonly sessions: ReadonlyArray<DesktopTraySession>;
+}
+
+export interface DesktopTrayState {
+  readonly available: boolean;
+  readonly reason: string | null;
+  readonly keepInTray: boolean;
+  readonly hidesOnClose: boolean;
+}
+
+export interface DesktopQuickComposerShortcutStatus {
+  readonly enabled: boolean;
+  /** The chord to register, or null when none is configured. */
+  readonly shortcut: KeybindingShortcut | null;
+  readonly registered: boolean;
+  /** Why registration failed, for Settings to name; null when registered or turned off. */
+  readonly reason: string | null;
+}
+
 export interface HostBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getRelayTelemetryEnabled: () => boolean;
@@ -1032,6 +1097,18 @@ export interface HostBridge {
   getClientPlatform: () => string;
   setNotificationBadge: (badge: { count: number; image: string | null }) => Promise<void>;
   onNotificationBadgeClear: (listener: () => void) => () => void;
+  /** Whether the host can show an OS notification itself; Linux needs a notification service. */
+  notificationsSupported: () => Promise<{ supported: boolean; reason: string | null }>;
+  /**
+   * Shows an OS notification through the host, which WebKitGTK does not wire up.
+   * `id` is the thread's stable key; a click arrives through `onThreadNotificationFocus`.
+   */
+  notifyThread: (payload: {
+    readonly id: string;
+    readonly title: string;
+    readonly body: string;
+  }) => Promise<void>;
+  onThreadNotificationFocus: (listener: (threadKey: string) => void) => () => void;
   onTrackpadScrollEnd: (listener: () => void) => () => void;
   /**
    * Renderer `window.focus()` cannot raise the desktop window, and on Wayland
@@ -1049,6 +1126,30 @@ export interface HostBridge {
   getLocalEnvironmentEnabled: () => boolean;
   setLocalEnvironmentEnabled: (enabled: boolean) => Promise<void>;
   getLocalEnvironmentBearerToken: () => Promise<string>;
+  /** Clears the cached bearer after the server rejects it, so the next request re-exchanges. */
+  invalidateLocalEnvironmentBearerToken: () => Promise<void>;
+  /** The local server's startup/error/ready state, with the log path and any warning. */
+  getServerStatus: () => Promise<DesktopLocalServerStatus | null>;
+  /** Stops the local server and starts a fresh one with the current settings. */
+  restartServer: () => Promise<DesktopLocalServerStatus>;
+  onServerStatus: (listener: (status: DesktopLocalServerStatus) => void) => () => void;
+  /** Feeds the native tray's connection, attention and session rows. */
+  traySync: (payload: DesktopTrayPayload) => Promise<void>;
+  /** Null when the desktop has no tray, so the keep-in-tray row stays hidden. */
+  trayState: () => Promise<DesktopTrayState | null>;
+  setKeepInTray: (enabled: boolean) => Promise<DesktopTrayState | null>;
+  onTrayFocus: (listener: (threadKey: string) => void) => () => void;
+  /** The quick composer's global shortcut and why it could not be registered. */
+  getQuickComposerStatus: () => Promise<DesktopQuickComposerShortcutStatus>;
+  /** Registers the chord system-wide; null turns the shortcut off. */
+  setQuickComposerShortcut: (
+    shortcut: KeybindingShortcut | null,
+  ) => Promise<DesktopQuickComposerShortcutStatus>;
+  /** Opens the always-on-top quick composer window, or closes it when already visible. */
+  openQuickComposer: () => Promise<void>;
+  closeQuickComposer: () => Promise<void>;
+  /** The window was hidden to the tray (`true`) or shown again (`false`). */
+  onWindowHiddenChange: (listener: (hidden: boolean) => void) => () => void;
   getClientSettings: () => Promise<ClientSettings | null>;
   setClientSettings: (settings: ClientSettings) => Promise<void>;
   getConnectionCatalog: () => Promise<string | null>;
@@ -1112,8 +1213,12 @@ export interface HostBridge {
   checkSystemPermission: (pane: SystemSettingsPane) => Promise<boolean>;
   probeRemoteEditors: () => Promise<readonly EditorId[]>;
   pasteAsText: () => Promise<void>;
+  /** The system clipboard's text. Absent where `navigator.clipboard` can read it natively. */
+  readClipboardText?: () => Promise<string>;
   /** The image on the system clipboard, or null when it holds none. Absent where `clipboardData` carries pasted images. */
   readClipboardImage?: () => Promise<HostClipboardImage | null>;
+  /** Reads a path carried by a drop or clipboard entry the webview exposes only as a URI list. */
+  readDroppedPath?: (path: string) => Promise<HostDroppedPath>;
   onMenuAction: (listener: (action: string) => void) => () => void;
   onSnapShotEvent: (listener: (event: DesktopSnapShotEvent) => void) => () => void;
   onQuitShortcut: (listener: (event: QuitShortcutHintEvent) => void) => () => void;
@@ -1135,6 +1240,10 @@ export interface HostBridge {
     getState: () => Promise<DesktopCliCommandState>;
     install: () => Promise<DesktopCliCommandState>;
     uninstall: () => Promise<DesktopCliCommandState>;
+  };
+  /** The last Houston 1 configuration cleanup, or null before the host ran one. */
+  houstonV1Cleanup: {
+    getReport: () => Promise<DesktopV1CleanupReport | null>;
   };
   webLinks: {
     setReady: (ready: boolean) => Promise<void>;

@@ -140,6 +140,26 @@ import {
   VcsPullInput,
   GitPullRequestRefInput,
   VcsPullResult,
+  VcsStageFilesInput,
+  VcsUnstageFilesInput,
+  VcsDiscardFilesInput,
+  VcsAmendCommitInput,
+  VcsAmendCommitResult,
+  VcsFetchInput,
+  VcsFetchResult,
+  VcsStatusLocalResult,
+  VcsRenameRefInput,
+  VcsRenameRefResult,
+  VcsDeleteRefInput,
+  VcsListWorktreesInput,
+  VcsListWorktreesResult,
+  VcsPruneWorktreesInput,
+  VcsPruneWorktreesResult,
+  VcsListStashesInput,
+  VcsListStashesResult,
+  VcsPushStashInput,
+  VcsPushStashResult,
+  VcsStashRefInput,
   VcsRemoveWorktreeInput,
   GitResolvePullRequestResult,
   GitRunStackedActionInput,
@@ -209,6 +229,7 @@ import {
   HoustonTaskSourceImportInput,
   HoustonTaskSourceImportResult,
   HoustonTaskSourceImportStatus,
+  HoustonTaskSourceConflictEntry,
   HoustonTaskSourceLink,
   HoustonTaskSourceLinksGetInput,
   HoustonTaskSourceProjectInput,
@@ -216,6 +237,7 @@ import {
   HoustonTaskSourceSettingsSetInput,
   HoustonTaskSourceStreamEvent,
   HoustonTaskSourceSyncResult,
+  HoustonTaskSourcesConflictsInput,
 } from "./houston/taskSources.ts";
 import {
   HoustonSlackConfigureInput,
@@ -229,55 +251,6 @@ import {
   HoustonSlackRequestsListInput,
   HoustonSlackStreamEvent,
 } from "./houston/slack.ts";
-import {
-  HoustonDefectDecideInput,
-  HoustonDefectDraftInput,
-  HoustonDefectFileInput,
-  HoustonDefectFileResult,
-  HoustonDefectIssueDraft,
-  HoustonHarnessCreateTaskInput,
-  HoustonHarnessCreateTaskResult,
-  HoustonHarnessDecideInput,
-  HoustonHarnessImportResult,
-  HoustonHarnessImportStatus,
-  HoustonHarnessEmptyResult,
-  HoustonHarnessError,
-  HoustonHarnessMarkSeenInput,
-  HoustonHarnessMarkSeenResult,
-  HoustonHarnessOverview,
-  HoustonHarnessOverviewEvent,
-  HoustonHarnessOverviewInput,
-  HoustonHarnessProjectInput,
-  HoustonHarnessReportInput,
-  HoustonHarnessReportResult,
-  HoustonHarnessRunNowResult,
-  HoustonHarnessSetupInput,
-  HoustonHarnessSnapshot,
-} from "./houston/harnessReview.ts";
-import {
-  HoustonNightReport,
-  HoustonNightShiftCloseInput,
-  HoustonNightShiftCloseResult,
-  HoustonNightShiftDecideInput,
-  HoustonNightShiftEmptyResult,
-  HoustonNightShiftEntryInput,
-  HoustonNightShiftError,
-  HoustonNightShiftImportResult,
-  HoustonNightShiftImportStatus,
-  NightEntry,
-  HoustonNightShiftOverviewEvent,
-  HoustonNightShiftOverviewInput,
-  HoustonNightShiftPreflightInput,
-  HoustonNightShiftPreflightResult,
-  HoustonNightShiftProjectInput,
-  HoustonNightShiftRunInput,
-  HoustonNightShiftRunNowInput,
-  HoustonNightShiftRunNowResult,
-  HoustonNightShiftSnapshot,
-  HoustonNightShiftStopResult,
-  HoustonNightShiftUpdateInput,
-  HoustonNightShiftWrapUpResult,
-} from "./houston/nightShift.ts";
 import {
   HoustonMergeQueueEmptyResult,
   HoustonMergeQueueEnqueueInput,
@@ -364,8 +337,13 @@ import {
   ProjectCreateNewInput,
   ProjectCreateNewResult,
   ProjectCreateFromThreadInput,
+  ProjectCreateEntryInput,
+  ProjectCreateEntryResult,
   ProjectCreateFromThreadResult,
+  ProjectDeleteEntryInput,
+  ProjectDeleteEntryResult,
   ProjectEnsureScratchResult,
+  ProjectFileMutationError,
   ProjectListEntriesError,
   ProjectListEntriesInput,
   ProjectListEntriesResult,
@@ -374,6 +352,8 @@ import {
   ProjectReadFileError,
   ProjectReadFileInput,
   ProjectReadFileResult,
+  ProjectRenameEntryInput,
+  ProjectRenameEntryResult,
   ProjectSearchContentsError,
   ProjectSearchContentsInput,
   ProjectSearchContentsResult,
@@ -541,6 +521,9 @@ export const WS_METHODS = {
   projectsSearchContents: "projects.searchContents",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
+  projectsCreateEntry: "projects.createEntry",
+  projectsRenameEntry: "projects.renameEntry",
+  projectsDeleteEntry: "projects.deleteEntry",
   projectsMutate: "projects.mutate",
   projectsEnsureScratch: "projects.ensureScratch",
   projectsCreateNew: "projects.createNew",
@@ -579,6 +562,19 @@ export const WS_METHODS = {
   providerInstallRemove: "provider.install.remove",
 
   vcsPull: "vcs.pull",
+  vcsStageFiles: "vcs.stageFiles",
+  vcsUnstageFiles: "vcs.unstageFiles",
+  vcsDiscardFiles: "vcs.discardFiles",
+  vcsAmendCommit: "vcs.amendCommit",
+  vcsFetch: "vcs.fetch",
+  vcsRenameRef: "vcs.renameRef",
+  vcsDeleteRef: "vcs.deleteRef",
+  vcsListWorktrees: "vcs.listWorktrees",
+  vcsPruneWorktrees: "vcs.pruneWorktrees",
+  vcsListStashes: "vcs.listStashes",
+  vcsPushStash: "vcs.pushStash",
+  vcsPopStash: "vcs.popStash",
+  vcsDropStash: "vcs.dropStash",
   vcsRefreshStatus: "vcs.refreshStatus",
   vcsListRefs: "vcs.listRefs",
   vcsCreateWorktree: "vcs.createWorktree",
@@ -625,6 +621,7 @@ export const WS_METHODS = {
   houstonTaskSourcesCredentialClear: "houston.taskSources.credential.clear",
   houstonTaskSourcesSyncNow: "houston.taskSources.syncNow",
   houstonTaskSourcesLinksGet: "houston.taskSources.links.get",
+  houstonTaskSourcesConflictsList: "houston.taskSources.conflicts.list",
   houstonTaskSourcesConflictResolve: "houston.taskSources.conflict.resolve",
   houstonTaskSourcesSubscribe: "houston.taskSources.subscribe",
   houstonTaskSourcesImportV1Status: "houston.taskSources.importV1.status",
@@ -637,37 +634,6 @@ export const WS_METHODS = {
   houstonSlackSubscribe: "houston.slack.subscribe",
   houstonSlackImportV1Status: "houston.slack.importV1.status",
   houstonSlackImportV1Run: "houston.slack.importV1.run",
-  houstonHarnessGet: "houston.harness.get",
-  houstonHarnessSubscribe: "houston.harness.subscribe",
-  houstonHarnessOverview: "houston.harness.overview",
-  houstonHarnessSubscribeOverview: "houston.harness.subscribeOverview",
-  houstonHarnessSetup: "houston.harness.setup",
-  houstonHarnessRunNow: "houston.harness.runNow",
-  houstonHarnessReport: "houston.harness.report",
-  houstonHarnessDecide: "houston.harness.decide",
-  houstonHarnessMarkSeen: "houston.harness.markSeen",
-  houstonHarnessCreateTask: "houston.harness.createTask",
-  houstonDefectsDecide: "houston.defects.decide",
-  houstonDefectsDraft: "houston.defects.draft",
-  houstonDefectsFile: "houston.defects.file",
-  houstonHarnessImportV1Status: "houston.harness.importV1.status",
-  houstonHarnessImportV1Run: "houston.harness.importV1.run",
-  houstonNightShiftGet: "houston.nightShift.get",
-  houstonNightShiftSubscribe: "houston.nightShift.subscribe",
-  houstonNightShiftSubscribeOverview: "houston.nightShift.subscribeOverview",
-  houstonNightShiftCreate: "houston.nightShift.create",
-  houstonNightShiftUpdate: "houston.nightShift.update",
-  houstonNightShiftDelete: "houston.nightShift.delete",
-  houstonNightShiftPreflight: "houston.nightShift.preflight",
-  houstonNightShiftRunNow: "houston.nightShift.runNow",
-  houstonNightShiftWrapUp: "houston.nightShift.wrapUp",
-  houstonNightShiftStop: "houston.nightShift.stop",
-  houstonNightShiftReport: "houston.nightShift.report",
-  houstonNightShiftDecide: "houston.nightShift.decide",
-  houstonNightShiftMarkQaPassed: "houston.nightShift.markQaPassed",
-  houstonNightShiftClosePullRequests: "houston.nightShift.closePullRequests",
-  houstonNightShiftImportV1Status: "houston.nightShift.importV1.status",
-  houstonNightShiftImportV1Run: "houston.nightShift.importV1.run",
   houstonMergeQueueGet: "houston.mergeQueue.get",
   houstonMergeQueueSubscribe: "houston.mergeQueue.subscribe",
   houstonMergeQueueSubscribeSummary: "houston.mergeQueue.subscribeSummary",
@@ -1522,6 +1488,24 @@ const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
   error: Schema.Union([ProjectWriteFileError, EnvironmentAuthorizationError]),
 });
 
+const WsProjectsCreateEntryRpc = Rpc.make(WS_METHODS.projectsCreateEntry, {
+  payload: ProjectCreateEntryInput,
+  success: ProjectCreateEntryResult,
+  error: Schema.Union([ProjectFileMutationError, EnvironmentAuthorizationError]),
+});
+
+const WsProjectsRenameEntryRpc = Rpc.make(WS_METHODS.projectsRenameEntry, {
+  payload: ProjectRenameEntryInput,
+  success: ProjectRenameEntryResult,
+  error: Schema.Union([ProjectFileMutationError, EnvironmentAuthorizationError]),
+});
+
+const WsProjectsDeleteEntryRpc = Rpc.make(WS_METHODS.projectsDeleteEntry, {
+  payload: ProjectDeleteEntryInput,
+  success: ProjectDeleteEntryResult,
+  error: Schema.Union([ProjectFileMutationError, EnvironmentAuthorizationError]),
+});
+
 const WsProjectsMutateRpc = Rpc.make(WS_METHODS.projectsMutate, {
   payload: ProjectMutation,
   success: Project,
@@ -1643,6 +1627,81 @@ const WsVcsPullRpc = Rpc.make(WS_METHODS.vcsPull, {
   payload: VcsPullInput,
   success: VcsPullResult,
   error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsStageFilesRpc = Rpc.make(WS_METHODS.vcsStageFiles, {
+  payload: VcsStageFilesInput,
+  success: VcsStatusLocalResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsUnstageFilesRpc = Rpc.make(WS_METHODS.vcsUnstageFiles, {
+  payload: VcsUnstageFilesInput,
+  success: VcsStatusLocalResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsDiscardFilesRpc = Rpc.make(WS_METHODS.vcsDiscardFiles, {
+  payload: VcsDiscardFilesInput,
+  success: VcsStatusLocalResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsAmendCommitRpc = Rpc.make(WS_METHODS.vcsAmendCommit, {
+  payload: VcsAmendCommitInput,
+  success: VcsAmendCommitResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsFetchRpc = Rpc.make(WS_METHODS.vcsFetch, {
+  payload: VcsFetchInput,
+  success: VcsFetchResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsRenameRefRpc = Rpc.make(WS_METHODS.vcsRenameRef, {
+  payload: VcsRenameRefInput,
+  success: VcsRenameRefResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsDeleteRefRpc = Rpc.make(WS_METHODS.vcsDeleteRef, {
+  payload: VcsDeleteRefInput,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsListWorktreesRpc = Rpc.make(WS_METHODS.vcsListWorktrees, {
+  payload: VcsListWorktreesInput,
+  success: VcsListWorktreesResult,
+  error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsPruneWorktreesRpc = Rpc.make(WS_METHODS.vcsPruneWorktrees, {
+  payload: VcsPruneWorktreesInput,
+  success: VcsPruneWorktreesResult,
+  error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsListStashesRpc = Rpc.make(WS_METHODS.vcsListStashes, {
+  payload: VcsListStashesInput,
+  success: VcsListStashesResult,
+  error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsPushStashRpc = Rpc.make(WS_METHODS.vcsPushStash, {
+  payload: VcsPushStashInput,
+  success: VcsPushStashResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsPopStashRpc = Rpc.make(WS_METHODS.vcsPopStash, {
+  payload: VcsStashRefInput,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsDropStashRpc = Rpc.make(WS_METHODS.vcsDropStash, {
+  payload: VcsStashRefInput,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
 });
 
 const WsVcsRefreshStatusRpc = Rpc.make(WS_METHODS.vcsRefreshStatus, {
@@ -1939,6 +1998,12 @@ const WsHoustonTaskSourcesLinksGetRpc = Rpc.make(WS_METHODS.houstonTaskSourcesLi
   error: HoustonTaskSourceRpcError,
 });
 
+const WsHoustonTaskSourcesConflictsListRpc = Rpc.make(WS_METHODS.houstonTaskSourcesConflictsList, {
+  payload: HoustonTaskSourcesConflictsInput,
+  success: Schema.Array(HoustonTaskSourceConflictEntry),
+  error: HoustonTaskSourceRpcError,
+});
+
 const WsHoustonTaskSourcesConflictResolveRpc = Rpc.make(
   WS_METHODS.houstonTaskSourcesConflictResolve,
   {
@@ -2021,128 +2086,6 @@ const WsHoustonSlackImportV1RunRpc = Rpc.make(WS_METHODS.houstonSlackImportV1Run
   error: HoustonSlackRpcError,
 });
 
-const HoustonHarnessRpcError = Schema.Union([HoustonHarnessError, EnvironmentAuthorizationError]);
-
-const WsHoustonHarnessGetRpc = Rpc.make(WS_METHODS.houstonHarnessGet, {
-  payload: HoustonHarnessProjectInput,
-  success: HoustonHarnessSnapshot,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessSubscribeRpc = Rpc.make(WS_METHODS.houstonHarnessSubscribe, {
-  payload: HoustonHarnessProjectInput,
-  success: HoustonHarnessSnapshot,
-  error: HoustonHarnessRpcError,
-  stream: true,
-});
-
-const WsHoustonHarnessOverviewRpc = Rpc.make(WS_METHODS.houstonHarnessOverview, {
-  payload: HoustonHarnessOverviewInput,
-  success: HoustonHarnessOverview,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessSubscribeOverviewRpc = Rpc.make(WS_METHODS.houstonHarnessSubscribeOverview, {
-  payload: HoustonHarnessOverviewInput,
-  success: HoustonHarnessOverviewEvent,
-  error: HoustonHarnessRpcError,
-  stream: true,
-});
-
-const WsHoustonHarnessSetupRpc = Rpc.make(WS_METHODS.houstonHarnessSetup, {
-  payload: HoustonHarnessSetupInput,
-  success: HoustonHarnessSnapshot,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessRunNowRpc = Rpc.make(WS_METHODS.houstonHarnessRunNow, {
-  payload: HoustonHarnessProjectInput,
-  success: HoustonHarnessRunNowResult,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessReportRpc = Rpc.make(WS_METHODS.houstonHarnessReport, {
-  payload: HoustonHarnessReportInput,
-  success: HoustonHarnessReportResult,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessDecideRpc = Rpc.make(WS_METHODS.houstonHarnessDecide, {
-  payload: HoustonHarnessDecideInput,
-  success: HoustonHarnessEmptyResult,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessMarkSeenRpc = Rpc.make(WS_METHODS.houstonHarnessMarkSeen, {
-  payload: HoustonHarnessMarkSeenInput,
-  success: HoustonHarnessMarkSeenResult,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessCreateTaskRpc = Rpc.make(WS_METHODS.houstonHarnessCreateTask, {
-  payload: HoustonHarnessCreateTaskInput,
-  success: HoustonHarnessCreateTaskResult,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonDefectsDecideRpc = Rpc.make(WS_METHODS.houstonDefectsDecide, {
-  payload: HoustonDefectDecideInput,
-  success: HoustonHarnessEmptyResult,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonDefectsDraftRpc = Rpc.make(WS_METHODS.houstonDefectsDraft, {
-  payload: HoustonDefectDraftInput,
-  success: HoustonDefectIssueDraft,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonDefectsFileRpc = Rpc.make(WS_METHODS.houstonDefectsFile, {
-  payload: HoustonDefectFileInput,
-  success: HoustonDefectFileResult,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessImportV1StatusRpc = Rpc.make(WS_METHODS.houstonHarnessImportV1Status, {
-  payload: HoustonHarnessOverviewInput,
-  success: HoustonHarnessImportStatus,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessImportV1RunRpc = Rpc.make(WS_METHODS.houstonHarnessImportV1Run, {
-  payload: HoustonHarnessOverviewInput,
-  success: HoustonHarnessImportResult,
-  error: HoustonHarnessRpcError,
-});
-
-const HoustonNightShiftRpcError = Schema.Union([
-  HoustonNightShiftError,
-  EnvironmentAuthorizationError,
-]);
-
-const WsHoustonNightShiftGetRpc = Rpc.make(WS_METHODS.houstonNightShiftGet, {
-  payload: HoustonNightShiftProjectInput,
-  success: HoustonNightShiftSnapshot,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftSubscribeRpc = Rpc.make(WS_METHODS.houstonNightShiftSubscribe, {
-  payload: HoustonNightShiftProjectInput,
-  success: HoustonNightShiftSnapshot,
-  error: HoustonNightShiftRpcError,
-  stream: true,
-});
-
-const WsHoustonNightShiftSubscribeOverviewRpc = Rpc.make(
-  WS_METHODS.houstonNightShiftSubscribeOverview,
-  {
-    payload: HoustonNightShiftOverviewInput,
-    success: HoustonNightShiftOverviewEvent,
-    error: HoustonNightShiftRpcError,
-    stream: true,
-  },
-);
-
 const HoustonMergeQueueRpcError = Schema.Union([
   HoustonMergeQueueError,
   EnvironmentAuthorizationError,
@@ -2170,87 +2113,6 @@ const WsHoustonMergeQueueSubscribeSummaryRpc = Rpc.make(
     stream: true,
   },
 );
-
-const WsHoustonNightShiftCreateRpc = Rpc.make(WS_METHODS.houstonNightShiftCreate, {
-  payload: HoustonNightShiftProjectInput,
-  success: HoustonNightShiftSnapshot,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftUpdateRpc = Rpc.make(WS_METHODS.houstonNightShiftUpdate, {
-  payload: HoustonNightShiftUpdateInput,
-  success: HoustonNightShiftSnapshot,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftDeleteRpc = Rpc.make(WS_METHODS.houstonNightShiftDelete, {
-  payload: HoustonNightShiftProjectInput,
-  success: HoustonNightShiftEmptyResult,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftPreflightRpc = Rpc.make(WS_METHODS.houstonNightShiftPreflight, {
-  payload: HoustonNightShiftPreflightInput,
-  success: HoustonNightShiftPreflightResult,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftRunNowRpc = Rpc.make(WS_METHODS.houstonNightShiftRunNow, {
-  payload: HoustonNightShiftRunNowInput,
-  success: HoustonNightShiftRunNowResult,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftWrapUpRpc = Rpc.make(WS_METHODS.houstonNightShiftWrapUp, {
-  payload: HoustonNightShiftRunInput,
-  success: HoustonNightShiftWrapUpResult,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftStopRpc = Rpc.make(WS_METHODS.houstonNightShiftStop, {
-  payload: HoustonNightShiftRunInput,
-  success: HoustonNightShiftStopResult,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftReportRpc = Rpc.make(WS_METHODS.houstonNightShiftReport, {
-  payload: HoustonNightShiftRunInput,
-  success: HoustonNightReport,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftDecideRpc = Rpc.make(WS_METHODS.houstonNightShiftDecide, {
-  payload: HoustonNightShiftDecideInput,
-  success: NightEntry,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftMarkQaPassedRpc = Rpc.make(WS_METHODS.houstonNightShiftMarkQaPassed, {
-  payload: HoustonNightShiftEntryInput,
-  success: NightEntry,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftClosePullRequestsRpc = Rpc.make(
-  WS_METHODS.houstonNightShiftClosePullRequests,
-  {
-    payload: HoustonNightShiftCloseInput,
-    success: HoustonNightShiftCloseResult,
-    error: HoustonNightShiftRpcError,
-  },
-);
-
-const WsHoustonNightShiftImportV1StatusRpc = Rpc.make(WS_METHODS.houstonNightShiftImportV1Status, {
-  payload: HoustonNightShiftOverviewInput,
-  success: HoustonNightShiftImportStatus,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftImportV1RunRpc = Rpc.make(WS_METHODS.houstonNightShiftImportV1Run, {
-  payload: HoustonNightShiftOverviewInput,
-  success: HoustonNightShiftImportResult,
-  error: HoustonNightShiftRpcError,
-});
 
 const WsHoustonMergeQueueEnqueueRpc = Rpc.make(WS_METHODS.houstonMergeQueueEnqueue, {
   payload: HoustonMergeQueueEnqueueInput,
@@ -2850,6 +2712,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsCreateNewRpc,
   WsProjectsCreateFromThreadRpc,
   WsProjectsWriteFileRpc,
+  WsProjectsCreateEntryRpc,
+  WsProjectsRenameEntryRpc,
+  WsProjectsDeleteEntryRpc,
   WsProjectsMutateRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
@@ -2869,6 +2734,19 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeWorktreeSetupRpc,
   WsWorktreeSetupCancelRpc,
   WsVcsPullRpc,
+  WsVcsStageFilesRpc,
+  WsVcsUnstageFilesRpc,
+  WsVcsDiscardFilesRpc,
+  WsVcsAmendCommitRpc,
+  WsVcsFetchRpc,
+  WsVcsRenameRefRpc,
+  WsVcsDeleteRefRpc,
+  WsVcsListWorktreesRpc,
+  WsVcsPruneWorktreesRpc,
+  WsVcsListStashesRpc,
+  WsVcsPushStashRpc,
+  WsVcsPopStashRpc,
+  WsVcsDropStashRpc,
   WsVcsRefreshStatusRpc,
   WsGitRunStackedActionRpc,
   WsGitResolvePullRequestRpc,
@@ -2913,6 +2791,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTaskSourcesCredentialClearRpc,
   WsHoustonTaskSourcesSyncNowRpc,
   WsHoustonTaskSourcesLinksGetRpc,
+  WsHoustonTaskSourcesConflictsListRpc,
   WsHoustonTaskSourcesConflictResolveRpc,
   WsHoustonTaskSourcesSubscribeRpc,
   WsHoustonTaskSourcesImportV1StatusRpc,
@@ -2925,37 +2804,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonSlackSubscribeRpc,
   WsHoustonSlackImportV1StatusRpc,
   WsHoustonSlackImportV1RunRpc,
-  WsHoustonHarnessGetRpc,
-  WsHoustonHarnessSubscribeRpc,
-  WsHoustonHarnessOverviewRpc,
-  WsHoustonHarnessSubscribeOverviewRpc,
-  WsHoustonHarnessSetupRpc,
-  WsHoustonHarnessRunNowRpc,
-  WsHoustonHarnessReportRpc,
-  WsHoustonHarnessDecideRpc,
-  WsHoustonHarnessMarkSeenRpc,
-  WsHoustonHarnessCreateTaskRpc,
-  WsHoustonDefectsDecideRpc,
-  WsHoustonDefectsDraftRpc,
-  WsHoustonDefectsFileRpc,
-  WsHoustonHarnessImportV1StatusRpc,
-  WsHoustonHarnessImportV1RunRpc,
-  WsHoustonNightShiftGetRpc,
-  WsHoustonNightShiftSubscribeRpc,
-  WsHoustonNightShiftSubscribeOverviewRpc,
-  WsHoustonNightShiftCreateRpc,
-  WsHoustonNightShiftUpdateRpc,
-  WsHoustonNightShiftDeleteRpc,
-  WsHoustonNightShiftPreflightRpc,
-  WsHoustonNightShiftRunNowRpc,
-  WsHoustonNightShiftWrapUpRpc,
-  WsHoustonNightShiftStopRpc,
-  WsHoustonNightShiftReportRpc,
-  WsHoustonNightShiftDecideRpc,
-  WsHoustonNightShiftMarkQaPassedRpc,
-  WsHoustonNightShiftClosePullRequestsRpc,
-  WsHoustonNightShiftImportV1StatusRpc,
-  WsHoustonNightShiftImportV1RunRpc,
   WsHoustonMergeQueueGetRpc,
   WsHoustonMergeQueueSubscribeRpc,
   WsHoustonMergeQueueSubscribeSummaryRpc,

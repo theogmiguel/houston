@@ -132,8 +132,16 @@ export class PreviewBrowser extends Context.Service<
       PreviewBrowserInstallError | PreviewBrowserInstallingError | PreviewBrowserUnsupportedError
     >;
     readonly installed: Effect.Effect<Option.Option<string>>;
+    /** The running first-use download, or none when nothing is installing. */
+    readonly installProgress: Effect.Effect<PreviewBrowserInstallProgress | null>;
   }
 >()("@houston-app/cli/preview/PreviewBrowser") {}
+
+export interface PreviewBrowserInstallProgress {
+  readonly downloadedBytes: number;
+  readonly totalBytes: number;
+  readonly unpacking: boolean;
+}
 
 export interface PreviewBrowserOptions {
   readonly baseDir: string;
@@ -437,7 +445,17 @@ export const makePreviewBrowser = Effect.fn("PreviewBrowser.make")(function* (
 
   const installed = release === null ? Effect.succeedNone : installedExecutable(release);
 
-  return PreviewBrowser.of({ executable, installed });
+  const installProgress = Effect.sync(() =>
+    state._tag === "installing"
+      ? {
+          downloadedBytes: progress.downloadedBytes,
+          totalBytes: release?.bytes ?? 0,
+          unpacking: progress.unpacking,
+        }
+      : null,
+  );
+
+  return PreviewBrowser.of({ executable, installed, installProgress });
 });
 
 export const layer = Layer.effect(

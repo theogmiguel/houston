@@ -30,6 +30,20 @@ import { type TimestampFormat } from "@houston-app/contracts/settings";
 import type { TurnItemDetailSource } from "../../state/queries";
 import { type HandoffTimelineRun } from "./V2LifecycleRow";
 import type { ThreadStatusPill } from "../Sidebar.logic";
+import type { ProviderInstanceEntry } from "../../providerInstances";
+
+/** The reviewer choices and review threads a turn can start and show. */
+export interface SecondOpinionContext {
+  readonly entries: ReadonlyArray<ProviderInstanceEntry>;
+  readonly onRequest: (input: {
+    readonly sourceThreadId: ThreadId;
+    readonly runId: RunId;
+    readonly instanceId: import("@houston-app/contracts").ProviderInstanceId;
+    readonly model: string;
+  }) => Promise<void>;
+  /** Finished reviews by the run they reviewed, so a turn shows its own card. */
+  readonly reviews: ReadonlyMap<RunId, ScopedThreadRef>;
+}
 
 /** Where an expanded row reads an item's detail and a command's output. */
 export interface TurnItemSource {
@@ -79,6 +93,7 @@ export interface TimelineRowSharedState {
   onForkFromRun:
     | ((input: { readonly sourceThreadId: ThreadId; readonly runId: RunId }) => Promise<void>)
     | undefined;
+  secondOpinion?: SecondOpinionContext | undefined;
   onToggleTurnFold: (runId: RunId) => void;
   onToggleAttemptFold: (attemptId: RunAttemptId) => void;
   onFileOpen: (attachment: ChatFileAttachment) => void;

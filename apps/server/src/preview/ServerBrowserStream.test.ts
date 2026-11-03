@@ -21,6 +21,7 @@ import * as Schema from "effect/Schema";
 import { HttpRouter, HttpServer } from "effect/http";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import * as PreviewBrowser from "./PreviewBrowser.ts";
 import * as PreviewBrowserHost from "./PreviewBrowserHost.ts";
 import * as ServerBrowser from "./ServerBrowser.ts";
 import { routeLayer } from "./ServerBrowserStream.ts";
@@ -379,16 +380,35 @@ it.effect.each([
     error: new PreviewBrowserHost.PreviewBrowserSandboxError({
       setupCommand: "sudo houston browser setup",
     }),
-    need: "sandbox",
+    expected: { need: "sandbox", command: "sudo houston browser setup" },
   },
   {
     error: new PreviewBrowserHost.PreviewBrowserLibrariesError({
       setupCommand: "sudo houston browser setup",
       libraries: ["libnss3.so"],
     }),
-    need: "libraries",
+    expected: { need: "libraries", command: "sudo houston browser setup" },
   },
-])("tells viewers the command that sets up the host ($need)", ({ error, need }) =>
+  {
+    error: new PreviewBrowser.PreviewBrowserInstallingError({
+      downloadedBytes: 10,
+      totalBytes: 100,
+      unpacking: false,
+    }),
+    expected: { need: "installing", downloadedBytes: 10, totalBytes: 100, unpacking: false },
+  },
+  {
+    error: new PreviewBrowser.PreviewBrowserInstallError({ detail: "The unpacking stopped." }),
+    expected: { need: "install-failed", detail: "The unpacking stopped." },
+  },
+  {
+    error: new PreviewBrowser.PreviewBrowserUnsupportedError({
+      platform: "linux",
+      arch: "riscv64",
+    }),
+    expected: { need: "unsupported", platform: "linux", arch: "riscv64" },
+  },
+])("tells viewers what the host needs ($need)", ({ error, expected }) =>
   Effect.gen(function* () {
     const browser = ServerBrowser.ServerBrowser.of({
       clearProfile: () => Effect.void,
@@ -426,9 +446,6 @@ it.effect.each([
     );
     const { code, reason } = yield* Effect.promise(() => closed.promise);
     expect(code).toBe(PREVIEW_STREAM_HOST_SETUP_CLOSE_CODE);
-    expect(yield* decodeHostSetup(reason)).toEqual({
-      need,
-      command: "sudo houston browser setup",
-    });
+    expect(yield* decodeHostSetup(reason)).toEqual(expected);
   }).pipe(Effect.scoped),
 );

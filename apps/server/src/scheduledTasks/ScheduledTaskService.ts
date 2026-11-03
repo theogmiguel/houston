@@ -54,7 +54,6 @@ import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as DueHint from "../scheduling/DueHint.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
-import { HoustonScheduledTaskRunner } from "../houston/harnessReview/ScheduledTaskRunner.ts";
 import { isMissedFixedTimeRun, isSameSchedule, nextScheduledRunAt } from "./Schedule.ts";
 import {
   redactHeaders,
@@ -414,8 +413,6 @@ export const layer = Layer.effect(
     const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
     const secretRequests = yield* SecretRequests.SecretRequests;
     const scheduler = yield* Scheduler.Scheduler;
-    // Houston: a task one of its features owns runs through that feature; absent, none is claimed.
-    const houstonRunner = yield* Effect.serviceOption(HoustonScheduledTaskRunner);
     const managedPolicy = yield* ManagedPolicy.ManagedPolicy;
     const webhookPolicyOrganization = ManagedPolicy.deniedBy(managedPolicy, "webhookTasks");
     // Existing webhook tasks stay stored but report why they do not run.
@@ -890,43 +887,37 @@ export const layer = Layer.effect(
               }),
             );
 
-        const claimed =
-          Option.isSome(houstonRunner) && (yield* houstonRunner.value.claims(active))
-            ? houstonRunner.value
-            : null;
         // Capture defects and interrupts too so dispatch failures still reach markCompleted.
         const result =
-          claimed !== null
-            ? yield* Effect.exit(claimed.run(active, trigger))
-            : active.threadId === null
-              ? yield* Effect.exit(
-                  threadLaunch
-                    .launch({
-                      commandId,
-                      projectId: active.projectId,
-                      title: active.title,
-                      modelSelection: active.modelSelection,
-                      runtimeMode: active.runtimeMode,
-                      interactionMode: active.interactionMode,
-                      workspaceStrategy: active.workspaceStrategy,
-                      initialMessage: {
-                        messageId,
-                        scheduledTaskId: active.id,
-                        text: prompt,
-                        attachments: [],
-                      },
-                      createdBy: active.createdBy,
-                      creationSource: active.creationSource,
-                    })
-                    .pipe(Effect.map((launched) => launched.threadId)),
-                )
-              : yield* Effect.exit(
-                  // The stored selection only seeds fresh threads. A bound run
-                  // follows the thread's current provider, so it passes none.
-                  sendBound(ThreadId.make(active.threadId), active.projectId, 2).pipe(
-                    Effect.as(ThreadId.make(active.threadId)),
-                  ),
-                );
+          active.threadId === null
+            ? yield* Effect.exit(
+                threadLaunch
+                  .launch({
+                    commandId,
+                    projectId: active.projectId,
+                    title: active.title,
+                    modelSelection: active.modelSelection,
+                    runtimeMode: active.runtimeMode,
+                    interactionMode: active.interactionMode,
+                    workspaceStrategy: active.workspaceStrategy,
+                    initialMessage: {
+                      messageId,
+                      scheduledTaskId: active.id,
+                      text: prompt,
+                      attachments: [],
+                    },
+                    createdBy: active.createdBy,
+                    creationSource: active.creationSource,
+                  })
+                  .pipe(Effect.map((launched) => launched.threadId)),
+              )
+            : yield* Effect.exit(
+                // The stored selection only seeds fresh threads. A bound run
+                // follows the thread's current provider, so it passes none.
+                sendBound(ThreadId.make(active.threadId), active.projectId, 2).pipe(
+                  Effect.as(ThreadId.make(active.threadId)),
+                ),
+              );
 
         const runSucceeded = result._tag === "Success";
         if (webhook !== undefined && runSucceeded) yield* Ref.set(webhook.dispatched, true);

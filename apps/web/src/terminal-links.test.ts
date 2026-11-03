@@ -39,6 +39,19 @@ describe("extractTerminalLinks", () => {
     ]);
   });
 
+  it("marks task keys as their own link", () => {
+    expect(extractTerminalLinks("started HOU-45 and HOU-12")).toEqual([
+      { kind: "task", text: "HOU-45", start: 8, end: 14 },
+      { kind: "task", text: "HOU-12", start: 19, end: 25 },
+    ]);
+  });
+
+  it("does not link a task key inside a longer word or path", () => {
+    expect(extractTerminalLinks("XHOU-3 and /tmp/HOU-4/x")).toEqual([
+      { kind: "path", text: "/tmp/HOU-4/x", start: 11, end: 23 },
+    ]);
+  });
+
   it("does not extend ordinary output paths through trailing prose", () => {
     const path = String.raw`C:\dev\project`;
     expect(extractTerminalLinks(`see ${path} for details`)).toEqual([

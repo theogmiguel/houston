@@ -20,19 +20,25 @@ import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { isDesktopHost } from "../env";
 import { isTauriHost } from "../lib/desktopWindow";
-import { useGrid, useGridStore } from "../grid/gridStore";
+import { MAX_GRID_THREADS, useGrid, useGridStore } from "../grid/gridStore";
 import { useOpenGridDraft } from "../grid/useOpenGridDraft";
 import { useGridShortcuts } from "../grid/useGridShortcuts";
+import { rememberLastOpenGridId } from "../grid/lastGrid";
+import { useGridMaximizeStore } from "../grid/gridMaximizeStore";
+import { ungroupedWorkspaceThreads } from "../grid/rail";
 import { resolveGridThreadOpen } from "../grid/gridThreadOpen";
 import { containsThread, preorderThreads } from "../grid/tree";
-import { isEditableFocused } from "../lib/editableFocus";
 import { cn } from "../lib/utils";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useNowMinute } from "../hooks/useNowMinute";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { resolveShortcutCommand } from "../keybindings";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { useRightPanelStore } from "../rightPanelStore";
 import { useQuietThreadShells } from "../state/entities";
+import { effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
+import { isSidebarHiddenThread } from "../components/Sidebar.logic";
+import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { buildThreadRouteParams } from "../threadRoutes";
 
@@ -44,6 +50,7 @@ function GridRoute() {
   const { gridId } = Route.useParams();
   const grid = useGrid(gridId);
   const shells = useQuietThreadShells();
+  const allGrids = useGridStore((store) => store.grids);
   const navigate = useNavigate();
   const setTree = useGridStore((store) => store.setTree);
   const addThread = useGridStore((store) => store.addThread);
@@ -60,7 +67,12 @@ function GridRoute() {
   const [rightPanelHost, setRightPanelHost] = useState<HTMLDivElement | null>(null);
   const [emptyDraftThreadId, setEmptyDraftThreadId] = useState<string | null>(null);
   const threadDetailsAnchorRef = useRef<HTMLElement | null>(null);
-  const [maximizedThreadId, setMaximizedThreadId] = useState<string | null>(null);
+  const maximizedThreadId = useGridMaximizeStore(
+    (store) => store.maximizedThreadIdByGrid[gridId] ?? null,
+  );
+  const storeMaximizedThreadId = useGridMaximizeStore((store) => store.setMaximizedThreadId);
+  const setMaximizedThreadId = (threadId: string | null) =>
+    storeMaximizedThreadId(gridId, threadId);
   const focusedThreadId = grid?.focusedThreadId ?? null;
   const previousFocusedThreadIdRef = useRef<string | null>(focusedThreadId);
   const focusedRef =
@@ -106,39 +118,11 @@ function GridRoute() {
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- clears the details follow handoff when the route unmounts
   useEffect(() => () => clearInlineDetailsHandoff(), []);
 
-  const focusEmptyComposer = () => {
-    window.requestAnimationFrame(() => {
-      document
-        .querySelector<HTMLElement>(
-          '[data-grid-empty-draft] [contenteditable="true"], [data-grid-empty-draft] textarea',
-        )
-        ?.focus();
-    });
-  };
-
-  const openNewThread = () => {
-    if (grid === null) return;
-    void openDraft({ gridId: grid.id, focusedThreadId: grid.focusedThreadId }).then(() => {
-      if (grid.tree === null) focusEmptyComposer();
-    });
-  };
-
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- window keydown listener for the grid's T shortcut
+  // Launch restores the grid last on screen instead of a fresh standalone draft.
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- persists the open grid id to local storage
   useEffect(() => {
-    if (grid === null) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat) return;
-      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-      if (event.key.toLowerCase() !== "t") return;
-      if (isEditableFocused(event.target)) return;
-      if (document.querySelector('[data-slot="menu-popup"], [role="dialog"]') !== null) return;
-      event.preventDefault();
-      event.stopPropagation();
-      openNewThread();
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  });
+    if (grid !== null) rememberLastOpenGridId(grid.id);
+  }, [grid]);
 
   // The grid's cells are embedded chats, which leave window shortcuts to the route.
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- window keydown listener for the focused thread's right panel shortcuts
@@ -207,6 +191,8 @@ function GridRoute() {
     setGridDetailsOpen(grid.id, false);
   }, [focusedThreadId, grid, setGridDetailsOpen]);
 
+  const nowMinute = useNowMinute();
+  const nowIso = `${nowMinute}:00.000Z`;
   const workspaceThreads =
     grid === null
       ? []
@@ -214,7 +200,11 @@ function GridRoute() {
           (thread) =>
             thread.environmentId === grid.environmentId &&
             thread.projectId === grid.projectId &&
-            thread.archivedAt === null,
+            thread.archivedAt === null &&
+            thread.deletedAt === null &&
+            thread.settledOverride !== "settled" &&
+            !effectiveSnoozed(thread, { now: nowIso }) &&
+            !isSidebarHiddenThread(thread),
         );
   const threadCount = grid === null || grid.tree === null ? 0 : preorderThreads(grid.tree).length;
   const effectiveMaximized =
@@ -264,9 +254,18 @@ function GridRoute() {
   );
   const providerEntries =
     providerEntriesByEnvironment.get(grid.environmentId) ?? EMPTY_PROVIDER_ENTRIES;
-  const availableThreads = workspaceThreads
-    .filter((thread) => !visibleThreadIds.has(thread.id))
-    .map((thread) => ({ threadId: thread.id, title: thread.title }));
+  // A split picker never offers a thread another grid already shows, nor a
+  // closed, held, archived or subagent thread: one thread, one ChatView.
+  const availableThreads = ungroupedWorkspaceThreads({
+    project: {
+      environmentId: grid.environmentId,
+      id: grid.projectId,
+      title: grid.name,
+    },
+    grids: allGrids,
+    threads: shells,
+    now: nowIso,
+  }).map((thread) => ({ threadId: thread.id, title: thread.title }));
   const soloLeaves = grid.tree === null ? [] : preorderThreads(grid.tree);
   const gridCells = soloLeaves.map((leaf) => ({
     threadId: leaf.threadId,
@@ -402,6 +401,32 @@ function GridRoute() {
             onFocusThread={(threadId) => focusThread(grid.id, threadId)}
             onCloseThread={(threadId) => closeGridCell(grid.id, threadId)}
             onDropThread={(source, targetThreadId, side) => {
+              const sourceGrid = allGrids.find((entry) => entry.id === source.gridId);
+              const targetCount = grid.tree === null ? 0 : preorderThreads(grid.tree).length;
+              if (sourceGrid !== undefined && sourceGrid.environmentId !== grid.environmentId) {
+                toastManager.add(
+                  stackedThreadToast({
+                    type: "error",
+                    title: "Thread belongs to another workspace",
+                    description: "Drag it to a grid in its own workspace.",
+                  }),
+                );
+                return;
+              }
+              if (
+                side !== "center" &&
+                targetCount >= MAX_GRID_THREADS &&
+                !visibleThreadIds.has(source.threadId)
+              ) {
+                toastManager.add(
+                  stackedThreadToast({
+                    type: "error",
+                    title: `This grid holds its maximum of ${MAX_GRID_THREADS} threads`,
+                    description: `Asked to add another cell to “${grid.name}”.`,
+                  }),
+                );
+                return;
+              }
               moveThreadToCell({
                 threadId: source.threadId,
                 targetGridId: grid.id,

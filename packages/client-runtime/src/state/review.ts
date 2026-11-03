@@ -88,6 +88,17 @@ export function createReviewEnvironmentAtoms<R, E>(
           }),
         ),
     }),
+    // Marks a path viewed against the content it was marked on; a later commit or edit
+    // dismisses the mark, so it reads "changed since viewed" rather than viewed.
+    filesViewed: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:review:files-viewed",
+      tag: WS_METHODS.houstonReviewFilesViewed,
+      staleTimeMs: 5_000,
+    }),
+    setFilesViewed: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:review:set-files-viewed",
+      tag: WS_METHODS.houstonReviewSetFilesViewed,
+    }),
     diffFileContents: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:review:diff-file-contents",
       tag: WS_METHODS.reviewGetDiffFileContents,

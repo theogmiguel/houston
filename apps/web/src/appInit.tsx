@@ -7,6 +7,7 @@ import { applyAppearanceContrast } from "./appearanceContrast";
 import { applyAppearanceFontVariables, TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "./appearanceFonts";
 import { startBrowserProfileReporting } from "./browser/BrowserProfileReporter";
 import { ensureThreadInGrid } from "./grid/ensureThreadInGrid";
+import { GRID_STORAGE_KEY, useGridStore } from "./grid/gridStore";
 import { startPreviewTitleRecording } from "./browserHistoryStore";
 import { retainThreadOverlaysForThread } from "./components/chat/threadOverlayRetention";
 import { startBackgroundThreadAnnouncements } from "./components/BackgroundThreadAnnouncer";
@@ -20,6 +21,7 @@ import { startMainAppLocationTracking } from "./components/sidebar/mainAppLocati
 import { startDesktopUpdateLaunchNotice } from "./components/sidebar/updateEverythingRun";
 import { startSlowRpcRequestToasts } from "./components/SlowRpcRequestToastCoordinator";
 import { startThreadNotifications } from "./components/ThreadNotificationCoordinator";
+import { startTraySync } from "./desktop/tray";
 import { startGuideRunNotifications } from "./components/pullRequest/guide/PullRequestGuideRunCoordinator";
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "./branding";
 import { resolveServerBackedAppDisplayName } from "./branding.logic";
@@ -39,8 +41,9 @@ import {
 } from "./hooks/useSettings";
 import { syncBrowserChromeTheme } from "./hooks/useTheme";
 import { startThreadVisitedMigration } from "./hooks/useThreadVisitedMigration";
-import { isTauriHost } from "./lib/desktopWindow";
+import { isQuickComposerWindow, isTauriHost } from "./lib/desktopWindow";
 import { installDesktopPasteAsText } from "./lib/desktopPasteAsText";
+import { installFileTransferNavigationGuard } from "./lib/fileTransfer";
 import {
   syncDocumentElectronPlatformClasses,
   syncDocumentWindowControlsOverlayClass,
@@ -182,6 +185,7 @@ export function startAppServices(): AppRouter {
   }
 
   installDesktopPasteAsText(window.hostBridge, window);
+  installFileTransferNavigationGuard(window);
 
   startClientAppearance();
   startDocumentTitle();
@@ -220,9 +224,20 @@ export function startAppServices(): AppRouter {
   startHostFreezeToasts();
   startLegacyThreadMigrationToast();
   startPermissionUpdateNotices(router);
-  startThreadNotifications(appAtomRegistry, router);
-  startGuideRunNotifications(appAtomRegistry, router);
-  if (isDesktopHost) startDesktopUpdateLaunchNotice();
+  // The quick composer is a second view of the same app; it must not double the
+  // tray payload or the notifications the main window already owns.
+  const quickComposerWindow = isQuickComposerWindow();
+  if (!quickComposerWindow) {
+    startThreadNotifications(appAtomRegistry, router);
+    startTraySync(appAtomRegistry, router);
+    startGuideRunNotifications(appAtomRegistry, router);
+    if (isDesktopHost) startDesktopUpdateLaunchNotice();
+  }
+  // The quick window and the main window share the persisted grid store; either one's
+  // placement must reach the other instead of waiting for a reload.
+  window.addEventListener("storage", (event) => {
+    if (event.key === GRID_STORAGE_KEY) void useGridStore.persist.rehydrate();
+  });
 
   return router;
 }

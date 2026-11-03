@@ -35,6 +35,22 @@ function quoteProviderBinary(
 
 export function getOnboardingProviderState(provider: ServerProvider | undefined) {
   if (provider === undefined) return "checking";
+  const readiness = provider.readiness;
+  if (readiness !== undefined) {
+    switch (readiness.state) {
+      case "turnedOff":
+        return "disabled";
+      case "notInstalled":
+        return readiness.reason === "missing" ? "install" : "attention";
+      case "signedOut":
+        return "signIn";
+      case "rejected":
+      case "outOfUsage":
+        return "attention";
+      case "ready":
+        break;
+    }
+  }
   if (!provider.enabled || provider.status === "disabled") return "disabled";
   if (!provider.installed && provider.status === "warning" && provider.auth.status === "unknown")
     return "checking";

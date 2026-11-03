@@ -1,11 +1,13 @@
-// @effect-diagnostics nodeBuiltinImport:off - FileSystem cannot create a FIFO, and reads spy on native realpath.
+// @effect-diagnostics nodeBuiltinImport:off globalDate:off - FileSystem cannot create a FIFO, reads spy on native realpath, and trash fixtures pin a fixed DeletionDate.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 
+import { ProjectWriteFileError } from "@houston-app/contracts";
 import * as NodePath from "@effect/platform-node/NodePath";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, describe, expect } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -17,6 +19,7 @@ import * as KnownWorkspaces from "./KnownWorkspaces.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
+import * as Trash from "./trash.ts";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import { symlinksSupported } from "@houston-app/shared/testing/symlinks";
 import { vi } from "vite-plus/test";
@@ -43,6 +46,9 @@ const injectShortReads = Effect.fn("injectShortReads")(function* (target: string
 });
 
 const UNKNOWN_WORKSPACE_PREFIX = "houston-unknown-workspace-";
+const isProjectWriteFileError = Schema.is(ProjectWriteFileError);
+const isWorkspacePathOutsideRootError = Schema.is(WorkspacePaths.WorkspacePathOutsideRootError);
+const isWorkspaceFilePathEscapeError = Schema.is(WorkspaceFileSystem.WorkspaceFilePathEscapeError);
 const layerKnownWorkspacesTest = Layer.mock(KnownWorkspaces.KnownWorkspaces)({
   assertContains: (cwd) =>
     cwd.includes(UNKNOWN_WORKSPACE_PREFIX)
@@ -194,6 +200,7 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           contents: "export const answer = 42;\n",
           byteLength: 26,
           truncated: false,
+          revision: expect.any(String),
         });
       }),
     );
@@ -212,6 +219,7 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           contents,
           byteLength: Buffer.byteLength(contents),
           truncated: false,
+          revision: expect.any(String),
         });
       }),
     );
@@ -248,6 +256,7 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           contents: "# Report\n",
           byteLength: 9,
           truncated: false,
+          revision: expect.any(String),
         });
       }),
     );
@@ -269,6 +278,7 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           contents: "# Notes\n",
           byteLength: 8,
           truncated: false,
+          revision: expect.any(String),
         });
       }),
     );
@@ -566,6 +576,68 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
       ),
     );
 
+    it.effect("rejects a write based on a revision the file no longer has", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/main.ts", "export {};\n");
+
+        const original = yield* workspaceFileSystem.readFile({
+          cwd,
+          relativePath: "src/main.ts",
+        });
+        expect(original.revision).toEqual(expect.any(String));
+
+        yield* writeTextFile(cwd, "src/main.ts", "export const agentEdit = true;\n");
+
+        const error = yield* workspaceFileSystem
+          .writeFile({
+            cwd,
+            relativePath: "src/main.ts",
+            contents: "export const userEdit = true;\n",
+            expectedRevision: original.revision,
+          })
+          .pipe(Effect.flip);
+
+        expect(isProjectWriteFileError(error)).toBe(true);
+        if (!isProjectWriteFileError(error)) throw new Error("expected a write error");
+        expect(error.failure).toBe("stale_revision");
+        expect(error.message).toContain(original.revision!);
+        expect(yield* fileSystem.readFileString(path.join(cwd, "src/main.ts"))).toBe(
+          "export const agentEdit = true;\n",
+        );
+      }),
+    );
+
+    it.effect("writes with the current revision and returns the new one", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/main.ts", "export {};\n");
+
+        const original = yield* workspaceFileSystem.readFile({
+          cwd,
+          relativePath: "src/main.ts",
+        });
+        const written = yield* workspaceFileSystem.writeFile({
+          cwd,
+          relativePath: "src/main.ts",
+          contents: "export const edited = true;\n",
+          expectedRevision: original.revision,
+        });
+
+        expect(written.revision).toEqual(expect.any(String));
+        expect(written.revision).not.toBe(original.revision);
+        expect(yield* fileSystem.readFileString(path.join(cwd, "src/main.ts"))).toBe(
+          "export const edited = true;\n",
+        );
+      }),
+    );
+
     it.effect("rejects writes outside the workspace root", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
@@ -803,6 +875,399 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           expect(yield* fileSystem.readFileString(path.join(cwd, relativePath))).toBe("ok\n");
         }
       }),
+    );
+  });
+  describe("entry mutations", () => {
+    it.effect("creates a file and a folder inside an existing directory", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/existing.ts", "export {};\n");
+
+        yield* workspaceFileSystem.createEntry({ cwd, relativePath: "src/new.ts", kind: "file" });
+        yield* workspaceFileSystem.createEntry({
+          cwd,
+          relativePath: "src/components",
+          kind: "directory",
+        });
+
+        expect(yield* fileSystem.readFileString(path.join(cwd, "src/new.ts"))).toBe("");
+        expect((yield* fileSystem.stat(path.join(cwd, "src/components"))).type).toBe("Directory");
+      }),
+    );
+
+    it.effect("refuses to create over an existing path or in a missing folder", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/main.ts", "export {};\n");
+
+        const existing = yield* workspaceFileSystem
+          .createEntry({ cwd, relativePath: "src/main.ts", kind: "file" })
+          .pipe(Effect.flip);
+        expect(existing).toBeInstanceOf(WorkspaceFileSystem.WorkspacePathExistsError);
+        expect(existing.message).toContain("src/main.ts");
+        expect(existing.message).toContain("does not exist yet");
+
+        const missingParent = yield* workspaceFileSystem
+          .createEntry({ cwd, relativePath: "missing/new.ts", kind: "file" })
+          .pipe(Effect.flip);
+        expect(missingParent).toBeInstanceOf(WorkspaceFileSystem.WorkspacePathNotFoundError);
+        expect(missingParent.message).toContain("missing");
+      }),
+    );
+
+    it.effect("refuses to create outside the workspace or inside git's folders", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, ".git/config", "[core]\n");
+
+        for (const relativePath of ["../escape.ts", ".git/hook.ts", "sub/.git/config"]) {
+          const error = yield* workspaceFileSystem
+            .createEntry({ cwd, relativePath, kind: "file" })
+            .pipe(Effect.flip);
+          expect(
+            isWorkspacePathOutsideRootError(error) || isWorkspaceFilePathEscapeError(error),
+          ).toBe(true);
+        }
+        expect(
+          yield* fileSystem
+            .exists(path.resolve(cwd, "..", "escape.ts"))
+            .pipe(Effect.orElseSucceed(() => false)),
+        ).toBe(false);
+      }),
+    );
+
+    it.effect("renames an entry and refuses a destination that exists", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/old.ts", "one\n");
+        yield* writeTextFile(cwd, "src/taken.ts", "two\n");
+
+        yield* workspaceFileSystem.renameEntry({
+          cwd,
+          fromPath: "src/old.ts",
+          toPath: "src/new.ts",
+        });
+        expect(yield* fileSystem.readFileString(path.join(cwd, "src/new.ts"))).toBe("one\n");
+        expect(yield* fileSystem.exists(path.join(cwd, "src/old.ts"))).toBe(false);
+
+        const existing = yield* workspaceFileSystem
+          .renameEntry({ cwd, fromPath: "src/new.ts", toPath: "src/taken.ts" })
+          .pipe(Effect.flip);
+        expect(existing).toBeInstanceOf(WorkspaceFileSystem.WorkspacePathExistsError);
+        expect(existing.message).toContain("src/taken.ts");
+
+        const missing = yield* workspaceFileSystem
+          .renameEntry({ cwd, fromPath: "src/missing.ts", toPath: "src/moved.ts" })
+          .pipe(Effect.flip);
+        expect(missing).toBeInstanceOf(WorkspaceFileSystem.WorkspacePathNotFoundError);
+      }),
+    );
+
+    it.effect("refuses a rename that leaves the workspace or touches git", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "docs/plan.md", "# Plan\n");
+        yield* writeTextFile(cwd, ".git/config", "[core]\n");
+
+        const outside = yield* workspaceFileSystem
+          .renameEntry({ cwd, fromPath: "docs/plan.md", toPath: "../plan.md" })
+          .pipe(Effect.flip);
+        expect(outside).toBeInstanceOf(WorkspacePaths.WorkspacePathOutsideRootError);
+
+        const intoGit = yield* workspaceFileSystem
+          .renameEntry({ cwd, fromPath: "docs/plan.md", toPath: ".git/config.md" })
+          .pipe(Effect.flip);
+        expect(intoGit).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFilePathEscapeError);
+      }),
+    );
+
+    it.effect("deletes a file and a folder, but never the workspace root or git's folders", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/old.ts", "one\n");
+        yield* writeTextFile(cwd, "src/nested/keep.ts", "two\n");
+        yield* writeTextFile(cwd, ".git/config", "[core]\n");
+
+        yield* workspaceFileSystem.deleteEntry({
+          cwd,
+          relativePath: "src/old.ts",
+          permanent: true,
+        });
+        expect(yield* fileSystem.exists(path.join(cwd, "src/old.ts"))).toBe(false);
+
+        yield* workspaceFileSystem.deleteEntry({
+          cwd,
+          relativePath: "src/nested",
+          permanent: true,
+        });
+        expect(yield* fileSystem.exists(path.join(cwd, "src/nested"))).toBe(false);
+
+        const root = yield* workspaceFileSystem
+          .deleteEntry({ cwd, relativePath: "." })
+          .pipe(Effect.flip);
+        expect(root).toBeInstanceOf(WorkspaceFileSystem.WorkspaceRootMutationError);
+
+        const git = yield* workspaceFileSystem
+          .deleteEntry({ cwd, relativePath: ".git/config" })
+          .pipe(Effect.flip);
+        expect(git).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFilePathEscapeError);
+        expect(yield* fileSystem.readFileString(path.join(cwd, ".git/config"))).toBe("[core]\n");
+
+        const outside = yield* workspaceFileSystem
+          .deleteEntry({ cwd, relativePath: "../outside" })
+          .pipe(Effect.flip);
+        expect(outside).toBeInstanceOf(WorkspacePaths.WorkspacePathOutsideRootError);
+      }),
+    );
+
+    it.effect("moves a deleted entry to the home trash by default when gio is missing", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const dataHome = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/old.ts", "one\n");
+
+        const calls: Array<{ command: string; args: ReadonlyArray<string> }> = [];
+        const trashContext: Trash.TrashContextValue = {
+          platform: "linux",
+          environment: { XDG_DATA_HOME: dataHome },
+          homeDirectory: path.join(dataHome, "home"),
+          runCommand: (command, args) => {
+            calls.push({ command, args });
+            return Promise.reject(
+              Object.assign(new Error(`spawn ${command} ENOENT`), { code: "ENOENT" }),
+            );
+          },
+          now: () => new Date(2026, 0, 2, 3, 4, 5),
+        };
+
+        yield* workspaceFileSystem
+          .deleteEntry({ cwd, relativePath: "src/old.ts" })
+          .pipe(Effect.provideService(Trash.TrashContext, trashContext));
+
+        expect(calls).toEqual([
+          { command: "gio", args: ["trash", "--", path.join(cwd, "src/old.ts")] },
+        ]);
+        expect(yield* fileSystem.exists(path.join(cwd, "src/old.ts"))).toBe(false);
+        const trashed = path.join(dataHome, "Trash", "files", "old.ts");
+        expect(yield* fileSystem.readFileString(trashed)).toBe("one\n");
+        const info = yield* fileSystem.readFileString(
+          path.join(dataHome, "Trash", "info", "old.ts.trashinfo"),
+        );
+        expect(info).toContain("[Trash Info]");
+        expect(info).toContain(`Path=${Trash.encodeTrashInfoPath(path.join(cwd, "src/old.ts"))}`);
+        expect(info).toContain("DeletionDate=2026-01-02T03:04:05");
+
+        yield* writeTextFile(cwd, "src/old.ts", "two\n");
+        yield* workspaceFileSystem
+          .deleteEntry({ cwd, relativePath: "src/old.ts" })
+          .pipe(Effect.provideService(Trash.TrashContext, trashContext));
+        expect(
+          yield* fileSystem.readFileString(path.join(dataHome, "Trash", "files", "old.ts.1")),
+        ).toBe("two\n");
+      }),
+    );
+
+    it.effect("uses gio trash when the command is available", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const dataHome = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/old.ts", "one\n");
+
+        const calls: Array<{ command: string; args: ReadonlyArray<string> }> = [];
+        const trashContext: Trash.TrashContextValue = {
+          platform: "linux",
+          environment: { XDG_DATA_HOME: dataHome },
+          homeDirectory: path.join(dataHome, "home"),
+          runCommand: async (command, args) => {
+            calls.push({ command, args });
+            await NodeFSP.rm(args[2] ?? "", { recursive: true, force: false });
+            return { exitCode: 0, stderr: "" };
+          },
+          now: () => new Date(0),
+        };
+
+        yield* workspaceFileSystem
+          .deleteEntry({ cwd, relativePath: "src/old.ts" })
+          .pipe(Effect.provideService(Trash.TrashContext, trashContext));
+
+        expect(calls).toEqual([
+          { command: "gio", args: ["trash", "--", path.join(cwd, "src/old.ts")] },
+        ]);
+        expect(yield* fileSystem.exists(path.join(cwd, "src/old.ts"))).toBe(false);
+        expect(yield* fileSystem.exists(path.join(dataHome, "Trash"))).toBe(false);
+      }),
+    );
+
+    it.effect("keeps a Windows path out of the PowerShell script text", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/it's; Remove-Item.ts", "one\n");
+        const absolutePath = path.join(cwd, "src/it's; Remove-Item.ts");
+        const calls: Array<{
+          command: string;
+          args: ReadonlyArray<string>;
+          extraEnvironment: Readonly<Record<string, string>> | undefined;
+        }> = [];
+
+        yield* workspaceFileSystem
+          .deleteEntry({ cwd, relativePath: "src/it's; Remove-Item.ts" })
+          .pipe(
+            Effect.provideService(Trash.TrashContext, {
+              platform: "win32",
+              environment: {},
+              homeDirectory: cwd,
+              runCommand: async (command, args, extraEnvironment) => {
+                calls.push({ command, args, extraEnvironment });
+                return { exitCode: 0, stderr: "" };
+              },
+              now: () => new Date(0),
+            }),
+          );
+
+        expect(calls).toHaveLength(1);
+        const [call] = calls;
+        expect(call?.command).toBe("powershell.exe");
+        expect(call?.args.at(-2)).toBe("-Command");
+        expect(call?.args.some((arg) => arg.includes(absolutePath))).toBe(false);
+        expect(call?.extraEnvironment).toEqual({
+          [Trash.WINDOWS_TRASH_PATH_VARIABLE]: absolutePath,
+        });
+      }),
+    );
+
+    it.effect("leaves the entry in place and names it when the trash is unavailable", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const dataHome = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/old.ts", "one\n");
+        const absolutePath = path.join(cwd, "src/old.ts");
+
+        const failure = yield* workspaceFileSystem
+          .deleteEntry({ cwd, relativePath: "src/old.ts" })
+          .pipe(
+            Effect.provideService(Trash.TrashContext, {
+              platform: "linux",
+              environment: { XDG_DATA_HOME: dataHome },
+              homeDirectory: path.join(dataHome, "home"),
+              runCommand: async () => ({ exitCode: 1, stderr: "gio: operation not supported" }),
+              now: () => new Date(0),
+            } satisfies Trash.TrashContextValue),
+            Effect.flip,
+          );
+
+        expect(failure).toBeInstanceOf(WorkspaceFileSystem.WorkspaceTrashUnavailableError);
+        expect(failure.message).toContain(absolutePath);
+        expect(failure.message).toContain("gio: operation not supported");
+        expect(yield* fileSystem.readFileString(absolutePath)).toBe("one\n");
+        expect(yield* fileSystem.exists(path.join(dataHome, "Trash"))).toBe(false);
+      }),
+    );
+
+    it.effect("removes immediately with permanent: true without touching the trash", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const dataHome = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/old.ts", "one\n");
+
+        yield* workspaceFileSystem
+          .deleteEntry({
+            cwd,
+            relativePath: "src/old.ts",
+            permanent: true,
+          })
+          .pipe(
+            Effect.provideService(Trash.TrashContext, {
+              platform: "linux",
+              environment: { XDG_DATA_HOME: dataHome },
+              homeDirectory: path.join(dataHome, "home"),
+              runCommand: () => Promise.reject(new Error("the trash must not be used")),
+              now: () => new Date(0),
+            } satisfies Trash.TrashContextValue),
+          );
+
+        expect(yield* fileSystem.exists(path.join(cwd, "src/old.ts"))).toBe(false);
+        expect(yield* fileSystem.exists(path.join(dataHome, "Trash"))).toBe(false);
+      }),
+    );
+
+    it.effect("invalidates the workspace entry cache after a create", () =>
+      Effect.gen(function* () {
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/existing.ts", "export {};\n");
+
+        yield* workspaceFileSystem.createEntry({ cwd, relativePath: "plans", kind: "directory" });
+        yield* workspaceFileSystem.createEntry({ cwd, relativePath: "plans/new.md", kind: "file" });
+        const listed = yield* workspaceEntries.list({ cwd });
+        expect(listed.entries).toEqual(
+          expect.arrayContaining([expect.objectContaining({ path: "plans/new.md" })]),
+        );
+      }),
+    );
+
+    it.effect.skipIf(!symlinksSupported)(
+      "renames and deletes a symlink itself instead of its target",
+      () =>
+        Effect.gen(function* () {
+          const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cwd = yield* makeTempDir;
+          const outsideDir = yield* makeTempDir;
+          yield* writeTextFile(outsideDir, "target.ts", "outside\n");
+          yield* fileSystem.symlink(
+            path.join(outsideDir, "target.ts"),
+            path.join(cwd, "linked.ts"),
+          );
+
+          yield* workspaceFileSystem.renameEntry({
+            cwd,
+            fromPath: "linked.ts",
+            toPath: "renamed.ts",
+          });
+          expect(yield* fileSystem.readLink(path.join(cwd, "renamed.ts"))).toBe(
+            path.join(outsideDir, "target.ts"),
+          );
+
+          yield* workspaceFileSystem.deleteEntry({
+            cwd,
+            relativePath: "renamed.ts",
+            permanent: true,
+          });
+          expect(yield* fileSystem.exists(path.join(cwd, "renamed.ts"))).toBe(false);
+          expect(yield* fileSystem.readFileString(path.join(outsideDir, "target.ts"))).toBe(
+            "outside\n",
+          );
+        }),
     );
   });
 });

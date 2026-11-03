@@ -4,7 +4,11 @@ import {
   scopeThreadRef,
   scopedThreadKey,
 } from "@houston-app/client-runtime/environment";
-import { settlePromise, squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
+import {
+  isAtomCommandInterrupted,
+  settlePromise,
+  squashAtomCommandFailure,
+} from "@houston-app/client-runtime/state/runtime";
 import { canSnooze, threadWokeAt } from "@houston-app/client-runtime/state/thread-settled";
 import { threadRuntimeCanArchive } from "@houston-app/client-runtime/state/models";
 import {
@@ -23,6 +27,14 @@ import { AsyncResult } from "effect/reactivity";
 import { useRouter } from "@tanstack/react-router";
 
 import { getFallbackThreadIdAfterDelete, pinOrderKeyBetween } from "../components/Sidebar.logic";
+import { resolveSnoozePresets as resolveThreadSnoozePresets } from "../components/Sidebar.snooze";
+import { openThreadFind } from "../components/chat/threadFindStore";
+import { copyThreadReference } from "../lib/copyThreadReference";
+import { threadChipCopyTarget } from "@houston-app/client-runtime/thread-reference";
+import {
+  deriveLogicalProjectKeyFromSettings,
+  selectProjectGroupingSettings,
+} from "@houston-app/client-runtime/state/project-grouping";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { environmentSession, readEnvironmentScope } from "../state/session";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -53,7 +65,7 @@ import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
-import { useClientSettings } from "./useSettings";
+import { getClientSettings, useClientSettings } from "./useSettings";
 import * as ThreadUndo from "@houston-app/client-runtime/state/thread-undo";
 import { showThreadUndoNotice } from "./showThreadUndoNotice";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -315,6 +327,9 @@ export function useThreadActions() {
     reportFailure: false,
   });
   const stopThreadSession = useOrchestrationCommand(threadEnvironment.stopSession);
+  const updateThreadMetadataMutation = useOrchestrationCommand(threadEnvironment.updateMetadata, {
+    reportFailure: false,
+  });
   const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, {
     reportFailure: false,
   });
@@ -948,8 +963,146 @@ export function useThreadActions() {
     return deleteThread(target);
   };
 
+  const resolvedThread = (target: ScopedThreadRef) => {
+    const thread = readThreadShell(target);
+    if (thread === null) return null;
+    return { thread, threadRef: target };
+  };
+
+  const copyText = async (text: string, title: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toastManager.add({ type: "success", title, description: text });
+    } catch {
+      toastManager.add({ type: "error", title: `Failed to copy ${title.toLowerCase()}` });
+    }
+  };
+
+  const copyThreadPath = async (target: ScopedThreadRef) => {
+    const resolved = resolvedThread(target);
+    if (resolved === null) return;
+    const project = readProject(
+      scopeProjectRef(resolved.thread.environmentId, resolved.thread.projectId),
+    );
+    const path = resolved.thread.worktreePath ?? project?.workspaceRoot ?? null;
+    if (path === null) {
+      toastManager.add({
+        type: "error",
+        title: "Path unavailable",
+        description: "This thread does not have a workspace path to copy.",
+      });
+      return;
+    }
+    await copyText(path, "Path copied");
+  };
+
+  const copyThreadBranch = async (target: ScopedThreadRef) => {
+    const resolved = resolvedThread(target);
+    if (resolved?.thread.branch == null) return;
+    await copyText(resolved.thread.branch, "Branch copied");
+  };
+
+  const copyThreadRef = async (target: ScopedThreadRef) => {
+    const resolved = resolvedThread(target);
+    if (resolved === null) return;
+    await copyThreadReference(threadChipCopyTarget(target, resolved.thread.title));
+  };
+
+  const findThread = (target: ScopedThreadRef) => {
+    openThreadFind(scopedThreadKey(target));
+  };
+
+  const openThreadProjectSettings = async (target: ScopedThreadRef) => {
+    const resolved = resolvedThread(target);
+    if (resolved === null) return;
+    const project = readProject(
+      scopeProjectRef(resolved.thread.environmentId, resolved.thread.projectId),
+    );
+    if (project === null) return;
+    const projectKey = deriveLogicalProjectKeyFromSettings(
+      project,
+      selectProjectGroupingSettings(getClientSettings()),
+    );
+    await router.navigate({ to: "/projects/$projectKey", params: { projectKey } });
+  };
+
+  const threadSnoozePresets = (target: ScopedThreadRef) =>
+    resolveThreadSnoozePresets(
+      new Date(),
+      getClientSettings().timestampFormat,
+      target.environmentId,
+    );
+
+  const holdThread = async (target: ScopedThreadRef, snoozedUntil: string) => {
+    const result = await snoozeThread(target, snoozedUntil);
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to hold thread",
+          description:
+            squashAtomCommandFailure(result) instanceof Error
+              ? (squashAtomCommandFailure(result) as Error).message
+              : "An error occurred.",
+        }),
+      );
+    }
+  };
+
+  const closeThread = async (target: ScopedThreadRef) => {
+    const result = await settleThread(target);
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to close thread",
+          description:
+            squashAtomCommandFailure(result) instanceof Error
+              ? (squashAtomCommandFailure(result) as Error).message
+              : "An error occurred.",
+        }),
+      );
+    }
+  };
+
+  const renameThread = (target: ScopedThreadRef, title: string) =>
+    updateThreadMetadataMutation({
+      environmentId: target.environmentId,
+      input: { threadId: target.threadId, title },
+    });
+
+  const regenerateThreadTitle = (target: ScopedThreadRef) =>
+    updateThreadMetadataMutation({
+      environmentId: target.environmentId,
+      input: { threadId: target.threadId, regenerateTitle: true },
+    });
+
+  const copyThreadId = async (target: ScopedThreadRef) => {
+    try {
+      await navigator.clipboard.writeText(target.threadId);
+      toastManager.add({
+        type: "success",
+        title: "Thread ID copied",
+        description: target.threadId,
+      });
+    } catch {
+      toastManager.add({ type: "error", title: "Failed to copy thread ID" });
+    }
+  };
+
   return {
     archiveThread,
+    renameThread,
+    regenerateThreadTitle,
+    copyThreadId,
+    copyThreadPath,
+    copyThreadBranch,
+    copyThreadRef,
+    findThread,
+    openThreadProjectSettings,
+    threadSnoozePresets,
+    holdThread,
+    closeThread,
     unarchiveThread,
     deleteThread,
     confirmAndDeleteThread,

@@ -46,6 +46,7 @@ url = "2"
 tauri-runtime = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-global-shortcut = "~2.3"
 # 2.10 is the floor, not taste: earlier versions look up a bare `{os}-{arch}` key
 # only, so a .deb install could be handed the AppImage. 2.10 searches the
 # bundle-specific `{os}-{arch}-{installer}` entry first.

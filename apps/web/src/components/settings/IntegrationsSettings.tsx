@@ -1337,43 +1337,47 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
             {atProfileLimit ? (
               <MenuItem disabled>You&rsquo;ve reached the profile limit</MenuItem>
             ) : null}
-            <MenuSeparator />
-            <MenuGroup>
-              <MenuGroupLabel>Import from</MenuGroupLabel>
-              {cookieImportDenial !== undefined ? (
-                <MenuItem disabled>{cookieImportDenial}</MenuItem>
-              ) : sources === null ? (
-                <MenuItem disabled>Looking for browsers…</MenuItem>
-              ) : importableSources.length === 0 ? (
-                <MenuItem disabled>No supported browsers found</MenuItem>
-              ) : (
-                <>
-                  {importableSources.map((source) => (
-                    <MenuItem
-                      key={source.id}
-                      disabled={!settingsHydrated || primaryEnvironment == null}
-                      onClick={() => {
-                        if (!settingsHydrated || primaryEnvironment == null) return;
-                        setImportSession({
-                          source,
-                          environmentId: primaryEnvironment.environmentId,
-                          environmentName: resolveEnvironmentOptionLabel({
-                            isPrimary: true,
-                            environmentId: primaryEnvironment.environmentId,
-                            runtimeLabel: primaryEnvironment.label,
-                          }),
-                        });
-                      }}
-                    >
-                      {source.name}
-                    </MenuItem>
-                  ))}
-                  {primaryEnvironment == null ? (
-                    <MenuItem disabled>Connect to an environment to import cookies</MenuItem>
-                  ) : null}
-                </>
-              )}
-            </MenuGroup>
+            {previewBridge ? (
+              <>
+                <MenuSeparator />
+                <MenuGroup>
+                  <MenuGroupLabel>Import from</MenuGroupLabel>
+                  {cookieImportDenial !== undefined ? (
+                    <MenuItem disabled>{cookieImportDenial}</MenuItem>
+                  ) : sources === null ? (
+                    <MenuItem disabled>Looking for browsers…</MenuItem>
+                  ) : importableSources.length === 0 ? (
+                    <MenuItem disabled>No supported browsers found</MenuItem>
+                  ) : (
+                    <>
+                      {importableSources.map((source) => (
+                        <MenuItem
+                          key={source.id}
+                          disabled={!settingsHydrated || primaryEnvironment == null}
+                          onClick={() => {
+                            if (!settingsHydrated || primaryEnvironment == null) return;
+                            setImportSession({
+                              source,
+                              environmentId: primaryEnvironment.environmentId,
+                              environmentName: resolveEnvironmentOptionLabel({
+                                isPrimary: true,
+                                environmentId: primaryEnvironment.environmentId,
+                                runtimeLabel: primaryEnvironment.label,
+                              }),
+                            });
+                          }}
+                        >
+                          {source.name}
+                        </MenuItem>
+                      ))}
+                      {primaryEnvironment == null ? (
+                        <MenuItem disabled>Connect to an environment to import cookies</MenuItem>
+                      ) : null}
+                    </>
+                  )}
+                </MenuGroup>
+              </>
+            ) : null}
           </MenuPopup>
         </Menu>
       }
@@ -1621,12 +1625,14 @@ export function BrowserSettingsPanel() {
         </SettingsUnavailableGroup>
       </SettingsSection>
 
-      <SettingsSection id="browser-recordings" title="Recordings">
-        <SettingsUnavailableGroup message={desktopOnlyMessage}>
-          <BrowserRecordingFrameRateSetting disabled={desktopOnly} />
-          <BrowserRecordingInputSettings disabled={desktopOnly} />
-        </SettingsUnavailableGroup>
-      </SettingsSection>
+      {previewBridge ? (
+        <SettingsSection id="browser-recordings" title="Recordings">
+          <SettingsUnavailableGroup message={desktopOnlyMessage}>
+            <BrowserRecordingFrameRateSetting disabled={desktopOnly} />
+            <BrowserRecordingInputSettings disabled={desktopOnly} />
+          </SettingsUnavailableGroup>
+        </SettingsSection>
+      ) : null}
     </SettingsPageContainer>
   );
 }

@@ -3,6 +3,7 @@
 import type { ProjectId } from "@houston-app/contracts";
 import {
   HOUSTON_TASK_SOURCE_LIMITS,
+  type HoustonTaskSourceConflictEntry,
   type HoustonTaskSourceConflictResolveInput,
   type HoustonTaskSourceCredentialClearInput,
   type HoustonTaskSourceCredentialResult,
@@ -15,7 +16,9 @@ import {
   type HoustonTaskSourceSettingsSetInput,
   type HoustonTaskSourceStreamEvent,
   type HoustonTaskSourceSyncResult,
+  type HoustonTaskSourcesConflictsInput,
 } from "@houston-app/contracts/houston/taskSources";
+import { houstonTaskKey } from "@houston-app/contracts/houston/tasks";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -64,6 +67,9 @@ export class HoustonTaskSourceService extends Context.Service<
     readonly links: (
       input: HoustonTaskSourceLinksGetInput,
     ) => Effect.Effect<ReadonlyArray<HoustonTaskSourceLink>, HoustonTaskSourceError>;
+    readonly conflicts: (
+      input: HoustonTaskSourcesConflictsInput,
+    ) => Effect.Effect<ReadonlyArray<HoustonTaskSourceConflictEntry>, HoustonTaskSourceError>;
     readonly resolve: (
       input: HoustonTaskSourceConflictResolveInput,
     ) => Effect.Effect<HoustonTaskSourceLink, HoustonTaskSourceError>;
@@ -245,6 +251,39 @@ const make = Effect.gen(function* () {
       Effect.flatMap((task) => store.linksOf(task.id)),
     );
 
+  const conflicts: HoustonTaskSourceService["Service"]["conflicts"] = Effect.fn(
+    "HoustonTaskSourceService.conflicts",
+  )(function* (input) {
+    if (input.projectId !== undefined) {
+      yield* requireProject("houston.taskSources.conflicts.list", input.projectId);
+    }
+    const links = yield* store.linksWithConflicts(input.projectId);
+    const entries: Array<HoustonTaskSourceConflictEntry> = [];
+    for (const link of links) {
+      const task = yield* tasks.taskById(link.taskId);
+      if (task === undefined) continue;
+      const domain = yield* tasks.domainRow(task.id);
+      const initiativeRevision =
+        domain?.initiative_id == null
+          ? null
+          : ((yield* sql<{ readonly revision: number }>`
+                SELECT revision FROM houston_task_initiatives
+                WHERE id = ${domain.initiative_id} AND archived_at IS NULL
+              `.pipe(Effect.orDie))[0]?.revision ?? null);
+      entries.push({
+        taskId: task.id,
+        taskKey: houstonTaskKey(task.number),
+        taskTitle: task.title,
+        taskRevision: task.revision,
+        initiativeRevision,
+        link,
+      });
+    }
+    return entries.toSorted((left, right) =>
+      left.taskKey.localeCompare(right.taskKey, undefined, { numeric: true }),
+    );
+  });
+
   const subscribe: HoustonTaskSourceService["Service"]["subscribe"] = (input) =>
     Stream.unwrap(
       Effect.gen(function* () {
@@ -269,6 +308,7 @@ const make = Effect.gen(function* () {
     clearCredential,
     syncNow,
     links,
+    conflicts,
     resolve: sync.resolve,
     subscribe,
   });

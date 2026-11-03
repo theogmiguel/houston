@@ -67,16 +67,12 @@ import {
 } from "./toolkits/device/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
-import * as HoustonDefectHandlers from "../houston/harnessReview/toolkit/handlers.ts";
-import { HoustonDefectToolkit } from "../houston/harnessReview/toolkit/tools.ts";
 import * as HoustonMergeQueueHandlers from "../houston/mergeQueue/toolkit/handlers.ts";
 import { HoustonMergeQueueToolkit } from "../houston/mergeQueue/toolkit/tools.ts";
 import * as HoustonSlackHandlers from "../houston/slack/toolkit/handlers.ts";
 import { HoustonSlackToolkit } from "../houston/slack/toolkit/tools.ts";
 import * as HoustonTaskHandlers from "../houston/tasks/toolkit/handlers.ts";
 import { HoustonTaskToolkit } from "../houston/tasks/toolkit/tools.ts";
-import * as HoustonNightHandlers from "../houston/nightShift/toolkit/handlers.ts";
-import { HoustonNightToolkit } from "../houston/nightShift/toolkit/tools.ts";
 
 const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
   HttpServerRequest.toURL(request).pipe(
@@ -1056,18 +1052,6 @@ export const layerHoustonTaskToolkit = toolkitRegistration(
   HoustonTaskHandlers.layer,
 );
 
-// Houston: suspected defects agents report; stored in the caller's project, never sent.
-export const layerHoustonDefectToolkit = toolkitRegistration(
-  HoustonDefectToolkit,
-  HoustonDefectHandlers.layer,
-);
-
-// Houston: the Night shift ledger for the threads of a live run; each call finds the caller's run.
-export const layerHoustonNightToolkit = toolkitRegistration(
-  HoustonNightToolkit,
-  HoustonNightHandlers.layer,
-);
-
 export const layerMcpTransport = McpServer.layerHttp({
   name: "Houston",
   version: packageJson.version,
@@ -1092,8 +1076,6 @@ export const layerTools = Layer.mergeAll(
   layerHoustonSlackToolkit,
   layerHoustonMergeQueueToolkit,
   layerHoustonTaskToolkit,
-  layerHoustonDefectToolkit,
-  layerHoustonNightToolkit,
 );
 
 export const layer = layerTools.pipe(Layer.provideMerge(layerMcpTransport));

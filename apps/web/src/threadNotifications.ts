@@ -24,9 +24,14 @@ const TAG_HASH_OFFSET_BASIS = 0xcbf29ce484222325n;
 const TAG_HASH_PRIME = 0x100000001b3n;
 const TAG_HASH_MASK = 0xffffffffffffffffn;
 
+/** The host's stable identity for a thread's notification: environment plus thread id. */
+export function threadNotificationKey(environmentId: EnvironmentId, threadId: ThreadId): string {
+  return `${environmentId}:${threadId}`;
+}
+
 /** Windows drops toast notifications with the 73-character environment/thread tag. */
 export function threadNotificationTag(environmentId: EnvironmentId, threadId: ThreadId): string {
-  const key = `${environmentId}:${threadId}`;
+  const key = threadNotificationKey(environmentId, threadId);
   let hash = TAG_HASH_OFFSET_BASIS;
   for (let index = 0; index < key.length; index += 1) {
     hash ^= BigInt(key.charCodeAt(index));

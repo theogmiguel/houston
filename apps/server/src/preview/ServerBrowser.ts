@@ -35,6 +35,9 @@ import {
   type PreviewAutomationUploadInput,
   type PreviewAutomationWaitForInput,
   PreviewClearProfileError,
+  PREVIEW_CONFIRMATION_TIMEOUT_MS,
+  PickedElementPayloadSchema,
+  type PickedElementPayload,
   type PreviewEvent,
   type PreviewNavStatus,
   type PreviewSessionSnapshot,
@@ -100,7 +103,10 @@ const DESKTOP_ATTACH_TIMEOUT = "10 seconds";
 const VIEWER_OUTPUT_LIMIT = 64;
 const RECORDING_SCREENCAST = { format: "jpeg", quality: 90, everyNthFrame: 1 } as const;
 const decodeViewportSetting = Schema.decodeUnknownSync(PreviewViewportSettingSchema);
+const decodePickedElement = Schema.decodeUnknownOption(PickedElementPayloadSchema);
 const AGENT_CURSOR_MOVE_MS = 160;
+/** Report install progress to a waiting viewer instead of blocking its stream on the download. */
+const INSTALL_PROGRESS_WAIT_MS = 250;
 const AGENT_CURSOR_CLICK_LEAD_MS = 40;
 /** A dialog blocks page script, so a desktop size read gives up after this. */
 const DESKTOP_VIEWPORT_READ_TIMEOUT = "1 second";
@@ -202,6 +208,41 @@ export type ServerBrowserViewerOutput =
       readonly fileName: string;
       readonly sizeBytes: number;
     }
+  | {
+      readonly _tag: "pickedElement";
+      readonly payload: PickedElementPayload;
+      readonly rect: {
+        readonly x: number;
+        readonly y: number;
+        readonly width: number;
+        readonly height: number;
+      };
+      readonly screenshot: {
+        readonly dataUrl: string;
+        readonly width: number;
+        readonly height: number;
+      } | null;
+    }
+  | { readonly _tag: "pickCancelled" }
+  | {
+      readonly _tag: "confirmation";
+      readonly id: string;
+      readonly origin: string;
+      readonly action: string;
+      readonly pageUrl: string;
+      readonly text: string | null;
+      readonly element: {
+        readonly tagName: string;
+        readonly text: string;
+        readonly selector: string | null;
+      } | null;
+      readonly rect: {
+        readonly x: number;
+        readonly y: number;
+        readonly width: number;
+        readonly height: number;
+      } | null;
+    }
   | { readonly _tag: "gone" }
   | { readonly _tag: "reconnect" };
 
@@ -255,6 +296,7 @@ interface ViewerState {
   readonly canOperate: boolean;
   readonly pressedKeys: Map<string, { key: string; code: string }>;
   readonly pressedButtons: Map<"left" | "middle" | "right", { x: number; y: number }>;
+  pickCancel: (() => void) | null;
   readonly push: (output: ServerBrowserViewerOutput) => void;
   readonly pause: () => Promise<void>;
   readonly resume: () => Promise<void>;
@@ -333,6 +375,12 @@ interface ServerTab {
   recordingStart: Promise<Recording> | null;
   captureLock: Promise<void>;
   capturing: number;
+  pendingConfirmation: {
+    readonly id: string;
+    readonly origin: string;
+    readonly resolve: (approved: boolean) => void;
+    readonly timer: ReturnType<typeof setTimeout>;
+  } | null;
 }
 
 interface ServerDownload {
@@ -359,6 +407,27 @@ const IDLE_SWEEP_INTERVAL = "1 minute";
 const DOWNLOAD_LIMIT = 20;
 const ABORTED_NAVIGATION_DOWNLOAD_WAIT_MS = 5_000;
 const DOWNLOAD_MAX_BYTES = 1024 * 1024 * 1024;
+
+/**
+ * The page reports the picked element's box; clip it to the visible viewport so a hostile page
+ * cannot ask for a capture larger than what is on screen. Coordinates come back in page space.
+ */
+export function clampPickClip(
+  rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+  scroll: { readonly x: number; readonly y: number },
+  viewport: { readonly width: number; readonly height: number },
+): { x: number; y: number; width: number; height: number } | null {
+  const values = [rect.x, rect.y, rect.width, rect.height, scroll.x, scroll.y];
+  if (!values.every(Number.isFinite)) return null;
+  const left = Math.max(0, rect.x);
+  const top = Math.max(0, rect.y);
+  const right = Math.min(viewport.width, rect.x + rect.width);
+  const bottom = Math.min(viewport.height, rect.y + rect.height);
+  const width = right - left;
+  const height = bottom - top;
+  if (!(width >= 1 && height >= 1)) return null;
+  return { x: left + Math.max(0, scroll.x), y: top + Math.max(0, scroll.y), width, height };
+}
 
 const tabKey = (threadId: string, tabId: string) => `${threadId}\u0000${tabId}`;
 
@@ -487,7 +556,28 @@ const make = Effect.gen(function* () {
 
   const contexts = new ServerBrowserContexts({
     profilesDir: NodePath.join(config.stateDir, "server-browser", "profiles"),
-    executable: () => runPromise(previewBrowser.executable),
+    executable: () =>
+      runPromise(
+        previewBrowser.executable.pipe(
+          Effect.timeoutOrElse({
+            duration: INSTALL_PROGRESS_WAIT_MS,
+            orElse: () =>
+              previewBrowser.installProgress.pipe(
+                Effect.flatMap((progress) =>
+                  progress === null
+                    ? previewBrowser.executable
+                    : Effect.fail(
+                        new PreviewBrowser.PreviewBrowserInstallingError({
+                          downloadedBytes: progress.downloadedBytes,
+                          totalBytes: progress.totalBytes,
+                          unpacking: progress.unpacking,
+                        }),
+                      ),
+                ),
+              ),
+          }),
+        ),
+      ),
     // An agent scope keeps Chrome out of the server's memory protection and OOM score.
     launcher: async (executable) => {
       const launch = await runPromise(
@@ -734,6 +824,7 @@ const make = Effect.gen(function* () {
     clearAbortedNavigation(tab);
     // A desktop page outlives the connection unless its session closed with it.
     const end = tab.desktop && !closeSession && sessionOpen(tab) ? "reconnect" : "gone";
+    tab.pendingConfirmation?.resolve(false);
     for (const viewer of tab.viewers) viewer.push({ _tag: end });
     void tab.control.close().catch(constVoid);
     if (tab.desktop) void tab.desktop.close().catch(constVoid);
@@ -863,6 +954,7 @@ const make = Effect.gen(function* () {
       abortedNavigation: null,
       captureLock: Promise.resolve(),
       capturing: 0,
+      pendingConfirmation: null,
     };
     if (!desktop) {
       await page.setViewportSize(fixedViewportSize(tab.setting) ?? UNATTACHED_FILL_VIEWPORT);
@@ -908,6 +1000,8 @@ const make = Effect.gen(function* () {
           if (!current && tab.fileChooser?.chooser === open.chooser) closeFileChooser(tab);
         });
       }
+      // A page that navigates itself while a confirmation is open invalidates what it showed.
+      if (frame === page.mainFrame()) tab.pendingConfirmation?.resolve(false);
       // Same-document navigations (SPA routes) fire no load event.
       if (frame === page.mainFrame() && !tab.loading) void reportLoaded(tab);
       if (!desktop) void recordFrameCopies(tab, frame);
@@ -1916,6 +2010,137 @@ const make = Effect.gen(function* () {
     }
   };
 
+  // Agent actions that change the page, run page script or hand it a local file ask the
+  // operator first; reads, navigation and viewport changes do not.
+  const ACT_OPERATIONS: ReadonlySet<PreviewAutomationRequest["operation"]> = new Set([
+    "click",
+    "hover",
+    "select",
+    "type",
+    "press",
+    "drag",
+    "evaluate",
+    "upload",
+    "dialog",
+  ]);
+  // Trust covers one conversation on one site, so a page that sends the agent elsewhere does
+  // not inherit an approval the operator gave for another origin.
+  const trustedThreadOrigins = new Set<string>();
+  const trustKey = (threadId: string, origin: string) => `${threadId}\u0000${origin}`;
+  const originOf = (url: string) => {
+    try {
+      return new URL(url).origin;
+    } catch {
+      return "";
+    }
+  };
+  let confirmationSequence = 0;
+
+  const describeConfirmationTarget = async (tab: ServerTab, request: PreviewAutomationRequest) => {
+    const input = asRecord(request.input) ?? {};
+    const selector =
+      typeof input.locator === "string"
+        ? input.locator
+        : typeof input.selector === "string"
+          ? input.selector
+          : null;
+    const read = async (locator: ReturnType<Page["locator"]>) =>
+      locator.evaluate(
+        (element) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            tagName: element.tagName,
+            text: (element.textContent ?? "").trim().slice(0, 200),
+            rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+          };
+        },
+        undefined,
+        { timeout: 1_500 },
+      );
+    try {
+      // Refs resolve against the snapshot's own map; a raw locator call would report them stale.
+      if (selector !== null && !/aria-ref\s*=/.test(selector)) {
+        const info = await read(tab.page.locator(selector).first());
+        return {
+          element: { tagName: info.tagName, text: info.text, selector },
+          rect: info.rect,
+        };
+      }
+      if (request.operation === "press") {
+        const info = (await tab.page.evaluate(
+          `(() => {
+            const element = document.activeElement;
+            if (!element || element === document.body) return null;
+            const rect = element.getBoundingClientRect();
+            return {
+              tagName: element.tagName,
+              text: (element.textContent || "").trim().slice(0, 200),
+              rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+            };
+          })()`,
+        )) as {
+          tagName: string;
+          text: string;
+          rect: { x: number; y: number; width: number; height: number };
+        } | null;
+        if (info) return { element: { ...info, selector: null }, rect: info.rect };
+      }
+    } catch {
+      // A stale or unresolvable target still names the action; the action fails after approval.
+    }
+    return { element: null, rect: null };
+  };
+
+  const requestConfirmation = async (
+    tab: ServerTab,
+    request: PreviewAutomationRequest,
+  ): Promise<boolean> => {
+    const pageUrl = tab.page.url();
+    const origin = originOf(pageUrl);
+    if (trustedThreadOrigins.has(trustKey(tab.threadId, origin))) return true;
+    const operators = [...tab.viewers].filter((viewer) => viewer.canOperate);
+    if (operators.length === 0) return false;
+    const input = asRecord(request.input) ?? {};
+    const text = typeof input.text === "string" ? input.text : null;
+    const target = await describeConfirmationTarget(tab, request);
+    const id = `confirm-${++confirmationSequence}`;
+    const approved = await new Promise<boolean>((resolve) => {
+      const settleOnce = (approved: boolean) => {
+        if (tab.pendingConfirmation?.id !== id) return;
+        clearTimeout(timer);
+        tab.pendingConfirmation = null;
+        resolve(approved);
+      };
+      const timer = setTimeout(() => settleOnce(false), PREVIEW_CONFIRMATION_TIMEOUT_MS);
+      tab.pendingConfirmation = { id, origin, resolve: settleOnce, timer };
+      for (const viewer of operators) {
+        viewer.push({
+          _tag: "confirmation",
+          id,
+          origin,
+          action: request.operation,
+          pageUrl,
+          text,
+          element: target.element,
+          rect: target.rect,
+        });
+      }
+    });
+    // The approval covers the page the operator saw; a page that moved meanwhile gets nothing.
+    return approved && tab.page.url() === pageUrl;
+  };
+
+  const resolveConfirmation = (tab: ServerTab, id: string, approved: boolean, trust: boolean) => {
+    if (tab.pendingConfirmation?.id !== id) return;
+    if (approved && trust)
+      trustedThreadOrigins.add(trustKey(tab.threadId, tab.pendingConfirmation.origin));
+    tab.pendingConfirmation.resolve(approved);
+  };
+
+  const denyPendingConfirmation = (tab: ServerTab) => {
+    tab.pendingConfirmation?.resolve(false);
+  };
+
   const runOperation = async (
     request: PreviewAutomationRequest,
     deadlineMs: number,
@@ -2086,6 +2311,11 @@ const make = Effect.gen(function* () {
     if (request.operation === "dialog") {
       if (tab.control.controller !== null)
         throw new BrowserControlInterrupted("A human controls this tab.", "humanControl");
+      if (!(await requestConfirmation(tab, request)))
+        throw new ServerBrowserPage.ServerBrowserOperationError(
+          "PreviewAutomationExecutionError",
+          "The browser action 'dialog' was denied. Nothing was performed.",
+        );
       await resolveDialog(tab, input as PreviewAutomationDialogInput);
       return statusWithTitle(tab, request.agentSessionId);
     }
@@ -2113,6 +2343,16 @@ const make = Effect.gen(function* () {
             "A browser dialog is pending. Read preview_status and use preview_dialog first.",
             "dialogPending",
           );
+        if (ACT_OPERATIONS.has(request.operation)) {
+          const approved = await requestConfirmation(tab, request);
+          if (!approved)
+            throw new ServerBrowserPage.ServerBrowserOperationError(
+              "PreviewAutomationExecutionError",
+              `The browser action '${request.operation}' was denied. Nothing was performed.`,
+            );
+          if (tab.control.controller !== null)
+            throw new BrowserControlInterrupted("A human controls this tab.", "humanControl");
+        }
         const generation = tab.control.generation;
         tab.agentOperating = !READ_OPERATIONS.has(request.operation);
         updateFileChooserInterception(tab);
@@ -2309,6 +2549,191 @@ const make = Effect.gen(function* () {
     viewer.requestedSize = null;
   };
 
+  const PICK_ELEMENT_SCRIPT = `(() => {
+    const SELECTOR_CLASS_LIMIT = 2;
+    if (window.__houstonPickStop) window.__houstonPickStop();
+    let current = null;
+    let outline = null;
+    const ensureOutline = () => {
+      if (outline) return outline;
+      outline = document.createElement("div");
+      outline.setAttribute("data-houston-pick-overlay", "");
+      outline.style.cssText = "position:fixed;pointer-events:none;z-index:2147483647;border:2px solid #f97316;background:rgba(249,115,22,0.12);border-radius:2px;transition:all 40ms linear;";
+      document.documentElement.appendChild(outline);
+      return outline;
+    };
+    const cssEscape = (value) => (window.CSS && CSS.escape ? CSS.escape(value) : value.replace(/[^a-zA-Z0-9_-]/g, "\\$&"));
+    const selectorFor = (element) => {
+      if (element.id) return "#" + cssEscape(element.id);
+      const parts = [];
+      let node = element;
+      while (node && node.nodeType === 1 && node !== document.documentElement && parts.length < 5) {
+        let part = node.tagName.toLowerCase();
+        const classes = Array.from(node.classList).slice(0, SELECTOR_CLASS_LIMIT);
+        if (classes.length > 0) part += "." + classes.map(cssEscape).join(".");
+        const parent = node.parentElement;
+        if (parent) {
+          const sameTag = Array.from(parent.children).filter((sibling) => sibling.tagName === node.tagName);
+          if (sameTag.length > 1) part += ":nth-of-type(" + (sameTag.indexOf(node) + 1) + ")";
+        }
+        parts.unshift(part);
+        node = node.parentElement;
+      }
+      return parts.join(" > ");
+    };
+    const stylesFor = (element) => {
+      const style = getComputedStyle(element);
+      return ["display","position","color","background-color","font-family","font-size","font-weight","line-height","padding","margin","border","border-radius","width","height"]
+        .map((property) => property + ": " + style.getPropertyValue(property))
+        .join("\n");
+    };
+    const move = (event) => {
+      const element = document.elementFromPoint(event.clientX, event.clientY);
+      if (!element) return;
+      current = element;
+      const rect = element.getBoundingClientRect();
+      const box = ensureOutline();
+      box.style.left = rect.left + "px";
+      box.style.top = rect.top + "px";
+      box.style.width = rect.width + "px";
+      box.style.height = rect.height + "px";
+    };
+    const click = (event) => {
+      if (!current) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      const target = current;
+      const rect = target.getBoundingClientRect();
+      const payload = {
+        pageUrl: location.href,
+        pageTitle: document.title || null,
+        tagName: target.tagName,
+        selector: selectorFor(target),
+        htmlPreview: (target.outerHTML || "").slice(0, 4000),
+        componentName: null,
+        source: null,
+        stack: [],
+        styles: stylesFor(target),
+        pickedAt: new Date().toISOString(),
+      };
+      current = null;
+      window.__houstonPickElement({
+        payload,
+        rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+        scroll: { x: window.scrollX, y: window.scrollY },
+      });
+    };
+    const key = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      window.__houstonPickCancel();
+    };
+    const stop = () => {
+      document.removeEventListener("mousemove", move, true);
+      document.removeEventListener("click", click, true);
+      document.removeEventListener("keydown", key, true);
+      if (outline) outline.remove();
+      outline = null;
+      delete window.__houstonPickStop;
+    };
+    window.__houstonPickStop = stop;
+    document.addEventListener("mousemove", move, true);
+    document.addEventListener("click", click, true);
+    document.addEventListener("keydown", key, true);
+    ensureOutline();
+    return true;
+  })()`;
+  const PICK_STOP_SCRIPT = `(() => { if (window.__houstonPickStop) window.__houstonPickStop(); return true; })()`;
+  const pickExposedPages = new WeakSet<Page>();
+  const pickStates = new WeakMap<
+    Page,
+    { readonly viewer: ViewerState; readonly tab: ServerTab; readonly session: CDPSession }
+  >();
+
+  const pickPayloadOf = (raw: unknown) => {
+    const message = asRecord(raw);
+    const rect = message ? asRecord(message.rect) : null;
+    const scroll = message ? asRecord(message.scroll) : null;
+    if (!message || !rect || !scroll) return null;
+    const payload = decodePickedElement(message.payload);
+    if (Option.isNone(payload)) return null;
+    const rectValue = {
+      x: num(rect.x),
+      y: num(rect.y),
+      width: num(rect.width),
+      height: num(rect.height),
+    };
+    if (!(rectValue.width > 0 && rectValue.height > 0)) return null;
+    return {
+      payload: payload.value,
+      rect: rectValue,
+      scroll: { x: num(scroll.x), y: num(scroll.y) },
+    };
+  };
+
+  const finishPick = async (
+    tab: ServerTab,
+    session: CDPSession,
+    viewer: ViewerState,
+    raw: unknown,
+  ) => {
+    await tab.page.evaluate(PICK_STOP_SCRIPT).catch(constVoid);
+    const picked = pickPayloadOf(raw);
+    if (!picked) {
+      viewer.push({ _tag: "pickCancelled" });
+      return;
+    }
+    const screenshot = await withCaptureLock(tab, async () => {
+      const viewport = tab.page.viewportSize();
+      if (!viewport) return null;
+      const clip = clampPickClip(picked.rect, picked.scroll, viewport);
+      if (clip === null) return null;
+      const { x, y, width, height } = clip;
+      const { data } = await session.send("Page.captureScreenshot", {
+        format: "png",
+        clip: { x, y, width, height, scale: 1 },
+      });
+      return { dataUrl: `data:image/png;base64,${data}`, width, height };
+    }).catch(() => null);
+    viewer.push({
+      _tag: "pickedElement",
+      payload: picked.payload,
+      rect: picked.rect,
+      screenshot,
+    });
+  };
+
+  const exposePick = async (page: Page) => {
+    if (pickExposedPages.has(page)) return;
+    pickExposedPages.add(page);
+    await page.exposeFunction("__houstonPickElement", async (raw: unknown) => {
+      const state = pickStates.get(page);
+      if (!state) return;
+      pickStates.delete(page);
+      state.viewer.pickCancel = null;
+      await finishPick(state.tab, state.session, state.viewer, raw);
+    });
+    await page.exposeFunction("__houstonPickCancel", async () => {
+      const state = pickStates.get(page);
+      if (!state) return;
+      pickStates.delete(page);
+      state.viewer.pickCancel = null;
+      await page.evaluate(PICK_STOP_SCRIPT).catch(constVoid);
+      state.viewer.push({ _tag: "pickCancelled" });
+    });
+  };
+
+  const stopPick = async (page: Page, viewer: ViewerState) => {
+    const state = pickStates.get(page);
+    if (!state || state.viewer !== viewer) return;
+    pickStates.delete(page);
+    viewer.pickCancel = null;
+    await page.evaluate(PICK_STOP_SCRIPT).catch(constVoid);
+  };
+
   const dispatchViewerInput = async (
     tab: ServerTab,
     session: CDPSession,
@@ -2413,12 +2838,14 @@ const make = Effect.gen(function* () {
       }
       // A stalled navigation must not block a corrected URL or further viewer input.
       case "navigate":
+        denyPendingConfirmation(tab);
         if (typeof message.url === "string") {
           const url = normalizePreviewUrl(message.url);
           tab.control.trackUntilHandoff(tab.page.goto(url, VIEWER_NAVIGATION_OPTIONS));
         }
         return;
       case "history":
+        denyPendingConfirmation(tab);
         tab.control.trackUntilHandoff(
           num(message.delta) < 0
             ? tab.page.goBack(VIEWER_NAVIGATION_OPTIONS)
@@ -2426,6 +2853,7 @@ const make = Effect.gen(function* () {
         );
         return;
       case "reload":
+        denyPendingConfirmation(tab);
         if (message.ignoreCache === true) {
           await session.send("Page.reload", { ignoreCache: true });
           return;
@@ -2442,6 +2870,20 @@ const make = Effect.gen(function* () {
         viewer.push({ _tag: "probe", x, y, editable: result.result.value === true });
         return;
       }
+      case "pick": {
+        await stopPick(tab.page, viewer);
+        await exposePick(tab.page);
+        pickStates.set(tab.page, { viewer, tab, session });
+        viewer.pickCancel = () => {
+          if (pickStates.get(tab.page)?.viewer === viewer) pickStates.delete(tab.page);
+        };
+        await tab.page.evaluate(PICK_ELEMENT_SCRIPT).catch(constVoid);
+        return;
+      }
+      case "pickCancel":
+        await stopPick(tab.page, viewer);
+        viewer.push({ _tag: "pickCancelled" });
+        return;
     }
   };
 
@@ -2528,6 +2970,7 @@ const make = Effect.gen(function* () {
       resume: () => startScreencast(screencastScale),
       scrolledAt: 0,
       requestedSize: null,
+      pickCancel: null,
     };
     yield* Effect.acquireRelease(
       Effect.sync(() => {
@@ -2536,6 +2979,8 @@ const make = Effect.gen(function* () {
       }),
       () =>
         Effect.promise(async () => {
+          viewer.pickCancel?.();
+          viewer.pickCancel = null;
           await tab.control.disconnect(viewer.id, () => releaseViewerInput(viewer, session));
           tab.viewers.delete(viewer);
           broadcastControl(tab);
@@ -2628,6 +3073,12 @@ const make = Effect.gen(function* () {
               );
               broadcastControl(tab);
               await releasing;
+            } else if (
+              message.type === "confirmationResponse" &&
+              typeof message.id === "string" &&
+              typeof message.approved === "boolean"
+            ) {
+              resolveConfirmation(tab, message.id, message.approved, message.trust === true);
             } else if (
               message.type === "dialog" &&
               tab.control.controller === viewer.id &&

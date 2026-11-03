@@ -1,78 +1,47 @@
 # Usage
 
-Open **Usage** from the rail or press **Ctrl+U** to see token totals and API-equivalent
-costs for Claude Code and Codex transcripts on this machine. Choose a workspace or
-**All workspaces**, then a 24-hour, 7-day, 30-day or 90-day window.
+Open **Usage** from the sidebar or press `Ctrl+U` to see token totals and API-equivalent
+costs for the threads Houston runs on this machine.
 
-Houston reads transcripts when you open the page, change its workspace or window, or
-request a refresh. It does not scan them on a background timer. Each result reports
-when it was read, how long the scan took and when the model-price catalog was updated.
-During a refresh, the previous result remains readable. A failed scan reports an error;
-refresh again to retry. Before the first result, Houston reports that it is reading
-rather than displaying a zero cost.
+Choose **24 hours**, **7 days**, **30 days** or **90 days**, and switch between **Cost**,
+**Tokens** and **Limits**. The provider filter hides providers you do not want to see.
+**Refresh** reads the current window again.
 
-## Coverage and sources
+## What it counts
 
-Houston reads the transcript directories that Claude Code and Codex already maintain,
-including directories configured for their Houston agent profiles. These sessions need
-not have been launched by Houston. The page names the directories it checked and
-reports empty, missing, incomplete or unreadable sources. A missing directory is not
-proof that no sessions ran elsewhere.
+Houston reads the usage records the providers already keep on this machine. Prompt text,
+tool output, file contents and file references are not retained for Usage; it keeps token
+counts, model and session identifiers, reported costs and the project association.
 
-The workspace filter uses the transcript's recorded working directory. Sessions inside
-a registered workspace or one of its worktrees belong to that workspace; other sessions
-remain in **All workspaces**. Unsupported agents, including OpenCode, Antigravity,
-ZCode and the recognised-only Cursor and Grok, are named as not counted rather than reported as zero usage.
+The page reports empty, missing or unreadable sources instead of a zero total. A provider
+whose records cannot be read is named. Costs are estimates at API prices, not a bill,
+subscription charge or remaining allowance.
 
-Transcript formats can change. Unsupported or malformed records may be omitted even
-when the file is readable. Source diagnostics describe scan failures; they cannot prove
-that every session or token has been counted.
+Published prices come from LiteLLM's public model catalog, downloaded from GitHub and cached
+locally. A failed download preserves the last valid catalog. The catalog request carries no
+usage data. A provider-reported cost is used when present; records without usable prices
+still contribute tokens and are marked unpriced.
 
-## What Houston keeps
+## Model prices
 
-Transcript lines become token counts and usage metadata, then are dropped. Houston does
-not retain, log or send prompt text, tool output, file contents or file references from
-those lines. It keeps usage counts with model and session identifiers, reported costs,
-speed information and the associated registered workspace in a local scan cache. The
-transcript's original working directory is not retained; the cache also identifies the
-transcript files it has already read.
+**Model prices** opens the price table. You can add a model price, map a model name to
+another model's price, and apply the table to the environments you select. A mapping and
+override apply to past and future usage on those environments.
 
-Each scan records daily totals in the channel's local SQLite database, allowing history
-to survive removal of the source transcripts. Usage's only network request is the
-price-catalog download; it carries no transcript data.
+## Limits
 
-## Understanding costs
+**Limits** shows the subscription windows each provider reports: remaining allowance,
+reset time and whether you are ahead of, on or under pace. It also shows shared or external
+usage, such as ChatGPT shared usage, when the provider exposes it. A provider that reports
+no limits is omitted rather than shown as unlimited.
 
-Costs estimate what the recorded usage would cost at API prices. They are not a bill,
-subscription charge or remaining allowance. Houston counts input, output, cache reads
-and cache writes, and explains the savings against full input prices. A speed surcharge
-is reported only when the required rates are available.
+Limits come from the provider account. Houston does not throttle, stop or extend a provider
+limit; a limited thread is reported and can be held or resumed from **Settings ▸ Threads**
+and the thread's own banner.
 
-Published prices come from LiteLLM's public model catalog, downloaded from GitHub and
-cached locally. Automatic catalog checks follow Settings ▸ About ▸ **Check
-for updates**. Refreshing Usage explicitly requests a catalog refresh even when
-that setting is off. Failed downloads preserve the last valid catalog. Transcript
-contents are not sent with the request.
+## Breakdowns
 
-A provider-reported cost can be used when present. Records without usable prices still
-contribute tokens, but are marked **not priced**. If every record is unpriced, the page
-reports that costs are unavailable instead of claiming a zero-dollar estimate.
-
-## Daily trends and breakdowns
-
-The daily chart compares Claude Code and Codex. Switch between **Cost** and **Tokens**;
-the 24-hour window uses hourly totals. Explore a point to read each agent's value.
-
-The breakdown groups usage by model or day. **Sessions** counts distinct sessions in
-the selected window or day; repeated records and hours do not add extra sessions.
-A session that uses several models can appear in several model rows, so model counts
-are not additive.
-
-The year view retains daily totals for up to 365 local calendar days. Its colour always
-represents daily cost, even when the daily chart shows tokens. Select a day to filter
-the breakdown without changing its grouping; clear the day filter to return to the
-whole window.
-
-Days whose transcripts have been removed retain their recorded daily total, but cannot
-supply model or session detail. History begins when a scan records a day; Houston cannot
-reconstruct usage from transcripts that were deleted before it read them.
+The breakdown groups usage by model or by time, with tokens, cost and share. The year view
+keeps daily totals for up to 365 local calendar days; its colour always represents daily
+cost, even when another metric is selected. Select a day to filter the breakdown; clear the
+day to return to the whole window.

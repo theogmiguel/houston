@@ -377,7 +377,7 @@ export function commandLabel(command: KeybindingCommand): string {
   if (command === "thread.editQueuedMessage") return "Queue: Edit Last Queued Message";
   if (command === "thread.copyReference") return "Pull Request: Copy Link or Thread";
   if (command === "thread.settle") return "Thread: Close";
-  if (command === "thread.pin") return "Thread: Pin Grid";
+  if (command === "thread.pin") return "Thread: Pin thread";
   const usageMetric = METRIC_OPTIONS.find((option) => option.command === command);
   if (usageMetric) return `Usage: ${usageMetric.label}`;
   const usagePeriod = WINDOW_OPTIONS.find((option) => option.command === command);
@@ -387,6 +387,9 @@ export function commandLabel(command: KeybindingCommand): string {
   if (command === "grid.tidyRow") return "Grid: Tidy Into One Row";
   if (command === "grid.tidyColumn") return "Grid: Tidy Into One Column";
   if (command === "grid.equalize") return "Grid: Equalize Splits";
+  if (command === "grid.toggleMaximizedCell") return "Grid: Maximize or Restore Cell";
+  if (command === "thread.attentionNext") return "Thread: Next Thread Needing Attention";
+  if (command === "thread.attentionPrevious") return "Thread: Previous Thread Needing Attention";
   if (command === "preview.focusUrl") return "Preview: Focus URL";
   const raw = String(command);
   if (raw.startsWith("script.") && raw.endsWith(".run")) {

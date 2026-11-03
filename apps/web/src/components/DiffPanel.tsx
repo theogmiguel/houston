@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { FileDiffContentsLoader, FileDiffMetadata } from "@pierre/diffs";
 import {
+  type AtomCommandResult,
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@houston-app/client-runtime/state/runtime";
@@ -10,13 +11,12 @@ import {
   ArrowRightIcon,
   CheckIcon,
   ChevronDownIcon,
-  FileText,
   MoreHorizontalIcon,
   XIcon,
 } from "lucide-react";
 import { ChevronDown, ChevronRight } from "lucide";
 import * as Schema from "effect/Schema";
-import { type MouseEvent, useEffect, useRef, useState } from "react";
+import { type MouseEvent, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useCodeViewFileReveal } from "./diffs/useCodeViewFileReveal";
 import { useFilesystemReadAccess } from "~/state/filesystem";
 import { useOpenInPreferredEditor } from "../editorPreferences";
@@ -37,6 +37,12 @@ import {
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { isTestChangedFile } from "@houston-app/shared/changedFileKind";
 import { useHideTestFiles } from "./diffs/useHideTestFiles";
+import {
+  discardKindForWorkingTreeFile,
+  stageActionForWorkingTreeFile,
+  stageAllPaths,
+} from "./diffs/workingTreeActions.logic";
+import { findDiffMatches, stepFindMatch } from "./diffs/diffFind.logic";
 import { useRenderedAppearance } from "../hooks/useTheme";
 import { useStableCallback } from "../hooks/useStableCallback";
 import {
@@ -62,6 +68,16 @@ import { DiffPanelLoadingState, DiffPanelShell, type DiffPanelMode } from "./Dif
 import { DiffStatLabel } from "./chat/DiffStatLabel";
 import { AnnotatableCodeView } from "./diffs/AnnotatableCodeView";
 import { DiffFileTree } from "./diffs/DiffFileTree";
+import {
+  DiffFileList,
+  type DiffFileListEntry,
+  type DiffFileListState,
+  DiffFileFilter,
+  DiffFindBar,
+  PausedOperationBanner,
+  WorkingTreeFileActions,
+  WorkingTreeGroupBar,
+} from "./ui/diff-review-controls";
 import { diffFileTreeEntries } from "./diffs/diffFileTree.logic";
 import { CopyButton } from "./ui/copy-button";
 import { Button } from "./ui/button";
@@ -92,6 +108,8 @@ import {
   DropdownMenuTrigger,
 } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { requestConfirmDialog } from "../confirmDialog";
+import { toastManager } from "./ui/toast";
 import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
 import { serverEnvironment } from "../state/server";
@@ -104,12 +122,18 @@ import { useReviewFilePatches } from "./diffs/useReviewFilePatches";
 import { DiffFileLoadingBoundary } from "./diffs/DiffFileLoadingBoundary";
 import { DiffFileStatus } from "./diffs/DiffFileStatus";
 import { useThreadRouteRef } from "../hooks/useThreadRouteTarget";
+import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { scopeProjectRef } from "@houston-app/client-runtime/environment";
 import { projectCommitUrl } from "@houston-app/client-runtime/change-request-links";
 import { useOpenLink } from "../browser/useOpenLink";
 
 type DiffThemeType = "light" | "dark";
+type FailedAtomCommand = Extract<AtomCommandResult<unknown, unknown>, { readonly _tag: "Failure" }>;
+const matchesEmpty = (matches: ReadonlyArray<unknown>) => matches.length === 0;
 const AUTOMATIC_BASE_REF = "__automatic_base_ref__";
 const DIFF_FILE_TREE_STORAGE_KEY = "houston.diffFileTreeOpen";
+// A review brief past this is mostly noise for the agent, so the prompt names the cut.
+const REVIEW_DIFF_MAX_CHARS = 60_000;
 const fileEntryCache = new WeakMap<
   FileDiffMetadata,
   { fileDiff: FileDiffMetadata; fileKey: string; fileVersion: number }
@@ -217,61 +241,6 @@ interface DiffPanelProps {
   onClose?: () => void;
 }
 
-const DIFF_STATUS_LETTERS: Record<string, string> = {
-  added: "A",
-  deleted: "D",
-  renamed: "R",
-  modified: "M",
-};
-
-interface DiffFileListEntry {
-  readonly path: string;
-  readonly status: string;
-  readonly additions: number;
-  readonly deletions: number;
-}
-
-function DiffFileList(props: {
-  entries: ReadonlyArray<DiffFileListEntry>;
-  selectedPath: string | null;
-  onSelectFile: (path: string) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-px px-1.5 py-1.5">
-      {props.entries.map((entry) => {
-        const selected = entry.path === props.selectedPath;
-        return (
-          <button
-            key={entry.path}
-            type="button"
-            onClick={() => props.onSelectFile(entry.path)}
-            className={cn(
-              "flex h-7 w-full min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-xs",
-              selected
-                ? "bg-[var(--sel)] text-foreground"
-                : "text-secondary-foreground hover:bg-[var(--hover)]",
-            )}
-          >
-            <FileText aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate">
-              {entry.path.slice(
-                Math.max(entry.path.lastIndexOf("/"), entry.path.lastIndexOf("\\")) + 1,
-              )}
-            </span>
-            <span className="shrink-0 tabular-nums">
-              <span className="text-[var(--ok-ink)]">+{entry.additions}</span>{" "}
-              <span className="text-[var(--stop-ink)]">−{entry.deletions}</span>
-            </span>
-            <span className="w-3 shrink-0 text-center font-mono text-[11px] text-muted-foreground">
-              {DIFF_STATUS_LETTERS[entry.status] ?? "M"}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 export default function DiffPanel({
   mode = "inline",
   composerDraftTarget,
@@ -281,6 +250,7 @@ export default function DiffPanel({
   onClose,
 }: DiffPanelProps) {
   const resolvedTheme = useRenderedAppearance();
+  const startNewThread = useNewThreadHandler();
   const settings = useClientSettings((settings) => ({
     diffFilesCollapsed: settings.diffFilesCollapsed,
     diffIgnoreWhitespace: settings.diffIgnoreWhitespace,
@@ -298,6 +268,12 @@ export default function DiffPanel({
   );
   const [hideTestFiles, setHideTestFiles] = useHideTestFiles();
   const [baseRefQuery, setBaseRefQuery] = useState("");
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findMatchCase, setFindMatchCase] = useState(false);
+  const [findIndex, setFindIndex] = useState(0);
+  const [fileFilter, setFileFilter] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
   // The open commit menu keeps the list it opened with, so rows do not move under the pointer.
   const [openCommitMenu, setOpenCommitMenu] = useState<ReviewBranchCommitsResult | null>(null);
   const [codeViewRevision, setCodeViewRevision] = useState(0);
@@ -385,6 +361,31 @@ export default function DiffPanel({
     diffSelection.kind === "unstaged" || diffSelection.kind === "commit"
       ? diffSelection.kind
       : "branch";
+  const isWorkingTreeSelection = diffSelection.kind === "unstaged";
+  const stageFiles = useAtomCommand(vcsEnvironment.stageFiles, { reportFailure: false });
+  const unstageFiles = useAtomCommand(vcsEnvironment.unstageFiles, { reportFailure: false });
+  const discardFiles = useAtomCommand(vcsEnvironment.discardFiles, { reportFailure: false });
+  const setFilesViewed = useAtomCommand(reviewEnvironment.setFilesViewed, { reportFailure: false });
+  const workingTreeFiles = isWorkingTreeSelection
+    ? (gitStatusQuery.data?.workingTree.files ?? [])
+    : [];
+  const workingTreeByPath = new Map(workingTreeFiles.map((file) => [file.path, file]));
+  const unstagedWorkingTreeCount = workingTreeFiles.filter(
+    (file) => file.untracked === true || file.unstaged === true,
+  ).length;
+  const stagedWorkingTreeCount = workingTreeFiles.filter((file) => file.staged === true).length;
+  const pausedOperation = gitStatusQuery.data?.pausedOperation ?? null;
+  const filesViewedQuery = useEnvironmentQuery(
+    isWorkingTreeSelection && canReadFiles && activeThread && activeCwd
+      ? reviewEnvironment.filesViewed({
+          environmentId: activeThread.environmentId,
+          input: { cwd: activeCwd },
+        })
+      : null,
+  );
+  const viewedByPath = new Map(
+    (filesViewedQuery.data?.files ?? []).map((file) => [file.path, file.state]),
+  );
   const selectedCommitSha = diffSelection.kind === "commit" ? diffSelection.sha : null;
   const selectedBaseRef =
     diffSelection.kind === "branch" || diffSelection.kind === "commit"
@@ -752,6 +753,146 @@ export default function DiffPanel({
       };
     },
   );
+  const stageActionForPath = (path: string) =>
+    stageActionForWorkingTreeFile(workingTreeByPath.get(path));
+  const fileListState = (path: string): DiffFileListState => ({
+    viewed: viewedByPath.get(path),
+    stage: stageActionForPath(path),
+  });
+  const reportFileActionFailure = (title: string, failure: FailedAtomCommand) => {
+    if (isAtomCommandInterrupted(failure)) return;
+    const error = squashAtomCommandFailure(failure);
+    toastManager.add({
+      type: "error",
+      title,
+      description: error instanceof Error ? error.message : "An error occurred.",
+    });
+  };
+  const toggleStageForPath = async (path: string) => {
+    if (!activeThread || !activeCwd) return;
+    const action = stageActionForPath(path);
+    if (action === null) return;
+    const result = await (action === "unstage" ? unstageFiles : stageFiles)({
+      environmentId: activeThread.environmentId,
+      input: { cwd: activeCwd, filePaths: [path] },
+    });
+    if (result._tag === "Failure") {
+      reportFileActionFailure(
+        action === "unstage" ? "Could not unstage" : "Could not stage",
+        result,
+      );
+    }
+  };
+  const stageAll = async (action: "stage" | "unstage") => {
+    if (!activeThread || !activeCwd) return;
+    const paths = stageAllPaths(workingTreeFiles, action);
+    if (paths.length === 0) return;
+    const result = await (action === "unstage" ? unstageFiles : stageFiles)({
+      environmentId: activeThread.environmentId,
+      input: { cwd: activeCwd, filePaths: paths },
+    });
+    if (result._tag === "Failure") {
+      reportFileActionFailure(
+        action === "unstage" ? "Could not unstage files" : "Could not stage files",
+        result,
+      );
+    }
+  };
+  const discardPath = async (path: string) => {
+    if (!activeThread || !activeCwd) return;
+    const kind = discardKindForWorkingTreeFile(workingTreeByPath.get(path));
+    if (kind === null) return;
+    const confirmed =
+      (await requestConfirmDialog(
+        kind === "untracked"
+          ? `Delete ${path}? It is untracked, so git has no copy. This cannot be undone.`
+          : `Discard your changes to ${path}? This cannot be undone.`,
+        { variant: "destructive" },
+      )) ?? false;
+    if (!confirmed) return;
+    const result = await discardFiles({
+      environmentId: activeThread.environmentId,
+      input: { cwd: activeCwd, files: [{ path, kind }] },
+    });
+    if (result._tag === "Failure") {
+      reportFileActionFailure("Could not discard changes", result);
+    }
+  };
+  const startAgentThread = async (prompt: string, successTitle: string) => {
+    if (!activeThread) return;
+    const created = await startNewThread(
+      scopeProjectRef(activeThread.environmentId, activeThread.projectId),
+      {
+        branch: gitStatusQuery.data?.refName ?? null,
+        worktreePath: activeThread.worktreePath ?? activeCwd ?? null,
+        prompt,
+      },
+    );
+    if (created === null) {
+      toastManager.add({
+        type: "error",
+        title: "Could not open a thread",
+        description: "Try again from the workspace, or open a thread first.",
+      });
+      return;
+    }
+    toastManager.add({
+      type: "success",
+      title: successTitle,
+      description: "The brief is in the composer. Read it over, then send.",
+    });
+  };
+  const reviewWithAgent = () => {
+    if (!activeThread || activeCwd === null) return;
+    const patch = selectedPatch ?? "";
+    const clipped = patch.length > REVIEW_DIFF_MAX_CHARS;
+    const brief = [
+      `Review the changes in ${activeCwd}${gitStatusQuery.data?.refName ? ` on ${gitStatusQuery.data.refName}` : ""}.`,
+      "Focus on correctness, missed edge cases and regressions. Do not edit files unless asked; report findings with file and line.",
+      "",
+      clipped ? `The diff is truncated to the first ${REVIEW_DIFF_MAX_CHARS} characters.` : "Diff:",
+      "",
+      clipped ? patch.slice(0, REVIEW_DIFF_MAX_CHARS) : patch,
+    ].join("\n");
+    void startAgentThread(brief, "Started a review thread");
+  };
+  const resolvePausedOperationWithAgent = () => {
+    if (!activeThread || activeCwd === null || pausedOperation === null) return;
+    const continueCommand =
+      pausedOperation.kind === "merge"
+        ? "commit to finish the merge"
+        : `git ${pausedOperation.kind} --continue`;
+    const brief = [
+      `Resolve the paused ${pausedOperation.kind} in ${activeCwd}.`,
+      pausedOperation.conflictedPaths.length > 0
+        ? `Conflicted files: ${pausedOperation.conflictedPaths.join(", ")}.`
+        : "No files are conflicted yet; check the operation state before changing anything.",
+      `Resolve each conflict, stage the resolved files, run git diff --check, then ${continueCommand}.`,
+      "Do not reset, restore, clean, stash or abort the operation. Report what you resolved.",
+    ].join("\n");
+    void startAgentThread(brief, "Started a conflict thread");
+  };
+  const setViewedForPath = async (path: string, viewed: boolean) => {
+    if (!activeThread || !activeCwd) return;
+    const result = await setFilesViewed({
+      environmentId: activeThread.environmentId,
+      input: { cwd: activeCwd, files: [{ path, viewed }] },
+    });
+    if (result._tag === "Failure") {
+      reportFileActionFailure("Could not record the viewed mark", result);
+      return;
+    }
+    filesViewedQuery.refresh();
+  };
+  const normalizedFileFilter = fileFilter.trim().toLowerCase();
+  const filteredFileListEntries: ReadonlyArray<DiffFileListEntry> =
+    normalizedFileFilter.length === 0
+      ? fileListEntries
+      : fileListEntries.filter((entry) => entry.path.toLowerCase().includes(normalizedFileFilter));
+  const filteredFileTreeEntries =
+    normalizedFileFilter.length === 0
+      ? fileTreeEntries
+      : fileTreeEntries.filter((entry) => entry.path.toLowerCase().includes(normalizedFileFilter));
   const diffSelectionKey = collapseScopeKey ?? reviewSectionId;
   const highlightedDiffPath =
     (activeDiffPath?.key === diffSelectionKey ? activeDiffPath.path : null) ??
@@ -765,6 +906,20 @@ export default function DiffPanel({
     ? pendingFiles.filter((file) => resolveFileDiffPath(file) === highlightedDiffPath)
     : pendingFiles;
   const codeViewReveal = useCodeViewFileReveal();
+  const findMatches =
+    findOpen && selectedCodeViewFile && findQuery.length > 0
+      ? findDiffMatches(selectedCodeViewFile.fileDiff, findQuery, findMatchCase)
+      : [];
+  const activeFindIndex =
+    findMatches.length === 0 ? 0 : Math.min(findIndex, findMatches.length - 1);
+  const findPartial = isSelectedPatchTruncated;
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- scrolls the code view to the match the find strip names
+  useEffect(() => {
+    if (!findOpen || matchesEmpty(findMatches) || !selectedCodeViewFile) return;
+    const match = findMatches[activeFindIndex];
+    if (!match) return;
+    codeViewReveal.requestLine(selectedCodeViewFile.fileKey, match.lineNumber, match.side);
+  }, [findOpen, findQuery, findMatchCase, activeFindIndex, selectedCodeViewFile?.fileKey]);
   const revealDiffFile = (filePath: string) => {
     const index = renderableFileEntries.findIndex(
       (candidate) => resolveFileDiffPath(candidate.fileDiff) === filePath,
@@ -782,6 +937,58 @@ export default function DiffPanel({
     codeViewReveal.request(file.fileKey);
     return true;
   };
+  const moveFileSelection = (direction: 1 | -1) => {
+    if (filteredFileListEntries.length === 0) return;
+    const currentIndex = filteredFileListEntries.findIndex(
+      (entry) => entry.path === highlightedDiffPath,
+    );
+    const nextIndex =
+      currentIndex < 0
+        ? 0
+        : Math.max(0, Math.min(filteredFileListEntries.length - 1, currentIndex + direction));
+    const next = filteredFileListEntries[nextIndex];
+    if (!next) return;
+    setActiveDiffPath({ key: diffSelectionKey, path: next.path });
+    revealDiffFile(next.path);
+  };
+  const handlePanelKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    const target = event.target as HTMLElement | null;
+    const inTerminal = target?.closest(".xterm") != null;
+    const inPanel = target?.closest("[data-diff-panel-scope]") != null;
+    const typing = target?.closest("input, textarea, select, [contenteditable='true']") != null;
+    // Keys belong to the panel only when focus is in it or has settled on the page.
+    const bodyFocused = document.activeElement === null || document.activeElement === document.body;
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+      if (inTerminal) return;
+      if (typing && target?.closest("[data-diff-find]") == null) return;
+      if (!inPanel && !bodyFocused) return;
+      event.preventDefault();
+      setFindOpen(true);
+      return;
+    }
+    if (typing) return;
+    if (!inPanel && !bodyFocused) return;
+    if (event.key === "/") {
+      event.preventDefault();
+      setFilterOpen(true);
+      return;
+    }
+    if (event.key === "j" || event.key === "J") {
+      event.preventDefault();
+      moveFileSelection(1);
+      return;
+    }
+    if (event.key === "k" || event.key === "K") {
+      event.preventDefault();
+      moveFileSelection(-1);
+    }
+  });
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- binds the panel's find, filter and file navigation keys only while the panel is visible
+  useEffect(() => {
+    if (!visible) return;
+    window.addEventListener("keydown", handlePanelKeyDown);
+    return () => window.removeEventListener("keydown", handlePanelKeyDown);
+  }, [visible]);
 
   // A file another view asked to reveal (a chat diff link): retried as the diff loads until it
   // holds the file, then not again until a new request, so it does not undo what the user did since.
@@ -892,7 +1099,7 @@ export default function DiffPanel({
   const headerRow = (
     <>
       <div className="@container/diff-refs flex min-w-0 flex-1 items-center gap-3 [-webkit-app-region:no-drag]">
-        <span className="shrink-0 truncate text-[13px] font-semibold text-foreground">
+        <span className="shrink-0 truncate text-headline font-semibold text-foreground">
           {selectedScopeLabel}
         </span>
         {canSelectBranchBase && (
@@ -1200,6 +1407,12 @@ export default function DiffPanel({
                 ) : null}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+            {isGitSelection ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={reviewWithAgent}>Review with agent…</DropdownMenuItem>
+              </>
+            ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuLabel>View</DropdownMenuLabel>
@@ -1245,6 +1458,8 @@ export default function DiffPanel({
                 {allDiffFilesCollapsed ? "Expand all files" : "Collapse all files"}
               </DropdownMenuItem>
             ) : null}
+            <DropdownMenuItem onClick={() => setFindOpen(true)}>Find in diff</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setFilterOpen(true)}>Filter files…</DropdownMenuItem>
             {canRefreshGitDiff ? (
               <DropdownMenuItem onClick={refreshDiffFromUserAction}>
                 {isRefreshingDiff ? "Refreshing…" : "Refresh diff"}
@@ -1299,6 +1514,40 @@ export default function DiffPanel({
       ) : (
         <>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
+            {findOpen ? (
+              <DiffFindBar
+                query={findQuery}
+                matchCase={findMatchCase}
+                matchCount={findMatches.length}
+                activeIndex={activeFindIndex}
+                partial={findPartial}
+                onQueryChange={(value) => {
+                  setFindQuery(value);
+                  setFindIndex(0);
+                }}
+                onMatchCaseChange={(value) => {
+                  setFindMatchCase(value);
+                  setFindIndex(0);
+                }}
+                onNext={() => {
+                  setFindIndex((current) => stepFindMatch(current, findMatches.length, 1));
+                }}
+                onPrevious={() => {
+                  setFindIndex((current) => stepFindMatch(current, findMatches.length, -1));
+                }}
+                onClose={() => {
+                  setFindOpen(false);
+                  setFindQuery("");
+                  setFindIndex(0);
+                }}
+              />
+            ) : null}
+            {pausedOperation ? (
+              <PausedOperationBanner
+                operation={pausedOperation}
+                onResolveWithAgent={resolvePausedOperationWithAgent}
+              />
+            ) : null}
             {isSelectedPatchTruncated && !lazySource && (
               <p className="shrink-0 border-b border-border/70 bg-muted/40 px-3 py-1.5 text-2xs text-muted-foreground">
                 This preview exceeds the size limit. Changes shown are incomplete.
@@ -1361,11 +1610,34 @@ export default function DiffPanel({
               )
             ) : lazySource || renderablePatch?.kind === "files" ? (
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                {isWorkingTreeSelection && workingTreeFiles.length > 0 ? (
+                  <WorkingTreeGroupBar
+                    unstagedCount={unstagedWorkingTreeCount}
+                    stagedCount={stagedWorkingTreeCount}
+                    onStageAll={() => {
+                      void stageAll("stage");
+                    }}
+                    onUnstageAll={() => {
+                      void stageAll("unstage");
+                    }}
+                  />
+                ) : null}
+                {filterOpen ? (
+                  <DiffFileFilter
+                    value={fileFilter}
+                    resultCount={filteredFileListEntries.length}
+                    onChange={setFileFilter}
+                    onClose={() => {
+                      setFilterOpen(false);
+                      setFileFilter("");
+                    }}
+                  />
+                ) : null}
                 <div className="max-h-[45%] shrink-0 overflow-y-auto border-b border-border bg-[var(--app-chrome-background)]">
                   {fileTreeOpen ? (
                     <DiffFileTree
                       ariaLabel={`${reviewSectionTitle} files`}
-                      entries={fileTreeEntries}
+                      entries={filteredFileTreeEntries}
                       selectedPath={highlightedDiffPath}
                       revealRequestId={selectedFileRevealRequestId}
                       onSelectFile={(path) => {
@@ -1375,12 +1647,15 @@ export default function DiffPanel({
                     />
                   ) : (
                     <DiffFileList
-                      entries={fileListEntries}
+                      entries={filteredFileListEntries}
                       selectedPath={highlightedDiffPath}
                       onSelectFile={(path) => {
                         setActiveDiffPath({ key: diffSelectionKey, path });
                         revealDiffFile(path);
                       }}
+                      {...(isWorkingTreeSelection
+                        ? { fileState: fileListState, onStageToggle: toggleStageForPath }
+                        : {})}
                     />
                   )}
                 </div>
@@ -1442,6 +1717,29 @@ export default function DiffPanel({
                     >
                       {selectedCodeViewFile?.filePath ?? ""}
                     </button>
+                    {isWorkingTreeSelection &&
+                    selectedCodeViewFile !== undefined &&
+                    workingTreeByPath.has(selectedCodeViewFile.filePath) ? (
+                      <WorkingTreeFileActions
+                        filePath={selectedCodeViewFile.filePath}
+                        viewed={viewedByPath.get(selectedCodeViewFile.filePath) === "viewed"}
+                        stageAction={stageActionForPath(selectedCodeViewFile.filePath)}
+                        discardLabel={
+                          workingTreeByPath.get(selectedCodeViewFile.filePath)?.untracked === true
+                            ? "Delete file"
+                            : "Discard"
+                        }
+                        onViewedChange={(viewed) => {
+                          void setViewedForPath(selectedCodeViewFile.filePath, viewed);
+                        }}
+                        onStageToggle={() => {
+                          void toggleStageForPath(selectedCodeViewFile.filePath);
+                        }}
+                        onDiscard={() => {
+                          void discardPath(selectedCodeViewFile.filePath);
+                        }}
+                      />
+                    ) : null}
                     {selectedCodeViewFile ? (
                       <DiffFileHeaderSuffix
                         filePath={selectedCodeViewFile.filePath}

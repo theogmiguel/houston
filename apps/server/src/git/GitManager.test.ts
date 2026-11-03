@@ -51,6 +51,7 @@ import {
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import * as KnownWorkspaces from "../workspace/KnownWorkspaces.ts";
 import * as VcsProjectConfig from "../vcs/VcsProjectConfig.ts";
 import * as GitWorkflowService from "./GitWorkflowService.ts";
 import type { SourceControlProvider } from "@houston-app/source-control-core/server/SourceControlProvider";
@@ -769,6 +770,11 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             Layer.provide(
               GitWorkflowService.layer.pipe(
                 Layer.provide(Layer.succeed(GitManager.GitManager, manager)),
+                Layer.provide(
+                  Layer.mock(KnownWorkspaces.KnownWorkspaces)({
+                    assertContains: () => Effect.void,
+                  }),
+                ),
                 Layer.provide(
                   VcsDriverRegistry.layer.pipe(
                     Layer.provide(VcsProjectConfig.layer),
@@ -4202,6 +4208,10 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 root === resolvedHandle.repository.rootPath
                   ? Effect.succeed(canonicalRoot)
                   : fileSystem.realPath(root),
+            }),
+            Effect.provideService(KnownWorkspaces.KnownWorkspaces, {
+              contains: () => Effect.succeed(true),
+              assertContains: () => Effect.void,
             }),
             Effect.provideService(GitManager.GitManager, {
               ...manager,

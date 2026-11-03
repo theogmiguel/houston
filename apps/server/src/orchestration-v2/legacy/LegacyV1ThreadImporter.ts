@@ -90,6 +90,8 @@ interface LegacyImportRow {
 export interface LegacyV1ImportSummary {
   readonly importedThreadCount: number;
   readonly importedMessageCount: number;
+  /** Transcripts that failed to hydrate and will retry on the next open. */
+  readonly failedThreadCount?: number;
 }
 
 export class LegacyV1ThreadImportError extends Schema.TaggedError<LegacyV1ThreadImportError>()(
@@ -741,10 +743,7 @@ const make = Effect.gen(function* () {
           WHERE thread_id = ${threadId}
         `;
         confirmedTranscriptThreadIds.add(threadId);
-        return {
-          importedThreadCount: 1,
-          importedMessageCount: missing.length,
-        };
+        return { importedThreadCount: 1, importedMessageCount: missing.length };
       }),
     );
 
@@ -771,8 +770,11 @@ const make = Effect.gen(function* () {
     `.pipe(NodeSqliteClient.readOnly);
     let importedThreadCount = 0;
     let importedMessageCount = 0;
+    let failedThreadCount = 0;
     for (const row of rows) {
-      const result = yield* ensureTranscript(ThreadId.make(row.thread_id)).pipe(
+      const result: LegacyV1ImportSummary = yield* ensureTranscript(
+        ThreadId.make(row.thread_id),
+      ).pipe(
         Effect.catchCauseIf(
           (cause) => !Cause.hasInterrupts(cause),
           (cause) =>
@@ -792,15 +794,20 @@ const make = Effect.gen(function* () {
                   ),
                 ),
               ),
-              Effect.as({ importedThreadCount: 0, importedMessageCount: 0 }),
+              Effect.as({
+                importedThreadCount: 0,
+                importedMessageCount: 0,
+                failedThreadCount: 1,
+              }),
             ),
         ),
       );
       importedThreadCount += result.importedThreadCount;
       importedMessageCount += result.importedMessageCount;
+      failedThreadCount += result.failedThreadCount ?? 0;
       yield* Effect.yieldNow;
     }
-    return { importedThreadCount, importedMessageCount };
+    return { importedThreadCount, importedMessageCount, failedThreadCount };
   }).pipe(
     Effect.catchCause((cause) =>
       Cause.hasInterrupts(cause)

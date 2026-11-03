@@ -49,9 +49,11 @@ import { settlePromise, squashAtomCommandFailure } from "@houston-app/client-run
 import * as Schema from "effect/Schema";
 import { isPasteAsTextShortcut } from "@houston-app/client-runtime/text-paste";
 import { serializeComposerFileLink } from "@houston-app/shared/composerTrigger";
-import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
+import { folderDropTarget, resolveDroppedFolderPaths } from "./folderDrop";
+import { droppedPathToFile } from "./droppedPathFile";
 import { isEmptyPaste, readHostClipboardImageFile } from "./hostClipboardImage";
 import { splitTransferredFiles } from "./workspaceFileDrop";
+import { pastedPathsConfirmationTitle, transferredPaths } from "../../lib/fileTransfer";
 import { createModelSelection, normalizeModelSlug } from "@houston-app/shared/model";
 import { USAGE_LIMITS_COMMAND } from "@houston-app/shared/usageLimits";
 import {
@@ -304,7 +306,11 @@ export interface ChatComposerHandle {
   focusAtEnd: () => void;
   focusAt: (cursor: number) => void;
   addDroppedFiles: (files: File[]) => void;
-  addDroppedFolders: (folders: File[]) => void;
+  addDroppedFolders: (folders: File[], paths?: readonly string[]) => void;
+  /** URI-list-only entries whose kind the host resolves: a folder reference or a file attachment. */
+  addDroppedPaths: (paths: readonly string[]) => void;
+  /** Pasted paths wait for the user's confirmation before any file is read. */
+  confirmPastedPaths: (paths: readonly string[]) => void;
   hasPendingAttachments: () => boolean;
   insertTextAtEnd: (
     text: string,
@@ -2210,6 +2216,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     submitComposer(event, resolveSubmitDispatchMode(event.metaKey || event.ctrlKey));
   };
   const handleSubmitMessageStable = useStableCallback(handleSubmitMessage);
+  const handleSubmitWithMode = (mode: "queue" | "steer" | "restart") => {
+    submitComposer(undefined, mode);
+  };
+  const handleSubmitWithModeStable = useStableCallback(handleSubmitWithMode);
   const submitCitationAndSend = () => {
     submitComposer(undefined, resolveSubmitDispatchMode(false));
   };
@@ -2594,7 +2604,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const insertComposerTextAtEndStable = useStableCallback(insertComposerTextAtEnd);
 
-  const addComposerFolders = (folders: File[]) => {
+  const insertComposerFolderPath = (path: string): boolean => {
+    const inserted = insertComposerTextAtEndStable(`${serializeComposerFileLink(path)} `, {
+      ensureLeadingBoundary: true,
+    });
+    if (!inserted) {
+      toastManager.add({
+        type: "error",
+        title: "Unable to add folder",
+        description: "The composer is busy; try again once it is ready.",
+      });
+    }
+    return inserted;
+  };
+  const addComposerFolders = (folders: File[], paths: readonly string[] = []) => {
     const target = folderDropTarget({
       localEnvironmentDisabled: isLocalEnvironmentDisabled(),
       environmentId,
@@ -2607,8 +2630,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       });
       return;
     }
-    for (const folder of folders) {
-      const path = resolveDroppedFolderPath(folder, window.hostBridge?.getPathForFile);
+    const resolved = resolveDroppedFolderPaths(folders, paths, window.hostBridge?.getPathForFile);
+    for (const [index, folder] of folders.entries()) {
+      const path = resolved[index] ?? null;
       if (path === null) {
         toastManager.add({
           type: "error",
@@ -2617,35 +2641,101 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         });
         continue;
       }
-      const inserted = insertComposerTextAtEndStable(`${serializeComposerFileLink(path)} `, {
-        ensureLeadingBoundary: true,
-      });
-      if (!inserted) {
-        toastManager.add({
-          type: "error",
-          title: "Unable to add folder",
-          description: "The composer is busy; try again once it is ready.",
-        });
-        break;
-      }
+      if (!insertComposerFolderPath(path)) break;
     }
     focusComposer();
   };
   const addComposerFoldersStable = useStableCallback(addComposerFolders);
 
+  const addComposerDroppedPaths = (paths: readonly string[]) => {
+    const readDroppedPath = window.hostBridge?.readDroppedPath;
+    if (!readDroppedPath) {
+      toastManager.add({
+        type: "error",
+        title: "Couldn't read the dropped files",
+        description: "Drop files from the file manager again, or attach them from the composer.",
+      });
+      return;
+    }
+    const folderTarget = folderDropTarget({
+      localEnvironmentDisabled: isLocalEnvironmentDisabled(),
+      environmentId,
+      primaryEnvironmentId,
+    });
+    void (async () => {
+      for (const path of paths) {
+        let entry;
+        try {
+          entry = await readDroppedPath(path);
+        } catch (error: unknown) {
+          toastManager.add({
+            type: "error",
+            title: `Couldn't read "${path}"`,
+            description: error instanceof Error ? error.message : String(error),
+          });
+          continue;
+        }
+        if (entry.directory) {
+          if (folderTarget === "remote") {
+            toastManager.add({
+              type: "error",
+              title: "Folders can only be referenced in the local desktop environment",
+            });
+            continue;
+          }
+          if (!insertComposerFolderPath(path)) break;
+          continue;
+        }
+        try {
+          await addComposerAttachments([droppedPathToFile(entry, path)]);
+        } catch (error: unknown) {
+          toastManager.add({
+            type: "error",
+            title: `Couldn't add "${entry.name}"`,
+            description: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      focusComposer();
+    })();
+  };
+  const addComposerDroppedPathsStable = useStableCallback(addComposerDroppedPaths);
+
+  // Any web page can put file:// URIs on the clipboard, so a paste that names paths but carries
+  // no files reads nothing until the user confirms the paths they are about to attach.
+  const confirmComposerPastedPaths = (paths: readonly string[]) => {
+    const toastId = toastManager.add({
+      type: "info",
+      title: pastedPathsConfirmationTitle(paths),
+      description: paths.join("\n"),
+      actionProps: {
+        children: "Attach",
+        onClick: () => {
+          toastManager.close(toastId);
+          addComposerDroppedPaths(paths);
+        },
+      },
+    });
+  };
+  const confirmComposerPastedPathsStable = useStableCallback(confirmComposerPastedPaths);
+
   const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
     const { files, folders } = splitTransferredFiles(event.clipboardData);
+    const paths = transferredPaths(event.clipboardData);
     const plainText = event.clipboardData.getData("text/plain");
     const bypassAutoAttachment = consumePasteAsTextShortcut(pasteAsTextShortcutUntilRef);
+    const pathsOnly = files.length === 0 && folders.length === 0 && paths.length > 0;
     if (
       folders.length > 0 ||
+      pathsOnly ||
       (activeThreadId &&
         files.length > 0 &&
         shouldHandleComposerAttachmentPaste({ files, plainText }))
     ) {
       event.preventDefault();
       event.stopPropagation();
-      if (folders.length > 0) addComposerFoldersStable(folders);
+      if (folders.length > 0) addComposerFoldersStable(folders, paths);
+      if (pathsOnly) confirmComposerPastedPathsStable(paths);
       if (files.length > 0) {
         void addComposerAttachments(files, { skipImageInlineChip: bypassAutoAttachment });
       }
@@ -2937,6 +3027,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         });
       },
       addDroppedFolders: addComposerFoldersStable,
+      addDroppedPaths: addComposerDroppedPathsStable,
+      confirmPastedPaths: confirmComposerPastedPathsStable,
       hasPendingAttachments: () =>
         countPreparingComposerImages(attachmentTargetKey) > 0 ||
         pendingDraftWork.has(attachmentTargetKey),
@@ -3133,6 +3225,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [
       activeThread,
       addComposerAttachments,
+      addComposerDroppedPathsStable,
       addComposerFoldersStable,
       foldPastedText,
       composerDraftTarget,
@@ -3689,6 +3782,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryActionStable}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryActionStable}
+                    onSubmitWithMode={handleSubmitWithModeStable}
                     compactBeforeSendTokens={props.resumeCompactionTokens}
                     keepFullHistory={props.keepFullHistory}
                     onToggleKeepFullHistory={props.onToggleKeepFullHistory}

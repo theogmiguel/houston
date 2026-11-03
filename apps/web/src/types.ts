@@ -87,6 +87,8 @@ export interface ChatMessage {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly inputIntent?: OrchestrationV2UserMessageInputIntent | undefined;
+  /** Houston: where a queued, steered or interrupting message is between composer and agent. */
+  readonly delivery?: import("@houston-app/contracts/houston/messageDelivery").MessageDelivery;
 }
 
 export interface ProposedPlan {

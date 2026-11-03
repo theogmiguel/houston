@@ -64,6 +64,7 @@ import { useEnvironments } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
+import { useMergeQueueEntry } from "~/state/mergeQueue";
 import { pullRequestEnvironment, usePullRequestTurnRefresh } from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { PullRequestStackMenu } from "./PullRequestStackMenu";
@@ -108,6 +109,8 @@ import { openOnHostLabel } from "./pullRequestLinkContextMenu";
 import { PullRequestMarkdownContext } from "./PullRequestMarkdown";
 import { pullRequestAutolinkPlugins } from "./pullRequestMarkdown.logic";
 import { PullRequestComposer } from "./PullRequestComposer";
+import { MERGE_QUEUE_ROW_HIDDEN } from "../ui/merge-queue-recipes";
+import { MergeQueueEntryPanel } from "./MergeQueueEntryPanel";
 import { PullRequestSummaryTab } from "./PullRequestSummaryTab";
 import { PullRequestTimelineTab } from "./PullRequestTimelineTab";
 import {
@@ -360,6 +363,11 @@ export function PullRequestDetailPanel({
     coreDetail,
     detail,
   } = usePullRequestDetail(environmentId, reference, matchingListEntry);
+  const { entry: queueEntry } = useMergeQueueEntry(
+    environmentId,
+    reference.projectId,
+    reference.number,
+  );
   const [selectedTab, setTab] = useState<PullRequestDetailTab>(initialTab);
   const [checksTabOpen, setChecksTabOpen] = useState(false);
   const reviewGuidesEnabled = useEnvironmentSettings(
@@ -376,11 +384,13 @@ export function PullRequestDetailPanel({
       ? (pageTab ?? initialTab)
       : selectedTab;
   const isTabAvailable = (value: DetailTab) =>
+    (value !== "queue" || queueEntry !== null) &&
     (value !== "code" || detail === null || detail.capabilities.diff) &&
     (value !== "guide" || reviewGuidesEnabled) &&
     (value !== "checks" || detail !== null);
   // An unavailable tab falls back without overwriting the saved selection.
   const tab = isTabAvailable(requestedTab) ? requestedTab : "summary";
+  const queueTabHidden = tab === "queue" ? undefined : MERGE_QUEUE_ROW_HIDDEN;
   // A review-guide notification switches the page tab; a local Checks view must yield to it.
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- clears the local Checks tab when the page tab changes outside this component
   useEffect(() => {
@@ -1147,6 +1157,7 @@ export function PullRequestDetailPanel({
     detail?.state === "open" ? (detail.workflowApprovalsRequired ?? 0) : 0;
   const freshness = detail === null ? null : resolveBaseFreshness(detail);
   const visibleTabs: ReadonlyArray<{ readonly value: DetailTab; readonly label: string }> = [
+    ...(queueEntry === null ? [] : [{ value: "queue" as const, label: "Queue" }]),
     ...TABS.filter((item) => isTabAvailable(item.value)).map((item) =>
       item.value === "code" && detail
         ? {
@@ -1775,6 +1786,15 @@ export function PullRequestDetailPanel({
           />
         ) : detail ? (
           <PullRequestMarkdownContext value={markdownContext}>
+            {mountedTabs.has("queue") ? (
+              <div className={cn("absolute inset-0", queueTabHidden)}>
+                <MergeQueueEntryPanel
+                  environmentId={environmentId}
+                  projectId={reference.projectId}
+                  number={reference.number}
+                />
+              </div>
+            ) : null}
             {mountedTabs.has("summary") ? (
               <div className={cn("absolute inset-0", tab !== "summary" && "invisible")}>
                 <PullRequestSummaryTab

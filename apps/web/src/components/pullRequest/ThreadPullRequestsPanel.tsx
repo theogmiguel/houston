@@ -48,12 +48,8 @@ import {
   PullRequestRowGlyph,
   PullRequestRowLines,
 } from "./PullRequestListRow";
-import {
-  PullRequestDiffStat,
-  PullRequestReviewDecisionGlyph,
-  pullRequestChecksStatePresentation,
-} from "./pullRequestPresentation";
-import { PullRequestGlyph } from "./pullRequestIcons";
+import { PullRequestDiffStat, PullRequestReviewDecisionGlyph } from "./pullRequestPresentation";
+import { PullRequestChecksGlyph, PullRequestGlyph } from "./pullRequestIcons";
 import { pullRequestQuickActions } from "./pullRequestList.logic";
 import { PullRequestSpeedActions, PullRequestSpeedModeContext } from "./PullRequestSpeedActions";
 
@@ -64,26 +60,6 @@ const SOURCE_LABELS: Record<ThreadPullRequestLink["source"], string> = {
   stack: "Found in the stack",
   "stack-dismissed": "Dismissed",
 };
-
-function ChecksGlyph({
-  state,
-}: {
-  state: NonNullable<ThreadPullRequestLink["snapshot"]>["checksState"] & string;
-}) {
-  const presentation = pullRequestChecksStatePresentation(state);
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
-        <presentation.Icon
-          role="img"
-          aria-label={presentation.label}
-          className={cn("size-3.5", presentation.toneClassName)}
-        />
-      </TooltipTrigger>
-      <TooltipPopup>{presentation.label}</TooltipPopup>
-    </Tooltip>
-  );
-}
 
 function LinkRowImpl({
   line,
@@ -202,7 +178,9 @@ function LinkRowImpl({
                     </TooltipPopup>
                   </Tooltip>
                 ) : null}
-                {snapshot?.checksState ? <ChecksGlyph state={snapshot.checksState} /> : null}
+                {snapshot?.checksState ? (
+                  <PullRequestChecksGlyph state={snapshot.checksState} />
+                ) : null}
                 {snapshot?.reviewDecision ? (
                   <PullRequestReviewDecisionGlyph decision={snapshot.reviewDecision} />
                 ) : null}

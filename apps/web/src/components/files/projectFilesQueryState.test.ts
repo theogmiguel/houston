@@ -90,7 +90,7 @@ describe("project files queries", () => {
     await vi.advanceTimersByTimeAsync(500);
 
     expect(persist).toHaveBeenCalledOnce();
-    expect(persist).toHaveBeenCalledWith("unsaved draft");
+    expect(persist).toHaveBeenCalledWith("unsaved draft", undefined);
     expect(onPendingChange).toHaveBeenLastCalledWith(false);
     expect(getUnsavedProjectFileQueryData(environmentId, "/repo", "convex.json")).toBeNull();
     reopened.dispose();
@@ -141,7 +141,7 @@ describe("project files queries", () => {
     canWrite = true;
     reopened.change("newer draft");
     await vi.advanceTimersByTimeAsync(500);
-    expect(persist).toHaveBeenLastCalledWith("newer draft");
+    expect(persist).toHaveBeenLastCalledWith("newer draft", undefined);
     expect(onPendingChange).toHaveBeenLastCalledWith(false);
     expect(getUnsavedProjectFileQueryData(environmentId, "/repo", "convex.json")).toBeNull();
     reopened.dispose();

@@ -1,5 +1,7 @@
+import { useNavigate } from "@tanstack/react-router";
+
 import { workspaceAreaProps } from "../lib/workspaceFocus";
-import { useAtomMount, useAtomValue } from "@effect/atom-react";
+import { useAtomMount } from "@effect/atom-react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -57,9 +59,11 @@ import {
   type GhosttyTerminalSurfaceOptions,
 } from "~/terminal/ghostty/surface";
 import { type GhosttyColor, type GhosttyTheme } from "~/terminal/ghostty/core";
-import { useOpenInPreferredEditor } from "../editorPreferences";
-import { resolvePathLinkTarget } from "@houston-app/shared/fileLinks";
-import { isTerminalUrl } from "../terminal-links";
+import { resolvePathLinkTarget, splitFilePathPosition } from "@houston-app/shared/fileLinks";
+import { workspaceRelativeFilePath } from "@houston-app/shared/path";
+import { useRightPanelStore } from "../rightPanelStore";
+import { COMPOSER_MENTION_DRAG_TYPE } from "./chat/composerMentionDrag";
+import { isHoustonTaskKey, isTerminalLinkActivation, isTerminalUrl } from "../terminal-links";
 import {
   isDiffToggleShortcut,
   isTerminalClearShortcut,
@@ -76,12 +80,12 @@ import {
   type ThreadTerminalGroup,
 } from "../types";
 import { readLocalApi } from "~/localApi";
+import { isKnownTaskKey } from "~/state/tasks";
 import { confirmTerminalClose } from "~/lib/terminalCloseConfirm";
 import { useClientSettings } from "../hooks/useSettings";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { attachedTerminalSessionAtom } from "../state/terminalSessions";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { serverEnvironment } from "../state/server";
 import { previewEnvironment } from "../state/preview";
 import { readEnvironmentScope } from "../state/session";
 import { terminalEnvironment } from "../state/terminal";
@@ -525,16 +529,18 @@ function TerminalSessionViewport({
     readEnvironmentScope(environmentId, AuthTerminalOperateScope),
   );
   const canOpenHostEditor = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
-  const canActivateTerminalLink = useEffectEvent(
-    (text: string) =>
-      isTerminalUrl(text) || readEnvironmentScope(environmentId, AuthOrchestrationOperateScope),
+  const navigate = useNavigate();
+  const openTaskFromTerminal = useEffectEvent((taskKey: string) => {
+    void navigate({ to: "/tasks", search: { task: taskKey } });
+  });
+  const canActivateTerminalLink = useEffectEvent((text: string) =>
+    isHoustonTaskKey(text)
+      ? isKnownTaskKey(text)
+      : isTerminalUrl(text) || readEnvironmentScope(environmentId, AuthOrchestrationOperateScope),
   );
-  const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  const openInPreferredEditor = useOpenInPreferredEditor(
-    environmentId,
-    serverConfig?.availableEditors ?? [],
+  const openTerminalFile = useEffectEvent((relativePath: string, line: number | undefined) =>
+    useRightPanelStore.getState().openFile(threadRef, relativePath, line),
   );
-  const openTerminalPath = useEffectEvent((target: string) => openInPreferredEditor(target));
   const openPreview = useAtomCommand(previewEnvironment.open, {
     reportFailure: false,
   });
@@ -995,6 +1001,11 @@ function TerminalSessionViewport({
         if (!canActivateTerminalLink(text)) return;
         const latestTerminal = terminalRef.current;
         if (!latestTerminal) return;
+        if (isHoustonTaskKey(text)) {
+          if (!isTerminalLinkActivation(event)) return;
+          openTaskFromTerminal(text.toUpperCase());
+          return;
+        }
         if (isTerminalUrl(text)) {
           if (!localApi) {
             writeSystemMessage(latestTerminal, "Opening links is unavailable in this browser.");
@@ -1025,18 +1036,9 @@ function TerminalSessionViewport({
           );
           return;
         }
-        const target = resolvePathLinkTarget(text, cwd);
-        void (async () => {
-          const result = await openTerminalPath(target);
-          if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
-            return;
-          }
-          const error = squashAtomCommandFailure(result);
-          writeSystemMessage(
-            latestTerminal,
-            error instanceof Error ? error.message : "Unable to open path",
-          );
-        })();
+        const position = splitFilePathPosition(resolvePathLinkTarget(text, cwd));
+        const relativePath = workspaceRelativeFilePath(position.path, cwd) ?? position.path;
+        openTerminalFile(relativePath, position.line);
       }
 
       function handleData(data: string): void {
@@ -1167,6 +1169,17 @@ function TerminalSessionViewport({
       ref={attachContainer}
       tabIndex={-1}
       className="relative h-full w-full overflow-hidden bg-(--terminal-background)"
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes(COMPOSER_MENTION_DRAG_TYPE)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+      }}
+      onDrop={(event) => {
+        const mention = event.dataTransfer.getData(COMPOSER_MENTION_DRAG_TYPE);
+        if (mention.length === 0 || !hasTerminalWriteAccess()) return;
+        event.preventDefault();
+        void writeTerminal(`${mention} `);
+      }}
     />
   );
 }

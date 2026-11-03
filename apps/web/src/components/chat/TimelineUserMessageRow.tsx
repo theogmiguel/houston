@@ -37,6 +37,7 @@ import {
   PencilIcon,
 } from "lucide-react";
 import { Link as LinkIconNode } from "lucide";
+import { Badge } from "../ui/badge";
 import { Button, InlineButton } from "../ui/button";
 import { useAssetUrlRefresh, useAssetUrls, useAssetUrlState } from "../../assets/assetUrls";
 import { AttachmentImage } from "../media/AttachmentImage";
@@ -55,6 +56,8 @@ import { promptLinkFor } from "../promptLinks/copyPromptLink";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { formatBytes } from "../../lib/formatBytes";
 import { shouldCollapseUserMessage } from "./MessagesTimeline.logic";
+import { messageDeliveryPresentation } from "./messageDelivery";
+import type { MessageDelivery } from "@houston-app/contracts/houston/messageDelivery";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   asKnownContextRecord,
@@ -281,6 +284,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
       row.message.inputIntent === "promoted_queued_to_steer" ? (
         <UserMessageIntentMarker intent={row.message.inputIntent} />
       ) : null}
+      {row.message.delivery ? <MessageDeliveryMarker delivery={row.message.delivery} /> : null}
       <div
         className={cn(
           "min-w-0 max-w-[80%] rounded-2xl bg-message text-message-foreground",
@@ -821,6 +825,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       !row.continuesSteer ? (
         <UserMessageIntentMarker intent={row.message.inputIntent} />
       ) : null}
+      {row.message.delivery ? <MessageDeliveryMarker delivery={row.message.delivery} /> : null}
       {mediaAboveText ? (
         <div className="flex max-w-[80%] justify-end">
           {/* The heading leads the media so screen readers reach it before the images. */}
@@ -1046,6 +1051,27 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
 
 const ACTIONS_REVEAL_CLASS_NAME =
   "items-center text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100";
+
+/** The quiet delivery state of a queued, steered or interrupting message. */
+function MessageDeliveryMarker({ delivery }: { readonly delivery: MessageDelivery }) {
+  const presentation = messageDeliveryPresentation(delivery);
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Badge
+            variant={presentation.tone === "warning" ? "warning" : "label"}
+            size="sm"
+            data-user-message-delivery={delivery.state}
+          />
+        }
+      >
+        {presentation.label}
+      </TooltipTrigger>
+      <TooltipPopup side="top">{presentation.detail}</TooltipPopup>
+    </Tooltip>
+  );
+}
 
 function UserMessageIntentMarker({
   intent,

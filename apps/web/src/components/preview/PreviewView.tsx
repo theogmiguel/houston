@@ -1,6 +1,9 @@
 import { scopedThreadKey } from "@houston-app/client-runtime/environment";
 import { settlePromise } from "@houston-app/client-runtime/state/runtime";
-import { previewStreamDownloadUrl } from "@houston-app/client-runtime/preview/server-browser-stream";
+import {
+  previewStreamDownloadUrl,
+  type PreviewStreamConfirmation,
+} from "@houston-app/client-runtime/preview/server-browser-stream";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -33,6 +36,10 @@ import {
 } from "~/browserHistoryStore";
 import { type ComposerImageAttachment, useComposerDraftStore } from "~/composerDraftStore";
 import { capturePreviewAnnotationScreenshot } from "~/lib/previewAnnotation";
+import {
+  elementContextToPreviewAnnotation,
+  normalizeElementContextSelection,
+} from "~/lib/elementContext";
 import { ensureLocalApi } from "~/localApi";
 import { getClientSettings } from "~/hooks/useSettings";
 import {
@@ -51,7 +58,7 @@ import {
   usePreviewMiniPlayerStore,
 } from "~/previewMiniPlayerStore";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
-import { useRightPanelStore } from "~/rightPanelStore";
+import { selectThreadRightPanelState, useRightPanelStore } from "~/rightPanelStore";
 
 import { previewBridge } from "./previewBridge";
 import { subscribePreviewAction } from "./previewActionBus";
@@ -72,6 +79,7 @@ import { PreviewFileNotShown, PreviewUnreachable } from "./PreviewUnreachable";
 import { revealInFileExplorerLabel } from "./fileExplorerLabel";
 import { shouldShowPreviewEmptyState } from "./previewEmptyStateLogic";
 import { Badge } from "~/components/ui/badge";
+import { PreviewConfirmationDialog } from "~/components/ui/preview-confirmation-dialog";
 import { BrowserSurfaceSlot } from "~/browser/BrowserSurfaceSlot";
 import { ServerBrowserSurface, type ServerBrowserHandle } from "~/browser/ServerBrowserSurface";
 import { cn } from "~/lib/utils";
@@ -89,6 +97,7 @@ import {
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { observeResize } from "~/lib/observeResize";
+import { randomUUID } from "~/lib/utils";
 
 interface Props {
   threadRef: ScopedThreadRef;
@@ -143,11 +152,16 @@ export function PreviewView({
 }: Props) {
   const urlInputRef = useRef<HTMLInputElement | null>(null);
   const [pickActive, setPickActive] = useState(false);
+  const [confirmation, setConfirmation] = useState<PreviewStreamConfirmation | null>(null);
+  const [confirmationTrust, setConfirmationTrust] = useState(false);
   const canSendAnnotation =
     useEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope) &&
     Boolean(onSendAnnotation);
   const activeRecordingTabIds = useActiveBrowserRecordingTabIds();
   const pickActiveRef = useRef<{ cancelled: boolean } | null>(null);
+  const panelMaximized = useRightPanelStore(
+    (state) => selectThreadRightPanelState(state.byThreadKey, threadRef).maximized === true,
+  );
   const previewState = useThreadPreviewState(threadRef);
   const recentHistoryEntries = useThreadRecentHistory(
     threadRef,
@@ -712,7 +726,93 @@ export function PreviewView({
     );
   };
 
+  const respondToConfirmation = (approved: boolean) => {
+    const pending = confirmation;
+    if (!pending) return;
+    serverSurfaceRef.current?.respondConfirmation(
+      pending.id,
+      approved,
+      approved && confirmationTrust,
+    );
+    setConfirmation(null);
+    setConfirmationTrust(false);
+  };
+
+  const completeServerPick = (picked: {
+    readonly payload: Parameters<typeof normalizeElementContextSelection>[0];
+    readonly rect: {
+      readonly x: number;
+      readonly y: number;
+      readonly width: number;
+      readonly height: number;
+    };
+    readonly screenshot: {
+      readonly dataUrl: string;
+      readonly width: number;
+      readonly height: number;
+    } | null;
+  }) => {
+    setPickActive(false);
+    const element = normalizeElementContextSelection(picked.payload);
+    if (!element) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not read the picked element",
+          description: "The page did not describe the element. Try picking it again.",
+        }),
+      );
+      return;
+    }
+    const id = randomUUID();
+    const annotation = elementContextToPreviewAnnotation(element, id, picked.payload.pickedAt);
+    const withTarget = {
+      ...annotation,
+      elements: [
+        {
+          id,
+          element: { ...element, stack: picked.payload.stack, pickedAt: picked.payload.pickedAt },
+          rect: picked.rect,
+        },
+      ],
+      screenshot: picked.screenshot ? { ...picked.screenshot, cropRect: picked.rect } : null,
+    };
+    const capture = capturePreviewAnnotationScreenshot(withTarget);
+    const kept = capture.status === "failed" ? { ...withTarget, screenshot: null } : withTarget;
+    addPreviewAnnotation(threadRef, kept);
+    if (capture.status === "captured" && kept.screenshot) {
+      addImage(threadRef, {
+        type: "image",
+        id: kept.id,
+        name: capture.file.name,
+        mimeType: capture.file.type,
+        sizeBytes: capture.file.size,
+        previewUrl: kept.screenshot.dataUrl,
+        file: capture.file,
+      });
+    }
+    if (capture.status === "failed") {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not capture the picked element",
+          description: "The annotation was kept without the screenshot.",
+        }),
+      );
+    }
+  };
+
   const handlePickElement = () => {
+    if (isServerTab && serverSurfaceRef.current) {
+      if (pickActive) {
+        serverSurfaceRef.current.pickCancel();
+        setPickActive(false);
+        return;
+      }
+      serverSurfaceRef.current.pick();
+      setPickActive(true);
+      return;
+    }
     if (!previewBridge || !runtimeTabId) return;
     if (pickActiveRef.current) {
       pickActiveRef.current.cancelled = true;
@@ -821,6 +921,19 @@ export function PreviewView({
     };
   }, [runtimeTabId]);
 
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Escape exits the expanded browser while a preview chrome control has focus
+  useEffect(() => {
+    if (!panelMaximized || !visible) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      const target = event.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+      useRightPanelStore.getState().setMaximized(threadRef, false);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [panelMaximized, threadRef, visible]);
+
   // Subscribe only while visible; ChatView always owns URL-aware toggle-panel handling.
   const onPreviewAction = useEffectEvent(
     (action: Parameters<Parameters<typeof subscribePreviewAction>[0]>[0]) => {
@@ -860,7 +973,7 @@ export function PreviewView({
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col bg-background"
+      className="relative flex min-h-0 flex-1 flex-col bg-background"
       data-thread-key={scopedThreadKey(threadRef)}
     >
       <PreviewChromeRow
@@ -888,11 +1001,23 @@ export function PreviewView({
         }
         onDeviceSize={tabId && runtimeTabId ? handleToggleDeviceToolbar : undefined}
         deviceSizeActive={viewport._tag !== "fill"}
-        onPickElement={previewBridge && tabId && !isServerTab ? handlePickElement : undefined}
+        onToggleFullScreen={
+          tabId
+            ? () => useRightPanelStore.getState().setMaximized(threadRef, !panelMaximized)
+            : undefined
+        }
+        fullScreen={panelMaximized}
+        onPickElement={tabId && (isServerTab || previewBridge) ? handlePickElement : undefined}
         pickActive={pickActive}
-        pickDisabled={!tabId || isUnreachable}
+        pickDisabled={
+          !tabId || isUnreachable || (isServerTab && (!canSendAnnotation || serverInputDisabled))
+        }
         pickDisabledReason={
-          isUnreachable ? "Page didn't load. Pick is unavailable until the page renders" : undefined
+          isUnreachable
+            ? "Page didn't load. Pick is unavailable until the page renders"
+            : isServerTab && !canSendAnnotation
+              ? "Open a live agent thread to send a selection"
+              : undefined
         }
         leadingActions={
           activeProfileId !== browserDefaults.profileId ? (
@@ -932,6 +1057,16 @@ export function PreviewView({
         }
       />
 
+      {confirmation ? (
+        <PreviewConfirmationDialog
+          request={confirmation}
+          trust={confirmationTrust}
+          onTrustChange={setConfirmationTrust}
+          onDeny={() => respondToConfirmation(false)}
+          onAllow={() => respondToConfirmation(true)}
+        />
+      ) : null}
+
       <div ref={serverBodyRef} className="relative min-h-0 flex-1 overflow-hidden">
         {runtimeTabId && snapshot && isServerTab ? (
           <>
@@ -958,6 +1093,12 @@ export function PreviewView({
               <ServerBrowserSurface
                 key={runtimeTabId}
                 ref={serverSurfaceRef}
+                onPickedElement={(picked) => completeServerPick(picked)}
+                onPickCancelled={() => setPickActive(false)}
+                onConfirmation={(request) => {
+                  setConfirmation(request);
+                  setConfirmationTrust(false);
+                }}
                 environmentId={threadRef.environmentId}
                 threadId={threadRef.threadId}
                 tabId={snapshot.tabId}

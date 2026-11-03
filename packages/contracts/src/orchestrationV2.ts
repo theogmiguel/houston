@@ -41,12 +41,7 @@ import {
 } from "./baseSchemas.ts";
 import { AuthMcpClientAccess } from "./auth.ts";
 import { MessageDelivery, MessageDeliveryJson } from "./houston/messageDelivery.ts";
-import {
-  HoustonHarnessReviewStartCommand,
-  HoustonNightShiftNotifyCommand,
-  HoustonSideThread,
-  makeHoustonSideThreadCommands,
-} from "./houston/sideThreads.ts";
+import { HoustonSideThread, makeHoustonSideThreadCommands } from "./houston/sideThreads.ts";
 import { HoustonMergeQueueNotifyCommand } from "./houston/mergeQueue.ts";
 import { HoustonSlackAnswerCommand } from "./houston/slack.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
@@ -3353,8 +3348,6 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 const OrchestrationV2InternalCommand = Schema.Union([
   /** A Slack answer, fenced by the server; a client could otherwise send it unfenced. */
   HoustonSlackAnswerCommand,
-  HoustonHarnessReviewStartCommand,
-  HoustonNightShiftNotifyCommand,
   /** A merge queue notice; a client could otherwise post one into any thread. */
   HoustonMergeQueueNotifyCommand,
   /** Moves a thread to a project rooted at the folder it already works in, so its cwd never changes. */

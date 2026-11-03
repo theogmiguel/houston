@@ -68,6 +68,7 @@ import {
   type ProjectFileFailure,
   type ProjectFileOperation,
   type ProjectMutation,
+  ProjectFileMutationError,
   ProjectListEntriesError,
   ProjectReadFileError,
   ProjectSearchContentsError,
@@ -220,8 +221,6 @@ import * as HoustonSlackService from "./houston/slack/Service.ts";
 import * as HoustonSlackV1Import from "./houston/slack/V1Import.ts";
 import * as HoustonTaskSourceV1Import from "./houston/taskSources/V1Import.ts";
 import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
-import * as HoustonHarnessService from "./houston/harnessReview/Service.ts";
-import * as HoustonNightShiftService from "./houston/nightShift/Service.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import { threadWorkspaceRoot } from "./project/threadWorkspaceRoot.ts";
@@ -565,6 +564,7 @@ function filesystemBrowseFailureContext(error: WorkspaceEntries.WorkspaceEntries
 
 function projectFileFailureContext(
   error:
+    | ProjectWriteFileError
     | WorkspaceFileSystem.WorkspaceFileSystemError
     | WorkspacePaths.WorkspacePathOutsideRootError
     | KnownWorkspaces.UnknownWorkspaceError,
@@ -574,6 +574,9 @@ function projectFileFailureContext(
   readonly resolvedWorkspaceRoot?: string;
   readonly operation?: ProjectFileOperation;
   readonly operationPath?: string;
+  readonly expectedRevision?: string;
+  readonly actualRevision?: string;
+  readonly message?: string;
 } {
   switch (error._tag) {
     case "WorkspacePathOutsideRootError":
@@ -596,6 +599,31 @@ function projectFileFailureContext(
       return { failure: "path_not_file", resolvedPath: error.resolvedPath };
     case "WorkspaceBinaryFileError":
       return { failure: "binary_file", resolvedPath: error.resolvedPath };
+    case "WorkspacePathExistsError":
+      return { failure: "already_exists", resolvedPath: error.resolvedPath };
+    case "WorkspacePathNotFoundError":
+      return { failure: "not_found", resolvedPath: error.resolvedPath };
+    case "WorkspacePathNotDirectoryError":
+      return { failure: "not_directory", resolvedPath: error.resolvedPath };
+    case "WorkspaceRootMutationError":
+      return { failure: "delete_workspace_root" };
+    case "WorkspaceTrashUnavailableError":
+      return {
+        failure: "trash_unavailable",
+        resolvedPath: error.resolvedPath,
+        operation: "delete",
+        operationPath: error.resolvedPath,
+        message: error.message,
+      };
+    case "ProjectWriteFileError":
+      return {
+        failure: error.failure ?? "operation_failed",
+        ...(error.resolvedPath === undefined ? {} : { resolvedPath: error.resolvedPath }),
+        ...(error.expectedRevision === undefined
+          ? {}
+          : { expectedRevision: error.expectedRevision }),
+        ...(error.actualRevision === undefined ? {} : { actualRevision: error.actualRevision }),
+      };
     default:
       return unexpectedCompatibilityError(error);
   }
@@ -1359,8 +1387,6 @@ export const layerWsRpc = (
       const houstonSlack = yield* HoustonSlackService.HoustonSlackService;
       const houstonSlackImport = yield* HoustonSlackV1Import.HoustonSlackV1Import;
       const houstonMergeQueue = yield* HoustonMergeQueueService.HoustonMergeQueueService;
-      const houstonHarness = yield* HoustonHarnessService.HoustonHarnessService;
-      const houstonNightShift = yield* HoustonNightShiftService.HoustonNightShiftService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
@@ -2847,6 +2873,46 @@ export const layerWsRpc = (
                 }),
             ),
           ),
+        [WS_METHODS.projectsCreateEntry]: (input) =>
+          workspaceFileSystem.createEntry(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProjectFileMutationError({
+                  cwd: input.cwd,
+                  mutation: "create",
+                  relativePath: input.relativePath,
+                  ...projectFileFailureContext(cause),
+                  cause,
+                }),
+            ),
+          ),
+        [WS_METHODS.projectsRenameEntry]: (input) =>
+          workspaceFileSystem.renameEntry(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProjectFileMutationError({
+                  cwd: input.cwd,
+                  mutation: "rename",
+                  relativePath: input.fromPath,
+                  toPath: input.toPath,
+                  ...projectFileFailureContext(cause),
+                  cause,
+                }),
+            ),
+          ),
+        [WS_METHODS.projectsDeleteEntry]: (input) =>
+          workspaceFileSystem.deleteEntry(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProjectFileMutationError({
+                  cwd: input.cwd,
+                  mutation: "delete",
+                  relativePath: input.relativePath,
+                  ...projectFileFailureContext(cause),
+                  cause,
+                }),
+            ),
+          ),
         [WS_METHODS.projectsMutate]: (mutation) =>
           startup.enqueueCommand(mutateProject(mutation)).pipe(
             Effect.mapError(
@@ -2978,6 +3044,32 @@ export const layerWsRpc = (
                 refreshGitStatus(input.cwd).pipe(Effect.ignore({ log: true }), Effect.as(result)),
             }),
           ),
+        [WS_METHODS.vcsStageFiles]: (input) =>
+          gitWorkflow.stageFiles(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsUnstageFiles]: (input) =>
+          gitWorkflow.unstageFiles(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsDiscardFiles]: (input) =>
+          gitWorkflow.discardFiles(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsAmendCommit]: (input) =>
+          gitWorkflow.amendCommit(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsFetch]: (input) =>
+          gitWorkflow.fetchCurrentBranch(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsRenameRef]: (input) =>
+          gitWorkflow.renameRef(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsDeleteRef]: (input) =>
+          gitWorkflow.deleteRef(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsListWorktrees]: (input) => gitWorkflow.listWorktrees(input),
+        [WS_METHODS.vcsPruneWorktrees]: (input) =>
+          gitWorkflow
+            .pruneWorktreesAndList(input)
+            .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsListStashes]: (input) => gitWorkflow.listStashes(input),
+        [WS_METHODS.vcsPushStash]: (input) =>
+          gitWorkflow.pushStash(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsPopStash]: (input) =>
+          gitWorkflow.popStash(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsDropStash]: (input) =>
+          gitWorkflow.dropStash(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
         [WS_METHODS.gitRunStackedAction]: (input) =>
           Stream.callback<GitActionProgressEvent, GitManagerServiceError>((queue) =>
             gitWorkflow
@@ -3073,6 +3165,8 @@ export const layerWsRpc = (
           houstonTaskSources.clearCredential(input),
         [WS_METHODS.houstonTaskSourcesSyncNow]: (input) => houstonTaskSources.syncNow(input),
         [WS_METHODS.houstonTaskSourcesLinksGet]: (input) => houstonTaskSources.links(input),
+        [WS_METHODS.houstonTaskSourcesConflictsList]: (input) =>
+          houstonTaskSources.conflicts(input),
         [WS_METHODS.houstonTaskSourcesConflictResolve]: (input) =>
           houstonTaskSources.resolve(input),
         [WS_METHODS.houstonTaskSourcesSubscribe]: (input) => houstonTaskSources.subscribe(input),
@@ -3086,42 +3180,6 @@ export const layerWsRpc = (
         [WS_METHODS.houstonSlackSubscribe]: () => houstonSlack.subscribe,
         [WS_METHODS.houstonSlackImportV1Status]: () => houstonSlackImport.status,
         [WS_METHODS.houstonSlackImportV1Run]: () => houstonSlackImport.run,
-        [WS_METHODS.houstonHarnessGet]: (input) => houstonHarness.get(input),
-        [WS_METHODS.houstonHarnessSubscribe]: (input) => houstonHarness.subscribe(input),
-        [WS_METHODS.houstonHarnessOverview]: (input) => houstonHarness.overview(input),
-        [WS_METHODS.houstonHarnessSubscribeOverview]: (input) =>
-          houstonHarness.subscribeOverview(input),
-        [WS_METHODS.houstonHarnessSetup]: (input) => houstonHarness.setup(input),
-        [WS_METHODS.houstonHarnessRunNow]: (input) => houstonHarness.runNow(input),
-        [WS_METHODS.houstonHarnessReport]: (input) => houstonHarness.report(input),
-        [WS_METHODS.houstonHarnessDecide]: (input) => houstonHarness.decide(input),
-        [WS_METHODS.houstonHarnessMarkSeen]: (input) => houstonHarness.markSeen(input),
-        [WS_METHODS.houstonHarnessCreateTask]: (input) => houstonHarness.createTask(input),
-        [WS_METHODS.houstonDefectsDecide]: (input) => houstonHarness.defectsDecide(input),
-        [WS_METHODS.houstonDefectsDraft]: (input) => houstonHarness.defectsDraft(input),
-        [WS_METHODS.houstonDefectsFile]: (input) => houstonHarness.defectsFile(input),
-        [WS_METHODS.houstonHarnessImportV1Status]: () => houstonHarness.importV1Status,
-        [WS_METHODS.houstonHarnessImportV1Run]: () => houstonHarness.importV1Run,
-        [WS_METHODS.houstonNightShiftGet]: (input) => houstonNightShift.get(input),
-        [WS_METHODS.houstonNightShiftSubscribe]: (input) => houstonNightShift.subscribe(input),
-        [WS_METHODS.houstonNightShiftSubscribeOverview]: (input) =>
-          houstonNightShift.subscribeOverview(input),
-        [WS_METHODS.houstonNightShiftCreate]: (input) => houstonNightShift.create(input),
-        [WS_METHODS.houstonNightShiftUpdate]: (input) => houstonNightShift.update(input),
-        [WS_METHODS.houstonNightShiftDelete]: (input) => houstonNightShift.delete(input),
-        [WS_METHODS.houstonNightShiftPreflight]: (input) => houstonNightShift.preflight(input),
-        [WS_METHODS.houstonNightShiftRunNow]: (input) => houstonNightShift.runNow(input),
-        [WS_METHODS.houstonNightShiftWrapUp]: (input) => houstonNightShift.wrapUp(input),
-        [WS_METHODS.houstonNightShiftStop]: (input) => houstonNightShift.stop(input),
-        [WS_METHODS.houstonNightShiftReport]: (input) => houstonNightShift.report(input),
-        [WS_METHODS.houstonNightShiftDecide]: (input) => houstonNightShift.decide(input),
-        [WS_METHODS.houstonNightShiftMarkQaPassed]: (input) =>
-          houstonNightShift.markQaPassed(input),
-        [WS_METHODS.houstonNightShiftClosePullRequests]: (input) =>
-          houstonNightShift.closePullRequests(input),
-        [WS_METHODS.houstonNightShiftImportV1Status]: (input) =>
-          houstonNightShift.importV1Status(input),
-        [WS_METHODS.houstonNightShiftImportV1Run]: (input) => houstonNightShift.importV1Run(input),
         [WS_METHODS.houstonMergeQueueGet]: (input) => houstonMergeQueue.get(input),
         [WS_METHODS.houstonMergeQueueSubscribe]: (input) => houstonMergeQueue.subscribe(input),
         [WS_METHODS.houstonMergeQueueSubscribeSummary]: (input) =>

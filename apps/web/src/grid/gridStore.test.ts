@@ -486,3 +486,58 @@ describe("sidebar grid order", () => {
     expect(manual()).toEqual(["g-c", "g-b", "g-a"]);
   });
 });
+
+describe("single-grid thread placement", () => {
+  it("removes a thread from its old grid when it is added to another", () => {
+    freshStore();
+    createdGrid();
+    useGridStore.getState().createGrid({
+      environmentId: "env-1",
+      projectId: "project-1",
+      workspaceKey,
+      id: "g-2",
+      now: "2026-01-02T00:00:00Z",
+    });
+    useGridStore.getState().addThread("g-1", "thread-a");
+    useGridStore.getState().addThread("g-2", "thread-a");
+    expect(preorderLeaves(gridById(useGridStore.getState().grids, "g-1")!.tree)).toEqual([]);
+    expect(preorderLeaves(gridById(useGridStore.getState().grids, "g-2")!.tree)).toEqual([
+      "thread-a",
+    ]);
+  });
+
+  it("refuses the seventh thread with a cap that names the grid", () => {
+    freshStore();
+    createdGrid();
+    for (let index = 0; index < 6; index += 1) {
+      useGridStore.getState().addThread("g-1", `thread-${index}`);
+    }
+    useGridStore.getState().addThread("g-1", "thread-7");
+    expect(preorderLeaves(gridById(useGridStore.getState().grids, "g-1")!.tree)).toHaveLength(6);
+  });
+
+  it("rejects a cell move that crosses workspaces", () => {
+    freshStore();
+    createdGrid();
+    useGridStore.getState().createGrid({
+      environmentId: "env-2",
+      projectId: "project-2",
+      workspaceKey: "env-2:project-2",
+      id: "g-other",
+      now: "2026-01-02T00:00:00Z",
+    });
+    useGridStore.getState().addThread("g-1", "thread-a");
+    useGridStore.getState().addThread("g-other", "thread-b");
+    expect(
+      useGridStore.getState().moveThreadToCell({
+        threadId: "thread-a",
+        targetGridId: "g-other",
+        targetThreadId: "thread-b",
+        side: "right",
+      }),
+    ).toBe(false);
+    expect(preorderLeaves(gridById(useGridStore.getState().grids, "g-1")!.tree)).toEqual([
+      "thread-a",
+    ]);
+  });
+});

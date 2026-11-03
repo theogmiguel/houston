@@ -140,8 +140,6 @@ import * as HoustonSlackService from "./slack/Service.ts";
 import * as HoustonSlackV1Import from "./slack/V1Import.ts";
 import * as HoustonTaskSourceV1Import from "./taskSources/V1Import.ts";
 import * as HoustonMergeQueueService from "./mergeQueue/Service.ts";
-import * as HoustonHarnessService from "./harnessReview/Service.ts";
-import * as HoustonNightShiftService from "./nightShift/Service.ts";
 
 const decodeReadiness = Schema.decodeUnknownSync(ProviderReadiness);
 
@@ -433,8 +431,6 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonSlackV1Import.HoustonSlackV1Import)({}),
   Layer.mock(HoustonTaskSourceV1Import.HoustonTaskSourceV1Import)({}),
   Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
-  Layer.mock(HoustonHarnessService.HoustonHarnessService)({}),
-  Layer.mock(HoustonNightShiftService.HoustonNightShiftService)({}),
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
   Layer.mock(SecretResolver.SecretResolver)({}),

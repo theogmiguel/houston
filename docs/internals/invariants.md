@@ -59,6 +59,20 @@ through `fs_allowlist::assert_within_allowed_roots` before touching a path. **En
 the gate itself, called at every command's own entry point in `src-tauri/src/fs.rs` — there
 is no shared middleware layer to bypass by adding a command that forgets the call.
 
+### A dropped path is readable only after the host saw the drop
+
+`fs_read_dropped_path` serves a path the renderer names, so on Linux the host does not trust
+the name: it records a drag's paths for 60 s only once that drag is dropped (WebKitGTK also asks
+for drag data while the pointer merely hovers), and otherwise accepts a path only while another
+application's copy holds it on the system clipboard (a page can write a URI list on copy, so a
+clipboard this process owns grants nothing). Every other path is refused with the path in the
+error. Windows keeps the direct read because WebView2 gives the host no
+drop signal to observe.
+
+**Why.** WebKitGTK delivers a file-manager drop as a URI list with no path-bearing `File`, so
+the renderer must ask the host to read the path. Without the allowlist, a compromised renderer
+could name any file on disk and have the host return its bytes.
+
 ## Channels and state
 
 ### Protect the installed release channel
@@ -116,7 +130,7 @@ outside Houston's entries. An unparsable config is left as is and logged.
 ### Measured values yes, class strings never
 
 Another app's shipped UI may be read for its measured values and structure; its class strings
-may not be copied. Since both sides speak Tailwind, a pasted class *renders* — just not what
+may not be copied. Since both sides speak Tailwind, a pasted class _renders_ — just not what
 it rendered there. Where a licence does permit copying, the copy carries its notice in
 `NOTICE`, added in the same commit that lands the copy.
 

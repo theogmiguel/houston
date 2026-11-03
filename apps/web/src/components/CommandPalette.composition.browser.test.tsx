@@ -82,6 +82,13 @@ vi.mock("../state/session", async (original) => ({
   useEnvironmentScope: () => true,
   readEnvironmentScope: () => true,
 }));
+vi.mock("../state/tasks", async (original) => {
+  const [actual, { EMPTY_TASKS_SNAPSHOT }] = await Promise.all([
+    original<typeof import("../state/tasks")>(),
+    import("@houston-app/client-runtime/state/tasks"),
+  ]);
+  return { ...actual, useAllTasksSnapshot: () => EMPTY_TASKS_SNAPSHOT };
+});
 vi.mock("../state/filesystem", async (original) => ({
   ...(await original<typeof import("../state/filesystem")>()),
   useFilesystemReadAccess: () => ({ canReadFiles: true, isPending: false, error: null }),

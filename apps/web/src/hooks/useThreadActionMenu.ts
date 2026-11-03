@@ -7,12 +7,7 @@ import {
   squashAtomCommandFailure,
 } from "@houston-app/client-runtime/state/runtime";
 import { canSnooze, effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
-import {
-  AuthOrchestrationOperateScope,
-  type ScopedThreadRef,
-  type ThreadId,
-} from "@houston-app/contracts";
-import { useRouter } from "@tanstack/react-router";
+import { AuthOrchestrationOperateScope, type ScopedThreadRef } from "@houston-app/contracts";
 
 import { pickSnoozePreset, resolveSnoozePresets } from "../components/Sidebar.snooze";
 import {
@@ -21,30 +16,17 @@ import {
   type ThreadActionMenuId,
 } from "../components/threadActionMenu.logic";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
-import { copyThreadReference } from "../lib/copyThreadReference";
-import { threadChipCopyTarget } from "@houston-app/client-runtime/thread-reference";
-import { threadEnvironment } from "../state/threads";
-import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { readEnvironmentScope } from "../state/session";
 import {
   readEnvironmentServerConfigLoaded,
   readEnvironmentSupportsAutoSettleOptOut,
   readThreadShell,
-  useProjects,
 } from "../state/entities";
-import { usePrimaryEnvironmentId } from "../state/environments";
 import { readLocalApi } from "../localApi";
-import {
-  deriveLogicalProjectKeyFromSettings,
-  derivePhysicalProjectKey,
-  selectProjectGroupingSettings,
-} from "@houston-app/client-runtime/state/project-grouping";
-import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { threadRuntimeCanArchive } from "@houston-app/client-runtime/state/models";
-import { useCopyToClipboard } from "./useCopyToClipboard";
-import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
 import { canTurnThreadIntoProject, useThreadActions } from "./useThreadActions";
+import type { NewThreadHandler } from "./useHandleNewThread";
 
 function failureToast(title: string, error: unknown) {
   toastManager.add(
@@ -58,24 +40,14 @@ function failureToast(title: string, error: unknown) {
 
 export function useThreadActionMenu(input: {
   readonly threadRef: ScopedThreadRef | null;
-  readonly projectCwd: string | null;
   readonly onStartRename: () => void;
   readonly onFind?: ((threadRef: ScopedThreadRef) => void) | undefined;
+  /** The caller owns thread creation, so this hook stays out of its draft store. */
+  readonly handleNewThread: NewThreadHandler;
 }) {
-  const { threadRef, projectCwd, onStartRename, onFind } = input;
-  const router = useRouter();
-  const projects = useProjects();
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const logicalProjectKeyByPhysicalKey = buildPhysicalToLogicalProjectKeyMap({
-    projects,
-    settings: projectGroupingSettings,
-    primaryEnvironmentId,
-  });
+  const { threadRef, onStartRename, onFind, handleNewThread } = input;
   const {
-    settleThread,
     unsettleThread,
-    snoozeThread,
     unsnoozeThread,
     pinThread,
     confirmAndUnpinThread,
@@ -84,34 +56,19 @@ export function useThreadActionMenu(input: {
     deleteThread,
     markThreadUnread,
     turnThreadIntoProject,
+    regenerateThreadTitle,
+    copyThreadPath,
+    copyThreadBranch,
+    copyThreadRef,
+    copyThreadId,
+    findThread,
+    openThreadProjectSettings,
+    holdThread,
+    closeThread,
   } = useThreadActions();
-  const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
-    reportFailure: false,
-  });
-  const handleNewThread = useNewThreadHandler();
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
-  const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
-    onCopy: ({ path }) => {
-      toastManager.add({ type: "success", title: "Path copied", description: path });
-    },
-    onError: (error) => failureToast("Failed to copy path", error),
-  });
-  const { copyToClipboard: copyBranchToClipboard } = useCopyToClipboard<{ branch: string }>({
-    target: "branch name",
-    onCopy: ({ branch }) => {
-      toastManager.add({ type: "success", title: "Branch copied", description: branch });
-    },
-    onError: (error) => failureToast("Failed to copy branch", error),
-  });
-  const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{ threadId: ThreadId }>({
-    onCopy: ({ threadId }) => {
-      toastManager.add({ type: "success", title: "Thread ID copied", description: threadId });
-    },
-    onError: (error) => failureToast("Failed to copy thread ID", error),
-  });
-
   const openMenu = (position: { x: number; y: number }) => {
     if (threadRef === null) return;
     void (async () => {
@@ -170,10 +127,7 @@ export function useThreadActionMenu(input: {
                 threadRef.environmentId,
               );
         if (!preset) return;
-        const result = await snoozeThread(threadRef, preset.snoozedUntil);
-        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-          failureToast("Failed to hold thread", squashAtomCommandFailure(result));
-        }
+        await holdThread(threadRef, preset.snoozedUntil);
         return;
       }
       const reportFailure = async (
@@ -187,23 +141,12 @@ export function useThreadActionMenu(input: {
       };
       switch (action) {
         case "find":
-          onFind?.(threadRef);
+          if (onFind === undefined) findThread(threadRef);
+          else onFind(threadRef);
           return;
-        case "project-settings": {
-          const project = projects.find(
-            (candidate) =>
-              candidate.environmentId === thread.environmentId && candidate.id === thread.projectId,
-          );
-          if (!project) return;
-          const projectKey =
-            logicalProjectKeyByPhysicalKey.get(derivePhysicalProjectKey(project)) ??
-            deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings);
-          void router.navigate({
-            to: "/projects/$projectKey",
-            params: { projectKey },
-          });
+        case "project-settings":
+          await openThreadProjectSettings(threadRef);
           return;
-        }
         case "new-thread-on-branch": {
           const result = await settlePromise(() =>
             handleNewThread(scopeProjectRef(threadRef.environmentId, thread.projectId), {
@@ -219,7 +162,7 @@ export function useThreadActionMenu(input: {
           return;
         }
         case "settle":
-          await reportFailure("Failed to close thread", () => settleThread(threadRef));
+          await closeThread(threadRef);
           return;
         case "unsettle":
           await reportFailure("Failed to reopen thread", () => unsettleThread(threadRef));
@@ -246,10 +189,7 @@ export function useThreadActionMenu(input: {
         case "regenerate-title":
           if (isRegeneratingTitle) return;
           await reportFailure("Failed to regenerate thread title", () =>
-            updateThreadMetadata({
-              environmentId: threadRef.environmentId,
-              input: { threadId: threadRef.threadId, regenerateTitle: true },
-            }),
+            regenerateThreadTitle(threadRef),
           );
           return;
         case "mark-unread":
@@ -268,31 +208,17 @@ export function useThreadActionMenu(input: {
           }
           return;
         }
-        case "copy-path": {
-          const workspacePath = thread.worktreePath ?? projectCwd;
-          if (!workspacePath) {
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Path unavailable",
-                description: "This thread does not have a workspace path to copy.",
-              }),
-            );
-            return;
-          }
-          copyPathToClipboard(workspacePath, { path: workspacePath });
+        case "copy-path":
+          await copyThreadPath(threadRef);
           return;
-        }
         case "copy-branch":
-          if (thread.branch) {
-            copyBranchToClipboard(thread.branch, { branch: thread.branch });
-          }
+          await copyThreadBranch(threadRef);
           return;
         case "copy-thread":
-          void copyThreadReference(threadChipCopyTarget(threadRef, thread.title));
+          await copyThreadRef(threadRef);
           return;
         case "copy-thread-id":
-          copyThreadIdToClipboard(thread.id, { threadId: thread.id });
+          await copyThreadId(threadRef);
           return;
         case "archive": {
           if (confirmThreadArchive) {

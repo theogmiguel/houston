@@ -10,7 +10,6 @@ import {
 import * as Effect from "effect/Effect";
 import { modelSelectionCommandType } from "@houston-app/shared/model";
 
-import { admitOperation, crewGateFailure } from "../../../houston/nightShift/CrewGate.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import {
@@ -95,8 +94,6 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
   run_scheduled_task_now: McpToolAccess.writesEnvironment((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
-      // Houston: a live Night shift run's threads start work only through delegate_task.
-      yield* admitOperation(scope, "run_scheduled_task_now").pipe(Effect.mapError(crewGateFailure));
       const scheduler = yield* ScheduledTasks.ScheduledTaskService;
       const { tasks } = yield* scheduler.list().pipe(Effect.mapError(unavailable));
       if (!tasks.some((task) => task.id === input.taskId))

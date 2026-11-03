@@ -47,11 +47,13 @@ import {
   type DesktopWslState,
   type EnvironmentId,
   type FilesystemBrowseResult,
+  type ProjectId,
+  type ThreadId,
   SourceControlProviderKind,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   resolveEnvironmentMachineKind,
 } from "@houston-app/contracts";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
   BugIcon,
@@ -62,11 +64,19 @@ import {
   FileSearchIcon,
   FolderGit2Icon,
   FolderIcon,
+  PauseIcon,
+  EyeOffIcon,
   FolderPlusIcon,
+  LayoutGridIcon,
+  ListChecksIcon,
+  Maximize2Icon,
+  Minimize2Icon,
+  PencilIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
   PaletteIcon,
+  PlusIcon,
   RotateCcwIcon,
   SettingsIcon,
   MonitorIcon,
@@ -74,6 +84,7 @@ import {
   PinOffIcon,
   SquarePenIcon,
   TextSearchIcon,
+  TrashIcon,
 } from "lucide-react";
 import { openThreadFind } from "./chat/threadFindStore";
 import {
@@ -114,6 +125,11 @@ import { threadEnvironment } from "../state/threads";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
+import {
+  mergeQueueEnvironment,
+  useMergeQueueEntry,
+  useMergeQueueSnapshot,
+} from "../state/mergeQueue";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useScratchProject } from "../hooks/useScratchProject";
@@ -127,6 +143,7 @@ import {
   useEnvironments,
   usePrimaryEnvironmentId,
 } from "../state/environments";
+import { useAllTasksSnapshot } from "../state/tasks";
 import { useProjects, useServerConfigs, useThreadShells, waitForProject } from "../state/entities";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import {
@@ -148,7 +165,11 @@ import {
   useCommandPaletteMount,
   useCommandPaletteStore,
 } from "../commandPaletteStore";
-import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
+import {
+  PULL_REQUESTS_PANEL_REF,
+  selectSelectedRightPanelSurface,
+  useRightPanelStore,
+} from "../rightPanelStore";
 import {
   getLatestThreadForProject,
   sortThreads,
@@ -250,7 +271,12 @@ import { pickableProjectGroups } from "@houston-app/client-runtime/state/project
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
-import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
+import { useActiveThreadRouteTarget } from "../hooks/useThreadRouteTarget";
+import { useGrid, useGridStore } from "../grid/gridStore";
+import { useGridMaximizeStore } from "../grid/gridMaximizeStore";
+import { requestGridCellRename } from "../grid/gridCellCommands";
+import { useThreadActions } from "../hooks/useThreadActions";
+import { useOpenGridDraft } from "../grid/useOpenGridDraft";
 import { threadRecentUse } from "@houston-app/shared/paletteSearch";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
@@ -391,6 +417,7 @@ function OpenCommandPaletteDialog(props: {
   const { openChildSearch, setOpen } = props;
   // Keyed by palette session: the intent and restored search only seed this
   // mount, and closing must not change what the closing palette shows.
+  const cloneIntentHandled = useRef(false);
   const [initialSearch] = useState(
     () =>
       props.initialContext ?? {
@@ -448,8 +475,17 @@ function OpenCommandPaletteDialog(props: {
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
-  const paletteRouteTarget = useThreadRouteTarget();
+  const paletteRouteTarget = useActiveThreadRouteTarget();
+  const gridIdParam = useParams({ strict: false, select: (params) => params.gridId });
+  const openGrid = useGrid(typeof gridIdParam === "string" ? gridIdParam : null);
+  const openGridDraft = useOpenGridDraft();
+  const maximizedCellThreadId = useGridMaximizeStore((store) =>
+    openGrid === null ? null : (store.maximizedThreadIdByGrid[openGrid.id] ?? null),
+  );
+  const setMaximizedCellThreadId = useGridMaximizeStore((store) => store.setMaximizedThreadId);
+  const { confirmAndDeleteThread } = useThreadActions();
   const projects = useProjects();
+  const taskBacklog = useAllTasksSnapshot();
   const referenceThreadRef =
     pathname === "/pull-requests"
       ? environments.some((environment) => environment.serverConfig !== null)
@@ -459,6 +495,81 @@ function OpenCommandPaletteDialog(props: {
         ? scopeThreadRef(activeThread.environmentId, activeThread.id)
         : null;
   const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(referenceThreadRef);
+  const selectedPanelSurface = useRightPanelStore((state) =>
+    referenceThreadRef === null
+      ? null
+      : selectSelectedRightPanelSurface(state.byThreadKey, referenceThreadRef),
+  );
+  const queuePullRequest =
+    selectedPanelSurface?.kind === "pull-request" ? selectedPanelSurface : null;
+  // Without an open pull request the queue commands still act on the first project that can have one.
+  const contextualQueueProject =
+    queuePullRequest ??
+    projects.find((project) => project.repositoryIdentity !== undefined) ??
+    null;
+  const queueEnvironmentId = (contextualQueueProject?.environmentId ??
+    null) as EnvironmentId | null;
+  const queueProjectId = (contextualQueueProject?.id ?? null) as ProjectId | null;
+  const { entry: paletteQueueEntry } = useMergeQueueEntry(
+    queueEnvironmentId,
+    queueProjectId,
+    queuePullRequest?.number ?? null,
+  );
+  const { snapshot: paletteQueueSnapshot } = useMergeQueueSnapshot(
+    queueEnvironmentId,
+    queueProjectId,
+  );
+  const enqueueMergeQueue = useAtomCommand(mergeQueueEnvironment.enqueue, {
+    reportFailure: false,
+  });
+  const pauseMergeQueue = useAtomCommand(mergeQueueEnvironment.pause, { reportFailure: false });
+  const addPalettePullRequestToQueue = async () => {
+    if (queuePullRequest === null || queueEnvironmentId === null) return;
+    const result = await enqueueMergeQueue({
+      environmentId: queueEnvironmentId,
+      input: {
+        projectId: queuePullRequest.projectId as ProjectId,
+        pullRequest: queuePullRequest.number,
+      },
+    });
+    if (result._tag === "Failure") {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add({
+        type: "error",
+        title: `Could not add #${queuePullRequest.number} to the merge queue`,
+        description: error instanceof Error ? error.message : "The merge queue refused it.",
+      });
+      return;
+    }
+    toastManager.add({
+      type: "success",
+      title: `Added #${queuePullRequest.number} to the merge queue`,
+    });
+  };
+  const togglePaletteMergeQueuePause = async () => {
+    if (queueEnvironmentId === null) return;
+    const global = paletteQueueSnapshot?.globalPaused === true;
+    const paused = paletteQueueSnapshot?.settings.paused === true;
+    const result = await pauseMergeQueue({
+      environmentId: queueEnvironmentId,
+      input: global
+        ? { paused: false }
+        : queueProjectId === null
+          ? { paused: !paused }
+          : { projectId: queueProjectId, paused: !paused },
+    });
+    if (result._tag === "Failure") {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add({
+        type: "error",
+        title: "Could not change the merge queue pause",
+        description: error instanceof Error ? error.message : "Try again.",
+      });
+      return;
+    }
+    const message = (result.value as { readonly message?: string } | null)?.message;
+    toastManager.add({ type: "success", title: message ?? "Merge queue updated" });
+  };
   const activeThreadServerConfig = useServerConfigs().get(
     activeThread?.environmentId ?? ("" as EnvironmentId),
   );
@@ -1163,6 +1274,22 @@ function OpenCommandPaletteDialog(props: {
     }
   };
 
+  // A clone intent starts at the Git URL entry; without a ready environment it
+  // falls back to the same environment/source picker as Add project.
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- runs once per clone intent to place the palette in its clone entry
+  useEffect(() => {
+    if (cloneIntentHandled.current) return;
+    if (props.openIntent?.kind !== "add-project" || props.openIntent.clone !== true) return;
+    cloneIntentHandled.current = true;
+    if (addProjectEntry.kind === "choose-source") {
+      // oxlint-disable-next-line react/set-state-in-effect -- A clone intent starts the palette at its Git URL clone entry.
+      startAddProjectClone(addProjectEntry.environmentId, "url");
+      return;
+    }
+    // oxlint-disable-next-line react/set-state-in-effect -- A clone intent without a ready environment opens the add-project picker.
+    openAddProjectFlow();
+  });
+
   // The view an "Add project" intent opens to follows the environments as they
   // connect, so it resolves here instead of being fixed when the palette opened.
   const addProjectEntryGroups = (): ReadonlyArray<CommandPaletteGroup> => {
@@ -1229,6 +1356,13 @@ function OpenCommandPaletteDialog(props: {
         icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
         shortcutCommand: "chat.newLocal",
         run: async () => {
+          if (openGrid !== null) {
+            await openGridDraft({
+              gridId: openGrid.id,
+              focusedThreadId: openGrid.focusedThreadId,
+            });
+            return;
+          }
           await startNewThreadFromContext({
             activeDraftThread,
             activeThread: activeThread ?? undefined,
@@ -1248,6 +1382,118 @@ function OpenCommandPaletteDialog(props: {
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: NEW_THREAD_IN_GROUP, label: "Projects", items: projectThreadItems }],
     });
+  }
+
+  if (openGrid !== null) {
+    const grid = openGrid;
+    const store = () => useGridStore.getState();
+    actionItems.push({
+      kind: "action",
+      value: "action:grid-new",
+      searchTerms: ["new grid", "grid", "create", "layout"],
+      title: "New grid in this workspace",
+      icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        const gridId = store().createGrid({
+          environmentId: grid.environmentId,
+          projectId: grid.projectId,
+          workspaceKey: grid.workspaceKey,
+        });
+        await navigate({ to: "/grid/$gridId", params: { gridId } });
+      },
+    });
+    const gridLayoutActions = [
+      { value: "action:grid-tidy", title: "Tidy grid", shape: "grid" as const },
+      { value: "action:grid-tidy-row", title: "Tidy grid into one row", shape: "row" as const },
+      {
+        value: "action:grid-tidy-column",
+        title: "Tidy grid into one column",
+        shape: "column" as const,
+      },
+    ];
+    for (const action of gridLayoutActions) {
+      actionItems.push({
+        kind: "action",
+        value: action.value,
+        searchTerms: ["grid", "tidy", "layout", "arrange"],
+        title: action.title,
+        icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
+        run: async () => store().tidyGrid(grid.id, action.shape),
+      });
+    }
+    actionItems.push({
+      kind: "action",
+      value: "action:grid-equalize",
+      searchTerms: ["grid", "equalize", "layout", "sizes"],
+      title: "Equalize grid cells",
+      icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
+      run: async () => store().equalizeGrid(grid.id),
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:grid-pin",
+      searchTerms: ["grid", "pin", "unpin", "favorite"],
+      title: grid.pinnedAt === null ? "Pin grid" : "Unpin grid",
+      icon:
+        grid.pinnedAt === null ? (
+          <PinIcon className={ITEM_ICON_CLASS} />
+        ) : (
+          <PinOffIcon className={ITEM_ICON_CLASS} />
+        ),
+      run: async () => {
+        if (grid.pinnedAt === null) store().pinGrid(grid.id);
+        else store().unpinGrid(grid.id);
+      },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:grid-hide",
+      searchTerms: ["grid", "hide", "visibility"],
+      title: "Hide grid",
+      icon: <EyeOffIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        store().setGridHidden(grid.id, true);
+        await navigate({ to: "/" });
+      },
+    });
+    const focusedThreadId = grid.focusedThreadId;
+    if (focusedThreadId !== null) {
+      const focusedThreadRef = scopeThreadRef(
+        grid.environmentId as EnvironmentId,
+        focusedThreadId as ThreadId,
+      );
+      actionItems.push({
+        kind: "action",
+        value: "action:grid-thread-rename",
+        searchTerms: ["grid", "thread", "rename", "title"],
+        title: "Rename focused thread",
+        icon: <PencilIcon className={ITEM_ICON_CLASS} />,
+        run: async () => requestGridCellRename(focusedThreadId),
+      });
+      actionItems.push({
+        kind: "action",
+        value: "action:grid-thread-delete",
+        searchTerms: ["grid", "thread", "delete", "remove"],
+        title: "Delete focused thread",
+        icon: <TrashIcon className={ITEM_ICON_CLASS} />,
+        run: async () => {
+          await confirmAndDeleteThread(focusedThreadRef);
+        },
+      });
+      const isMaximized = maximizedCellThreadId === focusedThreadId;
+      actionItems.push({
+        kind: "action",
+        value: "action:grid-thread-maximize",
+        searchTerms: ["grid", "cell", "maximize", "restore", "focus"],
+        title: isMaximized ? "Restore cell in grid" : "Maximize focused cell",
+        icon: isMaximized ? (
+          <Minimize2Icon className={ITEM_ICON_CLASS} />
+        ) : (
+          <Maximize2Icon className={ITEM_ICON_CLASS} />
+        ),
+        run: async () => setMaximizedCellThreadId(grid.id, isMaximized ? null : focusedThreadId),
+      });
+    }
   }
 
   if (scratchTargetEnvironmentId !== null) {
@@ -1535,6 +1781,110 @@ function OpenCommandPaletteDialog(props: {
       run: async () => {
         await navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
       },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:merge-queue-open",
+      searchTerms: ["merge queue", "queue", "land", "merge", "line", "parked"],
+      title: "Open merge queue",
+      icon: <PullRequestGlyph.merged className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await navigate({
+          to: "/pull-requests",
+          search: { ...readPullRequestListPreferences(), view: "queue" },
+        });
+      },
+    });
+    if (queuePullRequest !== null && queueEnvironmentId !== null) {
+      actionItems.push({
+        kind: "action",
+        value: "action:merge-queue-add",
+        searchTerms: ["merge queue", "queue", "add", "land", "merge"],
+        title:
+          paletteQueueEntry === null
+            ? "Add to merge queue"
+            : paletteQueueEntry.position > 0
+              ? `In the merge queue (#${paletteQueueEntry.position})`
+              : "In the merge queue",
+        description: `#${queuePullRequest.number} ${queuePullRequest.repository}`,
+        icon: <PullRequestGlyph.merged className={ITEM_ICON_CLASS} />,
+        disabled: paletteQueueEntry !== null,
+        run: async () => {
+          await addPalettePullRequestToQueue();
+        },
+      });
+    }
+    if (queueProjectId !== null && queueEnvironmentId !== null) {
+      const globalPaused = paletteQueueSnapshot?.globalPaused === true;
+      const paused = paletteQueueSnapshot?.settings.paused === true;
+      actionItems.push({
+        kind: "action",
+        value: "action:merge-queue-pause",
+        searchTerms: ["merge queue", "queue", "pause", "resume", "stop"],
+        title: globalPaused
+          ? "Resume every merge queue"
+          : paused
+            ? "Resume merge queue"
+            : "Pause merge queue",
+        description:
+          queuePullRequest === null
+            ? undefined
+            : `#${queuePullRequest.number} ${queuePullRequest.repository}`,
+        icon: <PauseIcon className={ITEM_ICON_CLASS} />,
+        run: async () => {
+          await togglePaletteMergeQueuePause();
+        },
+      });
+    }
+  }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:tasks",
+    searchTerms: ["tasks", "task", "backlog", "queue", "task board"],
+    title: "Open tasks",
+    icon: <ListChecksIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/tasks" });
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:new-task",
+    searchTerms: ["new task", "create task", "task", "backlog"],
+    title: "New task",
+    icon: <PlusIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/tasks", search: { new: true } });
+    },
+  });
+
+  const paletteTasks = taskBacklog.tasks.filter((task) => task.archivedAt === null).slice(0, 25);
+  if (paletteTasks.length > 0) {
+    actionItems.push({
+      kind: "submenu",
+      value: "action:open-task",
+      searchTerms: ["open task", "task", "HOU", "backlog"],
+      title: "Open task",
+      icon: <ListChecksIcon className={ITEM_ICON_CLASS} />,
+      addonIcon: <ListChecksIcon className={ADDON_ICON_CLASS} />,
+      groups: [
+        {
+          value: "tasks",
+          label: "Tasks",
+          items: paletteTasks.map((task) => ({
+            kind: "action" as const,
+            value: `task:${task.key}`,
+            title: `${task.key} ${task.title}`,
+            searchTerms: [task.key, task.title],
+            icon: <ListChecksIcon className={ITEM_ICON_CLASS} />,
+            run: async () => {
+              await navigate({ to: "/tasks", search: { task: task.key } });
+            },
+          })),
+        },
+      ],
     });
   }
 
@@ -2606,8 +2956,13 @@ function OpenCommandPaletteDialog(props: {
       pickedPath = await api.dialogs.pickFolder(
         Object.keys(pickerOptions).length > 0 ? pickerOptions : undefined,
       );
-    } catch {
+    } catch (cause) {
       setIsPickingProjectFolder(false);
+      toastManager.add({
+        type: "error",
+        title: "Could not open the folder picker",
+        description: cause instanceof Error ? cause.message : "The system dialog failed to open.",
+      });
       return;
     }
     setIsPickingProjectFolder(false);

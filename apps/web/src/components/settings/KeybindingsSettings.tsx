@@ -82,6 +82,7 @@ import {
   whenNodeRemoveLabel,
 } from "./KeybindingsSettings.logic";
 import { SettingsGroup } from "./SettingsGroup";
+import { QuickComposerShortcutSettings } from "./QuickComposerShortcutSettings";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { keybindingSearchAnchorId, searchableSetting } from "./settingsSearch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -1538,6 +1539,7 @@ export function KeybindingsSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      <QuickComposerShortcutSettings />
       <SettingsSection {...searchableSetting("keybindings")} variant="plain" hideTitle>
         <div className="flex items-center gap-2">
           <KeybindingsSearchInput query={query} onChange={setQuery} inputRef={searchInputRef} />

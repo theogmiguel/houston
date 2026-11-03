@@ -183,6 +183,7 @@ export function forgejoReview(review: typeof ForgejoReview.Type): PullRequestCom
 
 export function forgejoReviewThread(
   comment: typeof ForgejoReviewComment.Type,
+  headSha: string,
 ): PullRequestReviewThread {
   const oldSide = comment.position === 0 && comment.original_position > 0;
   const line = oldSide ? comment.original_position : comment.position;
@@ -192,7 +193,8 @@ export function forgejoReviewThread(
     line: line > 0 ? line : null,
     side: oldSide ? "left" : "right",
     isResolved: comment.resolver !== null,
-    isOutdated: false,
+    // Forgejo records the commit a comment was written on; a newer head moves it out of date.
+    isOutdated: comment.commit_id !== headSha || comment.original_commit_id !== headSha,
     comments: [forgejoComment(comment)],
   };
 }
