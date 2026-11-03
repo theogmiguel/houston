@@ -462,6 +462,7 @@ export const ProjectFileFailure = Schema.Literals([
   "not_found",
   "not_directory",
   "delete_workspace_root",
+  "trash_unavailable",
 ]);
 export type ProjectFileFailure = typeof ProjectFileFailure.Type;
 
@@ -484,6 +485,7 @@ type ProjectFileFailureContext = {
   readonly cwd: string;
   readonly relativePath: string;
   readonly failure: ProjectFileFailure;
+  readonly message?: string;
   readonly resolvedPath?: string;
   readonly resolvedWorkspaceRoot?: string;
   readonly operation?: ProjectFileOperation;
@@ -566,6 +568,8 @@ export type ProjectRenameEntryResult = typeof ProjectRenameEntryResult.Type;
 export const ProjectDeleteEntryInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
+  /** Skips the trash and removes the entry immediately; the caller confirms that explicitly. */
+  permanent: Schema.optional(Schema.Boolean),
 });
 export type ProjectDeleteEntryInput = typeof ProjectDeleteEntryInput.Type;
 

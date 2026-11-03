@@ -20,7 +20,9 @@ entries are dimmed.
 - Open a file from a terminal path at its line and column.
 - The context menu creates a file or folder, renames (`F2`), deletes, reveals in the file
   manager, opens in an editor, or adds the path to the chat.
-- Delete asks first and removes the entry permanently; there is no trash to restore from.
+- Delete asks first and moves the entry to the system Trash, where it can be restored. If no
+  trash is available for the entry, Houston says why and offers a second confirmation to
+  delete it permanently.
 - Drag a tree entry onto a terminal to paste an `@path` reference.
 
 Saves check the file's content revision. If another process changes an open file, Houston

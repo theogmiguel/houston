@@ -1,10 +1,12 @@
-import { EnvironmentId, type ProjectEntry } from "@houston-app/contracts";
+import { EnvironmentId, ProjectFileMutationError, type ProjectEntry } from "@houston-app/contracts";
+import * as Cause from "effect/Cause";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 
 import { COMPOSER_MENTION_DRAG_TYPE } from "~/components/chat/composerMentionDrag";
+import { requestConfirmDialog } from "~/confirmDialog";
 import { dismissContextMenu } from "~/contextMenuFallback";
 import { render } from "../../../test/render";
 import FileBrowserPanel from "./FileBrowserPanel";
@@ -34,9 +36,15 @@ const pathSearch = {
 };
 
 const entryCommands = vi.hoisted(() => ({
-  createEntry: vi.fn(() => Promise.resolve({ _tag: "Success", value: {} })),
-  renameEntry: vi.fn(() => Promise.resolve({ _tag: "Success", value: {} })),
-  deleteEntry: vi.fn(() => Promise.resolve({ _tag: "Success", value: {} })),
+  createEntry: vi.fn((_input: unknown): Promise<unknown> =>
+    Promise.resolve({ _tag: "Success", value: {} }),
+  ),
+  renameEntry: vi.fn((_input: unknown): Promise<unknown> =>
+    Promise.resolve({ _tag: "Success", value: {} }),
+  ),
+  deleteEntry: vi.fn((_input: unknown): Promise<unknown> =>
+    Promise.resolve({ _tag: "Success", value: {} }),
+  ),
 }));
 vi.mock("~/state/projects", () => ({ projectEnvironment: entryCommands }));
 vi.mock("~/state/use-atom-command", () => ({
@@ -55,7 +63,7 @@ vi.mock("~/state/query", () => ({
   }),
 }));
 vi.mock("~/confirmDialog", () => ({
-  requestConfirmDialog: vi.fn(() => Promise.resolve(true)),
+  requestConfirmDialog: vi.fn((_message: string, _options?: unknown) => Promise.resolve(true)),
 }));
 vi.mock("./useDirectoryEntries", () => ({ useDirectoryEntries: () => directory }));
 vi.mock("~/state/queries", () => ({ useProjectPathSearch: () => pathSearch }));
@@ -242,5 +250,53 @@ describe("FileBrowserPanel", () => {
         input: { cwd: "/repo", relativePath: "docker-compose.private.override.yml" },
       }),
     );
+  });
+
+  it("moves to the trash by default and offers permanent deletion when the trash is unavailable", async () => {
+    entryCommands.deleteEntry.mockClear();
+    const confirm = vi.mocked(requestConfirmDialog);
+    confirm.mockClear();
+    confirm.mockResolvedValue(true);
+    const trashFailure = new ProjectFileMutationError({
+      cwd: "/repo",
+      mutation: "delete",
+      relativePath: "README.md",
+      failure: "trash_unavailable",
+      resolvedPath: "/repo/README.md",
+      message:
+        "Cannot move workspace entry 'README.md' in '/repo' to the trash: gio is missing. The entry '/repo/README.md' was left in place.",
+    });
+    entryCommands.deleteEntry
+      .mockResolvedValueOnce({ _tag: "Failure", cause: Cause.fail(trashFailure) })
+      .mockResolvedValueOnce({ _tag: "Success", value: {} });
+
+    await using _screen = await render(
+      <FileBrowserPanel
+        environmentId={EnvironmentId.make("env-files")}
+        cwd="/repo"
+        projectName="repo"
+        selectedPath={null}
+        selectedPathRevealId={0}
+        onOpenFile={() => {}}
+        workspaceMutationId={null}
+      />,
+    );
+    await vi.waitFor(() => expect(findTreeRow("README.md")).not.toBeNull());
+    const row = findTreeRow("README.md")!;
+    row.focus();
+    await userEvent.keyboard("{Delete}");
+
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalledTimes(2));
+    expect(confirm.mock.calls[0]?.[0]).toBe('Move "README.md" to the Trash?');
+    expect(confirm.mock.calls[1]?.[0]).toContain("gio is missing");
+    expect(confirm.mock.calls[1]?.[0]).toContain('Delete "README.md" permanently instead?');
+    expect(entryCommands.deleteEntry.mock.calls[0]?.[0]).toEqual({
+      environmentId: EnvironmentId.make("env-files"),
+      input: { cwd: "/repo", relativePath: "README.md" },
+    });
+    expect(entryCommands.deleteEntry.mock.calls[1]?.[0]).toEqual({
+      environmentId: EnvironmentId.make("env-files"),
+      input: { cwd: "/repo", relativePath: "README.md", permanent: true },
+    });
   });
 });

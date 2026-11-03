@@ -34,6 +34,7 @@ import * as KnownWorkspaces from "./KnownWorkspaces.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import { fileHeaderMimeType } from "./fileHeaderMimeType.ts";
+import { moveToSystemTrash, TrashContext } from "./trash.ts";
 
 const PROJECT_READ_FILE_MAX_BYTES = 1024 * 1024;
 
@@ -154,6 +155,20 @@ export class WorkspacePathNotDirectoryError extends Schema.TaggedError<Workspace
   }
 }
 
+export class WorkspaceTrashUnavailableError extends Schema.TaggedError<WorkspaceTrashUnavailableError>()(
+  "WorkspaceTrashUnavailableError",
+  {
+    workspaceRoot: Schema.String,
+    relativePath: Schema.String,
+    resolvedPath: Schema.String,
+    reason: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Cannot move workspace entry '${this.relativePath}' in '${this.workspaceRoot}' to the trash: ${this.reason}. The entry '${this.resolvedPath}' was left in place.`;
+  }
+}
+
 export class WorkspaceRootMutationError extends Schema.TaggedError<WorkspaceRootMutationError>()(
   "WorkspaceRootMutationError",
   { workspaceRoot: Schema.String, operation: Schema.Literals(["rename", "delete"]) },
@@ -172,6 +187,7 @@ export const WorkspaceFileSystemError = Schema.Union([
   WorkspacePathNotFoundError,
   WorkspacePathNotDirectoryError,
   WorkspaceRootMutationError,
+  WorkspaceTrashUnavailableError,
 ]);
 export type WorkspaceFileSystemError = typeof WorkspaceFileSystemError.Type;
 
@@ -973,18 +989,30 @@ export const make = Effect.gen(function* () {
         relativePath: input.relativePath,
         resolvedPath: target.realEntryPath,
       });
-    yield* Effect.tryPromise({
-      try: () => NodeFSP.rm(target.realEntryPath, { recursive: true, force: false }),
-      catch: (cause) =>
-        mutationOperationError({
-          cwd: input.cwd,
+    if (input.permanent === true) {
+      yield* Effect.tryPromise({
+        try: () => NodeFSP.rm(target.realEntryPath, { recursive: true, force: false }),
+        catch: (cause) =>
+          mutationOperationError({
+            cwd: input.cwd,
+            relativePath: input.relativePath,
+            resolvedPath: target.realEntryPath,
+            operationPath: target.realEntryPath,
+            operation: "delete",
+            cause,
+          }),
+      });
+    } else {
+      const trash = yield* TrashContext;
+      const outcome = yield* Effect.promise(() => moveToSystemTrash(target.realEntryPath, trash));
+      if (!outcome.ok)
+        return yield* new WorkspaceTrashUnavailableError({
+          workspaceRoot: input.cwd,
           relativePath: input.relativePath,
           resolvedPath: target.realEntryPath,
-          operationPath: target.realEntryPath,
-          operation: "delete",
-          cause,
-        }),
-    });
+          reason: outcome.reason,
+        });
+    }
     yield* workspaceEntries.refresh(input.cwd);
     return { relativePath: target.relativePath };
   });

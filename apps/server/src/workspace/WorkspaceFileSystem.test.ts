@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off - FileSystem cannot create a FIFO, and reads spy on native realpath.
+// @effect-diagnostics nodeBuiltinImport:off globalDate:off - FileSystem cannot create a FIFO, reads spy on native realpath, and trash fixtures pin a fixed DeletionDate.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 
@@ -19,6 +19,7 @@ import * as KnownWorkspaces from "./KnownWorkspaces.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
+import * as Trash from "./trash.ts";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import { symlinksSupported } from "@houston-app/shared/testing/symlinks";
 import { vi } from "vite-plus/test";
@@ -1001,10 +1002,18 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
         yield* writeTextFile(cwd, "src/nested/keep.ts", "two\n");
         yield* writeTextFile(cwd, ".git/config", "[core]\n");
 
-        yield* workspaceFileSystem.deleteEntry({ cwd, relativePath: "src/old.ts" });
+        yield* workspaceFileSystem.deleteEntry({
+          cwd,
+          relativePath: "src/old.ts",
+          permanent: true,
+        });
         expect(yield* fileSystem.exists(path.join(cwd, "src/old.ts"))).toBe(false);
 
-        yield* workspaceFileSystem.deleteEntry({ cwd, relativePath: "src/nested" });
+        yield* workspaceFileSystem.deleteEntry({
+          cwd,
+          relativePath: "src/nested",
+          permanent: true,
+        });
         expect(yield* fileSystem.exists(path.join(cwd, "src/nested"))).toBe(false);
 
         const root = yield* workspaceFileSystem
@@ -1022,6 +1031,190 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           .deleteEntry({ cwd, relativePath: "../outside" })
           .pipe(Effect.flip);
         expect(outside).toBeInstanceOf(WorkspacePaths.WorkspacePathOutsideRootError);
+      }),
+    );
+
+    it.effect("moves a deleted entry to the home trash by default when gio is missing", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const dataHome = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/old.ts", "one\n");
+
+        const calls: Array<{ command: string; args: ReadonlyArray<string> }> = [];
+        const trashContext: Trash.TrashContextValue = {
+          platform: "linux",
+          environment: { XDG_DATA_HOME: dataHome },
+          homeDirectory: path.join(dataHome, "home"),
+          runCommand: (command, args) => {
+            calls.push({ command, args });
+            return Promise.reject(
+              Object.assign(new Error(`spawn ${command} ENOENT`), { code: "ENOENT" }),
+            );
+          },
+          now: () => new Date(2026, 0, 2, 3, 4, 5),
+        };
+
+        yield* workspaceFileSystem
+          .deleteEntry({ cwd, relativePath: "src/old.ts" })
+          .pipe(Effect.provideService(Trash.TrashContext, trashContext));
+
+        expect(calls).toEqual([
+          { command: "gio", args: ["trash", "--", path.join(cwd, "src/old.ts")] },
+        ]);
+        expect(yield* fileSystem.exists(path.join(cwd, "src/old.ts"))).toBe(false);
+        const trashed = path.join(dataHome, "Trash", "files", "old.ts");
+        expect(yield* fileSystem.readFileString(trashed)).toBe("one\n");
+        const info = yield* fileSystem.readFileString(
+          path.join(dataHome, "Trash", "info", "old.ts.trashinfo"),
+        );
+        expect(info).toContain("[Trash Info]");
+        expect(info).toContain(`Path=${Trash.encodeTrashInfoPath(path.join(cwd, "src/old.ts"))}`);
+        expect(info).toContain("DeletionDate=2026-01-02T03:04:05");
+
+        yield* writeTextFile(cwd, "src/old.ts", "two\n");
+        yield* workspaceFileSystem
+          .deleteEntry({ cwd, relativePath: "src/old.ts" })
+          .pipe(Effect.provideService(Trash.TrashContext, trashContext));
+        expect(
+          yield* fileSystem.readFileString(path.join(dataHome, "Trash", "files", "old.ts.1")),
+        ).toBe("two\n");
+      }),
+    );
+
+    it.effect("uses gio trash when the command is available", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const dataHome = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/old.ts", "one\n");
+
+        const calls: Array<{ command: string; args: ReadonlyArray<string> }> = [];
+        const trashContext: Trash.TrashContextValue = {
+          platform: "linux",
+          environment: { XDG_DATA_HOME: dataHome },
+          homeDirectory: path.join(dataHome, "home"),
+          runCommand: async (command, args) => {
+            calls.push({ command, args });
+            await NodeFSP.rm(args[2] ?? "", { recursive: true, force: false });
+            return { exitCode: 0, stderr: "" };
+          },
+          now: () => new Date(0),
+        };
+
+        yield* workspaceFileSystem
+          .deleteEntry({ cwd, relativePath: "src/old.ts" })
+          .pipe(Effect.provideService(Trash.TrashContext, trashContext));
+
+        expect(calls).toEqual([
+          { command: "gio", args: ["trash", "--", path.join(cwd, "src/old.ts")] },
+        ]);
+        expect(yield* fileSystem.exists(path.join(cwd, "src/old.ts"))).toBe(false);
+        expect(yield* fileSystem.exists(path.join(dataHome, "Trash"))).toBe(false);
+      }),
+    );
+
+    it.effect("keeps a Windows path out of the PowerShell script text", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/it's; Remove-Item.ts", "one\n");
+        const absolutePath = path.join(cwd, "src/it's; Remove-Item.ts");
+        const calls: Array<{
+          command: string;
+          args: ReadonlyArray<string>;
+          extraEnvironment: Readonly<Record<string, string>> | undefined;
+        }> = [];
+
+        yield* workspaceFileSystem
+          .deleteEntry({ cwd, relativePath: "src/it's; Remove-Item.ts" })
+          .pipe(
+            Effect.provideService(Trash.TrashContext, {
+              platform: "win32",
+              environment: {},
+              homeDirectory: cwd,
+              runCommand: async (command, args, extraEnvironment) => {
+                calls.push({ command, args, extraEnvironment });
+                return { exitCode: 0, stderr: "" };
+              },
+              now: () => new Date(0),
+            }),
+          );
+
+        expect(calls).toHaveLength(1);
+        const [call] = calls;
+        expect(call?.command).toBe("powershell.exe");
+        expect(call?.args.at(-2)).toBe("-Command");
+        expect(call?.args.some((arg) => arg.includes(absolutePath))).toBe(false);
+        expect(call?.extraEnvironment).toEqual({
+          [Trash.WINDOWS_TRASH_PATH_VARIABLE]: absolutePath,
+        });
+      }),
+    );
+
+    it.effect("leaves the entry in place and names it when the trash is unavailable", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const dataHome = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/old.ts", "one\n");
+        const absolutePath = path.join(cwd, "src/old.ts");
+
+        const failure = yield* workspaceFileSystem
+          .deleteEntry({ cwd, relativePath: "src/old.ts" })
+          .pipe(
+            Effect.provideService(Trash.TrashContext, {
+              platform: "linux",
+              environment: { XDG_DATA_HOME: dataHome },
+              homeDirectory: path.join(dataHome, "home"),
+              runCommand: async () => ({ exitCode: 1, stderr: "gio: operation not supported" }),
+              now: () => new Date(0),
+            } satisfies Trash.TrashContextValue),
+            Effect.flip,
+          );
+
+        expect(failure).toBeInstanceOf(WorkspaceFileSystem.WorkspaceTrashUnavailableError);
+        expect(failure.message).toContain(absolutePath);
+        expect(failure.message).toContain("gio: operation not supported");
+        expect(yield* fileSystem.readFileString(absolutePath)).toBe("one\n");
+        expect(yield* fileSystem.exists(path.join(dataHome, "Trash"))).toBe(false);
+      }),
+    );
+
+    it.effect("removes immediately with permanent: true without touching the trash", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const dataHome = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/old.ts", "one\n");
+
+        yield* workspaceFileSystem
+          .deleteEntry({
+            cwd,
+            relativePath: "src/old.ts",
+            permanent: true,
+          })
+          .pipe(
+            Effect.provideService(Trash.TrashContext, {
+              platform: "linux",
+              environment: { XDG_DATA_HOME: dataHome },
+              homeDirectory: path.join(dataHome, "home"),
+              runCommand: () => Promise.reject(new Error("the trash must not be used")),
+              now: () => new Date(0),
+            } satisfies Trash.TrashContextValue),
+          );
+
+        expect(yield* fileSystem.exists(path.join(cwd, "src/old.ts"))).toBe(false);
+        expect(yield* fileSystem.exists(path.join(dataHome, "Trash"))).toBe(false);
       }),
     );
 
@@ -1065,7 +1258,11 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
             path.join(outsideDir, "target.ts"),
           );
 
-          yield* workspaceFileSystem.deleteEntry({ cwd, relativePath: "renamed.ts" });
+          yield* workspaceFileSystem.deleteEntry({
+            cwd,
+            relativePath: "renamed.ts",
+            permanent: true,
+          });
           expect(yield* fileSystem.exists(path.join(cwd, "renamed.ts"))).toBe(false);
           expect(yield* fileSystem.readFileString(path.join(outsideDir, "target.ts"))).toBe(
             "outside\n",

@@ -576,6 +576,7 @@ function projectFileFailureContext(
   readonly operationPath?: string;
   readonly expectedRevision?: string;
   readonly actualRevision?: string;
+  readonly message?: string;
 } {
   switch (error._tag) {
     case "WorkspacePathOutsideRootError":
@@ -606,6 +607,14 @@ function projectFileFailureContext(
       return { failure: "not_directory", resolvedPath: error.resolvedPath };
     case "WorkspaceRootMutationError":
       return { failure: "delete_workspace_root" };
+    case "WorkspaceTrashUnavailableError":
+      return {
+        failure: "trash_unavailable",
+        resolvedPath: error.resolvedPath,
+        operation: "delete",
+        operationPath: error.resolvedPath,
+        message: error.message,
+      };
     case "ProjectWriteFileError":
       return {
         failure: error.failure ?? "operation_failed",

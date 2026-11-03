@@ -1,5 +1,10 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import type { EnvironmentId, ProjectEntry } from "@houston-app/contracts";
+import {
+  type EnvironmentId,
+  type ProjectEntry,
+  ProjectFileMutationError,
+} from "@houston-app/contracts";
+import * as Schema from "effect/Schema";
 import { settlePromise, squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
 import { serializeComposerFileLink } from "@houston-app/shared/composerTrigger";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
@@ -36,6 +41,8 @@ import {
 } from "./projectFileTreeRows";
 import { useDirectoryEntries } from "./useDirectoryEntries";
 import { useProjectPathSearch } from "~/state/queries";
+
+const isProjectFileMutationError = Schema.is(ProjectFileMutationError);
 
 interface FileBrowserPanelProps {
   environmentId: EnvironmentId;
@@ -251,10 +258,7 @@ export default function FileBrowserPanel({
   };
 
   const requestDelete = async (entry: ProjectEntry) => {
-    const confirmation = requestConfirmDialog(
-      `Delete "${entry.path}" permanently? This cannot be undone.`,
-      { variant: "destructive" },
-    );
+    const confirmation = requestConfirmDialog(`Move "${entry.path}" to the Trash?`);
     if (!confirmation || !(await confirmation)) return;
     const result = await deleteEntry({
       environmentId,
@@ -262,6 +266,28 @@ export default function FileBrowserPanel({
     });
     if (result._tag === "Failure") {
       const cause = squashAtomCommandFailure(result);
+      if (isProjectFileMutationError(cause) && cause.failure === "trash_unavailable") {
+        const permanent = requestConfirmDialog(
+          `${cause.message} Delete "${entry.path}" permanently instead? This cannot be undone.`,
+          { variant: "destructive" },
+        );
+        if (!permanent || !(await permanent)) return;
+        const permanentResult = await deleteEntry({
+          environmentId,
+          input: { cwd, relativePath: entry.path, permanent: true },
+        });
+        if (permanentResult._tag === "Failure") {
+          const permanentCause = squashAtomCommandFailure(permanentResult);
+          toastManager.add({
+            type: "error",
+            title: "Could not delete entry",
+            description: permanentCause instanceof Error ? permanentCause.message : undefined,
+          });
+          return;
+        }
+        void load(parentPathOf(entry.path), true);
+        return;
+      }
       toastManager.add({
         type: "error",
         title: "Could not delete entry",
@@ -293,7 +319,7 @@ export default function FileBrowserPanel({
                   { id: "rename", label: "Rename" },
                   {
                     id: "delete",
-                    label: "Delete permanently",
+                    label: "Delete",
                     destructive: true,
                     separatorBefore: true,
                   },
