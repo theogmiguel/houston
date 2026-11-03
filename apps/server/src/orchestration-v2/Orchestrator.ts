@@ -185,7 +185,6 @@ import {
   asideForkRefusal,
   asideSourceRun,
   finalAssistantText,
-  HARNESS_REVIEW_NOT_SENT,
   ONLY_FINISHED_REVIEW_SENDS,
   REVIEW_ALREADY_SENT,
   REVIEW_NEEDS_ANOTHER_PROVIDER,
@@ -193,8 +192,6 @@ import {
   reviewPrompt,
   sentReviewText,
   SIDE_RESULT_ONLY_THROUGH_SEND,
-  reservedThreadIdOf,
-  reservedThreadIdRefusal,
   SIDE_THREAD_NOT_A_SOURCE,
   SIDE_THREAD_READ_ONLY,
   sideMessageId,
@@ -629,8 +626,6 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
       return command.sideThreadId;
     case "houston.slack.answer":
     case "houston.merge-queue.notify":
-    case "houston.harness-review.start":
-    case "houston.night-shift.notify":
       return command.threadId;
   }
 }
@@ -4886,9 +4881,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ),
       );
     const side = review.thread.side;
-    if (side?.kind === "harnessReview") {
-      return yield* refuseSideCommand(command, HARNESS_REVIEW_NOT_SENT);
-    }
     const run = review.runs.find((candidate) => candidate.id === command.runId);
     const text =
       run === undefined ? undefined : finalAssistantText(review.turnItems, command.runId);
@@ -4981,62 +4973,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           text: command.text,
           attachments: [],
           dispatchMode: noteDispatchMode(owner.runs),
-        },
-        events,
-        effects,
-      );
-    },
-  );
-
-  // Houston: a harness review's read-only thread at its project's root (harnessReview/Runner.ts).
-  const dispatchHarnessReviewStart = Effect.fn("orchestrationV2.dispatch.harnessReviewStart")(
-    function* (
-      command: Extract<
-        OrchestrationV2ServerCommand,
-        { readonly type: "houston.harness-review.start" }
-      >,
-      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
-      effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
-    ) {
-      const project = yield* projects.get(command.projectId).pipe(mapDispatchError(command));
-      if (Option.isNone(project) || project.value.deletedAt !== null) {
-        return yield* refuseSideCommand(command, `Project ${command.projectId} does not exist.`);
-      }
-      yield* ensureNewThread(command, command.threadId);
-      yield* ensureReadOnlyProvider(command, command.threadId, command.modelSelection.instanceId);
-      yield* dispatchThreadCreate(
-        {
-          type: "thread.create",
-          createdBy: "system",
-          creationSource: "server",
-          commandId: command.commandId,
-          threadId: command.threadId,
-          projectId: command.projectId,
-          title: `Harness review ${command.reviewId}`,
-          modelSelection: command.modelSelection,
-          runtimeMode: "approval-required",
-          interactionMode: "default",
-          branch: null,
-          worktreePath: project.value.workspaceRoot,
-        },
-        events,
-      );
-      yield* markSideThread(events, command.threadId, {
-        kind: "harnessReview",
-        reviewId: command.reviewId,
-      });
-      return yield* dispatchMessage(
-        {
-          type: "message.dispatch",
-          createdBy: "system",
-          creationSource: "server",
-          commandId: command.commandId,
-          threadId: command.threadId,
-          messageId: command.messageId,
-          text: command.text,
-          attachments: [],
-          modelSelection: command.modelSelection,
-          dispatchMode: { type: "start_immediately" },
         },
         events,
         effects,
@@ -13436,10 +13372,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         }
       | undefined;
     let updateDelegatedCompletionOnlyRunId: RunId | undefined;
-    const reserved = reservedThreadIdOf(command);
-    if (reserved !== undefined) {
-      return yield* refuseSideCommand(command, reservedThreadIdRefusal(reserved));
-    }
     switch (command.type) {
       case "thread.create":
         yield* dispatchThreadCreate(command, events);
@@ -13853,27 +13785,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "houston.merge-queue.notify":
         cancelUnsettledEffects = yield* dispatchMergeQueueNotify(command, events, effects);
-        break;
-      case "houston.harness-review.start":
-        cancelUnsettledEffects = yield* dispatchHarnessReviewStart(command, events, effects);
-        break;
-      // Houston: a Night shift message waits for the orchestrator's turn (nightShift/Threads.ts).
-      case "houston.night-shift.notify":
-        cancelUnsettledEffects = yield* dispatchMessage(
-          {
-            type: "message.dispatch",
-            createdBy: "system",
-            creationSource: "server",
-            commandId: command.commandId,
-            threadId: command.threadId,
-            messageId: command.messageId,
-            text: command.text,
-            attachments: [],
-            dispatchMode: { type: "queue_after_active" },
-          },
-          events,
-          effects,
-        );
         break;
       default:
         return yield* dispatchUnsupported(command);

@@ -35,8 +35,9 @@ re-run (no Rust diff vs `main`). Before/after captures are still owed on the PR:
    - **Renderer = Houston's**, keeping the native design from PR #368, with T3's thread components
      ported into it, and Houston's sidebar: workspaces → named grids → one or more threads per grid.
    - `houston-core` (daemon), PTYs, hooks and the `/ws` protocol go away. Houston features T3 lacks
-     (Night shift, task sources GitHub/Notion/Slack, workspace transfer, WSL) are decided per slice;
-     default is to port or adapt them into the TS server, not keep a second backend.
+     (task sources GitHub/Notion/Slack, WSL) are decided per slice; default is to port or adapt them
+     into the TS server, not keep a second backend. Night shift and harness review are removed from
+     v2: routines and bots use the generic scheduled-tasks feature.
 4. **Licence:** T3 Code is MIT, "Copyright (c) 2026 T3 Tools Inc.". A 1:1 port is a derivative
    work. The maintainer keeps the notice (a clean-room rewrite was rejected: it would lose the
    robustness that is the reason for the port). Commit 0 on `v2` adds it to `NOTICE` and

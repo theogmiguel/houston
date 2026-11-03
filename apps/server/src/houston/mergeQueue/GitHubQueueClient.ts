@@ -131,7 +131,7 @@ const REVIEW_DECISIONS: Record<string, Facts["reviewDecision"]> = {
 const graphqlPath = (host: string) =>
   host === "github.com" || host.endsWith(".ghe.com") ? "graphql" : "../graphql";
 
-/** GitHub's own words for a failed request; Night shift's landing reports them too. */
+/** GitHub's own words for a failed request. */
 export const errorText = (error: unknown): string => {
   if (typeof error === "object" && error !== null) {
     const detail = (error as { readonly detail?: unknown }).detail;

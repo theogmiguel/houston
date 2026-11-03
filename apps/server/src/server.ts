@@ -132,11 +132,6 @@ import * as SlackWebApi from "./houston/slack/WebApi.ts";
 import { layerMergeQueue } from "./houston/mergeQueue/layer.ts";
 import * as HoustonMergeQueueStore from "./houston/mergeQueue/Store.ts";
 import * as HoustonMergeQueueThreads from "./houston/mergeQueue/Threads.ts";
-import { layerHarnessReview } from "./houston/harnessReview/layer.ts";
-import * as HoustonHarnessRunner from "./houston/harnessReview/Runner.ts";
-import * as HoustonHarnessStore from "./houston/harnessReview/Store.ts";
-import { layerNightShift } from "./houston/nightShift/layer.ts";
-import * as HoustonNightShiftStore from "./houston/nightShift/Store.ts";
 import * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
@@ -489,8 +484,6 @@ const layerAuth = EnvironmentAuth.layer.pipe(
 );
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
-  // Houston: Night shift reads each earlier pull request's fate once at a run's start.
-  Layer.provide(layerPullRequestService),
   Layer.provide(RuntimeLayer.layerProjectService),
   Layer.provide(ProviderEventIngestor.layerAnalytics),
   Layer.provide(layerCheckpointStore),
@@ -621,16 +614,6 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
       ),
     ),
   ),
-  // The harness review service and its one reactor, over the orchestration runtime below; defect
-  // issues use the GitHub client the merge queue and task sources share.
-  layerHarnessReview.pipe(
-    Layer.provide(GitHubRest.layerWithDependencies),
-    Layer.provide(HoustonHarnessRunner.layer),
-    Layer.provide(ProjectionStoreV2.layer),
-    Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
-  ),
-  // The Night shift service over the runner and claim the orchestration runtime below exports.
-  layerNightShift,
 )
   .pipe(
     // The merge queue reads through the PR page's own service and GitHub client.
@@ -661,14 +644,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     // Split from the chain above: Effect's `pipe` overloads accept at most 20 stages.
     Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
     // Below the orchestration runtime so its ProjectService sees the store on project deletion.
-    Layer.provideMerge(
-      Layer.mergeAll(
-        HoustonTaskSourceStore.layer,
-        HoustonMergeQueueStore.layer,
-        HoustonHarnessStore.layer,
-        HoustonNightShiftStore.layer,
-      ),
-    ),
+    Layer.provideMerge(Layer.mergeAll(HoustonTaskSourceStore.layer, HoustonMergeQueueStore.layer)),
     Layer.provideMerge(HoustonSlackStore.layer),
     Layer.provideMerge(HoustonKeychain.layerLive),
     Layer.provideMerge(layerHoustonTaskPersistence),

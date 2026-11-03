@@ -1,5 +1,5 @@
 // Credential shapes and paths Houston masks wherever text leaves the server: the merge queue's
-// verification output, the harness review's digest, Slack and Night shift's pull requests.
+// verification output, Slack messages and pull requests.
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 

@@ -230,55 +230,6 @@ import {
   HoustonSlackStreamEvent,
 } from "./houston/slack.ts";
 import {
-  HoustonDefectDecideInput,
-  HoustonDefectDraftInput,
-  HoustonDefectFileInput,
-  HoustonDefectFileResult,
-  HoustonDefectIssueDraft,
-  HoustonHarnessCreateTaskInput,
-  HoustonHarnessCreateTaskResult,
-  HoustonHarnessDecideInput,
-  HoustonHarnessImportResult,
-  HoustonHarnessImportStatus,
-  HoustonHarnessEmptyResult,
-  HoustonHarnessError,
-  HoustonHarnessMarkSeenInput,
-  HoustonHarnessMarkSeenResult,
-  HoustonHarnessOverview,
-  HoustonHarnessOverviewEvent,
-  HoustonHarnessOverviewInput,
-  HoustonHarnessProjectInput,
-  HoustonHarnessReportInput,
-  HoustonHarnessReportResult,
-  HoustonHarnessRunNowResult,
-  HoustonHarnessSetupInput,
-  HoustonHarnessSnapshot,
-} from "./houston/harnessReview.ts";
-import {
-  HoustonNightReport,
-  HoustonNightShiftCloseInput,
-  HoustonNightShiftCloseResult,
-  HoustonNightShiftDecideInput,
-  HoustonNightShiftEmptyResult,
-  HoustonNightShiftEntryInput,
-  HoustonNightShiftError,
-  HoustonNightShiftImportResult,
-  HoustonNightShiftImportStatus,
-  NightEntry,
-  HoustonNightShiftOverviewEvent,
-  HoustonNightShiftOverviewInput,
-  HoustonNightShiftPreflightInput,
-  HoustonNightShiftPreflightResult,
-  HoustonNightShiftProjectInput,
-  HoustonNightShiftRunInput,
-  HoustonNightShiftRunNowInput,
-  HoustonNightShiftRunNowResult,
-  HoustonNightShiftSnapshot,
-  HoustonNightShiftStopResult,
-  HoustonNightShiftUpdateInput,
-  HoustonNightShiftWrapUpResult,
-} from "./houston/nightShift.ts";
-import {
   HoustonMergeQueueEmptyResult,
   HoustonMergeQueueEnqueueInput,
   HoustonMergeQueueEntry,
@@ -637,37 +588,6 @@ export const WS_METHODS = {
   houstonSlackSubscribe: "houston.slack.subscribe",
   houstonSlackImportV1Status: "houston.slack.importV1.status",
   houstonSlackImportV1Run: "houston.slack.importV1.run",
-  houstonHarnessGet: "houston.harness.get",
-  houstonHarnessSubscribe: "houston.harness.subscribe",
-  houstonHarnessOverview: "houston.harness.overview",
-  houstonHarnessSubscribeOverview: "houston.harness.subscribeOverview",
-  houstonHarnessSetup: "houston.harness.setup",
-  houstonHarnessRunNow: "houston.harness.runNow",
-  houstonHarnessReport: "houston.harness.report",
-  houstonHarnessDecide: "houston.harness.decide",
-  houstonHarnessMarkSeen: "houston.harness.markSeen",
-  houstonHarnessCreateTask: "houston.harness.createTask",
-  houstonDefectsDecide: "houston.defects.decide",
-  houstonDefectsDraft: "houston.defects.draft",
-  houstonDefectsFile: "houston.defects.file",
-  houstonHarnessImportV1Status: "houston.harness.importV1.status",
-  houstonHarnessImportV1Run: "houston.harness.importV1.run",
-  houstonNightShiftGet: "houston.nightShift.get",
-  houstonNightShiftSubscribe: "houston.nightShift.subscribe",
-  houstonNightShiftSubscribeOverview: "houston.nightShift.subscribeOverview",
-  houstonNightShiftCreate: "houston.nightShift.create",
-  houstonNightShiftUpdate: "houston.nightShift.update",
-  houstonNightShiftDelete: "houston.nightShift.delete",
-  houstonNightShiftPreflight: "houston.nightShift.preflight",
-  houstonNightShiftRunNow: "houston.nightShift.runNow",
-  houstonNightShiftWrapUp: "houston.nightShift.wrapUp",
-  houstonNightShiftStop: "houston.nightShift.stop",
-  houstonNightShiftReport: "houston.nightShift.report",
-  houstonNightShiftDecide: "houston.nightShift.decide",
-  houstonNightShiftMarkQaPassed: "houston.nightShift.markQaPassed",
-  houstonNightShiftClosePullRequests: "houston.nightShift.closePullRequests",
-  houstonNightShiftImportV1Status: "houston.nightShift.importV1.status",
-  houstonNightShiftImportV1Run: "houston.nightShift.importV1.run",
   houstonMergeQueueGet: "houston.mergeQueue.get",
   houstonMergeQueueSubscribe: "houston.mergeQueue.subscribe",
   houstonMergeQueueSubscribeSummary: "houston.mergeQueue.subscribeSummary",
@@ -2021,128 +1941,6 @@ const WsHoustonSlackImportV1RunRpc = Rpc.make(WS_METHODS.houstonSlackImportV1Run
   error: HoustonSlackRpcError,
 });
 
-const HoustonHarnessRpcError = Schema.Union([HoustonHarnessError, EnvironmentAuthorizationError]);
-
-const WsHoustonHarnessGetRpc = Rpc.make(WS_METHODS.houstonHarnessGet, {
-  payload: HoustonHarnessProjectInput,
-  success: HoustonHarnessSnapshot,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessSubscribeRpc = Rpc.make(WS_METHODS.houstonHarnessSubscribe, {
-  payload: HoustonHarnessProjectInput,
-  success: HoustonHarnessSnapshot,
-  error: HoustonHarnessRpcError,
-  stream: true,
-});
-
-const WsHoustonHarnessOverviewRpc = Rpc.make(WS_METHODS.houstonHarnessOverview, {
-  payload: HoustonHarnessOverviewInput,
-  success: HoustonHarnessOverview,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessSubscribeOverviewRpc = Rpc.make(WS_METHODS.houstonHarnessSubscribeOverview, {
-  payload: HoustonHarnessOverviewInput,
-  success: HoustonHarnessOverviewEvent,
-  error: HoustonHarnessRpcError,
-  stream: true,
-});
-
-const WsHoustonHarnessSetupRpc = Rpc.make(WS_METHODS.houstonHarnessSetup, {
-  payload: HoustonHarnessSetupInput,
-  success: HoustonHarnessSnapshot,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessRunNowRpc = Rpc.make(WS_METHODS.houstonHarnessRunNow, {
-  payload: HoustonHarnessProjectInput,
-  success: HoustonHarnessRunNowResult,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessReportRpc = Rpc.make(WS_METHODS.houstonHarnessReport, {
-  payload: HoustonHarnessReportInput,
-  success: HoustonHarnessReportResult,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessDecideRpc = Rpc.make(WS_METHODS.houstonHarnessDecide, {
-  payload: HoustonHarnessDecideInput,
-  success: HoustonHarnessEmptyResult,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessMarkSeenRpc = Rpc.make(WS_METHODS.houstonHarnessMarkSeen, {
-  payload: HoustonHarnessMarkSeenInput,
-  success: HoustonHarnessMarkSeenResult,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessCreateTaskRpc = Rpc.make(WS_METHODS.houstonHarnessCreateTask, {
-  payload: HoustonHarnessCreateTaskInput,
-  success: HoustonHarnessCreateTaskResult,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonDefectsDecideRpc = Rpc.make(WS_METHODS.houstonDefectsDecide, {
-  payload: HoustonDefectDecideInput,
-  success: HoustonHarnessEmptyResult,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonDefectsDraftRpc = Rpc.make(WS_METHODS.houstonDefectsDraft, {
-  payload: HoustonDefectDraftInput,
-  success: HoustonDefectIssueDraft,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonDefectsFileRpc = Rpc.make(WS_METHODS.houstonDefectsFile, {
-  payload: HoustonDefectFileInput,
-  success: HoustonDefectFileResult,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessImportV1StatusRpc = Rpc.make(WS_METHODS.houstonHarnessImportV1Status, {
-  payload: HoustonHarnessOverviewInput,
-  success: HoustonHarnessImportStatus,
-  error: HoustonHarnessRpcError,
-});
-
-const WsHoustonHarnessImportV1RunRpc = Rpc.make(WS_METHODS.houstonHarnessImportV1Run, {
-  payload: HoustonHarnessOverviewInput,
-  success: HoustonHarnessImportResult,
-  error: HoustonHarnessRpcError,
-});
-
-const HoustonNightShiftRpcError = Schema.Union([
-  HoustonNightShiftError,
-  EnvironmentAuthorizationError,
-]);
-
-const WsHoustonNightShiftGetRpc = Rpc.make(WS_METHODS.houstonNightShiftGet, {
-  payload: HoustonNightShiftProjectInput,
-  success: HoustonNightShiftSnapshot,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftSubscribeRpc = Rpc.make(WS_METHODS.houstonNightShiftSubscribe, {
-  payload: HoustonNightShiftProjectInput,
-  success: HoustonNightShiftSnapshot,
-  error: HoustonNightShiftRpcError,
-  stream: true,
-});
-
-const WsHoustonNightShiftSubscribeOverviewRpc = Rpc.make(
-  WS_METHODS.houstonNightShiftSubscribeOverview,
-  {
-    payload: HoustonNightShiftOverviewInput,
-    success: HoustonNightShiftOverviewEvent,
-    error: HoustonNightShiftRpcError,
-    stream: true,
-  },
-);
-
 const HoustonMergeQueueRpcError = Schema.Union([
   HoustonMergeQueueError,
   EnvironmentAuthorizationError,
@@ -2170,87 +1968,6 @@ const WsHoustonMergeQueueSubscribeSummaryRpc = Rpc.make(
     stream: true,
   },
 );
-
-const WsHoustonNightShiftCreateRpc = Rpc.make(WS_METHODS.houstonNightShiftCreate, {
-  payload: HoustonNightShiftProjectInput,
-  success: HoustonNightShiftSnapshot,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftUpdateRpc = Rpc.make(WS_METHODS.houstonNightShiftUpdate, {
-  payload: HoustonNightShiftUpdateInput,
-  success: HoustonNightShiftSnapshot,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftDeleteRpc = Rpc.make(WS_METHODS.houstonNightShiftDelete, {
-  payload: HoustonNightShiftProjectInput,
-  success: HoustonNightShiftEmptyResult,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftPreflightRpc = Rpc.make(WS_METHODS.houstonNightShiftPreflight, {
-  payload: HoustonNightShiftPreflightInput,
-  success: HoustonNightShiftPreflightResult,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftRunNowRpc = Rpc.make(WS_METHODS.houstonNightShiftRunNow, {
-  payload: HoustonNightShiftRunNowInput,
-  success: HoustonNightShiftRunNowResult,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftWrapUpRpc = Rpc.make(WS_METHODS.houstonNightShiftWrapUp, {
-  payload: HoustonNightShiftRunInput,
-  success: HoustonNightShiftWrapUpResult,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftStopRpc = Rpc.make(WS_METHODS.houstonNightShiftStop, {
-  payload: HoustonNightShiftRunInput,
-  success: HoustonNightShiftStopResult,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftReportRpc = Rpc.make(WS_METHODS.houstonNightShiftReport, {
-  payload: HoustonNightShiftRunInput,
-  success: HoustonNightReport,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftDecideRpc = Rpc.make(WS_METHODS.houstonNightShiftDecide, {
-  payload: HoustonNightShiftDecideInput,
-  success: NightEntry,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftMarkQaPassedRpc = Rpc.make(WS_METHODS.houstonNightShiftMarkQaPassed, {
-  payload: HoustonNightShiftEntryInput,
-  success: NightEntry,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftClosePullRequestsRpc = Rpc.make(
-  WS_METHODS.houstonNightShiftClosePullRequests,
-  {
-    payload: HoustonNightShiftCloseInput,
-    success: HoustonNightShiftCloseResult,
-    error: HoustonNightShiftRpcError,
-  },
-);
-
-const WsHoustonNightShiftImportV1StatusRpc = Rpc.make(WS_METHODS.houstonNightShiftImportV1Status, {
-  payload: HoustonNightShiftOverviewInput,
-  success: HoustonNightShiftImportStatus,
-  error: HoustonNightShiftRpcError,
-});
-
-const WsHoustonNightShiftImportV1RunRpc = Rpc.make(WS_METHODS.houstonNightShiftImportV1Run, {
-  payload: HoustonNightShiftOverviewInput,
-  success: HoustonNightShiftImportResult,
-  error: HoustonNightShiftRpcError,
-});
 
 const WsHoustonMergeQueueEnqueueRpc = Rpc.make(WS_METHODS.houstonMergeQueueEnqueue, {
   payload: HoustonMergeQueueEnqueueInput,
@@ -2925,37 +2642,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonSlackSubscribeRpc,
   WsHoustonSlackImportV1StatusRpc,
   WsHoustonSlackImportV1RunRpc,
-  WsHoustonHarnessGetRpc,
-  WsHoustonHarnessSubscribeRpc,
-  WsHoustonHarnessOverviewRpc,
-  WsHoustonHarnessSubscribeOverviewRpc,
-  WsHoustonHarnessSetupRpc,
-  WsHoustonHarnessRunNowRpc,
-  WsHoustonHarnessReportRpc,
-  WsHoustonHarnessDecideRpc,
-  WsHoustonHarnessMarkSeenRpc,
-  WsHoustonHarnessCreateTaskRpc,
-  WsHoustonDefectsDecideRpc,
-  WsHoustonDefectsDraftRpc,
-  WsHoustonDefectsFileRpc,
-  WsHoustonHarnessImportV1StatusRpc,
-  WsHoustonHarnessImportV1RunRpc,
-  WsHoustonNightShiftGetRpc,
-  WsHoustonNightShiftSubscribeRpc,
-  WsHoustonNightShiftSubscribeOverviewRpc,
-  WsHoustonNightShiftCreateRpc,
-  WsHoustonNightShiftUpdateRpc,
-  WsHoustonNightShiftDeleteRpc,
-  WsHoustonNightShiftPreflightRpc,
-  WsHoustonNightShiftRunNowRpc,
-  WsHoustonNightShiftWrapUpRpc,
-  WsHoustonNightShiftStopRpc,
-  WsHoustonNightShiftReportRpc,
-  WsHoustonNightShiftDecideRpc,
-  WsHoustonNightShiftMarkQaPassedRpc,
-  WsHoustonNightShiftClosePullRequestsRpc,
-  WsHoustonNightShiftImportV1StatusRpc,
-  WsHoustonNightShiftImportV1RunRpc,
   WsHoustonMergeQueueGetRpc,
   WsHoustonMergeQueueSubscribeRpc,
   WsHoustonMergeQueueSubscribeSummaryRpc,

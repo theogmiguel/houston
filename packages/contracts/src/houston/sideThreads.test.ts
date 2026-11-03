@@ -129,9 +129,8 @@ describe("side thread records", () => {
 });
 
 describe("side thread kinds", () => {
-  it("a side thread is an aside, a second opinion or a harness review", () => {
-    const review = { kind: "harnessReview", reviewId: 7 } as const;
-    for (const side of [...sides, review]) {
+  it("a side thread is an aside or a second opinion", () => {
+    for (const side of sides) {
       expect(decodeSide(side)).toEqual(side);
       const thread = decodeThreadJson({ ...storedThread, id: `thread:${side.kind}`, side });
       expect(thread.side).toEqual(side);
@@ -143,31 +142,12 @@ describe("side thread kinds", () => {
       expect(decodeShellJson({ ...storedShell, side }).side).toEqual(side);
     }
     for (const refused of [
-      { kind: "harnessReview" },
-      { kind: "harnessReview", reviewId: 0 },
-      { kind: "harnessReview", reviewId: 1.5 },
-      { kind: "harnessReview", reviewId: "7" },
       { kind: "aside", reviewId: 7 },
       { kind: "aside", sourceRunId: "run:source:1" },
       { kind: "secondOpinion", sourceThreadId: "thread:source" },
     ]) {
       expect(() => decodeUnknownSide(refused), JSON.stringify(refused)).toThrow();
     }
-  });
-
-  it("the review start command is internal: no client can dispatch it", () => {
-    const start = {
-      type: "houston.harness-review.start",
-      commandId: "command:review-start",
-      threadId: "thread:review",
-      projectId: "project:1",
-      reviewId: 3,
-      modelSelection: { instanceId: "claudeAgent", model: "claude-sonnet-4-6" },
-      messageId: "message:review",
-      text: "What this run sends",
-    };
-    expect(() => decodeCommand(start)).toThrow();
-    expect(() => decodeDispatch(start)).toThrow();
   });
 });
 
