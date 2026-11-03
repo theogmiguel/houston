@@ -643,6 +643,19 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["ask before thread chat history"],
   },
   {
+    id: "quit-shortcut",
+    title: "Quit shortcut",
+    to: "/settings/general",
+    searchTerms: ["quit ctrl q hold press twice direct confirmation"],
+  },
+  {
+    id: "keep-in-tray",
+    title: "Keep in tray",
+    to: "/settings/general",
+    searchTerms: ["close window hide tray background agents keep running"],
+    desktopOnly: true,
+  },
+  {
     id: "text-generation-model",
     title: "Text generation model",
     to: "/settings/threads",
@@ -1016,13 +1029,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/access",
     targetId: "connections-environment",
     searchTerms: ["machine glyph sidebar mac mini studio laptop desktop server cloud vm"],
-  },
-  {
-    id: "local-environment",
-    title: "Local environment",
-    to: "/settings/connections",
-    searchTerms: ["turn off on disable enable local server agents remote only restart"],
-    desktopOnly: true,
   },
   {
     id: "network-access",

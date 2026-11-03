@@ -36,7 +36,7 @@ impl TrayStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TraySession {
-    pub id: i64,
+    pub id: String,
     pub agent: String,
     pub title: String,
     pub status: TrayStatus,
@@ -77,7 +77,7 @@ pub enum TrayItem {
     Header(String),
     Open,
     Separator,
-    Session { id: i64, label: String },
+    Session { id: String, label: String },
     Overflow(String),
     Group(String),
     Submenu { label: String, items: Vec<TrayItem> },
@@ -231,7 +231,7 @@ fn agents_submenu(sessions: &[TraySession]) -> Vec<TrayItem> {
         panes.sort_by_key(|s| status_rank(s.status));
         for session in panes.iter().take(GROUP_ROW_CAP) {
             items.push(TrayItem::Session {
-                id: session.id,
+                id: session.id.clone(),
                 label: session_label(session),
             });
         }
@@ -259,7 +259,7 @@ pub fn menu_model(payload: &TrayPayload) -> Vec<TrayItem> {
     let attention: Vec<&TraySession> = live.iter().filter(|s| s.needs_input).collect();
     for session in attention.iter().take(ATTENTION_ROW_CAP) {
         items.push(TrayItem::Session {
-            id: session.id,
+            id: session.id.clone(),
             label: session_label(session),
         });
     }
@@ -286,6 +286,10 @@ pub fn menu_model(payload: &TrayPayload) -> Vec<TrayItem> {
 mod tests {
     use super::*;
 
+    fn thread_key(n: i64) -> String {
+        format!("primary:{n}")
+    }
+
     fn session(id: i64, agent: &str, title: &str, status: TrayStatus) -> TraySession {
         session_in(id, agent, title, status, "houston")
     }
@@ -298,7 +302,7 @@ mod tests {
         workspace: &str,
     ) -> TraySession {
         TraySession {
-            id,
+            id: thread_key(id),
             agent: agent.into(),
             title: title.into(),
             status,
@@ -483,7 +487,7 @@ mod tests {
                     items: vec![
                         TrayItem::Group("houston".into()),
                         TrayItem::Session {
-                            id: 1,
+                            id: thread_key(1),
                             label: "● Claude — a".into(),
                         },
                     ],
@@ -501,17 +505,17 @@ mod tests {
             .map(|i| session(i, "claude", &format!("pane {i}"), TrayStatus::NeedsInput))
             .collect();
         let items = menu_model(&ready(sessions));
-        let inline: Vec<i64> = items
+        let inline: Vec<String> = items
             .iter()
             .take_while(|i| !matches!(i, TrayItem::Submenu { .. }))
             .filter_map(|i| match i {
-                TrayItem::Session { id, .. } => Some(*id),
+                TrayItem::Session { id, .. } => Some(id.clone()),
                 _ => None,
             })
             .collect();
         assert_eq!(
             inline,
-            vec![1, 2, 3, 4],
+            vec![thread_key(1), thread_key(2), thread_key(3), thread_key(4)],
             "capped at ATTENTION_ROW_CAP, in the order given"
         );
         assert!(
@@ -535,28 +539,28 @@ mod tests {
             session(1, "claude", "waiting", TrayStatus::NeedsInput),
             session(2, "codex", "running", TrayStatus::Running),
         ]));
-        let top_level_ids: Vec<i64> = items
+        let top_level_ids: Vec<String> = items
             .iter()
             .filter_map(|i| match i {
-                TrayItem::Session { id, .. } => Some(*id),
+                TrayItem::Session { id, .. } => Some(id.clone()),
                 _ => None,
             })
             .collect();
         assert_eq!(
             top_level_ids,
-            vec![1],
+            vec![thread_key(1)],
             "only the waiting pane gets an inline shortcut"
         );
-        let submenu_ids: Vec<i64> = submenu(&items)
+        let submenu_ids: Vec<String> = submenu(&items)
             .iter()
             .filter_map(|i| match i {
-                TrayItem::Session { id, .. } => Some(*id),
+                TrayItem::Session { id, .. } => Some(id.clone()),
                 _ => None,
             })
             .collect();
         assert_eq!(
             submenu_ids,
-            vec![1, 2],
+            vec![thread_key(1), thread_key(2)],
             "both panes still show up in the submenu's full inventory"
         );
     }
@@ -592,16 +596,16 @@ mod tests {
             session_in(4, "claude", "needs-input", TrayStatus::NeedsInput, "ws"),
             session_in(5, "claude", "idle-b", TrayStatus::Idle, "ws"),
         ]));
-        let ids: Vec<i64> = submenu(&items)
+        let ids: Vec<String> = submenu(&items)
             .iter()
             .filter_map(|i| match i {
-                TrayItem::Session { id, .. } => Some(*id),
+                TrayItem::Session { id, .. } => Some(id.clone()),
                 _ => None,
             })
             .collect();
         assert_eq!(
             ids,
-            vec![4, 3, 1, 5],
+            vec![thread_key(4), thread_key(3), thread_key(1), thread_key(5)],
             "needs-input, running, idle (payload order); a finished session is not listed"
         );
     }
@@ -613,15 +617,20 @@ mod tests {
             .collect();
         let items = menu_model(&ready(sessions));
         let sub = submenu(&items);
-        let shown: Vec<i64> = sub
+        let shown: Vec<String> = sub
             .iter()
             .filter_map(|i| match i {
-                TrayItem::Session { id, .. } => Some(*id),
+                TrayItem::Session { id, .. } => Some(id.clone()),
                 _ => None,
             })
             .collect();
         assert_eq!(shown.len(), GROUP_ROW_CAP);
-        assert_eq!(shown, (1..=GROUP_ROW_CAP as i64).collect::<Vec<i64>>());
+        assert_eq!(
+            shown,
+            (1..=GROUP_ROW_CAP as i64)
+                .map(thread_key)
+                .collect::<Vec<String>>()
+        );
         assert!(
             sub.contains(&TrayItem::Overflow("+3 more in Houston".into())),
             "the per-group overflow row must name the count it hid: {sub:?}"
@@ -683,7 +692,7 @@ mod tests {
     fn a_payload_deserializes_from_the_renderers_camel_case() {
         let payload: TrayPayload = serde_json::from_str(
             r#"{"connection":"ready","sessions":[
-                 {"id":3,"agent":"claude","title":"refactor auth",
+                 {"id":"primary:3","agent":"claude","title":"refactor auth",
                   "status":"needsInput","needsInput":true,"workspace":"houston"}]}"#,
         )
         .expect("the renderer's own shape must parse");
@@ -691,5 +700,6 @@ mod tests {
         assert_eq!(payload.sessions[0].status, TrayStatus::NeedsInput);
         assert!(payload.sessions[0].needs_input);
         assert_eq!(payload.sessions[0].workspace, "houston");
+        assert_eq!(payload.sessions[0].id, "primary:3");
     }
 }

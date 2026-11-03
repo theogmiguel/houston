@@ -6,6 +6,10 @@
 
   var bootstrap = window.__HOUSTON_V2_BOOTSTRAP__ || [];
   var status = window.__HOUSTON_V2_STATUS__ || {};
+  // The host refreshes these globals as the local server starts, retries or fails.
+  var readBootstrap = function () {
+    return window.__HOUSTON_V2_BOOTSTRAP__ || bootstrap || [];
+  };
   var origin = status.origin || null;
   var platform =
     window.__HOUSTON_V2_PLATFORM__ ||
@@ -135,6 +139,30 @@
     shortcutMessage: null,
     message: null,
   };
+  var parseStoredSettings = function () {
+    var raw = storageGet("houston:v2:client-settings");
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+  var applyDesktopSettings = function (settings) {
+    var value = settings || {};
+    var commands = [
+      invoke("snap_shot_configure", { settings: snapShotSettings(value) }).catch(noop),
+      invoke("v2_set_quit_confirmation", {
+        mode:
+          value.confirmQuit === "direct" ||
+          value.confirmQuit === "double-click" ||
+          value.confirmQuit === "hold"
+            ? value.confirmQuit
+            : "hold",
+      }).catch(noop),
+    ];
+    return Promise.all(commands);
+  };
   var snapShotSettings = function (settings) {
     var value = settings || {};
     return {
@@ -226,6 +254,22 @@
     onNotificationBadgeClear: function (listener) {
       return listen("v2-notification-badge-clear", listener);
     },
+    notificationsSupported: function () {
+      return invoke("native_notifications_supported").catch(function (error) {
+        return { supported: false, reason: String(error) };
+      });
+    },
+    notifyThread: function (payload) {
+      var value = payload || {};
+      return invoke("native_notify", {
+        title: value.title || "",
+        body: value.body || "",
+        threadId: value.id || "",
+      });
+    },
+    onThreadNotificationFocus: function (listener) {
+      return listen("native-notification://focus-pane", listener);
+    },
     onTrackpadScrollEnd: noUnsubscribe,
     revealWindow: function () {
       return invoke("window_focus").catch(noop);
@@ -234,7 +278,7 @@
       return locale;
     },
     getLocalEnvironmentBootstraps: function () {
-      return bootstrap;
+      return readBootstrap();
     },
     getLocalEnvironmentEnabled: function () {
       return true;
@@ -242,6 +286,37 @@
     setLocalEnvironmentEnabled: noop,
     getLocalEnvironmentBearerToken: function () {
       return invoke("v2_local_environment_bearer_token");
+    },
+    invalidateLocalEnvironmentBearerToken: function () {
+      return invoke("v2_local_environment_invalidate_bearer").catch(noop);
+    },
+    getServerStatus: function () {
+      return invoke("v2_server_status").catch(function () {
+        return null;
+      });
+    },
+    restartServer: function () {
+      return invoke("v2_server_restart");
+    },
+    onServerStatus: function (listener) {
+      return listen("v2-server-status", listener);
+    },
+    traySync: function (payload) {
+      return invoke("tray_sync", { payload: payload }).catch(noop);
+    },
+    trayState: function () {
+      return invoke("tray_state").catch(function () {
+        return null;
+      });
+    },
+    setKeepInTray: function (enabled) {
+      return invoke("tray_set_keep_in_tray", { enabled: !!enabled });
+    },
+    onTrayFocus: function (listener) {
+      return listen("tray://focus-pane", listener);
+    },
+    onWindowHiddenChange: function (listener) {
+      return listen("tray://window-hidden", listener);
     },
     getClientSettings: function () {
       var raw = storageGet("houston:v2:client-settings");
@@ -254,7 +329,7 @@
     },
     setClientSettings: function (settings) {
       storageSet("houston:v2:client-settings", JSON.stringify(settings));
-      return invoke("snap_shot_configure", { settings: snapShotSettings(settings) }).catch(noop);
+      return applyDesktopSettings(settings);
     },
     getConnectionCatalog: function () {
       return Promise.resolve(storageGet("houston:v2:connection-catalog"));
@@ -308,10 +383,26 @@
     readSnapShot: function (id) {
       return invoke("snap_shot_read", { id: id });
     },
-    setSnapShotAnimationDestination: function (id, destination) {
+    setSnapShotAnimationDestination: function (destination) {
+      var value = destination || {};
+      var frame = value.viewportFrame || {};
+      var viewportWidth = window.innerWidth || 1;
+      var viewportHeight = window.innerHeight || 1;
       return invoke("snap_shot_set_animation_destination", {
-        id: id,
-        destination: destination,
+        id: value.id,
+        destination: {
+          relativeFrame: {
+            x: (frame.x || 0) / viewportWidth,
+            y: (frame.y || 0) / viewportHeight,
+            width: (frame.width || 0) / viewportWidth,
+            height: (frame.height || 0) / viewportHeight,
+          },
+          backgroundColor: value.backgroundColor,
+          borderColor: value.borderColor,
+          borderWidth: value.borderWidth,
+          cornerRadius: value.cornerRadius,
+          details: value.details,
+        },
       }).catch(noop);
     },
     dismissSnapShotAnimation: function (id) {
@@ -423,14 +514,15 @@
         return state;
       });
     },
-    pickFolder: function () {
-      return invoke("dialog_pick_directory", {})
-        .then(function (result) {
-          return typeof result === "string" ? result : (result && result.path) || null;
-        })
-        .catch(function () {
-          return null;
-        });
+    pickFolder: function (options) {
+      return invoke("dialog_pick_directory", {
+        initialPath:
+          options && typeof options.initialPath === "string" && options.initialPath.length > 0
+            ? options.initialPath
+            : null,
+      }).then(function (result) {
+        return typeof result === "string" ? result : (result && result.path) || null;
+      });
     },
     pickProjectFavicon: function () {
       return Promise.resolve(null);
@@ -512,7 +604,9 @@
     onSnapShotEvent: function (listener) {
       return listen("v2-snap-shot-event", listener);
     },
-    onQuitShortcut: noUnsubscribe,
+    onQuitShortcut: function (listener) {
+      return listen("v2-quit-shortcut", listener);
+    },
     getWindowFullscreenState: function () {
       return fullscreen;
     },
@@ -611,5 +705,8 @@
   listen("v2-window-zoom", function (factor) {
     if (typeof factor === "number" && isFinite(factor) && factor > 0) zoomFactor = factor;
   });
+  // A persisted setting such as the SnapShot shortcut or quit confirmation only
+  // reaches the host through setClientSettings, which does not run on hydration.
+  applyDesktopSettings(parseStoredSettings());
   window.hostBridge = bridge;
 })();

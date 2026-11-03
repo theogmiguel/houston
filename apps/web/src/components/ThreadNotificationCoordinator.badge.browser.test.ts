@@ -181,7 +181,7 @@ function shell(overrides: Partial<typeof thread> = {}, ...others: Partial<typeof
 }
 // The mocked modules read `state` and the focus flags, so every test resets them before
 // starting the service.
-function setup() {
+function setup(options: { hostBridge?: Record<string, unknown> } = {}) {
   vi.clearAllMocks();
   const stack = new AsyncDisposableStack();
   registry = AtomRegistry.make();
@@ -198,6 +198,7 @@ function setup() {
   TestNotification.permission = "granted";
   TestNotification.sent = [];
   stack.use(stubGlobal("Notification", TestNotification));
+  if (options.hostBridge) stack.use(stubGlobal("hostBridge", options.hostBridge));
   stack.use(vi.spyOn(window, "focus").mockImplementation(() => undefined));
   stack.use(vi.spyOn(document, "hasFocus").mockImplementation(() => focused));
   stack.use(
@@ -330,3 +331,38 @@ it.each([false, true])(
     );
   },
 );
+
+it("uses the host notifier for a desktop notice and focuses the thread when it is clicked", async () => {
+  const notifyThread = vi.fn(async () => {});
+  let focus: ((key: string) => void) | undefined;
+  await using app = setup({
+    hostBridge: {
+      notifyThread,
+      notificationsSupported: async () => ({ supported: true, reason: null }),
+      onThreadNotificationFocus: (listener: (key: string) => void) => {
+        focus = listener;
+        return () => {};
+      },
+      onNotificationBadgeClear: () => () => {},
+      revealWindow: async () => {},
+    },
+  });
+  app.start();
+  state.shells.set("one", shell({ hasPendingApprovals: true }));
+
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(notifyThread).toHaveBeenCalledWith({
+    id: "one:thread",
+    title: "Approval needed",
+    body: "Test thread",
+  });
+  expect(TestNotification.sent).toEqual([]);
+
+  focus?.("one:thread");
+  expect(state.navigate).toHaveBeenCalledWith({
+    to: "/$environmentId/$threadId",
+    params: { environmentId: "one", threadId: "thread" },
+  });
+  expect(state.badge).toHaveBeenLastCalledWith(0);
+});

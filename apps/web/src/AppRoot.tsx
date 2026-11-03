@@ -1,6 +1,7 @@
 import { RouterProvider } from "@tanstack/react-router";
 
 import { DesktopWindowControls } from "./components/DesktopWindowControls";
+import { LocalServerStatusBanner } from "./components/desktop/LocalServerStatusBanner";
 import { QuitHoldOverlay } from "./components/QuitHoldOverlay";
 import { WindowResizeGrips } from "./components/WindowResizeGrips";
 import { AppAtomRegistryProvider } from "./rpc/atomRegistry";
@@ -11,6 +12,7 @@ export function AppRoot({ router }: { readonly router: AppRouter }) {
     <AppAtomRegistryProvider>
       <WindowResizeGrips />
       <RouterProvider router={router} />
+      <LocalServerStatusBanner />
       <DesktopWindowControls />
       <QuitHoldOverlay />
     </AppAtomRegistryProvider>

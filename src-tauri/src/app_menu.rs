@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use tauri::menu::{Menu, MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State, Webview};
@@ -10,6 +11,99 @@ const DISPLAY_NAME: &str = "Houston Dev";
 const ZOOM_STEP: f64 = 1.095_445_389_066_381; // Chromium's 1.2^0.5 half zoom-level step.
 const ZOOM_MIN: f64 = 0.25;
 const ZOOM_MAX: f64 = 5.0;
+
+/// How long a hold/double-press quit waits for its confirming press.
+const QUIT_CONFIRM_WINDOW: Duration = Duration::from_millis(1500);
+pub const EVENT_QUIT_SHORTCUT: &str = "v2-quit-shortcut";
+
+/// The host-side copy of the renderer's `confirmQuit` setting.
+pub struct QuitConfirmationState {
+    mode: Mutex<String>,
+    pending: Mutex<Option<Instant>>,
+}
+
+impl Default for QuitConfirmationState {
+    fn default() -> Self {
+        Self {
+            mode: Mutex::new("hold".to_string()),
+            pending: Mutex::new(None),
+        }
+    }
+}
+
+impl QuitConfirmationState {
+    fn mode(&self) -> String {
+        self.mode
+            .lock()
+            .map(|mode| mode.clone())
+            .unwrap_or_else(|_| "hold".to_string())
+    }
+}
+
+fn valid_quit_mode(mode: &str) -> bool {
+    matches!(mode, "direct" | "hold" | "double-click")
+}
+
+fn second_press_confirms(pending: Option<Instant>, now: Instant) -> bool {
+    pending.is_some_and(|at| now.duration_since(at) < QUIT_CONFIRM_WINDOW)
+}
+
+#[tauri::command]
+pub fn v2_set_quit_confirmation(
+    state: State<'_, QuitConfirmationState>,
+    mode: String,
+) -> Result<(), String> {
+    if !valid_quit_mode(&mode) {
+        return Err(format!(
+            "quit confirmation mode must be \"direct\", \"hold\" or \"double-click\", got {mode:?}"
+        ));
+    }
+    if let Ok(mut current) = state.mode.lock() {
+        *current = mode;
+    }
+    Ok(())
+}
+
+/// Quit from the menu or Ctrl+Q, honouring the confirmation mode. The tray's
+/// explicit Quit item keeps quitting immediately: its window may be hidden.
+pub fn request_quit(app: &AppHandle) {
+    let state = app.state::<QuitConfirmationState>();
+    let mode = state.mode();
+    if mode == "direct" {
+        crate::tray::quit(app);
+        return;
+    }
+    let now = Instant::now();
+    let confirmed = {
+        let mut pending = match state.pending.lock() {
+            Ok(pending) => pending,
+            Err(_) => {
+                crate::tray::quit(app);
+                return;
+            }
+        };
+        let confirmed = second_press_confirms(*pending, now);
+        *pending = if confirmed { None } else { Some(now) };
+        confirmed
+    };
+    if confirmed {
+        crate::tray::quit(app);
+        return;
+    }
+    let _ = app.emit(
+        EVENT_QUIT_SHORTCUT,
+        serde_json::json!({ "state": "down", "mode": mode }),
+    );
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(QUIT_CONFIRM_WINDOW).await;
+        let state = app.state::<QuitConfirmationState>();
+        if let Ok(mut pending) = state.pending.lock() {
+            *pending = None;
+        }
+        let _ = app.emit(EVENT_QUIT_SHORTCUT, serde_json::json!({ "state": "up" }));
+    });
+}
 
 pub struct ZoomState(Mutex<f64>);
 
@@ -298,7 +392,7 @@ fn build_help_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu:
 pub fn handle_menu_event(app: &AppHandle, id: &str) -> bool {
     match id {
         "quit-app" => {
-            crate::tray::quit(app);
+            request_quit(app);
             true
         }
         "reload" => {
@@ -428,6 +522,22 @@ mod tests {
     fn zoom_steps_stay_within_the_renderer_limits() {
         assert_eq!(zoom_step(ZOOM_MIN, ZoomDirection::Out), ZOOM_MIN);
         assert_eq!(zoom_step(ZOOM_MAX, ZoomDirection::In), ZOOM_MAX);
+    }
+
+    #[test]
+    fn a_second_press_inside_the_window_confirms_and_a_late_one_starts_over() {
+        let now = Instant::now();
+        assert!(second_press_confirms(Some(now), now));
+        assert!(!second_press_confirms(Some(now), now + QUIT_CONFIRM_WINDOW));
+        assert!(!second_press_confirms(None, now));
+    }
+
+    #[test]
+    fn quit_modes_accept_only_the_three_setting_values() {
+        assert!(valid_quit_mode("direct"));
+        assert!(valid_quit_mode("hold"));
+        assert!(valid_quit_mode("double-click"));
+        assert!(!valid_quit_mode("hold-the-door"));
     }
 
     #[test]

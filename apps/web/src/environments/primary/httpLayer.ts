@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
-import { readDesktopPrimaryBearerToken } from "./desktopAuth";
+import { invalidateDesktopPrimaryBearerToken, readDesktopPrimaryBearerToken } from "./desktopAuth";
 import { resolvePrimaryEnvironmentHttpUrl } from "./target";
 
 function isSameOriginBrowserPrimary(): boolean {
@@ -41,9 +41,22 @@ export function layerForCurrentOrigin() {
         );
       }
 
+      // A rejected cached bearer would otherwise fail every request until relaunch.
+      const withUnauthorizedInvalidation = (client: HttpClient.HttpClient) =>
+        client.pipe(
+          HttpClient.transformResponse((effect) =>
+            Effect.tap(effect, (response) =>
+              response.status === 401
+                ? Effect.sync(() => invalidateDesktopPrimaryBearerToken())
+                : Effect.void,
+            ),
+          ),
+        );
       const layerBearerClient = Layer.effect(
         HttpClient.HttpClient,
-        Effect.map(HttpClient.HttpClient, withPrimaryBearerToken),
+        Effect.map(HttpClient.HttpClient, (client) =>
+          withUnauthorizedInvalidation(withPrimaryBearerToken(client)),
+        ),
       ).pipe(Layer.provide(layerBase));
 
       return Layer.merge(

@@ -6,13 +6,15 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::Sha256;
+use tauri::{AppHandle, Emitter, Manager};
 
 /// The server's base directory below the channel directory: dev is
 /// `~/.houston-dev/v2`, release would be `~/.houston/v2`.
@@ -51,6 +53,8 @@ pub struct ServerRuntime {
     pub host: Option<String>,
     #[serde(default, rename = "startedAt")]
     pub started_at: Option<String>,
+    #[serde(default, rename = "serverVersion")]
+    pub server_version: Option<String>,
 }
 
 /// Host-owned server preferences. They live beside the runtime record rather
@@ -342,18 +346,29 @@ pub fn advertised_endpoints(settings: &DesktopSettings, running: Option<&Running
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decision {
-    Attach { pid: u32, port: u16, origin: String },
+    Attach {
+        pid: u32,
+        port: u16,
+        origin: String,
+    },
+    /// A live server of another build must be replaced, not merely outlived.
+    RestartStale {
+        pid: i32,
+    },
     Spawn,
 }
 
-/// Attach only to a record whose process is alive and whose origin is a loopback
-/// HTTP URL; anything else is stale and gets replaced.
-pub fn decide(record: Option<&ServerRuntime>, alive: bool) -> Decision {
+/// Attach only to a live record of this build whose origin is a loopback HTTP URL;
+/// a live record from another build is restarted so an update reaches server-side code.
+pub fn decide(record: Option<&ServerRuntime>, alive: bool, current_version: &str) -> Decision {
     let Some(record) = record else {
         return Decision::Spawn;
     };
     if record.pid <= 0 || !alive {
         return Decision::Spawn;
+    }
+    if record.server_version.as_deref() != Some(current_version) {
+        return Decision::RestartStale { pid: record.pid };
     }
     if !record.origin.starts_with("http://") && !record.origin.starts_with("https://") {
         return Decision::Spawn;
@@ -363,6 +378,11 @@ pub fn decide(record: Option<&ServerRuntime>, alive: bool) -> Decision {
         port: record.port,
         origin: record.origin.clone(),
     }
+}
+
+/// The build identity this host runs; a detached server of another build is replaced.
+pub fn current_build_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
 }
 
 /// `<channel dir>/v2`: the server's own state (`userdata/`) lives below it.
@@ -767,6 +787,7 @@ struct HostState {
     running: Option<RunningServer>,
     bearer: Option<String>,
     last_error: Option<String>,
+    warning: Option<String>,
     settings: DesktopSettings,
 }
 
@@ -775,6 +796,9 @@ pub struct V2Host {
     node: PathBuf,
     entry: ServerEntry,
     state: Mutex<HostState>,
+    start_lock: tokio::sync::Mutex<()>,
+    starting: AtomicBool,
+    fallback_secret: Mutex<Option<String>>,
 }
 
 impl V2Host {
@@ -791,8 +815,12 @@ impl V2Host {
                 running: None,
                 bearer: None,
                 last_error: None,
+                warning: None,
                 settings,
             }),
+            start_lock: tokio::sync::Mutex::new(()),
+            starting: AtomicBool::new(false),
+            fallback_secret: Mutex::new(None),
         }
     }
 
@@ -850,11 +878,56 @@ impl V2Host {
         ensure_running(self).await
     }
 
-    fn record_error(&self, error: String) {
+    pub(crate) fn record_error(&self, error: String) {
         eprintln!("houston-tauri: v2 server: {error}");
         if let Ok(mut state) = self.state.lock() {
             state.last_error = Some(error);
         }
+    }
+
+    fn set_warning(&self, warning: Option<String>) {
+        if let Ok(mut state) = self.state.lock() {
+            if state.warning == warning {
+                return;
+            }
+            if let Some(warning) = &warning {
+                eprintln!("houston-tauri: v2 server: {warning}");
+            }
+            state.warning = warning;
+        }
+    }
+
+    /// The keychain secret is preferred; a session without a Secret Service provider
+    /// still gets a server, with a visible warning that the credential is temporary.
+    fn desktop_secret(&self) -> String {
+        match load_or_create_secret(&self.base_dir) {
+            Ok(secret) => {
+                self.set_warning(None);
+                secret
+            }
+            Err(error) => {
+                let secret = self
+                    .fallback_secret
+                    .lock()
+                    .expect("fallback secret mutex")
+                    .get_or_insert_with(new_secret)
+                    .clone();
+                self.set_warning(Some(format!(
+                    "The system keychain is unavailable ({error}); Houston generated a temporary desktop secret for this run. Agents stop authenticating after Houston restarts. Install and unlock a Secret Service provider such as gnome-keyring or KWallet."
+                )));
+                secret
+            }
+        }
+    }
+
+    pub fn invalidate_bearer(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.bearer = None;
+        }
+    }
+
+    pub fn is_starting(&self) -> bool {
+        self.starting.load(Ordering::SeqCst)
     }
 
     fn set_running(&self, running: RunningServer) {
@@ -872,11 +945,17 @@ impl V2Host {
     }
 
     pub fn status(&self) -> Value {
-        let (running, last_error) = self
+        let (running, last_error, warning) = self
             .state
             .lock()
-            .map(|state| (state.running.clone(), state.last_error.clone()))
-            .unwrap_or((None, None));
+            .map(|state| {
+                (
+                    state.running.clone(),
+                    state.last_error.clone(),
+                    state.warning.clone(),
+                )
+            })
+            .unwrap_or((None, None, None));
         match running {
             Some(running) => json!({
                 "state": "ready",
@@ -886,12 +965,14 @@ impl V2Host {
                 "attached": running.attached,
                 "baseDir": self.base_dir,
                 "logPath": log_path(&self.base_dir),
+                "warning": warning,
             }),
             None => json!({
                 "state": if last_error.is_some() { "error" } else { "starting" },
                 "error": last_error,
                 "baseDir": self.base_dir,
                 "logPath": log_path(&self.base_dir),
+                "warning": warning,
             }),
         }
     }
@@ -901,7 +982,7 @@ impl V2Host {
         let running = self
             .running()
             .ok_or_else(|| "the v2 server is not running yet".to_string())?;
-        let secret = load_or_create_secret(&self.base_dir)?;
+        let secret = self.desktop_secret();
         Ok(bootstrap_payload(&running.origin, &secret))
     }
 
@@ -925,7 +1006,7 @@ impl V2Host {
         let running = self
             .running()
             .ok_or_else(|| "the v2 server is not running yet".to_string())?;
-        let secret = load_or_create_secret(&self.base_dir)?;
+        let secret = self.desktop_secret();
         let credential = current_desktop_bootstrap_token(&secret, now_ms());
         let body = format!(
             "grant_type={}&subject_token={}&subject_token_type={}&requested_token_type={}\
@@ -1054,6 +1135,22 @@ async fn stop_server(pid: i32) -> Result<(), String> {
 /// Discover and attach, or spawn and wait. On either path the host ends up with
 /// the loopback origin and pid the renderer talks to.
 pub async fn ensure_running(host: &V2Host) -> Result<RunningServer, String> {
+    let _start = host.start_lock.lock().await;
+    ensure_running_locked(host).await
+}
+
+/// The first attempt also lets the window paint before a slow start, and the
+/// monitor retries through this entry point so two starts never overlap.
+pub async fn start_server(host: &V2Host) -> Result<RunningServer, String> {
+    if host.starting.swap(true, Ordering::SeqCst) {
+        return Err("a v2 server start is already in progress".to_string());
+    }
+    let result = ensure_running(host).await;
+    host.starting.store(false, Ordering::SeqCst);
+    result
+}
+
+async fn ensure_running_locked(host: &V2Host) -> Result<RunningServer, String> {
     fs::create_dir_all(host.base_dir.join(RUNTIME_DIR)).map_err(|e| {
         format!(
             "creating the v2 state directory {}: {e}",
@@ -1062,26 +1159,40 @@ pub async fn ensure_running(host: &V2Host) -> Result<RunningServer, String> {
     })?;
 
     if let Some(record) = read_runtime(&host.base_dir) {
-        if let Decision::Attach { pid, port, origin } =
-            decide(Some(&record), process_alive(record.pid))
-        {
-            if health_ok(&origin).await {
-                let running = RunningServer {
-                    origin,
-                    port,
-                    pid: pid as i32,
-                    attached: true,
-                };
-                host.set_running(running.clone());
-                eprintln!(
-                    "houston-tauri: attached to the running v2 server (pid {pid}) on port {port}"
-                );
-                return Ok(running);
+        match decide(
+            Some(&record),
+            process_alive(record.pid),
+            current_build_version(),
+        ) {
+            Decision::Attach { pid, port, origin } => {
+                if health_ok(&origin).await {
+                    let running = RunningServer {
+                        origin,
+                        port,
+                        pid: pid as i32,
+                        attached: true,
+                    };
+                    host.set_running(running.clone());
+                    eprintln!(
+                        "houston-tauri: attached to the running v2 server (pid {pid}) on port {port}"
+                    );
+                    return Ok(running);
+                }
             }
+            Decision::RestartStale { pid } => {
+                eprintln!(
+                    "houston-tauri: the detached v2 server (pid {pid}) runs build {:?}, this host runs {}; stopping it so the update reaches server-side code",
+                    record.server_version.as_deref().unwrap_or("<unknown>"),
+                    current_build_version()
+                );
+                stop_server(pid).await?;
+                let _ = fs::remove_file(runtime_path(&host.base_dir));
+            }
+            Decision::Spawn => {}
         }
     }
 
-    let secret = load_or_create_secret(&host.base_dir)?;
+    let secret = host.desktop_secret();
     let settings = host.settings();
     let bind_host = if settings.exposure_mode == "network-accessible" {
         "0.0.0.0"
@@ -1103,24 +1214,71 @@ pub async fn ensure_running(host: &V2Host) -> Result<RunningServer, String> {
     Ok(running)
 }
 
-/// Restart on crash while the window is open. A user-closed app leaves the
-/// server alone: this loop ends with the process.
-pub async fn monitor(host: std::sync::Arc<V2Host>) {
+/// Restart on crash while the window is open, and retry a failed first start with
+/// backoff. A user-closed app leaves the server alone: this loop ends with the process.
+pub async fn monitor(host: std::sync::Arc<V2Host>, app: tauri::AppHandle) {
+    const HEALTHY_POLL: Duration = Duration::from_secs(5);
+    const RETRY_BASE: Duration = Duration::from_secs(2);
+    const RETRY_MAX: Duration = Duration::from_secs(60);
+    let mut retry = RETRY_BASE;
     loop {
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        let Some(running) = host.running() else {
-            continue;
-        };
-        if process_alive(running.pid) && health_ok(&running.origin).await {
+        if host.is_starting() {
+            tokio::time::sleep(Duration::from_secs(1)).await;
             continue;
         }
-        eprintln!(
-            "houston-tauri: v2 server (pid {}) is no longer healthy; restarting it",
-            running.pid
+        let running = host.running();
+        match &running {
+            Some(running) if process_alive(running.pid) && health_ok(&running.origin).await => {
+                retry = RETRY_BASE;
+                tokio::time::sleep(HEALTHY_POLL).await;
+                continue;
+            }
+            Some(running) => eprintln!(
+                "houston-tauri: v2 server (pid {}) is no longer healthy; restarting it",
+                running.pid
+            ),
+            None => {}
+        }
+        match start_server(&host).await {
+            Ok(running) => {
+                retry = RETRY_BASE;
+                publish_snapshot(&app, &host);
+                eprintln!(
+                    "houston-tauri: v2 server ready at {} (pid {})",
+                    running.origin, running.pid
+                );
+                tokio::time::sleep(HEALTHY_POLL).await;
+            }
+            Err(error) => {
+                host.record_error(error);
+                publish_snapshot(&app, &host);
+                tokio::time::sleep(retry).await;
+                retry = (retry * 2).min(RETRY_MAX);
+            }
+        }
+    }
+}
+
+/// Emitted when the local server's state changes, for the renderer's startup banner.
+pub const EVENT_STATUS: &str = "v2-server-status";
+
+/// Refreshes the bridge's bootstrap and status globals and tells the renderer.
+/// The renderer's environment poll reads the globals synchronously every few seconds.
+pub fn publish_snapshot(app: &AppHandle, host: &V2Host) {
+    let bootstrap = host
+        .bootstrap_list()
+        .unwrap_or_else(|_| serde_json::json!([]));
+    let status = host.status();
+    if let Some(webview) = app.get_webview("main") {
+        let script = format!(
+            "window.__HOUSTON_V2_BOOTSTRAP__ = {bootstrap};\nwindow.__HOUSTON_V2_STATUS__ = {status};"
         );
-        if let Err(error) = ensure_running(&host).await {
-            host.record_error(error);
+        if let Err(error) = webview.eval(&script) {
+            eprintln!("houston-tauri: could not refresh the renderer bootstrap: {error}");
         }
+    }
+    if let Err(error) = app.emit(EVENT_STATUS, &status) {
+        eprintln!("houston-tauri: could not emit {EVENT_STATUS}: {error}");
     }
 }
 
@@ -1141,6 +1299,37 @@ pub async fn v2_local_environment_bearer_token(
 #[tauri::command]
 pub fn v2_server_status(host: tauri::State<'_, std::sync::Arc<V2Host>>) -> Value {
     host.status()
+}
+
+#[tauri::command]
+pub fn v2_local_environment_invalidate_bearer(host: tauri::State<'_, std::sync::Arc<V2Host>>) {
+    host.invalidate_bearer();
+}
+
+#[tauri::command]
+pub async fn v2_server_restart(
+    host: tauri::State<'_, std::sync::Arc<V2Host>>,
+    app: AppHandle,
+) -> Result<Value, String> {
+    let host = Arc::clone(host.inner());
+    let result = start_server_restarting(&host).await;
+    publish_snapshot(&app, &host);
+    result?;
+    Ok(host.status())
+}
+
+/// A manual restart stops the tracked server and starts a fresh one, serialized
+/// with the monitor's own starts.
+async fn start_server_restarting(host: &V2Host) -> Result<RunningServer, String> {
+    if let Some(running) = host.running() {
+        stop_server(running.pid).await?;
+    }
+    let _ = fs::remove_file(runtime_path(&host.base_dir));
+    if let Ok(mut state) = host.state.lock() {
+        state.running = None;
+        state.bearer = None;
+    }
+    start_server(host).await
 }
 
 #[tauri::command]
@@ -1206,18 +1395,26 @@ mod tests {
             origin: origin.to_string(),
             host: Some("127.0.0.1".to_string()),
             started_at: None,
+            server_version: Some(current_build_version().to_string()),
         }
     }
 
     #[test]
     fn a_missing_record_spawns() {
-        assert_eq!(decide(None, false), Decision::Spawn);
+        assert_eq!(
+            decide(None, false, current_build_version()),
+            Decision::Spawn
+        );
     }
 
     #[test]
     fn a_live_loopback_record_attaches() {
         assert_eq!(
-            decide(Some(&record(42, "http://127.0.0.1:3773")), true),
+            decide(
+                Some(&record(42, "http://127.0.0.1:3773")),
+                true,
+                current_build_version()
+            ),
             Decision::Attach {
                 pid: 42,
                 port: 3773,
@@ -1227,9 +1424,33 @@ mod tests {
     }
 
     #[test]
+    fn a_live_server_of_another_build_is_restarted() {
+        let mut stale = record(42, "http://127.0.0.1:3773");
+        stale.server_version = Some("0.0.1".to_string());
+        assert_eq!(
+            decide(Some(&stale), true, current_build_version()),
+            Decision::RestartStale { pid: 42 }
+        );
+    }
+
+    #[test]
+    fn a_live_record_without_a_build_identity_is_restarted() {
+        let mut unversioned = record(42, "http://127.0.0.1:3773");
+        unversioned.server_version = None;
+        assert_eq!(
+            decide(Some(&unversioned), true, current_build_version()),
+            Decision::RestartStale { pid: 42 }
+        );
+    }
+
+    #[test]
     fn a_dead_pid_spawns() {
         assert_eq!(
-            decide(Some(&record(42, "http://127.0.0.1:3773")), false),
+            decide(
+                Some(&record(42, "http://127.0.0.1:3773")),
+                false,
+                current_build_version()
+            ),
             Decision::Spawn
         );
     }
@@ -1237,11 +1458,19 @@ mod tests {
     #[test]
     fn a_non_positive_pid_spawns() {
         assert_eq!(
-            decide(Some(&record(0, "http://127.0.0.1:3773")), true),
+            decide(
+                Some(&record(0, "http://127.0.0.1:3773")),
+                true,
+                current_build_version()
+            ),
             Decision::Spawn
         );
         assert_eq!(
-            decide(Some(&record(-1, "http://127.0.0.1:3773")), true),
+            decide(
+                Some(&record(-1, "http://127.0.0.1:3773")),
+                true,
+                current_build_version()
+            ),
             Decision::Spawn
         );
     }
@@ -1249,10 +1478,17 @@ mod tests {
     #[test]
     fn a_non_http_origin_spawns() {
         assert_eq!(
-            decide(Some(&record(42, "file:///tmp/x")), true),
+            decide(
+                Some(&record(42, "file:///tmp/x")),
+                true,
+                current_build_version()
+            ),
             Decision::Spawn
         );
-        assert_eq!(decide(Some(&record(42, "")), true), Decision::Spawn);
+        assert_eq!(
+            decide(Some(&record(42, "")), true, current_build_version()),
+            Decision::Spawn
+        );
     }
 
     fn touch(path: &Path) {

@@ -16,6 +16,15 @@ export function readDesktopPrimaryBearerToken(): Promise<string | null> {
   return desktopBearerTokenPromise;
 }
 
+/**
+ * The server rejected the cached bearer (expired, or a new bootstrap exchange
+ * revoked it). Drop both caches so the next request exchanges a fresh token.
+ */
+export function invalidateDesktopPrimaryBearerToken(): void {
+  desktopBearerTokenPromise = null;
+  void window.hostBridge?.invalidateLocalEnvironmentBearerToken?.().catch(() => undefined);
+}
+
 export function __resetDesktopPrimaryAuthForTests(): void {
   desktopBearerTokenPromise = null;
 }

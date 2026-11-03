@@ -21,6 +21,12 @@ const MANIFEST_URL: &str =
 const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 const NETWORK_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
+// Upstream's cadence: let the window settle before the first check, then poll
+// often enough that a daily-use install learns of a release the same day.
+// Checking is passive; installing still needs the user's click.
+pub const AUTO_UPDATE_STARTUP_DELAY: Duration = Duration::from_secs(15);
+pub const AUTO_UPDATE_POLL_INTERVAL: Duration = Duration::from_secs(4 * 60);
+
 fn bounded_updater(
     builder: tauri_plugin_updater::UpdaterBuilder,
     check_timeout: Duration,
@@ -486,6 +492,26 @@ pub async fn v2_update_check(
     Ok(json!({ "checked": checked, "state": snapshot }))
 }
 
+/// Runs the automatic check schedule in the background. A check already in
+/// flight, a download, or a downloaded update is left alone.
+pub fn start_auto_update_checks(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(AUTO_UPDATE_STARTUP_DELAY).await;
+        loop {
+            let state = app.state::<Arc<V2UpdateHandle>>();
+            let snapshot = state.snapshot();
+            if snapshot.enabled
+                && snapshot.status != "checking"
+                && snapshot.status != "downloading"
+                && snapshot.status != "downloaded"
+            {
+                let _ = perform_update_check(&app, state.inner().as_ref()).await;
+            }
+            tokio::time::sleep(AUTO_UPDATE_POLL_INTERVAL).await;
+        }
+    });
+}
+
 /// Menu-initiated check: updates the same state and reports the outcome to the
 /// caller, which shows the native dialog upstream shows from its menu.
 pub async fn check_for_updates_from_menu(app: &AppHandle) -> Result<Option<String>, String> {
@@ -816,6 +842,14 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn automatic_checks_start_after_the_window_settles_and_repeat_frequently() {
+        assert!(AUTO_UPDATE_STARTUP_DELAY >= Duration::from_secs(10));
+        assert!(AUTO_UPDATE_STARTUP_DELAY <= Duration::from_secs(30));
+        assert!(AUTO_UPDATE_POLL_INTERVAL >= Duration::from_secs(60));
+        assert!(AUTO_UPDATE_POLL_INTERVAL <= Duration::from_secs(60 * 60));
     }
 
     #[test]

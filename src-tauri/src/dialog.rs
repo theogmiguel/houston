@@ -108,10 +108,14 @@ fn to_pick_results(
 pub async fn dialog_pick_directory<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AllowedRoots>,
+    initial_path: Option<String>,
 ) -> Result<Option<String>, String> {
     let picked = await_pick(|cb| {
-        app.dialog()
-            .file()
+        let mut builder = app.dialog().file();
+        if let Some(dir) = initial_path.as_deref().filter(|dir| !dir.trim().is_empty()) {
+            builder = builder.set_directory(dir);
+        }
+        builder
             .pick_folder(move |file_path| cb(to_pick_result("dialog_pick_directory", file_path)));
     })
     .await?;

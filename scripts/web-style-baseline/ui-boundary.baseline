@@ -341,7 +341,7 @@
 10 apps/web/src/components/settings/LinkAccessPicker.tsx
 19 apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx
 4 apps/web/src/components/settings/LinkMachineSelect.tsx
-13 apps/web/src/components/settings/LocalEnvironmentSetting.tsx
+3 apps/web/src/components/settings/LocalEnvironmentSetting.tsx
 2 apps/web/src/components/settings/MobileAppSettingsRow.tsx
 2 apps/web/src/components/settings/MultipleAccountsNote.tsx
 34 apps/web/src/components/settings/OpenSourceLicenses.tsx

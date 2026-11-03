@@ -247,24 +247,30 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
     let id = event.id().as_ref();
     match id {
         MENU_ID_OPEN => show_main_window(app),
-        MENU_ID_QUIT => quit(app),
+        MENU_ID_QUIT => {
+            // The menu may be open while the window is hidden, so show it before
+            // the confirmation overlay can appear.
+            show_main_window(app);
+            crate::app_menu::request_quit(app);
+        }
         MENU_ID_HEADER | MENU_ID_AGENTS => {}
         _ if id.starts_with(MENU_ID_OVERFLOW) || id.starts_with(MENU_ID_GROUP_PREFIX) => {}
         _ => {
             let Some(rest) = id.strip_prefix(MENU_ID_SESSION_PREFIX) else {
                 return;
             };
-            let Ok(session) = rest.parse::<i64>() else {
+            let thread = rest.to_string();
+            if thread.is_empty() {
                 eprintln!(
                     "houston-tauri: tray menu id {id:?} is not \
-                     '{MENU_ID_SESSION_PREFIX}<session id>'; ignoring the click"
+                     '{MENU_ID_SESSION_PREFIX}<thread key>'; ignoring the click"
                 );
                 return;
-            };
+            }
             show_main_window(app);
-            if let Err(err) = app.emit(EVENT_FOCUS_PANE, session) {
+            if let Err(err) = app.emit(EVENT_FOCUS_PANE, thread.clone()) {
                 eprintln!(
-                    "houston-tauri: could not tell the renderer to focus pane {session}: {err}"
+                    "houston-tauri: could not tell the renderer to focus thread {thread}: {err}"
                 );
             }
         }

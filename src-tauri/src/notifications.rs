@@ -20,13 +20,13 @@ mod targets {
     const NOTIFICATION_TARGET_TTL: Duration = Duration::from_secs(60 * 60);
     const NOTIFICATION_TARGET_CAP: usize = 256;
 
-    static NOTIFICATION_TARGETS: OnceLock<Mutex<HashMap<u32, (i64, Instant)>>> = OnceLock::new();
+    static NOTIFICATION_TARGETS: OnceLock<Mutex<HashMap<u32, (String, Instant)>>> = OnceLock::new();
 
-    fn targets() -> &'static Mutex<HashMap<u32, (i64, Instant)>> {
+    fn targets() -> &'static Mutex<HashMap<u32, (String, Instant)>> {
         NOTIFICATION_TARGETS.get_or_init(|| Mutex::new(HashMap::new()))
     }
 
-    pub(super) fn remember_target(notification: u32, session: i64) {
+    pub(super) fn remember_target(notification: u32, thread: String) {
         let now = Instant::now();
         let mut targets = targets().lock().expect("notification targets mutex");
         targets.retain(|_, (_, at)| now.duration_since(*at) < NOTIFICATION_TARGET_TTL);
@@ -39,56 +39,56 @@ mod targets {
                 targets.remove(&oldest);
             }
         }
-        targets.insert(notification, (session, now));
+        targets.insert(notification, (thread, now));
     }
 
-    pub(super) fn take_target(notification: u32) -> Option<i64> {
+    pub(super) fn take_target(notification: u32) -> Option<String> {
         targets()
             .lock()
             .expect("notification targets mutex")
             .remove(&notification)
-            .and_then(|(session, at)| (at.elapsed() < NOTIFICATION_TARGET_TTL).then_some(session))
+            .and_then(|(thread, at)| (at.elapsed() < NOTIFICATION_TARGET_TTL).then_some(thread))
     }
 
     // A pane's newest Linux notification, passed as `replaces_id` so its next one replaces it.
     #[cfg(any(target_os = "linux", test))]
-    static LATEST_NOTIFICATIONS: OnceLock<Mutex<HashMap<i64, (u32, Instant)>>> = OnceLock::new();
+    static LATEST_NOTIFICATIONS: OnceLock<Mutex<HashMap<String, (u32, Instant)>>> = OnceLock::new();
 
     #[cfg(any(target_os = "linux", test))]
-    fn latest() -> &'static Mutex<HashMap<i64, (u32, Instant)>> {
+    fn latest() -> &'static Mutex<HashMap<String, (u32, Instant)>> {
         LATEST_NOTIFICATIONS.get_or_init(|| Mutex::new(HashMap::new()))
     }
 
     /// The id the session's next notification replaces, or 0 for a new one.
     #[cfg(any(target_os = "linux", test))]
-    pub(super) fn replaceable(session: i64) -> u32 {
+    pub(super) fn replaceable(thread: &str) -> u32 {
         latest()
             .lock()
             .expect("latest notifications mutex")
-            .get(&session)
+            .get(thread)
             .filter(|(_, at)| at.elapsed() < NOTIFICATION_TARGET_TTL)
             .map_or(0, |(notification, _)| *notification)
     }
 
     #[cfg(any(target_os = "linux", test))]
-    pub(super) fn remember_replacement(replaced: u32, notification: u32, session: i64) {
+    pub(super) fn remember_replacement(replaced: u32, notification: u32, thread: String) {
         if replaced != 0 && replaced != notification {
             take_target(replaced);
         }
-        remember_target(notification, session);
+        remember_target(notification, thread.clone());
         let now = Instant::now();
         let mut latest = latest().lock().expect("latest notifications mutex");
         latest.retain(|_, (_, at)| now.duration_since(*at) < NOTIFICATION_TARGET_TTL);
-        if latest.len() >= NOTIFICATION_TARGET_CAP && !latest.contains_key(&session) {
+        if latest.len() >= NOTIFICATION_TARGET_CAP && !latest.contains_key(&thread) {
             if let Some(oldest) = latest
                 .iter()
                 .min_by_key(|(_, (_, at))| *at)
-                .map(|(session, _)| *session)
+                .map(|(thread, _)| thread.clone())
             {
                 latest.remove(&oldest);
             }
         }
-        latest.insert(session, (notification, now));
+        latest.insert(thread, (notification, now));
     }
 
     /// The server closed this notification and may recycle its id for another app's notice.
@@ -107,6 +107,17 @@ const NOTIFICATION_TITLE_MAX_CHARS: usize = 200;
 #[cfg(any(target_os = "linux", target_os = "windows", test))]
 const NOTIFICATION_BODY_MAX_CHARS: usize = 2000;
 
+/// A stable 64-bit id for a thread key, used where the OS caps the tag length.
+#[cfg(any(target_os = "windows", test))]
+fn stable_id(value: &str) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in value.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x1000_0000_01b3);
+    }
+    hash
+}
+
 #[cfg(any(target_os = "linux", target_os = "windows", test))]
 fn notification_text(title: &str, body: &str) -> (String, String) {
     let title = title.chars().take(NOTIFICATION_TITLE_MAX_CHARS).collect();
@@ -122,9 +133,9 @@ fn notification_text(title: &str, body: &str) -> (String, String) {
 
 // Shows the window as the tray does, so a window hidden by Keep in tray appears too.
 #[cfg(any(target_os = "linux", target_os = "windows"))]
-fn focus_pane(app: &AppHandle, session: i64) {
+fn focus_pane(app: &AppHandle, thread: String) {
     crate::tray::show_main_window(app);
-    if let Err(error) = app.emit(EVENT_FOCUS_PANE, session) {
+    if let Err(error) = app.emit(EVENT_FOCUS_PANE, thread) {
         eprintln!("houston-tauri: could not emit notification pane action: {error}");
     }
 }
@@ -132,8 +143,8 @@ fn focus_pane(app: &AppHandle, session: i64) {
 // ActionInvoked also reports other applications' notifications; unknown ids are ignored.
 #[cfg(target_os = "linux")]
 fn focus_notification_target(app: &AppHandle, notification: u32) {
-    if let Some(session) = take_target(notification) {
-        focus_pane(app, session);
+    if let Some(thread) = take_target(notification) {
+        focus_pane(app, thread);
     }
 }
 
@@ -142,7 +153,7 @@ pub async fn native_notify(
     _app: AppHandle,
     title: String,
     body: String,
-    session_id: i64,
+    thread_id: String,
 ) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
@@ -160,7 +171,7 @@ pub async fn native_notify(
         .map_err(|e| format!("Linux notification service: {e}"))?;
         let hints: std::collections::HashMap<&str, zbus::zvariant::Value<'_>> =
             std::collections::HashMap::new();
-        let replaced = targets::replaceable(session_id);
+        let replaced = targets::replaceable(&thread_id);
         let notification: u32 = proxy
             .call(
                 "Notify",
@@ -177,16 +188,16 @@ pub async fn native_notify(
             )
             .await
             .map_err(|e| format!("Linux notification delivery: {e}"))?;
-        targets::remember_replacement(replaced, notification, session_id);
+        targets::remember_replacement(replaced, notification, thread_id);
         Ok(())
     }
     #[cfg(windows)]
     {
-        windows_toasts::show(&_app, &title, &body, session_id)
+        windows_toasts::show(&_app, &title, &body, &thread_id)
     }
     #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     {
-        let _ = (_app, title, body, session_id);
+        let _ = (_app, title, body, thread_id);
         Err(format!(
             "native notifications unsupported on {}; supported platforms: Linux, Windows",
             std::env::consts::OS
@@ -283,7 +294,7 @@ mod windows_toasts {
         FOLDERID_CommonPrograms, FOLDERID_Programs, SHGetKnownFolderPath,
     };
 
-    use super::{focus_pane, notification_text};
+    use super::{focus_pane, notification_text, stable_id};
 
     // Windows caps tag and group at 64 characters and drops longer ones.
     pub(super) const TOAST_TAG_MAX_CHARS: usize = 64;
@@ -294,38 +305,39 @@ mod windows_toasts {
 
     // Activated is raised on this toast object, so hold it until it is clicked, closed or
     // replaced; a toast that timed out into Action Center can still be clicked.
-    static LIVE_TOASTS: OnceLock<Mutex<HashMap<i64, (u32, ToastNotification)>>> = OnceLock::new();
+    static LIVE_TOASTS: OnceLock<Mutex<HashMap<String, (u32, ToastNotification)>>> =
+        OnceLock::new();
 
-    fn live_toasts() -> &'static Mutex<HashMap<i64, (u32, ToastNotification)>> {
+    fn live_toasts() -> &'static Mutex<HashMap<String, (u32, ToastNotification)>> {
         LIVE_TOASTS.get_or_init(|| Mutex::new(HashMap::new()))
     }
 
-    fn keep_toast(session_id: i64, notification_id: u32, toast: ToastNotification) {
+    fn keep_toast(thread_id: &str, notification_id: u32, toast: ToastNotification) {
         let mut toasts = live_toasts().lock().expect("live toasts mutex");
-        if toasts.len() >= LIVE_TOAST_CAP && !toasts.contains_key(&session_id) {
+        if toasts.len() >= LIVE_TOAST_CAP && !toasts.contains_key(thread_id) {
             if let Some(oldest) = toasts
                 .iter()
                 .min_by_key(|(_, (id, _))| *id)
-                .map(|(session, _)| *session)
+                .map(|(thread, _)| thread.clone())
             {
                 toasts.remove(&oldest);
             }
         }
-        toasts.insert(session_id, (notification_id, toast));
+        toasts.insert(thread_id.to_string(), (notification_id, toast));
     }
 
-    fn release_toast(session_id: i64, notification_id: u32) {
+    fn release_toast(thread_id: &str, notification_id: u32) {
         let mut toasts = live_toasts().lock().expect("live toasts mutex");
         if toasts
-            .get(&session_id)
+            .get(thread_id)
             .is_some_and(|(held, _)| *held == notification_id)
         {
-            toasts.remove(&session_id);
+            toasts.remove(thread_id);
         }
     }
 
-    pub(super) fn toast_tag(session_id: i64) -> String {
-        format!("pane-{session_id}")
+    pub(super) fn toast_tag(thread_id: &str) -> String {
+        format!("pane-{:016x}", stable_id(thread_id))
             .chars()
             .take(TOAST_TAG_MAX_CHARS)
             .collect()
@@ -452,7 +464,7 @@ mod windows_toasts {
         app: &AppHandle,
         title: &str,
         body: &str,
-        session_id: i64,
+        thread_id: &str,
     ) -> Result<(), String> {
         let notifier = enabled_notifier(app)?;
         let xml = XmlDocument::new().map_err(|e| format!("Windows toast XML document: {e}"))?;
@@ -461,17 +473,20 @@ mod windows_toasts {
         let toast = ToastNotification::CreateToastNotification(&xml)
             .map_err(|e| format!("Windows toast creation: {e}"))?;
         toast
-            .SetTag(&HSTRING::from(toast_tag(session_id)))
+            .SetTag(&HSTRING::from(toast_tag(thread_id)))
             .map_err(|e| format!("Windows toast tag: {e}"))?;
         toast
             .SetGroup(&HSTRING::from(TOAST_GROUP))
             .map_err(|e| format!("Windows toast group: {e}"))?;
         let notification_id = next_notification_id();
         let activation_app = app.clone();
+        let activation_thread = thread_id.to_string();
+        let dismissed_thread = thread_id.to_string();
+        let failed_thread = thread_id.to_string();
         toast
             .Activated(&TypedEventHandler::new(move |_, _| {
-                release_toast(session_id, notification_id);
-                focus_pane(&activation_app, session_id);
+                release_toast(&activation_thread, notification_id);
+                focus_pane(&activation_app, activation_thread.clone());
                 Ok(())
             }))
             .map_err(|e| format!("Windows toast activation handler: {e}"))?;
@@ -480,7 +495,7 @@ mod windows_toasts {
                 move |_, args: Ref<'_, ToastDismissedEventArgs>| {
                     let reason = args.as_ref().and_then(|dismissal| dismissal.Reason().ok());
                     if reason != Some(ToastDismissalReason::TimedOut) {
-                        release_toast(session_id, notification_id);
+                        release_toast(&dismissed_thread, notification_id);
                     }
                     Ok(())
                 },
@@ -489,7 +504,7 @@ mod windows_toasts {
         toast
             .Failed(&TypedEventHandler::new(
                 move |_, args: Ref<'_, ToastFailedEventArgs>| {
-                    release_toast(session_id, notification_id);
+                    release_toast(&failed_thread, notification_id);
                     let code = args
                         .as_ref()
                         .and_then(|failure| failure.ErrorCode().ok())
@@ -501,9 +516,9 @@ mod windows_toasts {
                 },
             ))
             .map_err(|e| format!("Windows toast failure handler: {e}"))?;
-        keep_toast(session_id, notification_id, toast.clone());
+        keep_toast(thread_id, notification_id, toast.clone());
         if let Err(error) = notifier.Show(&toast) {
-            release_toast(session_id, notification_id);
+            release_toast(thread_id, notification_id);
             return Err(format!("Windows toast delivery: {error}"));
         }
         Ok(())
@@ -574,6 +589,10 @@ pub fn start_action_listener(app: AppHandle) {
 mod tests {
     use super::*;
 
+    fn key(n: u32) -> String {
+        format!("primary:thread-{n}")
+    }
+
     #[test]
     fn notification_markup_is_escaped() {
         let (_, body) = notification_text("title", "<&>你好");
@@ -589,44 +608,44 @@ mod tests {
     }
 
     #[test]
-    fn a_panes_next_notification_replaces_its_previous_one() {
+    fn a_threads_next_notification_replaces_its_previous_one() {
         assert_eq!(
-            targets::replaceable(9001),
+            targets::replaceable(&key(9001)),
             0,
-            "a pane's first notice is new"
+            "a thread's first notice is new"
         );
-        targets::remember_replacement(0, 500, 9001);
-        assert_eq!(targets::replaceable(9001), 500);
+        targets::remember_replacement(0, 500, key(9001));
+        assert_eq!(targets::replaceable(&key(9001)), 500);
         assert_eq!(
-            targets::replaceable(9002),
+            targets::replaceable(&key(9002)),
             0,
-            "another pane's notice is separate"
+            "another thread's notice is separate"
         );
 
-        targets::remember_replacement(500, 501, 9001);
-        assert_eq!(targets::replaceable(9001), 501);
+        targets::remember_replacement(500, 501, key(9001));
+        assert_eq!(targets::replaceable(&key(9001)), 501);
         assert_eq!(
             targets::take_target(500),
             None,
-            "the replaced id no longer opens the pane"
+            "the replaced id no longer opens the thread"
         );
-        assert_eq!(targets::take_target(501), Some(9001));
+        assert_eq!(targets::take_target(501), Some(key(9001)));
     }
 
     #[test]
     fn a_server_that_reuses_the_replaced_id_keeps_the_click_target() {
-        targets::remember_replacement(0, 600, 9101);
-        targets::remember_replacement(600, 600, 9101);
-        assert_eq!(targets::replaceable(9101), 600);
-        assert_eq!(targets::take_target(600), Some(9101));
+        targets::remember_replacement(0, 600, key(9101));
+        targets::remember_replacement(600, 600, key(9101));
+        assert_eq!(targets::replaceable(&key(9101)), 600);
+        assert_eq!(targets::take_target(600), Some(key(9101)));
     }
 
     #[test]
     fn a_closed_notification_is_never_replaced_or_clicked() {
-        targets::remember_replacement(0, 700, 9201);
+        targets::remember_replacement(0, 700, key(9201));
         targets::forget(700);
         assert_eq!(
-            targets::replaceable(9201),
+            targets::replaceable(&key(9201)),
             0,
             "a recycled id must not be replaced"
         );
@@ -634,18 +653,23 @@ mod tests {
     }
 
     #[test]
-    fn closing_an_older_id_keeps_the_panes_newest_notification() {
-        targets::remember_replacement(0, 800, 9301);
-        targets::remember_replacement(800, 801, 9301);
+    fn closing_an_older_id_keeps_the_threads_newest_notification() {
+        targets::remember_replacement(0, 800, key(9301));
+        targets::remember_replacement(800, 801, key(9301));
         targets::forget(800);
-        assert_eq!(targets::replaceable(9301), 801);
+        assert_eq!(targets::replaceable(&key(9301)), 801);
     }
 
     #[test]
     fn action_target_is_consumed_once() {
-        targets::remember_target(42, 7);
-        assert_eq!(targets::take_target(42), Some(7));
+        targets::remember_target(42, key(7));
+        assert_eq!(targets::take_target(42), Some(key(7)));
         assert_eq!(targets::take_target(42), None);
+    }
+
+    #[test]
+    fn a_thread_key_stays_distinct_across_environments() {
+        assert_ne!(stable_id("env-a:thread-1"), stable_id("env-b:thread-1"));
     }
 
     #[cfg(windows)]
@@ -688,12 +712,28 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn toast_tag_names_the_session_within_the_windows_cap() {
-        for session in [7i64, -7, i64::MAX, i64::MIN] {
-            let tag = windows_toasts::toast_tag(session);
-            assert!(tag.chars().count() <= windows_toasts::TOAST_TAG_MAX_CHARS);
-            assert!(tag.contains(&session.to_string()));
+    fn toast_tag_names_the_thread_within_the_windows_cap() {
+        let threads = [
+            "primary:7".to_string(),
+            "primary:-7".to_string(),
+            format!("env:{}", "x".repeat(80)),
+        ];
+        for thread in &threads {
+            let tag = windows_toasts::toast_tag(thread);
+            assert!(
+                tag.chars().count() <= windows_toasts::TOAST_TAG_MAX_CHARS,
+                "{tag:?} for {thread:?}"
+            );
+            assert_eq!(
+                tag,
+                windows_toasts::toast_tag(thread),
+                "the same thread keeps one replaceable tag"
+            );
         }
+        assert_ne!(
+            windows_toasts::toast_tag("env-a:1"),
+            windows_toasts::toast_tag("env-b:1")
+        );
     }
 
     #[cfg(windows)]

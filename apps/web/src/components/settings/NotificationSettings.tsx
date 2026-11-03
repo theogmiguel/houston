@@ -20,10 +20,26 @@ export function NotificationSettings() {
   const updateSettings = useUpdateScopedSettings();
   const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
   const [requesting, setRequesting] = useState(false);
+  const desktopNotifier = window.hostBridge?.notifyThread;
 
   const applyMode = async (value: NotificationMode) => {
     setPermissionMessage(null);
     if (hasNotificationSound(value)) unlockNotificationAudio();
+    if (hasDesktopNotifications(value) && desktopNotifier) {
+      const support = await window.hostBridge
+        ?.notificationsSupported()
+        .catch(() => ({ supported: false, reason: null }));
+      if (!support?.supported) {
+        setPermissionMessage(
+          support?.reason
+            ? `This computer cannot show notifications: ${support.reason} Sound only is still available.`
+            : "This computer has no running notification service. Sound only is still available.",
+        );
+        return;
+      }
+      updateSettings({ notificationMode: value });
+      return;
+    }
     if (hasDesktopNotifications(value)) {
       if (typeof Notification === "undefined" || !window.isSecureContext) {
         setPermissionMessage(

@@ -34,7 +34,6 @@ use shells::ShellEntry;
 #[cfg(debug_assertions)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-#[cfg(debug_assertions)]
 use tauri::webview::PageLoadEvent;
 use tauri::{Emitter, Manager};
 
@@ -354,6 +353,7 @@ fn main() {
     let wasm_csp_probe_fired = Arc::new(AtomicBool::new(false));
 
     let dbus_id = dbus_id_for(&context.config().identifier, Some(&channel_label));
+    let page_host = Arc::clone(&v2_host);
     let mut builder = tauri::Builder::default();
     builder = builder.manage(Arc::clone(&v2_host));
     builder = builder.manage(Arc::clone(&v2_ssh));
@@ -364,6 +364,7 @@ fn main() {
     builder = builder.manage(window::ContextMenuState::default());
     builder = builder.manage(provider_auth::ProviderAuthCallbacks::default());
     builder = builder.manage(app_menu::ZoomState::default());
+    builder = builder.manage(app_menu::QuitConfirmationState::default());
 
     let launch_transfer = std::env::current_dir()
         .ok()
@@ -409,6 +410,8 @@ fn main() {
             v2_server::v2_local_environment_bootstrap,
             v2_server::v2_local_environment_bearer_token,
             v2_server::v2_server_status,
+            v2_server::v2_server_restart,
+            v2_server::v2_local_environment_invalidate_bearer,
             v2_server::v2_server_exposure_state,
             v2_server::v2_server_set_exposure_mode,
             v2_server::v2_server_set_tailscale_serve,
@@ -494,6 +497,7 @@ fn main() {
             window::window_toggle_fullscreen,
             window::window_set_zoom,
             app_menu::window_zoom,
+            app_menu::v2_set_quit_confirmation,
             window::window_focus,
             window::window_set_background_color,
             window::window_start_dragging,
@@ -590,29 +594,13 @@ fn main() {
         .setup(move |app| {
             notifications::start_action_listener(app.handle().clone());
 
+            // The window paints before a slow server start instead of waiting behind it;
+            // the monitor retries a failed first attempt with backoff.
             let host = Arc::clone(&v2_host);
-            match tokio_runtime.block_on(v2_server::ensure_running(&host)) {
-                Ok(running) => eprintln!(
-                    "houston-tauri: v2 server ready at {} (pid {}, {})",
-                    running.origin,
-                    running.pid,
-                    if running.attached {
-                        "attached"
-                    } else {
-                        "spawned detached"
-                    }
-                ),
-                Err(error) => eprintln!(
-                    "houston-tauri: v2 server failed to start: {error}; the window will \
-                     show no local environment"
-                ),
-            }
             let snapshot = host
                 .bootstrap_list()
                 .unwrap_or_else(|_| serde_json::json!([]));
             let status = host.status();
-            let monitor = Arc::clone(&host);
-            tokio_runtime.spawn(v2_server::monitor(monitor));
             let platform = match std::env::consts::OS {
                 "windows" => "win32",
                 "macos" => "darwin",
@@ -727,6 +715,32 @@ fn main() {
             tray::install(app.handle(), &tray_host);
             app_menu::install(app.handle()).expect("failed to install the application menu");
 
+            let startup_host = Arc::clone(&v2_host);
+            let startup_app = app.handle().clone();
+            tokio_runtime.spawn(async move {
+                match v2_server::start_server(&startup_host).await {
+                    Ok(running) => eprintln!(
+                        "houston-tauri: v2 server ready at {} (pid {}, {})",
+                        running.origin,
+                        running.pid,
+                        if running.attached {
+                            "attached"
+                        } else {
+                            "spawned detached"
+                        }
+                    ),
+                    Err(error) => startup_host.record_error(error),
+                }
+                v2_server::publish_snapshot(&startup_app, &startup_host);
+            });
+            let monitor_host = Arc::clone(&v2_host);
+            let monitor_app = app.handle().clone();
+            tokio_runtime.spawn(v2_server::monitor(monitor_host, monitor_app));
+
+            // A check shortly after start and then every few minutes keeps the
+            // sidebar's update pill current; installing stays an explicit click.
+            app_update::start_auto_update_checks(app.handle().clone());
+
             #[cfg(debug_assertions)]
             if std::env::var("HOUSTON_DEVTOOLS").as_deref() == Ok("1") {
                 main_window.open_devtools();
@@ -748,6 +762,12 @@ fn main() {
             Ok(())
         })
         .on_page_load(move |_webview, _payload| {
+            if _webview.label() == "main" && _payload.event() == PageLoadEvent::Finished {
+                // The page's initialization script carries the bootstrap captured at
+                // setup; refresh it once the document exists so a server that started
+                // in the meantime reaches the renderer's synchronous poll.
+                v2_server::publish_snapshot(_webview.app_handle(), &page_host);
+            }
             #[cfg(debug_assertions)]
             if _webview.label() == "main"
                 && _payload.event() == PageLoadEvent::Finished

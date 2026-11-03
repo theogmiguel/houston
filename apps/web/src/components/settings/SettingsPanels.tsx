@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { NotificationSettings } from "./NotificationSettings";
+import { KeepInTraySetting } from "./TraySettings";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
@@ -830,6 +831,12 @@ export function LegacyFeaturesSection() {
   );
 }
 
+const QUIT_SHORTCUT_LABELS = {
+  direct: "Direct",
+  hold: "Hold",
+  "double-click": "Press twice",
+} as const;
+
 export function GeneralSettingsPanel() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -1008,6 +1015,45 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+        <SettingsRow
+          {...searchableSetting("quit-shortcut")}
+          description="Direct quits immediately. Hold or press twice makes the quit shortcut wait for a second press."
+          resetAction={
+            settings.confirmQuit !== DEFAULT_UNIFIED_SETTINGS.confirmQuit ? (
+              <SettingResetButton
+                label="quit shortcut"
+                onClick={() =>
+                  updateSettings({ confirmQuit: DEFAULT_UNIFIED_SETTINGS.confirmQuit })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.confirmQuit}
+              onValueChange={(value) => {
+                if (value === "direct" || value === "hold" || value === "double-click") {
+                  updateSettings({ confirmQuit: value });
+                }
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Quit shortcut">
+                <SelectValue>{QUIT_SHORTCUT_LABELS[settings.confirmQuit]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {Object.entries(QUIT_SHORTCUT_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} hideIndicator value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+      </SettingsSection>
+
+      <SettingsSection id="background" title="Background">
+        <KeepInTraySetting />
       </SettingsSection>
 
       <SettingsSection id="display" title="Display">

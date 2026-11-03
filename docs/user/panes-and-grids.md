@@ -278,9 +278,9 @@ history may be unavailable. Input resumes after either form of attach completes.
 
 ## Closing the window
 
-Closing the window leaves the daemon and its sessions running. Settings ▸ Daemon ▸
-Background controls whether Houston stays in the tray or quits its client when the
-window closes. Reopen Houston to reconnect to the sessions. Tray counts include live
+Closing the window leaves the daemon and its sessions running. Settings ▸ General ▸
+Background ▸ Keep in tray controls whether Houston stays in the tray or quits its client
+when the window closes. Reopen Houston to reconnect to the sessions. Tray counts include live
 sessions only; ended sessions do not appear in the tray menu. **Quit and keep sessions**
 in the tray exits the client directly, including when the interface is unresponsive.
 While the window is in the tray, the rail's diff counts and a browser pane's local

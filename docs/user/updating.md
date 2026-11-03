@@ -5,8 +5,8 @@ Houston tells you when a newer release exists, and installs it when you click.
 ## The check
 
 Settings ▸ About shows which Houston you are running — version, channel and the commit it
-was built from — and whether a newer release has been published. Houston asks once when the
-daemon starts, every six hours after that, and whenever you press **Check now**.
+was built from — and whether a newer release has been published. Houston checks shortly
+after the app starts, every four minutes after that, and whenever you press **Check now**.
 The same schedule checks the model catalog used by Usage and the context indicator.
 Checks reuse cached responses when the server confirms nothing changed.
 
@@ -21,7 +21,7 @@ installed by hand, never offered as an update.
 If GitHub refuses the check because of a rate limit, the panel names the limit, how much of
 it was used and when it resets, when GitHub reports them.
 
-**Switching it off.** Settings ▸ About ▸ *Check for updates*. Off means the request is
+**Switching it off.** Settings ▸ About ▸ _Check for updates_. Off means the request is
 never made, and the panel says so rather than going quiet. The current value is always on
 screen; nothing about this lives only in a file.
 
@@ -33,8 +33,8 @@ the catalog while automatic checks are off.
 When a release is newer than what you are running, the panel names it, shows the start of
 its notes and how many sessions are live, and offers **Install update…** beside **Release
 notes** and **Later**. The bottom of the sidebar says so too, beside the theme switch: a
-chip reading "*version* available" that opens the same install dialog directly. It shows
-"Updating *n*%" while an install runs and "Update failed" if one did not finish. It appears
+chip reading "_version_ available" that opens the same install dialog directly. It shows
+"Updating _n_%" while an install runs and "Update failed" if one did not finish. It appears
 only while a newer release is waiting, and **Later** puts it away until a release newer
 still comes along — the panel itself goes on naming the release either way.
 

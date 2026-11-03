@@ -2606,8 +2606,13 @@ function OpenCommandPaletteDialog(props: {
       pickedPath = await api.dialogs.pickFolder(
         Object.keys(pickerOptions).length > 0 ? pickerOptions : undefined,
       );
-    } catch {
+    } catch (cause) {
       setIsPickingProjectFolder(false);
+      toastManager.add({
+        type: "error",
+        title: "Could not open the folder picker",
+        description: cause instanceof Error ? cause.message : "The system dialog failed to open.",
+      });
       return;
     }
     setIsPickingProjectFolder(false);
