@@ -17,6 +17,7 @@ import {
 import {
   BotIcon,
   ChartNoAxesColumnIcon,
+  ChromeIcon,
   CodeIcon,
   Maximize2Icon,
   MessagesSquareIcon,
@@ -263,6 +264,8 @@ function ComposerCommandItemGlyph({ item }: { item: ComposerCommandItem }) {
     case "slash-command":
       return item.command === "model" ? (
         <SparklesIcon aria-hidden="true" className={MENU_ICON_CLASS} />
+      ) : item.command === "chrome" ? (
+        <ChromeIcon aria-hidden="true" className={MENU_ICON_CLASS} />
       ) : item.command === "plan" ? (
         <PenLineIcon aria-hidden="true" className={MENU_ICON_CLASS} />
       ) : (

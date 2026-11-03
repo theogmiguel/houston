@@ -242,6 +242,17 @@ describe("custom model settings", () => {
   });
 });
 
+describe("Claude in Chrome setting", () => {
+  it("keeps an absent switch absent so the server can follow Claude Code's own default", () => {
+    expect(decodeClaudeSettings({}).claudeInChrome).toBeUndefined();
+  });
+
+  it("keeps either explicit value", () => {
+    expect(decodeClaudeSettings({ claudeInChrome: true }).claudeInChrome).toBe(true);
+    expect(decodeClaudeSettings({ claudeInChrome: false }).claudeInChrome).toBe(false);
+  });
+});
+
 describe("resolveIdleCompaction", () => {
   it("lets a Claude instance override the global default", () => {
     const settings = decodeServerSettings({

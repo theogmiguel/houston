@@ -750,9 +750,19 @@ export const ClaudeSettings = makeProviderSettingsSchema(
         title: "Launch arguments",
         description: "Additional CLI arguments passed on session start.",
         providerSettingsForm: {
-          placeholder: "e.g. --chrome",
+          placeholder: "e.g. --verbose",
           clearWhenEmpty: "omit",
         },
+      }),
+    ),
+    // Absent means "follow Claude Code's claudeInChromeDefaultEnabled"; the server reads
+    // ~/.claude.json in that case, so an explicit off is the only way to override it.
+    claudeInChrome: Schema.optionalKey(Schema.Boolean).pipe(
+      Schema.annotateKey({
+        title: "Claude in Chrome",
+        description:
+          "Let Claude use Chrome through the Claude in Chrome extension. Follows your Claude Code setting until you change it; requires the extension and a Chromium browser.",
+        providerSettingsForm: { control: "switch", clearWhenEmpty: "persist" },
       }),
     ),
     autoCompactWindow: TrimmedString.check(
@@ -784,7 +794,14 @@ export const ClaudeSettings = makeProviderSettingsSchema(
     ),
   },
   {
-    order: ["binaryPath", "homePath", "autoCompactWindow", "idleCompaction", "launchArgs"],
+    order: [
+      "binaryPath",
+      "homePath",
+      "claudeInChrome",
+      "autoCompactWindow",
+      "idleCompaction",
+      "launchArgs",
+    ],
   },
 );
 export type ClaudeSettings = typeof ClaudeSettings.Type;

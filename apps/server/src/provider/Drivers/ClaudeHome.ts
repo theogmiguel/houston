@@ -1,11 +1,13 @@
 import type { ClaudeSettings, ProviderInstanceEnvironment } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import { mergeProviderInstanceEnvironment } from "@houston-app/provider-core/server/instanceEnvironment";
 import { expandHomePath } from "@houston-app/provider-core/server/pathExpansion";
+import { fromLenientJson } from "@houston-app/shared/schemaJson";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 
 const quotePath = Schema.encodeSync(Schema.fromJsonString(Schema.String));
@@ -119,3 +121,42 @@ export const claudeSignedOutMessage = (input: {
       : "";
   return `Claude could not authenticate. For subscription login, run \`claude auth login\` on this environment's machine${configuration}, then start a new thread. For API-key authentication, check this instance's configured credentials.`;
 };
+
+/** Claude Code keeps its global config at `<config dir>/.claude.json`, defaulting the dir to $HOME. */
+export const resolveClaudeGlobalConfigPath = Effect.fn("resolveClaudeGlobalConfigPath")(function* (
+  config: Pick<ClaudeSettings, "homePath">,
+  environment?: NodeJS.ProcessEnv,
+): Effect.fn.Return<string, never, Path.Path> {
+  const path = yield* Path.Path;
+  const home = yield* HostProcess.HomeDirectory;
+  const homePath = config.homePath.trim();
+  if (homePath.length > 0) {
+    return path.join(path.resolve(expandHomePath(homePath, home)), ".claude.json");
+  }
+  const inherited = environment?.CLAUDE_CONFIG_DIR?.trim() ?? "";
+  if (inherited.length > 0) {
+    return path.join(path.resolve(inherited), ".claude.json");
+  }
+  return path.join(home, ".claude.json");
+});
+
+const ClaudeUserConfig = Schema.Struct({
+  claudeInChromeDefaultEnabled: Schema.optionalKey(Schema.Boolean),
+});
+const decodeClaudeUserConfig = Schema.decodeUnknownOption(fromLenientJson(ClaudeUserConfig));
+
+/**
+ * Claude Code ignores its own Claude in Chrome default in headless sessions. Houston reads it
+ * so a provider instance can follow the user's CLI setting until the toggle is changed.
+ * A missing or malformed file means off.
+ */
+export const readClaudeInChromeDefault = Effect.fn("readClaudeInChromeDefault")(function* (
+  configPath: string,
+): Effect.fn.Return<boolean, never, FileSystem.FileSystem> {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const contents = yield* fileSystem
+    .readFileString(configPath)
+    .pipe(Effect.orElseSucceed(() => ""));
+  const config = decodeClaudeUserConfig(contents);
+  return Option.isSome(config) && config.value.claudeInChromeDefaultEnabled === true;
+});

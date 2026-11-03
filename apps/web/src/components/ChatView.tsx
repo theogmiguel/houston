@@ -1400,6 +1400,24 @@ export default function ChatView(props: ChatViewProps) {
   const selectedProvider = selectedProviderEntry?.driverKind ?? requestedDriverKind;
   const activeProviderInstanceId = selectedProviderEntry?.instanceId ?? null;
   const activeProviderStatus = selectedProviderEntry?.snapshot ?? null;
+  const handleOpenClaudeInChromeSettings = () => {
+    void navigate({
+      to: "/settings/providers",
+      search: {
+        environmentId,
+        ...(activeProviderInstanceId === null ? {} : { instanceId: activeProviderInstanceId }),
+      },
+      ...(activeProviderInstanceId === null
+        ? {}
+        : {
+            hash: `provider-instance-${activeProviderInstanceId}-claudeInChrome-row`,
+            state: { settingsTargetHighlight: true },
+          }),
+    });
+  };
+  const handleOpenClaudeInChromeSettingsStable = useStableCallback(
+    handleOpenClaudeInChromeSettings,
+  );
   const { enabled: interactionModeEnabled, interactionMode } = resolveComposerInteractionMode({
     planModeEnabled: settings.planModeEnabled,
     provider: activeProviderStatus,
@@ -3869,6 +3887,11 @@ export default function ChatView(props: ChatViewProps) {
                                 usageLimitsKey !== null &&
                                 !composerHasNonPromptContent
                                   ? openUsageLimits
+                                  : undefined
+                              }
+                              onClaudeInChromeCommand={
+                                selectedProvider === "claudeAgent"
+                                  ? handleOpenClaudeInChromeSettingsStable
                                   : undefined
                               }
                               environmentUnavailable={activeEnvironmentUnavailableState}

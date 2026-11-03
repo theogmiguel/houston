@@ -157,6 +157,8 @@ import {
   claudeSignedOutMessage,
   makeClaudeEnvironment,
   mergeClaudeProcessEnvironment,
+  readClaudeInChromeDefault,
+  resolveClaudeGlobalConfigPath,
   resolveClaudeHomePath,
 } from "../../provider/Drivers/ClaudeHome.ts";
 import {
@@ -1469,6 +1471,8 @@ export function makeClaudeQueryOptions(input: {
   readonly cwd: string | null;
   readonly attachmentsDir?: string;
   readonly settings?: ClaudeSettings;
+  /** The effective Claude in Chrome switch, after any ~/.claude.json default. */
+  readonly claudeInChrome?: boolean;
   readonly sdkSettings?: string | ClaudeSdkSettings;
   readonly environment?: NodeJS.ProcessEnv;
   readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
@@ -1503,6 +1507,14 @@ export function makeClaudeQueryOptions(input: {
   if (input.strictMcpConfig === true) {
     delete extraArgs["mcp-config"];
     delete extraArgs["strict-mcp-config"];
+  }
+  // Launch arguments win: `--chrome` is already there, and `--no-chrome` is an explicit opt-out.
+  if (
+    input.claudeInChrome === true &&
+    extraArgs["chrome"] === undefined &&
+    extraArgs["no-chrome"] === undefined
+  ) {
+    extraArgs["chrome"] = null;
   }
   // Claude Code overwrites its CLI append text with the SDK's initialize
   // appendSystemPrompt, so launch-argument text has to travel in that value.
@@ -4573,6 +4585,18 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   const customHome =
     adapterOptions.settings.homePath.trim().length > 0 ||
     adapterOptions.environment.CLAUDE_CONFIG_DIR !== hostEnvironment.CLAUDE_CONFIG_DIR;
+  const claudeGlobalConfigPath = yield* resolveClaudeGlobalConfigPath(
+    adapterOptions.settings,
+    adapterOptions.environment,
+  ).pipe(Effect.provideService(Path.Path, path));
+  const resolveClaudeInChrome = Effect.fnUntraced(function* () {
+    return (
+      adapterOptions.settings.claudeInChrome ??
+      (yield* readClaudeInChromeDefault(claudeGlobalConfigPath).pipe(
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+      ))
+    );
+  });
   const announcedBypassDowngrades = new Set<ThreadId>();
   const readBypassSettings = (filePath: string) =>
     fileSystem.readFileString(filePath).pipe(
@@ -10372,8 +10396,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             turnInput.runtimePolicy.cwd,
             launchArgSettings,
           );
+          const claudeInChrome = yield* resolveClaudeInChrome();
           const queryOptions = makeClaudeQueryOptions({
             modelSelection: turnInput.modelSelection,
+            claudeInChrome,
             nativeThreadId,
             resume: shouldResume,
             ...(resumeSessionAt === undefined ? {} : { resumeSessionAt }),

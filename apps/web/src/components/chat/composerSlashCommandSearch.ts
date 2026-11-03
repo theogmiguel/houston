@@ -111,3 +111,68 @@ export function searchSlashCommandItems(
 
   return ranked.map((entry) => entry.item);
 }
+
+/** Houston commands that do not come from a provider. */
+export function builtInSlashCommandItems(input: {
+  readonly planModeUiEnabled: boolean;
+  readonly sideChatAvailable: boolean;
+  readonly sideChatDisabledReason: string | null;
+  readonly claudeInChrome: boolean;
+}): ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>> {
+  return [
+    {
+      id: "slash:model",
+      type: "slash-command",
+      command: "model",
+      label: "/model",
+      description: "Switch response model for this thread",
+    },
+    ...(input.claudeInChrome
+      ? ([
+          {
+            id: "slash:chrome",
+            type: "slash-command",
+            command: "chrome",
+            label: "/chrome",
+            description: "Use Chrome in this thread; opens the Claude provider setting",
+          },
+        ] as const)
+      : []),
+    ...(input.planModeUiEnabled
+      ? ([
+          {
+            id: "slash:plan",
+            type: "slash-command",
+            command: "plan",
+            label: "/plan",
+            description: "Switch this thread into plan mode",
+          },
+          {
+            id: "slash:default",
+            type: "slash-command",
+            command: "default",
+            label: "/default",
+            description: "Switch this thread back to normal build mode",
+          },
+        ] as const)
+      : []),
+    ...(input.sideChatAvailable
+      ? ([
+          {
+            id: "slash:side",
+            type: "slash-command",
+            command: "side",
+            label: "/side",
+            description: input.sideChatDisabledReason ?? "Ask a side question in a new side chat",
+          },
+          {
+            id: "slash:btw",
+            type: "slash-command",
+            command: "btw",
+            label: "/btw",
+            description: input.sideChatDisabledReason ?? "Same as /side",
+          },
+        ] as const)
+      : []),
+  ];
+}

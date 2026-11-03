@@ -59,6 +59,11 @@ directories, environment variables and models, and set the provider health check
 Each provider shows its readiness and one action to resolve it. See
 [Install](install.md#providers) and [Agent status](agent-status.md).
 
+Claude has a **Claude in Chrome** switch. When it is on, a thread's Claude can use the
+Claude in Chrome extension to read and drive your Chrome tabs. Until you change the switch
+it follows `claudeInChromeDefaultEnabled` from `~/.claude.json`; the extension and a
+Chromium browser are required.
+
 ## Threads
 
 Default model, fallback model, default permissions, where new threads start (local checkout
