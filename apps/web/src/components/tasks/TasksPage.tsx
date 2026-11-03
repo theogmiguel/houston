@@ -4,7 +4,7 @@ import type { HoustonTaskSummary } from "@houston-app/contracts/houston/tasks";
 import { squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { PlugIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { PlusIcon, SearchIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { environmentProjects } from "~/state/projects";
@@ -35,7 +35,6 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../ui/dialog";
-import { Empty, EmptyDescription, EmptyTitle } from "../ui/empty";
 import { Input } from "../ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { Skeleton } from "../ui/skeleton";
@@ -47,11 +46,16 @@ import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { SidebarInset } from "../ui/sidebar";
 import { toastManager } from "../ui/toast";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
-import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
+import {
+  WorkspaceBreadcrumb,
+  WorkspaceBreadcrumbItem,
+  WorkspaceBreadcrumbSeparator,
+} from "../WorkspaceBreadcrumb";
 import { TaskDetailPanel } from "./TaskDetailPanel";
 import { TaskEditorDialog } from "./TaskEditorDialog";
 import { TaskProjectPanel, TaskProjectView } from "./TaskProjectView";
 import { TaskQueueView } from "./TaskQueueView";
+import { TaskSourcesView } from "./TaskSourcesView";
 import {
   groupTasksByProject,
   queueTaskGroups,
@@ -59,7 +63,7 @@ import {
   type TaskNextActionKind,
 } from "./tasks.logic";
 
-export type TasksView = "queue" | "projects";
+export type TasksView = "queue" | "projects" | "sources";
 
 export interface TasksSearch {
   readonly task?: string;
@@ -190,38 +194,6 @@ function NewProjectDialog({
   );
 }
 
-function SourcesDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (value: boolean) => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Sources</DialogTitle>
-        </DialogHeader>
-        <div className="p-6">
-          <Empty>
-            <EmptyTitle>Sources are not connected yet</EmptyTitle>
-            <EmptyDescription>
-              Slack intake, tracker issues and review findings will file tasks here. Nothing is
-              connected in this version.
-            </EmptyDescription>
-          </Empty>
-        </div>
-        <DialogFooter variant="bare">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogPopup>
-    </Dialog>
-  );
-}
-
 export function TasksPage() {
   const search = useSearch({ from: "/_chat/tasks" });
   const navigate = useNavigate({ from: "/tasks" });
@@ -234,7 +206,8 @@ export function TasksPage() {
     id: project.id as string,
     title: project.title,
   }));
-  const view: TasksView = search.view === "projects" ? "projects" : "queue";
+  const view: TasksView =
+    search.view === "projects" ? "projects" : search.view === "sources" ? "sources" : "queue";
   const workspace = search.workspace ?? "all";
   const scope =
     workspace === "all"
@@ -242,7 +215,10 @@ export function TasksPage() {
       : workspace === "none"
         ? ("unassigned" as const)
         : { projectId: workspace as never };
-  const { snapshot, error: tasksError } = useTasksView(environmentId, scope);
+  const { snapshot, error: tasksError } = useTasksView(
+    environmentId,
+    view === "sources" ? "all" : scope,
+  );
   const openThread = useOpenThreadInGrid();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const startTask = useAtomCommand(tasksEnvironment.start);
@@ -253,7 +229,7 @@ export function TasksPage() {
     setEditorOpenState(next);
     if (!next && search.new === true) updateSearch({ new: undefined });
   };
-  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [sourceProjectId, setSourceProjectId] = useState<string | null>(null);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [projectPanel, setProjectPanel] = useState<ProjectTaskGroup | null>(null);
 
@@ -463,11 +439,21 @@ export function TasksPage() {
         <div className="flex min-w-0 flex-1 flex-col">
           <WorkspacePageHeader desktop={isDesktopHost}>
             <WorkspaceBreadcrumb ariaLabel="Tasks breadcrumb">
-              <WorkspaceBreadcrumbItem current>
+              <WorkspaceBreadcrumbItem current={view !== "sources"}>
                 <Text as="h1" variant="headline" weight="semibold">
                   Tasks
                 </Text>
               </WorkspaceBreadcrumbItem>
+              {view === "sources" ? (
+                <>
+                  <WorkspaceBreadcrumbSeparator />
+                  <WorkspaceBreadcrumbItem current>
+                    <Text as="h1" variant="headline" weight="semibold">
+                      Sources
+                    </Text>
+                  </WorkspaceBreadcrumbItem>
+                </>
+              ) : null}
             </WorkspaceBreadcrumb>
           </WorkspacePageHeader>
           <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4">
@@ -475,70 +461,75 @@ export function TasksPage() {
               <ToggleGroup
                 value={[view]}
                 onValueChange={(next) => {
-                  const target = next[0] === "projects" ? "projects" : "queue";
+                  const target =
+                    next[0] === "projects"
+                      ? "projects"
+                      : next[0] === "sources"
+                        ? "sources"
+                        : "queue";
                   updateSearch({ view: target });
                 }}
               >
                 <Toggle value="queue">Queue</Toggle>
                 <Toggle value="projects">By project</Toggle>
+                <Toggle value="sources">Sources</Toggle>
               </ToggleGroup>
-              <InputGroup className="min-w-40 flex-1">
-                <InputGroupAddon>
-                  <SearchIcon />
-                </InputGroupAddon>
-                <InputGroupInput
-                  value={search.q ?? ""}
-                  placeholder="Search"
-                  aria-label="Search tasks"
-                  size="compact"
-                  onChange={(event) => updateSearch({ q: event.currentTarget.value || undefined })}
-                />
-              </InputGroup>
-              <div className="w-48 shrink-0">
-                <Select
-                  value={workspace}
-                  onValueChange={(value) => {
-                    if (typeof value === "string") updateSearch({ workspace: value });
-                  }}
-                >
-                  <SelectTrigger aria-label="Workspace">
-                    <SelectValue>
-                      {workspaceOptions(projectOptions).find((option) => option.value === workspace)
-                        ?.label ?? "All workspaces"}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup>
-                    {workspaceOptions(projectOptions).map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectPopup>
-                </Select>
-              </div>
-              <Button
-                size="icon-sm"
-                variant="ghost-muted"
-                aria-label="Sources"
-                onClick={() => setSourcesOpen(true)}
-              >
-                <PlugIcon aria-hidden />
-              </Button>
-              {view === "projects" ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={selectedProject === null}
-                  onClick={() => setNewProjectOpen(true)}
-                >
-                  <PlusIcon aria-hidden />
-                  New project
-                </Button>
-              ) : null}
-              <Button size="sm" disabled={newTaskDisabled} onClick={() => setEditorOpen(true)}>
-                <PlusIcon aria-hidden />
-                New task
-              </Button>
+              {view === "sources" ? null : (
+                <>
+                  <InputGroup className="min-w-40 flex-1">
+                    <InputGroupAddon>
+                      <SearchIcon />
+                    </InputGroupAddon>
+                    <InputGroupInput
+                      value={search.q ?? ""}
+                      placeholder="Search"
+                      aria-label="Search tasks"
+                      size="compact"
+                      onChange={(event) =>
+                        updateSearch({ q: event.currentTarget.value || undefined })
+                      }
+                    />
+                  </InputGroup>
+                  <div className="w-48 shrink-0">
+                    <Select
+                      value={workspace}
+                      onValueChange={(value) => {
+                        if (typeof value === "string") updateSearch({ workspace: value });
+                      }}
+                    >
+                      <SelectTrigger aria-label="Workspace">
+                        <SelectValue>
+                          {workspaceOptions(projectOptions).find(
+                            (option) => option.value === workspace,
+                          )?.label ?? "All workspaces"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectPopup>
+                        {workspaceOptions(projectOptions).map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectPopup>
+                    </Select>
+                  </div>
+                  {view === "projects" ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={selectedProject === null}
+                      onClick={() => setNewProjectOpen(true)}
+                    >
+                      <PlusIcon aria-hidden />
+                      New project
+                    </Button>
+                  ) : null}
+                  <Button size="sm" disabled={newTaskDisabled} onClick={() => setEditorOpen(true)}>
+                    <PlusIcon aria-hidden />
+                    New task
+                  </Button>
+                </>
+              )}
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
               {tasksError !== null && !snapshot.loaded ? (
@@ -551,6 +542,20 @@ export function TasksPage() {
                     <Skeleton key={index} className="h-9 w-full" />
                   ))}
                 </div>
+              ) : view === "sources" ? (
+                <TaskSourcesView
+                  environmentId={environmentId as EnvironmentId}
+                  projects={projectOptions}
+                  tasks={snapshot.tasks}
+                  projectId={
+                    sourceProjectId ??
+                    (workspace === "all" || workspace === "none"
+                      ? (projectOptions[0]?.id ?? null)
+                      : workspace)
+                  }
+                  onProjectChange={setSourceProjectId}
+                  onOpenTask={openTask}
+                />
               ) : view === "queue" ? (
                 <TaskQueueView
                   groups={taskGroups}
@@ -658,7 +663,6 @@ export function TasksPage() {
         projectId={selectedProject?.id ?? null}
         projectTitle={selectedProject?.title ?? null}
       />
-      <SourcesDialog open={sourcesOpen} onOpenChange={setSourcesOpen} />
     </SidebarInset>
   );
 }

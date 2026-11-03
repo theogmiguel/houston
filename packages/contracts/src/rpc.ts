@@ -229,6 +229,7 @@ import {
   HoustonTaskSourceImportInput,
   HoustonTaskSourceImportResult,
   HoustonTaskSourceImportStatus,
+  HoustonTaskSourceConflictEntry,
   HoustonTaskSourceLink,
   HoustonTaskSourceLinksGetInput,
   HoustonTaskSourceProjectInput,
@@ -236,6 +237,7 @@ import {
   HoustonTaskSourceSettingsSetInput,
   HoustonTaskSourceStreamEvent,
   HoustonTaskSourceSyncResult,
+  HoustonTaskSourcesConflictsInput,
 } from "./houston/taskSources.ts";
 import {
   HoustonSlackConfigureInput,
@@ -619,6 +621,7 @@ export const WS_METHODS = {
   houstonTaskSourcesCredentialClear: "houston.taskSources.credential.clear",
   houstonTaskSourcesSyncNow: "houston.taskSources.syncNow",
   houstonTaskSourcesLinksGet: "houston.taskSources.links.get",
+  houstonTaskSourcesConflictsList: "houston.taskSources.conflicts.list",
   houstonTaskSourcesConflictResolve: "houston.taskSources.conflict.resolve",
   houstonTaskSourcesSubscribe: "houston.taskSources.subscribe",
   houstonTaskSourcesImportV1Status: "houston.taskSources.importV1.status",
@@ -1995,6 +1998,12 @@ const WsHoustonTaskSourcesLinksGetRpc = Rpc.make(WS_METHODS.houstonTaskSourcesLi
   error: HoustonTaskSourceRpcError,
 });
 
+const WsHoustonTaskSourcesConflictsListRpc = Rpc.make(WS_METHODS.houstonTaskSourcesConflictsList, {
+  payload: HoustonTaskSourcesConflictsInput,
+  success: Schema.Array(HoustonTaskSourceConflictEntry),
+  error: HoustonTaskSourceRpcError,
+});
+
 const WsHoustonTaskSourcesConflictResolveRpc = Rpc.make(
   WS_METHODS.houstonTaskSourcesConflictResolve,
   {
@@ -2782,6 +2791,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTaskSourcesCredentialClearRpc,
   WsHoustonTaskSourcesSyncNowRpc,
   WsHoustonTaskSourcesLinksGetRpc,
+  WsHoustonTaskSourcesConflictsListRpc,
   WsHoustonTaskSourcesConflictResolveRpc,
   WsHoustonTaskSourcesSubscribeRpc,
   WsHoustonTaskSourcesImportV1StatusRpc,

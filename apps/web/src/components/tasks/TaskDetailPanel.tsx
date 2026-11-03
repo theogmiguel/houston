@@ -25,7 +25,6 @@ import { useState, type ReactNode } from "react";
 import { RelativeTime } from "~/components/RelativeTime";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useOpenThreadInGrid } from "~/grid/openThreadInGrid";
-import { readLocalApi } from "~/localApi";
 import { useEnvironmentProviders } from "~/state/environments";
 import { refreshTaskDetail, useTaskDetail, useTaskSettings } from "~/state/tasks";
 import { Alert, AlertAction, AlertDescription } from "../ui/alert";
@@ -41,6 +40,7 @@ import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { TaskEditorDialog, type TaskDeliveryOption } from "./TaskEditorDialog";
+import { TaskSourceLinks } from "./TaskSourceLinks";
 import { useTaskCommands } from "./useTaskCommands";
 import {
   TASK_KIND_LABELS,
@@ -739,14 +739,6 @@ export function TaskDetailPanel({
     }
   };
 
-  const openSource = () => {
-    if (task.refUrl === null) return;
-    const url = task.refUrl;
-    const api = readLocalApi();
-    if (api == null) window.open(url, "_blank", "noreferrer");
-    else void api.shell.openExternal(url);
-  };
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-w-0 flex-col gap-2 p-4 pb-3">
@@ -862,6 +854,13 @@ export function TaskDetailPanel({
         </div>
         {tab === "overview" ? (
           <div className="flex min-w-0 flex-col gap-4">
+            <TaskSourceLinks
+              environmentId={environmentId}
+              taskKey={taskKey}
+              taskId={task.id}
+              taskRevision={task.revision}
+              refUrl={task.refUrl}
+            />
             <section className="flex min-w-0 flex-col gap-1">
               <Text variant="caption" tone="muted" weight="medium">
                 Description
@@ -961,18 +960,6 @@ export function TaskDetailPanel({
                     Approve plan
                   </Button>
                 </div>
-              </section>
-            )}
-            {task.refUrl === null ? null : (
-              <section className="flex min-w-0 items-center gap-2">
-                <Text variant="caption" tone="muted" weight="medium">
-                  Source
-                </Text>
-                <Button size="sm" variant="ghost" onClick={openSource}>
-                  <Text as="span" variant="callout" tone="accent" truncate>
-                    {task.refUrl}
-                  </Text>
-                </Button>
               </section>
             )}
           </div>

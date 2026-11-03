@@ -205,6 +205,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.houstonTaskSourcesCredentialClear]: AuthSettingsWriteScope,
   [WS_METHODS.houstonTaskSourcesSyncNow]: AuthOrchestrationOperateScope,
   [WS_METHODS.houstonTaskSourcesLinksGet]: AuthOrchestrationReadScope,
+  [WS_METHODS.houstonTaskSourcesConflictsList]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonTaskSourcesConflictResolve]: AuthOrchestrationOperateScope,
   [WS_METHODS.houstonTaskSourcesSubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonTaskSourcesImportV1Status]: AuthOrchestrationReadScope,

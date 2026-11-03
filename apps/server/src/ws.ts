@@ -3156,6 +3156,8 @@ export const layerWsRpc = (
           houstonTaskSources.clearCredential(input),
         [WS_METHODS.houstonTaskSourcesSyncNow]: (input) => houstonTaskSources.syncNow(input),
         [WS_METHODS.houstonTaskSourcesLinksGet]: (input) => houstonTaskSources.links(input),
+        [WS_METHODS.houstonTaskSourcesConflictsList]: (input) =>
+          houstonTaskSources.conflicts(input),
         [WS_METHODS.houstonTaskSourcesConflictResolve]: (input) =>
           houstonTaskSources.resolve(input),
         [WS_METHODS.houstonTaskSourcesSubscribe]: (input) => houstonTaskSources.subscribe(input),

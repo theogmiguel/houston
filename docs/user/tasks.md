@@ -26,10 +26,11 @@ its workspace and the reported session count. **Dismiss** records that decision 
 routine's provider, falling back to Claude when no routine exists. Start it after checking
 its scope and acceptance criteria.
 
-Open **Sources** on Tasks to configure where work comes from: Slack requests, GitHub
-issues, Notion and Weekly review. Source status reports whether intake is enabled,
-connected or failing. Tracker configuration is per workspace; choose one when viewing
-**All workspaces**. The same tracker form remains available in Settings ▸ Tasks.
+Open **Sources** on Tasks to see where work comes from: Slack requests, GitHub issues
+and Notion. The tab lists tracker conflicts that need a decision, each source's
+connection state, and the Slack requests filed into the selected workspace. Tracker
+configuration is per workspace; choose one in the Sources tab or in
+Settings ▸ Connections ▸ Task sources.
 
 A Slack bot mention in a mapped channel files a pending task. The configured owner starts
 it with Slack's `:white_check_mark:` reaction (✅), or another supported acceptance action;
@@ -257,7 +258,8 @@ implementation summary to the reviewer CLI as well. Access is per workspace and 
 **Read and write**. An agent's write is recorded with the pane's codename and role, so the
 attribution survives the pane.
 
-Tasks filed from Slack mentions return with Slack intake (parked on `v2`).
+Tasks filed from Slack mentions keep their Slack request state and permalink on the task.
+The Sources tab shows each request as awaiting approval, queued, started or refused.
 
 While a task is in review with a run branch, Houston runs the GitHub CLI (`gh pr view`)
 in that task's worktree every five minutes. The request uses your `gh` credentials.

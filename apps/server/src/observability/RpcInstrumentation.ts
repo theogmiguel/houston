@@ -230,6 +230,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.houstonTaskSourcesCredentialClear]: "houstonTaskSources",
   [WS_METHODS.houstonTaskSourcesSyncNow]: "houstonTaskSources",
   [WS_METHODS.houstonTaskSourcesLinksGet]: "houstonTaskSources",
+  [WS_METHODS.houstonTaskSourcesConflictsList]: "houstonTaskSources",
   [WS_METHODS.houstonTaskSourcesConflictResolve]: "houstonTaskSources",
   [WS_METHODS.houstonTaskSourcesSubscribe]: "houstonTaskSources",
   [WS_METHODS.houstonTaskSourcesImportV1Status]: "houstonTaskSources",

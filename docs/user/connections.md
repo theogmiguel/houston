@@ -12,8 +12,9 @@ Antigravity and ZCode can use MCP servers, but Houston does not manage their
 third-party server configuration here. Houston's own pane tools are configured separately;
 see [Installing Houston](install.md#providers).
 
-Slack setup is available from Tasks ▸ Sources ▸ Slack. It can turn a mention into a task you
-choose to start and return updates to the original thread.
+Slack setup is available from Settings ▸ Connections ▸ Task sources. It can turn a mention
+into a task you choose to start and return updates to the original thread. The same page
+configures GitHub issues and Notion per workspace, and imports Houston 1 source data.
 
 Connection checks run or contact the configured MCP server. Network-backed servers receive
 the connection test; local servers run on this machine. Adding, editing or removing a

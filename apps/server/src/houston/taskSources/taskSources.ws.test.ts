@@ -17,6 +17,7 @@ import {
   type AuthEnvironmentScope,
 } from "@houston-app/contracts";
 import type {
+  HoustonTaskSourceConflictEntry,
   HoustonTaskSourceLink,
   HoustonTaskSourceSettings,
   HoustonTaskSourceStreamEvent,
@@ -703,6 +704,55 @@ describe("links come back with their sync state", () => {
   });
 });
 
+describe("conflicts list every task whose link diverged", () => {
+  it.effect("conflicts list every task whose link diverged", () => {
+    const github = makeGithubFake();
+    let title = "Issue 1";
+    issuePages(github, () => [githubIssue(1, { title })]);
+    return withServer(
+      Effect.gen(function* () {
+        const projectId = yield* createProject("conflicted");
+        const client = yield* makeWsClient(ALL_SCOPES);
+        const tasks = yield* HoustonTaskService.HoustonTaskService;
+        yield* client.call(WS_METHODS.houstonTaskSourcesSettingsSet, {
+          projectId,
+          provider: "github_issues",
+          settings: GITHUB_SETTINGS,
+        });
+        yield* client.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId });
+        const detail = yield* tasks.get({ id: "HOU-1" });
+        yield* tasks.save({
+          id: "HOU-1",
+          expectedRevision: detail.task.revision,
+          patch: { title: "Local" },
+        });
+        title = "Remote";
+        yield* client.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId });
+        const entries = (yield* client.call(WS_METHODS.houstonTaskSourcesConflictsList, {
+          projectId,
+        })) as ReadonlyArray<HoustonTaskSourceConflictEntry>;
+        assert.lengthOf(entries, 1);
+        assert.strictEqual(entries[0]?.taskKey, "HOU-1");
+        assert.strictEqual(entries[0]?.taskTitle, "Local");
+        assert.strictEqual(entries[0]?.link.provider, "github_issues");
+        assert.deepEqual(
+          entries[0]?.link.snapshot.conflicts.map((conflict) => conflict.field),
+          ["title"],
+        );
+        const all = (yield* client.call(
+          WS_METHODS.houstonTaskSourcesConflictsList,
+          {},
+        )) as ReadonlyArray<HoustonTaskSourceConflictEntry>;
+        assert.deepEqual(
+          all.map((entry) => entry.taskKey),
+          ["HOU-1"],
+        );
+      }),
+      { github },
+    );
+  });
+});
+
 describe("subscribe sends settings then each state and link change", () => {
   it.effect("subscribe sends settings then each state and link change", () => {
     const github = makeGithubFake();
@@ -842,6 +892,11 @@ describe("each method requires its declared scope", () => {
             payload: () => Effect.succeed({ taskId: "HOU-1" }),
           },
           {
+            method: WS_METHODS.houstonTaskSourcesConflictsList,
+            scope: AuthOrchestrationReadScope,
+            payload: () => Effect.succeed({ projectId }),
+          },
+          {
             method: WS_METHODS.houstonTaskSourcesConflictResolve,
             scope: AuthOrchestrationOperateScope,
             payload: () =>
@@ -920,6 +975,7 @@ describe("an unknown project is refused naming it", () => {
           ],
           [WS_METHODS.houstonTaskSourcesCredentialClear, { projectId, provider: "notion" }],
           [WS_METHODS.houstonTaskSourcesSyncNow, { projectId }],
+          [WS_METHODS.houstonTaskSourcesConflictsList, { projectId }],
           [WS_METHODS.houstonTaskSourcesSubscribe, { projectId }],
         ];
         for (const [method, payload] of calls) {

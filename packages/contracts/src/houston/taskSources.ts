@@ -158,6 +158,18 @@ export const HoustonTaskSourceLink = Schema.Struct({
 });
 export type HoustonTaskSourceLink = typeof HoustonTaskSourceLink.Type;
 
+/** A linked task whose Houston and tracker values diverged, with the link to resolve it. */
+export const HoustonTaskSourceConflictEntry = Schema.Struct({
+  taskId: PositiveInt,
+  taskKey: Schema.String,
+  taskTitle: Schema.String,
+  taskRevision: PositiveInt,
+  /** The active initiative's revision, which `project.*` resolutions must match. */
+  initiativeRevision: Schema.NullOr(PositiveInt),
+  link: HoustonTaskSourceLink,
+});
+export type HoustonTaskSourceConflictEntry = typeof HoustonTaskSourceConflictEntry.Type;
+
 export const HoustonTaskSourceErrorKind = Schema.Literals([
   "invalid",
   "limit",
@@ -262,6 +274,12 @@ export type HoustonTaskSourceCredentialClearInput =
 
 export const HoustonTaskSourceCredentialResult = Schema.Struct({ hasCredential: Schema.Boolean });
 export type HoustonTaskSourceCredentialResult = typeof HoustonTaskSourceCredentialResult.Type;
+
+export const HoustonTaskSourcesConflictsInput = Schema.Struct({
+  /** Absent lists every project's conflicts. */
+  projectId: Schema.optionalKey(ProjectId),
+});
+export type HoustonTaskSourcesConflictsInput = typeof HoustonTaskSourcesConflictsInput.Type;
 
 export const HoustonTaskSourceLinksGetInput = Schema.Struct({ taskId: HoustonTaskRef });
 export type HoustonTaskSourceLinksGetInput = typeof HoustonTaskSourceLinksGetInput.Type;

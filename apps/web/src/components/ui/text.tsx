@@ -44,6 +44,10 @@ const textVariants = cva("min-w-0", {
       true: "whitespace-pre-wrap",
       false: "",
     },
+    breakWords: {
+      true: "break-words",
+      false: "",
+    },
   },
   defaultVariants: {
     variant: "body",
@@ -78,6 +82,7 @@ export function Text({
   tabular,
   truncate,
   preserve,
+  breakWords,
   className,
   ...props
 }: TextProps) {
@@ -85,7 +90,7 @@ export function Text({
   return (
     <Component
       className={cn(
-        textVariants({ variant, tone, weight, mono, tabular, truncate, preserve }),
+        textVariants({ variant, tone, weight, mono, tabular, truncate, preserve, breakWords }),
         className,
       )}
       {...props}

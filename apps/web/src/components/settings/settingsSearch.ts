@@ -32,6 +32,7 @@ export type SettingsPath =
   | "/settings/source-control"
   | "/settings/worktrees"
   | "/settings/connections"
+  | "/settings/task-sources"
   | "/settings/access"
   | "/settings/secrets"
   | "/settings/maintenance"
@@ -98,6 +99,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/source-control": "Source control",
   "/settings/worktrees": "Worktrees",
   "/settings/connections": "Environments",
+  "/settings/task-sources": "Task sources",
   "/settings/access": "Sharing & access",
   "/settings/secrets": "Secrets",
   "/settings/maintenance": "Maintenance",
@@ -140,6 +142,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
     heading: "Connections",
     paths: [
       "/settings/connections",
+      "/settings/task-sources",
       "/settings/access",
       ...(isSecretsFeatureEnabled ? (["/settings/secrets"] as const) : []),
     ],
@@ -1106,6 +1109,24 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "task-sources-slack",
+    title: "Slack intake",
+    to: "/settings/task-sources",
+    targetId: "task-sources-slack",
+    searchTerms: [
+      "slack app mention channel owner reaction request intake bot token app token socket mode",
+    ],
+  },
+  {
+    id: "task-sources-tracker",
+    title: "Tracker sources",
+    to: "/settings/task-sources",
+    targetId: "task-sources-project",
+    searchTerms: [
+      "github issues notion tracker repository label assignee status mapping sync token data source",
+    ],
+  },
+  {
     id: "secret-providers",
     title: "Secret providers",
     to: "/settings/secrets",
@@ -1148,6 +1169,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/source-control": "environment-defaults",
   "/settings/worktrees": "project-defaults",
   "/settings/connections": "connections",
+  "/settings/task-sources": "connections",
   "/settings/access": "connections",
   "/settings/secrets": null,
   "/settings/scheduled-tasks": null,
