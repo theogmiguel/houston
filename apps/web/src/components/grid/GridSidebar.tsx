@@ -114,6 +114,7 @@ import { isAppModalPage } from "../sidebar/mainAppLocation";
 import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { SidebarRailKbd, SidebarRailNav } from "../sidebar/SidebarRailNav";
 import { useOpenPullRequestCount } from "../pullRequest/useOpenPullRequestCount";
+import { useTaskYourTurnCount } from "../../state/tasks";
 import { SidebarProviderStack, type SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
 import { ThreadStateGlyph, threadStateTextClass } from "../ui/thread-state-glyph";
 import {
@@ -256,6 +257,7 @@ export function GridSidebar() {
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
   const pullRequestCount = useOpenPullRequestCount();
+  const taskCount = useTaskYourTurnCount();
   const sidebarVisible = useSidebarVisibility();
   const nowMinute = useNowMinute();
   const wakeClock = useSnoozeWakeClock(threads);
@@ -778,6 +780,7 @@ export function GridSidebar() {
       <SidebarHeader>
         <SidebarRailNav
           pullRequestCount={pullRequestCount}
+          taskCount={taskCount}
           sectionTitle="Grids"
           sectionAddProject={false}
           sectionActions={

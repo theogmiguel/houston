@@ -1,3 +1,5 @@
+import { useNavigate } from "@tanstack/react-router";
+
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { useAtomMount, useAtomValue } from "@effect/atom-react";
 import {
@@ -59,7 +61,7 @@ import {
 import { type GhosttyColor, type GhosttyTheme } from "~/terminal/ghostty/core";
 import { useOpenInPreferredEditor } from "../editorPreferences";
 import { resolvePathLinkTarget } from "@houston-app/shared/fileLinks";
-import { isTerminalUrl } from "../terminal-links";
+import { isHoustonTaskKey, isTerminalLinkActivation, isTerminalUrl } from "../terminal-links";
 import {
   isDiffToggleShortcut,
   isTerminalClearShortcut,
@@ -76,6 +78,7 @@ import {
   type ThreadTerminalGroup,
 } from "../types";
 import { readLocalApi } from "~/localApi";
+import { isKnownTaskKey } from "~/state/tasks";
 import { confirmTerminalClose } from "~/lib/terminalCloseConfirm";
 import { useClientSettings } from "../hooks/useSettings";
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -525,9 +528,14 @@ function TerminalSessionViewport({
     readEnvironmentScope(environmentId, AuthTerminalOperateScope),
   );
   const canOpenHostEditor = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
-  const canActivateTerminalLink = useEffectEvent(
-    (text: string) =>
-      isTerminalUrl(text) || readEnvironmentScope(environmentId, AuthOrchestrationOperateScope),
+  const navigate = useNavigate();
+  const openTaskFromTerminal = useEffectEvent((taskKey: string) => {
+    void navigate({ to: "/tasks", search: { task: taskKey } });
+  });
+  const canActivateTerminalLink = useEffectEvent((text: string) =>
+    isHoustonTaskKey(text)
+      ? isKnownTaskKey(text)
+      : isTerminalUrl(text) || readEnvironmentScope(environmentId, AuthOrchestrationOperateScope),
   );
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const openInPreferredEditor = useOpenInPreferredEditor(
@@ -995,6 +1003,11 @@ function TerminalSessionViewport({
         if (!canActivateTerminalLink(text)) return;
         const latestTerminal = terminalRef.current;
         if (!latestTerminal) return;
+        if (isHoustonTaskKey(text)) {
+          if (!isTerminalLinkActivation(event)) return;
+          openTaskFromTerminal(text.toUpperCase());
+          return;
+        }
         if (isTerminalUrl(text)) {
           if (!localApi) {
             writeSystemMessage(latestTerminal, "Opening links is unavailable in this browser.");

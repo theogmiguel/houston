@@ -47,16 +47,20 @@ function Outline({ children, className }: { children: ReactNode; className?: str
 export function ThreadStateGlyph({
   state,
   className,
+  colored = false,
 }: {
   state: ThreadState;
   className?: string | undefined;
+  /** Paint the glyph with the state's ink instead of the caller's currentColor. */
+  colored?: boolean;
 }) {
+  const ink = colored ? threadStateTextClass(state) : "";
   if (state === "running") {
-    return <StreamingGlyph className={cn("size-3.5", className)} />;
+    return <StreamingGlyph className={cn("size-3.5", ink, className)} />;
   }
   if (state === "ready") {
     return (
-      <Outline className={className}>
+      <Outline className={cn(ink, className)}>
         <circle cx="12" cy="12" r="8.5" />
         <path d="m8.5 12.2 2.4 2.4 4.6-4.8" />
       </Outline>
@@ -64,7 +68,7 @@ export function ThreadStateGlyph({
   }
   if (state === "needs") {
     return (
-      <Outline className={className}>
+      <Outline className={cn(ink, className)}>
         <circle cx="12" cy="12" r="8.5" />
         <path d="M9.8 9.6a2.3 2.3 0 0 1 4.4.9c0 1.6-2.2 1.9-2.2 3.2" />
         <path d="M12 16.6v.1" />
@@ -73,7 +77,7 @@ export function ThreadStateGlyph({
   }
   if (state === "failed") {
     return (
-      <Outline className={className}>
+      <Outline className={cn(ink, className)}>
         <circle cx="12" cy="12" r="8.5" />
         <path d="M12 7.8v5" />
         <path d="M12 16.2v.1" />
@@ -81,7 +85,7 @@ export function ThreadStateGlyph({
     );
   }
   return (
-    <Outline className={className}>
+    <Outline className={cn(ink, className)}>
       <circle cx="12" cy="13" r="7" />
       <path d="M12 10v3.2l2 1.4M5 5.5 7.5 3.5M19 5.5l-2.5-2" />
     </Outline>

@@ -22,6 +22,7 @@ const RIGHT_PANEL_KINDS = [
   "pull-request",
   "pull-requests",
   "side-chat",
+  "task",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
@@ -76,7 +77,14 @@ export type RightPanelSurface =
       detailTab?: PullRequestDetailTab;
     }
   | { id: "pull-requests"; kind: "pull-requests" }
-  | { id: `side-chat:${string}`; kind: "side-chat"; threadId: ThreadId };
+  | { id: `side-chat:${string}`; kind: "side-chat"; threadId: ThreadId }
+  | {
+      id: `task:${string}`;
+      kind: "task";
+      /** Tasks live in one channel's backlog; the key is not unique across environments. */
+      environmentId: string;
+      taskKey: string;
+    };
 
 const RIGHT_PANEL_STORAGE_KEY = "houston:right-panel-state:v2";
 const RIGHT_PANEL_STORAGE_VERSION = 14;
@@ -87,6 +95,10 @@ export const PULL_REQUESTS_PANEL_REF = scopeThreadRef(
 );
 
 const isPullRequestsPanelKey = (threadKey: string) => threadKey.endsWith(":pull-requests-panel");
+const isTasksPanelKey = (threadKey: string) => threadKey.endsWith(":tasks-panel");
+/** Page panels are view state, so a restart starts them closed. */
+const isPagePanelKey = (threadKey: string) =>
+  isPullRequestsPanelKey(threadKey) || isTasksPanelKey(threadKey);
 
 export interface ThreadRightPanelState {
   isOpen: boolean;
@@ -125,7 +137,7 @@ interface RightPanelStoreState {
   ) => boolean;
   open: (
     ref: ScopedThreadRef,
-    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request" | "side-chat">,
+    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request" | "side-chat" | "task">,
   ) => void;
   openSideChat: (ref: ScopedThreadRef, threadId: ThreadId) => void;
   openDevice: (ref: ScopedThreadRef, target: DeviceTabTarget, automatic?: boolean) => void;
@@ -158,6 +170,7 @@ interface RightPanelStoreState {
     surfaceId: string,
     detailTab: PullRequestDetailTab,
   ) => void;
+  openTask: (ref: ScopedThreadRef, target: { environmentId: string; taskKey: string }) => void;
   openTerminal: (ref: ScopedThreadRef, terminalId: string) => void;
   splitTerminal: (
     ref: ScopedThreadRef,
@@ -185,7 +198,7 @@ interface RightPanelStoreState {
   toggleVisibility: (ref: ScopedThreadRef) => void;
   toggle: (
     ref: ScopedThreadRef,
-    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request" | "side-chat">,
+    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request" | "side-chat" | "task">,
   ) => void;
   setThreadPanelOpen: (
     ref: ScopedThreadRef,
@@ -209,7 +222,10 @@ const DEFAULT_THREAD_PANEL_VISIBILITY: ThreadPanelVisibility = {
 };
 
 const singletonSurface = (
-  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request" | "side-chat">,
+  kind: Exclude<
+    RightPanelKind,
+    "file" | "preview" | "terminal" | "pull-request" | "side-chat" | "task"
+  >,
 ): RightPanelSurface => {
   switch (kind) {
     case "diff":
@@ -473,7 +489,7 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
     typeof persistedState.byThreadKey === "object"
       ? Object.fromEntries(
           Object.entries(persistedState.byThreadKey as Record<string, ThreadRightPanelState>)
-            .filter(([threadKey]) => !isPullRequestsPanelKey(threadKey))
+            .filter(([threadKey]) => !isPagePanelKey(threadKey))
             .map(([threadKey, threadState]) => {
               const validThreadState =
                 threadState && typeof threadState === "object" ? threadState : null;
@@ -520,6 +536,15 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                           ...(typeof environmentId === "string" ? { environmentId } : {}),
                         }),
                       ];
+                    }
+                    if (surface.kind === "task") {
+                      if (
+                        typeof surface.environmentId !== "string" ||
+                        typeof surface.taskKey !== "string"
+                      ) {
+                        return [];
+                      }
+                      return [{ ...surface, taskKey: surface.taskKey.toUpperCase() }];
                     }
                     if (surface.kind !== "terminal") return [surface];
                     if (
@@ -773,6 +798,17 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             ),
           }));
         }),
+      openTask: (ref, target) =>
+        set((state) =>
+          userAction(state, scopedThreadKey(ref), (current) =>
+            upsertSurface(current, {
+              id: `task:${encodeURIComponent(target.environmentId)}:${encodeURIComponent(target.taskKey)}`,
+              kind: "task",
+              environmentId: target.environmentId,
+              taskKey: target.taskKey,
+            }),
+          ),
+        ),
       openFile: (ref, requestedPath, line) =>
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {

@@ -232,6 +232,8 @@ export const HoustonTaskSummary = Schema.Struct({
   acceptanceTotal: NonNegativeInt,
   queue: HoustonTaskQueue,
   ready: Schema.Boolean,
+  /** Null for a task with no domain row; planning needs one of the two kinds. */
+  domainKind: Schema.NullOr(HoustonTaskDomainKind),
   /** The newest run still in flight, of either kind. */
   openRun: Schema.NullOr(HoustonTaskRun),
 });

@@ -48,7 +48,9 @@ palette's **New task from terminal selection** creates a task whose description 
 selection and whose title is its first line, then opens the task.
 
 Choose **New task** on the Tasks page. A task has a title, a description, a status, a
-priority, an optional parent task and an optional workspace. New tasks use the current
+priority, a kind and an optional workspace. A **Delivery** groups slices; a slice names
+its parent delivery. Set the kind in the editor or from the **Kind** property in the
+detail header. New tasks use the current
 workspace when one is selected;
 otherwise they are unassigned. The **Workspace** property assigns a registered workspace
 or clears it with **No workspace**. A task keeps its globally unique `HOU-<n>` key when its
@@ -86,6 +88,10 @@ Slack permalink or tracker URL is not presented as a pull request. Blockers iden
 that must finish before a slice can enter automatic execution.
 
 ## Planning a task
+
+A task needs a workspace and a delivery or slice kind before it can be planned; **Plan**
+is disabled until both are set, and its tooltip names what is missing. A task that already
+has a planning session open also refuses a second one.
 
 Use **Plan** before starting work when the request needs clarification. Houston opens a
 planning agent in the provider's read-only mode with the task, project context and repository.

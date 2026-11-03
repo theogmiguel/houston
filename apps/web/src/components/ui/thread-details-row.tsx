@@ -67,6 +67,17 @@ export function ThreadDetailsRowButton({ className, ...props }: ComponentProps<"
   );
 }
 
+/** A row whose whole surface takes the click but holds a control of its own. */
+export function ThreadDetailsRowInteractive({ className, ...props }: ComponentProps<"div">) {
+  return (
+    <div
+      data-thread-details-row=""
+      className={cn(ROW_CLASS, "cursor-pointer", className)}
+      {...props}
+    />
+  );
+}
+
 /** A mono value, such as a worktree or branch name, inside a row's right slot. */
 export function ThreadDetailsRowMono({
   children,

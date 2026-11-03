@@ -25,6 +25,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { useThreadActionMenu } from "~/hooks/useThreadActionMenu";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
+import { TaskThreadLink } from "../tasks/TaskThreadLink";
 import { readLocalApi } from "~/localApi";
 import { threadEnvironment } from "../../state/threads";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
@@ -408,6 +409,7 @@ export const ChatHeader = memo(function ChatHeader({
           ) : null}
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
+      <TaskThreadLink environmentId={activeThreadEnvironmentId} threadId={activeThreadId} />
     </div>
   );
 });

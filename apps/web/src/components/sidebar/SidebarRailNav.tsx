@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { ChartNoAxesColumnIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { ChartNoAxesColumnIcon, ListChecksIcon, PlusIcon, SearchIcon } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
 import { openCommandPalette } from "../../commandPaletteBus";
@@ -8,6 +8,7 @@ import { shortcutLabelForCommand } from "../../keybindings";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
 import { primaryServerKeybindingsAtom } from "../../state/server";
+import { Badge } from "../ui/badge";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { useSidebar } from "../ui/sidebar";
@@ -123,12 +124,14 @@ export function SidebarRailNav({
   sectionActions,
   sectionAddProject = true,
   pullRequestCount = null,
+  taskCount = null,
 }: {
   search: ReactNode;
   sectionTitle?: string;
   sectionActions?: ReactNode;
   sectionAddProject?: boolean;
   pullRequestCount?: number | null;
+  taskCount?: number | null;
 }) {
   const navigate = useNavigate();
   const pullRequestsSupported = usePullRequestsSupported();
@@ -140,6 +143,10 @@ export function SidebarRailNav({
   const openPullRequests = () => {
     closeMobileSidebar();
     void navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
+  };
+  const openTasks = () => {
+    closeMobileSidebar();
+    void navigate({ to: "/tasks" });
   };
   const openUsage = () => {
     closeMobileSidebar();
@@ -164,6 +171,19 @@ export function SidebarRailNav({
           onClick={openPullRequests}
         />
       ) : null}
+      <SidebarRailActionRow
+        icon={<ListChecksIcon />}
+        label="Tasks"
+        active={pathname === "/tasks"}
+        trailing={
+          taskCount !== null && taskCount > 0 ? (
+            <Badge variant="default" size="sm">
+              {taskCount}
+            </Badge>
+          ) : null
+        }
+        onClick={openTasks}
+      />
       <SidebarRailActionRow
         icon={<ChartNoAxesColumnIcon />}
         label="Usage"

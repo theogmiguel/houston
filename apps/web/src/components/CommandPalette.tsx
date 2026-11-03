@@ -66,6 +66,7 @@ import {
   EyeOffIcon,
   FolderPlusIcon,
   LayoutGridIcon,
+  ListChecksIcon,
   Maximize2Icon,
   Minimize2Icon,
   PencilIcon,
@@ -73,6 +74,7 @@ import {
   LinkIcon,
   MessageSquareIcon,
   PaletteIcon,
+  PlusIcon,
   RotateCcwIcon,
   SettingsIcon,
   MonitorIcon,
@@ -134,6 +136,7 @@ import {
   useEnvironments,
   usePrimaryEnvironmentId,
 } from "../state/environments";
+import { useAllTasksSnapshot } from "../state/tasks";
 import { useProjects, useServerConfigs, useThreadShells, waitForProject } from "../state/entities";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import {
@@ -471,6 +474,7 @@ function OpenCommandPaletteDialog(props: {
   const setMaximizedCellThreadId = useGridMaximizeStore((store) => store.setMaximizedThreadId);
   const { confirmAndDeleteThread } = useThreadActions();
   const projects = useProjects();
+  const taskBacklog = useAllTasksSnapshot();
   const referenceThreadRef =
     pathname === "/pull-requests"
       ? environments.some((environment) => environment.serverConfig !== null)
@@ -1691,6 +1695,56 @@ function OpenCommandPaletteDialog(props: {
       run: async () => {
         await navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
       },
+    });
+  }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:tasks",
+    searchTerms: ["tasks", "task", "backlog", "queue", "task board"],
+    title: "Open tasks",
+    icon: <ListChecksIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/tasks" });
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:new-task",
+    searchTerms: ["new task", "create task", "task", "backlog"],
+    title: "New task",
+    icon: <PlusIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/tasks", search: { new: true } });
+    },
+  });
+
+  const paletteTasks = taskBacklog.tasks.filter((task) => task.archivedAt === null).slice(0, 25);
+  if (paletteTasks.length > 0) {
+    actionItems.push({
+      kind: "submenu",
+      value: "action:open-task",
+      searchTerms: ["open task", "task", "HOU", "backlog"],
+      title: "Open task",
+      icon: <ListChecksIcon className={ITEM_ICON_CLASS} />,
+      addonIcon: <ListChecksIcon className={ADDON_ICON_CLASS} />,
+      groups: [
+        {
+          value: "tasks",
+          label: "Tasks",
+          items: paletteTasks.map((task) => ({
+            kind: "action" as const,
+            value: `task:${task.key}`,
+            title: `${task.key} ${task.title}`,
+            searchTerms: [task.key, task.title],
+            icon: <ListChecksIcon className={ITEM_ICON_CLASS} />,
+            run: async () => {
+              await navigate({ to: "/tasks", search: { task: task.key } });
+            },
+          })),
+        },
+      ],
     });
   }
 
