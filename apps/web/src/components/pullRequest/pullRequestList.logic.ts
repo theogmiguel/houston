@@ -893,6 +893,74 @@ export function settlePullRequestOverrides<Entry extends PullRequestListEntry>(
   return kept.size === overrides.size ? overrides : kept;
 }
 
+export type PullRequestListItem<Entry extends ScopedEntry> =
+  | { readonly kind: "row"; readonly entry: Entry }
+  | { readonly kind: "stack"; readonly key: string; readonly entries: ReadonlyArray<Entry> };
+
+/**
+ * Folds the rows of one native stack into a single item where the first of them sat, its layers
+ * bottom first. A stack with one row shown stays a plain row: there is nothing to fold.
+ */
+export function clusterPullRequestStacks<Entry extends ScopedEntry>(
+  entries: ReadonlyArray<Entry>,
+): ReadonlyArray<PullRequestListItem<Entry>> {
+  const members = new Map<string, Entry[]>();
+  const stackKeyOf = (entry: Entry) =>
+    entry.stack === undefined
+      ? null
+      : `${entry.environmentId ?? ""}:${entry.host}:${entry.repository}#stack${entry.stack.number}`;
+  for (const entry of entries) {
+    const key = stackKeyOf(entry);
+    if (key === null) continue;
+    const list = members.get(key);
+    if (list) list.push(entry);
+    else members.set(key, [entry]);
+  }
+  const items: PullRequestListItem<Entry>[] = [];
+  const placed = new Set<string>();
+  for (const entry of entries) {
+    const key = stackKeyOf(entry);
+    const stack = key === null ? undefined : members.get(key);
+    if (key === null || stack === undefined || stack.length < 2) {
+      items.push({ kind: "row", entry });
+      continue;
+    }
+    if (placed.has(key)) continue;
+    placed.add(key);
+    items.push({
+      kind: "stack",
+      key,
+      entries: stack.toSorted((a, b) => (a.stack?.position ?? 0) - (b.stack?.position ?? 0)),
+    });
+  }
+  return items;
+}
+
+/**
+ * How far a layer is from merging, worst first: the folded stack row speaks for the worst one.
+ */
+export function pullRequestStackLayerRank(
+  entry: Pick<
+    PullRequestListEntry,
+    | "state"
+    | "isDraft"
+    | "checksState"
+    | "mergeability"
+    | "reviewDecision"
+    | "viewerReviewRequested"
+  >,
+): number {
+  if (entry.state !== "open") return 9;
+  if (entry.checksState === "failing") return 0;
+  if (entry.mergeability === "conflicting") return 1;
+  if (entry.reviewDecision === "changes-requested") return 2;
+  if (entry.isDraft) return 8;
+  if (entry.checksState === "pending") return 3;
+  if (entry.viewerReviewRequested) return 4;
+  if (entry.reviewDecision === "review-required") return 5;
+  return 6;
+}
+
 export type PullRequestQuickAction = "close" | "merge" | "ready" | "reopen";
 
 export function pullRequestHostActions(

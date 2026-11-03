@@ -35,6 +35,8 @@ import {
   applyPullRequestOverrides,
   reusePullRequestEntries,
   settlePullRequestOverrides,
+  clusterPullRequestStacks,
+  pullRequestStackLayerRank,
 } from "./pullRequestList.logic";
 import {
   readPullRequestListPreferences,
@@ -835,5 +837,55 @@ describe("filter picker choices", () => {
       { name: "size:XL", color: "d93f0b", count: 7 },
       { name: "bug", color: null, count: 0 },
     ]);
+  });
+});
+
+describe("stacked pull request grouping", () => {
+  const stack = (number: number, position: number, size: number) => ({
+    number,
+    position,
+    size,
+    base: "main",
+  });
+
+  it("folds a stack into one item where its first layer sat, bottom first", () => {
+    const items = clusterPullRequestStacks([
+      entry({ number: 1 }),
+      entry({ number: 3, stack: stack(30, 2, 2) }),
+      entry({ number: 2, stack: stack(30, 1, 2) }),
+      entry({ number: 4 }),
+    ]);
+
+    expect(
+      items.map((item) => (item.kind === "row" ? `row:${item.entry.number}` : `stack:${item.key}`)),
+    ).toEqual(["row:1", "stack:env-1:github.com:pingdotgg/houston#stack30", "row:4"]);
+    const folded = items[1];
+    expect(folded?.kind === "stack" ? folded.entries.map((layer) => layer.number) : []).toEqual([
+      2, 3,
+    ]);
+  });
+
+  it("leaves a lone layer as a plain row and never folds stacks across repositories", () => {
+    const items = clusterPullRequestStacks([
+      entry({ number: 1, stack: stack(10, 1, 2) }),
+      entry({ number: 2, stack: stack(10, 2, 2), repository: "other/repo" }),
+    ]);
+
+    expect(items.every((item) => item.kind === "row")).toBe(true);
+  });
+
+  it("ranks a stack by its worst layer, with a settled layer last", () => {
+    const failing = entry({ number: 1, checksState: "failing" });
+    const conflicting = entry({ number: 2, mergeability: "conflicting" });
+    const changesRequested = entry({ number: 3, reviewDecision: "changes-requested" });
+    const draft = entry({ number: 4, isDraft: true });
+    const ready = entry({ number: 5 });
+
+    expect(pullRequestStackLayerRank(failing)).toBe(0);
+    expect(pullRequestStackLayerRank(conflicting)).toBe(1);
+    expect(pullRequestStackLayerRank(changesRequested)).toBe(2);
+    expect(pullRequestStackLayerRank(draft)).toBe(8);
+    expect(pullRequestStackLayerRank(ready)).toBe(6);
+    expect(pullRequestStackLayerRank(entry({ number: 6, state: "merged" }))).toBe(9);
   });
 });

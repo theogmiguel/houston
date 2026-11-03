@@ -9,6 +9,7 @@ import { useState } from "react";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
+import { RelativeTime } from "~/components/RelativeTime";
 import { squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
 
 import { toastManager } from "../ui/toast";
@@ -45,9 +46,14 @@ export function PullRequestReviewerPicker({
     reportFailure: false,
   });
 
-  const candidates = (candidatesQuery.data?.candidates ?? []).filter((entry) =>
-    matches(entry, query),
-  );
+  const candidates = (candidatesQuery.data?.candidates ?? [])
+    .filter((entry) => matches(entry, query))
+    // Suggested people first, then who has already been asked, then everyone else with access.
+    .toSorted((left, right) => {
+      const rank = (entry: PullRequestReviewerCandidate) =>
+        entry.isRequested ? 1 : entry.suggestion !== undefined ? 0 : 2;
+      return rank(left) - rank(right);
+    });
 
   const toggle = async (candidate: PullRequestReviewerCandidate) => {
     if (pending !== null) return;
@@ -110,6 +116,15 @@ export function PullRequestReviewerPicker({
           <PullRequestActorLabel actor={candidate} className="flex-1" />
           {candidate.kind === "team" ? (
             <span className="shrink-0 text-muted-foreground">team</span>
+          ) : null}
+          {candidate.isRequested ? (
+            candidate.requestedAt ? (
+              <span className="shrink-0">
+                requested <RelativeTime timestamp={candidate.requestedAt} />
+              </span>
+            ) : null
+          ) : candidate.suggestion ? (
+            <span className="min-w-0 shrink-0 truncate">{candidate.suggestion}</span>
           ) : null}
           {candidate.isRequested ? (
             <CheckIcon aria-label="Already asked" className="size-3.5 shrink-0" />

@@ -379,6 +379,7 @@ const DEFAULT_COMMENT_FILTER: typeof CommentFilterSchema.Type = { bots: false, r
 
 export function PullRequestSummaryTab({
   scrollerRef,
+  readiness,
   environmentId,
   threadRef,
   reference,
@@ -394,6 +395,8 @@ export function PullRequestSummaryTab({
   onRefreshChecks = onRefresh,
 }: {
   scrollerRef: (node: HTMLDivElement | null) => void;
+  /** The readiness card: checks, reviews, unresolved threads and mergeability. Built by the panel. */
+  readiness?: ReactNode;
   environmentId: EnvironmentId;
   threadRef: ScopedThreadRef | null;
   reference: PullRequestRef;
@@ -654,81 +657,84 @@ export function PullRequestSummaryTab({
 
   return (
     <div ref={scrollerRef} className="h-full overflow-y-auto" data-pull-request-summary-scroll>
+      {readiness ? <section className="px-4 pt-3 pb-1.5">{readiness}</section> : null}
       <section className="px-4 pt-2.5 pb-1">
         <div className="space-y-2">
-          <MetaRow icon={<UsersIcon className="size-3.5" />} label="Reviewers">
-            <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-              {reviewerEntries.length === 0 ? (
-                <span className="text-muted-foreground">None</span>
-              ) : (
-                <span className="flex items-center -space-x-1">
-                  {reviewerEntries.map((entry) => {
-                    const login = entry.actor?.login ?? "ghost";
-                    const named =
-                      entry.actor?.name && entry.actor.name !== login
-                        ? `${entry.actor.name} (@${login})`
-                        : login;
-                    return (
-                      <Tooltip key={entry.key}>
-                        <TooltipTrigger
-                          render={
-                            <span
-                              className={cn(
-                                "relative rounded-full hover:z-10",
-                                entry.outcome
-                                  ? pullRequestReviewOutcomeRingClassName(
-                                      entry.outcome,
-                                      entry.stale,
-                                    )
-                                  : undefined,
-                              )}
-                            />
-                          }
-                        >
-                          <PullRequestActorLabel
-                            actor={entry.actor}
-                            tooltip={false}
-                            variant="avatar"
-                          />
-                          {entry.outcome ? (
-                            <>
-                              <PullRequestReviewOutcomeAvatarBadge
-                                outcome={entry.outcome}
-                                stale={entry.stale}
+          {readiness ? null : (
+            <MetaRow icon={<UsersIcon className="size-3.5" />} label="Reviewers">
+              <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                {reviewerEntries.length === 0 ? (
+                  <span className="text-muted-foreground">None</span>
+                ) : (
+                  <span className="flex items-center -space-x-1">
+                    {reviewerEntries.map((entry) => {
+                      const login = entry.actor?.login ?? "ghost";
+                      const named =
+                        entry.actor?.name && entry.actor.name !== login
+                          ? `${entry.actor.name} (@${login})`
+                          : login;
+                      return (
+                        <Tooltip key={entry.key}>
+                          <TooltipTrigger
+                            render={
+                              <span
+                                className={cn(
+                                  "relative rounded-full hover:z-10",
+                                  entry.outcome
+                                    ? pullRequestReviewOutcomeRingClassName(
+                                        entry.outcome,
+                                        entry.stale,
+                                      )
+                                    : undefined,
+                                )}
                               />
-                              <span className="sr-only">
-                                {entry.stale
-                                  ? pullRequestReviewOutcomeStaleLabel(entry.outcome)
-                                  : pullRequestReviewOutcomeLabel(entry.outcome)}
-                              </span>
-                            </>
-                          ) : null}
-                        </TooltipTrigger>
-                        <TooltipPopup side="bottom">
-                          {entry.outcome
-                            ? `${named}: ${
-                                entry.stale
-                                  ? pullRequestReviewOutcomeStaleLabel(entry.outcome)
-                                  : pullRequestReviewOutcomeLabel(entry.outcome)
-                              }`
-                            : named}
-                        </TooltipPopup>
-                      </Tooltip>
-                    );
-                  })}
-                </span>
-              )}
-              {/* Azure DevOps accepts reviewers but cannot list candidates. */}
-              {detail.capabilities.reviewers.request &&
-              detail.capabilities.reviewers.listCandidates ? (
-                <PullRequestReviewerPicker
-                  environmentId={environmentId}
-                  reference={reference}
-                  allowed={detail.viewerPermissions.requestReviewers}
-                />
-              ) : null}
-            </span>
-          </MetaRow>
+                            }
+                          >
+                            <PullRequestActorLabel
+                              actor={entry.actor}
+                              tooltip={false}
+                              variant="avatar"
+                            />
+                            {entry.outcome ? (
+                              <>
+                                <PullRequestReviewOutcomeAvatarBadge
+                                  outcome={entry.outcome}
+                                  stale={entry.stale}
+                                />
+                                <span className="sr-only">
+                                  {entry.stale
+                                    ? pullRequestReviewOutcomeStaleLabel(entry.outcome)
+                                    : pullRequestReviewOutcomeLabel(entry.outcome)}
+                                </span>
+                              </>
+                            ) : null}
+                          </TooltipTrigger>
+                          <TooltipPopup side="bottom">
+                            {entry.outcome
+                              ? `${named}: ${
+                                  entry.stale
+                                    ? pullRequestReviewOutcomeStaleLabel(entry.outcome)
+                                    : pullRequestReviewOutcomeLabel(entry.outcome)
+                                }`
+                              : named}
+                          </TooltipPopup>
+                        </Tooltip>
+                      );
+                    })}
+                  </span>
+                )}
+                {/* Azure DevOps accepts reviewers but cannot list candidates. */}
+                {detail.capabilities.reviewers.request &&
+                detail.capabilities.reviewers.listCandidates ? (
+                  <PullRequestReviewerPicker
+                    environmentId={environmentId}
+                    reference={reference}
+                    allowed={detail.viewerPermissions.requestReviewers}
+                  />
+                ) : null}
+              </span>
+            </MetaRow>
+          )}
           {detail.labels.length > 0 || detail.capabilities.labels === true ? (
             <MetaRow icon={<TagIcon className="size-3.5" />} label="Labels">
               <span className="flex min-w-0 flex-wrap items-center gap-1">

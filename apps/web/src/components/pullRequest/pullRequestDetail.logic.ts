@@ -454,7 +454,14 @@ export function latestPullRequestReviewOutcomes(
 export interface PullRequestTimelineEvent {
   readonly id: string;
   readonly at: string;
-  readonly kind: "opened" | "commit" | "comment" | "review" | "merged" | "closed";
+  readonly kind:
+    | "opened"
+    | "commit"
+    | "comment"
+    | "review"
+    | "review-request"
+    | "merged"
+    | "closed";
   readonly title: string;
   readonly body: string | null;
   readonly markdown: boolean;
@@ -466,6 +473,11 @@ export interface PullRequestTimelineEvent {
   readonly path: string | null;
   readonly reviewState: string | null;
   readonly reactions: ReadonlyArray<PullRequestReaction>;
+  /** Who a review-request event asked, and whether every one of them had already reviewed. */
+  readonly reviewers?: ReadonlyArray<PullRequestActor>;
+  readonly again?: boolean;
+  /** A commit's own check rollup, where the host reports one. */
+  readonly checks?: PullRequestCommit["checks"];
   readonly comment?: PullRequestComment;
   readonly thread?: PullRequestTimelineThread;
 }
@@ -661,9 +673,14 @@ export function buildPullRequestTimeline(
     PullRequestDetailView,
     "provider" | "createdAt" | "author" | "commits" | "comments" | "mergedAt" | "closedAt"
   > &
-    Partial<Pick<PullRequestDetailView, "reviewThreads">>,
+    Partial<Pick<PullRequestDetailView, "reviewThreads" | "reviewRequests">>,
 ): ReadonlyArray<PullRequestTimelineEvent> {
   const term = sourceControlClients.get(detail.provider).changeRequest.singular;
+  const reviewedLogins = new Set(
+    detail.comments
+      .filter((comment) => pullRequestReviewOutcome(comment.reviewState) !== null)
+      .flatMap((comment) => (comment.author === null ? [] : [comment.author.login.toLowerCase()])),
+  );
   return [
     {
       id: "created",
@@ -696,6 +713,25 @@ export function buildPullRequestTimeline(
       path: null,
       reviewState: null,
       reactions: [],
+      ...(commit.checks === undefined ? {} : { checks: commit.checks }),
+    })),
+    ...(detail.reviewRequests ?? []).map((request) => ({
+      id: `review-request:${request.createdAt}:${request.reviewer.login}`,
+      at: request.createdAt,
+      kind: "review-request" as const,
+      title: `requested a review from ${request.reviewer.login}`,
+      body: null,
+      markdown: false,
+      url: null,
+      actor: request.actor,
+      commitAuthors: [],
+      additions: null,
+      deletions: null,
+      path: null,
+      reviewState: null,
+      reactions: [],
+      reviewers: [request.reviewer],
+      again: reviewedLogins.has(request.reviewer.login.toLowerCase()),
     })),
     ...pullRequestConversationItems(detail.comments, detail.reviewThreads ?? []).map((item) => {
       if (item.kind === "comment") return commentTimelineEvent(item.comment);
