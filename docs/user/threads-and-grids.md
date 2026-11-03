@@ -14,6 +14,11 @@ folder, or **Clone a repository** to clone a Git URL to a chosen machine and loc
 `Start without a project` opens a thread with no project; a thread without a folder can be
 turned into a project from its thread actions later.
 
+The add-project palette, opened from the sidebar's plus or **Add project** in the command
+palette, lists **Open folder…**, **Clone repository…** and **New project…**, followed by the
+provider repositories Houston can clone from. **New project…** appears when the server
+configures a projects folder.
+
 Projects appear in the sidebar under **Projects**. The **+** beside the section adds
 another project. **Project settings** in a thread's action menu or the command palette
 renames a project, pins it, archives it and changes its checkouts.
