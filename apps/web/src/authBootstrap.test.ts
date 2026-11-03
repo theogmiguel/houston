@@ -96,6 +96,7 @@ async function installAuthApi(input: {
   readonly browserSession?: (
     credential: string,
   ) => Effect.Effect<AuthBrowserSessionResult, EnvironmentAuthInvalidError>;
+  readonly refusedConnections?: number;
   readonly pairingCredential?: (payload: AuthCreatePairingCredentialInput) => Effect.Effect<{
     readonly id: string;
     readonly credential: string;
@@ -104,6 +105,7 @@ async function installAuthApi(input: {
   }>;
 }) {
   const testApi = await installEnvironmentHttpTest({
+    ...(input.refusedConnections ? { refusedConnections: input.refusedConnections } : {}),
     ...(input.session ? { session: () => Effect.succeed(input.session!()) } : {}),
     ...(input.browserSession
       ? { browserSession: (payload) => input.browserSession!(payload.credential) }
@@ -162,6 +164,32 @@ describe("resolveInitialServerAuthGateState", () => {
     await Promise.all([resolveInitialServerAuthGateState(), resolveInitialServerAuthGateState()]);
 
     expect(testApi.calls.session).toBe(2);
+    expect(testApi.calls.browserSession).toEqual([{ credential: "desktop-bootstrap-token" }]);
+  });
+
+  it("waits for a desktop server that is not listening yet instead of failing", async () => {
+    const testApi = await installAuthApi({
+      refusedConnections: 1,
+      session: sequence(unauthenticatedSession(DESKTOP_AUTH), authenticatedSession(DESKTOP_AUTH)),
+      browserSession: () => Effect.succeed(browserSession(["orchestration:read", "access:write"])),
+    });
+
+    const testWindow = installTestBrowser("http://localhost/");
+    testWindow.hostBridge = {
+      getLocalEnvironmentBootstraps: () => [
+        {
+          id: "primary",
+          label: "Linux",
+          httpBaseUrl: "http://localhost:3773",
+          wsBaseUrl: "ws://localhost:3773",
+          bootstrapToken: "desktop-bootstrap-token",
+        },
+      ],
+    } as unknown as HostBridge;
+
+    const { resolveInitialServerAuthGateState } = await import("./environments/primary");
+
+    await expect(resolveInitialServerAuthGateState()).resolves.toEqual({ status: "authenticated" });
     expect(testApi.calls.browserSession).toEqual([{ credential: "desktop-bootstrap-token" }]);
   });
 

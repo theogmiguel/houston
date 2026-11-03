@@ -293,7 +293,12 @@ function waitForBootstrapRetry(delayMs: number): Promise<void> {
 
 function isTransientBootstrapError(error: unknown): boolean {
   if (isPrimaryEnvironmentRequestError(error)) {
-    return TRANSIENT_BOOTSTRAP_STATUS_CODES.has(error.status);
+    // A transport failure has no response: the desktop server is still starting.
+    return (
+      TRANSIENT_BOOTSTRAP_STATUS_CODES.has(error.status) ||
+      (HttpClientError.isHttpClientError(error.cause) &&
+        error.cause.reason._tag === "TransportError")
+    );
   }
 
   if (error instanceof TypeError) {
