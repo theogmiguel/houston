@@ -321,6 +321,7 @@ import { useProactivePanels } from "../hooks/useProactivePanels";
 import { useIncrementalTimelineEntries } from "../hooks/useIncrementalTimelineEntries";
 import { useRightPanelSurfaceClose } from "../hooks/useRightPanelSurfaceClose";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { ComposerTaskStatus } from "./ui/composer-task-status";
 import { modelFallbackBannerItem } from "./chat/ComposerUsageLimits";
 import { ComposerSurface } from "./chat/ComposerSurface";
 import { resolveThreadSyncPhase } from "../threadSync";
@@ -899,6 +900,12 @@ export default function ChatView(props: ChatViewProps) {
   const activeLatestRun = isServerThread ? serverLatestRun : (activeThread?.latestRun ?? null);
   const activeActivityRun = isServerThread ? serverActivityRun : (activeThread?.latestRun ?? null);
   const activeRuntime = isServerThread ? serverRuntime : (activeThread?.runtime ?? null);
+  // The newest todo list belongs to the run the composer reports on; older lists are earlier turns.
+  const composerActivityRunId = (activeActivityRun ?? activeLatestRun)?.runId;
+  const composerTasks =
+    serverProjection?.turnItems.findLast(
+      (item) => item.type === "todo_list" && item.runId === composerActivityRunId,
+    ) ?? null;
   const hasHeldQueuedRuns =
     isServerThread &&
     serverProjection?.runs.some((run) => run.status === "queued" && run.queueHeld === true) ===
@@ -3711,6 +3718,11 @@ export default function ChatView(props: ChatViewProps) {
                       <div className="mb-1">
                         <ComposerBannerStack items={environmentComposerBanners} detached />
                       </div>
+                    ) : null}
+                    {composerTasks?.type === "todo_list" &&
+                    (isWorking ||
+                      composerTasks.steps.some((step) => step.status !== "completed")) ? (
+                      <ComposerTaskStatus key={composerTasks.planId} steps={composerTasks.steps} />
                     ) : null}
                     <ComposerSurface.Shell
                       contextRow={showComposerContextStrip}
