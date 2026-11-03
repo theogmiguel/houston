@@ -964,3 +964,13 @@ describe("newThreadNoProjectIndex", () => {
     expect(newThreadNoProjectIndex([entry(true), entry(true, false, true), entry()])).toBe(1);
   });
 });
+
+describe("clone intent", () => {
+  it("opens add-project at the clone entry", () => {
+    const state = reduceCommandPaletteUiState(
+      { open: false, mode: "command", openIntent: null, session: 0 },
+      { _tag: "OpenAddProject", clone: true },
+    );
+    expect(state.openIntent).toEqual({ kind: "add-project", clone: true });
+  });
+});

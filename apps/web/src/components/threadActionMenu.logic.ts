@@ -128,8 +128,8 @@ export function buildThreadActionMenuItems(
     ...(state.supports.pinning
       ? [
           state.isPinned
-            ? { id: "unpin" as const, label: "Unpin grid", icon: "pin-off" }
-            : { id: "pin" as const, label: "Pin grid", icon: "pin" },
+            ? { id: "unpin" as const, label: "Unpin thread", icon: "pin-off" }
+            : { id: "pin" as const, label: "Pin thread", icon: "pin" },
         ]
       : []),
     ...(state.supports.settlement

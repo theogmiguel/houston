@@ -410,6 +410,10 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       /** A grid cell, or a side chat in its parent's right panel. */
       embedded?: boolean | SideChatParentPanel;
+      /** A focused grid cell runs the window thread shortcuts the standalone view has. */
+      shortcutsAtWindow?: boolean;
+      /** Only a visible, focused cell may advance the thread's read watermark. */
+      visitActive?: boolean;
       /** The grid pane's density; omitted on the thread route. */
       paneDensity?: PaneDensity;
       /** An empty grid centres the draft composer without a pane head. */
@@ -433,6 +437,10 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       /** A grid cell; a side chat never renders the draft route. */
       embedded?: boolean;
+      /** A focused grid cell runs the window thread shortcuts the standalone view has. */
+      shortcutsAtWindow?: boolean;
+      /** Only a visible, focused cell may advance the thread's read watermark. */
+      visitActive?: boolean;
       /** The grid pane's density; omitted on the thread route. */
       paneDensity?: PaneDensity;
       /** An empty grid centres the draft composer without a pane head. */
@@ -484,6 +492,10 @@ export default function ChatView(props: ChatViewProps) {
   const detailsCardAnimateFollow = paneDensity === "comfortable" || paneDensity === "solo";
   const parentPanel = typeof embeddedOption === "object" ? embeddedOption : undefined;
   const embedded = embeddedOption !== false;
+  // A grid cell is embedded for layout, but its focused pane owns the window
+  // shortcuts: Esc stops its run, Mod+J its terminal, Mod+F its find bar.
+  const shortcutsEmbedded = embedded && props.shortcutsAtWindow !== true;
+  const visitActive = props.visitActive !== false;
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
   const draftId = routeKind === "draft" ? props.draftId : null;
@@ -2765,7 +2777,7 @@ export default function ChatView(props: ChatViewProps) {
     composerMenuOpen: composerRef.current?.isComposerMenuOpen() ?? false,
     composerFocus:
       document.activeElement?.getAttribute("data-testid") === "composer-editor" &&
-      isInSideChatPane(document.activeElement) === embedded,
+      isInSideChatPane(document.activeElement) === shortcutsEmbedded,
     draftThreadRoute: routeKind === "draft",
     turnRunning: phase === "running",
     composerRequiresModifier: composerRequiresModifier(settings.sendShortcut, promptRef.current),
@@ -2786,7 +2798,7 @@ export default function ChatView(props: ChatViewProps) {
 
   useChatShortcuts({
     enabled: activeThreadId !== null && !backgroundThread,
-    embedded,
+    embedded: shortcutsEmbedded,
     composerElement: composerOverlayElement,
     keybindings,
     scriptKeybindings,
@@ -4123,7 +4135,11 @@ export default function ChatView(props: ChatViewProps) {
 
       <RevertConfirmHost threadKey={routeThreadKey} onConfirm={onConfirmRevertStable} />
       {embedded ? null : <LinkPullRequestDialogHost />}
-      <ThreadVisitWatermark threadRef={routeThreadRef} />
+      <ThreadVisitWatermark
+        threadRef={routeThreadRef}
+        active={visitActive}
+        atEnd={timelineLiveFollowEnabled}
+      />
       <ExpandedImageDialogHost threadKey={routeThreadKey} />
     </div>
   );

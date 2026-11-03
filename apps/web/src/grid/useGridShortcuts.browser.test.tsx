@@ -22,6 +22,7 @@ const keybindings: ResolvedKeybindingsConfig = [
   { command: "navigation.back", shortcut: { ...mod, key: "[" } },
   { command: "navigation.forward", shortcut: { ...mod, key: "]" } },
   { command: "view.reopenClosed", shortcut: { ...mod, key: "t", shiftKey: true } },
+  { command: "grid.toggleMaximizedCell", shortcut: { ...mod, key: "enter", shiftKey: true } },
   ...(
     [
       ["grid.tidy", "y"],

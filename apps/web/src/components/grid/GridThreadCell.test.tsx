@@ -55,7 +55,22 @@ vi.mock("../../state/entities", () => ({
 }));
 
 vi.mock("../../hooks/useThreadActions", () => ({
-  useThreadActions: () => ({ archiveThread: vi.fn() }),
+  useThreadActions: () => ({
+    archiveThread: vi.fn(),
+    threadSnoozePresets: () => [],
+    markThreadUnread: vi.fn(),
+    confirmAndDeleteThread: vi.fn(),
+    renameThread: vi.fn(),
+    regenerateThreadTitle: vi.fn(),
+    copyThreadId: vi.fn(),
+    copyThreadPath: vi.fn(),
+    copyThreadBranch: vi.fn(),
+    copyThreadRef: vi.fn(),
+    findThread: vi.fn(),
+    openThreadProjectSettings: vi.fn(),
+    holdThread: vi.fn(),
+    closeThread: vi.fn(),
+  }),
 }));
 
 vi.mock("../../composerDraftStore", () => ({

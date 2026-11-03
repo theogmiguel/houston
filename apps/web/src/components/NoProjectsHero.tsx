@@ -129,7 +129,10 @@ export function NoProjectsHero() {
                 <FolderPlusIcon className="size-4" />
                 Add folder
               </Button>
-              <Button variant="outline" onClick={() => openCommandPalette({ open: "add-project" })}>
+              <Button
+                variant="outline"
+                onClick={() => openCommandPalette({ open: "add-project", clone: true })}
+              >
                 <GitForkIcon className="size-4" />
                 Clone a repository
               </Button>

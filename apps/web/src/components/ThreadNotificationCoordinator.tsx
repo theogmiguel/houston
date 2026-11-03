@@ -5,7 +5,12 @@ import {
 } from "@houston-app/client-runtime/state/models";
 import { isShownUnderParent } from "@houston-app/client-runtime/state/threads";
 import type { AnyRouter } from "@tanstack/react-router";
-import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@houston-app/contracts";
+import type {
+  EnvironmentId,
+  OrchestrationV2ThreadShell,
+  ProjectId,
+  ThreadId,
+} from "@houston-app/contracts";
 import type { ClientSettings } from "@houston-app/contracts/settings";
 import * as Option from "effect/Option";
 import type { AtomRegistry } from "effect/reactivity";
@@ -31,6 +36,8 @@ import {
   unlockNotificationAudio,
 } from "../threadNotifications";
 import { resolveSidebarThreadStatus, type SidebarThreadStatus } from "./Sidebar.logic";
+import { gridContainingThread, useGridStore } from "../grid/gridStore";
+import { resolveGridThreadTarget } from "../grid/gridNavigation";
 import {
   createThreadNotificationGate,
   type ThreadNotificationKind,
@@ -64,7 +71,10 @@ export function startThreadNotifications(
     string,
     { environmentId: EnvironmentId; notification: Notification | null }
   >();
-  const nativeTargets = new Map<string, { environmentId: EnvironmentId; threadId: ThreadId }>();
+  const nativeTargets = new Map<
+    string,
+    { environmentId: EnvironmentId; projectId: ProjectId; threadId: ThreadId }
+  >();
   const watched = new Map<EnvironmentId, WatchedEnvironment>();
   let nativeSupported: boolean | null = null;
   void window.hostBridge
@@ -82,10 +92,15 @@ export function startThreadNotifications(
     nativeTargets.delete(notification.tag);
     setNotificationBadge(pending.size);
   };
-  const trackNative = (key: string, environmentId: EnvironmentId, threadId: ThreadId) => {
+  const trackNative = (
+    key: string,
+    environmentId: EnvironmentId,
+    projectId: ProjectId,
+    threadId: ThreadId,
+  ) => {
     pending.get(key)?.notification?.close();
     pending.set(key, { environmentId, notification: null });
-    nativeTargets.set(key, { environmentId, threadId });
+    nativeTargets.set(key, { environmentId, projectId, threadId });
     setNotificationBadge(pending.size);
   };
   const clearPending = () => {
@@ -95,10 +110,26 @@ export function startThreadNotifications(
     setNotificationBadge(0);
   };
 
+  // Lands in the thread's grid with its cell focused; the standalone route is
+  // the fallback when no grid can take the thread.
+  const openThread = (environmentId: EnvironmentId, projectId: ProjectId, threadId: ThreadId) => {
+    const target = resolveGridThreadTarget({ environmentId, projectId, threadId });
+    if (target !== null) {
+      useGridStore.getState().focusThread(target.gridId, target.threadId);
+      void router.navigate({ to: "/grid/$gridId", params: { gridId: target.gridId } });
+      return;
+    }
+    void router.navigate({
+      to: "/$environmentId/$threadId",
+      params: { environmentId, threadId },
+    });
+  };
+
   const showWebNotification = (
     environmentId: EnvironmentId,
     title: string,
     body: string,
+    projectId: ProjectId,
     threadId: ThreadId,
     requireInteraction: boolean,
   ) => {
@@ -116,10 +147,7 @@ export function startThreadNotifications(
         notification.close();
         window.focus();
         void window.hostBridge?.revealWindow().catch(() => undefined);
-        void router.navigate({
-          to: "/$environmentId/$threadId",
-          params: { environmentId, threadId },
-        });
+        openThread(environmentId, projectId, threadId);
       });
     } catch {
       // Some browsers expose Notification but reject desktop presentation.
@@ -137,7 +165,19 @@ export function startThreadNotifications(
     const active = (router.state.matches.at(-1)?.params ?? {}) as {
       environmentId?: string;
       threadId?: string;
+      gridId?: string;
     };
+    // A grid route names no thread; the thread on screen is the one in one of
+    // its cells. Without this check every completion toasted inside the grid.
+    const activeGridId = typeof active.gridId === "string" ? active.gridId : null;
+    const containingGrid = gridContainingThread(
+      useGridStore.getState().grids,
+      environmentId,
+      thread.id,
+    );
+    const onScreen =
+      (active.environmentId === environmentId && active.threadId === thread.id) ||
+      (activeGridId !== null && containingGrid?.id === activeGridId);
     const title =
       kind === "completion"
         ? "Thread completed"
@@ -157,7 +197,7 @@ export function startThreadNotifications(
       inAppNotificationsEnabled &&
       document.visibilityState === "visible" &&
       document.hasFocus() &&
-      (active.environmentId !== environmentId || active.threadId !== thread.id)
+      !onScreen
     ) {
       const toastId = toastManager.add({
         type: kind === "completion" ? "success" : status === "failed" ? "error" : "warning",
@@ -182,10 +222,7 @@ export function startThreadNotifications(
           children: "Open thread",
           onClick: () => {
             toastManager.close(toastId);
-            void router.navigate({
-              to: "/$environmentId/$threadId",
-              params: { environmentId, threadId: thread.id },
-            });
+            openThread(environmentId, thread.projectId, thread.id);
           },
         },
       });
@@ -202,7 +239,7 @@ export function startThreadNotifications(
     // takes the thread key and reports a click through onThreadNotificationFocus.
     if (bridge?.notifyThread && nativeSupported !== false) {
       const key = threadNotificationKey(environmentId, thread.id);
-      trackNative(key, environmentId, thread.id);
+      trackNative(key, environmentId, thread.projectId, thread.id);
       void bridge.notifyThread({ id: key, title, body: thread.title }).catch(() => {
         const tracked = pending.get(key);
         if (tracked?.notification == null) {
@@ -210,11 +247,25 @@ export function startThreadNotifications(
           nativeTargets.delete(key);
           setNotificationBadge(pending.size);
         }
-        showWebNotification(environmentId, title, thread.title, thread.id, requireInteraction);
+        showWebNotification(
+          environmentId,
+          title,
+          thread.title,
+          thread.projectId,
+          thread.id,
+          requireInteraction,
+        );
       });
       return;
     }
-    showWebNotification(environmentId, title, thread.title, thread.id, requireInteraction);
+    showWebNotification(
+      environmentId,
+      title,
+      thread.title,
+      thread.projectId,
+      thread.id,
+      requireInteraction,
+    );
   };
 
   const observeThreads = (
@@ -399,10 +450,7 @@ export function startThreadNotifications(
     nativeTargets.delete(key);
     setNotificationBadge(pending.size);
     void window.hostBridge?.revealWindow().catch(() => undefined);
-    void router.navigate({
-      to: "/$environmentId/$threadId",
-      params: { environmentId: target.environmentId, threadId: target.threadId },
-    });
+    openThread(target.environmentId, target.projectId, target.threadId);
   });
 
   const unsubscribeSettings = subscribeClientSettings(onSettings);

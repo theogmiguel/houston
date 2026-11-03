@@ -152,9 +152,9 @@ const position = { x: 10, y: 20 };
 const createMenu = (options: { readonly onFind?: (threadRef: typeof target) => void } = {}) =>
   useThreadActionMenu({
     threadRef: target,
-    projectCwd: "/project",
     onStartRename: () => recordEffect("rename"),
     onFind: options.onFind,
+    handleNewThread: async () => null,
   });
 
 beforeEach(() => {

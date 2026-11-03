@@ -23,6 +23,8 @@ import {
   UserRoundXIcon,
 } from "lucide-react";
 import { Spinner } from "~/components/ui/spinner";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { cn } from "~/lib/utils";
 
 import type { PullRequestReviewOutcome } from "./pullRequestDetail.logic";
 
@@ -232,4 +234,21 @@ export function pullRequestReviewOutcomePresentation(outcome: PullRequestReviewO
 
 export function pullRequestStateHoverToneClassName(state: PullRequestState | "draft"): string {
   return PULL_REQUEST_PRESENTATION[state].hoverToneClassName;
+}
+
+/** The compact checks state a thread row shows beside its pull request number. */
+export function PullRequestChecksGlyph({ state }: { state: PullRequestChecksState }) {
+  const presentation = pullRequestChecksStatePresentation(state);
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
+        <presentation.Icon
+          role="img"
+          aria-label={presentation.label}
+          className={cn("size-3.5", presentation.toneClassName)}
+        />
+      </TooltipTrigger>
+      <TooltipPopup>{presentation.label}</TooltipPopup>
+    </Tooltip>
+  );
 }

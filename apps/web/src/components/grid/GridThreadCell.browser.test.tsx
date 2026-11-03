@@ -55,8 +55,13 @@ vi.mock("../ChatView", async () => {
   };
   const noop = () => {};
   return {
-    default: () => (
-      <div data-testid="chat-view" data-chat-composer-surface="true">
+    default: (props: { shortcutsAtWindow?: boolean; visitActive?: boolean }) => (
+      <div
+        data-testid="chat-view"
+        data-chat-composer-surface="true"
+        data-shortcuts-at-window={props.shortcutsAtWindow === true ? "true" : undefined}
+        data-visit-active={props.visitActive === true ? "true" : undefined}
+      >
         {state.pendingQuestion ? (
           <ComposerBanner.Root data-chat-composer-top-drawer="true" inCard="drawer">
             <ComposerPendingUserInputPanel
@@ -105,7 +110,22 @@ vi.mock("../../state/entities", () => ({
 }));
 
 vi.mock("../../hooks/useThreadActions", () => ({
-  useThreadActions: () => ({ archiveThread: state.archiveThread }),
+  useThreadActions: () => ({
+    archiveThread: state.archiveThread,
+    threadSnoozePresets: () => [],
+    markThreadUnread: () => {},
+    confirmAndDeleteThread: () => {},
+    renameThread: () => {},
+    regenerateThreadTitle: () => {},
+    copyThreadId: () => {},
+    copyThreadPath: () => {},
+    copyThreadBranch: () => {},
+    copyThreadRef: () => {},
+    findThread: () => {},
+    openThreadProjectSettings: () => {},
+    holdThread: () => {},
+    closeThread: () => {},
+  }),
 }));
 
 vi.mock("../../composerDraftStore", () => ({
@@ -156,6 +176,7 @@ async function renderCell(
     onClose?: () => void;
     onArchiveClose?: () => void;
     onMaximize?: () => void;
+    focused?: boolean;
     dragging?: boolean;
     dropIndicator?: Side | null;
     dragHandleProps?: ThreadDragHandleProps;
@@ -171,7 +192,7 @@ async function renderCell(
     <GridThreadCell
       node={node}
       grid={grid(tree)}
-      focused
+      focused={options?.focused ?? true}
       maximized={options?.maximized ?? false}
       availableThreads={options?.availableThreads ?? []}
       providerEntries={new Map()}
@@ -406,6 +427,15 @@ describe("GridThreadCell surfaces", () => {
       "Split down",
       "---",
       "Move to…",
+      "---",
+      "Rename thread",
+      "Mark unread",
+      "Copy",
+      "Find in thread",
+      "Project settings",
+      "Close thread",
+      "Regenerate title",
+      "Delete thread",
       "---",
       "Archive thread",
     ]);
@@ -651,5 +681,27 @@ describe("GridThreadCell pending question", () => {
       expect(option.getBoundingClientRect().width).toBeGreaterThan(150);
       expect(option.getBoundingClientRect().height).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("GridThreadCell shortcut scope", () => {
+  it("gives only the focused cell the window shortcuts and the read gate", async () => {
+    state.draftSession = null;
+    await using focused = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+    );
+    const focusedView = focused.container.querySelector('[data-testid="chat-view"]');
+    expect(focusedView?.getAttribute("data-shortcuts-at-window")).toBe("true");
+    expect(focusedView?.getAttribute("data-visit-active")).toBe("true");
+
+    await using unfocused = await renderCell(
+      { kind: "thread", threadId: "thread-b", id: "p2" },
+      twoThreadTree(),
+      { focused: false },
+    );
+    const unfocusedView = unfocused.container.querySelector('[data-testid="chat-view"]');
+    expect(unfocusedView?.getAttribute("data-shortcuts-at-window")).toBeNull();
+    expect(unfocusedView?.getAttribute("data-visit-active")).toBeNull();
   });
 });

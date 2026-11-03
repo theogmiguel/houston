@@ -1,6 +1,7 @@
 import type { EnvironmentId, ProjectId, ThreadId } from "@houston-app/contracts";
 
-import { gridContainingThread, useGridStore, workspaceKeyOf } from "./gridStore";
+import { gridContainingThread, MAX_GRID_THREADS, useGridStore, workspaceKeyOf } from "./gridStore";
+import { preorderThreads } from "./tree";
 
 /**
  * A thread a client started outside a grid (the root composer, a background send, a deep
@@ -31,13 +32,18 @@ export function ensureThreadInGrid(input: {
 
   const workspaceKey = workspaceKeyOf(input.environmentId, input.projectId);
   const workspaceGrids = store.grids.filter((grid) => grid.workspaceKey === workspaceKey);
+  const threadCount = (grid: (typeof workspaceGrids)[number]) =>
+    grid.tree === null ? 0 : preorderThreads(grid.tree).length;
+  const hasRoom = (grid: (typeof workspaceGrids)[number]) => threadCount(grid) < MAX_GRID_THREADS;
   // An empty grid's own draft adds the thread there; prefer it so one grid keeps the thread.
   const empty = workspaceGrids
     .filter((grid) => grid.tree === null)
     .toSorted((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
   const existing =
-    empty ??
-    workspaceGrids.toSorted((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+    (empty !== undefined && hasRoom(empty) ? empty : undefined) ??
+    workspaceGrids
+      .filter(hasRoom)
+      .toSorted((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
   if (existing !== undefined) {
     store.addThread(existing.id, input.threadId);
     return existing.id;

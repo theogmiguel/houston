@@ -77,6 +77,24 @@ describe("ensureThreadInGrid", () => {
     expect(gridContainingThread(useGridStore.getState().grids, environmentId, threadId)).toBeNull();
   });
 
+  it("starts another grid when every workspace grid is full", () => {
+    const fullGridId = useGridStore.getState().createGrid({
+      environmentId,
+      projectId,
+      workspaceKey,
+      now: "2026-01-01T00:00:00.000Z",
+    });
+    for (let index = 0; index < 6; index += 1) {
+      useGridStore.getState().addThread(fullGridId, `full-${index}`);
+    }
+    const newGridId = ensureThreadInGrid({ environmentId, projectId, threadId });
+    expect(newGridId).not.toBeNull();
+    expect(newGridId).not.toBe(fullGridId);
+    expect(gridContainingThread(useGridStore.getState().grids, environmentId, threadId)?.id).toBe(
+      newGridId,
+    );
+  });
+
   it("places an empty grid's draft thread in that grid, not in a newer one", () => {
     const emptyGridId = useGridStore.getState().createGrid({
       environmentId,

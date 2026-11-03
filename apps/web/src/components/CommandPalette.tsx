@@ -47,11 +47,12 @@ import {
   type DesktopWslState,
   type EnvironmentId,
   type FilesystemBrowseResult,
+  type ThreadId,
   SourceControlProviderKind,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   resolveEnvironmentMachineKind,
 } from "@houston-app/contracts";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
   BugIcon,
@@ -62,7 +63,12 @@ import {
   FileSearchIcon,
   FolderGit2Icon,
   FolderIcon,
+  EyeOffIcon,
   FolderPlusIcon,
+  LayoutGridIcon,
+  Maximize2Icon,
+  Minimize2Icon,
+  PencilIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -74,6 +80,7 @@ import {
   PinOffIcon,
   SquarePenIcon,
   TextSearchIcon,
+  TrashIcon,
 } from "lucide-react";
 import { openThreadFind } from "./chat/threadFindStore";
 import {
@@ -250,7 +257,12 @@ import { pickableProjectGroups } from "@houston-app/client-runtime/state/project
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
-import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
+import { useActiveThreadRouteTarget } from "../hooks/useThreadRouteTarget";
+import { useGrid, useGridStore } from "../grid/gridStore";
+import { useGridMaximizeStore } from "../grid/gridMaximizeStore";
+import { requestGridCellRename } from "../grid/gridCellCommands";
+import { useThreadActions } from "../hooks/useThreadActions";
+import { useOpenGridDraft } from "../grid/useOpenGridDraft";
 import { threadRecentUse } from "@houston-app/shared/paletteSearch";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
@@ -391,6 +403,7 @@ function OpenCommandPaletteDialog(props: {
   const { openChildSearch, setOpen } = props;
   // Keyed by palette session: the intent and restored search only seed this
   // mount, and closing must not change what the closing palette shows.
+  const cloneIntentHandled = useRef(false);
   const [initialSearch] = useState(
     () =>
       props.initialContext ?? {
@@ -448,7 +461,15 @@ function OpenCommandPaletteDialog(props: {
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
-  const paletteRouteTarget = useThreadRouteTarget();
+  const paletteRouteTarget = useActiveThreadRouteTarget();
+  const gridIdParam = useParams({ strict: false, select: (params) => params.gridId });
+  const openGrid = useGrid(typeof gridIdParam === "string" ? gridIdParam : null);
+  const openGridDraft = useOpenGridDraft();
+  const maximizedCellThreadId = useGridMaximizeStore((store) =>
+    openGrid === null ? null : (store.maximizedThreadIdByGrid[openGrid.id] ?? null),
+  );
+  const setMaximizedCellThreadId = useGridMaximizeStore((store) => store.setMaximizedThreadId);
+  const { confirmAndDeleteThread } = useThreadActions();
   const projects = useProjects();
   const referenceThreadRef =
     pathname === "/pull-requests"
@@ -1163,6 +1184,22 @@ function OpenCommandPaletteDialog(props: {
     }
   };
 
+  // A clone intent starts at the Git URL entry; without a ready environment it
+  // falls back to the same environment/source picker as Add project.
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- runs once per clone intent to place the palette in its clone entry
+  useEffect(() => {
+    if (cloneIntentHandled.current) return;
+    if (props.openIntent?.kind !== "add-project" || props.openIntent.clone !== true) return;
+    cloneIntentHandled.current = true;
+    if (addProjectEntry.kind === "choose-source") {
+      // oxlint-disable-next-line react/set-state-in-effect -- A clone intent starts the palette at its Git URL clone entry.
+      startAddProjectClone(addProjectEntry.environmentId, "url");
+      return;
+    }
+    // oxlint-disable-next-line react/set-state-in-effect -- A clone intent without a ready environment opens the add-project picker.
+    openAddProjectFlow();
+  });
+
   // The view an "Add project" intent opens to follows the environments as they
   // connect, so it resolves here instead of being fixed when the palette opened.
   const addProjectEntryGroups = (): ReadonlyArray<CommandPaletteGroup> => {
@@ -1229,6 +1266,13 @@ function OpenCommandPaletteDialog(props: {
         icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
         shortcutCommand: "chat.newLocal",
         run: async () => {
+          if (openGrid !== null) {
+            await openGridDraft({
+              gridId: openGrid.id,
+              focusedThreadId: openGrid.focusedThreadId,
+            });
+            return;
+          }
           await startNewThreadFromContext({
             activeDraftThread,
             activeThread: activeThread ?? undefined,
@@ -1248,6 +1292,118 @@ function OpenCommandPaletteDialog(props: {
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: NEW_THREAD_IN_GROUP, label: "Projects", items: projectThreadItems }],
     });
+  }
+
+  if (openGrid !== null) {
+    const grid = openGrid;
+    const store = () => useGridStore.getState();
+    actionItems.push({
+      kind: "action",
+      value: "action:grid-new",
+      searchTerms: ["new grid", "grid", "create", "layout"],
+      title: "New grid in this workspace",
+      icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        const gridId = store().createGrid({
+          environmentId: grid.environmentId,
+          projectId: grid.projectId,
+          workspaceKey: grid.workspaceKey,
+        });
+        await navigate({ to: "/grid/$gridId", params: { gridId } });
+      },
+    });
+    const gridLayoutActions = [
+      { value: "action:grid-tidy", title: "Tidy grid", shape: "grid" as const },
+      { value: "action:grid-tidy-row", title: "Tidy grid into one row", shape: "row" as const },
+      {
+        value: "action:grid-tidy-column",
+        title: "Tidy grid into one column",
+        shape: "column" as const,
+      },
+    ];
+    for (const action of gridLayoutActions) {
+      actionItems.push({
+        kind: "action",
+        value: action.value,
+        searchTerms: ["grid", "tidy", "layout", "arrange"],
+        title: action.title,
+        icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
+        run: async () => store().tidyGrid(grid.id, action.shape),
+      });
+    }
+    actionItems.push({
+      kind: "action",
+      value: "action:grid-equalize",
+      searchTerms: ["grid", "equalize", "layout", "sizes"],
+      title: "Equalize grid cells",
+      icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
+      run: async () => store().equalizeGrid(grid.id),
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:grid-pin",
+      searchTerms: ["grid", "pin", "unpin", "favorite"],
+      title: grid.pinnedAt === null ? "Pin grid" : "Unpin grid",
+      icon:
+        grid.pinnedAt === null ? (
+          <PinIcon className={ITEM_ICON_CLASS} />
+        ) : (
+          <PinOffIcon className={ITEM_ICON_CLASS} />
+        ),
+      run: async () => {
+        if (grid.pinnedAt === null) store().pinGrid(grid.id);
+        else store().unpinGrid(grid.id);
+      },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:grid-hide",
+      searchTerms: ["grid", "hide", "visibility"],
+      title: "Hide grid",
+      icon: <EyeOffIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        store().setGridHidden(grid.id, true);
+        await navigate({ to: "/" });
+      },
+    });
+    const focusedThreadId = grid.focusedThreadId;
+    if (focusedThreadId !== null) {
+      const focusedThreadRef = scopeThreadRef(
+        grid.environmentId as EnvironmentId,
+        focusedThreadId as ThreadId,
+      );
+      actionItems.push({
+        kind: "action",
+        value: "action:grid-thread-rename",
+        searchTerms: ["grid", "thread", "rename", "title"],
+        title: "Rename focused thread",
+        icon: <PencilIcon className={ITEM_ICON_CLASS} />,
+        run: async () => requestGridCellRename(focusedThreadId),
+      });
+      actionItems.push({
+        kind: "action",
+        value: "action:grid-thread-delete",
+        searchTerms: ["grid", "thread", "delete", "remove"],
+        title: "Delete focused thread",
+        icon: <TrashIcon className={ITEM_ICON_CLASS} />,
+        run: async () => {
+          await confirmAndDeleteThread(focusedThreadRef);
+        },
+      });
+      const isMaximized = maximizedCellThreadId === focusedThreadId;
+      actionItems.push({
+        kind: "action",
+        value: "action:grid-thread-maximize",
+        searchTerms: ["grid", "cell", "maximize", "restore", "focus"],
+        title: isMaximized ? "Restore cell in grid" : "Maximize focused cell",
+        icon: isMaximized ? (
+          <Minimize2Icon className={ITEM_ICON_CLASS} />
+        ) : (
+          <Maximize2Icon className={ITEM_ICON_CLASS} />
+        ),
+        run: async () => setMaximizedCellThreadId(grid.id, isMaximized ? null : focusedThreadId),
+      });
+    }
   }
 
   if (scratchTargetEnvironmentId !== null) {

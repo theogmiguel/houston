@@ -972,3 +972,41 @@ describe("Escape to stop", () => {
     }
   });
 });
+
+describe("grid keybinding commands", () => {
+  it("routes attention and maximize chords through rebindable commands", () => {
+    const attention = event({ key: ".", ctrlKey: true });
+    const previousAttention = event({ key: ".", ctrlKey: true, shiftKey: true });
+    const maximize = event({ key: "Enter", ctrlKey: true, shiftKey: true });
+
+    assert.equal(
+      resolveShortcutCommand(attention, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Linux",
+        context: { gridRoute: true },
+      }),
+      "thread.attentionNext",
+    );
+    assert.equal(
+      resolveShortcutCommand(previousAttention, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Linux",
+        context: { gridRoute: true },
+      }),
+      "thread.attentionPrevious",
+    );
+    assert.equal(
+      resolveShortcutCommand(maximize, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Linux",
+        context: { gridRoute: true },
+      }),
+      "grid.toggleMaximizedCell",
+    );
+    // The same chord keeps steering queued messages outside a grid.
+    assert.equal(
+      resolveShortcutCommand(maximize, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Linux",
+        context: { gridRoute: false },
+      }),
+      "thread.steerQueuedMessage",
+    );
+  });
+});

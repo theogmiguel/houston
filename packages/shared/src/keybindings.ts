@@ -188,7 +188,16 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
     command: "thread.stop",
     when: "!terminalFocus && !modelPickerOpen && !composerMenuOpen",
   },
-  { key: "mod+shift+enter", command: "thread.steerQueuedMessage", when: "!terminalFocus" },
+  {
+    key: "mod+shift+enter",
+    command: "thread.steerQueuedMessage",
+    when: "!terminalFocus && !gridRoute",
+  },
+  {
+    key: "mod+shift+enter",
+    command: "grid.toggleMaximizedCell",
+    when: "!terminalFocus && gridRoute",
+  },
   { key: "alt+arrowup", command: "thread.editQueuedMessage", when: "composerFocus" },
   { key: "mod+enter", command: "composer.sendAlternate", when: "composerFocus && turnRunning" },
   {
@@ -223,6 +232,8 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+shift+arrowup", command: "modelPicker.previousProvider", when: "modelPickerOpen" },
   { key: "mod+shift+arrowdown", command: "modelPicker.nextProvider", when: "modelPickerOpen" },
   { key: "mod+o", command: "editor.openFavorite" },
+  { key: "mod+.", command: "thread.attentionNext", when: "!terminalFocus" },
+  { key: "mod+shift+.", command: "thread.attentionPrevious", when: "!terminalFocus" },
   { key: "mod+shift+[", command: "thread.previous" },
   { key: "mod+shift+]", command: "thread.next" },
   { key: "mod+shift+c", command: "thread.copyReference", when: "!terminalFocus" },

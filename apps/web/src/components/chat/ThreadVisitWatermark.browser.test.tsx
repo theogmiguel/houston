@@ -36,6 +36,7 @@ const NOW = Date.parse("2026-01-04T00:00:00.000Z");
 const ENVIRONMENT = EnvironmentId.make("environment-visit-watermark");
 const threadA: ScopedThreadRef = { environmentId: ENVIRONMENT, threadId: ThreadId.make("a") };
 const threadB: ScopedThreadRef = { environmentId: ENVIRONMENT, threadId: ThreadId.make("b") };
+const threadC: ScopedThreadRef = { environmentId: ENVIRONMENT, threadId: ThreadId.make("c") };
 
 function setShell(ref: ScopedThreadRef, updatedAt: string) {
   appAtomRegistry.set(shellAtom(shellKey(ref)), {
@@ -58,6 +59,7 @@ it("records the visit of the next thread at once after switching threads", async
   mocks.visitRun.mockResolvedValue(AsyncResult.success(undefined));
   setShell(threadA, "2026-01-02T00:00:00.000Z");
   setShell(threadB, "2026-01-03T00:00:00.000Z");
+  using _focused = vi.spyOn(document, "hasFocus").mockReturnValue(true);
   using _timers = fakeTimers();
   vi.setSystemTime(NOW);
   // A palette pick already sent B's open with its query, so B's visit is a plain watermark advance.
@@ -79,4 +81,35 @@ it("records the visit of the next thread at once after switching threads", async
   // Thread A's throttle must not hold back B's first watermark: leaving B
   // within the throttle window would otherwise keep it unread.
   expect(visitedThreadIds()).toEqual(["a", "b"]);
+});
+
+it("does not advance the watermark for an unfocused cell or a reader scrolled up", async () => {
+  mocks.visitRun.mockReset();
+  mocks.visitRun.mockResolvedValue(AsyncResult.success(undefined));
+  setShell(threadC, "2026-01-05T00:00:00.000Z");
+  using _focused = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  using _timers = fakeTimers();
+  vi.setSystemTime(NOW);
+  claimThreadOpen(threadC.environmentId, threadC.threadId, NOW);
+
+  await using screen = await render(
+    <AppAtomRegistryProvider>
+      <ThreadVisitWatermark threadRef={threadC} active={false} />
+    </AppAtomRegistryProvider>,
+  );
+  expect(visitedThreadIds()).toEqual([]);
+
+  await screen.rerender(
+    <AppAtomRegistryProvider>
+      <ThreadVisitWatermark threadRef={threadC} active atEnd={false} />
+    </AppAtomRegistryProvider>,
+  );
+  expect(visitedThreadIds()).toEqual([]);
+
+  await screen.rerender(
+    <AppAtomRegistryProvider>
+      <ThreadVisitWatermark threadRef={threadC} active atEnd />
+    </AppAtomRegistryProvider>,
+  );
+  expect(visitedThreadIds()).toEqual(["c"]);
 });

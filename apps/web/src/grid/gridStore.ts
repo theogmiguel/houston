@@ -260,6 +260,22 @@ function containsThreadId(tree: LayoutNode | null, threadId: string): boolean {
   return tree !== null && preorderThreads(tree).some((leaf) => leaf.threadId === threadId);
 }
 
+/**
+ * A thread lives in at most one grid: adding it elsewhere removes it from the
+ * grid it was in, so two ChatViews never share one thread.
+ */
+function removeThreadFromOtherGrids(
+  grids: ReadonlyArray<GridRecord>,
+  exceptGridId: string,
+  threadId: string,
+): GridRecord[] {
+  return grids.map((grid) =>
+    grid.id === exceptGridId || grid.tree === null || !containsThreadId(grid.tree, threadId)
+      ? grid
+      : withTree(grid, removeThread(grid.tree, threadId)),
+  );
+}
+
 function replaceThreadDraft(
   tree: LayoutNode | null,
   threadId: string,
@@ -578,12 +594,22 @@ export const useGridStore = create<GridStoreState>()(
           };
         }),
       addThread: (gridId, threadId, draftId) =>
-        set((state) => ({
-          grids: updateGrid(state.grids, gridId, (grid) =>
-            addThreadToGrid(grid, threadId, draftId),
-          ),
-          closedCells: forgetClosedCellEverywhere(state.closedCells, threadId),
-        })),
+        set((state) => {
+          const target = gridById(state.grids, gridId);
+          if (target === null) return state;
+          const alreadyShown = containsThreadId(target.tree, threadId);
+          const count = target.tree === null ? 0 : preorderThreads(target.tree).length;
+          // The grid cap holds whether the thread arrives by drop, split or auto-placement.
+          if (!alreadyShown && count >= MAX_GRID_THREADS) return state;
+          return {
+            grids: updateGrid(
+              removeThreadFromOtherGrids(state.grids, gridId, threadId),
+              gridId,
+              (grid) => addThreadToGrid(grid, threadId, draftId),
+            ),
+            closedCells: forgetClosedCellEverywhere(state.closedCells, threadId),
+          };
+        }),
       removeThreadFromGrid: (gridId, threadId) =>
         set((state) => ({
           grids: updateGrid(state.grids, gridId, (grid) =>
@@ -695,6 +721,11 @@ export const useGridStore = create<GridStoreState>()(
         const sourceGrid = grids.find(
           (grid) => grid.tree !== null && findThread(grid.tree, input.threadId) !== null,
         );
+        // A cell's thread ref is built from the target grid's environment, so a
+        // cross-workspace drop would produce a pane with the wrong owner.
+        if (sourceGrid !== undefined && sourceGrid.environmentId !== target.environmentId) {
+          return false;
+        }
         if (sourceGrid !== undefined && sourceGrid.id !== target.id) {
           grids = updateGrid(grids, sourceGrid.id, (grid) =>
             withTree(grid, grid.tree === null ? null : removeThread(grid.tree, input.threadId)),

@@ -154,7 +154,8 @@ export function resolveGridThreadAttentionState(state: GridThreadState): boolean
 }
 
 export interface AttentionCard {
-  readonly gridId: string;
+  /** Null for a workspace thread that is not in any grid. */
+  readonly gridId: string | null;
   readonly threadId: string;
   readonly state: GridThreadState;
 }
@@ -203,7 +204,7 @@ export function attentionNavigationDirection(event: AttentionNavigationEvent): 1
  */
 export function nextAttentionCard(
   cards: ReadonlyArray<AttentionCard>,
-  current: { readonly gridId: string; readonly threadId: string } | null,
+  current: { readonly gridId: string | null; readonly threadId: string } | null,
   direction: 1 | -1,
 ): AttentionCard | null {
   const candidates = cards.filter((card) => resolveGridThreadAttentionState(card.state));

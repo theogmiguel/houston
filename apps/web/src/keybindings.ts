@@ -34,6 +34,7 @@ export interface ShortcutMatchContext {
   terminalOpen: boolean;
   previewFocus: boolean;
   previewOpen: boolean;
+  gridRoute?: boolean;
   isWeb: boolean;
   isDesktop: boolean;
   editableFocus?: boolean;
@@ -62,6 +63,7 @@ function resolvePlatform(options: ShortcutMatchOptions | undefined): string {
 
 function resolveContext(options: ShortcutMatchOptions | undefined): ShortcutMatchContext {
   return {
+    gridRoute: typeof window !== "undefined" && window.location.pathname.startsWith("/grid/"),
     terminalFocus: false,
     terminalOpen: false,
     previewFocus: false,

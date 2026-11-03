@@ -13,11 +13,11 @@ import {
 } from "@houston-app/client-runtime/state/models";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
-  AlarmClockIcon,
   AlarmClockOffIcon,
   CheckIcon,
   ChevronRightIcon,
   ClockIcon,
+  CpuIcon,
   EyeOffIcon,
   GitBranchIcon,
   MoreHorizontalIcon,
@@ -44,12 +44,20 @@ import {
   DEFAULT_SIDEBAR_GRID_THREAD_SORT_ORDER,
 } from "@houston-app/contracts/settings";
 import {
+  gridById,
   type GridRecord,
+  MAX_GRID_THREADS,
   orderedGridsForWorkspace,
   sidebarOrderedGrids,
   useGridStore,
   workspaceKeyOf,
 } from "../../grid/gridStore";
+import { resolveGridThreadTarget } from "../../grid/gridNavigation";
+import {
+  nextRailTargetIndex,
+  pinnedThreadsFirst,
+  ungroupedWorkspaceThreads,
+} from "../../grid/rail";
 import {
   beginThreadDrag,
   endThreadDrag,
@@ -59,7 +67,6 @@ import {
 } from "../../grid/threadDrag";
 import {
   attentionCardsForGrids,
-  attentionNavigationDirection,
   clearThreadSelection,
   gridThreadStateLabel,
   nextAttentionCard,
@@ -75,18 +82,25 @@ import {
   type GridThreadState,
   type ThreadSelection,
 } from "../../grid/sidebar";
-import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
+import { PullRequestChecksGlyph, PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { GridShelves } from "./GridShelves";
+import { SidebarUngroupedSection } from "../ui/sidebar-ungrouped";
 import { COLLAPSED_GRIDS_STORAGE_KEY, useCollapsedKeys } from "./sidebarCollapse";
 import { preorderThreads } from "../../grid/tree";
 import { useOpenGridDraft } from "../../grid/useOpenGridDraft";
 import { useQuietThreadShells, useProjects } from "../../state/entities";
+import { useSidebarProjectGroups } from "../../hooks/useSidebarProjectGroups";
 import { registerSettleAndAdvance } from "../../settleAndAdvance";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { threadEnvironment } from "../../state/threads";
 import { useThreadActions } from "../../hooks/useThreadActions";
-import { shortcutLabelForCommand } from "../../keybindings";
+import {
+  resolveShortcutCommand,
+  shortcutLabelForCommand,
+  threadJumpIndexFromCommand,
+  threadTraversalDirectionFromCommand,
+} from "../../keybindings";
 import { isEditableFocused } from "../../lib/editableFocus";
 import { isPreviewFocused } from "../../lib/previewFocus";
 import { isTerminalFocused } from "../../lib/terminalFocus";
@@ -171,9 +185,13 @@ function threadTimeLabel(thread: EnvironmentThreadShell, nowMinute: string): str
   );
 }
 
-function wakeTimeLabel(snoozedUntil: string): string {
+function wakeTimeLabel(snoozedUntil: string, now = new Date()): string {
   const date = new Date(snoozedUntil);
-  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const time = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  // A hold longer than a day needs its date; a bare time reads as today.
+  return date.toDateString() === now.toDateString()
+    ? time
+    : `${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
 }
 
 function HighlightedText({ text, query }: { text: string; query: string }) {
@@ -202,8 +220,20 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
 }
 
 export function GridSidebar() {
-  const projects = useProjects();
+  const allProjects = useProjects();
   const threads = useQuietThreadShells();
+  // Reading the same project groups as the rest of the app makes the rail obey
+  // pin, grouping and sort order instead of raw store order.
+  const projectGroups = useSidebarProjectGroups();
+  const projects = projectGroups.flatMap((group) =>
+    group.memberProjectRefs.flatMap((ref) => {
+      const project = allProjects.find(
+        (candidate) =>
+          candidate.environmentId === ref.environmentId && candidate.id === ref.projectId,
+      );
+      return project === undefined || project.archivedAt != null ? [] : [project];
+    }),
+  );
   const grids = useGridStore((store) => store.grids);
   const threadOrigins = useGridStore((store) => store.threadOrigins);
   const createGrid = useGridStore((store) => store.createGrid);
@@ -269,24 +299,71 @@ export function GridSidebar() {
     void openGridDraft({ gridId: grid.id, focusedThreadId: grid.focusedThreadId });
   };
 
-  const orderedThreadKeys = projects.flatMap((project) =>
-    orderedGridsForWorkspace(grids, workspaceKeyOf(project.environmentId, project.id))
-      .filter((grid) => !grid.hidden)
-      .flatMap((grid) =>
-        visibleGridThreads(grid, threads, nowIso).map((thread) =>
-          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-        ),
-      ),
+  const threadById = new Map<string, EnvironmentThreadShell>(
+    threads.map((thread) => [thread.id, thread] as const),
   );
 
-  // Hidden grids still answer Ctrl .: their threads keep their grid and pane.
-  const allCards: AttentionCard[] = projects.flatMap((project) =>
-    attentionCardsForGrids(
-      orderedGridsForWorkspace(grids, workspaceKeyOf(project.environmentId, project.id)),
-      threads,
-      nowIso,
-    ),
+  // The rail's flat order: workspaces, their grids, each grid's panes, then the
+  // workspace threads no grid shows. Keyboard traversal and shift-click ranges
+  // follow exactly what the rail draws.
+  const ungroupedByWorkspace = new Map<string, EnvironmentThreadShell[]>();
+  const railTargets = projects.flatMap((project) => {
+    const workspaceKey = workspaceKeyOf(project.environmentId, project.id);
+    const workspaceGrids = orderedGridsForWorkspace(grids, workspaceKey).filter(
+      (grid) => !grid.hidden,
+    );
+    const gridTargets = workspaceGrids.flatMap((grid) =>
+      visibleGridThreads(grid, threads, nowIso).map((thread) => ({
+        gridId: grid.id as string | null,
+        environmentId: thread.environmentId,
+        projectId: thread.projectId,
+        threadId: thread.id,
+      })),
+    );
+    const ungrouped = ungroupedWorkspaceThreads({ project, grids, threads, now: nowIso });
+    ungroupedByWorkspace.set(
+      workspaceKey,
+      pinnedThreadsFirst(threadSort === "grid" ? ungrouped : sortThreads(ungrouped, threadSort)),
+    );
+    return [
+      ...gridTargets,
+      ...ungrouped.map((thread) => ({
+        gridId: null,
+        environmentId: thread.environmentId,
+        projectId: thread.projectId,
+        threadId: thread.id,
+      })),
+    ];
+  });
+  const orderedThreadKeys = railTargets.map((target) =>
+    scopedThreadKey(scopeThreadRef(target.environmentId, target.threadId)),
   );
+  const openRailTarget = (target: (typeof railTargets)[number]) => {
+    if (target.gridId !== null) {
+      openThread(target.gridId, target.threadId);
+      return;
+    }
+    const resolved = resolveGridThreadTarget({
+      environmentId: target.environmentId,
+      projectId: target.projectId,
+      threadId: target.threadId,
+    });
+    if (resolved !== null) openThread(resolved.gridId, resolved.threadId);
+  };
+
+  // Hidden grids still answer Ctrl .: their threads keep their grid and pane.
+  // Ungrouped threads answer too, so an approval cannot hide from the walk.
+  const allCards: AttentionCard[] = projects.flatMap((project) => {
+    const workspaceKey = workspaceKeyOf(project.environmentId, project.id);
+    return [
+      ...attentionCardsForGrids(orderedGridsForWorkspace(grids, workspaceKey), threads, nowIso),
+      ...(ungroupedByWorkspace.get(workspaceKey) ?? []).map((thread) => ({
+        gridId: null,
+        threadId: thread.id,
+        state: resolveGridThreadState(thread, nowIso),
+      })),
+    ];
+  });
 
   const currentFocus =
     openGrid === null || openGrid.focusedThreadId === null
@@ -319,9 +396,10 @@ export function GridSidebar() {
       const remaining = visibleGridThreads(openGrid, threads, nowIso).filter(
         (thread) => !closedKeys.has(thread.id),
       );
+      // Closing the last cell keeps the grid on screen; its empty state offers
+      // a draft, and the closed thread is listed on the Closed shelf.
       const next = remaining[0];
       if (next !== undefined) openThread(openGrid.id, next.id);
-      else void navigate({ to: "/" });
     }
     for (const thread of threadsToClose) {
       void (async () => {
@@ -396,7 +474,11 @@ export function GridSidebar() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || !sidebarVisible) return;
-      const direction = attentionNavigationDirection(event);
+      const command = resolveShortcutCommand(event, keybindings, {
+        context: { gridRoute: true, terminalFocus: false, editableFocus: false },
+      });
+      const direction =
+        command === "thread.attentionNext" ? 1 : command === "thread.attentionPrevious" ? -1 : null;
       if (direction === null) return;
       if (
         isEditableFocused(event.target) ||
@@ -412,7 +494,17 @@ export function GridSidebar() {
       if (card === null) return;
       event.preventDefault();
       event.stopPropagation();
-      openThread(card.gridId, card.threadId);
+      const thread = threadById.get(card.threadId);
+      if (thread !== undefined) {
+        openRailTarget({
+          gridId: card.gridId,
+          environmentId: thread.environmentId,
+          projectId: thread.projectId,
+          threadId: thread.id,
+        });
+      } else if (card.gridId !== null) {
+        openThread(card.gridId, card.threadId);
+      }
     };
     const onEscape = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.key !== "Escape") return;
@@ -427,6 +519,44 @@ export function GridSidebar() {
       window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("keydown", onEscape);
     };
+  });
+
+  // Thread traversal and jump: the rail owns the order, so Mod+Shift+[ / ] and
+  // Mod+1..9 walk the same rows the user sees, including ungrouped threads.
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- window keydown listener for thread traversal and jump shortcuts
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return;
+      if (
+        isEditableFocused(event.target) ||
+        isTerminalFocused() ||
+        isPreviewFocused() ||
+        isCommandPaletteOpen() ||
+        isModelPickerOpen() ||
+        isAppModalPage(pathname)
+      ) {
+        return;
+      }
+      const command = resolveShortcutCommand(event, keybindings, {
+        context: { terminalFocus: false, editableFocus: false },
+      });
+      const direction = threadTraversalDirectionFromCommand(command);
+      const jumpIndex = threadJumpIndexFromCommand(command ?? "");
+      if (direction === null && jumpIndex === null) return;
+      if (railTargets.length === 0) return;
+      const index =
+        jumpIndex !== null
+          ? jumpIndex
+          : nextRailTargetIndex(railTargets, currentFocus, direction ?? "next");
+      if (index === null) return;
+      const target = railTargets[index];
+      if (target === undefined) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openRailTarget(target);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   });
 
   const selectThread = (
@@ -474,6 +604,31 @@ export function GridSidebar() {
     readThreadDrag(event.dataTransfer);
   const moveThreadToGrid = (source: DraggedThread, targetGridId: string) => {
     if (source.gridId === targetGridId) return;
+    const thread = threadById.get(source.threadId);
+    const target = gridById(useGridStore.getState().grids, targetGridId);
+    if (thread === undefined || target === null) return;
+    if (workspaceKeyOf(thread.environmentId, thread.projectId) !== target.workspaceKey) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Thread belongs to another workspace",
+          description: `“${thread.title}” cannot join “${target.name}”.`,
+        }),
+      );
+      return;
+    }
+    const leaves = target.tree === null ? [] : preorderThreads(target.tree);
+    const alreadyShown = leaves.some((leaf) => leaf.threadId === source.threadId);
+    if (!alreadyShown && leaves.length >= MAX_GRID_THREADS) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: `This grid holds its maximum of ${MAX_GRID_THREADS} threads`,
+          description: `“${target.name}” already shows ${leaves.length}; add a new grid instead.`,
+        }),
+      );
+      return;
+    }
     useGridStore.getState().removeThreadFromGrid(source.gridId, source.threadId);
     useGridStore.getState().addThread(targetGridId, source.threadId);
   };
@@ -488,17 +643,27 @@ export function GridSidebar() {
     }
     moveThreadToGrid(source, targetGridId);
   };
+  const openReturnedThread = (thread: EnvironmentThreadShell) => {
+    const target = resolveGridThreadTarget({
+      environmentId: thread.environmentId,
+      projectId: thread.projectId,
+      threadId: thread.id,
+      fromShelf: true,
+    });
+    if (target !== null) openThread(target.gridId, target.threadId);
+  };
+
   const wakeShelfThread = (thread: EnvironmentThreadShell) => {
     void (async () => {
       const result = await actions.unsnoozeThread(scopeThreadRef(thread.environmentId, thread.id));
-      reportFailure("Failed to bring thread back", result);
+      if (!reportFailure("Failed to bring thread back", result)) openReturnedThread(thread);
     })();
   };
 
   const reopenShelfThread = (thread: EnvironmentThreadShell) => {
     void (async () => {
       const result = await actions.unsettleThread(scopeThreadRef(thread.environmentId, thread.id));
-      reportFailure("Failed to reopen thread", result);
+      if (!reportFailure("Failed to reopen thread", result)) openReturnedThread(thread);
     })();
   };
 
@@ -510,10 +675,6 @@ export function GridSidebar() {
   );
   const shelves = partitionShelfThreads(threads, workspaceKeys, nowIso);
   const runningSubagentsByThread = runningSubagentsByParentThread(threads, nowIso);
-  const threadById = new Map<string, EnvironmentThreadShell>(
-    threads.map((thread) => [thread.id, thread] as const),
-  );
-
   // A held or closed thread leaves its pane but keeps its slot for the return.
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- keeps the grid store in step with thread lifecycle from the server
   useEffect(() => {
@@ -553,11 +714,26 @@ export function GridSidebar() {
   }, [threadById, threadOrigins, nowIso]);
 
   const query = search.trim();
-  const searchMatchThreads = projects.flatMap((project) =>
-    orderedGridsForWorkspace(grids, workspaceKeyOf(project.environmentId, project.id))
-      .filter((grid) => !grid.hidden)
-      .flatMap((grid) =>
-        visibleGridThreads(grid, threads, nowIso).filter((thread) =>
+  const searchMatchThreads = [
+    ...projects.flatMap((project) =>
+      orderedGridsForWorkspace(grids, workspaceKeyOf(project.environmentId, project.id))
+        .filter((grid) => !grid.hidden)
+        .flatMap((grid) =>
+          visibleGridThreads(grid, threads, nowIso).filter((thread) =>
+            threadMatchesGridSearch(
+              {
+                title: thread.title,
+                branch: thread.branch,
+                pullRequests: thread.pullRequests,
+              },
+              query,
+            ),
+          ),
+        ),
+    ),
+    ...projects.flatMap((project) =>
+      (ungroupedByWorkspace.get(workspaceKeyOf(project.environmentId, project.id)) ?? []).filter(
+        (thread) =>
           threadMatchesGridSearch(
             {
               title: thread.title,
@@ -566,9 +742,9 @@ export function GridSidebar() {
             },
             query,
           ),
-        ),
       ),
-  );
+    ),
+  ];
 
   const hiddenGridGroups = projects.flatMap((project) => {
     const workspaceKey = workspaceKeyOf(project.environmentId, project.id);
@@ -638,13 +814,52 @@ export function GridSidebar() {
                   }
                   if (event.key === "Enter") {
                     const first = searchMatchThreads[0];
-                    if (first === undefined) return;
-                    const grid = grids.find((candidate) =>
-                      visibleGridThreads(candidate, threads, nowIso).some(
-                        (thread) => thread.id === first.id,
-                      ),
+                    if (first !== undefined) {
+                      const grid = grids.find((candidate) =>
+                        visibleGridThreads(candidate, threads, nowIso).some(
+                          (thread) => thread.id === first.id,
+                        ),
+                      );
+                      if (grid !== undefined) openThread(grid.id, first.id);
+                      else {
+                        const target = railTargets.find(
+                          (candidate) =>
+                            candidate.threadId === first.id &&
+                            candidate.environmentId === first.environmentId,
+                        );
+                        if (target !== undefined) openRailTarget(target);
+                      }
+                      return;
+                    }
+                    const matchedGrid = projects
+                      .flatMap((project) =>
+                        orderedGridsForWorkspace(
+                          grids,
+                          workspaceKeyOf(project.environmentId, project.id),
+                        ).filter((grid) => !grid.hidden),
+                      )
+                      .find((grid) =>
+                        grid.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+                      );
+                    if (matchedGrid !== undefined) {
+                      const candidate = railTargets.find(
+                        (target) => target.gridId === matchedGrid.id,
+                      );
+                      if (candidate !== undefined) openRailTarget(candidate);
+                      else
+                        void navigate({ to: "/grid/$gridId", params: { gridId: matchedGrid.id } });
+                      return;
+                    }
+                    const matchedProject = projects.find((project) =>
+                      project.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
                     );
-                    if (grid !== undefined) openThread(grid.id, first.id);
+                    const workspaceTarget =
+                      matchedProject === undefined
+                        ? undefined
+                        : railTargets.find(
+                            (target) => target.environmentId === matchedProject.environmentId,
+                          );
+                    if (workspaceTarget !== undefined) openRailTarget(workspaceTarget);
                   }
                 }}
                 placeholder="Search"
@@ -686,77 +901,125 @@ export function GridSidebar() {
                 project.title.toLocaleLowerCase().includes(query.toLocaleLowerCase());
               const providerEntries =
                 providerEntriesByEnvironment.get(project.environmentId) ?? EMPTY_PROVIDER_ENTRIES;
-              return workspaceGrids
-                .filter((grid) => !grid.hidden)
-                .map((grid) => {
-                  const gridMatches =
-                    query.length > 0 &&
-                    grid.name.toLocaleLowerCase().includes(query.toLocaleLowerCase());
-                  const paneOrderThreads = visibleGridThreads(grid, threads, nowIso);
-                  const gridThreads =
-                    threadSort === "grid"
-                      ? paneOrderThreads
-                      : sortThreads(paneOrderThreads, threadSort);
-                  const matchedThreads =
-                    query.length === 0 || workspaceMatches || gridMatches
-                      ? gridThreads
-                      : gridThreads.filter((thread) =>
-                          threadMatchesGridSearch(
-                            {
-                              title: thread.title,
-                              branch: thread.branch,
-                              pullRequests: thread.pullRequests,
-                            },
-                            query,
-                          ),
-                        );
-                  if (
-                    query.length > 0 &&
-                    !workspaceMatches &&
-                    !gridMatches &&
-                    matchedThreads.length === 0
-                  ) {
-                    return null;
-                  }
-                  return (
-                    <GridGroup
-                      key={grid.id}
-                      grid={grid}
-                      workspaceTitle={project.title}
-                      threads={matchedThreads}
-                      query={query}
-                      open={openGrid?.id === grid.id}
-                      collapsed={query.length === 0 && collapsedGrids.collapsed.has(grid.id)}
-                      onToggleCollapsed={() => collapsedGrids.toggle(grid.id)}
-                      providerEntries={providerEntries}
-                      nowIso={nowIso}
-                      selection={selection}
-                      runningSubagents={runningSubagentsByThread}
-                      dragging={dragging}
-                      dropTarget={dropTarget}
-                      hiddenGrids={hiddenGrids}
-                      onOpenThread={openThread}
-                      onSelectThread={selectThread}
-                      onCloseThread={(thread) => closeThreads([thread])}
-                      onHoldThread={(thread, preset) => holdThreads([thread], preset.snoozedUntil)}
-                      onPickHoldTime={pickHoldTime}
-                      onDragStart={handleDragStart}
-                      onDragEnd={handleDragEnd}
-                      onDragOverGrid={setDropTarget}
-                      onDropOnGrid={(source, targetGridId) =>
-                        moveThreadToGrid(source, targetGridId)
-                      }
-                      onDropOnThread={dropThreadOnThread}
-                      onDragLeave={() => setDropTarget(null)}
-                      readDragged={readDragged}
-                      onCreateThread={() => createThreadInGrid(grid)}
-                      onRenameThread={renameThread}
-                      onSetAutoClose={setAutoClose}
-                      onShowGrid={(gridId) => useGridStore.getState().setGridHidden(gridId, false)}
-                      onCreateGrid={() => createGridInWorkspace(workspaceKey)}
-                    />
-                  );
-                });
+              const visibleWorkspaceGrids = workspaceGrids.filter((grid) => !grid.hidden);
+              const groups = visibleWorkspaceGrids.map((grid) => {
+                const gridMatches =
+                  query.length > 0 &&
+                  grid.name.toLocaleLowerCase().includes(query.toLocaleLowerCase());
+                const paneOrderThreads = visibleGridThreads(grid, threads, nowIso);
+                const gridThreads =
+                  threadSort === "grid"
+                    ? paneOrderThreads
+                    : sortThreads(paneOrderThreads, threadSort);
+                const matchedThreads =
+                  query.length === 0 || workspaceMatches || gridMatches
+                    ? gridThreads
+                    : gridThreads.filter((thread) =>
+                        threadMatchesGridSearch(
+                          {
+                            title: thread.title,
+                            branch: thread.branch,
+                            pullRequests: thread.pullRequests,
+                          },
+                          query,
+                        ),
+                      );
+                if (
+                  query.length > 0 &&
+                  !workspaceMatches &&
+                  !gridMatches &&
+                  matchedThreads.length === 0
+                ) {
+                  return null;
+                }
+                return (
+                  <GridGroup
+                    key={grid.id}
+                    grid={grid}
+                    workspaceTitle={project.title}
+                    threads={matchedThreads}
+                    query={query}
+                    open={openGrid?.id === grid.id}
+                    collapsed={query.length === 0 && collapsedGrids.collapsed.has(grid.id)}
+                    onToggleCollapsed={() => collapsedGrids.toggle(grid.id)}
+                    providerEntries={providerEntries}
+                    nowIso={nowIso}
+                    selection={selection}
+                    runningSubagents={runningSubagentsByThread}
+                    dragging={dragging}
+                    dropTarget={dropTarget}
+                    hiddenGrids={hiddenGrids}
+                    onOpenThread={openThread}
+                    onSelectThread={selectThread}
+                    onCloseThread={(thread) => closeThreads([thread])}
+                    onHoldThread={(thread, preset) => holdThreads([thread], preset.snoozedUntil)}
+                    onPickHoldTime={pickHoldTime}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                    onDragOverGrid={setDropTarget}
+                    onDropOnGrid={(source, targetGridId) => moveThreadToGrid(source, targetGridId)}
+                    onDropOnThread={dropThreadOnThread}
+                    onDragLeave={() => setDropTarget(null)}
+                    readDragged={readDragged}
+                    onCreateThread={() => createThreadInGrid(grid)}
+                    onRenameThread={renameThread}
+                    onSetAutoClose={setAutoClose}
+                    onShowGrid={(gridId) => useGridStore.getState().setGridHidden(gridId, false)}
+                    onCreateGrid={() => createGridInWorkspace(workspaceKey)}
+                  />
+                );
+              });
+              const ungroupedThreads = (ungroupedByWorkspace.get(workspaceKey) ?? []).filter(
+                (thread) =>
+                  query.length === 0 ||
+                  workspaceMatches ||
+                  threadMatchesGridSearch(
+                    {
+                      title: thread.title,
+                      branch: thread.branch,
+                      pullRequests: thread.pullRequests,
+                    },
+                    query,
+                  ),
+              );
+              const showUngrouped =
+                ungroupedThreads.length > 0 ||
+                (visibleWorkspaceGrids.length === 0 && (query.length === 0 || workspaceMatches));
+              return [
+                ...groups,
+                ...(showUngrouped
+                  ? [
+                      <UngroupedGroup
+                        key={`ungrouped:${workspaceKey}`}
+                        workspaceTitle={project.title}
+                        threads={ungroupedThreads}
+                        query={query}
+                        providerEntries={providerEntries}
+                        nowIso={nowIso}
+                        selection={selection}
+                        runningSubagents={runningSubagentsByThread}
+                        onCreateGrid={() => createGridInWorkspace(workspaceKey)}
+                        onOpenThread={(thread) =>
+                          openRailTarget({
+                            gridId: null,
+                            environmentId: thread.environmentId,
+                            projectId: thread.projectId,
+                            threadId: thread.id,
+                          })
+                        }
+                        onSelectThread={selectThread}
+                        onCloseThread={(thread) => closeThreads([thread])}
+                        onHoldThread={(thread, preset) =>
+                          holdThreads([thread], preset.snoozedUntil)
+                        }
+                        onPickHoldTime={pickHoldTime}
+                        onRenameThread={renameThread}
+                        onSetAutoClose={setAutoClose}
+                        readDragged={readDragged}
+                      />,
+                    ]
+                  : []),
+              ];
             })}
           </div>
         </div>
@@ -795,7 +1058,9 @@ export function GridSidebar() {
               }
               nowIso={nowIso}
               focused={false}
-              selected={false}
+              selected={selection.selectedThreadKeys.has(
+                scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+              )}
               dragging={false}
               runningSubagents={runningSubagentsByThread.get(subagentParentKey(thread)) ?? 0}
               workspaceTitle={
@@ -811,11 +1076,11 @@ export function GridSidebar() {
                 if (shelf === "snoozed") wakeShelfThread(thread);
                 else reopenShelfThread(thread);
               }}
-              onSelect={() => {}}
+              onSelect={(input) => selectThread(thread, input)}
               onClose={() => {}}
               onHold={() => {}}
               onPickHoldTime={pickHoldTime}
-              onRename={() => {}}
+              onRename={(title) => renameThread(thread, title)}
               onSetAutoClose={() => {}}
               onWake={() => wakeShelfThread(thread)}
               onReopen={() => reopenShelfThread(thread)}
@@ -884,9 +1149,8 @@ export function GridSidebar() {
             </span>
           </div>
         </div>
-      ) : (
-        <SidebarChromeFooter />
-      )}
+      ) : null}
+      <SidebarChromeFooter />
       {dragging !== null ? (
         <span aria-hidden className="sr-only">
           Dragging thread
@@ -946,7 +1210,7 @@ async function deleteGridWithConfirm(
   const { requestConfirmDialog } = await import("../../confirmDialog");
   const confirmed =
     (await requestConfirmDialog(
-      `Delete the grid “${grid.name}”? Its threads stay in the workspace.`,
+      `Delete the grid “${grid.name}”? Its threads stay in the workspace and appear under Ungrouped.`,
       { variant: "destructive" },
     )) ?? false;
   if (confirmed) deleteGrid(grid.id);
@@ -1031,6 +1295,8 @@ export function GridGroup({
   const setGridHidden = useGridStore((store) => store.setGridHidden);
   const deleteGrid = useGridStore((store) => store.deleteGrid);
   const moveGridInWorkspace = useGridStore((store) => store.moveGridInWorkspace);
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const newThreadShortcut = shortcutLabelForCommand(keybindings, "chat.new");
   const manualOrder = useClientSettings((settings) => settings.sidebarGridSortOrder === "manual");
   const isDropTarget = dropTarget === `grid:${grid.id}`;
   const readyThreads = threads.filter(
@@ -1188,7 +1454,9 @@ export function GridGroup({
                 >
                   <PlusIcon aria-hidden className="size-3" />
                 </TooltipTrigger>
-                <TooltipPopup side="top">New thread · T</TooltipPopup>
+                <TooltipPopup side="top">
+                  {newThreadShortcut === null ? "New thread" : `New thread · ${newThreadShortcut}`}
+                </TooltipPopup>
               </Tooltip>
             </span>
             <Menu>
@@ -1246,6 +1514,90 @@ export function GridGroup({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * A workspace's live threads that no grid shows: created by the CLI or another
+ * client, left behind by a deleted grid, or closed from a cell. The section
+ * also keeps a workspace visible when it has no grid yet.
+ */
+function UngroupedGroup({
+  workspaceTitle,
+  threads,
+  query,
+  providerEntries,
+  nowIso,
+  selection,
+  runningSubagents,
+  onCreateGrid,
+  onOpenThread,
+  onSelectThread,
+  onCloseThread,
+  onHoldThread,
+  onPickHoldTime,
+  onRenameThread,
+  onSetAutoClose,
+  readDragged,
+}: {
+  workspaceTitle: string;
+  threads: ReadonlyArray<EnvironmentThreadShell>;
+  query: string;
+  providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
+  nowIso: string;
+  selection: ThreadSelection;
+  runningSubagents: ReadonlyMap<string, number>;
+  onCreateGrid: () => void;
+  onOpenThread: (thread: EnvironmentThreadShell) => void;
+  onSelectThread: (
+    thread: EnvironmentThreadShell,
+    input: { shiftKey: boolean; toggleKey: boolean },
+  ) => void;
+  onCloseThread: (thread: EnvironmentThreadShell) => void;
+  onHoldThread: (
+    thread: EnvironmentThreadShell,
+    preset: Pick<SnoozePreset, "snoozedUntil">,
+  ) => void;
+  onPickHoldTime: () => Promise<Pick<SnoozePreset, "snoozedUntil"> | null>;
+  onRenameThread: (thread: EnvironmentThreadShell, title: string) => void;
+  onSetAutoClose: (thread: EnvironmentThreadShell, enabled: boolean) => void;
+  readDragged: (event: ReactDragEvent) => DraggedThread | null;
+}) {
+  return (
+    <SidebarUngroupedSection
+      workspaceTitle={workspaceTitle}
+      empty={threads.length === 0}
+      onCreateGrid={onCreateGrid}
+    >
+      {threads.map((thread) => (
+        <ThreadCard
+          key={thread.id}
+          gridId={null}
+          thread={thread}
+          query={query}
+          providerEntries={providerEntries}
+          nowIso={nowIso}
+          focused={false}
+          selected={selection.selectedThreadKeys.has(
+            scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+          )}
+          dragging={false}
+          runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
+          workspaceTitle={workspaceTitle}
+          onOpen={() => onOpenThread(thread)}
+          onSelect={(input) => onSelectThread(thread, input)}
+          onClose={() => onCloseThread(thread)}
+          onHold={(preset) => onHoldThread(thread, preset)}
+          onPickHoldTime={onPickHoldTime}
+          onRename={(title) => onRenameThread(thread, title)}
+          onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
+          onDragStart={() => {}}
+          onDragEnd={() => {}}
+          onDropOnThread={() => {}}
+          readDragged={readDragged}
+        />
+      ))}
+    </SidebarUngroupedSection>
   );
 }
 
@@ -1349,6 +1701,9 @@ export function ThreadCard({
   const attention = state === "needs" || state === "ready" || state === "back";
   const startedAt = resolveThreadWorkingStartedAt(thread);
   const pullRequestNumber = openPullRequestNumber(thread);
+  const pullRequestChecksState =
+    thread.pullRequests.find((entry) => entry.number === pullRequestNumber)?.snapshot
+      ?.checksState ?? null;
   const providerEntry = providerEntries.get(thread.providerInstanceId);
   const presets = resolveSnoozePresets(
     new Date(`${nowMinute}:00.000Z`),
@@ -1645,6 +2000,9 @@ export function ThreadCard({
             <span className="inline-flex shrink-0 items-center gap-0.75 tabular-nums">
               <PullRequestGlyph.pullRequest aria-hidden className="size-3 shrink-0" />
               <span>#{pullRequestNumber}</span>
+              {pullRequestChecksState === null ? null : (
+                <PullRequestChecksGlyph state={pullRequestChecksState} />
+              )}
             </span>
           ) : null}
           <span className="inline-grid size-3.5 shrink-0 place-items-center">
@@ -1671,7 +2029,7 @@ export function ThreadCard({
             {thread.branch ?? "no branch"}
           </span>
           <span className="flex items-center gap-1.5">
-            <AlarmClockIcon aria-hidden className="size-3" />
+            <CpuIcon aria-hidden className="size-3" />
             {modelLabel ?? "model"}
           </span>
         </div>

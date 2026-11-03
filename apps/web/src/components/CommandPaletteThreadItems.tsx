@@ -34,6 +34,8 @@ import { primaryServerProvidersAtom } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { buildThreadRouteParams } from "../threadRoutes";
+import { resolveGridThreadTarget } from "../grid/gridNavigation";
+import { useGridStore } from "../grid/gridStore";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { buildThreadActionItems, ITEM_ICON_CLASS } from "./CommandPalette.logic";
 import { useEnvironmentLookups, useProjectLookups } from "./CommandPaletteLookups";
@@ -181,6 +183,18 @@ export function useCommandPaletteThreadItems(input: {
             searchQuery: pickedQuery(threadSearchQuery),
           },
         });
+      }
+      // A pick opens the thread where the rail shows it. A thread outside every
+      // grid is placed first, so the grid layout is not lost on the way.
+      const target = resolveGridThreadTarget({
+        environmentId: thread.environmentId,
+        projectId: thread.projectId,
+        threadId: thread.id,
+      });
+      if (target !== null) {
+        useGridStore.getState().focusThread(target.gridId, target.threadId);
+        await navigate({ to: "/grid/$gridId", params: { gridId: target.gridId } });
+        return;
       }
       await navigate({
         to: "/$environmentId/$threadId",

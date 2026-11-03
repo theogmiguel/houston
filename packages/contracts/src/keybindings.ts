@@ -44,6 +44,8 @@ const THREAD_KEYBINDING_COMMANDS = [
   "thread.settle",
   "thread.pin",
   "thread.undo",
+  "thread.attentionNext",
+  "thread.attentionPrevious",
   ...THREAD_JUMP_KEYBINDING_COMMANDS,
 ] as const;
 
@@ -75,6 +77,7 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "grid.tidyRow",
   "grid.tidyColumn",
   "grid.equalize",
+  "grid.toggleMaximizedCell",
   "pullRequest.copyNumber",
   "diff.toggle",
   "preview.toggle",
