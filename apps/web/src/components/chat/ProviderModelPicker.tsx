@@ -206,9 +206,13 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             data-chat-provider-model-picker-icon-only={iconOnly ? "true" : undefined}
             className={cn(
               "min-w-0 shrink justify-between whitespace-nowrap",
+              // A long model name truncates (its tooltip keeps the full name) instead of
+              // stretching across the composer footer.
               props.compact
                 ? "max-w-42 shrink-0"
-                : !props.isComposerOwned && "max-w-48 sm:max-w-56",
+                : props.isComposerOwned
+                  ? "max-w-56"
+                  : "max-w-48 sm:max-w-56",
               traitsSplitTriggerClassName(props.split),
               props.triggerClassName,
             )}
@@ -219,27 +223,26 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         <span
           className={cn("flex min-w-0 flex-1 items-center", size === "xs" ? "gap-1" : "gap-1.5")}
         >
-          {iconOnly ? (
-            <span
-              className="inline-flex shrink-0 items-center"
-              data-chat-provider-model-picker-icon="true"
-            >
-              {activeEntry ? (
-                <ProviderInstanceIcon
-                  driverKind={activeEntry.driverKind}
-                  displayName={activeEntry.displayName}
-                  accentColor={activeEntry.accentColor}
-                  acpRegistryAgentId={activeEntry.acpRegistryAgentId}
-                  acpRegistryIconUrl={activeEntry.acpRegistryIconUrl}
-                  badgeContent="none"
-                  size="compact"
-                  iconClassName="size-3.5"
-                />
-              ) : (
-                <BotIcon aria-hidden="true" className="size-3.5" />
-              )}
-            </span>
-          ) : null}
+          {/* The provider mark tells Claude, Codex and OpenCode models apart at a glance. */}
+          <span
+            className="inline-flex shrink-0 items-center"
+            data-chat-provider-model-picker-icon="true"
+          >
+            {activeEntry ? (
+              <ProviderInstanceIcon
+                driverKind={activeEntry.driverKind}
+                displayName={activeEntry.displayName}
+                accentColor={activeEntry.accentColor}
+                acpRegistryAgentId={activeEntry.acpRegistryAgentId}
+                acpRegistryIconUrl={activeEntry.acpRegistryIconUrl}
+                badgeContent="none"
+                size="compact"
+                iconClassName="size-3.5"
+              />
+            ) : (
+              <BotIcon aria-hidden="true" className="size-3.5" />
+            )}
+          </span>
           <Tooltip>
             <TooltipTrigger
               render={

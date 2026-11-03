@@ -123,9 +123,9 @@ export function ProjectFileTree({
             <span className="flex w-[13px] shrink-0 items-center justify-center text-[var(--houston)]">
               {directory ? (
                 isExpanded ? (
-                  <ChevronDown className="size-[13px]" strokeWidth={1.7} aria-hidden />
+                  <ChevronDown className="size-[13px]" aria-hidden />
                 ) : (
-                  <ChevronRight className="size-[13px]" strokeWidth={1.7} aria-hidden />
+                  <ChevronRight className="size-[13px]" aria-hidden />
                 )
               ) : null}
             </span>

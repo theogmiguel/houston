@@ -1,8 +1,30 @@
-import { CheckIcon, FolderIcon, PlusIcon } from "lucide-react";
+import type {
+  SidebarGridSortOrder,
+  SidebarGridThreadSortOrder,
+} from "@houston-app/contracts/settings";
+import {
+  CheckIcon,
+  FolderIcon,
+  FolderPlusIcon,
+  PlusIcon,
+  SlidersHorizontalIcon,
+} from "lucide-react";
 import { useState } from "react";
 
 import { cn } from "~/lib/utils";
-import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "./menu";
+import {
+  Menu,
+  MenuCheckboxItem,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuItem,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuRadioItemIndicator,
+  MenuSeparator,
+  MenuTrigger,
+} from "./menu";
 
 /** A grid heading reads as one quiet line: name, then workspace, then empty. */
 export const SIDEBAR_GRID_HEADING_CLS =
@@ -42,6 +64,9 @@ export const SIDEBAR_NEW_GRID_POPOVER_CLS = "w-58 [&>div]:p-1.5";
 
 const SIDEBAR_NEW_GRID_TITLE_CLS = "px-2 pt-1 pb-1.5 text-2xs font-semibold text-secondary-label";
 
+const SIDEBAR_NEW_GRID_NAME_CLS =
+  "mb-1 h-7 w-full min-w-0 rounded-(--r-ctl) border border-input bg-background px-2 text-xs text-foreground outline-none placeholder:text-placeholder focus:border-ring focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+
 const SIDEBAR_NEW_GRID_ROW_CLS =
   "flex h-7.5 w-full cursor-pointer items-center gap-2 rounded-(--r-ctl) px-2 text-left text-xs text-secondary-foreground outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
@@ -57,8 +82,9 @@ export interface SidebarNewGridWorkspace {
 }
 
 /**
- * The Grids heading's +: creates a grid in the preselected workspace with Enter,
- * or opens the existing add-workspace flow from the last row.
+ * The Grids heading's New grid: creates a grid in the preselected workspace with Enter,
+ * or opens the existing add-workspace flow from the last row. The optional name
+ * field names the new grid; empty keeps the default name.
  */
 export function SidebarNewGridMenu({
   workspaces,
@@ -68,19 +94,32 @@ export function SidebarNewGridMenu({
 }: {
   workspaces: ReadonlyArray<SidebarNewGridWorkspace>;
   selectedKey: string | null;
-  onSelect: (workspaceKey: string) => void;
+  onSelect: (workspaceKey: string, name?: string) => void;
   onOpenFolder: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
   const selected = workspaces.find((workspace) => workspace.key === selectedKey) ?? workspaces[0];
+  const create = (workspaceKey: string) => {
+    const trimmed = name.trim();
+    setOpen(false);
+    if (trimmed.length === 0) onSelect(workspaceKey);
+    else onSelect(workspaceKey, trimmed);
+  };
   return (
-    <Menu open={open} onOpenChange={setOpen}>
+    <Menu
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setName("");
+      }}
+    >
       <MenuTrigger
         render={
           <button type="button" aria-label="New grid" className={SIDEBAR_SECTION_ACTION_CLS} />
         }
       >
-        <PlusIcon aria-hidden className="size-[15px]" />
+        <FolderPlusIcon aria-hidden className="size-[15px]" />
       </MenuTrigger>
       <MenuPopup
         align="end"
@@ -96,12 +135,32 @@ export function SidebarNewGridMenu({
           ) {
             return;
           }
+          if (event.target instanceof HTMLInputElement) return;
           event.preventDefault();
-          setOpen(false);
-          if (selected) onSelect(selected.key);
-          else onOpenFolder();
+          if (selected) create(selected.key);
+          else {
+            setOpen(false);
+            onOpenFolder();
+          }
         }}
       >
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => {
+            // Typing must not reach the menu's typeahead and item navigation.
+            if (event.key !== "ArrowDown" && event.key !== "Escape") event.stopPropagation();
+            if (event.key === "Enter" && !event.nativeEvent.isComposing && selected) {
+              event.preventDefault();
+              create(selected.key);
+            }
+          }}
+          placeholder="Name (optional)"
+          aria-label="Grid name"
+          // Not tabbable, so the popup rather than this field takes focus on open and Enter or Space keep creating.
+          tabIndex={-1}
+          className={SIDEBAR_NEW_GRID_NAME_CLS}
+        />
         <div className={SIDEBAR_NEW_GRID_TITLE_CLS}>New grid in</div>
         {workspaces.map((workspace) => {
           const isSelected = workspace.key === selected?.key;
@@ -109,10 +168,7 @@ export function SidebarNewGridMenu({
             <MenuItem
               key={workspace.key}
               data-selected={isSelected ? "" : undefined}
-              onClick={() => {
-                setOpen(false);
-                onSelect(workspace.key);
-              }}
+              onClick={() => create(workspace.key)}
               className={cn(
                 SIDEBAR_NEW_GRID_ROW_CLS,
                 isSelected && SIDEBAR_NEW_GRID_ROW_SELECTED_CLS,
@@ -134,6 +190,122 @@ export function SidebarNewGridMenu({
         >
           <PlusIcon aria-hidden className={SIDEBAR_NEW_GRID_ICON_CLS} />
           <span className="min-w-0 flex-1 truncate">Open folder…</span>
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+export interface SidebarGridOptions {
+  readonly threadSort: SidebarGridThreadSortOrder;
+  readonly gridSort: SidebarGridSortOrder;
+  readonly showBranch: boolean;
+  readonly showPullRequest: boolean;
+  readonly showSubagents: boolean;
+}
+
+const THREAD_SORT_CHOICES = [
+  { value: "grid", label: "Grid order" },
+  { value: "updated_at", label: "Last activity" },
+  { value: "created_at", label: "Created" },
+] as const satisfies ReadonlyArray<{ value: SidebarGridThreadSortOrder; label: string }>;
+
+const GRID_SORT_CHOICES = [
+  { value: "updated_at", label: "Last activity" },
+  { value: "created_at", label: "Created" },
+  { value: "manual", label: "Manual" },
+] as const satisfies ReadonlyArray<{ value: SidebarGridSortOrder; label: string }>;
+
+// Radio and checkbox rows share one anatomy: a check in a fixed column, then the label.
+const SIDEBAR_OPTIONS_RADIO_CLS = "gap-2 data-checked:bg-transparent data-highlighted:bg-(--sel)";
+const SIDEBAR_OPTIONS_INDICATOR_BOX_CLS = "inline-flex size-4 shrink-0 items-center justify-center";
+
+function OptionRadioItem({ value, label }: { value: string; label: string }) {
+  return (
+    <MenuRadioItem value={value} className={SIDEBAR_OPTIONS_RADIO_CLS}>
+      <span className="flex items-center gap-2">
+        <span className={SIDEBAR_OPTIONS_INDICATOR_BOX_CLS}>
+          <MenuRadioItemIndicator />
+        </span>
+        {label}
+      </span>
+    </MenuRadioItem>
+  );
+}
+
+/** The Grids heading's Sidebar options: how the rail sorts and what each thread row shows. */
+export function SidebarOptionsMenu({
+  options,
+  onChange,
+  onReset,
+}: {
+  options: SidebarGridOptions;
+  onChange: (patch: Partial<SidebarGridOptions>) => void;
+  onReset: () => void;
+}) {
+  return (
+    <Menu>
+      <MenuTrigger
+        render={
+          <button
+            type="button"
+            aria-label="Sidebar options"
+            className={cn(SIDEBAR_SECTION_ACTION_CLS, "data-popup-open:bg-(--sel)")}
+          />
+        }
+      >
+        <SlidersHorizontalIcon aria-hidden className="size-[15px]" />
+      </MenuTrigger>
+      <MenuPopup align="start" side="bottom" className="min-w-56">
+        <MenuGroup>
+          <MenuGroupLabel>Sort threads</MenuGroupLabel>
+          <MenuRadioGroup
+            value={options.threadSort}
+            onValueChange={(value) => onChange({ threadSort: value as SidebarGridThreadSortOrder })}
+          >
+            {THREAD_SORT_CHOICES.map((choice) => (
+              <OptionRadioItem key={choice.value} {...choice} />
+            ))}
+          </MenuRadioGroup>
+        </MenuGroup>
+        <MenuSeparator />
+        <MenuGroup>
+          <MenuGroupLabel>Sort grids</MenuGroupLabel>
+          <MenuRadioGroup
+            value={options.gridSort}
+            onValueChange={(value) => onChange({ gridSort: value as SidebarGridSortOrder })}
+          >
+            {GRID_SORT_CHOICES.map((choice) => (
+              <OptionRadioItem key={choice.value} {...choice} />
+            ))}
+          </MenuRadioGroup>
+        </MenuGroup>
+        <MenuSeparator />
+        <MenuGroup>
+          <MenuGroupLabel>Rows show</MenuGroupLabel>
+          <MenuCheckboxItem
+            checked={options.showBranch}
+            onCheckedChange={(checked) => onChange({ showBranch: checked })}
+          >
+            Branch
+          </MenuCheckboxItem>
+          <MenuCheckboxItem
+            checked={options.showPullRequest}
+            onCheckedChange={(checked) => onChange({ showPullRequest: checked })}
+          >
+            Pull request and checks
+          </MenuCheckboxItem>
+          <MenuCheckboxItem
+            checked={options.showSubagents}
+            onCheckedChange={(checked) => onChange({ showSubagents: checked })}
+          >
+            Subagents
+          </MenuCheckboxItem>
+        </MenuGroup>
+        <MenuSeparator />
+        <MenuItem onClick={onReset}>
+          <span className="w-4 shrink-0" aria-hidden />
+          Reset to defaults
         </MenuItem>
       </MenuPopup>
     </Menu>

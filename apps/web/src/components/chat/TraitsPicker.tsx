@@ -377,7 +377,7 @@ function TraitsToggleRow(props: {
       >
         <span
           className={cn(
-            "pointer-events-none block size-2.75 shrink-0 rounded-full bg-white shadow-xs transition-transform",
+            "pointer-events-none block size-2.75 shrink-0 rounded-full bg-(--thumb) shadow-xs transition-transform",
             props.checked && "translate-x-2.75",
           )}
         />

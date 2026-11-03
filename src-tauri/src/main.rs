@@ -855,3 +855,25 @@ mod webview_data_dir_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod window_config_tests {
+    /// WebKitGTK hands a native file drop to Tauri's drag-drop handler, which consumes it, so the
+    /// renderer never receives the HTML5 `drop` event. The renderer takes dropped files as `File`
+    /// objects and has no consumer of the native drag-drop events, so the handler stays off.
+    #[test]
+    fn the_main_window_leaves_file_drops_to_the_renderer() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).expect("tauri.conf.json");
+        let main_window = config["app"]["windows"]
+            .as_array()
+            .and_then(|windows| windows.first())
+            .expect("tauri.conf.json must declare the main window under app.windows");
+        assert_eq!(
+            main_window["dragDropEnabled"],
+            serde_json::Value::Bool(false),
+            "app.windows[0].dragDropEnabled must be false so HTML5 file drops reach the renderer; got {:?}",
+            main_window["dragDropEnabled"]
+        );
+    }
+}

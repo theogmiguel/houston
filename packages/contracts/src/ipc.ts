@@ -1015,6 +1015,16 @@ export const DesktopPreviewRecordingSaveInputSchema = Schema.Struct({
 export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
+/**
+ * An image the host read from the system clipboard. Some webviews (WebKitGTK) expose a pasted
+ * image or file in no `clipboardData` field, so the host reads it natively instead.
+ */
+export interface HostClipboardImage {
+  readonly mediaType: string;
+  /** Standard base64 of the encoded image bytes. */
+  readonly base64: string;
+}
+
 export interface HostBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getRelayTelemetryEnabled: () => boolean;
@@ -1102,6 +1112,8 @@ export interface HostBridge {
   checkSystemPermission: (pane: SystemSettingsPane) => Promise<boolean>;
   probeRemoteEditors: () => Promise<readonly EditorId[]>;
   pasteAsText: () => Promise<void>;
+  /** The image on the system clipboard, or null when it holds none. Absent where `clipboardData` carries pasted images. */
+  readClipboardImage?: () => Promise<HostClipboardImage | null>;
   onMenuAction: (listener: (action: string) => void) => () => void;
   onSnapShotEvent: (listener: (event: DesktopSnapShotEvent) => void) => () => void;
   onQuitShortcut: (listener: (event: QuitShortcutHintEvent) => void) => () => void;

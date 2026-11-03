@@ -3,7 +3,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
-import { render } from "../../../test/render";
+import { fakeTimers, render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
 import { ThreadCard } from "./GridSidebar";
 
@@ -39,10 +39,16 @@ function thread(overrides: Partial<EnvironmentThreadShell> = {}): EnvironmentThr
 
 function card(
   value: EnvironmentThreadShell,
-  overrides: { onSetAutoClose?: (enabled: boolean) => void; timeLabel?: string | null } = {},
+  overrides: {
+    onSetAutoClose?: (enabled: boolean) => void;
+    onRename?: (title: string) => void;
+    onOpen?: () => void;
+    timeLabel?: string | null;
+    tooltipDelay?: number;
+  } = {},
 ) {
   return (
-    <TooltipProvider delay={0}>
+    <TooltipProvider delay={overrides.tooltipDelay ?? 0}>
       <ThreadCard
         gridId="grid-a"
         thread={value}
@@ -54,12 +60,12 @@ function card(
         dragging={false}
         workspaceTitle="Houston"
         timeLabel={overrides.timeLabel === undefined ? "9:00" : overrides.timeLabel}
-        onOpen={() => {}}
+        onOpen={overrides.onOpen ?? (() => {})}
         onSelect={() => {}}
         onClose={() => {}}
         onHold={() => {}}
         onPickHoldTime={async () => null}
-        onRename={() => {}}
+        onRename={overrides.onRename ?? (() => {})}
         onSetAutoClose={overrides.onSetAutoClose ?? (() => {})}
         onDragStart={() => {}}
         onDragEnd={() => {}}
@@ -83,6 +89,30 @@ describe("ThreadCard", () => {
     const actions = screen.getByRole("button", { name: /Thread actions for/ });
     await expect.element(actions).toBeVisible();
     await userEvent.hover(actions);
+
+    await expect.element(trigger).not.toHaveAttribute("data-popup-open");
+  });
+
+  it("does not open the preview tooltip after the pointer leaves the row through its actions", async () => {
+    await using screen = await render(
+      <div style={{ display: "flex" }}>
+        <div style={{ width: 300 }}>
+          {/* Base UI's default hover delay: an open is still pending when the pointer leaves. */}
+          {card(thread(), { tooltipDelay: 600 })}
+        </div>
+        <button type="button" style={{ width: 300, height: 300 }}>
+          Elsewhere
+        </button>
+      </div>,
+    );
+    using _timers = fakeTimers();
+    const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
+    const trigger = page.elementLocator(row);
+
+    await userEvent.hover(row);
+    await userEvent.hover(screen.getByRole("button", { name: /Thread actions for/ }));
+    await userEvent.hover(screen.getByRole("button", { name: "Elsewhere" }));
+    await vi.advanceTimersByTimeAsync(2000);
 
     await expect.element(trigger).not.toHaveAttribute("data-popup-open");
   });
@@ -113,6 +143,64 @@ describe("ThreadCard", () => {
 
     const actions = screen.getByRole("button", { name: /Thread actions for/ });
     await expect.element(actions).toBeVisible();
+  });
+
+  it("keeps the rename input mounted after the Rename menu item closes the menu, and commits on Enter", async () => {
+    const onRename = vi.fn();
+    await using screen = await render(card(thread({ title: "Greeting" }), { onRename }));
+
+    await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
+    const trigger = screen.getByRole("button", { name: /Thread actions for/ });
+    await expect.element(trigger).toBeVisible();
+    await userEvent.click(trigger);
+    await userEvent.click(page.getByRole("menuitem", { name: /Rename/ }).element());
+
+    const input = screen.getByRole("textbox");
+    await expect.element(input).toBeVisible();
+    await expect.element(input).toHaveFocus();
+    expect(onRename).not.toHaveBeenCalled();
+
+    await userEvent.fill(input.element(), "Hello");
+    await userEvent.keyboard("{Enter}");
+    expect(onRename).toHaveBeenCalledExactlyOnceWith("Hello");
+  });
+
+  it("keeps the rename input focused when Rename is chosen while the pointer rests on the row", async () => {
+    const onRename = vi.fn();
+    await using screen = await render(card(thread({ title: "Greeting" }), { onRename }));
+
+    await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
+    const trigger = screen.getByRole("button", { name: /Thread actions for/ });
+    await expect.element(trigger).toBeVisible();
+    await userEvent.click(trigger);
+    await expect.element(page.getByRole("menuitem", { name: /Open in grid/ })).toBeVisible();
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+
+    const input = screen.getByRole("textbox");
+    await expect.element(input).toBeVisible();
+    await expect.element(input).toHaveFocus();
+    expect(onRename).not.toHaveBeenCalled();
+
+    await userEvent.fill(input.element(), "Hello");
+    await userEvent.keyboard("{Enter}");
+    expect(onRename).toHaveBeenCalledExactlyOnceWith("Hello");
+  });
+
+  it("does not open the thread when the rename input is clicked", async () => {
+    const onOpen = vi.fn();
+    const onRename = vi.fn();
+    await using screen = await render(card(thread({ title: "Greeting" }), { onOpen, onRename }));
+
+    await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
+    await userEvent.click(screen.getByRole("button", { name: /Thread actions for/ }).element());
+    await userEvent.click(page.getByRole("menuitem", { name: /Rename/ }).element());
+    const input = screen.getByRole("textbox");
+    await expect.element(input).toBeVisible();
+
+    await userEvent.click(input.element());
+    await expect.element(input).toHaveFocus();
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(onRename).not.toHaveBeenCalled();
   });
 
   it("labels the auto-close toggle without a glued On suffix and toggles it", async () => {

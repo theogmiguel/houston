@@ -19,6 +19,7 @@ export function GridTopBarControls({
   threadPanelAnchorRef,
   detailsOpen,
   onToggleDetails,
+  onArrange,
 }: {
   grid: GridRecord;
   /** The centred composer of an empty grid has no tree leaf yet. */
@@ -28,6 +29,8 @@ export function GridTopBarControls({
   /** The grid's one details flag; when the grid owns it the control follows it. */
   detailsOpen?: boolean;
   onToggleDetails?: (() => void) | undefined;
+  /** Runs after the Tidy control rearranges the grid. */
+  onArrange?: (() => void) | undefined;
 }) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const focusedLeaf =
@@ -65,9 +68,6 @@ export function GridTopBarControls({
 
   return (
     <PanelLayoutControls
-      // While the panel is open its own header carries the terminal and panel toggles.
-      showTerminalControl={!rightPanelOpen}
-      showRightPanelControl={!rightPanelOpen}
       terminalAvailable={focusedRef !== null}
       terminalOpen={terminalOpen}
       terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
@@ -78,7 +78,7 @@ export function GridTopBarControls({
       rightPanelAvailable={focusedRef !== null}
       rightPanelOpen={rightPanelOpen}
       rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
-      gridLayoutControl={<GridLayoutMenu grid={grid} />}
+      gridLayoutControl={<GridLayoutMenu grid={grid} {...(onArrange ? { onArrange } : {})} />}
       onToggleTerminal={() => {
         if (focusedRef !== null) {
           useTerminalUiStateStore.getState().setTerminalOpen(focusedRef, !terminalOpen);

@@ -1,6 +1,6 @@
 import type * as React from "react";
 
-import brandMarkUrl from "../assets/houston-mark-64.png";
+import brandMarkUrl from "../assets/houston-mark.svg";
 import { cn } from "~/lib/utils";
 
 /** Houston's app mark alone, for rows that render a product icon. */

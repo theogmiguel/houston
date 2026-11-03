@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { GridRecord } from "../../grid/gridStore";
 import { beginThreadDrag, endThreadDrag } from "../../grid/threadDrag";
-import { type LayoutNode, preorderLeaves, threadLeaf } from "../../grid/tree";
+import { type LayoutNode, preorderLeaves, preorderThreads, threadLeaf } from "../../grid/tree";
 import { act, render } from "../../../test/render";
 import { GridHost, type GridCellRenderProps } from "./GridHost";
 
@@ -231,5 +231,47 @@ describe("GridHost drag and drop", () => {
     expect(screen.container.querySelector('[data-testid="indicator-thread-b"]')).toBeNull();
     await act(() => drop(target, dataTransfer, "center"));
     expect(onTreeChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("GridHost surface", () => {
+  it("lays two or more cells out as cards with an 8px gutter and one cell edge to edge", async () => {
+    await using screen = await mount(row("thread-a", "thread-b"));
+    const surface = screen.container.querySelector<HTMLElement>("[data-grid-surface]")!;
+    expect(surface.hasAttribute("data-multi")).toBe(true);
+    const gutter = screen.container.querySelector<HTMLElement>("[data-grid-gutter]")!;
+    expect(gutter.getBoundingClientRect().width).toBe(8);
+
+    await using single = await mount(threadLeaf("thread-a", "p-thread-a"));
+    const soloSurface = single.container.querySelector<HTMLElement>("[data-grid-surface]")!;
+    expect(soloSurface.hasAttribute("data-multi")).toBe(false);
+    expect(getComputedStyle(soloSurface).paddingLeft).toBe("0px");
+  });
+
+  it("shrinks a closing cell away before it leaves the tree", async () => {
+    const changes: Array<LayoutNode | null> = [];
+    let close: (() => void) | null = null;
+    await using screen = await render(
+      <div style={{ display: "flex", width: 900, height: 600 }}>
+        <GridHost
+          grid={grid(row("thread-a", "thread-b"))}
+          onTreeChange={(tree) => changes.push(tree)}
+          onFocusThread={() => {}}
+          renderThread={(cell) => {
+            if (cell.node.threadId === "thread-b") close = cell.onClose;
+            return cellMarkup(cell);
+          }}
+        />
+      </div>,
+      { router: false },
+    );
+
+    await act(() => close?.());
+    // The survivor already reads as one thread while the closing cell shrinks.
+    expect(screen.container.querySelector("[data-grid-slot][data-leaving]")).not.toBeNull();
+    expect(screen.container.querySelector("[data-grid-surface][data-multi]")).toBeNull();
+    expect(changes).toEqual([]);
+    await vi.waitFor(() => expect(changes).toHaveLength(1));
+    expect(preorderThreads(changes[0] ?? null).map((leaf) => leaf.threadId)).toEqual(["thread-a"]);
   });
 });

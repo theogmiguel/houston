@@ -37,7 +37,7 @@ describe("theme reveal", () => {
     const root = { dataset: {} as Record<string, string | undefined>, animate };
     const startViewTransition = vi.fn((callback: () => void) => {
       callback();
-      return { ready: Promise.resolve() };
+      return { ready: Promise.resolve(), finished: Promise.resolve() };
     });
     vi.stubGlobal("document", { documentElement: root, startViewTransition });
     stubViewport();
@@ -71,7 +71,7 @@ describe("theme reveal", () => {
       documentElement: root,
       startViewTransition: (callback: () => void) => {
         callback();
-        return { ready: Promise.resolve() };
+        return { ready: Promise.resolve(), finished: Promise.resolve() };
       },
     });
     stubViewport();
@@ -94,7 +94,7 @@ describe("theme reveal", () => {
       startViewTransition: (callback: () => void) => {
         scoped = root.dataset.themeReveal;
         callback();
-        return { ready: Promise.resolve() };
+        return { ready: Promise.resolve(), finished: Promise.resolve() };
       },
     });
     stubViewport();
@@ -103,6 +103,32 @@ describe("theme reveal", () => {
     revealThemeFromClick(control(), vi.fn());
 
     expect(scoped).toBe("true");
+    await vi.waitFor(() => expect(root.dataset.themeReveal).toBeUndefined());
+  });
+
+  it("keeps the reveal rules until the whole transition ends, not just the clip", async () => {
+    let finishTransition = () => {};
+    const finished = new Promise<void>((resolve) => {
+      finishTransition = resolve;
+    });
+    const animate = vi.fn(() => ({ finished: Promise.resolve() }));
+    const root = { dataset: {} as Record<string, string | undefined>, animate };
+    vi.stubGlobal("document", {
+      documentElement: root,
+      startViewTransition: (callback: () => void) => {
+        callback();
+        return { ready: Promise.resolve(), finished };
+      },
+    });
+    stubViewport();
+    vi.stubGlobal("getComputedStyle", () => ({ getPropertyValue: () => "linear" }));
+
+    revealThemeFromClick(control(), vi.fn());
+    await vi.waitFor(() => expect(animate).toHaveBeenCalled());
+    await Promise.resolve();
+
+    expect(root.dataset.themeReveal).toBe("true");
+    finishTransition();
     await vi.waitFor(() => expect(root.dataset.themeReveal).toBeUndefined());
   });
 

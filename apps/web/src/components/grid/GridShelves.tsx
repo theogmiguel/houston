@@ -20,6 +20,8 @@ export interface GridShelvesProps {
   closed: ReadonlyArray<EnvironmentThreadShell>;
   renderCard: (thread: EnvironmentThreadShell, shelf: ShelfName) => ReactNode;
   closedDropTarget?: boolean;
+  /** A thread is being dragged, so Closed reads as a place it can go. */
+  closedDragActive?: boolean;
   onClosedDragOver?: (event: ReactDragEvent<HTMLElement>) => void;
   onClosedDragLeave?: () => void;
   onClosedDrop?: (event: ReactDragEvent<HTMLElement>) => void;
@@ -34,6 +36,7 @@ export function GridShelves({
   closed,
   renderCard,
   closedDropTarget = false,
+  closedDragActive = false,
   onClosedDragOver,
   onClosedDragLeave,
   onClosedDrop,
@@ -108,7 +111,7 @@ export function GridShelves({
           shelf="settled"
           label="Closed"
           count={closed.length}
-          dragging={onClosedDragOver !== undefined}
+          dragging={closedDragActive}
           isDropTarget={closedDropTarget}
           toggle={{
             expanded: settledExpanded,

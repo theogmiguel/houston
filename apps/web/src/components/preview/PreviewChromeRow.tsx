@@ -125,7 +125,7 @@ export function PreviewChromeRow({
                 />
               }
             >
-              <ChevronLeft className="size-[15px]" strokeWidth={1.7} />
+              <ChevronLeft className="size-[15px]" />
             </TooltipTrigger>
             <TooltipPopup>Back</TooltipPopup>
           </Tooltip>
@@ -143,7 +143,7 @@ export function PreviewChromeRow({
                 />
               }
             >
-              <ChevronRight className="size-[15px]" strokeWidth={1.7} />
+              <ChevronRight className="size-[15px]" />
             </TooltipTrigger>
             <TooltipPopup>Forward</TooltipPopup>
           </Tooltip>
@@ -164,7 +164,7 @@ export function PreviewChromeRow({
               {loading ? (
                 <RefreshIcon className="size-[15px]" refreshing />
               ) : (
-                <RotateCw className="size-[15px]" strokeWidth={1.7} />
+                <RotateCw className="size-[15px]" />
               )}
             </TooltipTrigger>
             <TooltipPopup>{loading ? "Loading…" : "Reload"}</TooltipPopup>
@@ -225,7 +225,7 @@ export function PreviewChromeRow({
                 />
               }
             >
-              <ExternalLink className="size-[15px]" strokeWidth={1.7} />
+              <ExternalLink className="size-[15px]" />
             </TooltipTrigger>
             <TooltipPopup>Open in system browser</TooltipPopup>
           </Tooltip>
@@ -245,7 +245,7 @@ export function PreviewChromeRow({
                 />
               }
             >
-              <MonitorSmartphone className="size-[15px]" strokeWidth={1.7} />
+              <MonitorSmartphone className="size-[15px]" />
             </TooltipTrigger>
             <TooltipPopup>{deviceSizeActive ? "Fit the panel" : "Device size"}</TooltipPopup>
           </Tooltip>
@@ -266,10 +266,7 @@ export function PreviewChromeRow({
                 />
               }
             >
-              <Crosshair
-                className={cn("size-[15px]", pickActive && "text-[var(--t1)]")}
-                strokeWidth={1.7}
-              />
+              <Crosshair className={cn("size-[15px]", pickActive && "text-[var(--t1)]")} />
             </TooltipTrigger>
             <TooltipPopup>
               {pickDisabled && pickDisabledReason
@@ -295,7 +292,7 @@ export function PreviewChromeRow({
                 />
               }
             >
-              <Camera className="size-[15px]" strokeWidth={1.7} />
+              <Camera className="size-[15px]" />
               {recording ? (
                 <span className="absolute right-1 top-1 size-1.5 animate-status-pulse rounded-full bg-destructive motion-safe:animate-status-pulse" />
               ) : null}
@@ -323,7 +320,7 @@ export function PreviewChromeRow({
                 />
               }
             >
-              <PictureInPicture2 className="size-[15px]" strokeWidth={1.7} />
+              <PictureInPicture2 className="size-[15px]" />
             </TooltipTrigger>
             <TooltipPopup>
               {pictureInPicture ? "Close floating preview" : "Float preview over chat"}

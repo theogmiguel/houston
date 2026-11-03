@@ -29,7 +29,7 @@ const threadRef: ScopedThreadRef = {
   threadId: ThreadId.make("thread-geometry"),
 };
 const container = { width: 1200, height: 800 };
-const placement = { x: 848, y: 0, right: 12, width: 340, height: 800 } as const;
+const placement = { x: 908, y: 0, right: 12, width: 280, height: 800 } as const;
 
 const row = (content: ReactNode) => (
   <ThreadDetailsRow data-thread-details-row="">{content}</ThreadDetailsRow>

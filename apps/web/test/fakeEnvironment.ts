@@ -185,6 +185,8 @@ function run(threadId: ThreadId, id: RunId, ordinal: number, userMessageId: stri
 export interface FakeThread {
   /** Makes this a side chat of that thread. */
   readonly sideChatOf?: ThreadId;
+  /** Makes this a provider subagent started by that thread. */
+  readonly subagentOf?: ThreadId;
   readonly id: ThreadId;
   readonly title: string;
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
@@ -228,14 +230,14 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
     worktreePath: null,
     activeProviderThreadId: null,
     lineage: {
-      rootThreadId: thread.sideChatOf ?? thread.id,
-      parentThreadId: thread.sideChatOf ?? null,
-      relationshipToParent: null,
+      rootThreadId: thread.sideChatOf ?? thread.subagentOf ?? thread.id,
+      parentThreadId: thread.sideChatOf ?? thread.subagentOf ?? null,
+      relationshipToParent: thread.subagentOf ? "subagent" : null,
       ...(thread.sideChatOf ? { sideChat: true } : {}),
     },
     forkedFrom: null,
     createdBy: "user",
-    creationSource: "web",
+    creationSource: thread.subagentOf ? "provider" : "web",
     latestRunId: latest?.id ?? null,
     activeRunId: null,
     // Idle reads as waiting on the user, which shows a per-second duration in the sidebar.
@@ -282,7 +284,7 @@ function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
       lineage: shell.lineage,
       forkedFrom: null,
       createdBy: "user",
-      creationSource: "web",
+      creationSource: shell.creationSource,
       createdAt: AT,
       updatedAt: AT,
       archivedAt: null,
@@ -487,6 +489,44 @@ export async function emitThreadEvent(
       event: { ...event, id: EventId.make(`event-${sequence}`), threadId, occurredAt: AT },
     } as OrchestrationV2ThreadStreamItem),
   );
+}
+
+/**
+ * The fake environment advertises no uploads, and a composer that cannot attach rejects every
+ * dropped file. Call after `installFakeEnvironment`; disposing restores the fetch it wrapped.
+ */
+export function advertiseFileUploads(maxUploadBytes = 10 * 1024 * 1024): Disposable {
+  return advertiseCapabilities({
+    attachmentUploads: true,
+    fileAttachments: { maxUploadBytes },
+  });
+}
+
+/**
+ * Adds `extra` to the capabilities the fake environment advertises. Call after
+ * `installFakeEnvironment`; disposing restores the fetch it wrapped.
+ */
+export function advertiseCapabilities(extra: Record<string, unknown>): Disposable {
+  const baseFetch = globalThis.fetch;
+  const capabilities = { ...descriptor.capabilities, ...extra };
+  // The server config carries its own decoded descriptor; the HTTP route serves one encoded at
+  // load, so it is patched in flight.
+  const configEnvironment = serverConfig.environment as { capabilities: object };
+  const baseConfigCapabilities = configEnvironment.capabilities;
+  configEnvironment.capabilities = capabilities;
+  globalThis.fetch = async (input, init) => {
+    const response = await baseFetch(input, init);
+    const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
+    if (url.pathname !== "/.well-known/houston/environment") return response;
+    const encoded = (await response.json()) as Record<string, unknown>;
+    return Response.json({ ...encoded, capabilities });
+  };
+  return {
+    [Symbol.dispose]: () => {
+      globalThis.fetch = baseFetch;
+      configEnvironment.capabilities = baseConfigCapabilities;
+    },
+  };
 }
 
 export function runningRun(threadId: ThreadId, id: string, ordinal: number, userMessageId: string) {

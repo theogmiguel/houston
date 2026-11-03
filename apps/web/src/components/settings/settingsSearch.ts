@@ -360,7 +360,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "environment-identification",
     title: "Environment identification",
     to: "/settings/appearance",
-    searchTerms: ["dev nightly latest channel artwork pill label hide none"],
+    searchTerms: ["dev channel artwork pill label hide none"],
     targetId: "appearance-interface",
   },
   {
@@ -442,24 +442,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Resume after usage limits",
     to: "/settings/threads",
     searchTerms: ["usage quota rate limit reset recover continue"],
-  },
-  {
-    id: "working-shelf",
-    title: "Running section",
-    to: "/settings/general",
-    searchTerms: ["hide fold running monitoring threads inbox sidebar shelf"],
-  },
-  {
-    id: "boring-sidebar",
-    title: "Boring sidebar (group by project)",
-    to: "/settings/labs",
-    searchTerms: ["beta folders project tree legacy old classic sidebar"],
-  },
-  {
-    id: "boring-sidebar-multiline",
-    title: "Two-line folder rows",
-    to: "/settings/labs",
-    searchTerms: ["beta boring sidebar folder rows multiline branch pull request details"],
   },
   {
     id: "linked-environments-beta",
@@ -659,13 +641,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Delete confirmation",
     to: "/settings/general",
     searchTerms: ["ask before thread chat history"],
-  },
-  {
-    id: "quit-confirmation",
-    title: "Quit shortcut",
-    to: "/settings/general",
-    searchTerms: ["confirmation desktop app exit direct hold double click press twice"],
-    desktopOnly: true,
   },
   {
     id: "text-generation-model",

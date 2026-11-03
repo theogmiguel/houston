@@ -61,7 +61,11 @@ export function ThreadDetailsUsage({
   if (!limits && !contextWindow) return null;
 
   return (
-    <ThreadDetailsSection headingId="thread-details-usage-heading" title="Usage">
+    <ThreadDetailsSection
+      headingId="thread-details-usage-heading"
+      title="Usage"
+      showHeading={false}
+    >
       <div className="grid grid-cols-[minmax(0,auto)_minmax(3rem,1fr)_auto] gap-x-3 text-xs">
         {notice ? (
           <UsageRow

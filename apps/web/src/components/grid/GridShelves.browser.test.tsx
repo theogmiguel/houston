@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
@@ -91,5 +91,32 @@ describe("GridShelves", () => {
 
     await userEvent.click(screen.getByRole("treeitem", { name: /Closed/ }));
     await expect.element(screen.getByText("Old work")).toBeVisible();
+  });
+
+  it("draws both shelf rows alike until a thread is dragged toward Closed", async () => {
+    localStorage.clear();
+    const noop = () => {};
+    const shelves = (closedDragActive: boolean) => (
+      <GridShelves
+        held={held}
+        closed={closed}
+        renderCard={(thread) => <span data-testid="shelf-card">{thread.title}</span>}
+        closedDragActive={closedDragActive}
+        onClosedDragOver={noop}
+        onClosedDragLeave={noop}
+        onClosedDrop={noop}
+      />
+    );
+    await using screen = await render(shelves(false), { router: false });
+
+    const color = (testId: string) =>
+      getComputedStyle(screen.container.querySelector(`[data-testid="${testId}"]`)!).color;
+    expect(color("grid-settled-shelf-toggle")).toBe(color("grid-snoozed-shelf-toggle"));
+
+    await screen.rerender(shelves(true));
+    // The row eases its colour, so wait for the transition to land.
+    await vi.waitFor(() =>
+      expect(color("grid-settled-shelf-toggle")).not.toBe(color("grid-snoozed-shelf-toggle")),
+    );
   });
 });

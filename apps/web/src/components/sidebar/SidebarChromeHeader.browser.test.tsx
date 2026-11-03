@@ -11,7 +11,7 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
 }));
 
 describe("SidebarChromeHeader", () => {
-  it("draws the board's brand row: an 18px mark, Houston and the hide button", async () => {
+  it("draws the board's brand row: a 22px mark, Houston and the hide button", async () => {
     await using screen = await render(
       <SidebarProvider defaultOpen>
         <SidebarChromeHeader isDesktopHost={false} />
@@ -21,11 +21,29 @@ describe("SidebarChromeHeader", () => {
     const mark = screen.container.querySelector("img");
     expect(mark).not.toBeNull();
     const style = getComputedStyle(mark as HTMLImageElement);
-    expect(style.width).toBe("18px");
-    expect(style.height).toBe("18px");
+    expect(style.width).toBe("22px");
+    expect(style.height).toBe("22px");
 
     await expect.element(screen.getByText("Houston")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "Hide sidebar" })).toBeVisible();
     expect(screen.container.querySelector("[data-stage-art]")).toBeNull();
+  });
+
+  it("draws the hide button's icon at the 16px, 2.5-stroke weight of the other chrome icons", async () => {
+    await using screen = await render(
+      <SidebarProvider defaultOpen>
+        <SidebarChromeHeader isDesktopHost={false} />
+      </SidebarProvider>,
+    );
+
+    const icon = screen
+      .getByRole("button", { name: "Hide sidebar" })
+      .element()
+      .querySelector("svg");
+    expect(icon).not.toBeNull();
+    const rect = (icon as SVGSVGElement).getBoundingClientRect();
+    expect(rect.width).toBe(16);
+    expect(rect.height).toBe(16);
+    expect(icon?.getAttribute("stroke-width")).toBe("2.5");
   });
 });

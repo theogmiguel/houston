@@ -15,7 +15,7 @@ function Textarea({ className, size = "default", unstyled = false, ...props }: T
       className={
         cn(
           !unstyled &&
-            "relative inline-flex w-full rounded-[var(--r-ctl)] border border-border bg-[var(--field)] text-base text-foreground ring-ring/24 transition-[border-color,box-shadow] has-focus-visible:has-aria-invalid:border-destructive/64 has-focus-visible:has-aria-invalid:ring-destructive/16 has-aria-invalid:border-destructive/36 has-focus-visible:border-ring has-disabled:opacity-64 has-focus-visible:ring-2 has-focus-visible:ring-inset sm:text-sm",
+            "relative inline-flex w-full rounded-[var(--r-ctl)] border border-border bg-(--control-fill) text-base text-foreground ring-ring/24 transition-[border-color,box-shadow] has-focus-visible:has-aria-invalid:border-destructive/64 has-focus-visible:has-aria-invalid:ring-destructive/16 has-aria-invalid:border-destructive/36 has-focus-visible:border-ring has-disabled:opacity-64 has-focus-visible:ring-2 has-focus-visible:ring-inset sm:text-sm",
           className,
         ) || undefined
       }

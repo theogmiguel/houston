@@ -498,6 +498,14 @@
       return invoke("v2_probe_remote_editors");
     },
     pasteAsText: noop,
+    readClipboardImage: function () {
+      return invoke("clipboard_save_image").then(function (path) {
+        if (path === null) return null;
+        return invoke("fs_read_capture", { path: path }).then(function (base64) {
+          return { mediaType: "image/png", base64: base64 };
+        });
+      });
+    },
     onMenuAction: function (listener) {
       return listen("v2-menu-action", listener);
     },

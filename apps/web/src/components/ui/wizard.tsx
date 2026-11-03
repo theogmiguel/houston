@@ -95,7 +95,7 @@ export function WizardSteps({
               onStepChange &&
                 "cursor-pointer hover:bg-card disabled:cursor-default disabled:hover:bg-transparent",
               index === currentStep &&
-                "bg-card text-foreground shadow-xs ring-1 ring-inset ring-black/5 hover:bg-card dark:shadow-none dark:ring-white/5",
+                "bg-card text-foreground shadow-xs ring-1 ring-inset ring-foreground/5 hover:bg-card dark:shadow-none dark:ring-foreground/5",
             )}
             aria-current={index === currentStep ? "step" : undefined}
             aria-label={`${step}, step ${index + 1}${index < currentStep && summaries?.[index] ? `, ${summaries?.[index]}` : ""}`}
@@ -108,7 +108,7 @@ export function WizardSteps({
                   ? "bg-primary text-primary-foreground ring-primary"
                   : index === currentStep
                     ? "bg-primary/10 text-(--accent-ink) ring-primary/30"
-                    : "bg-card text-muted-foreground ring-black/10 dark:bg-white/5 dark:ring-white/10",
+                    : "bg-card text-muted-foreground ring-foreground/10 dark:bg-foreground/5 dark:ring-foreground/10",
               )}
               aria-hidden
             >
@@ -145,7 +145,7 @@ export function WizardPanel({
     <div
       data-slot="dialog-panel"
       className={cn(
-        "min-w-0 space-y-4 bg-background/80 px-6 py-5 ring-1 ring-black/5 dark:bg-white/2 dark:ring-white/5",
+        "min-w-0 space-y-4 bg-background/80 px-6 py-5 ring-1 ring-foreground/5 dark:bg-foreground/2 dark:ring-foreground/5",
         className,
       )}
     >

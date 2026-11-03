@@ -67,6 +67,15 @@ export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
+// The grid rail keeps each grid's threads in pane order unless the user picks a time order.
+export const SidebarGridThreadSortOrder = Schema.Literals(["grid", "updated_at", "created_at"]);
+export type SidebarGridThreadSortOrder = typeof SidebarGridThreadSortOrder.Type;
+export const DEFAULT_SIDEBAR_GRID_THREAD_SORT_ORDER: SidebarGridThreadSortOrder = "grid";
+
+export const SidebarGridSortOrder = Schema.Literals(["updated_at", "created_at", "manual"]);
+export type SidebarGridSortOrder = typeof SidebarGridSortOrder.Type;
+export const DEFAULT_SIDEBAR_GRID_SORT_ORDER: SidebarGridSortOrder = "created_at";
+
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
   "repository_path",
@@ -504,6 +513,16 @@ export const ClientSettingsSchema = Schema.Struct({
   sidebarThreadSortOrder: SidebarThreadSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_SORT_ORDER)),
   ),
+  sidebarGridThreadSortOrder: SidebarGridThreadSortOrder.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_GRID_THREAD_SORT_ORDER)),
+  ),
+  sidebarGridSortOrder: SidebarGridSortOrder.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_GRID_SORT_ORDER)),
+  ),
+  // What the grid rail's thread rows show under the title.
+  sidebarRowShowBranch: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  sidebarRowShowPullRequest: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  sidebarRowShowSubagents: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
   ),
@@ -1807,6 +1826,11 @@ export const ClientSettingsPatch = Schema.Struct({
   ),
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
+  sidebarGridThreadSortOrder: Schema.optionalKey(SidebarGridThreadSortOrder),
+  sidebarGridSortOrder: Schema.optionalKey(SidebarGridSortOrder),
+  sidebarRowShowBranch: Schema.optionalKey(Schema.Boolean),
+  sidebarRowShowPullRequest: Schema.optionalKey(Schema.Boolean),
+  sidebarRowShowSubagents: Schema.optionalKey(Schema.Boolean),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   snapShotEnabled: Schema.optionalKey(Schema.Boolean),
   snapShotIncludeAccessibility: Schema.optionalKey(Schema.Boolean),

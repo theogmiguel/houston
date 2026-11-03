@@ -292,7 +292,7 @@ export default function FileBrowserPanel({
     >
       <div className="flex shrink-0 items-center gap-1 px-2 pb-1.5 pt-2" data-surface-subheader>
         <div className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md bg-[var(--field)] px-2 text-[var(--houston)]">
-          <Search className="size-[13px] shrink-0" strokeWidth={1.7} aria-hidden />
+          <Search className="size-[13px] shrink-0" aria-hidden />
           <input
             type="search"
             name="project-files-search"

@@ -26,7 +26,7 @@ function Switch({
     >
       <SwitchPrimitive.Thumb
         className={cn(
-          "pointer-events-none block size-[var(--thumb-size)] shrink-0 origin-left rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.3)] in-[[role=switch]:active,[data-slot=label]:active,[data-slot=field-label]:active]:not-data-disabled:scale-x-110 in-[[role=switch]:active,[data-slot=label]:active,[data-slot=field-label]:active]:rounded-[var(--thumb-size)/calc(var(--thumb-size)*1.1)] [transition:translate_.15s,border-radius_.15s,scale_.1s_.1s,transform-origin_.15s] data-checked:origin-right data-checked:translate-x-[var(--thumb-travel)]",
+          "pointer-events-none block size-[var(--thumb-size)] shrink-0 origin-left rounded-full bg-(--thumb) shadow-[0_1px_2px_rgba(0,0,0,0.3)] in-[[role=switch]:active,[data-slot=label]:active,[data-slot=field-label]:active]:not-data-disabled:scale-x-110 in-[[role=switch]:active,[data-slot=label]:active,[data-slot=field-label]:active]:rounded-[var(--thumb-size)/calc(var(--thumb-size)*1.1)] [transition:translate_.15s,border-radius_.15s,scale_.1s_.1s,transform-origin_.15s] data-checked:origin-right data-checked:translate-x-[var(--thumb-travel)]",
           mixed &&
             "translate-x-[calc(var(--thumb-travel)/2)] opacity-70 data-checked:translate-x-[calc(var(--thumb-travel)/2)]",
         )}

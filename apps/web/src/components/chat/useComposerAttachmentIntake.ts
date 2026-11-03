@@ -8,7 +8,6 @@ import {
 import {
   type ComposerContextReference,
   collectInlineContextIds,
-  stripInlineContextReferences,
 } from "~/lib/composerContextReferences";
 import {
   type ComposerFileAttachment,
@@ -63,7 +62,6 @@ export function useComposerAttachmentIntake(input: {
   readonly pendingUserInputs: ReadonlyArray<PendingUserInput>;
   readonly supportsQuestionAttachments: boolean;
   readonly isLiteralPendingAnswer: boolean;
-  readonly projectSelectionRequired: boolean;
   readonly questionAttachmentTarget: DraftId | null;
   readonly attachmentTargetKey: string;
   readonly fileStagingLimit: number | null;
@@ -90,7 +88,6 @@ export function useComposerAttachmentIntake(input: {
     pendingUserInputs,
     supportsQuestionAttachments,
     isLiteralPendingAnswer,
-    projectSelectionRequired,
     questionAttachmentTarget,
     attachmentTargetKey,
     fileStagingLimit,
@@ -137,12 +134,9 @@ export function useComposerAttachmentIntake(input: {
     // large image is being compressed, and the attachments and errors belong
     // to the thread the paste happened in.
     const threadId = activeThreadId;
-    const imageAttachmentsGetChips =
-      !options?.skipImageInlineChip &&
-      (options?.selection !== undefined ||
-        pendingUserInputs.length > 0 ||
-        projectSelectionRequired ||
-        stripInlineContextReferences(promptRef.current).trim().length > 0);
+    // An attachment is one tile in the strip. It also gets an inline reference only when it
+    // replaces a range of the prompt, such as a pasted text folded into a file.
+    const attachmentsGetChips = !options?.skipImageInlineChip && options?.selection !== undefined;
 
     // Validation happens synchronously so concurrent pastes see each other:
     // accepted files reserve their attachment slots (as preparing images)
@@ -221,7 +215,7 @@ export function useComposerAttachmentIntake(input: {
     if (acceptedFiles.length > 0) {
       const storedIds = new Set(addComposerFilesToDraft(acceptedFiles));
       const storedFiles = acceptedFiles.filter((file) => storedIds.has(file.id));
-      if (storedFiles.length > 0) {
+      if (storedFiles.length > 0 && options?.selection !== undefined) {
         insertedAny = insertAttachmentReferences(
           storedFiles.map(fileContextReference),
           options?.selection,
@@ -310,7 +304,7 @@ export function useComposerAttachmentIntake(input: {
     for (const image of nextImages) {
       if (!storedImageIds.has(image.id)) URL.revokeObjectURL(image.previewUrl);
     }
-    if (storedImages.length > 0 && imageAttachmentsGetChips) {
+    if (storedImages.length > 0 && attachmentsGetChips) {
       insertedAny =
         insertAttachmentReferences(storedImages.map(imageContextReference)) || insertedAny;
     }

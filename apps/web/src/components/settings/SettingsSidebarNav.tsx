@@ -258,7 +258,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
           <div className="flex flex-col gap-2">
             <div
               className={cn(
-                "flex h-7 items-center gap-2 rounded-md bg-muted px-2 text-[13px] font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+                "flex h-7 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
                 !compactSearchOpen && "max-md:hidden",
               )}
             >

@@ -17,7 +17,7 @@ const inputGroupVariants = cva(
         lg: "h-8",
       },
       variant: {
-        default: "border-border bg-[var(--field)]",
+        default: "border-border bg-(--control-fill)",
         popover:
           "dropdown-glass rounded-[var(--r-group)] has-[input:focus-visible,textarea:focus-visible]:ring-0",
         ghost:

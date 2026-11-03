@@ -90,6 +90,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
     >
       <div className="flex items-center gap-1">
         {showThreadPanelControl ? threadPanelControl : null}
+        {gridLayoutControl ? <div className="flex items-center">{gridLayoutControl}</div> : null}
         {showTerminalControl ? (
           <Tooltip>
             <TooltipTrigger render={<span className="flex shrink-0" />}>
@@ -136,20 +137,17 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
           </Tooltip>
         ) : null}
       </div>
-      {gridLayoutControl ? (
-        <div className="ml-1.5 flex items-center">{gridLayoutControl}</div>
-      ) : null}
     </div>
   );
 });
 
-// While the right panel is open its own top row carries the terminal and panel toggles.
+// Every toggle stays in the header; with the right panel open the header loses its end gutter.
 export const ChatHeaderPanelControls = memo(function ChatHeaderPanelControls(
   props: PanelLayoutControlsProps,
 ) {
   return props.rightPanelOpen ? (
     <div className="flex h-full shrink-0 items-center pr-1">
-      <PanelLayoutControls {...props} showTerminalControl={false} showRightPanelControl={false} />
+      <PanelLayoutControls {...props} />
     </div>
   ) : (
     <PanelLayoutControls {...props} />

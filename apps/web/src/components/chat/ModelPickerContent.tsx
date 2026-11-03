@@ -161,11 +161,6 @@ function adjacentModelPickerProvider(input: {
 
 const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
 const MODEL_LIST_ESTIMATED_ITEM_SIZE = 34;
-// Rendered heights in `--spacing` units. Chrome is the search box and list padding, plus a 1px border.
-const ONE_LINE_ROW_UNITS = 7.5;
-const TWO_LINE_ROW_UNITS = 11;
-const ROW_SEPARATOR_UNITS = 0.5;
-const LIST_CHROME_UNITS = 15.5;
 
 function ModelListSeparator() {
   return <div className="h-0.5" />;
@@ -377,7 +372,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   } = props;
   const [searchQuery, setSearchQuery] = useState("");
   const modelListRef = useRef<LegendListRef | null>(null);
-  const pickerContentRef = useRef<HTMLDivElement>(null);
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- publishes this picker's mount to global keydown handlers
   useLayoutEffect(() => registerModelPickerContent(), []);
   const highlightedModelKeyRef = useRef<string | null>(null);
@@ -449,7 +443,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   );
   const serverKeybindings = useAtomValue(primaryServerKeybindingsAtom);
   const keybindings = providedKeybindings ?? serverKeybindings;
-  const [searchHeight, setSearchHeight] = useState(0);
   const toggleFavorite = useToggleEnvironmentModelFavorite(props.environmentId);
 
   const focusSearchInput = () => {
@@ -596,34 +589,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             model.instanceId !== selectedInstanceId &&
             selectedModelKeySet.has(modelPickerModelKey(model.instanceId, model.slug)),
         );
-  // Fit the tallest tab so switching tabs never resizes the popup and moves the rail under the cursor.
-  const tallestTabUnits = (() => {
-    const unitsByTab = new Map<ProviderInstanceId | "favorites", number>();
-    const addRow = (tab: ProviderInstanceId | "favorites", twoLine: boolean) => {
-      const rowUnits = twoLine ? TWO_LINE_ROW_UNITS : ONE_LINE_ROW_UNITS;
-      const previous = unitsByTab.get(tab);
-      unitsByTab.set(
-        tab,
-        previous === undefined ? rowUnits : previous + ROW_SEPARATOR_UNITS + rowUnits,
-      );
-    };
-    const tabsWithLegacyRow = new Set<ProviderInstanceId>();
-    for (const model of flatModels) {
-      if (!matchesLockedProvider(model)) continue;
-      const isFavorite = favoritesSet.has(providerModelKey(model.instanceId, model.slug));
-      if (isFavorite) addRow("favorites", true);
-      if (model.isLegacy && !isFavorite) {
-        tabsWithLegacyRow.add(model.instanceId);
-      } else {
-        addRow(model.instanceId, Boolean(model.subProvider));
-      }
-    }
-    for (const instanceId of tabsWithLegacyRow) addRow(instanceId, true);
-    for (let index = 0; index < crossProviderSelectedModels.length; index += 1) {
-      addRow(selectedInstanceId, true);
-    }
-    return Math.max(0, ...unitsByTab.values());
-  })();
   const lockedDisabledInstanceIds = (() => {
     if (!isLocked) {
       return undefined;
@@ -858,15 +823,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     <TooltipProvider delay={0}>
       <WindowKeyDownListener onKeyDown={onWindowKeyDown} />
       <div
-        ref={pickerContentRef}
-        className="relative flex max-h-86.5 w-[26.75rem] max-w-[calc(100vw-2rem)] flex-row overflow-hidden rounded-lg border border-border bg-(--raised)"
-        style={
-          isSearching
-            ? { height: searchHeight }
-            : {
-                minHeight: `min(calc(var(--spacing) * ${tallestTabUnits + LIST_CHROME_UNITS} + 1px), calc(var(--spacing) * 86.5))`,
-              }
-        }
+        // One fixed size whatever the tab, its model count or the search holds, so switching tabs
+        // or typing never moves the rail under the cursor.
+        className="relative flex h-86.5 max-h-(--available-height) w-[26.75rem] max-w-[calc(100vw-2rem)] flex-row overflow-hidden rounded-lg border border-border bg-(--raised)"
         data-model-picker-content="true"
       >
         {showSidebar && (
@@ -938,7 +897,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 className="h-5 min-w-0 flex-1 bg-transparent p-0 text-(--t1) text-xs leading-5 outline-none placeholder:text-(--houston)"
                 value={searchQuery}
                 onChange={(e) => {
-                  if (!isSearching) setSearchHeight(pickerContentRef.current?.offsetHeight ?? 0);
                   setSearchQuery(e.target.value);
                 }}
                 onKeyDown={(e) => {

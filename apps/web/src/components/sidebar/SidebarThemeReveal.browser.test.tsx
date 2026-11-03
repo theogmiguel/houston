@@ -27,7 +27,7 @@ describe("sidebar theme button", () => {
     const startViewTransition = vi.fn((update: () => void) => {
       scopedForTransition = document.documentElement.dataset.themeReveal;
       update();
-      return { ready: Promise.resolve() };
+      return { ready: Promise.resolve(), finished: Promise.resolve() };
     });
     Object.defineProperty(document, "startViewTransition", {
       configurable: true,
@@ -42,7 +42,7 @@ describe("sidebar theme button", () => {
         <SidebarUtilityMenu />
       </SidebarProvider>,
     );
-    const button = screen.getByRole("button", { name: "Theme: Graphite" });
+    const button = screen.getByRole("button", { name: "Theme: Dark" });
     const rect = button.element().getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;

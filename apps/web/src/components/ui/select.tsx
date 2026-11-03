@@ -19,7 +19,7 @@ const selectTriggerVariants = cva(
     variants: {
       variant: {
         default:
-          "w-full min-w-36 border-border bg-[var(--field)] text-foreground pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 focus-visible:outline-2 focus-visible:outline-ring aria-invalid:border-destructive [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='text-'])]:text-icon-muted",
+          "w-full min-w-36 border-border bg-(--control-fill) text-foreground pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 focus-visible:outline-2 focus-visible:outline-ring aria-invalid:border-destructive [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='text-'])]:text-icon-muted",
         ghost:
           "border-transparent text-secondary-label focus-visible:outline-2 focus-visible:outline-ring data-pressed:bg-hover [:hover,[data-pressed]]:bg-hover [:hover,[data-pressed]]:text-foreground",
       },

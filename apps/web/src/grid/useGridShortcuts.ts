@@ -5,7 +5,13 @@ import { resolveShortcutCommand } from "../keybindings";
 import { isEditableFocused } from "../lib/editableFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { type ClosedCell, useGridStore } from "./gridStore";
-import { adjacentThreadKey, preorderThreads } from "./tree";
+import { adjacentThreadKey, preorderThreads, type TidyShape } from "./tree";
+
+const TIDY_COMMAND_SHAPES: Readonly<Record<string, TidyShape | undefined>> = {
+  "grid.tidy": "grid",
+  "grid.tidyRow": "row",
+  "grid.tidyColumn": "column",
+};
 
 export interface GridShortcutsOptions {
   readonly gridId: string;
@@ -17,10 +23,9 @@ export interface GridShortcutsOptions {
 }
 
 /**
- * The grid's keyboard commands: Ctrl+[ and Ctrl+] move pane focus in reading
- * order, Ctrl+Shift+Enter maximizes the focused pane, and Ctrl+Shift+T reopens
- * the most recently closed pane at its slot. They run in the capture phase so
- * the focused chat never sees them.
+ * Grid keyboard commands, run in the capture phase so the focused chat never
+ * sees them: pane focus (Ctrl+[ / ]), maximize, reopen closed, and the single
+ * keys Y/H/V/= that tidy or equalize, which never fire in a terminal or field.
  */
 export function useGridShortcuts(options: GridShortcutsOptions): void {
   const readThreadAvailable = useEffectEvent(options.isThreadAvailable);
@@ -51,6 +56,21 @@ export function useGridShortcuts(options: GridShortcutsOptions): void {
         event.preventDefault();
         event.stopPropagation();
         state.focusThread(options.gridId, next);
+        return;
+      }
+
+      const tidyShape = TIDY_COMMAND_SHAPES[command ?? ""];
+      if (tidyShape !== undefined || command === "grid.equalize") {
+        if (terminalFocus || editableFocus) return;
+        const state = useGridStore.getState();
+        const grid = state.grids.find((entry) => entry.id === options.gridId);
+        if (grid === undefined || grid.tree === null || preorderThreads(grid.tree).length < 2)
+          return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setMaximizedThreadId(null);
+        if (tidyShape !== undefined) state.tidyGrid(options.gridId, tidyShape);
+        else state.equalizeGrid(options.gridId);
         return;
       }
 

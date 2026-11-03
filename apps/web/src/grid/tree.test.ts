@@ -7,6 +7,7 @@ import {
   appendThread,
   clampSplitRatio,
   computeRects,
+  equalize,
   evenGrid,
   findThread,
   gridPreset,
@@ -24,6 +25,7 @@ import {
   swapThread,
   threadLeaf,
   tidy,
+  tidyColumns,
 } from "./tree";
 
 const leaf = (threadId: string) => threadLeaf(threadId, `p-${threadId}`);
@@ -298,5 +300,77 @@ describe("adjacentThreadKey", () => {
     expect(adjacentThreadKey(leaf("a"), "a", 1)).toBeNull();
     expect(adjacentThreadKey(row(leaf("a"), leaf("b")), "gone", 1)).toBeNull();
     expect(adjacentThreadKey(null, "a", 1)).toBeNull();
+  });
+});
+
+describe("tidy shapes", () => {
+  const panes = (n: number) => Array.from({ length: n }, (_, i) => leaf(`t${i + 1}`));
+
+  it.each([
+    [1, 1],
+    [2, 2],
+    [3, 2],
+    [4, 2],
+    [5, 3],
+    [6, 3],
+    [7, 4],
+    [8, 4],
+    [9, 4],
+    [20, 4],
+  ])("uses the column count tidyColumns gives for %i panes", (n, columns) => {
+    expect(tidyColumns(n)).toBe(columns);
+  });
+
+  it("rebuilds five panes as rows of 3 and 2 with even weights, in order", () => {
+    const tree = tidy(row(...panes(5))) as Extract<LayoutNode, { kind: "split" }>;
+    expect(tree.dir).toBe("col");
+    expect(tree.weights).toEqual([50, 50]);
+    expect(tree.children.map((c) => (c.kind === "split" ? c.children.length : 1))).toEqual([3, 2]);
+    expect(preorderLeaves(tree)).toEqual(["t1", "t2", "t3", "t4", "t5"]);
+  });
+
+  it.each([
+    ["row", "row"],
+    ["column", "col"],
+  ] as const)("lays 2, 4 and 7 panes in one even %s", (shape, dir) => {
+    for (const n of [2, 4, 7]) {
+      const tree = tidy(row(...panes(n)), shape) as Extract<LayoutNode, { kind: "split" }>;
+      expect(tree.dir).toBe(dir);
+      expect(tree.children).toHaveLength(n);
+      expect(tree.children.every((c) => c.kind === "thread")).toBe(true);
+      expect(tree.weights).toEqual(Array.from({ length: n }, () => 100 / n));
+    }
+  });
+
+  it.each(["grid", "row", "column"] as const)(
+    "keeps visual order from a nested grid as %s",
+    (shape) => {
+      const nested: LayoutNode = {
+        kind: "split",
+        dir: "col",
+        children: [row(leaf("c"), leaf("a")), row(leaf("d"), leaf("b"))],
+        weights: [50, 50],
+      };
+      expect(preorderLeaves(tidy(nested, shape))).toEqual(["c", "a", "d", "b"]);
+    },
+  );
+
+  it("collapses one pane to the bare pane and an empty tree to null", () => {
+    const only = leaf("x");
+    expect(tidy(row(only), "row")).toBe(only);
+    expect(tidy(null, "column")).toBeNull();
+  });
+
+  it("equalize resets every split without moving a pane", () => {
+    const before: LayoutNode = {
+      kind: "split",
+      dir: "col",
+      children: [{ ...row(leaf("a"), leaf("b")), weights: [90, 10] }, leaf("c")],
+      weights: [80, 20],
+    };
+    const after = equalize(before) as Extract<LayoutNode, { kind: "split" }>;
+    expect(after.weights).toEqual([50, 50]);
+    expect((after.children[0] as Extract<LayoutNode, { kind: "split" }>).weights).toEqual([50, 50]);
+    expect(preorderLeaves(after)).toEqual(["a", "b", "c"]);
   });
 });

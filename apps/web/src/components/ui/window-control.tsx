@@ -4,36 +4,34 @@ import type { WindowButtonKind, WindowButtonLayout } from "~/lib/windowButtonLay
 import { windowControlLabel } from "~/lib/windowButtonLayout";
 import { cn } from "~/lib/utils";
 
-function ButtonGlyph({ kind, maximized }: { kind: WindowButtonKind; maximized: boolean }) {
-  if (kind === "minimize") {
-    return (
-      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-        <path d="M1 5h8v1H1z" fill="currentColor" />
-      </svg>
-    );
-  }
-  if (kind === "maximize") {
-    return maximized ? (
-      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-        <path d="M3 1v2H1v6h6V7h2V1H3zM6 8H2V4h4v4zM8 6H7V3H4V2h4v4z" fill="currentColor" />
-      </svg>
-    ) : (
-      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-        <path d="M1 1v8h8V1H1zm7 7H2V2h6v6z" fill="currentColor" />
-      </svg>
-    );
-  }
+// Stroked at 1.5px, the drawn weight of the 14px lucide icons beside them at stroke 2.5.
+const GLYPH_STROKE_PX = 1.5;
+
+function GlyphPath({ d }: { d: string }) {
   return (
-    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
       <path
-        d="M2 2l6 6M8 2l-6 6"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
+        d={d}
         fill="none"
+        stroke="currentColor"
+        strokeWidth={GLYPH_STROKE_PX}
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
+}
+
+function ButtonGlyph({ kind, maximized }: { kind: WindowButtonKind; maximized: boolean }) {
+  if (kind === "minimize") return <GlyphPath d="M2.5 6h7" />;
+  if (kind === "maximize") {
+    return maximized ? (
+      <GlyphPath d="M2.5 4.5h5V9.5h-5V4.5zM4.5 4.5V2.5h5V7.5H7.5" />
+    ) : (
+      <GlyphPath d="M2.5 2.5h7v7h-7z" />
+    );
+  }
+  return <GlyphPath d="M3 3l6 6M9 3l-6 6" />;
 }
 
 export function WindowControlButton({

@@ -13,6 +13,7 @@ export type ThemeRevealSource = Element | ThemeRevealOrigin;
 
 interface ViewTransition {
   readonly ready: Promise<void>;
+  readonly finished: Promise<void>;
 }
 
 type ViewTransitionDocument = Document & {
@@ -20,7 +21,9 @@ type ViewTransitionDocument = Document & {
 };
 
 // Two switches in one gesture (a theme and its half) start two transitions; the
-// scoping attribute stays until the last one ends, including a skipped one.
+// scoping attribute stays until the last one ends, including a skipped one. It must
+// outlive the clip animation: without it the browser's default cross-fade runs on the
+// still-open transition and flashes the old theme back.
 let activeReveals = 0;
 
 function isElement(origin: ThemeRevealSource): origin is Element {
@@ -91,12 +94,12 @@ export function revealThemeFromClick(
     return;
   }
 
+  void transition.finished.then(clearReveal, clearReveal);
   void transition.ready
     .then(() => {
       const easing = getComputedStyle(root).getPropertyValue("--ease-drawer").trim();
-      let animation: Animation;
       try {
-        animation = root.animate(
+        root.animate(
           [
             { clipPath: `circle(0px at ${x}px ${y}px)` },
             { clipPath: `circle(${radius}px at ${x}px ${y}px)` },
@@ -108,14 +111,10 @@ export function revealThemeFromClick(
           },
         );
       } catch {
-        clearReveal();
-        return;
-      }
-      if (animation && typeof animation.finished?.then === "function") {
-        void animation.finished.then(clearReveal, clearReveal);
-      } else {
-        clearReveal();
+        // The transition still ends without the clip; `finished` clears the attribute.
       }
     })
-    .catch(clearReveal);
+    .catch(() => {
+      // A skipped transition rejects `ready` and still settles `finished`.
+    });
 }

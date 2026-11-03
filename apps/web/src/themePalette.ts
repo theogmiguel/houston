@@ -1200,7 +1200,7 @@ export function updateThemeColorFamily(
 }
 
 const HOUSTON_THEME_LABELS: Readonly<Record<string, string>> = {
-  [BASE_CHAT_THEME_ID]: "Houston Chat",
+  [BASE_CHAT_THEME_ID]: "Light Pink",
 };
 
 /** User-visible names are Houston's; stored ids stay upstream's so preferences survive. */

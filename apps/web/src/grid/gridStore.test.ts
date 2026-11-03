@@ -8,6 +8,7 @@ import {
   gridsForWorkspace,
   orderedGridsForWorkspace,
   parseGrids,
+  sidebarOrderedGrids,
   type GridRecord,
   useGridStore,
 } from "./gridStore";
@@ -428,5 +429,60 @@ describe("closed cells", () => {
     useGridStore.getState().closeGridCell("g-1", "thread-b");
     useGridStore.getState().deleteGrid("g-1");
     expect(useGridStore.getState().closedCells["g-1"]).toBeUndefined();
+  });
+});
+
+describe("sidebar grid order", () => {
+  function seed(): string[] {
+    freshStore();
+    const create = (id: string, now: string) =>
+      useGridStore
+        .getState()
+        .createGrid({ environmentId: "env-1", projectId: "project-1", workspaceKey, id, now });
+    return [
+      create("g-a", "2026-01-01T00:00:00Z"),
+      create("g-b", "2026-01-02T00:00:00Z"),
+      create("g-c", "2026-01-03T00:00:00Z"),
+    ];
+  }
+  const ids = (grids: GridRecord[]) => grids.map((grid) => grid.id);
+
+  it("orders by creation, by latest activity or by the stored manual order, pins first", () => {
+    seed();
+    useGridStore.getState().pinGrid("g-c", "2026-01-04T00:00:00Z");
+    const { grids } = useGridStore.getState();
+    const activity: Record<string, number> = { "g-a": 30, "g-b": 20, "g-c": 10 };
+    const at = (grid: GridRecord) => activity[grid.id] ?? 0;
+
+    expect(ids(sidebarOrderedGrids(grids, workspaceKey, "created_at", at))).toEqual([
+      "g-c",
+      "g-a",
+      "g-b",
+    ]);
+    expect(ids(sidebarOrderedGrids(grids, workspaceKey, "updated_at", at))).toEqual([
+      "g-c",
+      "g-a",
+      "g-b",
+    ]);
+    activity["g-b"] = 40;
+    expect(ids(sidebarOrderedGrids(grids, workspaceKey, "updated_at", at))).toEqual([
+      "g-c",
+      "g-b",
+      "g-a",
+    ]);
+  });
+
+  it("moves a grid past its visible neighbour in the manual order and stops at the ends", () => {
+    seed();
+    useGridStore.getState().setGridHidden("g-b", true);
+    useGridStore.getState().moveGridInWorkspace("g-c", -1);
+    const manual = () =>
+      ids(sidebarOrderedGrids(useGridStore.getState().grids, workspaceKey, "manual", () => 0));
+    // The hidden g-b is skipped, so g-c lands above g-a.
+    expect(manual()).toEqual(["g-c", "g-b", "g-a"]);
+    useGridStore.getState().moveGridInWorkspace("g-c", -1);
+    expect(manual()).toEqual(["g-c", "g-b", "g-a"]);
+    useGridStore.getState().moveGridInWorkspace("g-a", 1);
+    expect(manual()).toEqual(["g-c", "g-b", "g-a"]);
   });
 });

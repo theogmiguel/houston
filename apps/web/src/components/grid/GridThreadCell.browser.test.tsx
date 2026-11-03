@@ -339,7 +339,7 @@ describe("GridThreadCell surfaces", () => {
     );
 
     await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
-    await userEvent.click(screen.getByRole("button", { name: "Split cell" }));
+    await userEvent.click(screen.getByRole("button", { name: "More cell actions" }));
     await userEvent.hover(page.getByRole("menuitem", { name: "Split right" }));
     await expect
       .element(page.getByRole("menuitem", { name: "This grid holds six threads" }))
@@ -351,7 +351,7 @@ describe("GridThreadCell surfaces", () => {
     expect(items).toContain("This grid holds six threads");
   });
 
-  it("splits right or down from one split menu", async () => {
+  it("splits right or down from the more actions menu", async () => {
     state.draftSession = null;
     const onSplit = vi.fn();
     await using screen = await renderCell(
@@ -364,7 +364,7 @@ describe("GridThreadCell surfaces", () => {
     );
 
     await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
-    await userEvent.click(screen.getByRole("button", { name: "Split cell" }));
+    await userEvent.click(screen.getByRole("button", { name: "More cell actions" }));
     await expect.element(page.getByRole("menuitem", { name: "Split right" })).toBeVisible();
     await expect.element(page.getByRole("menuitem", { name: "Split down" })).toBeVisible();
     await userEvent.hover(page.getByRole("menuitem", { name: "Split right" }));
@@ -372,6 +372,43 @@ describe("GridThreadCell surfaces", () => {
     await expect.element(pick).toBeVisible();
     await userEvent.click(pick);
     expect(onSplit).toHaveBeenCalledWith("right", "thread-b");
+  });
+
+  it("orders the label actions more, maximize, close and groups split, move and archive", async () => {
+    state.draftSession = null;
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      {
+        availableThreads: [{ threadId: "thread-b", title: "Beta thread" }],
+        onMaximize: vi.fn(),
+        swapTargets: [{ threadId: "thread-b", title: "Beta thread" }],
+        onSwapWith: vi.fn(),
+      },
+    );
+
+    const label = screen.container.querySelector("[data-pane-label]") as HTMLElement;
+    const actions = [...label.querySelectorAll("button")].map((button) =>
+      button.getAttribute("aria-label"),
+    );
+    expect(actions).toEqual(["More cell actions", "Maximize cell", "Close cell"]);
+    expect(label.querySelector('[aria-label="Split cell"]')).toBeNull();
+
+    await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
+    await userEvent.click(screen.getByRole("button", { name: "More cell actions" }));
+    await expect.element(page.getByRole("menuitem", { name: "Archive thread" })).toBeVisible();
+    const menu = document.querySelector('[role="menu"]') as HTMLElement;
+    const entries = [...menu.querySelectorAll('[role="menuitem"], [role="separator"]')].map(
+      (entry) => (entry.getAttribute("role") === "separator" ? "---" : entry.textContent?.trim()),
+    );
+    expect(entries).toEqual([
+      "Split right",
+      "Split down",
+      "---",
+      "Move to…",
+      "---",
+      "Archive thread",
+    ]);
   });
 
   it("splits down from the same menu", async () => {
@@ -387,7 +424,7 @@ describe("GridThreadCell surfaces", () => {
     );
 
     await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
-    await userEvent.click(screen.getByRole("button", { name: "Split cell" }));
+    await userEvent.click(screen.getByRole("button", { name: "More cell actions" }));
     await userEvent.hover(page.getByRole("menuitem", { name: "Split down" }));
     const pick = page.getByRole("menuitem", { name: "Beta thread" });
     await expect.element(pick).toBeVisible();
