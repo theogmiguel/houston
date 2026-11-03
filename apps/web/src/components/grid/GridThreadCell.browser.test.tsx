@@ -183,6 +183,9 @@ async function renderCell(
     dropTargetProps?: ThreadDropTargetProps;
     swapTargets?: ReadonlyArray<{ threadId: string; title: string }>;
     onSwapWith?: (threadId: string) => void;
+    gridTargets?: ReadonlyArray<{ gridId: string; name: string }>;
+    onMoveToGrid?: (gridId: string) => void;
+    onMoveToNewGrid?: () => void;
     onSplit?: (side: SplitSide, threadId: string) => void;
     onNewThread?: (side: SplitSide) => void;
     container?: HTMLElement;
@@ -210,6 +213,11 @@ async function renderCell(
         : { dropTargetProps: options.dropTargetProps })}
       swapTargets={options?.swapTargets ?? []}
       {...(options?.onSwapWith === undefined ? {} : { onSwapWith: options.onSwapWith })}
+      gridTargets={options?.gridTargets ?? []}
+      {...(options?.onMoveToGrid === undefined ? {} : { onMoveToGrid: options.onMoveToGrid })}
+      {...(options?.onMoveToNewGrid === undefined
+        ? {}
+        : { onMoveToNewGrid: options.onMoveToNewGrid })}
       onSplit={options?.onSplit ?? (() => {})}
       onNewThread={options?.onNewThread}
       onOpenThread={() => {}}
@@ -393,6 +401,28 @@ describe("GridThreadCell surfaces", () => {
     await expect.element(pick).toBeVisible();
     await userEvent.click(pick);
     expect(onSplit).toHaveBeenCalledWith("right", "thread-b");
+  });
+
+  it("moves the cell's thread to another grid of its project", async () => {
+    state.draftSession = null;
+    const onMoveToGrid = vi.fn();
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      {
+        gridTargets: [{ gridId: "grid-b", name: "Review" }],
+        onMoveToGrid,
+        onMoveToNewGrid: vi.fn(),
+      },
+    );
+
+    await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
+    await userEvent.click(screen.getByRole("button", { name: "More cell actions" }));
+    await userEvent.hover(page.getByRole("menuitem", { name: "Move to grid" }));
+    await expect.element(page.getByRole("menuitem", { name: "Review" })).toBeVisible();
+    await expect.element(page.getByRole("menuitem", { name: "New grid" })).toBeVisible();
+    await userEvent.click(page.getByRole("menuitem", { name: "Review" }));
+    expect(onMoveToGrid).toHaveBeenCalledExactlyOnceWith("grid-b");
   });
 
   it("orders the label actions more, maximize, close and groups split, move and archive", async () => {

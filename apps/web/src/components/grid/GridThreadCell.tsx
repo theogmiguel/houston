@@ -15,6 +15,7 @@ import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { paneDensityLayout } from "../../grid/density";
 import { subscribeGridCellRename } from "../../grid/gridCellCommands";
 import { MAX_GRID_THREADS, type GridRecord, useGridStore } from "../../grid/gridStore";
+import type { MoveToGridTarget } from "../../grid/moveToGrid";
 import { type Side, type SplitSide, type ThreadNode, preorderThreads } from "../../grid/tree";
 import type { ThreadDragHandleProps, ThreadDropTargetProps } from "../../grid/threadDrag";
 import { Button } from "../ui/button";
@@ -33,6 +34,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 import { TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR } from "../chat/composerFocusRedirect";
+import { MoveToGridMenuItems } from "./MoveToGridMenuItems";
 import { ThreadOpenProvider } from "./threadOpenContext";
 import { usePaneDensity } from "./usePaneDensity";
 
@@ -60,6 +62,9 @@ export function GridThreadCell({
   dropTargetProps,
   swapTargets = [],
   onSwapWith,
+  gridTargets = [],
+  onMoveToGrid,
+  onMoveToNewGrid,
 }: {
   node: ThreadNode;
   grid: GridRecord;
@@ -92,6 +97,10 @@ export function GridThreadCell({
   /** The other cells in this grid, for the label's keyboard move action. */
   swapTargets?: ReadonlyArray<{ threadId: string; title: string }>;
   onSwapWith?: ((threadId: string) => void) | undefined;
+  /** The project's other grids, for the cell menu's Move to grid action. */
+  gridTargets?: ReadonlyArray<MoveToGridTarget>;
+  onMoveToGrid?: ((gridId: string) => void) | undefined;
+  onMoveToNewGrid?: (() => void) | undefined;
 }) {
   const environmentId = grid.environmentId as EnvironmentId;
   const threadId = node.threadId as ThreadId;
@@ -178,7 +187,8 @@ export function GridThreadCell({
   const moveTargets = onSwapWith === undefined ? [] : swapTargets;
   const canArchive = draftId === undefined;
   const showSplit = availableThreads.length > 0 || onNewThread !== undefined;
-  const showOverflow = showSplit || moveTargets.length > 0 || canArchive;
+  const showOverflow =
+    showSplit || moveTargets.length > 0 || onMoveToGrid !== undefined || canArchive;
   const archived = useArchivedThreadSnapshots([environmentId]);
   const closeCellStable = useStableCallback(closeArchivedCell);
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- drops a cell whose thread was archived elsewhere (the sidebar or another window)
@@ -214,6 +224,9 @@ export function GridThreadCell({
           }
           targets={moveTargets}
           onPick={onSwapWith}
+          gridTargets={gridTargets}
+          onMoveToGrid={onMoveToGrid}
+          onMoveToNewGrid={onMoveToNewGrid}
           onArchive={
             canArchive
               ? () => void archiveThread(threadRef, { onArchived: closeArchivedCell })
@@ -449,6 +462,9 @@ function MoreCellMenu({
   split,
   targets,
   onPick,
+  gridTargets,
+  onMoveToGrid,
+  onMoveToNewGrid,
   onArchive,
   onRename,
   onMarkUnread,
@@ -467,6 +483,9 @@ function MoreCellMenu({
   split: SplitChoices | null;
   targets: ReadonlyArray<{ threadId: string; title: string }>;
   onPick?: ((threadId: string) => void) | undefined;
+  gridTargets: ReadonlyArray<MoveToGridTarget>;
+  onMoveToGrid?: ((gridId: string) => void) | undefined;
+  onMoveToNewGrid?: (() => void) | undefined;
   onArchive?: (() => void) | undefined;
   onRename?: (() => void) | undefined;
   onMarkUnread?: (() => void) | undefined;
@@ -498,6 +517,7 @@ function MoreCellMenu({
   const groups = [
     split === null ? null : "split",
     targets.length === 0 ? null : "move",
+    onMoveToGrid === undefined ? null : "grid",
     hasThreadActions ? "thread" : null,
     onArchive === undefined ? null : "archive",
   ].filter((group) => group !== null);
@@ -561,6 +581,27 @@ function MoreCellMenu({
                     Swap with {target.title}
                   </MenuItem>
                 ))}
+              </MenuSubPopup>
+            </MenuSub>
+          </>
+        )}
+        {onMoveToGrid === undefined ? null : (
+          <>
+            {separatorBefore("grid") ? <MenuSeparator /> : null}
+            <MenuSub>
+              <MenuSubTrigger>Move to grid</MenuSubTrigger>
+              <MenuSubPopup>
+                <MoveToGridMenuItems
+                  targets={gridTargets}
+                  onMove={(gridId) => {
+                    setOpen(false);
+                    onMoveToGrid(gridId);
+                  }}
+                  onNewGrid={() => {
+                    setOpen(false);
+                    onMoveToNewGrid?.();
+                  }}
+                />
               </MenuSubPopup>
             </MenuSub>
           </>

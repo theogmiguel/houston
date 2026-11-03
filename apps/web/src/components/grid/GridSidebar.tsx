@@ -46,12 +46,13 @@ import {
 import {
   gridById,
   type GridRecord,
-  MAX_GRID_THREADS,
   orderedGridsForWorkspace,
   sidebarOrderedGrids,
   useGridStore,
   workspaceKeyOf,
 } from "../../grid/gridStore";
+import { moveThreadToGridOrExplain, moveToGridTargets } from "../../grid/moveToGrid";
+import { crossProjectMoveToast, sameProject } from "../../grid/projectMove";
 import { resolveGridThreadTarget } from "../../grid/gridNavigation";
 import {
   nextRailTargetIndex,
@@ -84,6 +85,7 @@ import {
 } from "../../grid/sidebar";
 import { PullRequestChecksGlyph, PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { GridShelves } from "./GridShelves";
+import { MoveToGridMenuItems } from "./MoveToGridMenuItems";
 import { SidebarUngroupedSection } from "../ui/sidebar-ungrouped";
 import { COLLAPSED_GRIDS_STORAGE_KEY, useCollapsedKeys } from "./sidebarCollapse";
 import { preorderThreads } from "../../grid/tree";
@@ -609,30 +611,26 @@ export function GridSidebar() {
     const thread = threadById.get(source.threadId);
     const target = gridById(useGridStore.getState().grids, targetGridId);
     if (thread === undefined || target === null) return;
-    if (workspaceKeyOf(thread.environmentId, thread.projectId) !== target.workspaceKey) {
+    if (!sameProject(thread, target)) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Thread belongs to another workspace",
-          description: `“${thread.title}” cannot join “${target.name}”.`,
+          ...crossProjectMoveToast(
+            workspaceTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ??
+              thread.projectId,
+            workspaceTitles.get(target.workspaceKey) ?? target.projectId,
+          ),
         }),
       );
       return;
     }
-    const leaves = target.tree === null ? [] : preorderThreads(target.tree);
-    const alreadyShown = leaves.some((leaf) => leaf.threadId === source.threadId);
-    if (!alreadyShown && leaves.length >= MAX_GRID_THREADS) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: `This grid holds its maximum of ${MAX_GRID_THREADS} threads`,
-          description: `“${target.name}” already shows ${leaves.length}; add a new grid instead.`,
-        }),
-      );
-      return;
-    }
-    useGridStore.getState().removeThreadFromGrid(source.gridId, source.threadId);
-    useGridStore.getState().addThread(targetGridId, source.threadId);
+    const refusal = moveThreadToGridOrExplain({
+      threadId: source.threadId,
+      threadEnvironmentId: thread.environmentId,
+      threadProjectId: thread.projectId,
+      targetGridId,
+    });
+    if (refusal !== null) toastManager.add(stackedThreadToast({ type: "error", ...refusal }));
   };
   const dropThreadOnThread = (
     source: DraggedThread,
@@ -1511,6 +1509,7 @@ export function GridGroup({
               onDragStart={() => onDragStart(grid.id, thread)}
               onDragEnd={onDragEnd}
               onDropOnThread={(source) => onDropOnThread(source, grid.id, thread.id)}
+              onOpenGrid={(targetGridId) => onOpenThread(targetGridId, thread.id)}
               readDragged={readDragged}
             />
           ))}
@@ -1597,6 +1596,7 @@ function UngroupedGroup({
           onDragStart={() => {}}
           onDragEnd={() => {}}
           onDropOnThread={() => {}}
+          onOpenGrid={() => onOpenThread(thread)}
           readDragged={readDragged}
         />
       ))}
@@ -1660,6 +1660,7 @@ export function ThreadCard({
   onDragStart,
   onDragEnd,
   onDropOnThread,
+  onOpenGrid,
   readDragged,
 }: {
   gridId: string | null;
@@ -1686,6 +1687,8 @@ export function ThreadCard({
   onDragStart: () => void;
   onDragEnd: () => void;
   onDropOnThread: (source: DraggedThread) => void;
+  /** Opens the grid a menu move landed in; absent hides the Move to grid submenu. */
+  onOpenGrid?: ((gridId: string) => void) | undefined;
   readDragged: (event: ReactDragEvent) => DraggedThread | null;
 }) {
   const [renaming, setRenaming] = useState(false);
@@ -1718,6 +1721,36 @@ export function ThreadCard({
   const autoCloseEnabled = thread.autoSettleDisabledAt == null;
   const actionsVisible = actionsHovered || holdMenuOpen || actionsMenuOpen;
   const [previewOpen, setPreviewOpen] = useState(false);
+  const grids = useGridStore((store) => store.grids);
+  const createGrid = useGridStore((store) => store.createGrid);
+  const moveTargets =
+    onOpenGrid === undefined || thread.projectId.length === 0
+      ? null
+      : moveToGridTargets(grids, {
+          environmentId: thread.environmentId,
+          projectId: thread.projectId,
+          currentGridId: gridId,
+        });
+
+  const moveThreadToTarget = (targetGridId: string) => {
+    const refusal = moveThreadToGridOrExplain({
+      threadId: thread.id,
+      threadEnvironmentId: thread.environmentId,
+      threadProjectId: thread.projectId,
+      targetGridId,
+    });
+    if (refusal === null) onOpenGrid?.(targetGridId);
+    else toastManager.add(stackedThreadToast({ type: "error", ...refusal }));
+  };
+
+  const moveThreadToNewGrid = () => {
+    const targetGridId = createGrid({
+      environmentId: thread.environmentId,
+      projectId: thread.projectId,
+      workspaceKey: workspaceKeyOf(thread.environmentId, thread.projectId),
+    });
+    moveThreadToTarget(targetGridId);
+  };
 
   const applyPreset = (preset: Pick<SnoozePreset, "snoozedUntil"> | undefined) => {
     if (preset !== undefined) onHold(preset);
@@ -1944,6 +1977,21 @@ export function ThreadCard({
                       Rename
                       <MenuShortcut>F2</MenuShortcut>
                     </MenuItem>
+                    {moveTargets === null ? null : (
+                      <MenuSub>
+                        <MenuSubTrigger>
+                          Move to grid
+                          <ChevronRightIcon aria-hidden className="ml-auto size-3.5" />
+                        </MenuSubTrigger>
+                        <MenuSubPopup>
+                          <MoveToGridMenuItems
+                            targets={moveTargets}
+                            onMove={moveThreadToTarget}
+                            onNewGrid={moveThreadToNewGrid}
+                          />
+                        </MenuSubPopup>
+                      </MenuSub>
+                    )}
                     <MenuSeparator />
                     <MenuSub>
                       <MenuSubTrigger>

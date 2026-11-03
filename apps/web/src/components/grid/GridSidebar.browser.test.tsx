@@ -3,6 +3,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
+import { useGridStore } from "../../grid/gridStore";
 import { fakeTimers, render, type Screen } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
 import { ThreadCard } from "./GridSidebar";
@@ -43,6 +44,7 @@ function card(
     onSetAutoClose?: (enabled: boolean) => void;
     onRename?: (title: string) => void;
     onOpen?: () => void;
+    onOpenGrid?: (gridId: string) => void;
     timeLabel?: string | null;
     tooltipDelay?: number;
     focused?: boolean;
@@ -72,6 +74,7 @@ function card(
         onDragStart={() => {}}
         onDragEnd={() => {}}
         onDropOnThread={() => {}}
+        {...(overrides.onOpenGrid === undefined ? {} : { onOpenGrid: overrides.onOpenGrid })}
         readDragged={() => null}
       />
     </TooltipProvider>
@@ -398,4 +401,99 @@ describe.skipIf(!capturesEnabled)("ThreadCard captures", () => {
       document.documentElement.classList.remove("dark");
     },
   );
+});
+
+describe("ThreadCard move to grid", () => {
+  function seedGrids() {
+    useGridStore.setState({ grids: [], threadOrigins: {}, closedCells: {} });
+    const store = useGridStore.getState();
+    store.createGrid({
+      environmentId: "env-1",
+      projectId: "project-1",
+      workspaceKey: "env-1:project-1",
+      id: "grid-a",
+      name: "Alpha",
+      now: "2026-01-01T00:00:00Z",
+    });
+    store.createGrid({
+      environmentId: "env-1",
+      projectId: "project-1",
+      workspaceKey: "env-1:project-1",
+      id: "grid-b",
+      name: "Review",
+      now: "2026-01-02T00:00:00Z",
+    });
+    store.createGrid({
+      environmentId: "env-1",
+      projectId: "project-2",
+      workspaceKey: "env-1:project-2",
+      id: "grid-other",
+      name: "Elsewhere",
+      now: "2026-01-03T00:00:00Z",
+    });
+    useGridStore.getState().addThread("grid-a", "thread-a");
+  }
+
+  async function openMoveMenu() {
+    const screen = await render(card(thread(), { onOpenGrid: () => {} }));
+    await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
+    await userEvent.click(screen.getByRole("button", { name: /Thread actions for/ }));
+    await userEvent.hover(page.getByRole("menuitem", { name: /Move to grid/ }));
+    return screen;
+  }
+
+  it("lists the project's other grids and no other project's grid", async () => {
+    seedGrids();
+    await using _screen = await openMoveMenu();
+
+    await expect.element(page.getByRole("menuitem", { name: "Review" })).toBeVisible();
+    await expect.element(page.getByRole("menuitem", { name: "New grid" })).toBeVisible();
+    expect(page.getByRole("menuitem", { name: "Alpha" }).elements()).toHaveLength(0);
+    expect(page.getByRole("menuitem", { name: "Elsewhere" }).elements()).toHaveLength(0);
+  });
+
+  it("hides the submenu when the thread has no project", async () => {
+    seedGrids();
+    await using screen = await render(
+      card(thread({ projectId: "" as never }), { onOpenGrid: () => {} }),
+    );
+    await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
+    await userEvent.click(screen.getByRole("button", { name: /Thread actions for/ }));
+    await expect.element(page.getByRole("menuitem", { name: /Open in grid/ })).toBeVisible();
+    expect(page.getByRole("menuitem", { name: /Move to grid/ }).elements()).toHaveLength(0);
+  });
+
+  it("moves the thread to the chosen grid and opens it", async () => {
+    seedGrids();
+    const onOpenGrid = vi.fn();
+    await using screen = await render(card(thread(), { onOpenGrid }));
+    await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
+    await userEvent.click(screen.getByRole("button", { name: /Thread actions for/ }));
+    await userEvent.hover(page.getByRole("menuitem", { name: /Move to grid/ }));
+    await userEvent.click(page.getByRole("menuitem", { name: "Review" }));
+
+    expect(onOpenGrid).toHaveBeenCalledExactlyOnceWith("grid-b");
+    const grids = useGridStore.getState().grids;
+    expect(grids.find((grid) => grid.id === "grid-a")?.tree).toBeNull();
+    expect(grids.find((grid) => grid.id === "grid-b")?.tree).toMatchObject({
+      kind: "thread",
+      threadId: "thread-a",
+    });
+  });
+
+  it("creates a new grid in the thread's project", async () => {
+    seedGrids();
+    const onOpenGrid = vi.fn();
+    await using screen = await render(card(thread(), { onOpenGrid }));
+    await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
+    await userEvent.click(screen.getByRole("button", { name: /Thread actions for/ }));
+    await userEvent.hover(page.getByRole("menuitem", { name: /Move to grid/ }));
+    await userEvent.click(page.getByRole("menuitem", { name: "New grid" }));
+
+    const createdId = onOpenGrid.mock.calls[0]?.[0] as string | undefined;
+    expect(createdId).toBeDefined();
+    const created = useGridStore.getState().grids.find((grid) => grid.id === createdId);
+    expect(created).toMatchObject({ environmentId: "env-1", projectId: "project-1" });
+    expect(created?.tree).toMatchObject({ kind: "thread", threadId: "thread-a" });
+  });
 });

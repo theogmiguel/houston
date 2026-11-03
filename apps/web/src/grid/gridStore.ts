@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import { randomUUID } from "../lib/utils";
 import { resolveStorage } from "../lib/storage";
+import { sameProject } from "./projectMove";
 import {
   type LayoutNode,
   type Side,
@@ -94,6 +95,13 @@ export interface GridStoreState {
   renameGrid: (gridId: string, name: string) => void;
   deleteGrid: (gridId: string) => void;
   addThread: (gridId: string, threadId: string, draftId?: string) => void;
+  /** Appends a thread to another grid of its own project; the menu and a sidebar drop share this path. */
+  moveThreadToGrid: (input: {
+    threadId: string;
+    threadEnvironmentId: string;
+    threadProjectId: string;
+    targetGridId: string;
+  }) => boolean;
   removeThreadFromGrid: (gridId: string, threadId: string) => void;
   setTree: (gridId: string, tree: LayoutNode | null) => void;
   /** Rebuilds the grid as a balanced grid, one row or one column; a grid with fewer than two threads is unchanged. */
@@ -610,6 +618,27 @@ export const useGridStore = create<GridStoreState>()(
             closedCells: forgetClosedCellEverywhere(state.closedCells, threadId),
           };
         }),
+      moveThreadToGrid: (input) => {
+        const state = get();
+        const target = gridById(state.grids, input.targetGridId);
+        if (target === null) return false;
+        if (
+          !sameProject(
+            {
+              environmentId: input.threadEnvironmentId,
+              projectId: input.threadProjectId,
+            },
+            target,
+          )
+        ) {
+          return false;
+        }
+        const shown = containsThreadId(target.tree, input.threadId);
+        const count = target.tree === null ? 0 : preorderThreads(target.tree).length;
+        if (!shown && count >= MAX_GRID_THREADS) return false;
+        get().addThread(input.targetGridId, input.threadId);
+        return true;
+      },
       removeThreadFromGrid: (gridId, threadId) =>
         set((state) => ({
           grids: updateGrid(state.grids, gridId, (grid) =>
@@ -721,9 +750,9 @@ export const useGridStore = create<GridStoreState>()(
         const sourceGrid = grids.find(
           (grid) => grid.tree !== null && findThread(grid.tree, input.threadId) !== null,
         );
-        // A cell's thread ref is built from the target grid's environment, so a
-        // cross-workspace drop would produce a pane with the wrong owner.
-        if (sourceGrid !== undefined && sourceGrid.environmentId !== target.environmentId) {
+        // A thread never leaves its project; a cell's ref is built from the
+        // target grid's environment, so a cross-project drop would be wrong too.
+        if (sourceGrid !== undefined && !sameProject(sourceGrid, target)) {
           return false;
         }
         if (sourceGrid !== undefined && sourceGrid.id !== target.id) {
