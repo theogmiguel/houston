@@ -96,7 +96,7 @@ import {
 import { Label } from "../ui/label";
 import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "../ui/menu";
 import { ToggleGroup, Toggle } from "../ui/toggle-group";
-import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "../ui/empty";
+import { PageEmptyState } from "../ui/empty-state";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -456,15 +456,13 @@ export function ScheduledTasksSettings(target: {
             <SettingsRow title={scope.message} />
           </SettingsSection>
         ) : environments.length === 0 ? (
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <Clock3Icon />
-              </EmptyMedia>
-              <EmptyTitle>No environments available</EmptyTitle>
-              <EmptyDescription>Connect an environment to manage scheduled tasks.</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          <div className="py-8">
+            <PageEmptyState
+              icon={<Clock3Icon />}
+              title="No environments available"
+              description="Connect an environment to manage scheduled tasks."
+            />
+          </div>
         ) : environments.length > 1 ? (
           <ScheduledTaskEnvironmentList
             environmentId={linkedEnvironmentId}
@@ -700,10 +698,13 @@ function ScheduledTaskEnvironmentSection({
             />
           ) : null}
           {tasks.length === 0 ? (
-            <SettingsRow
-              title="No scheduled tasks"
-              description="No tasks match this environment and project selection."
-            />
+            <div className="py-8">
+              <PageEmptyState
+                icon={<Clock3Icon />}
+                title="No scheduled tasks"
+                description="No tasks match this environment and project selection."
+              />
+            </div>
           ) : (
             tasks.map((task) => (
               <ScheduledTaskRow
