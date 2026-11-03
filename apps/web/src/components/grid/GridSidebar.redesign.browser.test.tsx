@@ -157,7 +157,7 @@ function CollapsibleGroup({
 }
 
 describe("grid sidebar", () => {
-  it("lists grids flat with their workspace instead of a workspace row", async () => {
+  it("lists a grid without repeating its project name", async () => {
     const first = grid({ id: "grid-a", name: "v2 port" });
     const second = grid({
       id: "grid-b",
@@ -173,9 +173,9 @@ describe("grid sidebar", () => {
       </>,
     );
 
-    expect(screen.getByRole("button", { name: /^v2 port Houston$/ }).element()).toBeVisible();
-    expect(screen.getByRole("button", { name: /^Grid 2 notes empty$/ }).element()).toBeVisible();
-    expect(screen.getByText("notes").element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^v2 port$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Grid 2 empty$/ }).element()).toBeVisible();
+    expect(screen.container.textContent).not.toContain("notes");
     expect(screen.container.textContent).not.toContain("Workspaces");
   });
 
@@ -188,10 +188,8 @@ describe("grid sidebar", () => {
       }),
     );
 
-    expect(
-      screen.getByRole("button", { name: /^Landing copy houston-site$/ }).element(),
-    ).toBeVisible();
-    expect(screen.container.textContent).not.toContain("houston-site ·");
+    expect(screen.getByRole("button", { name: /^Landing copy$/ }).element()).toBeVisible();
+    expect(screen.container.textContent).not.toContain("houston-site");
     const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
     expect(row.className).toContain("pl-7.5");
 
@@ -251,8 +249,8 @@ describe("grid sidebar", () => {
       </>,
     );
 
-    const open = screen.getByRole("button", { name: /^v2 port Houston$/ }).element();
-    const closed = screen.getByRole("button", { name: /^Review Houston$/ }).element();
+    const open = screen.getByRole("button", { name: /^v2 port$/ }).element();
+    const closed = screen.getByRole("button", { name: /^Review$/ }).element();
     expect(open.className).toContain("bg-sidebar-row-selected");
     expect(closed.className).not.toContain("bg-sidebar-row-selected");
   });
@@ -265,7 +263,7 @@ describe("grid sidebar", () => {
       }),
     );
 
-    const heading = screen.getByRole("button", { name: /^v2 port Houston$/ }).element();
+    const heading = screen.getByRole("button", { name: /^v2 port$/ }).element();
     expect(heading.className).not.toContain("bg-sidebar-row-selected");
   });
 
@@ -278,7 +276,7 @@ describe("grid sidebar", () => {
       }),
     );
 
-    const heading = screen.getByRole("button", { name: /^v2 port Houston$/ }).element();
+    const heading = screen.getByRole("button", { name: /^v2 port 2$/ }).element();
     expect(heading.className).toContain("bg-sidebar-row-selected");
   });
 

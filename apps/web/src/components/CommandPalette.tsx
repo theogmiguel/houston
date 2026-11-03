@@ -272,7 +272,7 @@ import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
 import { useActiveThreadRouteTarget } from "../hooks/useThreadRouteTarget";
-import { useGrid, useGridStore } from "../grid/gridStore";
+import { useGrid, useGridStore, workspaceKeyOf } from "../grid/gridStore";
 import { useGridMaximizeStore } from "../grid/gridMaximizeStore";
 import { requestGridCellRename } from "../grid/gridCellCommands";
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -479,6 +479,15 @@ function OpenCommandPaletteDialog(props: {
   const gridIdParam = useParams({ strict: false, select: (params) => params.gridId });
   const openGrid = useGrid(typeof gridIdParam === "string" ? gridIdParam : null);
   const openGridDraft = useOpenGridDraft();
+  const openFirstGridForProject = async (environmentId: EnvironmentId, projectId: string) => {
+    const gridId = useGridStore.getState().createGrid({
+      environmentId,
+      projectId,
+      workspaceKey: workspaceKeyOf(environmentId, projectId),
+    });
+    await openGridDraft({ gridId, focusedThreadId: null });
+    return gridId;
+  };
   const maximizedCellThreadId = useGridMaximizeStore((store) =>
     openGrid === null ? null : (store.maximizedThreadIdByGrid[openGrid.id] ?? null),
   );
@@ -2197,7 +2206,7 @@ function OpenCommandPaletteDialog(props: {
     }
 
     const navigationResult = await settlePromise(() =>
-      handleNewThread(scopeProjectRef(input.environmentId, projectId)),
+      openFirstGridForProject(input.environmentId, projectId),
     );
     if (navigationResult._tag === "Failure") {
       const error = squashAtomCommandFailure(navigationResult);
@@ -2436,7 +2445,9 @@ function OpenCommandPaletteDialog(props: {
     );
     const projectRef = scopeProjectRef(addProjectCloneFlow.environmentId, projectId);
     await waitForProject(projectRef, 3_000).catch(() => null);
-    const navigationResult = await settlePromise(() => handleNewThread(projectRef));
+    const navigationResult = await settlePromise(() =>
+      openFirstGridForProject(addProjectCloneFlow.environmentId, projectId),
+    );
     if (navigationResult._tag === "Failure") {
       const error = squashAtomCommandFailure(navigationResult);
       toastManager.add(

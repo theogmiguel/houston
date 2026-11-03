@@ -14,7 +14,8 @@ import { waitForProject } from "~/state/entities";
 import { projectEnvironment } from "~/state/projects";
 import { sourceControlEnvironment } from "~/state/sourceControl";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { useNewThreadHandler } from "./useHandleNewThread";
+import { useGridStore, workspaceKeyOf } from "../grid/gridStore";
+import { useOpenGridDraft } from "../grid/useOpenGridDraft";
 import { suggestAppAccessForRemote } from "../components/sourceControlAppAccessToast";
 
 function errorMessage(error: unknown): string {
@@ -28,7 +29,7 @@ export function useNewProject() {
   const publishRepository = useAtomCommand(sourceControlEnvironment.publishRepository, {
     reportFailure: false,
   });
-  const handleNewThread = useNewThreadHandler();
+  const openGridDraft = useOpenGridDraft();
 
   const publishNewRepository = async (input: {
     readonly environmentId: EnvironmentId;
@@ -122,7 +123,12 @@ export function useNewProject() {
       return null;
     });
     if (project === null) return true;
-    await handleNewThread(projectRef).catch((error: unknown) => {
+    const gridId = useGridStore.getState().createGrid({
+      environmentId: input.environmentId,
+      projectId,
+      workspaceKey: workspaceKeyOf(input.environmentId, projectId),
+    });
+    await openGridDraft({ gridId, focusedThreadId: null }).catch((error: unknown) => {
       toastManager.add(
         stackedThreadToast({
           type: "error",
