@@ -1,5 +1,7 @@
 import { DownloadIcon } from "lucide-react";
 import { Spinner } from "~/components/ui/spinner";
+import { Alert, AlertAction, AlertDescription } from "~/components/ui/alert";
+import { Button } from "~/components/ui/button";
 import { CopyButton } from "~/components/ui/copy-button";
 import {
   AuthPreviewOperateScope,
@@ -47,7 +49,7 @@ import { mediaFileReference } from "@houston-app/client-runtime/media-reference"
 import { FolderTree, Globe2, WrapTextIcon } from "lucide-react";
 import { Code2, Eye, Table2 } from "lucide";
 import * as Schema from "effect/Schema";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { isBrowserPreviewFile, openFileInPreview } from "~/browser/openFileInPreview";
 import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
@@ -118,13 +120,21 @@ import {
   shouldShowFileExplorer,
   workspaceAssetResource,
 } from "./filePreviewMode";
-import { changeFileSaveSession, useFileSaveSession } from "./fileSaveSessions";
+import {
+  changeFileSaveSession,
+  overwriteFileSaveSession,
+  resetFileSaveSession,
+  useFileSaveConflict,
+  useFileSaveSession,
+} from "./fileSaveSessions";
 import { revisionedQuery } from "~/state/revisionedQuery";
 import {
+  confirmProjectFileQueryData,
   getOptimisticProjectFileQueryData,
   getProjectFileContents,
   getProjectFileQueryAtom,
   setProjectFileQueryData,
+  setProjectFileRevision,
   useProjectFileQuery,
 } from "./projectFilesQueryState";
 
@@ -654,6 +664,8 @@ interface EditableFileSurfaceProps {
   relativePath: string;
   composerDraftTarget: ScopedThreadRef | DraftId;
   contents: string;
+  diskContents: string | null;
+  diskRevision: string | null;
   resolvedTheme: "light" | "dark";
   revealRequestId: number;
   wordWrap: boolean;
@@ -672,6 +684,8 @@ function EditableFileSurface({
   relativePath,
   composerDraftTarget,
   contents,
+  diskContents,
+  diskRevision,
   resolvedTheme,
   revealRequestId,
   wordWrap,
@@ -691,6 +705,7 @@ function EditableFileSurface({
   const selectionFrameRef = useRef<number | null>(null);
   const saveTarget = { environmentId, cwd, relativePath };
   useFileSaveSession(saveTarget, onPendingChange);
+  const saveConflict = useFileSaveConflict(saveTarget);
   // Retain file identity for echoed editor changes; only external changes replace the editor's draft.
   const [externalFile, setExternalFile] = useState(() =>
     editableFileContents(environmentId, cwd, relativePath, contents),
@@ -700,6 +715,26 @@ function EditableFileSurface({
     setExternalFile(editableFileContents(environmentId, cwd, relativePath, contents));
     setEditedContents(null);
   }
+  const externalChangeOnDisk =
+    editedContents !== null &&
+    diskContents !== null &&
+    diskContents !== externalFile.contents &&
+    diskContents !== editedContents;
+  const showConflict = saveConflict || externalChangeOnDisk;
+  const reloadFromDisk = () => {
+    if (diskContents === null) return;
+    resetFileSaveSession(saveTarget, diskContents);
+    setExternalFile(editableFileContents(environmentId, cwd, relativePath, diskContents));
+    setEditedContents(null);
+    setProjectFileQueryData(environmentId, cwd, relativePath, diskContents);
+    if (diskRevision !== null) {
+      setProjectFileRevision(environmentId, cwd, relativePath, diskRevision);
+    }
+    confirmProjectFileQueryData(environmentId, cwd, relativePath, diskContents);
+  };
+  const overwriteOnDisk = () => {
+    overwriteFileSaveSession(saveTarget);
+  };
   const { ready: editable, onPostRender: onEditablePostRender } =
     useEditableAfterHighlight(externalFile);
   const editorRef = useRef<Editor<"file", FileCommentAnnotationGroup, undefined> | null>(null);
@@ -863,6 +898,21 @@ function EditableFileSurface({
 
   return (
     <EditProvider createEditor={createFileEditor}>
+      {showConflict ? (
+        <Alert variant="warning">
+          <AlertDescription>
+            This file changed on disk while you were editing. Your edits are kept.
+          </AlertDescription>
+          <AlertAction>
+            <Button size="xs" variant="outline" type="button" onClick={reloadFromDisk}>
+              Reload
+            </Button>
+            <Button size="xs" variant="outline" type="button" onClick={overwriteOnDisk}>
+              Overwrite
+            </Button>
+          </AlertAction>
+        </Alert>
+      ) : null}
       <div ref={surfaceRef} className="flex min-h-0 flex-1">
         <Virtualizer
           className="file-preview-virtualizer min-h-0 flex-1 overflow-auto"
@@ -931,6 +981,8 @@ function RenderedMarkdownSurface({
   | "revealLine"
   | "revealRequestId"
   | "wordWrap"
+  | "diskContents"
+  | "diskRevision"
   | "onPostRender"
 > & {
   threadRef: ScopedThreadRef;
@@ -1179,6 +1231,14 @@ export default function FilePreviewPanel({
         )
       : NO_FILE_REVISION_ATOM,
   );
+
+  const refreshFileOnFocus = useEffectEvent(() => file.refresh());
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- returning focus checks the open file against disk for external edits
+  useEffect(() => {
+    const onFocus = () => refreshFileOnFocus();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- scrolls the breadcrumb DOM so the deepest and current crumbs are in view after commit
   useEffect(() => {
@@ -1542,6 +1602,8 @@ export default function FilePreviewPanel({
                   relativePath={relativePath}
                   composerDraftTarget={composerDraftTarget}
                   contents={file.data.contents}
+                  diskContents={file.diskData?.contents ?? null}
+                  diskRevision={file.diskData?.revision ?? null}
                   resolvedTheme={resolvedTheme}
                   revealRequestId={revealRequestId}
                   wordWrap={wordWrap}

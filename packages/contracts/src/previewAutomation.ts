@@ -961,6 +961,9 @@ export class PreviewAutomationRecordingDeadlineExpiredError extends Schema.Tagge
   }
 }
 
+/** A human answers an agent's browser action within this window; otherwise it is denied. */
+export const PREVIEW_CONFIRMATION_TIMEOUT_MS = 120_000;
+
 export const PreviewAutomationError = Schema.Union([
   PreviewAutomationRecordingTransferError,
   PreviewAutomationRecordingDesktopUpdateRequiredError,

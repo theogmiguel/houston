@@ -34,7 +34,9 @@ function setup() {
         state.onWritable = state.onWritable.filter((listener) => listener !== onWritable);
       };
     },
+    revision: () => "base",
     persist,
+    onPersisted: vi.fn(),
     confirm,
     readUnsaved: () => state.unsaved,
   });

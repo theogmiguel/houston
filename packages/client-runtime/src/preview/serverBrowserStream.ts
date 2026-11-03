@@ -2,6 +2,7 @@
 import { type DeviceHubAccess, withDeviceHubQuery } from "../device/hubAccess.ts";
 import {
   PREVIEW_STREAM_HOST_SETUP_CLOSE_CODE,
+  type PickedElementPayload,
   type PreviewStreamHostSetup,
   type PreviewViewportSetting,
 } from "@houston-app/contracts";
@@ -90,7 +91,15 @@ export type PreviewStreamInput =
   | { readonly type: "navigate"; readonly url: string }
   | { readonly type: "history"; readonly delta: -1 | 1 }
   | { readonly type: "reload"; readonly ignoreCache?: boolean }
-  | { readonly type: "probe"; readonly x: number; readonly y: number };
+  | { readonly type: "probe"; readonly x: number; readonly y: number }
+  | { readonly type: "pick" }
+  | { readonly type: "pickCancel" }
+  | {
+      readonly type: "confirmationResponse";
+      readonly id: string;
+      readonly approved: boolean;
+      readonly trust: boolean;
+    };
 
 export interface PreviewStreamDownload {
   readonly fileName: string;
@@ -153,6 +162,40 @@ export interface PreviewStreamProbe {
   readonly editable: boolean;
 }
 
+export interface PreviewStreamPickedElement {
+  readonly payload: PickedElementPayload;
+  readonly rect: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
+  readonly screenshot: {
+    readonly dataUrl: string;
+    readonly width: number;
+    readonly height: number;
+  } | null;
+}
+
+export interface PreviewStreamConfirmation {
+  readonly id: string;
+  readonly origin: string;
+  readonly action: string;
+  readonly pageUrl: string;
+  readonly text: string | null;
+  readonly element: {
+    readonly tagName: string;
+    readonly text: string;
+    readonly selector: string | null;
+  } | null;
+  readonly rect: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  } | null;
+}
+
 export interface PreviewStreamPointer {
   readonly phase: "move" | "click";
   readonly x: number;
@@ -187,6 +230,9 @@ export interface PreviewStreamEvents {
   readonly onViewport: (viewport: PreviewStreamViewport) => void;
   readonly onProbe?: (probe: PreviewStreamProbe) => void;
   readonly onPointer?: (pointer: PreviewStreamPointer) => void;
+  readonly onPickedElement?: (picked: PreviewStreamPickedElement) => void;
+  readonly onPickCancelled?: () => void;
+  readonly onConfirmation?: (request: PreviewStreamConfirmation) => void;
   readonly onControl?: (control: PreviewStreamControl) => void;
   readonly onClipboard?: (text: string) => void;
   readonly onDownload?: (download: PreviewStreamDownload) => void;
@@ -271,6 +317,13 @@ export function createPreviewStreamClient(
         phase,
         sequence,
         tabId,
+        payload,
+        rect,
+        screenshot,
+        element,
+        origin,
+        action,
+        pageUrl,
       } = message as Record<string, unknown>;
       if (
         type === "fileChooser" &&
@@ -289,6 +342,52 @@ export function createPreviewStreamClient(
         if (fileChooser !== id) return;
         fileChooser = null;
         events.onFileChooser?.(null);
+      } else if (
+        type === "confirmation" &&
+        typeof id === "string" &&
+        typeof origin === "string" &&
+        typeof action === "string" &&
+        typeof pageUrl === "string" &&
+        (text === null || typeof text === "string") &&
+        (element === null ||
+          (typeof element === "object" &&
+            element !== null &&
+            typeof (element as Record<string, unknown>).tagName === "string"))
+      ) {
+        events.onConfirmation?.({
+          id,
+          origin,
+          action,
+          pageUrl,
+          text,
+          element: element as PreviewStreamConfirmation["element"],
+          rect:
+            typeof rect === "object" && rect !== null
+              ? (rect as PreviewStreamConfirmation["rect"])
+              : null,
+        });
+      } else if (type === "pickCancelled") {
+        events.onPickCancelled?.();
+      } else if (
+        type === "pickedElement" &&
+        typeof payload === "object" &&
+        payload !== null &&
+        typeof rect === "object" &&
+        rect !== null &&
+        typeof (rect as Record<string, unknown>).x === "number" &&
+        typeof (rect as Record<string, unknown>).y === "number" &&
+        typeof (rect as Record<string, unknown>).width === "number" &&
+        typeof (rect as Record<string, unknown>).height === "number"
+      ) {
+        const bounds = rect as Record<string, number>;
+        events.onPickedElement?.({
+          payload: payload as PickedElementPayload,
+          rect: { x: bounds.x!, y: bounds.y!, width: bounds.width!, height: bounds.height! },
+          screenshot:
+            typeof screenshot === "object" && screenshot !== null
+              ? (screenshot as PreviewStreamPickedElement["screenshot"])
+              : null,
+        });
       } else if (
         type === "pointer" &&
         (phase === "move" || phase === "click") &&
@@ -354,8 +453,14 @@ export function createPreviewStreamClient(
         return;
       }
       if (event.code === PREVIEW_STREAM_HOST_SETUP_CLOSE_CODE) {
+        const setup = decodeHostSetup(event.reason);
+        events.onHostSetup?.(setup);
+        if (setup.need === "installing") {
+          // Installation continues on the server; reconnect until its frames arrive.
+          retryTimer = setTimeout(connect, 1_000);
+          return;
+        }
         stopped = true;
-        events.onHostSetup?.(decodeHostSetup(event.reason));
         return;
       }
       // Rejected upgrades surface as 1006 before open for both cookies and tickets.
@@ -375,7 +480,13 @@ export function createPreviewStreamClient(
     send: (input) => {
       if (socket?.readyState !== WebSocket.OPEN) return false;
       if (!control?.canOperate) return false;
-      if (input.type !== "takeControl" && control.controller !== "you") return false;
+      if (
+        input.type !== "takeControl" &&
+        input.type !== "confirmationResponse" &&
+        input.type !== "pick" &&
+        control.controller !== "you"
+      )
+        return false;
       socket.send(JSON.stringify(input));
       return true;
     },
@@ -443,18 +554,68 @@ export function createPreviewFramePainter(
 
 const decodeHostSetup = (reason: string): PreviewStreamHostSetup => {
   try {
-    const value = JSON.parse(reason) as Partial<PreviewStreamHostSetup>;
+    const value = JSON.parse(reason) as {
+      need?: unknown;
+      command?: unknown;
+      downloadedBytes?: unknown;
+      totalBytes?: unknown;
+      unpacking?: unknown;
+      detail?: unknown;
+      platform?: unknown;
+      arch?: unknown;
+    };
     if (
       (value.need === "sandbox" || value.need === "libraries") &&
       typeof value.command === "string"
     ) {
       return { need: value.need, command: value.command };
     }
+    if (
+      value.need === "installing" &&
+      typeof value.downloadedBytes === "number" &&
+      typeof value.totalBytes === "number" &&
+      typeof value.unpacking === "boolean"
+    ) {
+      return {
+        need: "installing",
+        downloadedBytes: value.downloadedBytes,
+        totalBytes: value.totalBytes,
+        unpacking: value.unpacking,
+      };
+    }
+    if (value.need === "install-failed" && typeof value.detail === "string") {
+      return { need: "install-failed", detail: value.detail };
+    }
+    if (
+      value.need === "unsupported" &&
+      typeof value.platform === "string" &&
+      typeof value.arch === "string"
+    ) {
+      return { need: "unsupported", platform: value.platform, arch: value.arch };
+    }
   } catch {}
   return { need: "sandbox", command: "sudo houston browser setup" };
 };
 
-export const previewStreamHostSetupMessage = (setup: PreviewStreamHostSetup) =>
-  setup.need === "sandbox"
-    ? "This server's host blocks the sandbox its browser runs in. Run this once on the host, then try again:"
-    : "This server's host is missing libraries its browser needs. Run this once on the host, then try again:";
+export const previewStreamHostSetupMessage = (setup: PreviewStreamHostSetup) => {
+  switch (setup.need) {
+    case "sandbox":
+      return "This server's host blocks the sandbox its browser runs in. Run this once on the host, then try again:";
+    case "libraries":
+      return "This server's host is missing libraries its browser needs. Run this once on the host, then try again:";
+    case "installing":
+      return setup.unpacking
+        ? "Houston is unpacking its headless browser. This happens once on a new machine."
+        : "Houston is downloading its headless browser (about 127 MB). This happens once on a new machine.";
+    case "install-failed":
+      return `Houston could not install its headless browser: ${setup.detail}`;
+    case "unsupported":
+      return `Houston's headless browser is not available for ${setup.platform}-${setup.arch}.`;
+  }
+};
+
+/** Download percentage for the installing state, or null before the size is known. */
+export const previewStreamInstallPercent = (setup: PreviewStreamHostSetup) =>
+  setup.need === "installing" && setup.totalBytes > 0
+    ? Math.min(100, Math.round((setup.downloadedBytes / setup.totalBytes) * 100))
+    : null;

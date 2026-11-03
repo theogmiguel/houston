@@ -353,6 +353,16 @@ const VcsStatusChangeRequest = Schema.Struct({
   updatedAt: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
+export const VcsWorkingTreeFileStatus = Schema.Literals([
+  "modified",
+  "added",
+  "untracked",
+  "deleted",
+  "renamed",
+  "conflicted",
+]);
+export type VcsWorkingTreeFileStatus = typeof VcsWorkingTreeFileStatus.Type;
+
 const VcsStatusLocalShape = {
   isRepo: Schema.Boolean,
   sourceControlProvider: Schema.optional(SourceControlProviderInfo),
@@ -374,6 +384,8 @@ const VcsStatusLocalShape = {
         unstaged: Schema.optional(Schema.Boolean),
         untracked: Schema.optional(Schema.Boolean),
         conflicted: Schema.optional(Schema.Boolean),
+        // Omitted by servers that do not classify working-tree changes.
+        status: Schema.optional(VcsWorkingTreeFileStatus),
       }),
     ),
     insertions: NonNegativeInt,

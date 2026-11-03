@@ -444,6 +444,8 @@ export const ProjectReadFileResult = Schema.Struct({
   contents: Schema.String,
   byteLength: NonNegativeInt,
   truncated: Schema.Boolean,
+  // Omitted by older servers, and for an absent optional file.
+  revision: Schema.optional(Schema.String),
   // Omitted by older servers; false only for an absent optional file.
   exists: Schema.optional(Schema.Boolean),
 });
@@ -455,6 +457,11 @@ export const ProjectFileFailure = Schema.Literals([
   "path_not_file",
   "binary_file",
   "operation_failed",
+  "stale_revision",
+  "already_exists",
+  "not_found",
+  "not_directory",
+  "delete_workspace_root",
 ]);
 export type ProjectFileFailure = typeof ProjectFileFailure.Type;
 
@@ -467,6 +474,9 @@ export const ProjectFileOperation = Schema.Literals([
   "close",
   "make-directory",
   "write-file",
+  "create-entry",
+  "rename",
+  "delete",
 ]);
 export type ProjectFileOperation = typeof ProjectFileOperation.Type;
 
@@ -478,6 +488,9 @@ type ProjectFileFailureContext = {
   readonly resolvedWorkspaceRoot?: string;
   readonly operation?: ProjectFileOperation;
   readonly operationPath?: string;
+  readonly expectedRevision?: string;
+  readonly actualRevision?: string;
+  readonly toPath?: string;
   readonly cause?: unknown;
 };
 
@@ -510,13 +523,56 @@ export const ProjectWriteFileInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
   contents: Schema.String,
+  /** The revision the edit was based on; omitted, the write replaces whatever is on disk. */
+  expectedRevision: Schema.optional(Schema.String),
 });
 export type ProjectWriteFileInput = typeof ProjectWriteFileInput.Type;
 
 export const ProjectWriteFileResult = Schema.Struct({
   relativePath: TrimmedNonEmptyString,
+  revision: Schema.optional(Schema.String),
 });
 export type ProjectWriteFileResult = typeof ProjectWriteFileResult.Type;
+
+export const ProjectEntryMutationKind = Schema.Literals(["file", "directory"]);
+export type ProjectEntryMutationKind = typeof ProjectEntryMutationKind.Type;
+
+export const ProjectCreateEntryInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
+  kind: ProjectEntryMutationKind,
+});
+export type ProjectCreateEntryInput = typeof ProjectCreateEntryInput.Type;
+
+export const ProjectCreateEntryResult = Schema.Struct({
+  relativePath: TrimmedNonEmptyString,
+  kind: ProjectEntryMutationKind,
+});
+export type ProjectCreateEntryResult = typeof ProjectCreateEntryResult.Type;
+
+export const ProjectRenameEntryInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  fromPath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
+  toPath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
+});
+export type ProjectRenameEntryInput = typeof ProjectRenameEntryInput.Type;
+
+export const ProjectRenameEntryResult = Schema.Struct({
+  fromPath: TrimmedNonEmptyString,
+  toPath: TrimmedNonEmptyString,
+});
+export type ProjectRenameEntryResult = typeof ProjectRenameEntryResult.Type;
+
+export const ProjectDeleteEntryInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
+});
+export type ProjectDeleteEntryInput = typeof ProjectDeleteEntryInput.Type;
+
+export const ProjectDeleteEntryResult = Schema.Struct({
+  relativePath: TrimmedNonEmptyString,
+});
+export type ProjectDeleteEntryResult = typeof ProjectDeleteEntryResult.Type;
 
 export const ProjectEnsureScratchResult = Schema.Struct({
   projectId: ProjectId,
@@ -556,6 +612,8 @@ export class ProjectWriteFileError extends Schema.TaggedError<ProjectWriteFileEr
     resolvedWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
     operation: Schema.optional(ProjectFileOperation),
     operationPath: Schema.optional(TrimmedNonEmptyString),
+    expectedRevision: Schema.optional(Schema.String),
+    actualRevision: Schema.optional(Schema.String),
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect()),
   },
@@ -566,7 +624,48 @@ export class ProjectWriteFileError extends Schema.TaggedError<ProjectWriteFileEr
       ...props,
       message:
         decodedProjectErrorMessage(props) ??
-        `Failed to write workspace file '${props.relativePath}' in '${props.cwd}'.`,
+        (props.failure === "stale_revision"
+          ? `Workspace file '${props.relativePath}' changed on disk: expected revision '${props.expectedRevision ?? "unknown"}', found '${props.actualRevision ?? "no file"}'.`
+          : `Failed to write workspace file '${props.relativePath}' in '${props.cwd}'.`),
+    } as any);
+  }
+}
+
+export const ProjectEntryMutation = Schema.Literals(["create", "rename", "delete"]);
+export type ProjectEntryMutation = typeof ProjectEntryMutation.Type;
+
+export class ProjectFileMutationError extends Schema.TaggedError<ProjectFileMutationError>()(
+  "ProjectFileMutationError",
+  {
+    cwd: Schema.optional(TrimmedNonEmptyString),
+    mutation: ProjectEntryMutation,
+    relativePath: Schema.optional(TrimmedNonEmptyString),
+    toPath: Schema.optional(TrimmedNonEmptyString),
+    failure: Schema.optional(ProjectFileFailure),
+    resolvedPath: Schema.optional(TrimmedNonEmptyString),
+    resolvedWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
+    operation: Schema.optional(ProjectFileOperation),
+    operationPath: Schema.optional(TrimmedNonEmptyString),
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  // @effect-diagnostics-next-line overriddenSchemaConstructor:off
+  constructor(
+    props: ProjectFileFailureContext & {
+      readonly mutation: ProjectEntryMutation;
+      readonly cwd: string;
+    },
+  ) {
+    super({
+      ...props,
+      message:
+        decodedProjectErrorMessage(props) ??
+        (props.mutation === "rename"
+          ? `Failed to rename workspace entry '${props.relativePath}' to '${props.toPath ?? ""}' in '${props.cwd}'.`
+          : props.mutation === "delete"
+            ? `Failed to delete workspace entry '${props.relativePath}' in '${props.cwd}'.`
+            : `Failed to create workspace entry '${props.relativePath}' in '${props.cwd}'.`),
     } as any);
   }
 }

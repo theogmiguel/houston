@@ -32,6 +32,7 @@ import {
   type ReviewDiffFileStat,
   type ReviewDiffPreviewSource,
   type VcsRef,
+  type VcsWorkingTreeFileStatus,
 } from "@houston-app/contracts";
 import { dedupeRemoteBranchesWithLocalMatches } from "@houston-app/shared/git";
 import * as HostProcess from "@houston-app/shared/HostProcess";
@@ -250,6 +251,22 @@ const PORCELAIN_V2_FIELDS_BEFORE_PATH: Record<string, number> = {
   "?": 1,
   "!": 1,
 };
+
+function parsePorcelainFileStatus(record: string): VcsWorkingTreeFileStatus | null {
+  const type = record[0];
+  if (type === "?") return "untracked";
+  if (type === "!") return null;
+  if (type === "u") return "conflicted";
+  if (type === "2") return "renamed";
+  if (type !== "1") return null;
+  // The XY field follows "1 "; index status X first, then worktree status Y.
+  const indexStatus = record[2] ?? ".";
+  const worktreeStatus = record[3] ?? ".";
+  if (indexStatus === "A" || worktreeStatus === "A") return "added";
+  if (indexStatus === "D" || worktreeStatus === "D") return "deleted";
+  if (indexStatus === "R" || worktreeStatus === "R") return "renamed";
+  return "modified";
+}
 
 function parsePorcelainPath(record: string): string | null {
   const fieldsBeforePath = PORCELAIN_V2_FIELDS_BEFORE_PATH[record[0] ?? ""];
@@ -2447,6 +2464,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     let aheadOfDefaultCount = 0;
     let hasWorkingTreeChanges = false;
     const changedFilesWithoutNumstat = new Set<string>();
+    const fileStatuses = new Map<string, VcsWorkingTreeFileStatus>();
     const untrackedRoots: string[] = [];
     const conflictedPaths: string[] = [];
     const fileFlags = new Map<
@@ -2496,6 +2514,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         const pathValue = parsePorcelainPath(line);
         if (pathValue) {
           changedFilesWithoutNumstat.add(pathValue);
+          const status = parsePorcelainFileStatus(line);
+          if (status !== null) fileStatuses.set(pathValue, status);
           if (line.startsWith("? ")) {
             untrackedRoots.push(pathValue);
             setFlags(pathValue, { untracked: true });
@@ -2520,6 +2540,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           if (originalPath) {
             changedFilesWithoutNumstat.add(originalPath);
             setFlags(originalPath, { staged: true });
+            fileStatuses.set(originalPath, "deleted");
           }
         }
       }
@@ -2577,6 +2598,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             ...(flags.conflicted ? { conflicted: true } : {}),
           };
     };
+    const statusOf = (filePath: string) => {
+      const status = fileStatuses.get(filePath);
+      return status === undefined ? {} : { status };
+    };
     const files = Array.from(fileStatMap.entries()).map(([filePath, stat]) => {
       insertions += stat.insertions;
       deletions += stat.deletions;
@@ -2585,12 +2610,19 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         insertions: stat.insertions,
         deletions: stat.deletions,
         ...statusFlagsOf(filePath),
+        ...statusOf(filePath),
       };
     });
 
     for (const filePath of changedFilesWithoutNumstat) {
       if (fileStatMap.has(filePath)) continue;
-      files.push({ path: filePath, insertions: 0, deletions: 0, ...statusFlagsOf(filePath) });
+      files.push({
+        path: filePath,
+        insertions: 0,
+        deletions: 0,
+        ...statusFlagsOf(filePath),
+        ...statusOf(filePath),
+      });
     }
     files.sort((a, b) => a.path.localeCompare(b.path));
     const pausedKind = yield* readPausedOperation(cwd);

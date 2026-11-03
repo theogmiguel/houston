@@ -343,6 +343,7 @@ const dependencies = Layer.mergeAll(
   Layer.succeed(PreviewBrowser.PreviewBrowser, {
     executable: Effect.die("mock Chromium does not need an executable"),
     installed: Effect.die("mock Chromium does not need an executable"),
+    installProgress: Effect.succeed(null),
   }),
   Layer.succeed(DesktopChannel.DesktopBrowserChannel, {
     available: true,
@@ -407,6 +408,26 @@ const viewerInput = (tabId: string, canOperate: boolean) => ({
   maxHeight: 800,
   quality: 70,
 });
+/** An operator pane that approves every agent action, for tests about something else. */
+const approveAgentActions = (browser: ServerBrowser.ServerBrowser["Service"], tabId: string) =>
+  Effect.gen(function* () {
+    const viewer = yield* browser.attachViewer(viewerInput(tabId, true));
+    yield* Queue.take(viewer.output).pipe(
+      Effect.flatMap((output) =>
+        output._tag === "confirmation"
+          ? viewer.input({
+              type: "confirmationResponse",
+              id: output.id,
+              approved: true,
+              trust: false,
+            })
+          : Effect.void,
+      ),
+      Effect.forever,
+      Effect.forkScoped,
+    );
+    return viewer;
+  });
 /** Fills a viewer's output with frames; resolves once every one of them is acknowledged. */
 const stallViewer = (viewer: ServerBrowser.ServerBrowserViewer) => {
   const output = viewer.output as unknown as Queue.Queue<ServerBrowser.ServerBrowserViewerOutput>;
@@ -674,7 +695,8 @@ it.live.each([
 it.live("enforces provider ownership and explicit targets when a session has multiple tabs", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const { broker, tabId } = yield* ready;
+      const { browser, broker, tabId } = yield* ready;
+      yield* approveAgentActions(browser, tabId);
       const foreign = yield* broker
         .invoke<void>({
           scope: asSession("agent-b"),
@@ -786,6 +808,116 @@ it.live("streams to a read-only viewer without allowing takeover, input, or view
   ).pipe(Effect.provide(layer)),
 );
 
+it.live("denies an agent action when no browser pane is open to confirm it", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { broker, tabId } = yield* ready;
+      const denied = yield* broker
+        .invoke<void>({ scope, tabId, operation: "click", input: { locator: "#go" } })
+        .pipe(Effect.flip);
+      expect(denied).toMatchObject({ _tag: "PreviewAutomationExecutionError" });
+      expect(denied.message).toContain("denied");
+      expect(contexts[0]!.page.locator).not.toHaveBeenCalled();
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.live("denies page script and dialog answers when no browser pane is open to confirm them", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { broker, tabId } = yield* ready;
+      const session = contexts[0]!.sessions[0]!;
+      session.send.mockClear();
+      const evaluate = yield* broker
+        .invoke<void>({ scope, tabId, operation: "evaluate", input: { expression: "steal()" } })
+        .pipe(Effect.flip);
+      expect(evaluate.message).toContain("denied");
+      expect(session.send).not.toHaveBeenCalledWith("Runtime.evaluate", expect.anything());
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.live("trusts a conversation only on the site the operator approved", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { browser, broker, tabId } = yield* ready;
+      const viewer = yield* browser.attachViewer(viewerInput(tabId, true));
+      const nextConfirmation = Effect.gen(function* () {
+        let output = yield* Queue.take(viewer.output);
+        while (output._tag !== "confirmation") output = yield* Queue.take(viewer.output);
+        return output;
+      });
+      yield* broker.invoke({
+        scope,
+        tabId,
+        operation: "navigate",
+        input: { url: "http://localhost:5173/" },
+      });
+      const first = yield* broker
+        .invoke({ scope, tabId, operation: "evaluate", input: { expression: "one()" } })
+        .pipe(Effect.forkScoped);
+      const asked = yield* nextConfirmation;
+      expect(asked.origin).toBe("http://localhost:5173");
+      yield* viewer.input({
+        type: "confirmationResponse",
+        id: asked.id,
+        approved: true,
+        trust: true,
+      });
+      yield* Fiber.join(first);
+      // Same site: trusted, no prompt.
+      yield* broker.invoke({ scope, tabId, operation: "evaluate", input: { expression: "two()" } });
+
+      yield* broker.invoke({
+        scope,
+        tabId,
+        operation: "navigate",
+        input: { url: "http://example.test/" },
+      });
+      const elsewhere = yield* broker
+        .invoke<void>({ scope, tabId, operation: "evaluate", input: { expression: "three()" } })
+        .pipe(Effect.forkScoped);
+      const askedAgain = yield* nextConfirmation;
+      expect(askedAgain.origin).toBe("http://example.test");
+      yield* viewer.input({
+        type: "confirmationResponse",
+        id: askedAgain.id,
+        approved: false,
+        trust: false,
+      });
+      const denied = yield* Fiber.join(elsewhere).pipe(Effect.flip);
+      expect(denied.message).toContain("denied");
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.effect("clips a picked element's capture to the visible viewport", () =>
+  Effect.sync(() => {
+    const viewport = { width: 1280, height: 800 };
+    expect(
+      ServerBrowser.clampPickClip(
+        { x: -50, y: 10, width: 1e9, height: 1e9 },
+        { x: 0, y: 200 },
+        viewport,
+      ),
+    ).toEqual({ x: 0, y: 210, width: 1280, height: 790 });
+    expect(
+      ServerBrowser.clampPickClip(
+        { x: 10, y: 10, width: Number.NaN, height: 5 },
+        { x: 0, y: 0 },
+        viewport,
+      ),
+    ).toBeNull();
+    expect(
+      ServerBrowser.clampPickClip(
+        { x: 2000, y: 10, width: 50, height: 50 },
+        { x: 0, y: 0 },
+        viewport,
+      ),
+    ).toBeNull();
+  }),
+);
+
 it.live(
   "takeover waits for the running agent and revokes snapshot refs before returning control",
   () =>
@@ -799,6 +931,7 @@ it.live(
           input: {},
         });
         const ref = /\[ref=([^\]]+)\]/.exec(String(snapshot.accessibilityTree))![1]!;
+        yield* approveAgentActions(browser, tabId);
         const viewer = yield* browser.attachViewer(viewerInput(tabId, true));
         const started = Promise.withResolvers<void>();
         const finish = Promise.withResolvers<Record<string, unknown>>();
@@ -830,9 +963,20 @@ it.live(
         expect(yield* Fiber.join(running)).toBe("finished");
         yield* Fiber.join(takeover);
         yield* viewer.input({ type: "releaseControl" });
-        const stale = yield* broker
+        const staleRun = yield* broker
           .invoke<void>({ scope, tabId, operation: "click", input: { locator: `aria-ref=${ref}` } })
-          .pipe(Effect.flip);
+          .pipe(Effect.forkScoped);
+        let confirmation = yield* Queue.take(viewer.output);
+        while (confirmation._tag !== "confirmation") {
+          confirmation = yield* Queue.take(viewer.output);
+        }
+        yield* viewer.input({
+          type: "confirmationResponse",
+          id: confirmation.id,
+          approved: true,
+          trust: true,
+        });
+        const stale = yield* Fiber.join(staleRun).pipe(Effect.flip);
         expect(stale._tag).toBe("PreviewAutomationInvalidSelectorError");
         expect(contexts[0]!.page.locator).not.toHaveBeenCalled();
         expect(
@@ -850,7 +994,8 @@ it.live(
 it.live("reports a pending dialog without evaluating the page and resolves it explicitly", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const { broker, tabId } = yield* ready;
+      const { browser, broker, tabId } = yield* ready;
+      yield* approveAgentActions(browser, tabId);
       const page = contexts[0]!.page;
       yield* broker.invoke({
         scope,

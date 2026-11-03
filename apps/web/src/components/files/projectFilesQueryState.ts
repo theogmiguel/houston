@@ -50,6 +50,8 @@ interface ProjectQueryState<A> {
 }
 
 interface ProjectFileQueryState extends ProjectQueryState<ProjectReadFileResult> {
+  /** The contents on disk, even while an unsaved draft masks them in `data`. */
+  readonly diskData: ProjectReadFileResult | null;
   readonly readError: ProjectReadFileError | null;
   readonly isNotFile: boolean;
   readonly isFile: boolean;
@@ -91,6 +93,13 @@ export function setProjectFileQueryData(
   if (!unsavedFileMounts.has(atom)) {
     unsavedFileMounts.set(atom, appAtomRegistry.mount(atom));
   }
+  const existingRevision =
+    appAtomRegistry.get(atom)?.data.revision ??
+    Option.getOrUndefined(
+      AsyncResult.value(
+        appAtomRegistry.get(getProjectFileQueryAtom(environmentId, cwd, relativePath)),
+      ),
+    )?.revision;
   appAtomRegistry.set(atom, {
     confirmedAgainst: undefined,
     data: {
@@ -98,8 +107,34 @@ export function setProjectFileQueryData(
       contents,
       byteLength: new TextEncoder().encode(contents).byteLength,
       truncated: false,
+      ...(existingRevision ? { revision: existingRevision } : {}),
     },
   });
+}
+
+/** The revision a write should name, from the draft's baseline or the last disk read. */
+export function getProjectFileRevision(
+  environmentId: EnvironmentId,
+  cwd: string,
+  relativePath: string,
+): string | undefined {
+  const optimistic = appAtomRegistry.get(optimisticFileAtom(environmentId, cwd, relativePath));
+  if (optimistic?.data.revision !== undefined) return optimistic.data.revision;
+  const query = appAtomRegistry.get(getProjectFileQueryAtom(environmentId, cwd, relativePath));
+  return Option.getOrUndefined(AsyncResult.value(query))?.revision;
+}
+
+/** Keeps the draft's baseline current after a successful save. */
+export function setProjectFileRevision(
+  environmentId: EnvironmentId,
+  cwd: string,
+  relativePath: string,
+  revision: string,
+): void {
+  const atom = optimisticFileAtom(environmentId, cwd, relativePath);
+  const optimistic = appAtomRegistry.get(atom);
+  if (!optimistic) return;
+  appAtomRegistry.set(atom, { ...optimistic, data: { ...optimistic.data, revision } });
 }
 
 export function getOptimisticProjectFileQueryData(
@@ -272,10 +307,12 @@ export function useProjectFileQuery(
   const cause = failureCause(result);
   const readError = isProjectReadFileError(cause) ? cause : null;
   const data = canReadFiles ? (optimisticFile?.data ?? (isMissing ? null : readData)) : null;
+  const diskData = canReadFiles ? (isMissing ? null : readData) : null;
   const isNotFile = readError?.failure === "path_not_file";
 
   return {
     data,
+    diskData,
     error:
       !isQueryEnabled || fileAccess.isPending
         ? null

@@ -40,8 +40,8 @@ Narrower panels keep the tree above a single viewer.
 Filter files by name without case sensitivity; matching rows retain their visible
 ancestors. Escape clears the filter. Breadcrumb folders reveal their location in the tree.
 Click a file to preview it; another click replaces that preview. Double-click or edit to
-keep the file in its own tab. Tabs show Git status and unsaved changes. Close with the
-tab button or middle-click; unsaved changes require confirmation. Files keeps up to
+keep the file in its own tab. Tabs show unsaved changes. Close with the tab button or middle-click;
+unsaved changes require confirmation. Files keeps up to
 12 tabs, replacing the oldest clean preview at the limit. If every tab is pinned or
 unsaved, close a tab before opening another. Terminal file links open pinned tabs.
 Closing the last view releases its document; reopening reads the file from disk.
@@ -56,11 +56,19 @@ file from the tree adds a tab and shows it in the editor half of the pane. The f
 contents are shared with any plain editor pane open on the same path — editing it in one
 place shows the change in the other, live.
 
-The tree shows Git status, with folders carrying their most severe descendant status.
-Use its context menu to create a file or folder, rename an entry, or move it to the OS
-trash. `F2` renames the focused entry; `Delete` moves it to the trash. Drag an entry onto
-a terminal to paste an `@path` reference; directories keep a trailing slash and paths
-with spaces are quoted.
+The tree marks changed entries with their Git status: M modified, A added, U untracked,
+D deleted, R renamed and ! conflicted. A folder carries the most severe status among its
+descendants, and Git-ignored entries are dimmed. Status reflects the same working-tree
+changes the Changes surface reads.
+
+The context menu creates a file or folder inside the selected folder (or beside a
+selected file), renames the entry, or deletes it. Rename works in place; F2 starts it
+from the keyboard. Delete asks for confirmation and permanently removes the entry,
+because the server has no trash location to restore from across every platform. Escape
+cancels an inline name. Drag an entry onto a terminal to paste an `@path` reference;
+directories keep a trailing slash and paths with spaces are quoted. The same context menu
+also opens an entry, reveals it in the file manager, opens it in an editor, or adds its
+path to the chat.
 
 Saves check the file's content revision atomically. When another process changes an
 unsaved file, Houston keeps your edits and offers Reload or Overwrite. Returning focus
@@ -104,6 +112,13 @@ limit, current count and requested browser; close a browser tab before retrying.
 Opening a URL from a terminal link, source control, the launcher or an agent creates a
 new browser tab and loads the requested page. Add Browser again, or press the prefix
 key followed by `B`, to open another tab.
+
+The first browser tab on a machine downloads Houston's headless Chromium build (about
+127 MB) from `storage.googleapis.com` and unpacks it under Houston's channel directory.
+The browser area shows the download percentage, or that it is unpacking, while this runs.
+If the download, its size or SHA-256 check, or the unpack fails, the area names the step
+that failed instead of leaving an empty page. Nothing is downloaded while no browser tab
+is open.
 Browser tabs and their URLs are remembered separately for each workspace. Page popups
 open another side-panel tab. Agents reveal the exact tab when opening or selecting a tab,
 capturing it or requesting confirmation for an element action. Reading, navigating,
@@ -138,26 +153,26 @@ An agent acting inside a browser pane can be acting inside a session that is log
 as you. The agent also reads what is on the page to decide what to do next, and page
 content is not trustworthy — a hostile page can plant an instruction ("click the
 delete-account button") in text the agent will read. So before the agent's click, type,
-hover, key-press or option-select actually lands, Houston stops and asks you to confirm
-it — reads (like taking a snapshot of the page) do not ask.
+hover, key-press, option-select or drag actually lands, before it runs script in the page,
+uploads a file or answers a page dialog, Houston stops and asks you to confirm it. Reads
+(like taking a snapshot of the page), navigation and viewport changes do not ask.
 
 ### What the confirmation shows
 
 The prompt names the page's origin, so you see where the action happens without relying
 on the agent's word for it, and exactly what will be touched: the specific element, and
-for a type action, the full text about to be inserted, never truncated. Where possible
-it draws the target directly on a screenshot of the pane; if the pane can't be captured
-right then, it falls back to describing the element in text. If nobody answers within
+for a type action, the full text about to be inserted, never truncated. If no browser
+pane is open, the action is denied at once. If a pane is open but nobody answers within
 two minutes, the action is denied on its own — an unattended prompt never becomes an
-approval by waiting it out. Navigation and reload dismiss pending confirmations.
-Approval binds the document and element shown; replacing the element requires a fresh
-snapshot and confirmation even when its tag, text and position are unchanged.
+approval by waiting it out. Navigation and reload dismiss pending confirmations, including
+a navigation the page starts itself, and an approval only applies to the page address the
+prompt showed.
 
-### Trusting a directory
+### Trusting a conversation
 
-Approving a prompt can also mark the workspace trusted for the rest of the session,
-which skips the gate for further actions in that workspace. Trust is per-workspace (it
-never carries over to another one you haven't approved), lives only in memory, and is
+Approving a prompt can also mark the conversation trusted on that site for the rest of the
+session, which skips the gate for further actions in that conversation on the same origin.
+Trust never carries over to another site, conversation or workspace you haven't approved, lives only in memory, and is
 gone the next time Houston starts — it is not a permanent grant. A denial never grants
 trust, even if the trust box was checked. Settings ▸ Privacy & data ▸ Browser pane data
 shows how much cookie/login/cache data browser panes have kept on this channel, and lets

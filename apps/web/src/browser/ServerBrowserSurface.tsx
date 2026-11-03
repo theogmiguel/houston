@@ -10,6 +10,8 @@ import {
   uploadPreviewStreamFiles,
   type PreviewStreamInput,
   type PreviewStreamMouseButton,
+  type PreviewStreamConfirmation,
+  type PreviewStreamPickedElement,
   type PreviewStreamPointer,
   type PreviewStreamViewport,
   previewStreamHostSetupMessage,
@@ -37,6 +39,7 @@ import {
 import { AgentCursorMark } from "~/components/preview/AgentBrowserCursor";
 import { CommandBlock } from "~/components/CommandBlock";
 import { Button } from "~/components/ui/button";
+import { PreviewInstallProgress } from "~/components/ui/preview-install-progress";
 import { Input } from "~/components/ui/input";
 import { toastManager } from "~/components/ui/toast";
 import { cn } from "~/lib/utils";
@@ -48,6 +51,9 @@ export interface ServerBrowserHandle {
   readonly history: (delta: -1 | 1) => void;
   readonly reload: (options?: { readonly ignoreCache?: boolean }) => void;
   readonly viewport: (setting: PreviewViewportSetting) => void;
+  readonly pick: () => void;
+  readonly pickCancel: () => void;
+  readonly respondConfirmation: (id: string, approved: boolean, trust: boolean) => void;
   readonly canvas: () => HTMLCanvasElement | null;
 }
 
@@ -151,6 +157,9 @@ export function ServerBrowserSurface(props: {
   readonly onViewport?: (viewport: PreviewStreamViewport) => void;
   readonly onControl?: (control: PreviewStreamControl | null) => void;
   readonly onPopup?: (tabId: string) => void;
+  readonly onPickedElement?: (picked: PreviewStreamPickedElement) => void;
+  readonly onPickCancelled?: () => void;
+  readonly onConfirmation?: (request: PreviewStreamConfirmation) => void;
   readonly className?: string;
   readonly pdfUrl?: string | null;
   readonly ref?: Ref<ServerBrowserHandle>;
@@ -166,6 +175,9 @@ export function ServerBrowserSurface(props: {
     onViewport,
     onControl,
     onPopup,
+    onPickedElement,
+    onPickCancelled,
+    onConfirmation,
     className,
     pdfUrl = null,
     ref,
@@ -199,6 +211,7 @@ export function ServerBrowserSurface(props: {
   const [accessDenied, setAccessDenied] = useState(false);
   const access = usePreviewStreamAccess(environmentId, { retry: visible && !accessDenied });
   const [hostSetup, setHostSetup] = useState<PreviewStreamHostSetup | null>(null);
+  const [installing, setInstalling] = useState<PreviewStreamHostSetup | null>(null);
   const pendingMoveRef = useRef<MouseInput | null>(null);
   const pendingWheelRef = useRef<WheelInput | null>(null);
   const inputFrameRef = useRef<number | null>(null);
@@ -220,6 +233,21 @@ export function ServerBrowserSurface(props: {
   );
   const controlChanged = useEffectEvent((next: PreviewStreamControl | null) => onControl?.(next));
   const popupOpened = useEffectEvent((popupTabId: string) => onPopup?.(popupTabId));
+  const pickedElement = useEffectEvent((picked: PreviewStreamPickedElement) =>
+    onPickedElement?.(picked),
+  );
+  const pickCancelled = useEffectEvent(() => onPickCancelled?.());
+  const confirmationRequested = useEffectEvent((request: PreviewStreamConfirmation) =>
+    onConfirmation?.(request),
+  );
+  const hostSetupChanged = useEffectEvent((setup: PreviewStreamHostSetup) => {
+    if (setup.need === "installing") {
+      setInstalling(setup);
+      return;
+    }
+    setInstalling(null);
+    setHostSetup(setup);
+  });
   const [cap, setCap] = useState<{ width: number; height: number } | null>(null);
   const capRef = useRef<{ width: number; height: number } | null>(null);
 
@@ -314,6 +342,13 @@ export function ServerBrowserSurface(props: {
       reload: (options) =>
         send({ type: "reload", ...(options?.ignoreCache ? { ignoreCache: true } : {}) }),
       viewport: (setting) => send({ type: "viewport", setting }),
+      pick: () => {
+        if (controlRef.current?.controller !== "you") send({ type: "takeControl" });
+        send({ type: "pick" });
+      },
+      pickCancel: () => send({ type: "pickCancel" }),
+      respondConfirmation: (id, approved, trust) =>
+        clientRef.current?.send({ type: "confirmationResponse", id, approved, trust }),
       canvas: () => (!pdfUrl && hasFrameRef.current ? canvasRef.current : null),
     }),
     [pdfUrl, send],
@@ -408,6 +443,9 @@ export function ServerBrowserSurface(props: {
           if (result.editable) inputRef.current?.focus({ preventScroll: true });
           else inputRef.current?.blur();
         },
+        onPickedElement: pickedElement,
+        onPickCancelled: pickCancelled,
+        onConfirmation: confirmationRequested,
         onPointer: (pointer) => {
           const placed = placeAgentCursor(pointer, canvasRef.current, viewportRef.current);
           if (placed) setAgentCursor(placed);
@@ -438,14 +476,17 @@ export function ServerBrowserSurface(props: {
           }
         },
         onConnectedChange: (connected) => {
-          if (connected) return;
+          if (connected) {
+            setInstalling(null);
+            return;
+          }
           setFileChooser(null);
           controlRef.current = null;
           setControl(null);
           controlChanged(null);
           clearInput();
         },
-        onHostSetup: setHostSetup,
+        onHostSetup: hostSetupChanged,
         onUnauthorized: () => {
           const refusals = ++unauthorizedRef.current;
           if (refusals >= MAX_UNAUTHORIZED_REFUSALS) {
@@ -914,12 +955,15 @@ export function ServerBrowserSurface(props: {
           </div>
         ) : null}
       </div>
+      {visible && installing && !hostSetup ? <PreviewInstallProgress setup={installing} /> : null}
       {visible && hostSetup ? (
         <div className="visible absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-background p-4 text-center">
           <p role="alert" className="max-w-sm text-sm text-muted-foreground">
             {previewStreamHostSetupMessage(hostSetup)}
           </p>
-          <CommandBlock command={hostSetup.command} className="w-full max-w-md text-left" />
+          {hostSetup.need === "sandbox" || hostSetup.need === "libraries" ? (
+            <CommandBlock command={hostSetup.command} className="w-full max-w-md text-left" />
+          ) : null}
           <Button variant="outline" size="sm" onClick={() => setHostSetup(null)}>
             Try again
           </Button>

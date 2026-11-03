@@ -68,6 +68,7 @@ import {
   type ProjectFileFailure,
   type ProjectFileOperation,
   type ProjectMutation,
+  ProjectFileMutationError,
   ProjectListEntriesError,
   ProjectReadFileError,
   ProjectSearchContentsError,
@@ -563,6 +564,7 @@ function filesystemBrowseFailureContext(error: WorkspaceEntries.WorkspaceEntries
 
 function projectFileFailureContext(
   error:
+    | ProjectWriteFileError
     | WorkspaceFileSystem.WorkspaceFileSystemError
     | WorkspacePaths.WorkspacePathOutsideRootError
     | KnownWorkspaces.UnknownWorkspaceError,
@@ -572,6 +574,8 @@ function projectFileFailureContext(
   readonly resolvedWorkspaceRoot?: string;
   readonly operation?: ProjectFileOperation;
   readonly operationPath?: string;
+  readonly expectedRevision?: string;
+  readonly actualRevision?: string;
 } {
   switch (error._tag) {
     case "WorkspacePathOutsideRootError":
@@ -594,6 +598,23 @@ function projectFileFailureContext(
       return { failure: "path_not_file", resolvedPath: error.resolvedPath };
     case "WorkspaceBinaryFileError":
       return { failure: "binary_file", resolvedPath: error.resolvedPath };
+    case "WorkspacePathExistsError":
+      return { failure: "already_exists", resolvedPath: error.resolvedPath };
+    case "WorkspacePathNotFoundError":
+      return { failure: "not_found", resolvedPath: error.resolvedPath };
+    case "WorkspacePathNotDirectoryError":
+      return { failure: "not_directory", resolvedPath: error.resolvedPath };
+    case "WorkspaceRootMutationError":
+      return { failure: "delete_workspace_root" };
+    case "ProjectWriteFileError":
+      return {
+        failure: error.failure ?? "operation_failed",
+        ...(error.resolvedPath === undefined ? {} : { resolvedPath: error.resolvedPath }),
+        ...(error.expectedRevision === undefined
+          ? {}
+          : { expectedRevision: error.expectedRevision }),
+        ...(error.actualRevision === undefined ? {} : { actualRevision: error.actualRevision }),
+      };
     default:
       return unexpectedCompatibilityError(error);
   }
@@ -2837,6 +2858,46 @@ export const layerWsRpc = (
               (cause) =>
                 new ProjectWriteFileError({
                   cwd: input.cwd,
+                  relativePath: input.relativePath,
+                  ...projectFileFailureContext(cause),
+                  cause,
+                }),
+            ),
+          ),
+        [WS_METHODS.projectsCreateEntry]: (input) =>
+          workspaceFileSystem.createEntry(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProjectFileMutationError({
+                  cwd: input.cwd,
+                  mutation: "create",
+                  relativePath: input.relativePath,
+                  ...projectFileFailureContext(cause),
+                  cause,
+                }),
+            ),
+          ),
+        [WS_METHODS.projectsRenameEntry]: (input) =>
+          workspaceFileSystem.renameEntry(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProjectFileMutationError({
+                  cwd: input.cwd,
+                  mutation: "rename",
+                  relativePath: input.fromPath,
+                  toPath: input.toPath,
+                  ...projectFileFailureContext(cause),
+                  cause,
+                }),
+            ),
+          ),
+        [WS_METHODS.projectsDeleteEntry]: (input) =>
+          workspaceFileSystem.deleteEntry(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProjectFileMutationError({
+                  cwd: input.cwd,
+                  mutation: "delete",
                   relativePath: input.relativePath,
                   ...projectFileFailureContext(cause),
                   cause,

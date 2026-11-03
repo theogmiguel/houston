@@ -748,4 +748,21 @@
   // reaches the host through setClientSettings, which does not run on hydration.
   applyDesktopSettings(parseStoredSettings());
   window.hostBridge = bridge;
+  // WebKitGTK has no new-window handler in this host, so a renderer `window.open`
+  // for http(s) would otherwise do nothing. Route it through the system browser and
+  // keep every other call (for example a blank OAuth popup) with the platform.
+  var nativeWindowOpen = window.open ? window.open.bind(window) : null;
+  window.open = function (url, target, features) {
+    var href =
+      typeof url === "string"
+        ? url.trim()
+        : url && typeof url.toString === "function"
+          ? url.toString().trim()
+          : "";
+    if (/^https?:\/\//i.test(href)) {
+      void bridge.openExternal(href);
+      return null;
+    }
+    return nativeWindowOpen ? nativeWindowOpen(url, target, features) : null;
+  };
 })();

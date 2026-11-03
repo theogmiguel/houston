@@ -141,10 +141,31 @@ export const PreviewRuntime = Schema.Literals(["desktop", "server"]);
 export type PreviewRuntime = typeof PreviewRuntime.Type;
 
 /** JSON reason for preview stream close code 4503; must fit the 123-byte close-reason limit. */
-export const PreviewStreamHostSetup = Schema.Struct({
-  need: Schema.Literals(["sandbox", "libraries"]),
-  command: Schema.String,
-});
+export const PreviewStreamHostSetup = Schema.Union([
+  Schema.Struct({
+    need: Schema.Literal("sandbox"),
+    command: Schema.String,
+  }),
+  Schema.Struct({
+    need: Schema.Literal("libraries"),
+    command: Schema.String,
+  }),
+  Schema.Struct({
+    need: Schema.Literal("installing"),
+    downloadedBytes: NonNegativeInt,
+    totalBytes: NonNegativeInt,
+    unpacking: Schema.Boolean,
+  }),
+  Schema.Struct({
+    need: Schema.Literal("install-failed"),
+    detail: Schema.String,
+  }),
+  Schema.Struct({
+    need: Schema.Literal("unsupported"),
+    platform: Schema.String,
+    arch: Schema.String,
+  }),
+]);
 export type PreviewStreamHostSetup = typeof PreviewStreamHostSetup.Type;
 export const PREVIEW_STREAM_HOST_SETUP_CLOSE_CODE = 4503;
 

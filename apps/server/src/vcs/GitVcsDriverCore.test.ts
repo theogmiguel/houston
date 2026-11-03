@@ -3469,6 +3469,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           deletions: 0,
           staged: false,
           unstaged: true,
+          status: "modified",
         });
       }),
     );
@@ -3489,9 +3490,30 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const status = yield* driver.statusDetails(cwd);
 
         assert.deepEqual(status.workingTree.files, [
-          { path: "café notes.md", insertions: 1, deletions: 0, staged: false, unstaged: true },
-          { path: "src/new.ts", insertions: 1, deletions: 0, staged: true, unstaged: true },
-          { path: "src/old.ts", insertions: 0, deletions: 0, staged: true, unstaged: false },
+          {
+            path: "café notes.md",
+            insertions: 1,
+            deletions: 0,
+            staged: false,
+            unstaged: true,
+            status: "modified",
+          },
+          {
+            path: "src/new.ts",
+            insertions: 1,
+            deletions: 0,
+            staged: true,
+            unstaged: true,
+            status: "renamed",
+          },
+          {
+            path: "src/old.ts",
+            insertions: 0,
+            deletions: 0,
+            staged: true,
+            unstaged: false,
+            status: "deleted",
+          },
         ]);
         yield* driver.commit(cwd, "Commit selection", "", {
           stage: { filePaths: status.workingTree.files.map((file) => file.path) },
@@ -3526,6 +3548,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
             staged: false,
             unstaged: false,
             untracked: true,
+            status: "untracked",
           },
           {
             path: "nested/tracked.txt",
@@ -3533,8 +3556,16 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
             deletions: 0,
             staged: false,
             unstaged: true,
+            status: "modified",
           },
-          { path: "README.md", insertions: 1, deletions: 0, staged: false, unstaged: true },
+          {
+            path: "README.md",
+            insertions: 1,
+            deletions: 0,
+            staged: false,
+            unstaged: true,
+            status: "modified",
+          },
         ]);
         // The root is what the paths above are relative to, not the nested cwd, and it keeps
         // the trailing space so the resolved editor target is the file that exists.
@@ -3574,6 +3605,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
             staged: false,
             unstaged: false,
             untracked: true,
+            status: "untracked",
           },
           {
             path: "nested/tracked.txt",
@@ -3581,6 +3613,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
             deletions: 0,
             staged: false,
             unstaged: true,
+            status: "modified",
           },
         ]);
         assert.equal(
