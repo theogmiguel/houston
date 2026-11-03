@@ -22,13 +22,13 @@ pub struct LaunchTargets {
 /// Registers the `houston://` handler for the installed release channel. A dev,
 /// nightly or other named channel leaves the system default untouched.
 pub fn ensure_protocol_registered() {
-    if crate::sys::paths::channel().ok().flatten().is_some() {
-        return;
+    #[cfg(any(target_os = "linux", windows))]
+    if crate::sys::paths::channel().ok().flatten().is_none() {
+        #[cfg(target_os = "linux")]
+        register_linux();
+        #[cfg(windows)]
+        register_windows();
     }
-    #[cfg(target_os = "linux")]
-    register_linux();
-    #[cfg(windows)]
-    register_windows();
 }
 
 #[cfg(target_os = "linux")]
