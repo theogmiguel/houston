@@ -57,14 +57,15 @@ expands it. When a patch was truncated at its size cap, the count is marked **pa
 Rebind the chord in **Settings ▸ Shortcuts** under **Find in the focused diff**; in a
 focused terminal, `Ctrl+F` remains terminal search.
 
-Review with agent opens a picker with the five engines Houston can spawn — Claude Code,
-Codex, Antigravity, OpenCode or ZCode — and starts the one you choose in a
-new pane, with the prepared diff as its brief. Nothing is sent until you press Start
-review; Cancel sends nothing at all.
+Review with agent opens a new thread in this workspace with the prepared diff in its
+composer. Nothing is sent until you send that message.
+
+In **Uncommitted**, each file carries a **Viewed** checkbox. A mark is kept for the
+checkout's branch: a new commit that touches the file, or an edit that changes it, clears the
+mark and shows a **Changed since viewed** dot until you mark the new content.
 
 When a merge, rebase or cherry-pick stops part-way in the checkout, Changes shows a banner
-naming the operation and its conflicted files. **Resolve with agent** opens the same engine
-picker and starts the chosen agent in a new pane in that checkout. Its brief lists the
+naming the operation and its conflicted files. **Resolve with agent** opens a new thread in this checkout. Its brief lists the
 conflicted files and the command that continues the operation without opening an editor,
 and tells the agent to run `git diff --check`, never to reset, restore, clean, stash or
 abort, and to report what it resolved. The banner leaves once git no longer reports the
@@ -333,28 +334,19 @@ there. Worktree branches use `houston/<slug>`; names are normalized to lowercase
 letters, digits, hyphens and underscores. If a branch already belongs to a worktree,
 choosing it focuses its known pane or opens a Shell in that checkout.
 
-The Git tools menu in the Changes strip opens three lists, each acting on the selected
-workspace:
+**Branches and worktrees…** in the git actions menu opens the selected workspace's
+local branches, worktrees and stashes:
 
-- **Branches** lists local and remote-tracking branches and marks the default. Switch to
-  one, create one off any base (and switch to it in the same step), rename one, or delete
-  one. Deleting a branch whose work is not merged into the current branch asks first and
-  says what would be lost. A branch that another worktree has checked out says so instead
-  of offering the switch.
-- **Worktrees** adds a worktree beside the repository (Houston names its branch
-  `houston/<name>`), removes one, and prunes registrations whose directory is already
-  gone. Before a removal is confirmed, Houston lists what it would interrupt or lose:
-  uncommitted files and how recently the newest changed, commits not on the base branch or
-  on any remote, and the panes working inside the worktree. A check that could not look
-  says why; a worktree with uncommitted changes needs **Force remove**. A new worktree
-  receives the ignored files listed in `.worktreeinclude` and has its declared submodules
-  initialised. "Add as workspace" turns a
-  worktree into a workspace you can open panes in.
-- **Checkpoints** captures the working tree and staging area as a snapshot you can come
-  back to. Inspect shows what a checkpoint would change; Restore replaces the current
-  files and staging with the snapshot (your commits are not moved, and anything newer
-  than the snapshot is lost unless it is committed); Delete removes the snapshot and
-  touches no file. A checkpoint is stored as a hidden git ref in the repository itself.
+- **Branches** lists local branches and marks the current one. Rename one in place. Delete
+  one; a delete Git refuses because the branch is not merged asks before forcing it and
+  says what would be lost.
+- **Worktrees** lists the checkout's worktrees with their refs and prunes registrations
+  whose directory is already gone.
+- **Stashes** saves the current tracked changes with an optional message, restores a stash
+  with **Pop**, or drops one after confirmation.
+
+A worktree Houston creates receives the ignored files listed in `.worktreeinclude` and has
+its declared submodules initialised.
 
 ### Cleaning up worktrees
 

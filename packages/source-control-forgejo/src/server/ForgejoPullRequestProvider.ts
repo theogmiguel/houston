@@ -390,6 +390,7 @@ export const make = Effect.gen(function* () {
           ],
           { concurrency: 5 },
         );
+        const headSha = commits.items[0]?.sha ?? "";
         const reviewComments = yield* Effect.forEach(
           reviews.items.filter((review) => review.comments_count > 0 && review.state !== "PENDING"),
           (review) =>
@@ -443,7 +444,7 @@ export const make = Effect.gen(function* () {
           commentsTruncated:
             comments.truncated || reviews.truncated || allInline.length > inline.length,
           reviewThreads: inline.map((comment) => ({
-            ...forgejoReviewThread(comment),
+            ...forgejoReviewThread(comment, headSha),
             comments: [byId.get(String(comment.id)) ?? forgejoComment(comment)],
           })),
           commits: commits.items.map(forgejoCommit),

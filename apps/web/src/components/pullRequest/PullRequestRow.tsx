@@ -14,6 +14,7 @@ import { getSourceControlPresentationForKind } from "~/sourceControlPresentation
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
+import { PullRequestChecksUnknown } from "../ui/pull-request-checks-unknown";
 import type { EnvironmentPullRequestEntry } from "./pullRequestList.logic";
 import { openOnHostLabel, showPullRequestLinkContextMenu } from "./pullRequestLinkContextMenu";
 import {
@@ -62,6 +63,9 @@ function PullRequestRowLabels({ labels }: { labels: EnvironmentPullRequestEntry[
 }
 
 const PAGE_ROW_CLASS = "px-2.5 py-2";
+
+// These providers put checks on the row; the others need the request opened.
+const CHECK_STATE_KNOWN_PROVIDERS = new Set(["github", "gitcafe", "gitlab"]);
 
 export type PullRequestRowTarget = Pick<
   EnvironmentPullRequestEntry,
@@ -148,7 +152,11 @@ function PullRequestRowImpl({
           title={entry.title}
           signals={
             <>
-              {entry.checksState === undefined ? null : (
+              {entry.checksState === undefined ? (
+                CHECK_STATE_KNOWN_PROVIDERS.has(entry.provider) ? null : (
+                  <PullRequestChecksUnknown provider={entry.provider} />
+                )
+              ) : (
                 <PullRequestChecksPopover
                   checksState={entry.checksState}
                   environmentId={entry.environmentId}

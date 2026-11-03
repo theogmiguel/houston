@@ -7,6 +7,7 @@ import type {
   PullRequestActor,
   PullRequestCheck,
   PullRequestCheckStatus,
+  PullRequestChecksState,
   PullRequestComment,
   PullRequestCommit,
   PullRequestLabel,
@@ -191,6 +192,7 @@ export interface GitLabMergeRequestListItem {
   readonly updatedAt: string;
   readonly reviewRequestLogins: ReadonlyArray<string>;
   readonly labels: ReadonlyArray<PullRequestLabel>;
+  readonly checksState?: PullRequestChecksState | null;
 }
 
 export interface GitLabMergeRequestDetail extends GitLabMergeRequestListItem {
@@ -274,6 +276,13 @@ function toPipelineStatus(value: string | null | undefined): PullRequestCheckSta
   }
 }
 
+function checksStateOf(checks: ReadonlyArray<PullRequestCheck>): PullRequestChecksState | null {
+  const statuses = new Set(checks.map((check) => check.status));
+  if (statuses.has("failure") || statuses.has("cancelled")) return "failing";
+  if (statuses.has("pending") || statuses.has("action-required")) return "pending";
+  return statuses.has("success") ? "passing" : null;
+}
+
 function toChecks(
   raw: Schema.Schema.Type<typeof RawMergeRequestSchema>,
 ): ReadonlyArray<PullRequestCheck> {
@@ -292,6 +301,8 @@ function toChecks(
 function toListItem(
   raw: Schema.Schema.Type<typeof RawMergeRequestSchema>,
 ): GitLabMergeRequestListItem {
+  // A pipeline that never ran (manual, skipped) has no state to report.
+  const checksState = checksStateOf(toChecks(raw));
   return {
     number: raw.iid,
     title: raw.title,
@@ -311,6 +322,7 @@ function toListItem(
       return login === null ? [] : [login];
     }),
     labels: toLabels(raw.labels),
+    ...(checksState === null ? {} : { checksState }),
   };
 }
 
@@ -558,7 +570,11 @@ export function decodeDiscussionsJson(
       line: typeof line === "number" && line > 0 ? line : null,
       side,
       isResolved: root.resolved === true,
-      isOutdated: false,
+      // GitLab has no outdated flag: a text position with no line on either side no longer
+      // anchors to the current diff.
+      isOutdated:
+        (position.new_line === null || position.new_line === undefined) &&
+        (position.old_line === null || position.old_line === undefined),
       comments: notes.map((note) => ({
         id: String(note.id),
         author: toActor(note.author),

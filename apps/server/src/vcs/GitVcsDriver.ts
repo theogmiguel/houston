@@ -20,6 +20,7 @@ import {
   type VcsCreateRefResult,
   type VcsCreateWorktreeInput,
   type VcsCreateWorktreeResult,
+  type VcsDiscardKind,
   type ReviewBranchCommitsInput,
   type ReviewBranchCommitsResult,
   type ReviewDiffPreviewInput,
@@ -29,6 +30,9 @@ import {
   type VcsInitInput,
   type VcsListRefsInput,
   type VcsListRefsResult,
+  type VcsListStashesResult,
+  type VcsListWorktreesResult,
+  type VcsPushStashResult,
   type VcsPullResult,
   type VcsRemoveWorktreeInput,
   type VcsStatusInput,
@@ -81,6 +85,7 @@ export interface GitStatusDetails {
   hasWorkingTreeChanges: boolean;
   workingTree: VcsStatusResult["workingTree"];
   branchChanges?: VcsStatusResult["branchChanges"];
+  pausedOperation?: VcsStatusResult["pausedOperation"];
   hasUpstream: boolean;
   aheadCount: number;
   behindCount: number;
@@ -346,6 +351,26 @@ export class GitVcsDriver extends Context.Service<
       body: string,
       options?: GitCommitOptions,
     ) => Effect.Effect<{ commitSha: string }, GitCommandError>;
+    readonly stageFiles: (
+      cwd: string,
+      filePaths: ReadonlyArray<string>,
+    ) => Effect.Effect<void, GitCommandError>;
+    readonly unstageFiles: (
+      cwd: string,
+      filePaths: ReadonlyArray<string>,
+    ) => Effect.Effect<void, GitCommandError>;
+    readonly discardFiles: (
+      cwd: string,
+      files: ReadonlyArray<{ readonly path: string; readonly kind: VcsDiscardKind }>,
+    ) => Effect.Effect<void, GitCommandError>;
+    /** Rewrites HEAD, refusing when HEAD is already contained in its upstream. */
+    readonly amendCommit: (
+      cwd: string,
+      message: string,
+    ) => Effect.Effect<{ commitSha: string }, GitCommandError>;
+    readonly fetchCurrentBranch: (
+      cwd: string,
+    ) => Effect.Effect<{ remoteName: string; summary: string }, GitCommandError>;
     readonly pushCurrentBranch: (
       cwd: string,
       fallbackBranch: string | null,
@@ -455,7 +480,15 @@ export class GitVcsDriver extends Context.Service<
     readonly pruneWorktrees: (input: {
       readonly cwd: string;
     }) => Effect.Effect<void, GitCommandError>;
+    readonly listWorktrees: (cwd: string) => Effect.Effect<VcsListWorktreesResult, GitCommandError>;
     readonly listWorktreePaths: (cwd: string) => Effect.Effect<string[], GitCommandError>;
+    readonly listStashes: (cwd: string) => Effect.Effect<VcsListStashesResult, GitCommandError>;
+    readonly pushStash: (
+      cwd: string,
+      message?: string,
+    ) => Effect.Effect<VcsPushStashResult, GitCommandError>;
+    readonly popStash: (cwd: string, ref: string) => Effect.Effect<void, GitCommandError>;
+    readonly dropStash: (cwd: string, ref: string) => Effect.Effect<void, GitCommandError>;
     readonly deleteLocalBranch: (
       input: GitDeleteLocalBranchInput,
     ) => Effect.Effect<void, GitCommandError>;

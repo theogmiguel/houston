@@ -7,6 +7,7 @@ import {
   decodeCommitsJson,
   decodeMergeRequestDetailJson,
   decodeMergeRequestDiffsJson,
+  decodeDiscussionsJson,
   decodeMergeRequestListJson,
   decodeMergeRequestFileStatsJson,
   decodeMergeRequestStatsJson,
@@ -788,5 +789,52 @@ describe("decodeMergeRequestStatsJson", () => {
       truncated: false,
     });
     expect(read(2).truncated).toBe(true);
+  });
+});
+
+describe("GitLab list checks and outdated threads", () => {
+  it("reports a pipeline state on each list row", () => {
+    const passing = expectSuccess(
+      decodeMergeRequestListJson(
+        listJson([{ head_pipeline: { status: "success", web_url: "https://gitlab.com/p/1" } }]),
+      ),
+    );
+    expect(passing.items[0]?.checksState).toBe("passing");
+    const failing = expectSuccess(
+      decodeMergeRequestListJson(listJson([{ head_pipeline: { status: "failed" } }])),
+    );
+    expect(failing.items[0]?.checksState).toBe("failing");
+    const none = expectSuccess(decodeMergeRequestListJson(listJson([{}])));
+    expect(none.items[0]?.checksState).toBeUndefined();
+  });
+
+  it("marks a discussion whose position lost both lines as outdated", () => {
+    const threads = expectSuccess(
+      decodeDiscussionsJson(
+        JSON.stringify([
+          {
+            id: "d1",
+            notes: [
+              {
+                id: 1,
+                body: "old line",
+                author: { username: "reviewer" },
+                created_at: "2026-07-01T00:00:00Z",
+                resolvable: true,
+                resolved: false,
+                position: {
+                  position_type: "text",
+                  new_path: "src/main.ts",
+                  old_path: "src/main.ts",
+                  new_line: null,
+                  old_line: null,
+                },
+              },
+            ],
+          },
+        ]),
+      ),
+    );
+    expect(threads.threads[0]?.isOutdated).toBe(true);
   });
 });

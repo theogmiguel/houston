@@ -2974,6 +2974,32 @@ export const layerWsRpc = (
                 refreshGitStatus(input.cwd).pipe(Effect.ignore({ log: true }), Effect.as(result)),
             }),
           ),
+        [WS_METHODS.vcsStageFiles]: (input) =>
+          gitWorkflow.stageFiles(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsUnstageFiles]: (input) =>
+          gitWorkflow.unstageFiles(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsDiscardFiles]: (input) =>
+          gitWorkflow.discardFiles(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsAmendCommit]: (input) =>
+          gitWorkflow.amendCommit(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsFetch]: (input) =>
+          gitWorkflow.fetchCurrentBranch(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsRenameRef]: (input) =>
+          gitWorkflow.renameRef(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsDeleteRef]: (input) =>
+          gitWorkflow.deleteRef(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsListWorktrees]: (input) => gitWorkflow.listWorktrees(input),
+        [WS_METHODS.vcsPruneWorktrees]: (input) =>
+          gitWorkflow
+            .pruneWorktreesAndList(input)
+            .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsListStashes]: (input) => gitWorkflow.listStashes(input),
+        [WS_METHODS.vcsPushStash]: (input) =>
+          gitWorkflow.pushStash(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsPopStash]: (input) =>
+          gitWorkflow.popStash(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsDropStash]: (input) =>
+          gitWorkflow.dropStash(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
         [WS_METHODS.gitRunStackedAction]: (input) =>
           Stream.callback<GitActionProgressEvent, GitManagerServiceError>((queue) =>
             gitWorkflow

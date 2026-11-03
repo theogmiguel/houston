@@ -140,6 +140,26 @@ import {
   VcsPullInput,
   GitPullRequestRefInput,
   VcsPullResult,
+  VcsStageFilesInput,
+  VcsUnstageFilesInput,
+  VcsDiscardFilesInput,
+  VcsAmendCommitInput,
+  VcsAmendCommitResult,
+  VcsFetchInput,
+  VcsFetchResult,
+  VcsStatusLocalResult,
+  VcsRenameRefInput,
+  VcsRenameRefResult,
+  VcsDeleteRefInput,
+  VcsListWorktreesInput,
+  VcsListWorktreesResult,
+  VcsPruneWorktreesInput,
+  VcsPruneWorktreesResult,
+  VcsListStashesInput,
+  VcsListStashesResult,
+  VcsPushStashInput,
+  VcsPushStashResult,
+  VcsStashRefInput,
   VcsRemoveWorktreeInput,
   GitResolvePullRequestResult,
   GitRunStackedActionInput,
@@ -530,6 +550,19 @@ export const WS_METHODS = {
   providerInstallRemove: "provider.install.remove",
 
   vcsPull: "vcs.pull",
+  vcsStageFiles: "vcs.stageFiles",
+  vcsUnstageFiles: "vcs.unstageFiles",
+  vcsDiscardFiles: "vcs.discardFiles",
+  vcsAmendCommit: "vcs.amendCommit",
+  vcsFetch: "vcs.fetch",
+  vcsRenameRef: "vcs.renameRef",
+  vcsDeleteRef: "vcs.deleteRef",
+  vcsListWorktrees: "vcs.listWorktrees",
+  vcsPruneWorktrees: "vcs.pruneWorktrees",
+  vcsListStashes: "vcs.listStashes",
+  vcsPushStash: "vcs.pushStash",
+  vcsPopStash: "vcs.popStash",
+  vcsDropStash: "vcs.dropStash",
   vcsRefreshStatus: "vcs.refreshStatus",
   vcsListRefs: "vcs.listRefs",
   vcsCreateWorktree: "vcs.createWorktree",
@@ -1565,6 +1598,81 @@ const WsVcsPullRpc = Rpc.make(WS_METHODS.vcsPull, {
   error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
 });
 
+const WsVcsStageFilesRpc = Rpc.make(WS_METHODS.vcsStageFiles, {
+  payload: VcsStageFilesInput,
+  success: VcsStatusLocalResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsUnstageFilesRpc = Rpc.make(WS_METHODS.vcsUnstageFiles, {
+  payload: VcsUnstageFilesInput,
+  success: VcsStatusLocalResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsDiscardFilesRpc = Rpc.make(WS_METHODS.vcsDiscardFiles, {
+  payload: VcsDiscardFilesInput,
+  success: VcsStatusLocalResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsAmendCommitRpc = Rpc.make(WS_METHODS.vcsAmendCommit, {
+  payload: VcsAmendCommitInput,
+  success: VcsAmendCommitResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsFetchRpc = Rpc.make(WS_METHODS.vcsFetch, {
+  payload: VcsFetchInput,
+  success: VcsFetchResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsRenameRefRpc = Rpc.make(WS_METHODS.vcsRenameRef, {
+  payload: VcsRenameRefInput,
+  success: VcsRenameRefResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsDeleteRefRpc = Rpc.make(WS_METHODS.vcsDeleteRef, {
+  payload: VcsDeleteRefInput,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsListWorktreesRpc = Rpc.make(WS_METHODS.vcsListWorktrees, {
+  payload: VcsListWorktreesInput,
+  success: VcsListWorktreesResult,
+  error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsPruneWorktreesRpc = Rpc.make(WS_METHODS.vcsPruneWorktrees, {
+  payload: VcsPruneWorktreesInput,
+  success: VcsPruneWorktreesResult,
+  error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsListStashesRpc = Rpc.make(WS_METHODS.vcsListStashes, {
+  payload: VcsListStashesInput,
+  success: VcsListStashesResult,
+  error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsPushStashRpc = Rpc.make(WS_METHODS.vcsPushStash, {
+  payload: VcsPushStashInput,
+  success: VcsPushStashResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsPopStashRpc = Rpc.make(WS_METHODS.vcsPopStash, {
+  payload: VcsStashRefInput,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsDropStashRpc = Rpc.make(WS_METHODS.vcsDropStash, {
+  payload: VcsStashRefInput,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
 const WsVcsRefreshStatusRpc = Rpc.make(WS_METHODS.vcsRefreshStatus, {
   payload: Schema.Struct({
     ...VcsStatusInput.fields,
@@ -2586,6 +2694,19 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeWorktreeSetupRpc,
   WsWorktreeSetupCancelRpc,
   WsVcsPullRpc,
+  WsVcsStageFilesRpc,
+  WsVcsUnstageFilesRpc,
+  WsVcsDiscardFilesRpc,
+  WsVcsAmendCommitRpc,
+  WsVcsFetchRpc,
+  WsVcsRenameRefRpc,
+  WsVcsDeleteRefRpc,
+  WsVcsListWorktreesRpc,
+  WsVcsPruneWorktreesRpc,
+  WsVcsListStashesRpc,
+  WsVcsPushStashRpc,
+  WsVcsPopStashRpc,
+  WsVcsDropStashRpc,
   WsVcsRefreshStatusRpc,
   WsGitRunStackedActionRpc,
   WsGitResolvePullRequestRpc,

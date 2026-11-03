@@ -36,6 +36,7 @@ import {
   CloudDownloadIcon,
   CloudUploadIcon,
   FileDiffIcon,
+  GitBranchIcon,
   GitBranchPlusIcon,
   GitCommitIcon,
   InfoIcon,
@@ -102,6 +103,7 @@ import { serverEnvironment } from "~/state/server";
 import { sourceControlEnvironment } from "~/state/sourceControl";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { BranchesWorktreesDialog } from "./ui/branches-worktrees-dialog";
 import { vcsActionManager, vcsEnvironment, vcsStatusRevalidation } from "~/state/vcs";
 import { randomUUID } from "~/lib/utils";
 import { resolvePathLinkTarget } from "@houston-app/shared/fileLinks";
@@ -982,10 +984,12 @@ export default function GitActionsControl({
   const canChangeThreadBranch = canWriteSourceControl && (isLocalDraftThread || canOperateThread);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
+  const [isAmendDialog, setIsAmendDialog] = useState(false);
   const [dialogCommitMessage, setDialogCommitMessage] = useState("");
   const [excludedFiles, setExcludedFiles] = useState<ReadonlySet<string>>(new Set());
   const [isEditingFiles, setIsEditingFiles] = useState(false);
   const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
+  const [isGitToolsOpen, setIsGitToolsOpen] = useState(false);
   const [inlineSuccess, setInlineSuccess] = useState<InlineGitActionSuccess | null>(null);
   const [pendingDefaultBranchAction, setPendingDefaultBranchAction] =
     useState<PendingDefaultBranchAction | null>(null);
@@ -1079,6 +1083,8 @@ export default function GitActionsControl({
   const initAction = useVcsInitAction(sourceControlScope);
   const runImmediateGitAction = useGitStackedAction(sourceControlScope);
   const pullAction = useVcsPullAction(sourceControlScope);
+  const amendCommitAction = useAtomCommand(vcsEnvironment.amendCommit, { reportFailure: false });
+  const fetchAction = useAtomCommand(vcsEnvironment.fetch, { reportFailure: false });
   const isGitActionRunning = useSourceControlActionRunning(
     sourceControlScope,
     RUNNING_SOURCE_CONTROL_ACTIONS,
@@ -1274,6 +1280,84 @@ export default function GitActionsControl({
     });
   };
 
+  const closeCommitDialog = () => {
+    setIsCommitDialogOpen(false);
+    setIsAmendDialog(false);
+    setDialogCommitMessage("");
+    setExcludedFiles(new Set());
+    setIsEditingFiles(false);
+  };
+  const runAmendAction = () => {
+    if (!isCommitDialogOpen || activeEnvironmentId === null || gitCwd === null) return;
+    const commitMessage = dialogCommitMessage.trim();
+    if (commitMessage.length === 0) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Write a message to amend",
+          description: "Amending rewrites the last commit, so it needs a message.",
+          ...(threadToastData !== undefined ? { data: threadToastData } : {}),
+        }),
+      );
+      return;
+    }
+    closeCommitDialog();
+    void (async () => {
+      setInlineSuccess(null);
+      const result = await amendCommitAction({
+        environmentId: activeEnvironmentId,
+        input: { cwd: gitCwd, message: commitMessage },
+      });
+      if (result._tag === "Failure") {
+        if (isAtomCommandInterrupted(result)) return;
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Amend failed",
+            description: error instanceof Error ? error.message : "An error occurred.",
+            ...(threadToastData !== undefined ? { data: threadToastData } : {}),
+          }),
+        );
+        return;
+      }
+      setInlineSuccess({
+        title: "Amended",
+        description: `Rewrote ${result.value.commitSha.slice(0, 7)}.`,
+        scopeKey: successScopeKey,
+        expiresAtMs: inlineSuccessExpiresAt(),
+      });
+    })();
+  };
+  const runFetch = () => {
+    if (activeEnvironmentId === null || gitCwd === null) return;
+    void (async () => {
+      setInlineSuccess(null);
+      const result = await fetchAction({
+        environmentId: activeEnvironmentId,
+        input: { cwd: gitCwd },
+      });
+      if (result._tag === "Failure") {
+        if (isAtomCommandInterrupted(result)) return;
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Fetch failed",
+            description: error instanceof Error ? error.message : "An error occurred.",
+            ...(threadToastData !== undefined ? { data: threadToastData } : {}),
+          }),
+        );
+        return;
+      }
+      setInlineSuccess({
+        title: "Fetched",
+        description: `${result.value.remoteName}: ${result.value.summary}`,
+        scopeKey: successScopeKey,
+        expiresAtMs: inlineSuccessExpiresAt(),
+      });
+    })();
+  };
   const runDialogActionOnNewBranch = () => {
     if (!isCommitDialogOpen) return;
     const commitMessage = dialogCommitMessage.trim();
@@ -1360,6 +1444,7 @@ export default function GitActionsControl({
     }
     setExcludedFiles(new Set());
     setIsEditingFiles(false);
+    setIsAmendDialog(false);
     setIsCommitDialogOpen(true);
   };
 
@@ -1466,6 +1551,35 @@ export default function GitActionsControl({
           </MenuItem>
         );
       })}
+      {isRepo ? (
+        <MenuItem
+          disabled={!canWriteSourceControl || isGitActionRunning || gitStatusForActions === null}
+          onClick={() => {
+            setExcludedFiles(new Set());
+            setIsEditingFiles(false);
+            setDialogCommitMessage("");
+            setIsAmendDialog(true);
+            setIsCommitDialogOpen(true);
+          }}
+        >
+          <GitCommitIcon />
+          <MenuItemLabel>Amend last commit…</MenuItemLabel>
+        </MenuItem>
+      ) : null}
+      <MenuItem
+        disabled={!canWriteSourceControl || isGitActionRunning || !hasPrimaryRemote}
+        onClick={runFetch}
+      >
+        <CloudDownloadIcon />
+        <MenuItemLabel>Fetch</MenuItemLabel>
+      </MenuItem>
+      <MenuItem
+        disabled={!canWriteSourceControl || isGitActionRunning}
+        onClick={() => setIsGitToolsOpen(true)}
+      >
+        <GitBranchIcon />
+        <MenuItemLabel>Branches and worktrees…</MenuItemLabel>
+      </MenuItem>
       {canPublishRepository ? (
         <MenuItem
           disabled={isGitActionRunning}
@@ -1648,18 +1762,17 @@ export default function GitActionsControl({
       <Dialog
         open={isCommitDialogOpen}
         onOpenChange={(open) => {
-          if (!open) {
-            setIsCommitDialogOpen(false);
-            setDialogCommitMessage("");
-            setExcludedFiles(new Set());
-            setIsEditingFiles(false);
-          }
+          if (!open) closeCommitDialog();
         }}
       >
         <DialogPopup>
           <DialogHeader>
-            <DialogTitle>{COMMIT_DIALOG_TITLE}</DialogTitle>
-            <DialogDescription>{COMMIT_DIALOG_DESCRIPTION}</DialogDescription>
+            <DialogTitle>{isAmendDialog ? "Amend last commit" : COMMIT_DIALOG_TITLE}</DialogTitle>
+            <DialogDescription>
+              {isAmendDialog
+                ? "Amending rewrites the most recent commit. It is refused once that commit is on the branch's upstream."
+                : COMMIT_DIALOG_DESCRIPTION}
+            </DialogDescription>
           </DialogHeader>
           <DialogPanel>
             <div className="space-y-3 rounded-xl bg-muted/40 p-3 text-sm ring-1 ring-foreground/5 dark:bg-foreground/[0.035] dark:ring-foreground/5">
@@ -1780,48 +1893,57 @@ export default function GitActionsControl({
               </div>
             </div>
             <div className="space-y-1">
-              <p className="text-sm font-medium">Commit message (optional)</p>
+              <p className="text-sm font-medium">
+                {isAmendDialog ? "Commit message" : "Commit message (optional)"}
+              </p>
               <Textarea
                 value={dialogCommitMessage}
                 onChange={(event) => setDialogCommitMessage(event.target.value)}
-                placeholder="Leave empty to auto-generate"
+                placeholder={
+                  isAmendDialog ? "Describe the amended commit" : "Leave empty to auto-generate"
+                }
                 size="sm"
               />
             </div>
           </DialogPanel>
           <DialogFooter variant="bare">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setIsCommitDialogOpen(false);
-                setDialogCommitMessage("");
-                setExcludedFiles(new Set());
-                setIsEditingFiles(false);
-              }}
-            >
+            <Button variant="outline" size="sm" onClick={closeCommitDialog}>
               Cancel
             </Button>
+            {isAmendDialog ? null : (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!canChangeThreadBranch || noneSelected}
+                onClick={runDialogActionOnNewBranch}
+              >
+                Commit on new branch
+              </Button>
+            )}
             <Button
-              variant="outline"
               size="sm"
-              disabled={!canChangeThreadBranch || noneSelected}
-              onClick={runDialogActionOnNewBranch}
+              disabled={
+                !canWriteSourceControl ||
+                (isAmendDialog ? dialogCommitMessage.trim().length === 0 : noneSelected)
+              }
+              onClick={isAmendDialog ? runAmendAction : runDialogAction}
             >
-              Commit on new branch
-            </Button>
-            <Button
-              size="sm"
-              disabled={!canWriteSourceControl || noneSelected}
-              onClick={runDialogAction}
-            >
-              Commit
+              {isAmendDialog ? "Amend" : "Commit"}
             </Button>
           </DialogFooter>
         </DialogPopup>
       </Dialog>
 
       {/* Its discovery query should stop when the Git actions row that opens it is hidden. */}
+      {activeEnvironmentId !== null && gitCwd !== null ? (
+        <BranchesWorktreesDialog
+          open={isGitToolsOpen}
+          onOpenChange={setIsGitToolsOpen}
+          environmentId={activeEnvironmentId}
+          cwd={gitCwd}
+        />
+      ) : null}
+
       {showActions ? (
         <PublishRepositoryDialog
           open={isPublishDialogOpen}

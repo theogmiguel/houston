@@ -14,6 +14,8 @@ import { VcsDriverKind } from "./vcs.ts";
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 const GitFilePath = Schema.String.check(Schema.isNonEmpty());
 const GIT_LIST_BRANCHES_MAX_LIMIT = 200;
+// A working-tree action names the files it changes; one press must not sweep the whole tree.
+const GIT_FILE_MUTATION_MAX_PATHS = 500;
 
 export const GitStackedAction = Schema.Literals([
   "commit",
@@ -123,6 +125,55 @@ export const VcsPullInput = Schema.Struct({
 });
 export type VcsPullInput = typeof VcsPullInput.Type;
 
+export const VcsStageFilesInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  filePaths: Schema.Array(GitFilePath).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(GIT_FILE_MUTATION_MAX_PATHS),
+  ),
+});
+export type VcsStageFilesInput = typeof VcsStageFilesInput.Type;
+
+export const VcsUnstageFilesInput = VcsStageFilesInput;
+export type VcsUnstageFilesInput = typeof VcsUnstageFilesInput.Type;
+
+export const VcsDiscardKind = Schema.Literals(["staged", "unstaged", "untracked"]);
+export type VcsDiscardKind = typeof VcsDiscardKind.Type;
+
+export const VcsDiscardFilesInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  files: Schema.Array(
+    Schema.Struct({
+      path: GitFilePath,
+      kind: VcsDiscardKind,
+    }),
+  ).check(Schema.isMinLength(1), Schema.isMaxLength(GIT_FILE_MUTATION_MAX_PATHS)),
+});
+export type VcsDiscardFilesInput = typeof VcsDiscardFilesInput.Type;
+
+export const VcsAmendCommitInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  message: TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(10_000)),
+});
+export type VcsAmendCommitInput = typeof VcsAmendCommitInput.Type;
+
+export const VcsAmendCommitResult = Schema.Struct({
+  commitSha: TrimmedNonEmptyStringSchema,
+});
+export type VcsAmendCommitResult = typeof VcsAmendCommitResult.Type;
+
+export const VcsFetchInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+});
+export type VcsFetchInput = typeof VcsFetchInput.Type;
+
+export const VcsFetchResult = Schema.Struct({
+  remoteName: TrimmedNonEmptyStringSchema,
+  /** The first non-empty line git printed, for the toast under the button. */
+  summary: TrimmedNonEmptyStringSchema,
+});
+export type VcsFetchResult = typeof VcsFetchResult.Type;
+
 export const GitRunStackedActionInput = Schema.Struct({
   actionId: TrimmedNonEmptyStringSchema,
   cwd: TrimmedNonEmptyStringSchema,
@@ -196,6 +247,95 @@ export const VcsSwitchRefInput = Schema.Struct({
 });
 export type VcsSwitchRefInput = typeof VcsSwitchRefInput.Type;
 
+export const VcsRenameRefInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  oldRefName: TrimmedNonEmptyStringSchema,
+  newRefName: TrimmedNonEmptyStringSchema,
+});
+export type VcsRenameRefInput = typeof VcsRenameRefInput.Type;
+
+export const VcsRenameRefResult = Schema.Struct({
+  refName: TrimmedNonEmptyStringSchema,
+});
+export type VcsRenameRefResult = typeof VcsRenameRefResult.Type;
+
+export const VcsDeleteRefInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  refName: TrimmedNonEmptyStringSchema,
+  /** Force deletes a branch whose work is not merged. The UI asks first. */
+  force: Schema.optional(Schema.Boolean),
+});
+export type VcsDeleteRefInput = typeof VcsDeleteRefInput.Type;
+
+export const VcsListWorktreesInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+});
+export type VcsListWorktreesInput = typeof VcsListWorktreesInput.Type;
+
+export const VcsWorktreeInfo = Schema.Struct({
+  path: TrimmedNonEmptyStringSchema,
+  refName: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  headSha: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  isMain: Schema.Boolean,
+  isBare: Schema.Boolean,
+  isDetached: Schema.Boolean,
+  /** Present when git reports the worktree locked; the value is git's reason or "". */
+  locked: Schema.optional(Schema.NullOr(Schema.String)),
+  /** Present when git reports the directory missing or unusable. */
+  prunable: Schema.optional(Schema.NullOr(Schema.String)),
+});
+export type VcsWorktreeInfo = typeof VcsWorktreeInfo.Type;
+
+export const VcsListWorktreesResult = Schema.Struct({
+  worktrees: Schema.Array(VcsWorktreeInfo),
+});
+export type VcsListWorktreesResult = typeof VcsListWorktreesResult.Type;
+
+export const VcsPruneWorktreesInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+});
+export type VcsPruneWorktreesInput = typeof VcsPruneWorktreesInput.Type;
+
+export const VcsPruneWorktreesResult = Schema.Struct({
+  worktrees: Schema.Array(VcsWorktreeInfo),
+});
+export type VcsPruneWorktreesResult = typeof VcsPruneWorktreesResult.Type;
+
+export const VcsStashEntry = Schema.Struct({
+  ref: TrimmedNonEmptyStringSchema,
+  message: Schema.String,
+  createdAt: Schema.NullOr(Schema.String),
+});
+export type VcsStashEntry = typeof VcsStashEntry.Type;
+
+export const VcsListStashesInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+});
+export type VcsListStashesInput = typeof VcsListStashesInput.Type;
+
+export const VcsListStashesResult = Schema.Struct({
+  stashes: Schema.Array(VcsStashEntry),
+});
+export type VcsListStashesResult = typeof VcsListStashesResult.Type;
+
+export const VcsPushStashInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  message: Schema.optional(TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(1_000))),
+});
+export type VcsPushStashInput = typeof VcsPushStashInput.Type;
+
+export const VcsPushStashResult = Schema.Struct({
+  /** False when git found nothing to stash. */
+  created: Schema.Boolean,
+});
+export type VcsPushStashResult = typeof VcsPushStashResult.Type;
+
+export const VcsStashRefInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  ref: TrimmedNonEmptyStringSchema.check(Schema.isPattern(/^stash@\{\d+\}$/)),
+});
+export type VcsStashRefInput = typeof VcsStashRefInput.Type;
+
 export const VcsInitInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   kind: Schema.optional(VcsDriverKind),
@@ -229,6 +369,11 @@ const VcsStatusLocalShape = {
         path: GitFilePath,
         insertions: NonNegativeInt,
         deletions: NonNegativeInt,
+        // Optional so a status from before these flags existed still decodes.
+        staged: Schema.optional(Schema.Boolean),
+        unstaged: Schema.optional(Schema.Boolean),
+        untracked: Schema.optional(Schema.Boolean),
+        conflicted: Schema.optional(Schema.Boolean),
       }),
     ),
     insertions: NonNegativeInt,
@@ -239,6 +384,13 @@ const VcsStatusLocalShape = {
       baseRef: Schema.NullOr(TrimmedNonEmptyStringSchema),
       insertions: NonNegativeInt,
       deletions: NonNegativeInt,
+    }),
+  ),
+  // Present only while a merge, rebase or cherry-pick is paused in the checkout.
+  pausedOperation: Schema.optional(
+    Schema.Struct({
+      kind: Schema.Literals(["merge", "rebase", "cherry-pick"]),
+      conflictedPaths: Schema.Array(GitFilePath),
     }),
   ),
 };

@@ -11,6 +11,7 @@ import * as GitManager from "./GitManager.ts";
 import * as GitWorkflowService from "./GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import * as KnownWorkspaces from "../workspace/KnownWorkspaces.ts";
 
 it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
   it.effect("finds a name among the refs of every namespace", () =>
@@ -43,10 +44,58 @@ it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
             }),
           ),
           Layer.provide(Layer.mock(GitManager.GitManager)({})),
+          Layer.provide(
+            Layer.mock(KnownWorkspaces.KnownWorkspaces)({ assertContains: () => Effect.void }),
+          ),
           Layer.provideMerge(GitVcsDriver.layer),
           Layer.provideMerge(VcsProcess.layer),
           Layer.provideMerge(
             ServerConfig.layerTest(process.cwd(), { prefix: "houston-ref-named-" }).pipe(
+              Layer.provide(NodeServices.layer),
+            ),
+          ),
+          Layer.provideMerge(NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("refuses a working-tree action outside the known workspaces", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const outside = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "houston-outside-workspace-",
+      });
+      const workflow = yield* GitWorkflowService.GitWorkflowService;
+      const failure = yield* workflow
+        .stageFiles({ cwd: outside, filePaths: ["a.txt"] })
+        .pipe(Effect.flip);
+      assert.strictEqual(failure._tag, "GitCommandError");
+      if (failure._tag !== "GitCommandError") {
+        return yield* Effect.die(`Unexpected failure: ${failure._tag}`);
+      }
+      assert.include(failure.detail, outside);
+      assert.include(failure.detail, "not a registered project");
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        GitWorkflowService.layer.pipe(
+          Layer.provide(
+            Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+              resolve: () => Effect.succeed({ kind: "git" } as VcsDriverRegistry.VcsDriverHandle),
+            }),
+          ),
+          Layer.provide(Layer.mock(GitManager.GitManager)({})),
+          Layer.provide(
+            Layer.mock(KnownWorkspaces.KnownWorkspaces)({
+              assertContains: (cwd) =>
+                Effect.fail(new KnownWorkspaces.UnknownWorkspaceError({ cwd })),
+            }),
+          ),
+          Layer.provideMerge(GitVcsDriver.layer),
+          Layer.provideMerge(VcsProcess.layer),
+          Layer.provideMerge(
+            ServerConfig.layerTest(process.cwd(), { prefix: "houston-outside-workspace-" }).pipe(
               Layer.provide(NodeServices.layer),
             ),
           ),

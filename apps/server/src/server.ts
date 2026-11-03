@@ -384,9 +384,15 @@ const layerGit = Layer.empty.pipe(
   Layer.provideMerge(GitVcsDriver.layer),
 );
 
+const layerKnownWorkspaces = KnownWorkspaces.layer.pipe(
+  Layer.provide(ProjectStore.layer),
+  Layer.provide(GitVcsDriver.layer),
+);
+
 const layerGitWorkflow = GitWorkflowService.layer.pipe(
   Layer.provideMerge(layerVcsDriverRegistry),
   Layer.provideMerge(layerGit),
+  Layer.provideMerge(layerKnownWorkspaces),
 );
 
 const layerSourceControlRepositoryService = SourceControlRepositoryService.layer.pipe(
@@ -396,11 +402,6 @@ const layerSourceControlRepositoryService = SourceControlRepositoryService.layer
 
 const layerProjectCloneTracker = ProjectCloneTracker.layer.pipe(
   Layer.provide(layerSourceControlRepositoryService),
-);
-
-const layerKnownWorkspaces = KnownWorkspaces.layer.pipe(
-  Layer.provide(ProjectStore.layer),
-  Layer.provide(GitVcsDriver.layer),
 );
 
 const layerReview = HoustonReviewState.layer.pipe(

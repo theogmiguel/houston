@@ -168,7 +168,7 @@
 24 apps/web/src/components/device/DeviceToolVersions.tsx
 4 apps/web/src/components/device/DeviceWorkspace.tsx
 2 apps/web/src/components/DevReplayHost.tsx
-122 apps/web/src/components/DiffPanel.tsx
+107 apps/web/src/components/DiffPanel.tsx
 17 apps/web/src/components/DiffPanelShell.tsx
 4 apps/web/src/components/diffs/AnnotatableCodeView.tsx
 15 apps/web/src/components/diffs/DiffCommentAnnotation.tsx

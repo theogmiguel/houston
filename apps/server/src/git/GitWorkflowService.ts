@@ -12,6 +12,22 @@ import {
   type VcsCreateRefResult,
   type VcsCreateWorktreeInput,
   type VcsCreateWorktreeResult,
+  type VcsStageFilesInput,
+  type VcsUnstageFilesInput,
+  type VcsDiscardFilesInput,
+  type VcsAmendCommitInput,
+  type VcsAmendCommitResult,
+  type VcsFetchInput,
+  type VcsFetchResult,
+  type VcsRenameRefInput,
+  type VcsRenameRefResult,
+  type VcsDeleteRefInput,
+  type VcsListWorktreesResult,
+  type VcsPruneWorktreesResult,
+  type VcsListStashesResult,
+  type VcsPushStashInput,
+  type VcsPushStashResult,
+  type VcsStashRefInput,
   type VcsListRefsInput,
   type VcsListRefsResult,
   type GitManagerServiceError,
@@ -32,6 +48,7 @@ import {
 import * as GitManager from "./GitManager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import * as KnownWorkspaces from "../workspace/KnownWorkspaces.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 
 export class GitWorkflowService extends Context.Service<
@@ -61,6 +78,39 @@ export class GitWorkflowService extends Context.Service<
     readonly invalidateRemoteStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly invalidateStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly pullCurrentBranch: (cwd: string) => Effect.Effect<VcsPullResult, GitCommandError>;
+    readonly stageFiles: (
+      input: VcsStageFilesInput,
+    ) => Effect.Effect<VcsStatusLocalResult, GitManagerServiceError>;
+    readonly unstageFiles: (
+      input: VcsUnstageFilesInput,
+    ) => Effect.Effect<VcsStatusLocalResult, GitManagerServiceError>;
+    readonly discardFiles: (
+      input: VcsDiscardFilesInput,
+    ) => Effect.Effect<VcsStatusLocalResult, GitManagerServiceError>;
+    readonly amendCommit: (
+      input: VcsAmendCommitInput,
+    ) => Effect.Effect<VcsAmendCommitResult, GitManagerServiceError>;
+    readonly fetchCurrentBranch: (
+      input: VcsFetchInput,
+    ) => Effect.Effect<VcsFetchResult, GitManagerServiceError>;
+    readonly renameRef: (
+      input: VcsRenameRefInput,
+    ) => Effect.Effect<VcsRenameRefResult, GitManagerServiceError>;
+    readonly deleteRef: (input: VcsDeleteRefInput) => Effect.Effect<void, GitManagerServiceError>;
+    readonly listWorktrees: (input: {
+      readonly cwd: string;
+    }) => Effect.Effect<VcsListWorktreesResult, GitCommandError>;
+    readonly pruneWorktreesAndList: (input: {
+      readonly cwd: string;
+    }) => Effect.Effect<VcsPruneWorktreesResult, GitCommandError>;
+    readonly listStashes: (input: {
+      readonly cwd: string;
+    }) => Effect.Effect<VcsListStashesResult, GitCommandError>;
+    readonly pushStash: (
+      input: VcsPushStashInput,
+    ) => Effect.Effect<VcsPushStashResult, GitManagerServiceError>;
+    readonly popStash: (input: VcsStashRefInput) => Effect.Effect<void, GitManagerServiceError>;
+    readonly dropStash: (input: VcsStashRefInput) => Effect.Effect<void, GitManagerServiceError>;
     readonly runStackedAction: (
       input: GitRunStackedActionInput,
       options?: GitManager.GitRunStackedActionOptions,
@@ -175,6 +225,7 @@ export const make = Effect.gen(function* () {
   const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const gitManager = yield* GitManager.GitManager;
+  const knownWorkspaces = yield* KnownWorkspaces.KnownWorkspaces;
   const fileSystem = yield* FileSystem.FileSystem;
 
   // Nested projects and path aliases must share the checkout's branch-mutation lease.
@@ -220,6 +271,20 @@ export const make = Effect.gen(function* () {
     );
     return handle;
   });
+
+  // Mutations reach the file system, so refuse a cwd outside every registered workspace.
+  const ensureKnownWorkspace = (operation: string, cwd: string) =>
+    knownWorkspaces.assertContains(cwd).pipe(
+      Effect.mapError(
+        (cause) =>
+          new GitCommandError({
+            operation,
+            command: "git",
+            cwd,
+            detail: `Refusing ${operation}: ${cause.message}`,
+          }),
+      ),
+    );
 
   const detectGitRepositoryForStatus = Effect.fn("GitWorkflowService.detectGitRepositoryForStatus")(
     function* (operation: string, cwd: string) {
@@ -373,6 +438,149 @@ export const make = Effect.gen(function* () {
     pullCurrentBranch: Effect.fn("GitWorkflowService.pullCurrentBranch")(function (cwd) {
       return ensureGitCommand("GitWorkflowService.pullCurrentBranch", cwd).pipe(
         Effect.andThen(git.pullCurrentBranch(cwd)),
+      );
+    }),
+    stageFiles: Effect.fn("GitWorkflowService.stageFiles")(function (input) {
+      return ensureKnownWorkspace("GitWorkflowService.stageFiles", input.cwd).pipe(
+        Effect.andThen(
+          ensureGitCommand("GitWorkflowService.stageFiles", input.cwd).pipe(
+            Effect.andThen(git.stageFiles(input.cwd, input.filePaths)),
+            Effect.andThen(gitManager.invalidateLocalStatus(input.cwd)),
+            Effect.andThen(gitManager.localStatus({ cwd: input.cwd })),
+          ),
+        ),
+      );
+    }),
+    unstageFiles: Effect.fn("GitWorkflowService.unstageFiles")(function (input) {
+      return ensureKnownWorkspace("GitWorkflowService.unstageFiles", input.cwd).pipe(
+        Effect.andThen(
+          ensureGitCommand("GitWorkflowService.unstageFiles", input.cwd).pipe(
+            Effect.andThen(git.unstageFiles(input.cwd, input.filePaths)),
+            Effect.andThen(gitManager.invalidateLocalStatus(input.cwd)),
+            Effect.andThen(gitManager.localStatus({ cwd: input.cwd })),
+          ),
+        ),
+      );
+    }),
+    discardFiles: Effect.fn("GitWorkflowService.discardFiles")(function (input) {
+      return ensureKnownWorkspace("GitWorkflowService.discardFiles", input.cwd).pipe(
+        Effect.andThen(
+          ensureGitCommand("GitWorkflowService.discardFiles", input.cwd).pipe(
+            Effect.andThen(git.discardFiles(input.cwd, input.files)),
+            Effect.andThen(gitManager.invalidateLocalStatus(input.cwd)),
+            Effect.andThen(gitManager.localStatus({ cwd: input.cwd })),
+          ),
+        ),
+      );
+    }),
+    amendCommit: Effect.fn("GitWorkflowService.amendCommit")(function (input) {
+      return ensureKnownWorkspace("GitWorkflowService.amendCommit", input.cwd).pipe(
+        Effect.andThen(
+          ensureGitCommand("GitWorkflowService.amendCommit", input.cwd).pipe(
+            Effect.andThen(git.amendCommit(input.cwd, input.message)),
+            Effect.tap(() => gitManager.invalidateStatus(input.cwd)),
+          ),
+        ),
+      );
+    }),
+    fetchCurrentBranch: Effect.fn("GitWorkflowService.fetchCurrentBranch")(function (input) {
+      return ensureKnownWorkspace("GitWorkflowService.fetchCurrentBranch", input.cwd).pipe(
+        Effect.andThen(
+          ensureGitCommand("GitWorkflowService.fetchCurrentBranch", input.cwd).pipe(
+            Effect.andThen(git.fetchCurrentBranch(input.cwd)),
+            Effect.tap(() => gitManager.invalidateStatus(input.cwd)),
+          ),
+        ),
+      );
+    }),
+    renameRef: Effect.fn("GitWorkflowService.renameRef")(function (input) {
+      return ensureKnownWorkspace("GitWorkflowService.renameRef", input.cwd).pipe(
+        Effect.andThen(ensureGit("GitWorkflowService.renameRef", input.cwd)),
+        Effect.flatMap((handle) =>
+          withCheckoutLease(
+            handle.repository.rootPath,
+            git.renameBranch({
+              cwd: input.cwd,
+              oldBranch: input.oldRefName,
+              newBranch: input.newRefName,
+              exactName: true,
+            }),
+          ),
+        ),
+        Effect.map((result) => ({ refName: result.branch })),
+      );
+    }),
+    deleteRef: Effect.fn("GitWorkflowService.deleteRef")(function (input) {
+      return ensureKnownWorkspace("GitWorkflowService.deleteRef", input.cwd).pipe(
+        Effect.andThen(ensureGit("GitWorkflowService.deleteRef", input.cwd)),
+        Effect.flatMap((handle) =>
+          withCheckoutLease(
+            handle.repository.rootPath,
+            git.deleteLocalBranch({
+              cwd: input.cwd,
+              refName: input.refName,
+              ...(input.force === true ? { force: true } : {}),
+            }),
+          ),
+        ),
+      );
+    }),
+    listWorktrees: Effect.fn("GitWorkflowService.listWorktrees")(function (input) {
+      return ensureKnownWorkspace("GitWorkflowService.listWorktrees", input.cwd).pipe(
+        Effect.andThen(
+          ensureGitCommand("GitWorkflowService.listWorktrees", input.cwd).pipe(
+            Effect.andThen(git.listWorktrees(input.cwd)),
+          ),
+        ),
+      );
+    }),
+    pruneWorktreesAndList: Effect.fn("GitWorkflowService.pruneWorktreesAndList")(function (input) {
+      return ensureKnownWorkspace("GitWorkflowService.pruneWorktreesAndList", input.cwd).pipe(
+        Effect.andThen(
+          ensureGitCommand("GitWorkflowService.pruneWorktreesAndList", input.cwd).pipe(
+            Effect.andThen(git.pruneWorktrees(input)),
+            Effect.andThen(git.listWorktrees(input.cwd)),
+          ),
+        ),
+      );
+    }),
+    listStashes: Effect.fn("GitWorkflowService.listStashes")(function (input) {
+      return ensureKnownWorkspace("GitWorkflowService.listStashes", input.cwd).pipe(
+        Effect.andThen(
+          ensureGitCommand("GitWorkflowService.listStashes", input.cwd).pipe(
+            Effect.andThen(git.listStashes(input.cwd)),
+          ),
+        ),
+      );
+    }),
+    pushStash: Effect.fn("GitWorkflowService.pushStash")(function (input) {
+      return ensureKnownWorkspace("GitWorkflowService.pushStash", input.cwd).pipe(
+        Effect.andThen(
+          ensureGitCommand("GitWorkflowService.pushStash", input.cwd).pipe(
+            Effect.andThen(git.pushStash(input.cwd, input.message)),
+            Effect.tap(() => gitManager.invalidateStatus(input.cwd)),
+          ),
+        ),
+      );
+    }),
+    popStash: Effect.fn("GitWorkflowService.popStash")(function (input) {
+      return ensureKnownWorkspace("GitWorkflowService.popStash", input.cwd).pipe(
+        Effect.andThen(
+          ensureGitCommand("GitWorkflowService.popStash", input.cwd).pipe(
+            Effect.andThen(git.popStash(input.cwd, input.ref)),
+            Effect.tap(() => gitManager.invalidateStatus(input.cwd)),
+          ),
+        ),
+      );
+    }),
+    dropStash: Effect.fn("GitWorkflowService.dropStash")(function (input) {
+      return ensureKnownWorkspace("GitWorkflowService.dropStash", input.cwd).pipe(
+        Effect.andThen(
+          ensureGitCommand("GitWorkflowService.dropStash", input.cwd).pipe(
+            Effect.andThen(git.dropStash(input.cwd, input.ref)),
+            Effect.tap(() => gitManager.invalidateStatus(input.cwd)),
+          ),
+        ),
       );
     }),
     runStackedAction: Effect.fn("GitWorkflowService.runStackedAction")(function (input, options) {
