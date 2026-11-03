@@ -54,6 +54,7 @@ import {
 import {
   type ComposerSubmissionIntent,
   collapseExpandedComposerCursor,
+  parseClaudeInChromeCommand,
   parseSideChatCommand,
   parseStandaloneComposerSlashCommand,
 } from "../../composer-logic";
@@ -242,6 +243,8 @@ interface ComposerSendInput {
   readonly handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
   /** Resolves true once the side chat started and got the prompt. */
   readonly onSideChat?: ((prompt: string) => Promise<boolean>) | undefined;
+  /** Opens the Claude in Chrome setting; set only for Claude threads. */
+  readonly onClaudeInChromeCommand?: (() => void) | undefined;
   /** Refuses `/side` with this reason and keeps the draft. */
   readonly sideChatDisabledReason: string | null;
   readonly handleNewThreadInActiveProject: () => void;
@@ -330,6 +333,7 @@ export function useComposerSend(input: ComposerSendInput) {
     acknowledgeActiveThreadWoke,
     handleInteractionModeChange,
     onSideChat,
+    onClaudeInChromeCommand,
     sideChatDisabledReason,
     handleNewThreadInActiveProject,
     persistThreadSettingsForNextTurn,
@@ -489,6 +493,17 @@ export function useComposerSend(input: ComposerSendInput) {
         : null;
     const answeringQuestion =
       Boolean(activePendingProgress) && sendCtx?.answeringPendingUserInput !== false;
+    // Headless Claude has no `/chrome`: open the setting and keep the rest of the message as the draft.
+    const claudeInChromeCommand =
+      onClaudeInChromeCommand && !answeringQuestion && !directAnnotation && !queuedRunEdit.isEditing
+        ? parseClaudeInChromeCommand(promptAtSend)
+        : null;
+    if (onClaudeInChromeCommand && claudeInChromeCommand) {
+      promptRef.current = claudeInChromeCommand.prompt;
+      setComposerDraftPrompt(composerDraftTarget, claudeInChromeCommand.prompt);
+      onClaudeInChromeCommand();
+      return;
+    }
     // Where side chats are unavailable, `/side` text can still be a literal answer.
     if (sideChatDisabledReason !== null && sideChatCommand && !answeringQuestion) {
       toastManager.add(

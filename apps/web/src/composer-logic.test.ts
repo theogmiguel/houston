@@ -22,6 +22,7 @@ import {
   extendReplacementRangeForTrailingSpace,
   formatAssistantCitationForComposer,
   isPathSuggestionCurrent,
+  parseClaudeInChromeCommand,
   parseSideChatCommand,
   replaceTextRange,
 } from "./composer-logic";
@@ -574,5 +575,19 @@ describe("parseSideChatCommand", () => {
     expect(slashCommandItemsForPromptPosition(items, false).map((item) => item.id)).toEqual([
       "slash:plan",
     ]);
+  });
+});
+
+describe("parseClaudeInChromeCommand", () => {
+  it("keeps the text after /chrome as the prompt to restore", () => {
+    expect(parseClaudeInChromeCommand("/chrome Ola, chrome esta funcionando?")).toEqual({
+      prompt: "Ola, chrome esta funcionando?",
+    });
+    expect(parseClaudeInChromeCommand("  /CHROME  ")).toEqual({ prompt: "" });
+  });
+
+  it("ignores other commands and /chrome inside a message", () => {
+    expect(parseClaudeInChromeCommand("/chromebook")).toBeNull();
+    expect(parseClaudeInChromeCommand("use /chrome please")).toBeNull();
   });
 });

@@ -338,6 +338,8 @@ interface ProviderSettingsFormProps {
   readonly managed?: { readonly keys: ReadonlySet<string>; readonly reason: string } | undefined;
   /** Where the secret providers offered for `SettingsSecretValue` fields are configured. */
   readonly environmentId?: EnvironmentId | undefined;
+  /** What an unset switch actually resolves to, when the server knows better than the schema. */
+  readonly unsetBooleanValues?: Readonly<Record<string, boolean>> | undefined;
 }
 
 function SecretSettingsControl({
@@ -678,8 +680,13 @@ export function ProviderSettingsForm({
   onChange,
   managed,
   environmentId,
+  unsetBooleanValues,
 }: ProviderSettingsFormProps) {
-  const fields = deriveProviderSettingsFields(definition, value);
+  const fields = deriveProviderSettingsFields(definition, value).map((field) =>
+    field.control === "switch" && unsetBooleanValues?.[field.key] !== undefined
+      ? { ...field, defaultBooleanValue: unsetBooleanValues[field.key] }
+      : field,
+  );
   const isLocalAcp =
     definition.driverKind === "acpRegistry" &&
     readProviderConfigString(value, "source") === "local";

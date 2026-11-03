@@ -3164,6 +3164,8 @@ export default function ChatView(props: ChatViewProps) {
     acknowledgeActiveThreadWoke,
     handleInteractionModeChange,
     onSideChat: sideChat.available ? sendSideChatStable : undefined,
+    onClaudeInChromeCommand:
+      selectedProvider === "claudeAgent" ? handleOpenClaudeInChromeSettingsStable : undefined,
     sideChatDisabledReason,
     handleNewThreadInActiveProject,
     persistThreadSettingsForNextTurn,

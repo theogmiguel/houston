@@ -324,6 +324,12 @@ export function parseSideChatCommand(text: string): { prompt: string } | null {
   return match ? { prompt: match[1]?.trim() ?? "" } : null;
 }
 
+/** `/chrome [prompt]` as the whole message: the prompt is what the user meant to send after it. */
+export function parseClaudeInChromeCommand(text: string): { prompt: string } | null {
+  const match = /^\/chrome(?:\s+([\s\S]*))?$/i.exec(text.trim());
+  return match ? { prompt: match[1]?.trim() ?? "" } : null;
+}
+
 export function parseStandaloneComposerSlashCommand(text: string): "plan" | "default" | null {
   const match = /^\/(plan|default)\s*$/i.exec(text.trim());
   if (!match) {
