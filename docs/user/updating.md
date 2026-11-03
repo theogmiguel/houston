@@ -108,6 +108,31 @@ not from inside a Houston pane on the channel being restarted. It requests an or
 shutdown, waits for the daemon to exit, then starts the installed binary; it never stops
 live sessions without an explicit confirmation.
 
+## Coming from Houston 1
+
+Houston 2 installs as the same application as Houston 1, so it replaces it without a separate
+migration step. Your state continues under `~/.houston`; Houston 2 keeps its own data in
+`~/.houston/v2` and never changes Houston 1's files.
+
+On the first start, Houston stops Houston 1's own daemon unit for the channel and removes the
+hook and MCP entries Houston 1 added to Claude, Codex, OpenCode, Antigravity and ZCode. The
+removal waits while a Houston 1 daemon is still running, since that daemon would reinstall its
+entries at startup. Settings ▸ Maintenance shows the outcome and names anything that still needs
+you to quit Houston 1.
+
+Houston 1 conversations in the same channel are imported once, automatically. The rest is a
+one-time, read-only import in Settings ▸ Maintenance under **Coming from Houston 1**:
+
+- projects (Houston 1 workspaces that still exist on disk), the Tasks backlog and its settings,
+  task-source links, and Slack intake.
+- Night shift runs and harness reviews are not imported: Houston 2 uses scheduled tasks instead.
+
+The import reads Houston 1's `houston.db` and leaves it untouched. It refuses to copy tasks into
+a v2 backlog that already has tasks rather than merging two unrelated numbering schemes. When a
+value cannot be carried over, the row names what happened instead — for example a v1 agent with
+no Houston 2 driver, or a workspace that no longer exists. A failed import shows the server's
+message in the same section.
+
 ## From a terminal
 
 `houston --version` prints the same version and commit the About panel shows, plus the wire

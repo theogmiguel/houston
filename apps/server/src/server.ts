@@ -626,7 +626,12 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
       ),
     ),
     Layer.provideMerge(layerOrchestrationApplication),
-    Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer, HoustonTaskV1Import.layer)),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        HoustonTaskService.layer,
+        HoustonTaskV1Import.layer.pipe(Layer.provideMerge(RuntimeLayer.layerProjectService)),
+      ),
+    ),
     // The task source poller reads GitHub through its own client and the token from the OS keychain.
     Layer.provideMerge(
       layerTaskSources(

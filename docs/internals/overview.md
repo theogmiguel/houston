@@ -55,13 +55,16 @@ to v2.
 
 ### Start-up cleanup of v1 configuration
 
-Once per start, on its own thread, the host removes its own channel's v1 hook and MCP entries
-from the Claude, Codex, OpenCode, Antigravity and ZCode configs (`src-tauri/src/v1_cleanup/`).
-It stands down while that channel's v1 daemon is still running, which would
-reinstall them, and it never writes the channel directory. The `houston` MCP entries of
-Claude, Codex and Antigravity carry no channel marker, so they leave only while no other
-channel's v1 daemon runs; Claude's leaves only through `claude mcp remove`. WSL distros are
-not reached.
+Once per start, on its own thread, the host stops the channel's v1 daemon units and removes
+its v1 hook and MCP entries from the Claude, Codex, OpenCode, Antigravity and ZCode configs
+(`src-tauri/src/v1_cleanup/`). Houston 1 runs its daemon and supervisor in one transient user
+systemd unit named `houston-daemon-<channel>-<nonce>.service`; the host stops and disables that
+exact unit, and signals the `daemon.json` pid only when no unit answered. It stands down while
+a v1 daemon still runs, which would reinstall the entries, and it never writes the channel
+directory. The `houston` MCP entries of Claude, Codex and Antigravity carry no channel marker,
+so they leave only while no other channel's v1 daemon runs; Claude's leaves only through
+`claude mcp remove`. WSL distros are not reached. The outcome reaches the renderer through the
+desktop bridge for Settings ▸ Maintenance.
 
 ### Detach and shutdown
 
@@ -100,8 +103,9 @@ server uses the PID that file names.
 One SQLite database per channel, under `<channel dir>/v2/`. Upstream's tables follow
 upstream's migrations; Houston's tables live on the Houston migration track
 (`houston_sql_migrations`), applied after upstream's and never entering its migrator. Secrets
-live in the OS keychain, scoped by channel directory, project and provider. The one-time Tasks
-and task-source imports read v1's `houston.db` read-only.
+live in the OS keychain, scoped by channel directory, project and provider. The one-time
+import of Houston 1 workspaces, Tasks, task sources and Slack reads v1's `houston.db`
+read-only.
 
 ## Platform notes
 

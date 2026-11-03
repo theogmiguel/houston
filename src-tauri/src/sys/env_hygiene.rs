@@ -149,7 +149,7 @@ mod tests {
             "HOUSTON_SHELL_INTEGRATION_TOKEN_FILE",
             "HOUSTON_TASK",
             "HOUSTON_ROUTINE_RUN",
-                    "ZCODE_HOUSTON_MCP_URL",
+            "ZCODE_HOUSTON_MCP_URL",
             "ZCODE_HOUSTON_MCP_URL_DEV",
             "HOUSTON_CHANNEL",
             "HOUSTON_SESSION",

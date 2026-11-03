@@ -340,6 +340,14 @@ export const DesktopCliCommandStateSchema = Schema.Struct({
 });
 export type DesktopCliCommandState = typeof DesktopCliCommandStateSchema.Type;
 
+/** What the host's one-time removal of Houston 1's agent-CLI entries did. */
+export const DesktopV1CleanupReportSchema = Schema.Struct({
+  stoodDown: Schema.Boolean,
+  changed: Schema.Array(Schema.String),
+  messages: Schema.Array(Schema.String),
+});
+export type DesktopV1CleanupReport = typeof DesktopV1CleanupReportSchema.Type;
+
 export interface DesktopUpdateActionResult {
   accepted: boolean;
   completed: boolean;
@@ -1232,6 +1240,10 @@ export interface HostBridge {
     getState: () => Promise<DesktopCliCommandState>;
     install: () => Promise<DesktopCliCommandState>;
     uninstall: () => Promise<DesktopCliCommandState>;
+  };
+  /** The last Houston 1 configuration cleanup, or null before the host ran one. */
+  houstonV1Cleanup: {
+    getReport: () => Promise<DesktopV1CleanupReport | null>;
   };
   webLinks: {
     setReady: (ready: boolean) => Promise<void>;

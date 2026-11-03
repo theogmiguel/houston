@@ -743,6 +743,13 @@
         return Promise.resolve(cliState);
       },
     },
+    houstonV1Cleanup: {
+      getReport: function () {
+        return invoke("v1_cleanup_report").catch(function () {
+          return null;
+        });
+      },
+    },
     webLinks: {
       setReady: noop,
       onOpen: noUnsubscribe,

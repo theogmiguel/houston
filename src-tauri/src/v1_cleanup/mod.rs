@@ -6,12 +6,14 @@ mod claude_mcp;
 mod files;
 mod providers;
 mod shared_mcp;
+mod units;
 mod v1_daemon;
 mod zcode;
 
 use crate::sys::host_env::HostEnv;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 /// Guards the host's call: the cleanup runs once per host process.
 pub static HOST_START: AtomicBool = AtomicBool::new(false);
@@ -55,6 +57,43 @@ pub struct Outcome {
     pub stood_down: bool,
 }
 
+/// The last run's outcome as the renderer reads it, after the host started the cleanup.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Report {
+    pub stood_down: bool,
+    pub changed: Vec<String>,
+    pub messages: Vec<String>,
+}
+
+impl From<&Outcome> for Report {
+    fn from(outcome: &Outcome) -> Self {
+        Self {
+            stood_down: outcome.stood_down,
+            changed: outcome
+                .changed
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect(),
+            messages: outcome.log.clone(),
+        }
+    }
+}
+
+static LAST_REPORT: Mutex<Option<Report>> = Mutex::new(None);
+
+fn record(outcome: &Outcome) {
+    if let Ok(mut slot) = LAST_REPORT.lock() {
+        *slot = Some(Report::from(outcome));
+    }
+}
+
+/// The last cleanup outcome for Settings, or `None` before the host has run one.
+#[tauri::command]
+pub fn v1_cleanup_report() -> Option<Report> {
+    LAST_REPORT.lock().ok().and_then(|slot| slot.clone())
+}
+
 impl Outcome {
     fn note(&mut self, line: String) {
         tracing::info!("v1 cleanup: {line}");
@@ -84,16 +123,26 @@ type Remover = fn(&Path, &str) -> anyhow::Result<bool>;
 /// v1's sentinel stem; a channel's is `--houston-managed=<channel>`.
 const SENTINEL: &str = "--houston-managed";
 
+/// Runs the cleanup without touching systemd; tests use this so no unit manager is reached.
+#[cfg(test)]
 pub fn run(target: &Target) -> Outcome {
+    run_with(target, &units::Unavailable)
+}
+
+/// Runs the cleanup, first stopping this channel's v1 daemon units when `stopper` can.
+pub fn run_with(target: &Target, stopper: &dyn units::UnitStopper) -> Outcome {
     let mut outcome = Outcome::default();
-    if let Some((pid, record)) = v1_daemon::running(&target.channel_dir) {
-        outcome.stood_down = true;
-        outcome.note(format!(
-            "stood down: houston-core (pid {pid}, named by {}) still runs this channel's v1 \
-             daemon, which reinstalls its entries at boot; no agent CLI config was changed",
-            record.display()
-        ));
-        return outcome;
+    if v1_daemon::running(&target.channel_dir).is_some() {
+        stop_v1_daemon(target, stopper, &mut outcome);
+        if let Some((pid, record)) = v1_daemon::running(&target.channel_dir) {
+            outcome.stood_down = true;
+            outcome.note(format!(
+                "stood down: houston-core (pid {pid}, named by {}) still runs this channel's v1 \
+                 daemon, which reinstalls its entries at boot; no agent CLI config was changed",
+                record.display()
+            ));
+            return outcome;
+        }
     }
     let sentinel = match &target.channel {
         None => SENTINEL.to_string(),
@@ -188,6 +237,46 @@ pub fn run(target: &Target) -> Outcome {
     outcome
 }
 
+/// Stops this channel's v1 daemon units, naming what happened in the report. The plain
+/// entry point has no unit manager and reports nothing, so it keeps standing down.
+fn stop_v1_daemon(target: &Target, stopper: &dyn units::UnitStopper, outcome: &mut Outcome) {
+    let channel = target.channel.as_deref().unwrap_or("release");
+    let report = stopper.stop(channel);
+    for note in report.notes {
+        outcome.note(note);
+    }
+    if !report.stopped.is_empty() {
+        outcome.note(format!(
+            "stopped this channel's Houston 1 daemon unit(s): {}",
+            report.stopped.join(", ")
+        ));
+        wait_for_unit_stop(target);
+        return;
+    }
+    if !stopper.may_signal_daemon() {
+        return;
+    }
+    match v1_daemon::stop(&target.channel_dir) {
+        Ok(Some(note)) => outcome.note(note),
+        Ok(None) => {}
+        Err(note) => outcome.note(note),
+    }
+}
+
+/// `systemctl stop` waits for the unit, but a unit that reports stopped just before its
+/// cgroup settles must not leave the cleanup standing down every start.
+const UNIT_STOP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+fn wait_for_unit_stop(target: &Target) {
+    let deadline = std::time::Instant::now() + UNIT_STOP_TIMEOUT;
+    while v1_daemon::running(&target.channel_dir).is_some() {
+        if std::time::Instant::now() >= deadline {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
 /// Whether a file holds v1's shared MCP entry.
 type Present = fn(&Path) -> bool;
 /// That entry's removal: whether it changed the file, or why it was left.
@@ -220,7 +309,11 @@ pub fn start(
     }
     std::thread::Builder::new()
         .name("v1-cleanup".to_string())
-        .spawn(move || run(&target))
+        .spawn(move || {
+            let outcome = run_with(&target, &units::Systemd::new(units::ProcessCommands));
+            record(&outcome);
+            outcome
+        })
         .map_err(|e| tracing::warn!("v1 cleanup: could not start its thread: {e}"))
         .ok()
 }
@@ -654,4 +747,63 @@ fn crlf_codex_config_loses_its_trust_block() {
         "{:?}",
         outcome.log
     );
+}
+
+#[test]
+fn a_stopped_unit_lets_the_cleanup_remove_the_entries() {
+    struct FakeUnits<'a>(std::cell::RefCell<&'a mut FakeDaemon>);
+
+    impl units::UnitStopper for FakeUnits<'_> {
+        fn stop(&self, _channel: &str) -> units::StopReport {
+            self.0.borrow_mut().terminate();
+            units::StopReport {
+                stopped: vec!["houston-daemon-dev-test.service".to_string()],
+                notes: Vec::new(),
+            }
+        }
+    }
+
+    let home = TestHome::new();
+    home.install_all(&[DEV]);
+    let mut daemon = FakeDaemon::spawn(&home.root().join("fake-daemon"), "houston-core");
+    home.write_daemon_json(Some("dev"), daemon.pid());
+    let outcome = run_with(
+        &home.target(Some("dev")),
+        &FakeUnits(std::cell::RefCell::new(&mut daemon)),
+    );
+    assert!(!outcome.stood_down, "{:?}", outcome.log);
+    assert!(
+        outcome
+            .log
+            .iter()
+            .any(|line| line.contains("houston-daemon-dev-test.service")),
+        "{:?}",
+        outcome.log
+    );
+    home.assert_only(Provider::Codex, &[]);
+}
+
+#[test]
+fn an_unavailable_unit_manager_still_stands_down() {
+    let home = TestHome::new();
+    home.install_all(&[DEV]);
+    let daemon = FakeDaemon::spawn(&home.root().join("fake-daemon"), "houston-core");
+    home.write_daemon_json(Some("dev"), daemon.pid());
+    let before = home.snapshot();
+    let outcome = run_with(&home.target(Some("dev")), &units::Unavailable);
+    assert!(outcome.stood_down, "{:?}", outcome.log);
+    assert_eq!(home.snapshot(), before, "{:?}", outcome.log);
+}
+
+#[test]
+fn the_renderer_report_names_the_files_and_messages() {
+    let outcome = Outcome {
+        changed: vec![PathBuf::from("/home/x/.claude/settings.json")],
+        log: vec!["removed entries".to_string()],
+        stood_down: true,
+    };
+    let report = Report::from(&outcome);
+    assert!(report.stood_down);
+    assert_eq!(report.changed, ["/home/x/.claude/settings.json"]);
+    assert_eq!(report.messages, ["removed entries"]);
 }

@@ -4,8 +4,10 @@
 import * as NodeSqlite from "node:sqlite";
 
 import {
+  CommandId,
   DEFAULT_MODEL_BY_PROVIDER,
   type ModelSelection,
+  ProjectId,
   ProviderDriverKind,
   defaultInstanceIdForDriver,
 } from "@houston-app/contracts";
@@ -19,6 +21,7 @@ import {
   type HoustonTaskImportStatus,
 } from "@houston-app/contracts/houston/tasks";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -32,6 +35,7 @@ import type * as SqlError from "effect/sql/SqlError";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as ServerConfig from "../../config.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
+import * as ProjectService from "../../project/ProjectService.ts";
 import { HostedLaunch } from "../baseDir.ts";
 import { isOpenRun, priorityFromValue, priorityValue, refuse, v1PathMatches } from "./rules.ts";
 import { DEFAULT_START_MODEL, encodeSelection } from "./TaskService.ts";
@@ -68,6 +72,7 @@ interface V1Snapshot {
   readonly blocks: ReadonlyArray<Row>;
   readonly runs: ReadonlyArray<Row>;
   readonly projects: ReadonlyArray<Row>;
+  readonly workspaces: ReadonlyArray<Row>;
   readonly domains: ReadonlyArray<Row>;
   readonly settings: ReadonlyArray<Row>;
 }
@@ -117,6 +122,7 @@ const readV1 = (path: string): V1Snapshot => {
         blocks: all("backlog_task_blocks", "task_id, blocked_by_id"),
         runs: all("backlog_task_runs", "id"),
         projects: all("backlog_projects", "id"),
+        workspaces: all("workspaces", "path"),
         domains: all("backlog_task_domain", "task_id"),
         settings: tables.has("settings")
           ? (db
@@ -132,17 +138,24 @@ const readV1 = (path: string): V1Snapshot => {
   }
 };
 
-/** The v1 task count, or null when the file is not a v1 database with a backlog. */
-const probeV1 = (path: string): number | null => {
+/** The v1 task and workspace counts, or null when the file has no backlog. */
+const probeV1 = (path: string): { taskCount: number; workspaceCount: number } | null => {
   try {
     const db = new NodeSqlite.DatabaseSync(path, { readOnly: true });
     try {
-      const table = db
-        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'backlog_tasks'")
-        .get();
-      if (table === undefined) return null;
-      const row = db.prepare("SELECT COUNT(*) AS n FROM backlog_tasks").get() as Row;
-      return Number(row.n);
+      const tables = new Set(
+        (
+          db
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+            .all() as ReadonlyArray<Row>
+        ).map((row) => String(row.name)),
+      );
+      if (!tables.has("backlog_tasks")) return null;
+      const tasks = db.prepare("SELECT COUNT(*) AS n FROM backlog_tasks").get() as Row;
+      const workspaces = tables.has("workspaces")
+        ? (db.prepare("SELECT COUNT(*) AS n FROM workspaces").get() as Row)
+        : { n: 0 };
+      return { taskCount: Number(tasks.n), workspaceCount: Number(workspaces.n) };
     } finally {
       db.close();
     }
@@ -194,11 +207,16 @@ const convertPlan = (raw: SqlValue | undefined) =>
     ),
   );
 
-// Houston 1 agent names that a v2 driver runs; the import reports every other one.
+// Houston 1 agent names that a v2 driver runs; the import reports every other one. v1
+// serialized its Antigravity kind as "antigravity" and accepted "gemini" as an alias.
 const V1_AGENT_DRIVERS: Readonly<Record<string, string>> = {
   claude: "claudeAgent",
   codex: "codex",
   opencode: "opencode",
+  antigravity: "antigravity",
+  gemini: "antigravity",
+  cursor: "cursor",
+  grok: "grok",
 };
 
 const v1Agent = (agent: string | undefined): ModelSelection | undefined => {
@@ -234,6 +252,8 @@ const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const store = yield* HoustonTaskStore;
   const projects = yield* ProjectStore.ProjectStoreV2;
+  const projectService = yield* ProjectService.ProjectService;
+  const crypto = yield* Crypto.Crypto;
   const platform = yield* HostProcess.Platform;
   const hosted = yield* HostedLaunch;
 
@@ -286,18 +306,79 @@ const make = Effect.gen(function* () {
       };
     }
     const found = yield* source;
-    const taskCount =
+    const counts =
       found === null
         ? null
         : yield* fromCopy(found, probeV1).pipe(Effect.orElseSucceed(() => null));
-    if (found === null || taskCount === null) return { state: "unavailable" as const };
+    if (found === null || counts === null) return { state: "unavailable" as const };
     const v2 = yield* backlogEmpty;
     if (!v2.empty) return { state: "blocked" as const, taskCount: v2.count };
-    return { state: "available" as const, source: found, taskCount };
+    return {
+      state: "available" as const,
+      source: found,
+      taskCount: counts.taskCount,
+      workspaceCount: counts.workspaceCount,
+    };
   });
 
-  const copy = Effect.fn("HoustonTaskV1Import.copy")(function* (file: string, v1: V1Snapshot) {
+  /** Adds every v1 workspace that is still on disk and not a v2 project yet. Runs outside
+   * the task write transaction, since bootstrapping a project commits its own events. */
+  const importWorkspaces = Effect.fn("HoustonTaskV1Import.importWorkspaces")(function* (
+    v1: V1Snapshot,
+  ) {
+    const notes: Array<string> = [];
+    let imported = 0;
+    const knownRoots = (yield* projects.list().pipe(Effect.orDie))
+      .filter((project) => project.deletedAt === null)
+      .map((project) => project.workspaceRoot);
+    for (const workspace of v1.workspaces) {
+      const path = typeof workspace.path === "string" ? workspace.path.trim() : "";
+      if (path.length === 0) continue;
+      if (knownRoots.some((root) => v1PathMatches(path, root, platform))) continue;
+      if (!(yield* fs.exists(path).pipe(Effect.orElseSucceed(() => false)))) {
+        notes.push(`workspace ${path} no longer exists; added no project for it`);
+        continue;
+      }
+      const name = typeof workspace.name === "string" ? workspace.name.trim() : "";
+      const fallback =
+        path
+          .replace(/[\\/]+$/u, "")
+          .split(/[\\/]/u)
+          .at(-1) ?? path;
+      const id = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+      const added = yield* projectService
+        .bootstrap({
+          commandId: CommandId.make(`houston-v1-import-project:${id}`),
+          projectId: ProjectId.make(id),
+          title: name.length > 0 ? name : fallback,
+          workspaceRoot: path,
+          createWorkspaceRootIfMissing: false,
+        })
+        .pipe(
+          Effect.map((result) => result.created),
+          Effect.catch((error) => {
+            notes.push(`workspace ${path} was not added: ${error.message}`);
+            return Effect.succeed(false);
+          }),
+        );
+      if (added) {
+        imported += 1;
+        knownRoots.push(path);
+      }
+    }
+    if (v1.workspaces.length > 0) {
+      notes.push(`Houston 1 workspaces: ${imported} added of ${v1.workspaces.length}`);
+    }
+    return { imported, notes };
+  });
+
+  const copy = Effect.fn("HoustonTaskV1Import.copy")(function* (
+    file: string,
+    v1: V1Snapshot,
+    workspaceImport: { readonly imported: number; readonly notes: ReadonlyArray<string> },
+  ) {
     const now = yield* nowIso;
+    const notes: Array<string> = [...workspaceImport.notes];
     const roots = (yield* projects.list().pipe(Effect.orDie)).filter(
       (project) => project.deletedAt === null,
     );
@@ -318,8 +399,6 @@ const make = Effect.gen(function* () {
             ),
           ),
         );
-    const notes: Array<string> = [];
-
     const ids: Array<number> = [];
     let highest = 0;
     for (const task of v1.tasks) {
@@ -557,6 +636,7 @@ const make = Effect.gen(function* () {
       1,
     )(sql`UPDATE houston_task_counter SET next_number = ${next} WHERE id = 1`);
     const counts: HoustonTaskImportCounts = {
+      workspaces: workspaceImport.imported,
       tasks: v1.tasks.length,
       acceptance: v1.acceptance.length,
       comments: v1.comments.length,
@@ -577,54 +657,53 @@ const make = Effect.gen(function* () {
     return { result: { imported: counts, notes }, touched: ids };
   });
 
-  const run = store.write(
-    Effect.gen(function* () {
-      const previous = yield* importRow;
-      if (previous !== undefined) {
-        return yield* refuse(
-          "invalid",
-          OPERATION,
-          `Houston 1 tasks were already imported at ${previous.imported_at}`,
-        );
-      }
-      const v2 = yield* backlogEmpty;
-      if (!v2.empty) {
-        return yield* refuse(
-          "invalid",
-          OPERATION,
-          `the backlog already holds ${v2.count} task(s); the import needs a backlog without tasks`,
-        );
-      }
-      const found = yield* source;
-      if (found === null) {
-        return yield* refuse(
+  const run = Effect.gen(function* () {
+    const previous = yield* importRow;
+    if (previous !== undefined) {
+      return yield* refuse(
+        "invalid",
+        OPERATION,
+        `Houston 1 tasks were already imported at ${previous.imported_at}`,
+      );
+    }
+    const v2 = yield* backlogEmpty;
+    if (!v2.empty) {
+      return yield* refuse(
+        "invalid",
+        OPERATION,
+        `the backlog already holds ${v2.count} task(s); the import needs a backlog without tasks`,
+      );
+    }
+    const found = yield* source;
+    if (found === null) {
+      return yield* refuse(
+        "unsupported",
+        OPERATION,
+        hosted
+          ? `no Houston 1 database at ${sourcePath}`
+          : `the server is not hosted, so no Houston 1 database sits beside its base dir ${config.baseDir}`,
+      );
+    }
+    const v1 = yield* fromCopy(found, readV1).pipe(
+      Effect.mapError((error) =>
+        refuse(
           "unsupported",
           OPERATION,
-          hosted
-            ? `no Houston 1 database at ${sourcePath}`
-            : `the server is not hosted, so no Houston 1 database sits beside its base dir ${config.baseDir}`,
-        );
-      }
-      const v1 = yield* fromCopy(found, readV1).pipe(
-        Effect.mapError((error) =>
-          refuse(
-            "unsupported",
-            OPERATION,
-            `could not read the Houston 1 database at ${found}: ${causeMessage(error)}`,
-          ),
+          `could not read the Houston 1 database at ${found}: ${causeMessage(error)}`,
         ),
+      ),
+    );
+    if (v1.tasks.length > HOUSTON_TASK_LIMITS.tasks) {
+      return yield* refuse(
+        "limit",
+        OPERATION,
+        `${v1.tasks.length} tasks is over the limit of ${HOUSTON_TASK_LIMITS.tasks} tasks`,
+        { limit: HOUSTON_TASK_LIMITS.tasks, actual: v1.tasks.length },
       );
-      if (v1.tasks.length > HOUSTON_TASK_LIMITS.tasks) {
-        return yield* refuse(
-          "limit",
-          OPERATION,
-          `${v1.tasks.length} tasks is over the limit of ${HOUSTON_TASK_LIMITS.tasks} tasks`,
-          { limit: HOUSTON_TASK_LIMITS.tasks, actual: v1.tasks.length },
-        );
-      }
-      return yield* copy(found, v1);
-    }),
-  );
+    }
+    const workspaceImport = yield* importWorkspaces(v1);
+    return yield* store.write(copy(found, v1, workspaceImport));
+  });
 
   return HoustonTaskV1Import.of({ status, run });
 });

@@ -13,7 +13,10 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as SqlClient from "effect/sql/SqlClient";
+
+import * as ProjectService from "../../project/ProjectService.ts";
 
 import * as HoustonTaskService from "./TaskService.ts";
 import * as HoustonTaskV1Import from "./V1Import.ts";
@@ -88,6 +91,7 @@ describe("import status names each state", () => {
           state: "available",
           source: dirs.source,
           taskCount: 2,
+          workspaceCount: 0,
         });
         const result = yield* imports.run;
         assert.strictEqual(result.imported.tasks, 2);
@@ -253,6 +257,7 @@ describe("an import keeps every key, row and the counter", () => {
         const tasks = yield* service;
         const result = yield* (yield* importer).run;
         assert.deepEqual(result.imported, {
+          workspaces: 0,
           tasks: 3,
           acceptance: 2,
           comments: 2,
@@ -552,11 +557,11 @@ describe("unmapped v1 agents are reported", () => {
         writeV1Database(dirs.source, {
           ...simpleFixture(V1_ROOT),
           settings: {
-            [`tasks_start_agent:${V1_ROOT}`]: "antigravity",
+            [`tasks_start_agent:${V1_ROOT}`]: "droid",
             [`tasks_default_reviewer:${V1_ROOT}`]: "zcode",
             [`tasks_review_mode:${V1_ROOT}`]: "every_push",
             [`tasks_start_agent:${SECOND}`]: "codex",
-            [`tasks_default_reviewer:${SECOND}`]: "cursor",
+            [`tasks_default_reviewer:${SECOND}`]: "aider",
           },
         });
         const project = yield* createProject("shop", ROOT);
@@ -578,10 +583,10 @@ describe("unmapped v1 agents are reported", () => {
         assert.sameMembers(
           [...result.notes],
           [
-            `${project}: start agent antigravity has no v2 driver; chose claudeAgent claude-opus-5-5`,
+            `${project}: start agent droid has no v2 driver; chose claudeAgent claude-opus-5-5`,
             `${project}: reviewer zcode has no v2 driver; chose no reviewer`,
             `${project}: review mode every_push needs a reviewer; chose manual`,
-            `${second}: reviewer cursor has no v2 driver; chose no reviewer`,
+            `${second}: reviewer aider has no v2 driver; chose no reviewer`,
           ],
         );
       }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
@@ -864,6 +869,71 @@ describe("a failed import stores nothing", () => {
           JSON.stringify(counts),
         );
         assert.strictEqual((yield* (yield* importer).status).state, "available");
+      }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
+    ),
+  );
+});
+
+describe("v1 workspaces become v2 projects", () => {
+  it.effect("adds every workspace still on disk before copying its tasks", () =>
+    withChannel((dirs) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const workspace = yield* fs.makeTempDirectoryScoped({ prefix: "houston-v1-workspace-" });
+        writeV1Database(dirs.source, {
+          ...simpleFixture(workspace),
+          workspaces: [{ path: workspace, name: "shop", addedAtMs: T0 }],
+        });
+        const imports = yield* importer;
+        const status = yield* imports.status;
+        assert.strictEqual(status.state, "available");
+        if (status.state !== "available") return;
+        assert.strictEqual(status.workspaceCount, 1);
+        const result = yield* imports.run;
+        assert.strictEqual(result.imported.workspaces, 1);
+        const projects = yield* ProjectService.ProjectService;
+        const project = yield* projects.getByWorkspaceRoot(workspace);
+        assert.isTrue(Option.isSome(project));
+        assert.strictEqual(
+          (yield* (yield* service).get({ id: "HOU-1" })).task.projectId,
+          Option.getOrThrow(project).id,
+        );
+      }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
+    ),
+  );
+
+  it.effect("names a workspace that is gone instead of failing the import", () =>
+    withChannel((dirs) =>
+      Effect.gen(function* () {
+        const gone = WINDOWS ? "C:\\work\\gone" : "/work/gone";
+        writeV1Database(dirs.source, {
+          ...simpleFixture(gone),
+          workspaces: [{ path: gone, name: "gone", addedAtMs: T0 }],
+        });
+        const result = yield* (yield* importer).run;
+        assert.strictEqual(result.imported.workspaces, 0);
+        assert.isTrue(result.notes.some((note) => note.includes("no longer exists")));
+      }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
+    ),
+  );
+});
+
+describe("v1 agent names map to every v2 driver", () => {
+  it.effect("keeps an Antigravity start agent instead of falling back", () =>
+    withChannel((dirs) =>
+      Effect.gen(function* () {
+        writeV1Database(dirs.source, {
+          ...simpleFixture(V1_ROOT),
+          settings: { [`tasks_start_agent:${V1_ROOT}`]: "antigravity" },
+        });
+        const project = yield* createProject("shop", ROOT);
+        const result = yield* (yield* importer).run;
+        assert.strictEqual(result.imported.settings, 1);
+        assert.deepEqual((yield* (yield* service).getSettings({ projectId: project })).startModel, {
+          instanceId: "antigravity",
+          model: "antigravity-default",
+        } as never);
+        assert.isFalse(result.notes.some((note) => note.includes("no v2 driver")));
       }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),
     ),
   );

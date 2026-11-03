@@ -107,6 +107,7 @@ import {
   SettingsRow,
   SettingsSection,
 } from "./settingsLayout";
+import { Houston1CleanupRow, Houston1ImportSection } from "./Houston1Section";
 import { searchableSetting } from "./settingsSearch";
 import { BackgroundActivitySettingsRow, GitFetchIntervalRow } from "./BackgroundActivitySettings";
 import { PullRequestLinksOpenInAppSetting } from "./IntegrationsSettings";
@@ -1879,6 +1880,8 @@ export function MaintenanceSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      <Houston1ImportSection />
+      <Houston1CleanupRow />
       <SettingsSection id="updates" title="Updates">
         <SettingsRow
           serverScoped

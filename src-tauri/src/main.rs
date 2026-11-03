@@ -11,8 +11,6 @@ mod notifications;
 mod provider_auth;
 mod quick_composer;
 mod shell;
-mod shells;
-mod skills;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 mod snapshot;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
@@ -22,7 +20,6 @@ mod sys;
 mod system;
 #[cfg(test)]
 mod test_home;
-mod transfer_open;
 mod tray;
 mod v1_cleanup;
 mod v2_server;
@@ -31,19 +28,11 @@ mod window;
 mod window_state;
 mod wsl;
 
-use shells::ShellEntry;
 #[cfg(debug_assertions)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::webview::PageLoadEvent;
 use tauri::{Emitter, Manager};
-
-#[tauri::command]
-async fn detect_available_shells(
-    cache: tauri::State<'_, shells::ShellsCache>,
-) -> Result<Vec<ShellEntry>, ()> {
-    Ok(shells::detect_available_shells(&cache).await)
-}
 
 const CHANNEL_ENV: &str = crate::sys::paths::CHANNEL_ENV;
 const KNOWN_STANDALONE_FLAGS: &[&str] = &["--print-target"];
@@ -76,11 +65,6 @@ fn reject_unrecognized_args(args: &[String]) -> Result<(), UnrecognizedArgError>
             continue;
         }
         if arg.starts_with("--channel=") || KNOWN_STANDALONE_FLAGS.contains(&arg.as_str()) {
-            i += 1;
-            continue;
-        }
-        // Opening a transfer file with the app passes its path; `transfer_open` reads it.
-        if crate::transfer_open::is_transfer_path(arg) {
             i += 1;
             continue;
         }
@@ -395,17 +379,11 @@ fn main() {
     builder = builder.manage(Arc::clone(&v2_ssh));
     builder = builder.manage(Arc::clone(&snapshot_host));
     builder = builder.manage(fs_allowlist::AllowedRoots::new());
-    builder = builder.manage(shells::ShellsCache::new());
     builder = builder.manage(std::sync::Arc::new(app_update::V2UpdateHandle::new()));
     builder = builder.manage(window::ContextMenuState::default());
     builder = builder.manage(provider_auth::ProviderAuthCallbacks::default());
     builder = builder.manage(app_menu::ZoomState::default());
     builder = builder.manage(app_menu::QuitConfirmationState::default());
-
-    let launch_transfer = std::env::current_dir()
-        .ok()
-        .and_then(|cwd| transfer_open::file_argument(&args, &cwd));
-    builder = builder.manage(transfer_open::LaunchFile::new(launch_transfer));
 
     let tray_host = tray::TrayHost::new(state_dir.clone(), tray::probe());
     builder = builder.manage(Arc::clone(&tray_host));
@@ -420,8 +398,7 @@ fn main() {
         builder = builder.plugin(
             tauri_plugin_single_instance::Builder::new()
                 .dbus_id(dbus_id)
-                .callback(move |app, argv, cwd| {
-                    transfer_open::forward(app, &argv, &cwd);
+                .callback(move |app, _argv, _cwd| {
                     eprintln!(
                         "houston-tauri: rejected a second launch on channel \
                          {channel_label:?} (already owned by this instance); focusing the \
@@ -439,8 +416,8 @@ fn main() {
         // stay unreachable, and updates run through v2_update_install instead.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            detect_available_shells,
             app_log::system_log_debug,
+            v1_cleanup::v1_cleanup_report,
             app_update::v2_update_state,
             app_update::v2_update_set_channel,
             app_update::v2_update_check,
@@ -501,30 +478,15 @@ fn main() {
             clipboard::clipboard_save_image,
             clipboard::clipboard_read_text,
             dialog::dialog_pick_directory,
-            dialog::dialog_pick_directories,
-            dialog::dialog_pick_file,
-            dialog::dialog_pick_image,
             dialog::dialog_pick_theme_files,
-            dialog::dialog_save_image_url,
-            dialog::dialog_save_transfer,
-            dialog::dialog_pick_transfer,
-            transfer_open::transfer_launch_file,
             shell::shell_open_external,
             shell::shell_show_item_in_folder,
             shell::shell_reveal_item_in_folder,
             shell::shell_open_media_file,
             shell::shell_list_editors,
             shell::shell_open_in_editor,
-            system::system_get_log_path,
-            system::system_third_party_licenses,
-            system::system_get_home_dir,
             system::v2_open_system_settings,
             system::v2_check_system_permission,
-            skills::system_list_skills,
-            skills::system_write_skill,
-            skills::system_delete_skill,
-            skills::system_preview_skill_url,
-            skills::system_install_skill_url,
             window::window_button_layout,
             window::window_close,
             window::window_minimize,
