@@ -132,6 +132,9 @@ export interface GridStoreState {
     targetGridId: string;
     targetThreadId: string;
     side: Side;
+    /** The thread's own project, for a thread no grid shows yet. */
+    threadEnvironmentId?: string;
+    threadProjectId?: string;
   }) => boolean;
   /** Reflows the grid to the automatic arrangement for its thread count. */
   autoArrangeGrid: (gridId: string) => void;
@@ -752,7 +755,14 @@ export const useGridStore = create<GridStoreState>()(
         );
         // A thread never leaves its project; a cell's ref is built from the
         // target grid's environment, so a cross-project drop would be wrong too.
-        if (sourceGrid !== undefined && !sameProject(sourceGrid, target)) {
+        const threadOwner =
+          input.threadEnvironmentId !== undefined && input.threadProjectId !== undefined
+            ? {
+                environmentId: input.threadEnvironmentId,
+                projectId: input.threadProjectId,
+              }
+            : sourceGrid;
+        if (threadOwner !== undefined && !sameProject(threadOwner, target)) {
           return false;
         }
         if (sourceGrid !== undefined && sourceGrid.id !== target.id) {

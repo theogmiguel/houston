@@ -15,6 +15,7 @@ import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { paneDensityLayout } from "../../grid/density";
 import { subscribeGridCellRename } from "../../grid/gridCellCommands";
 import { MAX_GRID_THREADS, type GridRecord, useGridStore } from "../../grid/gridStore";
+import type { ThreadDropRefusal } from "../../grid/projectMove";
 import type { MoveToGridTarget } from "../../grid/moveToGrid";
 import { type Side, type SplitSide, type ThreadNode, preorderThreads } from "../../grid/tree";
 import type { ThreadDragHandleProps, ThreadDropTargetProps } from "../../grid/threadDrag";
@@ -58,6 +59,7 @@ export function GridThreadCell({
   onDetailsOpenChange,
   dragging = false,
   dropIndicator = null,
+  dropRefusal = null,
   dragHandleProps,
   dropTargetProps,
   swapTargets = [],
@@ -92,6 +94,8 @@ export function GridThreadCell({
   dragging?: boolean;
   /** Where a thread dropped on this cell would land. */
   dropIndicator?: Side | null;
+  /** The cell refuses the drop, and why. */
+  dropRefusal?: ThreadDropRefusal | null;
   dragHandleProps?: ThreadDragHandleProps;
   dropTargetProps?: ThreadDropTargetProps;
   /** The other cells in this grid, for the label's keyboard move action. */
@@ -440,7 +444,11 @@ export function GridThreadCell({
           )}
         </ThreadOpenProvider>
       </div>
-      {dropIndicator === null ? null : <GridDropIndicator side={dropIndicator} />}
+      {dropRefusal !== null ? (
+        <GridDropIndicator refusal={dropRefusal} />
+      ) : dropIndicator === null ? null : (
+        <GridDropIndicator side={dropIndicator} />
+      )}
     </section>
   );
 }

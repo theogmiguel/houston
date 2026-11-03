@@ -19,6 +19,7 @@ import {
 import symbolsFontUrl from "./fonts/SymbolsNerdFontMono-Regular.woff2?url";
 import { isMonospaceFamily } from "../../appearanceFonts";
 import { observeResize } from "../../lib/observeResize";
+import { isLayoutResizing, onLayoutResizeEnd } from "../../motion/layoutResize";
 
 const DEFAULT_TERMINAL_FONT_SIZE = 12;
 const MIN_TERMINAL_FONT_SIZE = 6;
@@ -553,6 +554,8 @@ export class GhosttyTerminalSurface {
   private fontEpoch = 0;
   private pendingFontEpoch: number | null = null;
   private readonly stopObservingResize: () => void;
+  private readonly stopWatchingLayoutResize: () => void;
+  private fitAfterResize = false;
   private readonly scrollbarThumb: HTMLDivElement;
   private snapshot: GhosttySnapshot | null = null;
   private frame = 0;
@@ -662,7 +665,18 @@ export class GhosttyTerminalSurface {
     this.watchDevicePixelRatio();
     this.reducedMotionMedia?.addEventListener("change", this.onReducedMotionChange);
     document.fonts.addEventListener("loadingdone", this.onFontsLoaded);
-    this.stopObservingResize = observeResize(mount, () => this.fit());
+    this.stopObservingResize = observeResize(mount, () => {
+      if (isLayoutResizing()) {
+        this.fitAfterResize = true;
+        return;
+      }
+      this.fit();
+    });
+    this.stopWatchingLayoutResize = onLayoutResizeEnd(() => {
+      if (!this.fitAfterResize) return;
+      this.fitAfterResize = false;
+      this.fit();
+    });
   }
 
   static async create(
@@ -1062,6 +1076,7 @@ export class GhosttyTerminalSurface {
     if (this.disposed) return;
     this.disposed = true;
     this.stopObservingResize();
+    this.stopWatchingLayoutResize();
     document.fonts.removeEventListener("loadingdone", this.onFontsLoaded);
     this.dprMedia?.removeEventListener("change", this.onDevicePixelRatioChange);
     this.dprMedia = null;

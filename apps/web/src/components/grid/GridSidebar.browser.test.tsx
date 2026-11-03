@@ -4,6 +4,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { useGridStore } from "../../grid/gridStore";
+import { endThreadDrag, readThreadDrag } from "../../grid/threadDrag";
 import { fakeTimers, render, type Screen } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
 import { ThreadCard } from "./GridSidebar";
@@ -49,12 +50,13 @@ function card(
     tooltipDelay?: number;
     focused?: boolean;
     selected?: boolean;
+    gridId?: string | null;
   } = {},
 ) {
   return (
     <TooltipProvider delay={overrides.tooltipDelay ?? 0}>
       <ThreadCard
-        gridId="grid-a"
+        gridId={overrides.gridId === undefined ? "grid-a" : overrides.gridId}
         thread={value}
         query=""
         providerEntries={new Map()}
@@ -80,6 +82,44 @@ function card(
     </TooltipProvider>
   );
 }
+
+describe("ThreadCard drag source", () => {
+  it("carries the thread's project so grid zones can accept or refuse it", async () => {
+    await using screen = await render(card(thread()));
+    const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
+    const dataTransfer = new DataTransfer();
+    row.dispatchEvent(
+      new DragEvent("dragstart", {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer,
+      }),
+    );
+    expect(readThreadDrag(dataTransfer)).toEqual({
+      gridId: "grid-a",
+      threadId: "thread-a",
+      environmentId: "env-1",
+      projectId: "project-1",
+    });
+    endThreadDrag();
+  });
+
+  it("lets a thread no grid shows start a drag", async () => {
+    await using screen = await render(card(thread(), { gridId: null }));
+    const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
+    expect(row.draggable).toBe(true);
+    const dataTransfer = new DataTransfer();
+    row.dispatchEvent(
+      new DragEvent("dragstart", {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer,
+      }),
+    );
+    expect(readThreadDrag(dataTransfer)).toMatchObject({ gridId: null, threadId: "thread-a" });
+    endThreadDrag();
+  });
+});
 
 describe("ThreadCard", () => {
   it("closes the preview tooltip while the card actions are hovered", async () => {

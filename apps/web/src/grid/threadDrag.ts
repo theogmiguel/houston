@@ -4,8 +4,11 @@ import { useSyncExternalStore, type DragEvent } from "react";
 export const THREAD_DRAG_TYPE = "application/x-houston-thread";
 
 export interface ThreadDragSource {
-  readonly gridId: string;
+  /** The grid the row currently lives in; null for a thread no grid shows. */
+  readonly gridId: string | null;
   readonly threadId: string;
+  readonly environmentId: string;
+  readonly projectId: string;
 }
 
 export interface ThreadDragHandleProps {
@@ -52,22 +55,29 @@ export function useThreadDragSource(): ThreadDragSource | null {
   return useSyncExternalStore(subscribeThreadDrag, getThreadDragSource, () => null);
 }
 
-export function hasThreadDrag(dataTransfer: DataTransfer): boolean {
-  return Array.from(dataTransfer.types).includes(THREAD_DRAG_TYPE);
-}
-
 export function writeThreadDrag(dataTransfer: DataTransfer, source: ThreadDragSource): void {
   dataTransfer.setData(THREAD_DRAG_TYPE, JSON.stringify(source));
   dataTransfer.effectAllowed = "move";
+}
+
+function isThreadDragSource(value: unknown): value is ThreadDragSource {
+  if (value === null || typeof value !== "object") return false;
+  const parsed = value as Partial<Record<keyof ThreadDragSource, unknown>>;
+  return (
+    (parsed.gridId === null || typeof parsed.gridId === "string") &&
+    typeof parsed.threadId === "string" &&
+    typeof parsed.environmentId === "string" &&
+    typeof parsed.projectId === "string"
+  );
 }
 
 export function readThreadDrag(dataTransfer: DataTransfer): ThreadDragSource | null {
   const raw = dataTransfer.getData(THREAD_DRAG_TYPE);
   if (raw.length === 0) return null;
   try {
-    const parsed = JSON.parse(raw) as Partial<ThreadDragSource>;
-    if (typeof parsed.gridId !== "string" || typeof parsed.threadId !== "string") return null;
-    return { gridId: parsed.gridId, threadId: parsed.threadId };
+    const parsed: unknown = JSON.parse(raw);
+    if (!isThreadDragSource(parsed)) return null;
+    return parsed;
   } catch {
     return null;
   }

@@ -35,6 +35,38 @@ describe("moveThreadToGridOrExplain", () => {
     ]);
   });
 
+  it("leaves the source grid without cells when its last thread moves out", () => {
+    useGridStore.setState({ grids: [], closedCells: {}, threadOrigins: {} });
+    gridWith("g-1", ["thread-a"]);
+    gridWith("g-2", ["thread-b"]);
+    const moved = useGridStore.getState().moveThreadToCell({
+      threadId: "thread-a",
+      targetGridId: "g-2",
+      targetThreadId: "thread-b",
+      side: "center",
+      threadEnvironmentId: "env-1",
+      threadProjectId: "project-1",
+    });
+    expect(moved).toBe(true);
+    // A grid with no tree renders its empty draft, ready for the next thread.
+    expect(gridById(useGridStore.getState().grids, "g-1")!.tree).toBeNull();
+    expect(gridById(useGridStore.getState().grids, "g-2")!.focusedThreadId).toBe("thread-a");
+  });
+
+  it("refuses a cell move whose own project differs from the grid's", () => {
+    useGridStore.setState({ grids: [], closedCells: {}, threadOrigins: {} });
+    gridWith("g-2", ["thread-b"]);
+    const moved = useGridStore.getState().moveThreadToCell({
+      threadId: "thread-a",
+      targetGridId: "g-2",
+      targetThreadId: "thread-b",
+      side: "center",
+      threadEnvironmentId: "env-1",
+      threadProjectId: "project-2",
+    });
+    expect(moved).toBe(false);
+  });
+
   it("explains a move into a full grid with the cap and the grid's count", () => {
     useGridStore.setState({ grids: [], closedCells: {}, threadOrigins: {} });
     gridWith("g-1", ["thread-a"]);

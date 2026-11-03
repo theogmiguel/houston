@@ -11,9 +11,13 @@ import {
 import { useReducedMotion } from "../../hooks/useReducedMotion";
 import { MAX_GRID_THREADS, type GridRecord } from "../../grid/gridStore";
 import {
+  THREAD_DROP_REFUSAL_LABEL,
+  threadDropRefusal,
+  type ThreadDropRefusal,
+} from "../../grid/projectMove";
+import {
   beginThreadDrag,
   endThreadDrag,
-  hasThreadDrag,
   useThreadDragSource,
   writeThreadDrag,
   type ThreadDragHandleProps,
@@ -37,7 +41,12 @@ import {
   swapThread,
   threadLeaf,
 } from "../../grid/tree";
-import { cn } from "../../lib/utils";
+import { presetOf, snapSplitRatio, splitFractionLabel, stepSplitPreset } from "../../grid/resize";
+import { beginLayoutResize, endLayoutResize } from "../../motion/layoutResize";
+import { useGridCellFlip } from "../../motion/paneMotion";
+import { GRID_BADGE_LINGER_MS, SNAP_DISTANCE_PX } from "../../motion/timings";
+import { announce } from "../../lib/announce";
+import { GridResizeDivider } from "../ui/grid-resize-divider";
 
 export interface GridCellRenderProps {
   node: ThreadNode;
@@ -52,6 +61,8 @@ export interface GridCellRenderProps {
   dragging: boolean;
   /** Where a thread dropped on this cell would land, for the drop indicator. */
   dropIndicator: Side | null;
+  /** The cell refuses the drop; the indicator replaces the landing hint. */
+  dropRefusal: ThreadDropRefusal | null;
   dragHandleProps: ThreadDragHandleProps;
   dropTargetProps: ThreadDropTargetProps;
 }
@@ -90,8 +101,14 @@ export function GridHost(props: GridHostProps) {
   const tree = grid.tree;
   const dragSource = useThreadDragSource();
   const reducedMotion = useReducedMotion();
-  const [hover, setHover] = useState<{ threadId: string; side: Side } | null>(null);
+  const [hover, setHover] = useState<{
+    threadId: string;
+    side: Side;
+    refusal: ThreadDropRefusal | null;
+  } | null>(null);
   const [leavingThreadId, setLeavingThreadId] = useState<string | null>(null);
+
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
 
   const threadIds = tree === null ? [] : preorderThreads(tree).map((leaf) => leaf.threadId);
   const threadCount = threadIds.length;
@@ -114,12 +131,15 @@ export function GridHost(props: GridHostProps) {
     const timer = window.setTimeout(() => setEnteringThreadIds(EMPTY_IDS), GRID_MORPH_MS);
     return () => window.clearTimeout(timer);
   }, [enteringThreadIds]);
-  const atCap = threadCount >= MAX_GRID_THREADS;
-  const sourceInTree =
-    dragSource !== null &&
-    dragSource.gridId === grid.id &&
-    tree !== null &&
-    findThread(tree, dragSource.threadId) !== null;
+
+  // Cells that existed before a tree change FLIP into their new slots; a join or
+  // a leave already animates through the grid's flex transition.
+  useGridCellFlip(
+    surfaceRef,
+    grid.id,
+    tree,
+    !reducedMotion && enteringThreadIds.size === 0 && leavingThreadId === null,
+  );
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Escape must cancel a drag whose source cell the pointer left
   useEffect(() => {
@@ -134,16 +154,28 @@ export function GridHost(props: GridHostProps) {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [dragSource]);
 
+  const refusalForDrop = (source: ThreadDragSource, side: Side): ThreadDropRefusal | null =>
+    threadDropRefusal({
+      threadProject: { environmentId: source.environmentId, projectId: source.projectId },
+      grid,
+      side,
+      sourceInTarget: findThread(tree, source.threadId) !== null,
+      targetCount: threadCount,
+      maxThreads: MAX_GRID_THREADS,
+    });
+
   const sideForDrop = (threadId: string, event: DragEvent<HTMLElement>): Side | null => {
     if (dragSource === null || dragSource.threadId === threadId) return null;
-    const side = quadrant(
-      event.currentTarget.getBoundingClientRect(),
-      event.clientX,
-      event.clientY,
+    return quadrant(event.currentTarget.getBoundingClientRect(), event.clientX, event.clientY);
+  };
+
+  const announceMove = (side: Side) => {
+    announce(
+      side === "center"
+        ? "Swapped the dragged thread with the cell under the pointer."
+        : `Docked the dragged thread at the ${side} of the grid.`,
+      `grid-move:${grid.id}`,
     );
-    // Edges add a cell; a grid at the cap only accepts a centre drop, which replaces.
-    if (side !== "center" && !sourceInTree && atCap) return null;
-    return side;
   };
 
   const handleDragStart =
@@ -158,7 +190,12 @@ export function GridHost(props: GridHostProps) {
         event.preventDefault();
         return;
       }
-      const source = { gridId: grid.id, threadId };
+      const source: ThreadDragSource = {
+        gridId: grid.id,
+        threadId,
+        environmentId: grid.environmentId,
+        projectId: grid.projectId,
+      };
       writeThreadDrag(event.dataTransfer, source);
       beginThreadDrag(source);
     };
@@ -171,7 +208,8 @@ export function GridHost(props: GridHostProps) {
   const handleDragOver =
     (threadId: string) =>
     (event: DragEvent<HTMLElement>): void => {
-      if (dragSource === null && !hasThreadDrag(event.dataTransfer)) return;
+      if (dragSource === null) return;
+      const source = dragSource;
       const side = sideForDrop(threadId, event);
       if (side === null) {
         event.dataTransfer.dropEffect = "none";
@@ -179,9 +217,13 @@ export function GridHost(props: GridHostProps) {
         return;
       }
       event.preventDefault();
-      event.dataTransfer.dropEffect = "move";
+      const refusal = refusalForDrop(source, side);
+      // A refused zone still accepts the drop so its toast can explain the refusal.
+      event.dataTransfer.dropEffect = refusal === null ? "move" : "none";
       setHover((current) =>
-        current?.threadId === threadId && current.side === side ? current : { threadId, side },
+        current?.threadId === threadId && current.side === side && current.refusal === refusal
+          ? current
+          : { threadId, side, refusal },
       );
     };
 
@@ -195,27 +237,30 @@ export function GridHost(props: GridHostProps) {
   const handleDrop =
     (threadId: string) =>
     (event: DragEvent<HTMLElement>): void => {
-      if (dragSource === null && !hasThreadDrag(event.dataTransfer)) return;
-      const side = sideForDrop(threadId, event);
       const source = dragSource;
+      const side = source === null ? null : sideForDrop(threadId, event);
       setHover(null);
       endThreadDrag();
       if (source === null || side === null) return;
       event.preventDefault();
       event.stopPropagation();
-      if (
-        source.gridId === grid.id &&
-        tree !== null &&
-        findThread(tree, source.threadId) !== null
-      ) {
+      const refusal = refusalForDrop(source, side);
+      if (refusal !== null) {
+        announce(`Drop refused: ${THREAD_DROP_REFUSAL_LABEL[refusal]}.`, `grid-move:${grid.id}`);
+        onDropThread?.(source, threadId, side);
+        return;
+      }
+      if (tree !== null && findThread(tree, source.threadId) !== null) {
         onTreeChange(
           side === "center"
             ? swapThread(tree, source.threadId, threadId)
             : moveThread(tree, source.threadId, threadId, side),
         );
         onFocusThread(source.threadId);
+        announceMove(side);
         return;
       }
+      announceMove(side);
       onDropThread?.(source, threadId, side);
     };
 
@@ -228,6 +273,7 @@ export function GridHost(props: GridHostProps) {
   const multi = maximizedLeaf === null && threadCount - (shownLeaving ? 1 : 0) > 1;
   const surface = (children: ReactNode) => (
     <div
+      ref={surfaceRef}
       data-grid-surface=""
       data-multi={multi ? "" : undefined}
       data-morphing={enteringThreadIds.size > 0 ? "" : undefined}
@@ -288,6 +334,7 @@ export function GridHost(props: GridHostProps) {
       onSplit: (side, threadId) => splitThread(node.threadId, side, threadId),
       dragging: dragSource?.threadId === node.threadId,
       dropIndicator: dragSource !== null && hover?.threadId === node.threadId ? hover.side : null,
+      dropRefusal: dragSource !== null && hover?.threadId === node.threadId ? hover.refusal : null,
       dragHandleProps: {
         draggable: threadCount > 1 && maximizedThreadId == null,
         onDragStart: handleDragStart(node.threadId),
@@ -356,6 +403,18 @@ function GridBranch({
   );
 }
 
+interface ResizeDrag {
+  index: number;
+  startCoord: number;
+  /** The pixel width the pair had when the drag started. */
+  pairPx: number;
+  startValue: number;
+  /** The share the first cell shows now, kept current through the drag. */
+  value: number;
+  snapped: number | null;
+  pairSum: number;
+}
+
 function SplitView({
   node,
   path,
@@ -374,14 +433,16 @@ function SplitView({
   onTreeChange: (tree: LayoutNode) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<{
-    index: number;
-    startCoord: number;
-    spanPx: number;
-    pairSum: number;
-    startWeight: number;
-  } | null>(null);
-  const [dragging, setDragging] = useState(false);
+  const slotRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const badgeRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const badgeTimerRefs = useRef<Array<number | null>>([]);
+  const badgeStateRefs = useRef<Array<{ text: string; snapped: boolean; visible: boolean } | null>>(
+    [],
+  );
+  const dragRef = useRef<ResizeDrag | null>(null);
+  const frameRef = useRef<number | null>(null);
+  const coordRef = useRef(0);
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const isLeaving = (child: LayoutNode) =>
     leavingThreadId !== null &&
     preorderThreads(child).every((leaf) => leaf.threadId === leavingThreadId);
@@ -390,23 +451,134 @@ function SplitView({
     preorderThreads(child).every((leaf) => enteringThreadIds.has(leaf.threadId));
   const leavingIndex = node.children.findIndex(isLeaving);
 
-  const applyRatio = (index: number, clientCoord: number) => {
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- clears the badge timer and the pending resize frame when the divider unmounts
+  useEffect(
+    () => () => {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      for (const timer of badgeTimerRefs.current) {
+        if (timer !== null && timer !== undefined) window.clearTimeout(timer);
+      }
+      if (dragRef.current !== null) endLayoutResize();
+    },
+    [],
+  );
+
+  // The badge is painted from a ref, not React state, so pointer moves never
+  // re-render the cells. A re-render can replace its node, and the ref callback
+  // repaints the drag's state onto the new one.
+  const paintBadge = (index: number) => {
+    const badge = badgeRefs.current[index];
+    const state = badgeStateRefs.current[index];
+    if (badge == null || state == null || !state.visible) {
+      if (badge != null) badge.style.display = "none";
+      return;
+    }
+    badge.textContent = state.text;
+    if (state.snapped) badge.dataset.snapped = "";
+    else delete badge.dataset.snapped;
+    badge.style.display = "inline-block";
+  };
+
+  const showBadge = (index: number, value: number, snapped: number | null, holdMs = 0) => {
+    badgeStateRefs.current[index] = {
+      text: `${splitFractionLabel(value, snapped)} width`,
+      snapped: snapped !== null,
+      visible: true,
+    };
+    paintBadge(index);
+    const timer = badgeTimerRefs.current[index];
+    if (timer !== null && timer !== undefined) window.clearTimeout(timer);
+    badgeTimerRefs.current[index] =
+      holdMs > 0 ? window.setTimeout(() => hideBadge(index), holdMs) : null;
+  };
+
+  const hideBadge = (index: number) => {
+    const timer = badgeTimerRefs.current[index];
+    if (timer !== null && timer !== undefined) window.clearTimeout(timer);
+    badgeTimerRefs.current[index] = null;
+    badgeStateRefs.current[index] = null;
+    paintBadge(index);
+  };
+
+  const measureSpace = () => {
+    const container = containerRef.current;
+    const span =
+      container === null ? 0 : node.dir === "row" ? container.clientWidth : container.clientHeight;
+    return Math.max(0, span - (node.children.length - 1) * GUTTER_PX);
+  };
+
+  const pairPx = (index: number) => {
+    const pairSum = (node.weights[index] ?? 0) + (node.weights[index + 1] ?? 0) || 1;
+    return (measureSpace() * pairSum) / 100;
+  };
+
+  const applyPreview = (drag: ResizeDrag, clientCoord: number) => {
+    const extent = drag.pairPx;
+    if (extent <= 0) return;
+    const raw = drag.startValue + (clientCoord - drag.startCoord) / extent;
+    const snapped = snapSplitRatio(raw, extent, SNAP_DISTANCE_PX);
+    const value = clampSplitRatio(snapped.value, extent);
+    drag.value = value;
+    drag.snapped = snapped.snapped;
+    const first = slotRefs.current[drag.index];
+    const second = slotRefs.current[drag.index + 1];
+    if (first != null) first.style.flexGrow = String(value * drag.pairSum);
+    if (second != null) second.style.flexGrow = String((1 - value) * drag.pairSum);
+    showBadge(drag.index, value, presetOf(value));
+  };
+
+  const restoreSlots = () => {
+    node.children.forEach((_, index) => {
+      const slot = slotRefs.current[index];
+      if (slot != null) slot.style.flexGrow = "";
+    });
+  };
+
+  const finishDrag = (commit: () => void) => {
+    if (dragRef.current === null) return;
+    dragRef.current = null;
+    if (frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+    if (containerRef.current !== null) containerRef.current.style.userSelect = "";
+    commit();
+    endLayoutResize();
+    setDraggingIndex(null);
+  };
+
+  const commitRatio = (index: number, value: number) => {
+    onTreeChange(setRatio(node, path, index, value));
+  };
+
+  const endPointerDrag = (event: React.PointerEvent<HTMLDivElement>, cancelled: boolean) => {
     const drag = dragRef.current;
     if (drag === null) return;
-    const deltaPx = clientCoord - drag.startCoord;
-    const span = drag.spanPx - (node.children.length - 1) * GUTTER_PX;
-    if (span <= 0) return;
-    const ratio = clampSplitRatio((drag.startWeight + (deltaPx / span) * 100) / drag.pairSum, span);
-    onTreeChange(setRatio(node, path, index, ratio));
+    if (!cancelled) applyPreview(drag, node.dir === "row" ? event.clientX : event.clientY);
+    const current = dragRef.current;
+    if (cancelled || current === null) {
+      finishDrag(restoreSlots);
+      hideBadge(drag.index);
+      return;
+    }
+    // A click on the divider is not a resize: it must not write the tree.
+    const changed = Math.abs(current.value - current.startValue) > 1e-4;
+    finishDrag(() => {
+      if (changed) commitRatio(current.index, current.value);
+      else restoreSlots();
+    });
+    if (!changed) {
+      hideBadge(current.index);
+      return;
+    }
+    // The badge keeps the final fraction readable after the pointer lets go.
+    showBadge(current.index, current.value, current.snapped, GRID_BADGE_LINGER_MS);
   };
 
   return (
     <div
       ref={containerRef}
-      className={cn(
-        "relative flex h-full min-h-0 w-full min-w-0 flex-1 overflow-hidden",
-        dragging && "select-none",
-      )}
+      className="relative flex h-full min-h-0 w-full min-w-0 flex-1 overflow-hidden"
       style={{ flexDirection: node.dir === "row" ? "row" : "column" }}
     >
       {node.children.map((child, index) => (
@@ -420,6 +592,9 @@ function SplitView({
         >
           <div
             data-grid-slot=""
+            ref={(element) => {
+              slotRefs.current[index] = element;
+            }}
             data-leaving={index === leavingIndex ? "" : undefined}
             data-entering={isEntering(child) ? "" : undefined}
             className="relative flex min-h-0 min-w-0 overflow-hidden"
@@ -443,72 +618,80 @@ function SplitView({
             />
           </div>
           {index < node.children.length - 1 ? (
-            <div
-              role="separator"
-              aria-orientation={node.dir === "row" ? "vertical" : "horizontal"}
-              aria-label="Resize grid cells"
-              tabIndex={0}
-              data-grid-gutter=""
+            <GridResizeDivider
+              orientation={node.dir === "row" ? "vertical" : "horizontal"}
+              valueNow={Math.round(
+                ((node.weights[index] ?? 0) /
+                  ((node.weights[index] ?? 0) + (node.weights[index + 1] ?? 0) || 1)) *
+                  100,
+              )}
+              dragging={draggingIndex === index}
               // The gutter beside a leaving cell closes with it, so nothing jumps when it is removed.
-              data-leaving={
+              leaving={
                 leavingIndex !== -1 && (index === leavingIndex || index === leavingIndex - 1)
-                  ? ""
-                  : undefined
               }
               style={{ flexBasis: GUTTER_PX }}
-              className={cn(
-                "group relative z-10 shrink-0 outline-none after:absolute after:rounded-full after:bg-transparent after:transition-colors after:content-[''] hover:after:bg-(--accent-ink) focus-visible:after:bg-(--accent-ink)",
-                node.dir === "row"
-                  ? "cursor-col-resize after:inset-y-0 after:left-[3px] after:w-0.5"
-                  : "cursor-row-resize after:inset-x-0 after:top-[3px] after:h-0.5",
-              )}
-              onDoubleClick={() => onTreeChange(setRatio(node, path, index, 0.5))}
+              badgeRef={(element) => {
+                badgeRefs.current[index] = element;
+                // A re-render replaces the node; repaint the drag's state onto it.
+                if (element !== null) paintBadge(index);
+              }}
+              onDoubleClick={() => {
+                const extent = pairPx(index);
+                const value = clampSplitRatio(0.5, extent);
+                commitRatio(index, value);
+                showBadge(index, value, presetOf(value), GRID_BADGE_LINGER_MS);
+              }}
               onPointerDown={(event) => {
-                const container = containerRef.current;
-                if (container === null) return;
-                event.preventDefault();
+                if (event.button !== 0 || dragRef.current !== null) return;
+                const extent = pairPx(index);
+                if (extent <= 0) return;
+                // No preventDefault: cancelling pointerdown also cancels the click
+                // that double-click needs. The container holds selection instead.
+                if (containerRef.current !== null) containerRef.current.style.userSelect = "none";
                 event.currentTarget.setPointerCapture(event.pointerId);
                 const pairSum = (node.weights[index] ?? 0) + (node.weights[index + 1] ?? 0) || 1;
                 dragRef.current = {
                   index,
                   startCoord: node.dir === "row" ? event.clientX : event.clientY,
-                  spanPx: node.dir === "row" ? container.clientWidth : container.clientHeight,
+                  pairPx: extent,
+                  startValue: (node.weights[index] ?? 0) / pairSum,
+                  value: (node.weights[index] ?? 0) / pairSum,
+                  snapped: null,
                   pairSum,
-                  startWeight: node.weights[index] ?? 0,
                 };
-                setDragging(true);
+                beginLayoutResize();
+                setDraggingIndex(index);
+                showBadge(index, dragRef.current.startValue, null);
               }}
               onPointerMove={(event) => {
-                if (dragRef.current === null) return;
-                applyRatio(index, node.dir === "row" ? event.clientX : event.clientY);
+                const drag = dragRef.current;
+                if (drag === null || frameRef.current !== null) return;
+                coordRef.current = node.dir === "row" ? event.clientX : event.clientY;
+                frameRef.current = requestAnimationFrame(() => {
+                  frameRef.current = null;
+                  applyPreview(drag, coordRef.current);
+                });
               }}
-              onPointerUp={(event) => {
-                dragRef.current = null;
-                setDragging(false);
-                if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-                  event.currentTarget.releasePointerCapture(event.pointerId);
-                }
-              }}
-              onPointerCancel={() => {
-                dragRef.current = null;
-                setDragging(false);
+              onPointerUp={(event) => endPointerDrag(event, false)}
+              onPointerCancel={(event) => endPointerDrag(event, true)}
+              onLostPointerCapture={() => {
+                if (dragRef.current !== null) finishDrag(restoreSlots);
               }}
               onKeyDown={(event) => {
                 const decrease = node.dir === "row" ? "ArrowLeft" : "ArrowUp";
                 const increase = node.dir === "row" ? "ArrowRight" : "ArrowDown";
                 if (event.key !== decrease && event.key !== increase) return;
                 event.preventDefault();
-                const container = containerRef.current;
-                const span =
-                  (node.dir === "row" ? container?.clientWidth : container?.clientHeight) ?? 0;
                 const pairSum = (node.weights[index] ?? 0) + (node.weights[index + 1] ?? 0) || 1;
                 const current = (node.weights[index] ?? 0) / pairSum;
-                const delta = event.key === increase ? 0.02 : -0.02;
-                onTreeChange(
-                  setRatio(node, path, index, clampSplitRatio(current + delta, Math.max(span, 1))),
-                );
+                const next = stepSplitPreset(current, event.key === increase ? 1 : -1);
+                if (Math.abs(next - current) < 1e-3) return;
+                const value = clampSplitRatio(next, pairPx(index));
+                commitRatio(index, value);
+                showBadge(index, value, presetOf(value), GRID_BADGE_LINGER_MS);
               }}
-            ></div>
+            />
           ) : null}
         </div>
       ))}

@@ -53,7 +53,8 @@ import {
   workspaceKeyOf,
 } from "../../grid/gridStore";
 import { moveThreadToGridOrExplain, moveToGridTargets } from "../../grid/moveToGrid";
-import { crossProjectMoveToast, sameProject } from "../../grid/projectMove";
+import { crossProjectMoveToast, noProjectMoveToast, sameProject } from "../../grid/projectMove";
+import { showThreadMovedToast } from "../../grid/moveFeedback";
 import { resolveGridThreadTarget } from "../../grid/gridNavigation";
 import {
   nextRailTargetIndex,
@@ -612,8 +613,13 @@ export function GridSidebar() {
           selectedHoldEnvironmentId,
         );
 
-  const handleDragStart = (gridId: string, thread: EnvironmentThreadShell) => {
-    const source = { gridId, threadId: thread.id };
+  const handleDragStart = (gridId: string | null, thread: EnvironmentThreadShell) => {
+    const source = {
+      gridId,
+      threadId: thread.id,
+      environmentId: thread.environmentId,
+      projectId: thread.projectId,
+    };
     beginThreadDrag(source);
     setDragging(source);
   };
@@ -624,11 +630,17 @@ export function GridSidebar() {
   };
   const readDragged = (event: ReactDragEvent): DraggedThread | null =>
     readThreadDrag(event.dataTransfer);
+  // A drag lands the thread in the target grid but does not move the user; the
+  // toast offers the grid and the way back.
   const moveThreadToGrid = (source: DraggedThread, targetGridId: string) => {
     if (source.gridId === targetGridId) return;
     const thread = threadById.get(source.threadId);
     const target = gridById(useGridStore.getState().grids, targetGridId);
     if (thread === undefined || target === null) return;
+    if (thread.projectId.length === 0) {
+      toastManager.add(stackedThreadToast({ type: "error", ...noProjectMoveToast(target.name) }));
+      return;
+    }
     if (!sameProject(thread, target)) {
       toastManager.add(
         stackedThreadToast({
@@ -648,7 +660,19 @@ export function GridSidebar() {
       threadProjectId: thread.projectId,
       targetGridId,
     });
-    if (refusal !== null) toastManager.add(stackedThreadToast({ type: "error", ...refusal }));
+    if (refusal !== null) {
+      toastManager.add(stackedThreadToast({ type: "error", ...refusal }));
+      return;
+    }
+    showThreadMovedToast({
+      threadId: thread.id,
+      threadEnvironmentId: thread.environmentId,
+      threadProjectId: thread.projectId,
+      threadTitle: thread.title,
+      sourceGridId: source.gridId,
+      targetGridId,
+      onOpenTarget: (gridId) => openThread(gridId, thread.id),
+    });
   };
   const dropThreadOnThread = (
     source: DraggedThread,
@@ -1219,7 +1243,7 @@ export function SidebarProjectSection({
     preset: Pick<SnoozePreset, "snoozedUntil">,
   ) => void;
   onPickHoldTime: () => Promise<Pick<SnoozePreset, "snoozedUntil"> | null>;
-  onDragStart: (gridId: string, thread: EnvironmentThreadShell) => void;
+  onDragStart: (gridId: string | null, thread: EnvironmentThreadShell) => void;
   onDragEnd: () => void;
   onDragOverGrid: (key: string | null) => void;
   onDropOnGrid: (source: DraggedThread, targetGridId: string) => void;
@@ -1344,7 +1368,7 @@ export function SidebarProjectSection({
               selected={selection.selectedThreadKeys.has(
                 scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
               )}
-              dragging={false}
+              dragging={dragging?.threadId === thread.id}
               workspaceTitle={section.title}
               notInGrid
               runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
@@ -1355,8 +1379,8 @@ export function SidebarProjectSection({
               onPickHoldTime={onPickHoldTime}
               onRename={(title) => onRenameThread(thread, title)}
               onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
-              onDragStart={() => {}}
-              onDragEnd={() => {}}
+              onDragStart={() => onDragStart(null, thread)}
+              onDragEnd={onDragEnd}
               onDropOnThread={() => {}}
               onOpenGrid={() => onOpenUngroupedThread(thread)}
               readDragged={readDragged}
@@ -1853,12 +1877,16 @@ export function ThreadCard({
       <TooltipTrigger
         render={
           <div
-            draggable={!renaming && gridId !== null}
+            draggable={!renaming && shelf === null}
             onDragStart={(event) => {
-              if (gridId === null) return;
               event.dataTransfer.setData(
                 THREAD_DRAG_TYPE,
-                JSON.stringify({ gridId, threadId: thread.id }),
+                JSON.stringify({
+                  gridId,
+                  threadId: thread.id,
+                  environmentId: thread.environmentId,
+                  projectId: thread.projectId,
+                }),
               );
               event.dataTransfer.effectAllowed = "move";
               onDragStart();
