@@ -3303,8 +3303,11 @@ export default function ChatView(props: ChatViewProps) {
       composerRef.current?.addDroppedFiles(files),
   );
   const addDroppedFoldersToComposer = useStableCallback(
-    (folders: Parameters<ChatComposerHandle["addDroppedFolders"]>[0]) =>
-      composerRef.current?.addDroppedFolders(folders),
+    (folders: Parameters<ChatComposerHandle["addDroppedFolders"]>[0], paths: readonly string[]) =>
+      composerRef.current?.addDroppedFolders(folders, paths),
+  );
+  const addDroppedPathsToComposer = useStableCallback((paths: readonly string[]) =>
+    composerRef.current?.addDroppedPaths(paths),
   );
   // Above the early return, where React Compiler can cache it for the side chat pane.
   const sideChatParentPanel = {
@@ -3389,6 +3392,7 @@ export default function ChatView(props: ChatViewProps) {
     setDragActive: setIsWorkspaceFileDragActive,
     addFiles: addDroppedFilesToComposer,
     addFolders: addDroppedFoldersToComposer,
+    addDroppedPaths: addDroppedPathsToComposer,
   });
 
   const content = (

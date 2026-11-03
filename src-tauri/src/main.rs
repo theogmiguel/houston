@@ -450,6 +450,8 @@ fn main() {
             fs::fs_unwatch,
             fs::fs_save_image,
             fs::fs_read_capture,
+            fs::fs_delete_capture,
+            fs::fs_read_dropped_path,
             fs::fs_save_review,
             fs::fs_copy_dropped_file,
             fs::fs_set_window_background,
@@ -736,6 +738,8 @@ fn main() {
             let monitor_host = Arc::clone(&v2_host);
             let monitor_app = app.handle().clone();
             tokio_runtime.spawn(v2_server::monitor(monitor_host, monitor_app));
+
+            tokio_runtime.spawn(crate::fs::sweep_stale_pastes());
 
             // A check shortly after start and then every few minutes keeps the
             // sidebar's update pill current; installing stays an explicit click.

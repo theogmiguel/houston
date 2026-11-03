@@ -589,14 +589,53 @@
     probeRemoteEditors: function () {
       return invoke("v2_probe_remote_editors");
     },
-    pasteAsText: noop,
+    // GTK consumes the menu accelerator before the webview sees the key, so the native paste
+    // never reaches the focused editor. Read the clipboard through the host and deliver it as a
+    // plain-text paste event to whatever the app armed.
+    pasteAsText: function () {
+      return (
+        invoke("clipboard_read_text")
+          .then(function (text) {
+            var value = typeof text === "string" ? text : "";
+            if (value.length === 0) return;
+            var target = document.activeElement || document.body;
+            if (!target) return;
+            var data = {
+              types: ["text/plain"],
+              files: [],
+              items: [],
+              getData: function (type) {
+                return type === "text/plain" ? value : "";
+              },
+            };
+            var event = new Event("paste", { bubbles: true, cancelable: true });
+            Object.defineProperty(event, "clipboardData", { value: data });
+            target.dispatchEvent(event);
+          })
+          // A clipboard the compositor refuses pastes nothing; the action has no error surface.
+          .catch(noop)
+      );
+    },
+    readClipboardText: function () {
+      return invoke("clipboard_read_text");
+    },
     readClipboardImage: function () {
       return invoke("clipboard_save_image").then(function (path) {
         if (path === null) return null;
-        return invoke("fs_read_capture", { path: path }).then(function (base64) {
-          return { mediaType: "image/png", base64: base64 };
-        });
+        return invoke("fs_read_capture", { path: path }).then(
+          function (base64) {
+            invoke("fs_delete_capture", { path: path }).catch(noop);
+            return { mediaType: "image/png", base64: base64 };
+          },
+          function (error) {
+            invoke("fs_delete_capture", { path: path }).catch(noop);
+            throw error;
+          },
+        );
       });
+    },
+    readDroppedPath: function (path) {
+      return invoke("fs_read_dropped_path", { path: path });
     },
     onMenuAction: function (listener) {
       return listen("v2-menu-action", listener);

@@ -1025,6 +1025,17 @@ export interface HostClipboardImage {
   readonly base64: string;
 }
 
+/**
+ * A file or folder named by a file-manager drop or clipboard entry. WebKitGTK can deliver such a
+ * drag as `text/uri-list` only, with no `File` that carries a path, so the host reads the path.
+ */
+export interface HostDroppedPath {
+  readonly name: string;
+  readonly directory: boolean;
+  /** Standard base64 of the file bytes; null for a directory. */
+  readonly base64: string | null;
+}
+
 export interface DesktopLocalServerStatus {
   readonly state: "starting" | "ready" | "error";
   readonly origin?: string;
@@ -1175,8 +1186,12 @@ export interface HostBridge {
   checkSystemPermission: (pane: SystemSettingsPane) => Promise<boolean>;
   probeRemoteEditors: () => Promise<readonly EditorId[]>;
   pasteAsText: () => Promise<void>;
+  /** The system clipboard's text. Absent where `navigator.clipboard` can read it natively. */
+  readClipboardText?: () => Promise<string>;
   /** The image on the system clipboard, or null when it holds none. Absent where `clipboardData` carries pasted images. */
   readClipboardImage?: () => Promise<HostClipboardImage | null>;
+  /** Reads a path carried by a drop or clipboard entry the webview exposes only as a URI list. */
+  readDroppedPath?: (path: string) => Promise<HostDroppedPath>;
   onMenuAction: (listener: (action: string) => void) => () => void;
   onSnapShotEvent: (listener: (event: DesktopSnapShotEvent) => void) => () => void;
   onQuitShortcut: (listener: (event: QuitShortcutHintEvent) => void) => () => void;

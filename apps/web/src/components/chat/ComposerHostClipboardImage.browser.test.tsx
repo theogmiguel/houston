@@ -154,3 +154,48 @@ it(
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );
+
+it(
+  "a paste that only names paths reads nothing until the user confirms the attachment",
+  async () => {
+    using _environment = installFakeEnvironment([]);
+    using _uploads = advertiseFileUploads();
+    await using _app = await bootDraftComposer();
+    const readDroppedPath = vi.fn(() =>
+      Promise.resolve({ name: "id_ed25519", directory: false, base64: btoa("key") }),
+    );
+    const editor = page.getByTestId("composer-editor").element();
+    const data = new DataTransfer();
+    data.setData("text/plain", "hello");
+    data.setData("text/uri-list", "file:///home/someone/.ssh/id_ed25519");
+    const paste = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: data,
+    });
+
+    pasteWithHostBridge(editor, paste, { readDroppedPath });
+
+    expect(paste.defaultPrevented).toBe(true);
+    await expect.element(page.getByText('Attach "id_ed25519" from the clipboard?')).toBeVisible();
+    expect(readDroppedPath).not.toHaveBeenCalled();
+    expect(tiles()).toHaveLength(0);
+
+    // The composer takes the reader synchronously when Attach runs, like the paste handler.
+    const attach = page.getByRole("button", { name: "Attach" }).element() as HTMLElement;
+    const previous = window.hostBridge;
+    window.hostBridge = {
+      readDroppedPath,
+      getLocalEnvironmentEnabled: () => true,
+    } as unknown as HostBridge;
+    try {
+      attach.click();
+    } finally {
+      if (previous === undefined) delete window.hostBridge;
+      else window.hostBridge = previous;
+    }
+    await vi.waitFor(() => expect(tiles()).toHaveLength(1));
+    expect(readDroppedPath).toHaveBeenCalledWith("/home/someone/.ssh/id_ed25519");
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);

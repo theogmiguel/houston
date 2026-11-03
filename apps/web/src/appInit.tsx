@@ -42,6 +42,7 @@ import { syncBrowserChromeTheme } from "./hooks/useTheme";
 import { startThreadVisitedMigration } from "./hooks/useThreadVisitedMigration";
 import { isTauriHost } from "./lib/desktopWindow";
 import { installDesktopPasteAsText } from "./lib/desktopPasteAsText";
+import { installFileTransferNavigationGuard } from "./lib/fileTransfer";
 import {
   syncDocumentElectronPlatformClasses,
   syncDocumentWindowControlsOverlayClass,
@@ -183,6 +184,7 @@ export function startAppServices(): AppRouter {
   }
 
   installDesktopPasteAsText(window.hostBridge, window);
+  installFileTransferNavigationGuard(window);
 
   startClientAppearance();
   startDocumentTitle();

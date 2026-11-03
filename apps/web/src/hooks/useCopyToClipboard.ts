@@ -172,18 +172,35 @@ export async function writeTextToClipboard(
 }
 
 export async function readTextFromClipboard(target = "text"): Promise<string> {
-  if (
-    typeof window === "undefined" ||
-    typeof navigator === "undefined" ||
-    !navigator.clipboard?.readText
-  ) {
+  if (typeof window === "undefined" || typeof navigator === "undefined") {
+    throw new ClipboardReadUnavailableError({
+      target,
+    });
+  }
+
+  const readFromHost = window.hostBridge?.readClipboardText;
+  if (navigator.clipboard?.readText) {
+    try {
+      return await navigator.clipboard.readText();
+    } catch (cause) {
+      // WebKitGTK can refuse `readText` outside a native paste gesture, such as from a context
+      // menu click; the host reads the same clipboard without that restriction.
+      if (!readFromHost) {
+        throw new ClipboardReadError({
+          target,
+          cause,
+        });
+      }
+    }
+  }
+  if (!readFromHost) {
     throw new ClipboardReadUnavailableError({
       target,
     });
   }
 
   try {
-    return await navigator.clipboard.readText();
+    return await readFromHost();
   } catch (cause) {
     throw new ClipboardReadError({
       target,
