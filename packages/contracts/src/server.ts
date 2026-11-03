@@ -826,6 +826,8 @@ export type ServerLifecycleWelcomePayload = typeof ServerLifecycleWelcomePayload
 export const ServerLifecycleLegacyThreadMigrationPayload = Schema.Struct({
   status: Schema.Union([Schema.Literal("running"), Schema.Literal("complete")]),
   totalThreadCount: NonNegativeInt,
+  // Threads whose transcript could not be hydrated; they stay pending and retry on the next open.
+  failedThreadCount: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
 });
 export type ServerLifecycleLegacyThreadMigrationPayload =
   typeof ServerLifecycleLegacyThreadMigrationPayload.Type;

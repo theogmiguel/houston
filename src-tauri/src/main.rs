@@ -1,9 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod app_activation;
 mod app_log;
 mod app_menu;
 mod app_update;
 mod clipboard;
+mod connection_catalog;
 mod dialog;
 mod fs;
 mod fs_allowlist;
@@ -65,6 +67,16 @@ fn reject_unrecognized_args(args: &[String]) -> Result<(), UnrecognizedArgError>
             continue;
         }
         if arg.starts_with("--channel=") || KNOWN_STANDALONE_FLAGS.contains(&arg.as_str()) {
+            i += 1;
+            continue;
+        }
+        // `houston <folder>` and a `houston://` deep link both open the running app.
+        if crate::app_activation::is_web_link(arg)
+            || crate::app_activation::is_workspace_argument(
+                arg,
+                &std::env::current_dir().unwrap_or_default(),
+            )
+        {
             i += 1;
             continue;
         }
@@ -195,8 +207,8 @@ pub(crate) fn v2_initialization_script(app: &tauri::AppHandle) -> String {
         serde_json::Value::Null,
         serde_json::json!({
             "baseName": "Houston",
-            "stageLabel": "Dev",
-            "displayName": "Houston Dev",
+            "stageLabel": crate::app_menu::stage_label(),
+            "displayName": crate::app_menu::display_name(),
         }),
         include_str!("v2_bridge.js"),
     )
@@ -385,6 +397,15 @@ fn main() {
     builder = builder.manage(app_menu::ZoomState::default());
     builder = builder.manage(app_menu::QuitConfirmationState::default());
 
+    let launch_targets = std::env::current_dir()
+        .ok()
+        .map(|cwd| app_activation::launch_targets(&args, &cwd))
+        .unwrap_or_default();
+    builder = builder.manage(app_activation::DeepLinkHost::new(
+        launch_targets.web_links,
+        launch_targets.workspaces,
+    ));
+
     let tray_host = tray::TrayHost::new(state_dir.clone(), tray::probe());
     builder = builder.manage(Arc::clone(&tray_host));
     let quick_composer_host = quick_composer::QuickComposerHost::new(state_dir.clone());
@@ -398,7 +419,8 @@ fn main() {
         builder = builder.plugin(
             tauri_plugin_single_instance::Builder::new()
                 .dbus_id(dbus_id)
-                .callback(move |app, _argv, _cwd| {
+                .callback(move |app, argv, cwd| {
+                    app_activation::forward(app, &argv, &cwd);
                     eprintln!(
                         "houston-tauri: rejected a second launch on channel \
                          {channel_label:?} (already owned by this instance); focusing the \
@@ -423,6 +445,11 @@ fn main() {
             app_update::v2_update_check,
             app_update::v2_update_download,
             app_update::v2_update_install,
+            app_activation::v2_web_links_set_ready,
+            app_activation::v2_app_activation_set_ready,
+            app_activation::v2_app_activation_complete,
+            connection_catalog::v2_get_connection_catalog,
+            connection_catalog::v2_set_connection_catalog,
             v2_server::v2_local_environment_bootstrap,
             v2_server::v2_local_environment_bearer_token,
             v2_server::v2_server_status,
@@ -599,6 +626,8 @@ fn main() {
             }
         })
         .setup(move |app| {
+            // Registration shells out to xdg-mime/reg, so it stays off the window's first paint.
+            std::thread::spawn(app_activation::ensure_protocol_registered);
             notifications::start_action_listener(app.handle().clone());
 
             // The window paints before a slow server start instead of waiting behind it;

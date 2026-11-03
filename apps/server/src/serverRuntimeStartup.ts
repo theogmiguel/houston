@@ -508,6 +508,7 @@ const make = Effect.fn("serverRuntimeStartup.make")(function* (options?: Startup
         payload: {
           status: "running",
           totalThreadCount: legacyMigrationThreadCount,
+          failedThreadCount: 0,
         },
       });
     }
@@ -561,6 +562,11 @@ const make = Effect.fn("serverRuntimeStartup.make")(function* (options?: Startup
 
     const importPendingTranscripts = legacyV1ThreadImporter.importPendingTranscripts.pipe(
       Effect.tap((summary) =>
+        summary.failedThreadCount === undefined || summary.failedThreadCount === 0
+          ? Effect.void
+          : Effect.logWarning("Some legacy v1 thread transcripts did not hydrate", summary),
+      ),
+      Effect.tap((summary) =>
         summary.importedThreadCount === 0
           ? Effect.void
           : Effect.logInfo("Hydrated legacy v1 thread transcripts", summary),
@@ -569,13 +575,14 @@ const make = Effect.fn("serverRuntimeStartup.make")(function* (options?: Startup
     yield* (
       legacyMigrationThreadCount > 0
         ? importPendingTranscripts.pipe(
-            Effect.tap(() =>
+            Effect.tap((summary) =>
               lifecycleEvents.publish({
                 version: 1,
                 type: "legacyThreadMigration",
                 payload: {
                   status: "complete",
                   totalThreadCount: legacyMigrationThreadCount,
+                  failedThreadCount: summary.failedThreadCount ?? 0,
                 },
               }),
             ),

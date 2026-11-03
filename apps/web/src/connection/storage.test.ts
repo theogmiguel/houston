@@ -69,6 +69,79 @@ const fixedHandle = (database: IDBDatabase) => ({
 });
 
 describe("ConnectionStorage.makeCatalogBackend", () => {
+  it.effect("moves a legacy plaintext catalog into the host's secure store", () =>
+    Effect.gen(function* () {
+      const legacy = '{"schemaVersion":1,"targets":[],"profiles":[],"credentials":[]}';
+      const setConnectionCatalog = vi.fn(async () => true);
+      const removeItem = vi.fn();
+      vi.stubGlobal("window", {
+        hostBridge: {
+          getConnectionCatalog: async () => null,
+          setConnectionCatalog,
+        },
+        localStorage: {
+          getItem: (key: string) => (key === "houston:v2:connection-catalog" ? legacy : null),
+          removeItem,
+        },
+      });
+      const backend = ConnectionStorage.makeCatalogBackend(
+        {} as Parameters<typeof ConnectionStorage.makeCatalogBackend>[0],
+      );
+
+      expect(yield* backend.read).toBe(legacy);
+      expect(setConnectionCatalog).toHaveBeenCalledWith(legacy);
+      expect(removeItem).toHaveBeenCalledWith("houston:v2:connection-catalog");
+    }),
+  );
+
+  it.effect("drops a leftover plaintext catalog once the secure store holds one", () =>
+    Effect.gen(function* () {
+      const stored = '{"schemaVersion":1,"targets":[],"profiles":[],"credentials":[]}';
+      const setConnectionCatalog = vi.fn(async () => true);
+      const removeItem = vi.fn();
+      vi.stubGlobal("window", {
+        hostBridge: {
+          getConnectionCatalog: async () => stored,
+          setConnectionCatalog,
+        },
+        localStorage: {
+          getItem: () => '{"schemaVersion":1,"targets":[],"profiles":[],"credentials":["stale"]}',
+          removeItem,
+        },
+      });
+      const backend = ConnectionStorage.makeCatalogBackend(
+        {} as Parameters<typeof ConnectionStorage.makeCatalogBackend>[0],
+      );
+
+      expect(yield* backend.read).toBe(stored);
+      expect(setConnectionCatalog).not.toHaveBeenCalled();
+      expect(removeItem).toHaveBeenCalledWith("houston:v2:connection-catalog");
+    }),
+  );
+
+  it.effect("keeps a legacy plaintext catalog when the secure store rejects it", () =>
+    Effect.gen(function* () {
+      const legacy = '{"schemaVersion":1,"targets":[],"profiles":[],"credentials":[]}';
+      const removeItem = vi.fn();
+      vi.stubGlobal("window", {
+        hostBridge: {
+          getConnectionCatalog: async () => null,
+          setConnectionCatalog: async () => false,
+        },
+        localStorage: {
+          getItem: () => legacy,
+          removeItem,
+        },
+      });
+      const backend = ConnectionStorage.makeCatalogBackend(
+        {} as Parameters<typeof ConnectionStorage.makeCatalogBackend>[0],
+      );
+
+      expect(yield* backend.read).toBe(legacy);
+      expect(removeItem).not.toHaveBeenCalled();
+    }),
+  );
+
   it.effect("fails IndexedDB writes whose commit aborts", () =>
     Effect.gen(function* () {
       vi.stubGlobal("window", {});

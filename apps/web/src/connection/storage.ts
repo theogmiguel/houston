@@ -50,6 +50,9 @@ const THREAD_STORE_NAME = "thread";
 const SERVER_CONFIG_STORE_NAME = "server-config";
 const VCS_REFS_STORE_NAME = "vcs-refs";
 const CATALOG_KEY = "document";
+// Before the desktop host kept the catalog in the keychain, the bridge wrote this
+// plaintext copy into the webview's localStorage; the next read moves it across.
+const LEGACY_PLAINTEXT_CATALOG_KEY = "houston:v2:connection-catalog";
 const StoredShellSnapshot = StoredOrchestrationShellSnapshot;
 const StoredShellSnapshotJson = Schema.fromJsonString(StoredShellSnapshot);
 const StoredThreadSnapshot = StoredOrchestrationThreadSnapshot;
@@ -389,13 +392,43 @@ export interface CatalogBackend {
   readonly quarantine?: (raw: string) => Effect.Effect<void, ConnectionTransientError>;
 }
 
+function readLegacyPlaintextCatalog(): string | null {
+  try {
+    return window.localStorage.getItem(LEGACY_PLAINTEXT_CATALOG_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function removeLegacyPlaintextCatalog(): void {
+  try {
+    window.localStorage.removeItem(LEGACY_PLAINTEXT_CATALOG_KEY);
+  } catch {
+    // A storage the webview refuses leaves the plaintext copy for the next attempt.
+  }
+}
+
 export function makeCatalogBackend(database: DatabaseHandle): CatalogBackend {
   const bridge = window.hostBridge;
   if (bridge !== undefined) {
     return {
-      read: Effect.tryPromise({
-        try: () => bridge.getConnectionCatalog(),
-        catch: (cause) => catalogError("load", cause),
+      read: Effect.gen(function* () {
+        const stored = yield* Effect.tryPromise({
+          try: () => bridge.getConnectionCatalog(),
+          catch: (cause) => catalogError("load", cause),
+        });
+        if (stored !== null) {
+          removeLegacyPlaintextCatalog();
+          return stored;
+        }
+        const legacy = readLegacyPlaintextCatalog();
+        if (legacy === null) return null;
+        const migrated = yield* Effect.tryPromise({
+          try: () => bridge.setConnectionCatalog(legacy),
+          catch: (cause) => catalogError("save", cause),
+        }).pipe(Effect.orElseSucceed(() => false));
+        if (migrated) removeLegacyPlaintextCatalog();
+        return legacy;
       }),
       write: (raw) =>
         Effect.tryPromise({

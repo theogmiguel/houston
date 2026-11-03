@@ -7,7 +7,30 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, State, Webview};
 pub const EVENT_ZOOM: &str = "v2-window-zoom";
 pub const ZOOM_GLOBAL: &str = "__HOUSTON_V2_ZOOM__";
 
-const DISPLAY_NAME: &str = "Houston Dev";
+fn stage_label_for(channel: Option<&str>) -> &'static str {
+    match channel {
+        None => "Latest",
+        Some("nightly") => "Nightly",
+        Some(_) => "Dev",
+    }
+}
+
+fn display_name_for(channel: Option<&str>) -> String {
+    match stage_label_for(channel) {
+        "Latest" => "Houston".to_string(),
+        stage => format!("Houston ({stage})"),
+    }
+}
+
+/// What this installation is called: the release channel shows the product name,
+/// while a dev, nightly or other named channel keeps its qualifier visible.
+pub fn display_name() -> String {
+    display_name_for(crate::sys::paths::channel().ok().flatten().as_deref())
+}
+
+pub fn stage_label() -> &'static str {
+    stage_label_for(crate::sys::paths::channel().ok().flatten().as_deref())
+}
 const ZOOM_STEP: f64 = 1.095_445_389_066_381; // Chromium's 1.2^0.5 half zoom-level step.
 const ZOOM_MIN: f64 = 0.25;
 const ZOOM_MAX: f64 = 5.0;
@@ -199,9 +222,10 @@ fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 
     #[cfg(target_os = "macos")]
     {
+        let display_name = display_name();
         let about = tauri::menu::PredefinedMenuItem::about(
             app,
-            Some(format!("About {DISPLAY_NAME}").as_str()),
+            Some(format!("About {display_name}").as_str()),
             None,
         )?;
         let check = MenuItem::with_id(
@@ -221,18 +245,18 @@ fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         let services = tauri::menu::PredefinedMenuItem::services(app, None)?;
         let hide = tauri::menu::PredefinedMenuItem::hide(
             app,
-            Some(format!("Hide {DISPLAY_NAME}").as_str()),
+            Some(format!("Hide {display_name}").as_str()),
         )?;
         let hide_others = tauri::menu::PredefinedMenuItem::hide_others(app, None)?;
         let show_all = tauri::menu::PredefinedMenuItem::show_all(app, None)?;
         let quit = MenuItem::with_id(
             app,
             "quit-app",
-            format!("Quit {DISPLAY_NAME}"),
+            format!("Quit {display_name}"),
             true,
             Some("CmdOrCtrl+Q"),
         )?;
-        let app_menu = SubmenuBuilder::new(app, DISPLAY_NAME)
+        let app_menu = SubmenuBuilder::new(app, &display_name)
             .item(&about)
             .item(&check)
             .separator()
@@ -266,6 +290,7 @@ fn build_file_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu:
     }
     #[cfg(not(target_os = "macos"))]
     {
+        let display_name = display_name();
         let settings = MenuItem::with_id(
             app,
             "open-settings",
@@ -276,7 +301,7 @@ fn build_file_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu:
         let quit = MenuItem::with_id(
             app,
             "quit-app",
-            format!("Quit {DISPLAY_NAME}"),
+            format!("Quit {display_name}"),
             true,
             Some("CmdOrCtrl+Q"),
         )?;
@@ -556,5 +581,16 @@ mod tests {
         );
         let error = parse_zoom_direction("sideways").expect_err("unknown directions are refused");
         assert!(error.contains("sideways"), "{error}");
+    }
+
+    #[test]
+    fn release_installs_use_the_product_name_and_other_channels_keep_their_qualifier() {
+        assert_eq!(stage_label_for(None), "Latest");
+        assert_eq!(display_name_for(None), "Houston");
+        assert_eq!(stage_label_for(Some("dev")), "Dev");
+        assert_eq!(display_name_for(Some("dev")), "Houston (Dev)");
+        assert_eq!(stage_label_for(Some("nightly")), "Nightly");
+        assert_eq!(display_name_for(Some("nightly")), "Houston (Nightly)");
+        assert_eq!(display_name_for(Some("pr-42")), "Houston (Dev)");
     }
 }

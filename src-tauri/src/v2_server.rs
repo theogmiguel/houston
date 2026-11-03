@@ -824,6 +824,10 @@ impl V2Host {
         }
     }
 
+    pub fn base_dir(&self) -> &Path {
+        &self.base_dir
+    }
+
     pub fn settings(&self) -> DesktopSettings {
         self.state
             .lock()

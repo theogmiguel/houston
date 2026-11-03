@@ -1,5 +1,4 @@
-import { HOSTED_APP_CHANNEL } from "~/branding";
-import { isDesktopHost, isSecretsFeatureEnabled } from "~/env";
+import { isDesktopHost } from "~/env";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
 import { STATIC_KEYBINDING_COMMANDS, type KeybindingCommand } from "@houston-app/contracts";
 import type { EnvironmentId } from "@houston-app/contracts";
@@ -58,8 +57,6 @@ export interface SettingsSearchItem {
   readonly desktopOnly?: boolean;
   readonly macOnly?: boolean;
   readonly windowsOnly?: boolean;
-  readonly releaseChannelOnly?: boolean;
-  readonly secretsFeatureOnly?: boolean;
   readonly environmentOnly?: boolean;
   readonly providerSettingsOnly?: boolean;
   readonly macProviderSettingsOnly?: boolean;
@@ -144,7 +141,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
       "/settings/connections",
       "/settings/task-sources",
       "/settings/access",
-      ...(isSecretsFeatureEnabled ? (["/settings/secrets"] as const) : []),
+      "/settings/secrets",
     ],
   },
   {
@@ -679,26 +676,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["about check for updates download install upgrade release"],
   },
   {
-    id: "update-track",
-    title: "Update track",
-    to: "/settings/about",
-    searchTerms: ["release channel stable latest nightly prerelease"],
-    releaseChannelOnly: true,
-  },
-  {
-    id: "cli-command",
-    title: "houston command",
-    to: "/settings/about",
-    searchTerms: ["cli terminal shell path install command line"],
-    desktopOnly: true,
-  },
-  {
-    id: "mobile-app",
-    title: "Mobile app",
-    to: "/settings/about",
-    searchTerms: ["phone tablet iPhone iPad iOS Android App Store Google Play QR"],
-  },
-  {
     id: "telemetry-export",
     title: "OpenTelemetry export",
     to: "/settings/diagnostics",
@@ -1131,7 +1108,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Secret providers",
     to: "/settings/secrets",
     searchTerms: ["1password vault credentials api key"],
-    secretsFeatureOnly: true,
   },
   {
     id: "secret-providers-add",
@@ -1139,7 +1115,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/secrets",
     targetId: "secret-providers",
     searchTerms: ["new 1password vault op cli account"],
-    secretsFeatureOnly: true,
   },
   {
     id: "archive",
@@ -1311,8 +1286,6 @@ export function settingsForThisPlatform(
   return items.filter(
     (item) =>
       (isDesktopHost || item.desktopOnly !== true) &&
-      (!item.releaseChannelOnly || isDesktopHost || HOSTED_APP_CHANNEL !== null) &&
-      (!item.secretsFeatureOnly || isSecretsFeatureEnabled) &&
       (!item.macOnly || isMacPlatform(platform)) &&
       (!item.windowsOnly || isWindowsPlatform(platform)),
   );

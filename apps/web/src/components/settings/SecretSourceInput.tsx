@@ -12,7 +12,6 @@ import * as Schema from "effect/Schema";
 import { KeyRoundIcon, TypeIcon } from "lucide-react";
 import { useState, type ComponentProps, type ComponentType, type ReactNode } from "react";
 
-import { isSecretsFeatureEnabled } from "../../env";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { OnePasswordIcon } from "../Icons";
 import { serverEnvironment } from "../../state/server";
@@ -38,7 +37,7 @@ export function useSecretSources(environmentId: EnvironmentId): ReadonlyArray<Se
     serverEnvironment.configValueAtom(environmentId),
     (config) => config?.secretReferences === true,
   );
-  if (!isSecretsFeatureEnabled || !supported) return NO_SECRET_SOURCES;
+  if (!supported) return NO_SECRET_SOURCES;
   return (Object.entries(providers) as Array<[SecretProviderId, SecretProviderConfig]>)
     .filter(([, config]) => classifySecretProvider(config).kind !== "unsupported")
     .map(([id, config]) => ({ id, kind: config.kind, label: config.label }));

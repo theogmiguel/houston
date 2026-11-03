@@ -20,8 +20,8 @@
         : "linux");
   var branding = window.__HOUSTON_V2_BRANDING__ || {
     baseName: "Houston",
-    stageLabel: "Dev",
-    displayName: "Houston Dev",
+    stageLabel: "Latest",
+    displayName: "Houston",
   };
   var locale = window.__HOUSTON_V2_LOCALE__ || null;
   var invoke = function (command, args) {
@@ -346,10 +346,10 @@
       return applyDesktopSettings(settings);
     },
     getConnectionCatalog: function () {
-      return Promise.resolve(storageGet("houston:v2:connection-catalog"));
+      return invoke("v2_get_connection_catalog");
     },
     setConnectionCatalog: function (catalog) {
-      return Promise.resolve(storageSet("houston:v2:connection-catalog", catalog));
+      return invoke("v2_set_connection_catalog", { catalog: catalog });
     },
     discoverSshHosts: function () {
       return invoke("v2_ssh_discover_hosts");
@@ -751,13 +751,23 @@
       },
     },
     webLinks: {
-      setReady: noop,
-      onOpen: noUnsubscribe,
+      setReady: function (ready) {
+        return invoke("v2_web_links_set_ready", { ready: ready === true });
+      },
+      onOpen: function (listener) {
+        return listen("v2-web-link-open", listener);
+      },
     },
     appActivation: {
-      setReady: noop,
-      complete: noop,
-      onRequest: noUnsubscribe,
+      setReady: function (ready) {
+        return invoke("v2_app_activation_set_ready", { ready: ready === true });
+      },
+      complete: function (response) {
+        return invoke("v2_app_activation_complete", { response: response });
+      },
+      onRequest: function (listener) {
+        return listen("v2-app-activation-request", listener);
+      },
     },
     preview: preview,
   };
