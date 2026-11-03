@@ -96,6 +96,8 @@ interface AnnotatableCodeViewProps {
     fileKey: string,
     collapsed: boolean,
   ) => ReactNode;
+  /** Told each time a comment from this view lands in the composer draft. */
+  onCommentAdded?: (commentId: string) => void;
   onRevealSearchMatch: (fileKey: string) => void;
 }
 
@@ -118,6 +120,7 @@ export function AnnotatableCodeView({
   renderHeaderMetadata,
   renderHeaderFilenameSuffix,
   renderHeaderPrefix,
+  onCommentAdded,
   onRevealSearchMatch,
 }: AnnotatableCodeViewProps) {
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
@@ -215,7 +218,10 @@ export function AnnotatableCodeView({
       range: entry.range,
       text,
     });
-    if (comment) addReviewComment(composerDraftTarget, comment);
+    if (comment) {
+      addReviewComment(composerDraftTarget, comment);
+      onCommentAdded?.(comment.id);
+    }
     setSelectedLines(null);
     setDraft(null);
     setDraftText("");
