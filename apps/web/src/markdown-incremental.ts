@@ -30,6 +30,29 @@ function shiftPositions(node: Root | RootContent, offset: number, lines: number)
   }
 }
 
+// Parser output is plain data, so a recursive copy suffices and skips structuredClone's
+// serialisation on every streamed render.
+function cloneParsed<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(cloneParsed) as T;
+  if (value === null || typeof value !== "object") return value;
+  const copy: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(value)) copy[key] = cloneParsed(field);
+  return copy as T;
+}
+
+const FENCE_OPENING = /^ {0,3}(`{3,}|~{3,})[^\n]*\n/;
+const BLANK_LINE_SEPARATOR = /^\n[ \t]*\n/;
+const TRAILING_WHITESPACE = /^[ \t]*$/;
+
+// Same test as /^ {0,3}F{n,}[ \t]*$/ for an opening fence of n characters F.
+function closesFence(line: string, opening: string): boolean {
+  let start = 0;
+  while (start < 3 && line[start] === " ") start++;
+  let end = start;
+  while (line[end] === opening[0]) end++;
+  return end - start >= opening.length && TRAILING_WHITESPACE.test(line.slice(end));
+}
+
 // Cache completed fences followed by blank lines; document-wide definitions require a full parse.
 function createIncrementalMarkdownParser(parse: Parser): Parser {
   let cached: ParsedPrefix | undefined;
@@ -46,7 +69,7 @@ function createIncrementalMarkdownParser(parse: Parser): Parser {
       shiftPositions(root, prefix.offset, prefix.line - 1);
       if (root.position) root.position.start = { line: 1, column: 1, offset: 0 };
       // Remark mutates nodes; give each render a clone of the pristine cache.
-      root.children.unshift(...structuredClone(prefix.children));
+      root.children.unshift(...cloneParsed(prefix.children));
     } else {
       root = parse(source, file);
       if (hasDefinitions(root)) return root;
@@ -60,18 +83,17 @@ function createIncrementalMarkdownParser(parse: Parser): Parser {
       if (start === undefined || end === undefined) continue;
       if (prefix && end < prefix.offset) break;
       const value = source.slice(start, end);
-      const opening = /^ {0,3}(`{3,}|~{3,})[^\n]*\n/.exec(value)?.[1];
+      const opening = FENCE_OPENING.exec(value)?.[1];
       if (!opening) continue;
       const lastLine = value.slice(value.lastIndexOf("\n") + 1);
-      const closing = new RegExp(`^ {0,3}${opening[0]}{${opening.length},}[ \\t]*$`);
-      const separator = /^\n[ \t]*\n/.exec(source.slice(end))?.[0];
-      if (!closing.test(lastLine) || !separator) continue;
+      const separator = BLANK_LINE_SEPARATOR.exec(source.slice(end))?.[0];
+      if (!closesFence(lastLine, opening) || !separator) continue;
       const offset = end + separator.length;
       cached = {
         source: source.slice(0, offset),
         offset,
         line: node.position!.end.line + 2,
-        children: structuredClone(root.children.slice(0, index + 1)),
+        children: cloneParsed(root.children.slice(0, index + 1)),
       };
       break;
     }

@@ -104,9 +104,11 @@ export function startTraySync(registry: AtomRegistry.AtomRegistry, router: AnyRo
   let timer: number | null = null;
   let pending: DesktopTrayPayload | null = null;
   let lastSentAt = Number.NEGATIVE_INFINITY;
+  let lastSentKey: string | null = null;
 
   const send = (payload: DesktopTrayPayload) => {
     lastSentAt = Date.now();
+    lastSentKey = JSON.stringify(payload);
     void bridge.traySync?.(payload);
   };
 
@@ -125,12 +127,16 @@ export function startTraySync(registry: AtomRegistry.AtomRegistry, router: AnyRo
     }
     const presentations = registry.get(environmentPresentations.presentationsAtom);
     const payload = buildTrayPayload(
-      registry.get(environmentThreadShells.threadShellsAtom),
+      registry.get(environmentThreadShells.quietThreadShellsAtom),
       [...presentations.values()].map((presentation) => presentation.connection.phase),
       projectTitles,
       providerDrivers,
       delegatedUnderParent,
     );
+    if (JSON.stringify(payload) === lastSentKey) {
+      pending = null;
+      return;
+    }
     const elapsed = Date.now() - lastSentAt;
     if (elapsed >= TRAY_SYNC_MIN_INTERVAL_MS && timer === null) {
       send(payload);
@@ -150,7 +156,8 @@ export function startTraySync(registry: AtomRegistry.AtomRegistry, router: AnyRo
   };
 
   const unsubscribers = [
-    registry.subscribe(environmentThreadShells.threadShellsAtom, publish, { immediate: true }),
+    // Quiet shells: streaming ticks change no tray field.
+    registry.subscribe(environmentThreadShells.quietThreadShellsAtom, publish, { immediate: true }),
     registry.subscribe(environmentProjects.projectsAtom, publish),
     registry.subscribe(environmentPresentations.presentationsAtom, publish),
     registry.subscribe(environmentThreadShells.delegatedUnderParentAtom, publish),
