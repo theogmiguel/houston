@@ -931,10 +931,12 @@ impl V2Host {
         }
     }
 
-    /// Stop the tracked server and start a fresh one with the current settings.
+    /// Stop the tracked server and start a fresh one with the current settings. The
+    /// start lock spans both, so a start in flight finishes before its server is stopped.
     pub async fn restart(&self) -> Result<RunningServer, String> {
+        let _start = self.start_lock.lock().await;
         self.stop_for_restart().await?;
-        ensure_running(self).await
+        ensure_running_locked(self).await
     }
 
     /// The server a restart must stop first. A hung server the monitor forgot is
@@ -1634,11 +1636,19 @@ pub async fn v2_server_restart(
     Ok(host.status())
 }
 
-/// A manual restart stops the tracked server and starts a fresh one, serialized
-/// with the monitor's own starts.
+/// A manual restart stops the tracked server and starts a fresh one. It claims the
+/// start first, so it never stops a server the monitor is still starting, and its
+/// failure is the banner's error.
 async fn start_server_restarting(host: &V2Host) -> Result<RunningServer, String> {
-    host.stop_for_restart().await?;
-    start_server(host).await
+    if host.starting.swap(true, Ordering::SeqCst) {
+        return Err("a v2 server start is already in progress".to_string());
+    }
+    let result = host.restart().await;
+    host.starting.store(false, Ordering::SeqCst);
+    if let Err(error) = &result {
+        host.record_error(error.clone());
+    }
+    result
 }
 
 #[tauri::command]
@@ -2257,6 +2267,7 @@ mod tests {
     struct FakeProcesses {
         identity: Option<ProcessIdentity>,
         real_identity: bool,
+        refuse_signals: bool,
         signals: Signals,
     }
 
@@ -2274,6 +2285,11 @@ mod tests {
         }
 
         fn signal(&self, pid: u32, signal: Signal) -> Result<SignalOutcome, SignalError> {
+            if self.refuse_signals {
+                return Err(SignalError::Os(std::io::Error::from(
+                    std::io::ErrorKind::PermissionDenied,
+                )));
+            }
             self.signals.lock().unwrap().push((pid, signal));
             Ok(SignalOutcome::Delivered)
         }
@@ -2397,6 +2413,47 @@ mod tests {
         host.stop_for_restart().await.expect("the server stops");
         assert_eq!(*signals.lock().unwrap(), [(RECORDED_PID, Signal::Term)]);
         assert!(!runtime_path(dir.path()).exists());
+    }
+
+    #[tokio::test]
+    async fn a_failed_retry_stop_reaches_the_banner() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        write_record(dir.path(), RECORDED_PID, Some(STARTED_AT));
+        let (host, _) = host_with_processes(
+            dir.path(),
+            FakeProcesses {
+                identity: Some(server_identity(-1)),
+                refuse_signals: true,
+                ..FakeProcesses::default()
+            },
+        );
+        let error = start_server_restarting(&host)
+            .await
+            .expect_err("the refused signal fails the retry");
+        let status = host.status();
+        assert_eq!(status["state"], "error", "{status}");
+        assert_eq!(status["error"], error.as_str(), "{status}");
+        assert!(error.contains(&RECORDED_PID.to_string()), "{error}");
+        assert!(
+            runtime_path(dir.path()).exists(),
+            "the record names a live server"
+        );
+        assert!(!host.is_starting());
+    }
+
+    #[tokio::test]
+    async fn a_retry_during_a_start_signals_nothing() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let (host, signals) = host_with_processes(dir.path(), FakeProcesses::default());
+        host.set_running(running_server(42));
+        host.starting.store(true, Ordering::SeqCst);
+        let error = start_server_restarting(&host)
+            .await
+            .expect_err("a start is in progress");
+        assert!(error.contains("already in progress"), "{error}");
+        assert_eq!(*signals.lock().unwrap(), []);
+        assert!(host.is_starting(), "the in-flight start keeps its claim");
+        assert_eq!(host.status()["pid"], 42);
     }
 
     #[test]
