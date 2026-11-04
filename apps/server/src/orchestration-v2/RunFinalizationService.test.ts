@@ -8,6 +8,7 @@ import {
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
@@ -68,6 +69,7 @@ it.effect("completes finalization when the post-checkpoint workspace refresh fai
 const makeBackgroundRefreshLayer = (input: {
   readonly events: Queue.Queue<string>;
   readonly pullRequestRefresh: Effect.Effect<void>;
+  readonly activeRunId?: string;
 }) => {
   const threadId = ThreadId.make("thread-background-refresh");
   const scopeId = CheckpointScopeId.make("scope-background-refresh");
@@ -81,7 +83,11 @@ const makeBackgroundRefreshLayer = (input: {
         checkpoints: [],
       }),
     getThreadShell: () =>
-      Effect.succeed({ id: threadId, branch: "feature", activeRunId: null } as never),
+      Effect.succeed({
+        id: threadId,
+        branch: "feature",
+        activeRunId: input.activeRunId === undefined ? null : RunId.make(input.activeRunId),
+      } as never),
   });
   const observer = RunFinalization.layerObserver.pipe(
     Layer.provide(
@@ -182,6 +188,28 @@ it.effect("coalesces refreshes requested while one is still running", () =>
   }),
 );
 
+it.live("refreshes a run's pull request after the next queued run has started", () =>
+  Effect.gen(function* () {
+    const events = yield* Queue.unbounded<string>();
+    // The next turn starts while the refresh is still queued, so run-2 is already active.
+    const { layer, finalizeInput } = makeBackgroundRefreshLayer({
+      events,
+      pullRequestRefresh: Effect.void,
+      activeRunId: "run-2",
+    });
+    yield* Effect.gen(function* () {
+      const service = yield* RunFinalization.RunFinalizationService;
+      yield* service.finalize(finalizeInput("run-1"));
+      const seen = yield* takeEvents(events, 3).pipe(Effect.timeoutOption("2 seconds"));
+      assert.deepEqual(Option.getOrUndefined(seen), [
+        "checkpoint",
+        "local status",
+        "pull request status",
+      ]);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
 it.effect.each(
   (
     [
@@ -207,11 +235,11 @@ it.effect.each(
         expected: [],
       },
       {
-        label: "does not refresh during a newer active run",
+        label: "refreshes the completed run's PR after a newer run starts",
         branch: "feature",
         checkedOut: "feature",
         activeRun: "newer-run",
-        expected: [],
+        expected: ["/repo"],
       },
     ] as const
   ).map((scenario) => [scenario.label, scenario] as const),

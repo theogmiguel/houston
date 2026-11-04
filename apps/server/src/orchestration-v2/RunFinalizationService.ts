@@ -146,15 +146,15 @@ export const layerObserver = Layer.effect(
     return {
       refreshAfterTurn: pullRequests.refreshAfterTurn,
       refresh: Effect.fn("RunFinalizationService.refresh")(
-        function* ({ cwd, threadId, runId }) {
+        function* ({ cwd, threadId }) {
           const [, local] = yield* Effect.all(
             [workspaceEntries.refresh(cwd), vcsStatus.refreshLocalStatus(cwd)],
             { concurrency: "unbounded" },
           );
           if (local.refName === null || local.isDefaultRef) return;
           const thread = yield* projections.getThreadShell(threadId);
+          // Houston: the refresh is for the finished run it carries, even if the next turn started.
           if (!thread || thread.branch !== local.refName) return;
-          if (thread.activeRunId !== null && thread.activeRunId !== runId) return;
           yield* vcsStatus.refreshPullRequestStatus(cwd).pipe(
             Effect.catch((error) =>
               Effect.logWarning("failed to refresh pull request status after run completion", {
