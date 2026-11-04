@@ -179,13 +179,13 @@ describe("DevicePanel thread switches", () => {
 
     await act(async () => first.settle(failed));
 
-    expect(startButton()).toBeNull();
+    await vi.waitFor(() => expect(startButton()).toBeNull());
     expect(errors()).toHaveLength(0);
     expect(mocks.openDevice).not.toHaveBeenCalled();
 
     await act(async () => second.settle(opened));
 
-    expect(startButton()).toBeNull();
+    await vi.waitFor(() => expect(startButton()).toBeNull());
     expect(mocks.openDevice.mock.calls).toEqual([[threadB, phoneTarget]]);
 
     await act(async () => latest.settle(opened));

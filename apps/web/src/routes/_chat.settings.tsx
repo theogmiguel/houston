@@ -3,6 +3,7 @@ import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-
 import { useState, type ReactNode } from "react";
 import { RotateCcwIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
+import { Swap } from "../components/ui/swap";
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 
 import { AppRouteModal } from "../components/AppRouteModal";
@@ -136,11 +137,15 @@ function SettingsContentLayout() {
               )}
             </div>
           </header>
-          <div key={`${contentScopeKey}:${restoreSignal}`} className="min-h-0 flex flex-1 flex-col">
+          <Swap
+            swapKey={`${location.pathname}:${contentScopeKey}:${restoreSignal}`}
+            className="min-h-0 flex flex-1 flex-col"
+            contentClassName="min-h-0 flex flex-1 flex-col"
+          >
             <SettingsScopeBoundary pathname={location.pathname}>
               <Outlet />
             </SettingsScopeBoundary>
-          </div>
+          </Swap>
         </div>
       </div>
     </AppRouteModal>

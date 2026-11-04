@@ -1,5 +1,6 @@
 import { ChevronDownIcon, PaperclipIcon } from "lucide-react";
 
+import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 
 export function WorkspaceFileDropOverlay() {
@@ -26,18 +27,26 @@ export function WorkspaceFileDropOverlay() {
 export function ScrollToEndButton(props: {
   readonly bottom: number;
   readonly summary: string | null;
+  readonly open: boolean;
   readonly onScrollToEnd: () => void;
 }) {
   return (
     <div
-      className="chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-center py-1.5"
+      aria-hidden={!props.open || undefined}
+      inert={!props.open}
+      className={cn(
+        "chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-center py-1.5 transition-[opacity,translate]",
+        props.open
+          ? "translate-y-0 opacity-100 duration-(--motion-toast-in) ease-standard"
+          : "-translate-y-1 opacity-0 duration-(--motion-toast-out) ease-exit",
+      )}
       style={{ bottom: props.bottom }}
     >
       <Button
         data-scroll-to-end="true"
         onPointerDown={(event) => event.preventDefault()}
         onClick={props.onScrollToEnd}
-        className="pointer-events-auto"
+        className={props.open ? "pointer-events-auto" : undefined}
         size="xs"
         variant="glass"
       >

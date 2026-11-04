@@ -89,6 +89,7 @@ import { isTerminalFocused } from "~/lib/terminalFocus";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "../chat/PanelLayoutControls";
 import { Button } from "../ui/button";
 import { SidebarInset } from "../ui/sidebar";
+import { Swap } from "../ui/swap";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { useOpenPanelPullRequestUrl } from "~/hooks/useOpenPanelPullRequestUrl";
@@ -1615,72 +1616,77 @@ export function PullRequestsPage() {
             deviceAvailable={false}
             pullRequestStatusSeeds={listedPullRequestTabStatuses}
           >
-            <PullRequestDetailPanel
-              getShortcutContext={getShortcutContext}
-              shortcutsEnabled={activePullRequestSurface?.id === renderedPullRequestSurface.id}
-              key={renderedPullRequestSurface.id}
-              environmentId={panelEnvironmentId}
-              onGuideShown={onGuideShown}
-              onSelectPullRequest={(reference) => {
-                if (rightPanelRef === null) return;
-                useRightPanelStore.getState().openPullRequest(rightPanelRef, {
-                  projectId: reference.projectId,
-                  repository: reference.repository,
-                  number: reference.number,
-                  ...(reference.host ? { host: reference.host } : {}),
-                  environmentId: panelEnvironmentId,
-                });
-                updateSearch({
-                  repository: reference.repository,
-                  number: reference.number,
-                  selectedHost: reference.host,
-                  selectedProjectId: reference.projectId,
-                  selectedEnvironmentId: panelEnvironmentId,
-                });
-              }}
-              reference={{
-                projectId: renderedPullRequestSurface.projectId as ProjectId,
-                repository: renderedPullRequestSurface.repository,
-                number: renderedPullRequestSurface.number,
-                ...(renderedPullRequestSurface.host
-                  ? { host: renderedPullRequestSurface.host }
-                  : {}),
-              }}
-              listEntry={
-                listedPullRequestsBySurface.get(
-                  pullRequestListEntryId(renderedPullRequestSurface),
-                ) ?? null
-              }
-              refreshToken={detailRefreshToken}
-              tabOnPage
-              onActed={(action, phase = "done") => {
-                // From every row held, not the ones on screen: a pull request closed from an open
-                // list has left the screen, and reopening it has to find it anyway.
-                const acted = heldPullRequestsBySurface.get(
-                  pullRequestListEntryId(renderedPullRequestSurface),
-                );
-                const stateOnly =
-                  action !== undefined &&
-                  acted !== undefined &&
-                  pullRequestOverrideAfterAction(acted, action, new Date(), 0) !== null;
-                if (stateOnly) {
-                  const key = pullRequestEntryKey(acted);
-                  if (phase === "sent" && action !== "merge") {
-                    detailOverrideTokens.current.set(key, overrideEntry(acted, action));
-                  }
-                  if (phase === "failed" && action !== "merge") {
-                    revertOverride(key, detailOverrideTokens.current.get(key) ?? null);
-                  }
-                  if (phase !== "sent") detailOverrideTokens.current.delete(key);
-                  if (phase === "done" && action === "merge") {
-                    overrideEntry(acted, action);
-                    refreshListAndStats(undefined, panelEnvironmentId);
-                  }
-                  return;
+            <Swap
+              swapKey={renderedPullRequestSurface.id}
+              className="flex min-h-0 flex-1 flex-col"
+              contentClassName="flex min-h-0 flex-1 flex-col"
+            >
+              <PullRequestDetailPanel
+                getShortcutContext={getShortcutContext}
+                shortcutsEnabled={activePullRequestSurface?.id === renderedPullRequestSurface.id}
+                environmentId={panelEnvironmentId}
+                onGuideShown={onGuideShown}
+                onSelectPullRequest={(reference) => {
+                  if (rightPanelRef === null) return;
+                  useRightPanelStore.getState().openPullRequest(rightPanelRef, {
+                    projectId: reference.projectId,
+                    repository: reference.repository,
+                    number: reference.number,
+                    ...(reference.host ? { host: reference.host } : {}),
+                    environmentId: panelEnvironmentId,
+                  });
+                  updateSearch({
+                    repository: reference.repository,
+                    number: reference.number,
+                    selectedHost: reference.host,
+                    selectedProjectId: reference.projectId,
+                    selectedEnvironmentId: panelEnvironmentId,
+                  });
+                }}
+                reference={{
+                  projectId: renderedPullRequestSurface.projectId as ProjectId,
+                  repository: renderedPullRequestSurface.repository,
+                  number: renderedPullRequestSurface.number,
+                  ...(renderedPullRequestSurface.host
+                    ? { host: renderedPullRequestSurface.host }
+                    : {}),
+                }}
+                listEntry={
+                  listedPullRequestsBySurface.get(
+                    pullRequestListEntryId(renderedPullRequestSurface),
+                  ) ?? null
                 }
-                if (phase === "done") refreshListAndStats(undefined, panelEnvironmentId);
-              }}
-            />
+                refreshToken={detailRefreshToken}
+                tabOnPage
+                onActed={(action, phase = "done") => {
+                  // From every row held, not the ones on screen: a pull request closed from an open
+                  // list has left the screen, and reopening it has to find it anyway.
+                  const acted = heldPullRequestsBySurface.get(
+                    pullRequestListEntryId(renderedPullRequestSurface),
+                  );
+                  const stateOnly =
+                    action !== undefined &&
+                    acted !== undefined &&
+                    pullRequestOverrideAfterAction(acted, action, new Date(), 0) !== null;
+                  if (stateOnly) {
+                    const key = pullRequestEntryKey(acted);
+                    if (phase === "sent" && action !== "merge") {
+                      detailOverrideTokens.current.set(key, overrideEntry(acted, action));
+                    }
+                    if (phase === "failed" && action !== "merge") {
+                      revertOverride(key, detailOverrideTokens.current.get(key) ?? null);
+                    }
+                    if (phase !== "sent") detailOverrideTokens.current.delete(key);
+                    if (phase === "done" && action === "merge") {
+                      overrideEntry(acted, action);
+                      refreshListAndStats(undefined, panelEnvironmentId);
+                    }
+                    return;
+                  }
+                  if (phase === "done") refreshListAndStats(undefined, panelEnvironmentId);
+                }}
+              />
+            </Swap>
           </RightPanelTabs>
         ) : null}
       </div>
