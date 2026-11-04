@@ -5,7 +5,7 @@ import type {
   OrchestrationV2ThreadShell,
   ThreadId,
 } from "@houston-app/contracts";
-import type * as DateTime from "effect/DateTime";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -135,8 +135,9 @@ function readShared<E>(
   );
 }
 
-// One subscriber's shell reads. An inert batch keeps the last shell with the batch's `updatedAt`;
-// other reads are shared by subscribers reading that thread at the same or an earlier sequence.
+// One subscriber's shell reads. An inert batch keeps the last shell with the later of its `updatedAt`
+// and the batch's, since a lagging subscriber's last read may already include later events. Other
+// reads are shared by subscribers reading that thread at the same or an earlier sequence.
 export function makeSubscriberShellReads<E>(
   owner: object,
   getThreadShell: (threadId: ThreadId) => Effect.Effect<Shell, E>,
@@ -165,7 +166,7 @@ export function makeSubscriberShellReads<E>(
         reuse && batch.occurredAt !== undefined
           ? prior.shell === null
             ? null
-            : { ...prior.shell, updatedAt: batch.occurredAt }
+            : { ...prior.shell, updatedAt: DateTime.max(prior.shell.updatedAt, batch.occurredAt) }
           : yield* readShared(shared, getThreadShell, threadId, sequence);
       const items =
         prior === undefined || prior.items.size >= KNOWN_ITEMS_LIMIT

@@ -7,6 +7,7 @@ import {
   ThreadId,
 } from "@houston-app/contracts";
 import * as Deferred from "effect/Deferred";
+import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -45,11 +46,24 @@ interface ShellRun {
 
 const SENTINEL_PROJECT = "project:shell-reads-sentinel";
 
+interface ShellRunOptions {
+  /** A lagging subscriber: every event is applied before the first batch reaches it. */
+  readonly applyFirst?: boolean;
+  readonly cadence?: Duration.Input;
+}
+
 // Applies each event to a fresh projection and delivers it to every subscriber as its own 50 ms
 // batch, the cadence of a streaming turn. A project removal after each event marks the batch end.
-const runShellSubscribers = (events: ReadonlyArray<OrchestrationV2DomainEvent>, count: number) =>
+const runShellSubscribers = (
+  events: ReadonlyArray<OrchestrationV2DomainEvent>,
+  count: number,
+  options: ShellRunOptions = {},
+) =>
   Effect.gen(function* () {
     const projections = yield* ProjectionStore.ProjectionStoreV2;
+    if (options.applyFirst) {
+      for (const event of events) yield* projections.apply(event);
+    }
     let reads = 0;
     const live = yield* Effect.forEach(Array.from({ length: count }), () =>
       Queue.unbounded<unknown>(),
@@ -116,7 +130,7 @@ const runShellSubscribers = (events: ReadonlyArray<OrchestrationV2DomainEvent>, 
     const expected: Array<string> = [];
     let sequence = 0;
     for (const event of events) {
-      yield* projections.apply(event);
+      if (!options.applyFirst) yield* projections.apply(event);
       const stored = { sequence: ++sequence, commandId: null, event };
       const sentinel = {
         aggregateKind: "project",
@@ -125,7 +139,7 @@ const runShellSubscribers = (events: ReadonlyArray<OrchestrationV2DomainEvent>, 
         sequence: ++sequence,
       };
       for (const queue of live) yield* Queue.offerAll(queue, [stored, sentinel]);
-      yield* TestClock.adjust("50 millis");
+      yield* TestClock.adjust(options.cadence ?? "50 millis");
       for (const [index, output] of outputs.entries()) {
         for (;;) {
           const item = yield* Queue.take(output);
@@ -191,6 +205,18 @@ describe("shell stream reads over a replayed Claude turn", () => {
       yield* Fiber.interrupt(first);
       assert.isNull(yield* Fiber.join(second));
       assert.equal(reads, 2);
+    }),
+  );
+
+  it.effect("a lagging subscriber never sends a thread's updatedAt backwards", () =>
+    Effect.gen(function* () {
+      // The first read already sees the final state; the batches behind it carry older times.
+      const run = yield* runShellSubscribers(yield* replayedTurnEvents, 1, {
+        applyFirst: true,
+        cadence: "1 second",
+      });
+      assert.isAbove(run.expected.length, 1);
+      assert.deepEqual(run.received, [run.expected]);
     }),
   );
 
