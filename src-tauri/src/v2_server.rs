@@ -17,6 +17,8 @@ use serde_json::{json, Value};
 use sha2::Sha256;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::sys::pid::{Signal, SignalError, SignalOutcome};
+
 /// The server's base directory below the channel directory: dev is
 /// `~/.houston-dev/v2`, release would be `~/.houston/v2`.
 pub const BASE_DIR_NAME: &str = "v2";
@@ -842,6 +844,7 @@ pub struct V2Host {
     start_lock: tokio::sync::Mutex<()>,
     starting: AtomicBool,
     secret_source: Box<SecretSource>,
+    processes: Box<dyn ServerProcesses>,
     /// The keychain secret once read: it is written only when first created, so
     /// it stays valid for the process and later reads cost no keychain I/O.
     secret: Mutex<Option<String>>,
@@ -877,6 +880,7 @@ impl V2Host {
             start_lock: tokio::sync::Mutex::new(()),
             starting: AtomicBool::new(false),
             secret_source,
+            processes: Box::new(LiveProcesses),
             secret: Mutex::new(None),
             fallback_secret: Mutex::new(None),
         }
@@ -946,7 +950,7 @@ impl V2Host {
     /// The runtime record is removed only once its server is confirmed stopped.
     async fn stop_for_restart(&self) -> Result<(), String> {
         if let Some(pid) = self.restart_target() {
-            stop_server(pid).await?;
+            stop_server(&*self.processes, pid).await?;
         }
         let _ = fs::remove_file(runtime_path(&self.base_dir));
         if let Ok(mut state) = self.state.lock() {
@@ -1199,32 +1203,50 @@ fn process_exited(pid: i32) -> bool {
     false
 }
 
+/// The process queries and signals a server stop needs. Tests substitute a fake,
+/// so no test ever signals a real process.
+trait ServerProcesses: Send + Sync {
+    fn exited(&self, pid: i32) -> bool;
+    fn signal(&self, pid: u32, signal: Signal) -> Result<SignalOutcome, SignalError>;
+}
+
+struct LiveProcesses;
+
+impl ServerProcesses for LiveProcesses {
+    fn exited(&self, pid: i32) -> bool {
+        process_exited(pid)
+    }
+
+    fn signal(&self, pid: u32, signal: Signal) -> Result<SignalOutcome, SignalError> {
+        crate::sys::pid::signal_process_checked(pid, signal)
+    }
+}
+
 /// Stop a server this host started or attached to. SIGTERM first so the server
 /// can close its database; a process that ignores it is killed after five
 /// seconds. Only a recorded, positive pid ever reaches the signal helper.
-async fn stop_server(pid: i32) -> Result<(), String> {
-    use crate::sys::pid::{signal_process_checked, Signal, SignalOutcome};
-    if process_exited(pid) {
+async fn stop_server(processes: &dyn ServerProcesses, pid: i32) -> Result<(), String> {
+    if processes.exited(pid) {
         return Ok(());
     }
     let pid = pid as u32;
-    match signal_process_checked(pid, Signal::Term) {
+    match processes.signal(pid, Signal::Term) {
         Ok(SignalOutcome::Delivered | SignalOutcome::NoSuchProcess) => {}
         Err(error) => return Err(format!("stopping the v2 server (pid {pid}): {error}")),
     }
     for _ in 0..25 {
-        if process_exited(pid as i32) {
+        if processes.exited(pid as i32) {
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     eprintln!("houston-tauri: v2 server (pid {pid}) ignored SIGTERM for 5 s; sending a hard kill");
-    match signal_process_checked(pid, Signal::Kill) {
+    match processes.signal(pid, Signal::Kill) {
         Ok(SignalOutcome::Delivered | SignalOutcome::NoSuchProcess) => {}
         Err(error) => return Err(format!("killing the v2 server (pid {pid}): {error}")),
     }
     for _ in 0..25 {
-        if process_exited(pid as i32) {
+        if processes.exited(pid as i32) {
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -1290,7 +1312,7 @@ async fn ensure_running_locked(host: &V2Host) -> Result<RunningServer, String> {
                     record.server_version.as_deref().unwrap_or("<unknown>"),
                     current_build_version()
                 );
-                stop_server(pid).await?;
+                stop_server(&*host.processes, pid).await?;
                 let _ = fs::remove_file(runtime_path(&host.base_dir));
             }
             Decision::Spawn => {}
@@ -1805,7 +1827,9 @@ mod tests {
             .spawn()
             .expect("spawn sleep");
         let pid = child.id() as i32;
-        stop_server(pid).await.expect("SIGTERM stops the child");
+        stop_server(&LiveProcesses, pid)
+            .await
+            .expect("SIGTERM stops the child");
         assert!(process_exited(pid), "an exited child may still be a zombie");
         let _ = child.wait();
     }
