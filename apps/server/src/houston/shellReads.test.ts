@@ -11,6 +11,7 @@ import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
@@ -217,6 +218,40 @@ describe("shell stream reads over a replayed Claude turn", () => {
       });
       assert.isAbove(run.expected.length, 1);
       assert.deepEqual(run.received, [run.expected]);
+    }),
+  );
+
+  it.effect("a subscriber retrying a shared read can be interrupted", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("thread:shared-read-retry");
+      const firstGate = yield* Deferred.make<void>();
+      const retryGate = yield* Deferred.make<void>();
+      let reads = 0;
+      const read = () =>
+        Effect.suspend(() => {
+          reads += 1;
+          return Deferred.await(reads === 1 ? firstGate : retryGate).pipe(Effect.as(null));
+        });
+      const owner = {};
+      const first = yield* makeSubscriberShellReads(owner, read)(threadId, 1, undefined).pipe(
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+      const second = yield* makeSubscriberShellReads(owner, read)(threadId, 1, undefined).pipe(
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+      yield* Fiber.interrupt(first);
+      yield* Effect.yieldNow;
+      assert.equal(reads, 2);
+      const closing = yield* Fiber.interrupt(second).pipe(
+        Effect.timeoutOption("1 second"),
+        Effect.forkChild,
+      );
+      yield* TestClock.adjust("1 second");
+      const closed = yield* Fiber.join(closing);
+      yield* Deferred.succeed(retryGate, undefined);
+      assert.isTrue(Option.isSome(closed), "closing the window waited for the retried read");
     }),
   );
 

@@ -115,7 +115,7 @@ function readShared<E>(
           Effect.flatMap((exit) =>
             Exit.isSuccess(exit)
               ? Effect.succeed(exit.value)
-              : readShared(reads, getThreadShell, threadId, sequence),
+              : restore(readShared(reads, getThreadShell, threadId, sequence)),
           ),
         );
       }
