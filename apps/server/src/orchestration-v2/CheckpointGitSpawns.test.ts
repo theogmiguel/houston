@@ -459,25 +459,27 @@ it.effect("removes a prepared baseline's scratch index when its turn never publi
           ),
         );
       yield* Effect.scoped(
-        checkpoints.prepareBaseline({
-          scope: {
-            id: CheckpointScopeId.make("checkpoint-scope:abandoned"),
-            threadId,
-            runId,
-            nodeId: rootNodeId,
-            parentScopeId: null,
-            providerThreadId,
-            kind: "root_run",
-            ordinalWithinParent: 0,
-            advancesAppRunCount: true,
-            cwd,
-            createdAt: now,
-          },
-          ordinalWithinScope: 0,
-        }).pipe(
-          Effect.andThen(scratchIndexes),
-          Effect.map((kept) => assert.lengthOf(kept, 1, "publishing checks the kept index")),
-        ),
+        checkpoints
+          .prepareBaseline({
+            scope: {
+              id: CheckpointScopeId.make("checkpoint-scope:abandoned"),
+              threadId,
+              runId,
+              nodeId: rootNodeId,
+              parentScopeId: null,
+              providerThreadId,
+              kind: "root_run",
+              ordinalWithinParent: 0,
+              advancesAppRunCount: true,
+              cwd,
+              createdAt: now,
+            },
+            ordinalWithinScope: 0,
+          })
+          .pipe(
+            Effect.andThen(scratchIndexes),
+            Effect.map((kept) => assert.lengthOf(kept, 1, "publishing checks the kept index")),
+          ),
       );
       assert.deepEqual(yield* scratchIndexes, []);
     }).pipe(Effect.provide(makeLayer(spawns)));
