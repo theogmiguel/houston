@@ -624,11 +624,42 @@ export const layer: Layer.Layer<
         }
       }
       const { worktreePath, branch } = projection.thread;
+      const selectInheritedBackgroundItems = (
+        current: ProjectionStore.ProjectionRuntimeRecoveryState,
+      ): ReturnType<typeof RunExecutionService.selectInheritedBackgroundTurnItems> =>
+        RunExecutionService.selectInheritedBackgroundTurnItems({
+          threadId: current.thread.id,
+          currentProviderThreadId: providerThread.id,
+          currentRunOrdinal: run.ordinal,
+          runs: current.runs,
+          turnItems: current.turnItems,
+        });
+      // These reads are independent; their outcomes, defects included, are still handled in order.
+      const [worktreeExists, inheritedBackgroundRead, policyRead] = yield* Effect.all(
+        [
+          worktreePath !== null && branch !== null
+            ? fileSystem.exists(worktreePath).pipe(Effect.orElseSucceed(() => true))
+            : Effect.succeed(true),
+          projectionStore
+            .getRuntimeRecoveryProjection(projection.thread.id)
+            .pipe(Effect.map(selectInheritedBackgroundItems), Effect.exit),
+          // A side chat shares its parent's worktree; the turn that gets its context asks before acting.
+          runtimePolicy
+            .resolve({
+              thread:
+                projection.thread.lineage.sideChat === true &&
+                (sideChatHandoff !== undefined ||
+                  !projection.runs.some((previous) => previous.ordinal < run.ordinal))
+                  ? { ...projection.thread, runtimeMode: "approval-required" }
+                  : projection.thread,
+              modelSelection: run.modelSelection,
+            })
+            .pipe(Effect.result, Effect.exit),
+        ],
+        { concurrency: 3 },
+      );
       if (worktreePath !== null && branch !== null) {
-        const exists = yield* fileSystem
-          .exists(worktreePath)
-          .pipe(Effect.orElseSucceed(() => true));
-        if (!exists && (yield* isManagedWorktreePath(worktreePath))) {
+        if (!worktreeExists && (yield* isManagedWorktreePath(worktreePath))) {
           const project = yield* projects.getById(projection.thread.projectId).pipe(
             Effect.map(Option.getOrUndefined),
             Effect.orElseSucceed(() => undefined),
@@ -665,19 +696,7 @@ export const layer: Layer.Layer<
           }
         }
       }
-      const selectInheritedBackgroundItems = (
-        current: ProjectionStore.ProjectionRuntimeRecoveryState,
-      ): ReturnType<typeof RunExecutionService.selectInheritedBackgroundTurnItems> =>
-        RunExecutionService.selectInheritedBackgroundTurnItems({
-          threadId: current.thread.id,
-          currentProviderThreadId: providerThread.id,
-          currentRunOrdinal: run.ordinal,
-          runs: current.runs,
-          turnItems: current.turnItems,
-        });
-      const inheritedBackgroundTurnItems = yield* projectionStore
-        .getRuntimeRecoveryProjection(projection.thread.id)
-        .pipe(Effect.map(selectInheritedBackgroundItems));
+      const inheritedBackgroundTurnItems = yield* inheritedBackgroundRead;
       const providerSessionId = providerThread.providerSessionId;
       const runControls = makeRunControls({
         threadId: projection.thread.id,
@@ -689,18 +708,7 @@ export const layer: Layer.Layer<
       });
       const { isCurrentAttemptInStatus } = runControls;
 
-      // A side chat shares its parent's worktree; the turn that gets its context asks before acting.
-      const resolvedPolicy = yield* runtimePolicy
-        .resolve({
-          thread:
-            projection.thread.lineage.sideChat === true &&
-            (sideChatHandoff !== undefined ||
-              !projection.runs.some((previous) => previous.ordinal < run.ordinal))
-              ? { ...projection.thread, runtimeMode: "approval-required" }
-              : projection.thread,
-          modelSelection: run.modelSelection,
-        })
-        .pipe(Effect.result);
+      const resolvedPolicy = yield* policyRead;
       if (resolvedPolicy._tag === "Failure") {
         const error = resolvedPolicy.failure;
         if (error._tag !== "RuntimePolicyAboveCeilingError") return yield* error;
