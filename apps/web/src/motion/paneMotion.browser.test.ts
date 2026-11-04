@@ -57,7 +57,9 @@ describe("grid cell FLIP", () => {
     using _guard = motionGuard();
     const { root, a, b } = surface();
     const before = measureCells(root);
-    const attributes = [...root.attributes].map((attribute) => `${attribute.name}=${attribute.value}`);
+    const attributes = [...root.attributes].map(
+      (attribute) => `${attribute.name}=${attribute.value}`,
+    );
     a.style.left = "300px";
     b.style.left = "0px";
     animateCellMove(root, before);

@@ -21,7 +21,11 @@ export function rawMotionReason(utility: string): string | null {
   if (utility === "transition-all") {
     return "`transition-all` also animates layout properties; list the properties (`transition-[opacity,scale]`)";
   }
-  if (/^(duration|delay)-\d+$/u.test(utility) && utility !== "duration-0" && utility !== "delay-0") {
+  if (
+    /^(duration|delay)-\d+$/u.test(utility) &&
+    utility !== "duration-0" &&
+    utility !== "delay-0"
+  ) {
     return "a raw duration; use a role such as `duration-(--motion-overlay-in)`";
   }
   if (/^(duration|delay)-\[[^\]]*\d(ms|s)\]$/u.test(utility)) {
@@ -36,7 +40,11 @@ export function rawMotionReason(utility: string): string | null {
   return null;
 }
 
-function check(context: Parameters<ReturnType<typeof defineRule>["create"]>[0], node: object, text: string) {
+function check(
+  context: Parameters<ReturnType<typeof defineRule>["create"]>[0],
+  node: object,
+  text: string,
+) {
   for (const token of text.split(/\s+/u)) {
     if (token.length === 0) continue;
     const reason = rawMotionReason(utilityOf(token));

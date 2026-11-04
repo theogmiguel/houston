@@ -807,7 +807,9 @@ describe("GridHost stable cells", () => {
       detached,
       show: (node: LayoutNode, maximized?: string) => screen.rerender(view(node, maximized)),
       cell: (threadId: string) =>
-        screen.container.querySelector<HTMLElement>(`[data-grid-cell][data-thread-id="${threadId}"]`)!,
+        screen.container.querySelector<HTMLElement>(
+          `[data-grid-cell][data-thread-id="${threadId}"]`,
+        )!,
       [Symbol.asyncDispose]: async () => {
         observer.disconnect();
         await screen[Symbol.asyncDispose]();
@@ -850,7 +852,10 @@ describe("GridHost stable cells", () => {
       ...tree,
       children: [
         threadLeaf("thread-c", "p-thread-c"),
-        { ...tree.children[1], children: [threadLeaf("thread-b", "p-thread-b"), threadLeaf("thread-a", "p-thread-a")] },
+        {
+          ...tree.children[1],
+          children: [threadLeaf("thread-b", "p-thread-b"), threadLeaf("thread-a", "p-thread-a")],
+        },
       ],
     };
     await stage.show(swapped);

@@ -77,7 +77,12 @@ export function animateMaximizeMorph(
       { opacity: 0, transform: `translateY(${CONTENT_RISE_PX}px)` },
       { opacity: 1, transform: "none" },
     ],
-    { duration: MOTION_ROLE_MS["swap-in"], delay: contentDelay, easing: STANDARD, fill: "backwards" },
+    {
+      duration: MOTION_ROLE_MS["swap-in"],
+      delay: contentDelay,
+      easing: STANDARD,
+      fill: "backwards",
+    },
   );
   const neighbours = others.map((frame) => {
     if (opening) {
@@ -115,10 +120,12 @@ export function animateMaximizeMorph(
     });
   };
   running.set(root, finish);
-  void Promise.allSettled([tint.finished, content.finished, ...neighbours.map((a) => a.finished)]).then(
-    () => {
-      if (running.get(root) === finish) finish();
-    },
-  );
+  void Promise.allSettled([
+    tint.finished,
+    content.finished,
+    ...neighbours.map((a) => a.finished),
+  ]).then(() => {
+    if (running.get(root) === finish) finish();
+  });
   probeCellMoveFrames(1, motion.durationMs, "maximize");
 }

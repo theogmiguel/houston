@@ -24,7 +24,10 @@ interface Running {
 const runs = new WeakMap<HTMLElement, Running>();
 
 /** The cell's offset inside `root`'s layout box, ignoring any transform in flight. */
-export function offsetWithin(element: HTMLElement, root: HTMLElement): { x: number; y: number } | null {
+export function offsetWithin(
+  element: HTMLElement,
+  root: HTMLElement,
+): { x: number; y: number } | null {
   let x = 0;
   let y = 0;
   let node: HTMLElement | null = element;

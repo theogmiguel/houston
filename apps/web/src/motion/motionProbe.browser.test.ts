@@ -8,7 +8,8 @@ describe("motion probe", () => {
     window.__houstonMotionEpisodes = [];
     const box = document.createElement("div");
     box.dataset.slot = "probe-box";
-    box.style.cssText = "width:40px;height:40px;opacity:1;color:black;transition:opacity 60ms linear,color 60ms linear";
+    box.style.cssText =
+      "width:40px;height:40px;opacity:1;color:black;transition:opacity 60ms linear,color 60ms linear";
     document.body.append(box);
     using _cleanup = { [Symbol.dispose]: () => box.remove() };
     box.getBoundingClientRect();
