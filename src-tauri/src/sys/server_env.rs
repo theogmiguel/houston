@@ -78,8 +78,9 @@ pub fn prepared_windows_path(inputs: &WindowsInputs, cwd: &Path, probe: &Probe) 
         return None;
     }
     let inherited = inputs.path.as_deref().filter(|p| !p.is_empty());
-    // Windows PowerShell answers with the PATH it inherited, and a failed probe
-    // contributes nothing, so either way the merge sees the inherited value.
+    // The probe echoes its inherited PATH (a failed one adds nothing), but only
+    // ASCII entries survive its OEM code-page capture; a garbled copy of a
+    // non-ASCII entry would lead. This PATH keeps the user's entries and order.
     let merged = merge_path_values(inherited, inherited);
     let known = known_cli_dirs(inputs).join(";");
     let baseline = merge_path_values(merged.as_deref(), Some(&known))?;
@@ -236,13 +237,16 @@ mod tests {
         // without case or quotes, then the known CLI directories it lacks.
         let present = files(&[(r"C:\Program Files\nodejs", "node.exe")]);
         let got = run(
-            &inputs(r#"C:\Windows;"C:\Program Files\nodejs";c:\windows;;C:\Users\u\.bun\bin"#),
+            &inputs(
+                r#"C:\Windows;"C:\Program Files\nodejs";c:\windows;;C:\Users\u\.bun\bin;C:\Users\José\bin"#,
+            ),
             &present,
         );
         let expected = [
             r"C:\Windows",
             r"C:\Program Files\nodejs",
             r"C:\Users\u\.bun\bin",
+            r"C:\Users\José\bin",
             r"C:\Users\u\AppData\Roaming\npm",
             r"C:\Users\u\AppData\Local\Programs\nodejs",
             r"C:\Users\u\AppData\Local\Volta\bin",

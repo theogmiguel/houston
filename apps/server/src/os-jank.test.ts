@@ -154,11 +154,12 @@ effectIt.effect("replaces a Path-spelled Windows PATH instead of adding a second
 
 // The host prepares this PATH itself (src-tauri/src/sys/server_env.rs); both sides pin one fixture.
 const HOST_PREPARED_FIXTURE = {
-  inherited: String.raw`C:\Windows;"C:\Program Files\nodejs";c:\windows;;C:\Users\u\.bun\bin`,
+  inherited: String.raw`C:\Windows;"C:\Program Files\nodejs";c:\windows;;C:\Users\u\.bun\bin;C:\Users\José\bin`,
   prepared: [
     String.raw`C:\Windows`,
     String.raw`C:\Program Files\nodejs`,
     String.raw`C:\Users\u\.bun\bin`,
+    String.raw`C:\Users\José\bin`,
     String.raw`C:\Users\u\AppData\Roaming\npm`,
     String.raw`C:\Users\u\AppData\Local\Programs\nodejs`,
     String.raw`C:\Users\u\AppData\Local\Volta\bin`,
