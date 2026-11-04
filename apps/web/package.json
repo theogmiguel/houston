@@ -9,8 +9,7 @@
     "dev:built": "vp build --watch",
     "build": "vp build",
     "preview": "vp preview",
-    "test": "vp test run --passWithNoTests --project unit --project browser",
-    "typecheck": "tsc --noEmit"
+    "test": "vp test run --passWithNoTests --project unit --project browser"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
