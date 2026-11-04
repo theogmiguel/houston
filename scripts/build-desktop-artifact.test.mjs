@@ -42,10 +42,10 @@ NodeTest.test("the Windows config installs per-user with the Houston NSIS hook",
   NodeAssert.deepEqual(config.nsis, {
     oneClick: true,
     perMachine: false,
-    differentialPackage: true,
+    differentialPackage: false,
     include: "apps/desktop/resources/installer.nsh",
     shortcutName: "Houston",
-    artifactName: "Houston-Setup-${version}.${ext}",
+    artifactName: "Houston-${version}-${arch}-setup.${ext}",
   });
   NodeAssert.deepEqual(config.win, {
     target: ["nsis"],
@@ -63,6 +63,43 @@ NodeTest.test("the NSIS hook keeps the Tauri install directory and daemon cleanu
   NodeAssert.match(hook, /!macro customUnInstall/);
   NodeAssert.match(hook, /\.houston\\daemon\.json/);
   NodeAssert.match(hook, /StartsWith\('\$INSTDIR'\)/);
+});
+
+NodeTest.test("the NSIS hook accepts the arguments the Tauri updater passes", () => {
+  const hook = NodeFS.readFileSync(
+    NodePath.join(REPO_ROOT, "apps/desktop/resources/installer.nsh"),
+    "utf8",
+  );
+  NodeAssert.match(hook, /\$\{GetOptions\} \$R0 "\/UPDATE" \$R1/);
+  NodeAssert.match(hook, /\$\{GetOptions\} \$R0 "\/R" \$R1/);
+  NodeAssert.match(hook, /\$\{GetOptions\} \$R0 "\/ARGS" \$R1/);
+  NodeAssert.match(hook, /\$\{StdUtils\.TestParameter\} \$R1 "force-run"/);
+  NodeAssert.match(hook, /\$\{StdUtils\.TestParameter\} \$R1 "updated"/);
+});
+
+NodeTest.test("the NSIS hook relaunches Houston with the updater's arguments", () => {
+  const hook = NodeFS.readFileSync(
+    NodePath.join(REPO_ROOT, "apps/desktop/resources/installer.nsh"),
+    "utf8",
+  );
+  NodeAssert.match(hook, /\$\{ElseIfNot\} \$\{Silent\}/);
+  NodeAssert.match(hook, /\$\{StdUtils\.ExecShellAsUser\} \$1 "\$launchLink" "open" "\$R0"/);
+  NodeAssert.match(hook, /!ifdef RUN_AFTER_FINISH\n {2}!undef RUN_AFTER_FINISH/);
+});
+
+NodeTest.test("the NSIS hook removes the Tauri uninstall registry entry", () => {
+  const hook = NodeFS.readFileSync(
+    NodePath.join(REPO_ROOT, "apps/desktop/resources/installer.nsh"),
+    "utf8",
+  );
+  NodeAssert.match(
+    hook,
+    /ReadRegStr \$R0 HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Houston" "DisplayName"/,
+  );
+  NodeAssert.match(
+    hook,
+    /DeleteRegKey HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Houston"/,
+  );
 });
 
 NodeTest.test("the Linux config builds the AppImage and deb with the Tauri dependency", () => {

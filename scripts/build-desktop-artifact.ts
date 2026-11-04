@@ -36,6 +36,7 @@ export const GITHUB_PUBLISH_CONFIG = {
   repo: "houston",
 } as const;
 export const DESKTOP_ARTIFACT_NAME = "Houston-${version}-${arch}.${ext}";
+export const DESKTOP_WINDOWS_ARTIFACT_NAME = "Houston-${version}-${arch}-setup.${ext}";
 // Setting `depends` replaces electron-builder's defaults, so Chromium's runtime
 // libraries are listed here too; libsecret backs the keychain-stored secrets.
 export const LINUX_DEB_DEPENDS = [
@@ -354,10 +355,12 @@ export function createBuildConfig(input: {
     buildConfig.nsis = {
       oneClick: true,
       perMachine: false,
-      differentialPackage: true,
+      // Authenticode signing rewrites the installer after packaging, which
+      // invalidates a differential block map; updates stay full downloads.
+      differentialPackage: false,
       include: "apps/desktop/resources/installer.nsh",
       shortcutName: PRODUCT_NAME,
-      artifactName: "Houston-Setup-${version}.${ext}",
+      artifactName: DESKTOP_WINDOWS_ARTIFACT_NAME,
     };
   }
 
