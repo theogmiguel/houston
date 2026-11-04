@@ -40,20 +40,18 @@ export function rawMotionReason(utility: string): string | null {
   return null;
 }
 
-function check(
-  context: Parameters<ReturnType<typeof defineRule>["create"]>[0],
-  node: object,
-  text: string,
-) {
+/** One message per raw motion class in a class string. */
+function rawMotionMessages(text: string): string[] {
+  const messages: string[] = [];
   for (const token of text.split(/\s+/u)) {
     if (token.length === 0) continue;
     const reason = rawMotionReason(utilityOf(token));
     if (reason === null) continue;
-    context.report({
-      node: node as never,
-      message: `Raw motion class \`${token}\`: ${reason}. Motion roles live in index.css (--motion-*).`,
-    });
+    messages.push(
+      `Raw motion class \`${token}\`: ${reason}. Motion roles live in index.css (--motion-*).`,
+    );
   }
+  return messages;
 }
 
 export default defineRule({
@@ -67,10 +65,13 @@ export default defineRule({
   create(context) {
     return {
       Literal(node) {
-        if (typeof node.value === "string") check(context, node, node.value);
+        if (typeof node.value !== "string") return;
+        for (const message of rawMotionMessages(node.value)) context.report({ node, message });
       },
       TemplateElement(node) {
-        check(context, node, node.value.cooked ?? node.value.raw);
+        for (const message of rawMotionMessages(node.value.cooked ?? node.value.raw)) {
+          context.report({ node, message });
+        }
       },
     };
   },
