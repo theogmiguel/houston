@@ -7,6 +7,7 @@ import { cn } from "~/lib/utils";
 import { RelativeTime } from "../RelativeTime";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
+import { overlayMotion } from "../ui/overlayMotion";
 import { ScrollArea } from "../ui/scroll-area";
 import { type PromptStashEntry } from "../../promptStashStore";
 
@@ -139,7 +140,10 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
     <div
       ref={drawerRef}
       data-composer-stash-drawer="true"
-      className="dialog-glass mb-2 grid gap-px rounded-(--r-group) p-1 text-headline text-popover-foreground"
+      className={cn(
+        overlayMotion,
+        "dialog-glass mb-2 grid origin-bottom gap-px rounded-(--r-group) p-1 text-headline text-popover-foreground",
+      )}
     >
       <div className="flex h-7.5 items-center ps-2 pe-1 text-xs font-semibold text-muted-foreground">
         <span>Stashed prompts</span>

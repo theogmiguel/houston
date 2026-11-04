@@ -11,6 +11,7 @@ import {
 
 import { cn } from "~/lib/utils";
 import { useNativeTitlebarHeight } from "~/lib/windowControlsOverlay";
+import { overlayMotion } from "./overlayMotion";
 
 // Base UI's default, restated because a padding object zeroes the sides it omits.
 const COLLISION_PADDING = 5;
@@ -138,7 +139,8 @@ function TooltipPopup({
       <TooltipPositioner align={align} anchor={anchor} side={side} sideOffset={sideOffset}>
         <TooltipPrimitive.Popup
           className={cn(
-            "relative flex origin-(--transform-origin) text-balance rounded-[var(--r-ctl)] text-popover-foreground text-xs transition-[scale,opacity] motion-reduce:transition-none data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 data-instant:duration-0",
+            overlayMotion,
+            "relative flex text-balance rounded-[var(--r-ctl)] text-popover-foreground text-xs data-instant:duration-0",
             variant === "glass" ? "dropdown-glass" : "border bg-popover shadow-[var(--shadow-1)]",
             variant === "code"
               ? "max-w-120 wrap-anywhere text-left font-mono text-[11px] leading-relaxed"

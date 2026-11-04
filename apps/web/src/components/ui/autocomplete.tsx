@@ -4,6 +4,7 @@ import { ChevronsUpDownIcon, XIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { overlayMotion } from "./overlayMotion";
 
 const Autocomplete = AutocompletePrimitive.Root;
 
@@ -102,12 +103,15 @@ function AutocompletePopup({
       >
         <span
           className={cn(
-            "relative flex max-h-full min-w-(--anchor-width) max-w-(--available-width) origin-(--transform-origin) rounded-[var(--r-group)] border bg-popover shadow-[var(--shadow-1)] transition-[scale,opacity]",
+            "relative flex max-h-full min-w-(--anchor-width) max-w-(--available-width) rounded-[var(--r-group)]",
             className,
           )}
         >
           <AutocompletePrimitive.Popup
-            className="flex max-h-[min(var(--available-height),23rem)] flex-1 flex-col text-foreground"
+            className={cn(
+              overlayMotion,
+              "flex max-h-[min(var(--available-height),23rem)] flex-1 flex-col rounded-[var(--r-group)] border bg-popover text-foreground shadow-[var(--shadow-1)]",
+            )}
             data-slot="autocomplete-popup"
             {...props}
           >
