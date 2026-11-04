@@ -123,6 +123,7 @@ import { updateClientSettings, useClientSettings } from "../../hooks/useSettings
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { useNowSecond } from "../../hooks/useNowSecond";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
+import { AnimatedHeight } from "../AnimatedHeight";
 import { isAppModalPage } from "../sidebar/mainAppLocation";
 import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { SidebarRailKbd, SidebarRailNav } from "../sidebar/SidebarRailNav";
@@ -151,7 +152,6 @@ import { Separator } from "../ui/separator";
 import {
   FOCUS_ACTION_CLS,
   FOCUS_ROW_CLS,
-  ROW_ACTIONS_FOCUS_REVEAL,
   SidebarContent,
   SidebarHeader,
   useSidebarVisibility,
@@ -1237,7 +1237,13 @@ export function SidebarProjectSection({
                 onClick={onToggleCollapsed}
                 className={SIDEBAR_PROJECT_LABEL_CLS}
               >
-                {collapsed ? <ChevronRightIcon aria-hidden className="size-3 shrink-0" /> : null}
+                <ChevronRightIcon
+                  aria-hidden
+                  className={cn(
+                    "size-3 shrink-0 transition-transform duration-(--motion-disclosure) ease-standard",
+                    !collapsed && "rotate-90",
+                  )}
+                />
                 <span className={SIDEBAR_PROJECT_LABEL_TEXT_CLS}>{section.title}</span>
                 {collapsed ? <span className={SIDEBAR_PROJECT_SUMMARY_CLS}>{summary}</span> : null}
               </button>
@@ -1269,79 +1275,81 @@ export function SidebarProjectSection({
           </span>
         )}
       </div>
-      {collapsed ? null : (
-        <div className="flex flex-col gap-px">
-          {section.grids.map(({ grid, threads }) => (
-            <GridGroup
-              key={grid.id}
-              grid={grid}
-              workspaceTitle={section.title}
-              threads={threads}
-              query={query}
-              open={openGridId === grid.id}
-              collapsed={query.length === 0 && collapsedGridIds.has(grid.id)}
-              onToggleCollapsed={() => onToggleGridCollapsed(grid.id)}
-              providerEntries={providerEntries}
-              nowIso={nowIso}
-              selection={selection}
-              runningSubagents={runningSubagents}
-              dragging={dragging}
-              dropTarget={dropTarget}
-              hiddenGrids={section.hiddenGrids}
-              onOpenThread={onOpenThread}
-              onSelectThread={onSelectThread}
-              onCloseThread={onCloseThread}
-              onHoldThread={onHoldThread}
-              onPickHoldTime={onPickHoldTime}
-              onDropOnGrid={onDropOnGrid}
-              onDropOnThread={onDropOnThread}
-              onCreateThread={() => onCreateThread(grid.id)}
-              onRenameThread={onRenameThread}
-              onSetAutoClose={onSetAutoClose}
-              onShowGrid={onShowGrid}
-              onCreateGrid={onCreateGrid}
-            />
-          ))}
-          {gridCount === 0 && !section.isScratch ? (
-            <button
-              type="button"
-              aria-label="New grid"
-              onClick={onCreateGrid}
-              className={SIDEBAR_PROJECT_EMPTY_ACTION_CLS}
-            >
-              <Grid2X2PlusIcon aria-hidden className="size-3.5" />
-              <span>New grid</span>
-            </button>
-          ) : null}
-          {section.ungroupedThreads.map((thread) => (
-            <ThreadCard
-              key={thread.id}
-              gridId={null}
-              thread={thread}
-              query={query}
-              providerEntries={providerEntries}
-              nowIso={nowIso}
-              focused={false}
-              selected={selection.selectedThreadKeys.has(
-                scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-              )}
-              dragging={dragging?.threadId === thread.id}
-              workspaceTitle={section.title}
-              notInGrid
-              runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
-              onOpen={() => onOpenUngroupedThread(thread)}
-              onSelect={(input) => onSelectThread(thread, input)}
-              onClose={() => onCloseThread(thread)}
-              onHold={(preset) => onHoldThread(thread, preset)}
-              onPickHoldTime={onPickHoldTime}
-              onRename={(title) => onRenameThread(thread, title)}
-              onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
-              onDropOnThread={() => {}}
-              onOpenGrid={() => onOpenUngroupedThread(thread)}
-            />
-          ))}
-        </div>
-      )}
+      <AnimatedHeight>
+        {collapsed ? null : (
+          <div className="flex flex-col gap-px">
+            {section.grids.map(({ grid, threads }) => (
+              <GridGroup
+                key={grid.id}
+                grid={grid}
+                workspaceTitle={section.title}
+                threads={threads}
+                query={query}
+                open={openGridId === grid.id}
+                collapsed={query.length === 0 && collapsedGridIds.has(grid.id)}
+                onToggleCollapsed={() => onToggleGridCollapsed(grid.id)}
+                providerEntries={providerEntries}
+                nowIso={nowIso}
+                selection={selection}
+                runningSubagents={runningSubagents}
+                dragging={dragging}
+                dropTarget={dropTarget}
+                hiddenGrids={section.hiddenGrids}
+                onOpenThread={onOpenThread}
+                onSelectThread={onSelectThread}
+                onCloseThread={onCloseThread}
+                onHoldThread={onHoldThread}
+                onPickHoldTime={onPickHoldTime}
+                onDropOnGrid={onDropOnGrid}
+                onDropOnThread={onDropOnThread}
+                onCreateThread={() => onCreateThread(grid.id)}
+                onRenameThread={onRenameThread}
+                onSetAutoClose={onSetAutoClose}
+                onShowGrid={onShowGrid}
+                onCreateGrid={onCreateGrid}
+              />
+            ))}
+            {gridCount === 0 && !section.isScratch ? (
+              <button
+                type="button"
+                aria-label="New grid"
+                onClick={onCreateGrid}
+                className={SIDEBAR_PROJECT_EMPTY_ACTION_CLS}
+              >
+                <Grid2X2PlusIcon aria-hidden className="size-3.5" />
+                <span>New grid</span>
+              </button>
+            ) : null}
+            {section.ungroupedThreads.map((thread) => (
+              <ThreadCard
+                key={thread.id}
+                gridId={null}
+                thread={thread}
+                query={query}
+                providerEntries={providerEntries}
+                nowIso={nowIso}
+                focused={false}
+                selected={selection.selectedThreadKeys.has(
+                  scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+                )}
+                dragging={dragging?.threadId === thread.id}
+                workspaceTitle={section.title}
+                notInGrid
+                runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
+                onOpen={() => onOpenUngroupedThread(thread)}
+                onSelect={(input) => onSelectThread(thread, input)}
+                onClose={() => onCloseThread(thread)}
+                onHold={(preset) => onHoldThread(thread, preset)}
+                onPickHoldTime={onPickHoldTime}
+                onRename={(title) => onRenameThread(thread, title)}
+                onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
+                onDropOnThread={() => {}}
+                onOpenGrid={() => onOpenUngroupedThread(thread)}
+              />
+            ))}
+          </div>
+        )}
+      </AnimatedHeight>
     </div>
   );
 }
@@ -1605,36 +1613,38 @@ export function GridGroup({
           </>
         )}
       </div>
-      {collapsed ? null : (
-        <div className="flex flex-col gap-px">
-          {threads.map((thread) => (
-            <ThreadCard
-              key={thread.id}
-              gridId={grid.id}
-              thread={thread}
-              query={query}
-              providerEntries={providerEntries}
-              nowIso={nowIso}
-              focused={open && grid.focusedThreadId === thread.id}
-              selected={selection.selectedThreadKeys.has(
-                scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-              )}
-              dragging={dragging?.threadId === thread.id}
-              runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
-              workspaceTitle={workspaceTitle}
-              onOpen={() => onOpenThread(grid.id, thread.id)}
-              onSelect={(input) => onSelectThread(thread, input)}
-              onClose={() => onCloseThread(thread)}
-              onHold={(preset) => onHoldThread(thread, preset)}
-              onPickHoldTime={onPickHoldTime}
-              onRename={(title) => onRenameThread(thread, title)}
-              onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
-              onDropOnThread={(source) => onDropOnThread(source, grid.id, thread.id)}
-              onOpenGrid={(targetGridId) => onOpenThread(targetGridId, thread.id)}
-            />
-          ))}
-        </div>
-      )}
+      <AnimatedHeight>
+        {collapsed ? null : (
+          <div className="flex flex-col gap-px">
+            {threads.map((thread) => (
+              <ThreadCard
+                key={thread.id}
+                gridId={grid.id}
+                thread={thread}
+                query={query}
+                providerEntries={providerEntries}
+                nowIso={nowIso}
+                focused={open && grid.focusedThreadId === thread.id}
+                selected={selection.selectedThreadKeys.has(
+                  scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+                )}
+                dragging={dragging?.threadId === thread.id}
+                runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
+                workspaceTitle={workspaceTitle}
+                onOpen={() => onOpenThread(grid.id, thread.id)}
+                onSelect={(input) => onSelectThread(thread, input)}
+                onClose={() => onCloseThread(thread)}
+                onHold={(preset) => onHoldThread(thread, preset)}
+                onPickHoldTime={onPickHoldTime}
+                onRename={(title) => onRenameThread(thread, title)}
+                onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
+                onDropOnThread={(source) => onDropOnThread(source, grid.id, thread.id)}
+                onOpenGrid={(targetGridId) => onOpenThread(targetGridId, thread.id)}
+              />
+            ))}
+          </div>
+        )}
+      </AnimatedHeight>
     </div>
   );
 }
@@ -1844,7 +1854,7 @@ export function ThreadCard({
               onOpen();
             }}
             className={cn(
-              `group/th relative flex w-full flex-col gap-0.75 rounded-lg py-1.75 pr-2.5 text-left outline-none ${FOCUS_ROW_CLS}`,
+              `group/th relative flex w-full flex-col gap-0.75 rounded-lg py-1.75 pr-2.5 text-left outline-none transition-colors duration-(--motion-feedback) ease-standard ${FOCUS_ROW_CLS}`,
               notInGrid ? "pl-2" : "pl-7.5",
               "cursor-pointer",
               dragging && "opacity-50",
@@ -1906,7 +1916,12 @@ export function ThreadCard({
               >
                 <HighlightedText text={thread.title} query={query} />
               </span>
-              <span className="shrink-0 group-hover/th:hidden">
+              <span
+                className={cn(
+                  "shrink-0 transition-opacity duration-(--motion-feedback) ease-standard group-hover/th:opacity-0",
+                  actionsVisible && "opacity-0",
+                )}
+              >
                 {timeLabel !== null ? (
                   <span className="text-xs text-secondary-label tabular-nums">{timeLabel}</span>
                 ) : state === "idle" ? (
@@ -1921,8 +1936,10 @@ export function ThreadCard({
           )}
           <span
             className={cn(
-              "shrink-0 items-center gap-0.5",
-              actionsVisible ? "flex" : `hidden group-hover/th:flex ${ROW_ACTIONS_FOCUS_REVEAL}`,
+              "absolute inset-y-0 right-2.5 flex items-center gap-0.5 transition-opacity duration-(--motion-feedback) ease-standard",
+              actionsVisible
+                ? "opacity-100"
+                : "pointer-events-none opacity-0 group-hover/th:pointer-events-auto group-hover/th:opacity-100 group-has-[:focus-visible]/th:pointer-events-auto group-has-[:focus-visible]/th:opacity-100",
             )}
             onMouseEnter={() => setActionsHovered(true)}
             onMouseLeave={() => setActionsHovered(false)}

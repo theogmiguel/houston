@@ -2,6 +2,13 @@ import { Collapsible as CollapsiblePrimitive } from "@base-ui/react/collapsible"
 
 import { cn } from "~/lib/utils";
 
+/**
+ * The chevron that points into an expanding panel. Pair it with
+ * `group-data-panel-open:rotate-90` on a trigger that carries `group`.
+ */
+export const DISCLOSURE_CHEVRON_MOTION =
+  "transition-transform duration-(--motion-disclosure) ease-standard";
+
 function Collapsible({ ...props }: CollapsiblePrimitive.Root.Props) {
   return <CollapsiblePrimitive.Root data-slot="collapsible" {...props} />;
 }
@@ -19,6 +26,7 @@ function CollapsibleTrigger({ className, ...props }: CollapsiblePrimitive.Trigge
 function CollapsiblePanel({
   className,
   animate = true,
+  children,
   ...props
 }: CollapsiblePrimitive.Panel.Props & { animate?: boolean }) {
   return (
@@ -26,12 +34,20 @@ function CollapsiblePanel({
       className={cn(
         "overflow-hidden",
         animate &&
-          "h-(--collapsible-panel-height) transition-[height] duration-200 motion-reduce:transition-none data-ending-style:h-0 data-starting-style:h-0 data-open:data-ending-style:[height:var(--collapsible-panel-height)]",
+          "group/panel h-(--collapsible-panel-height) transition-[height] duration-(--motion-disclosure) ease-standard data-ending-style:h-0 data-ending-style:ease-exit data-starting-style:h-0 data-open:data-ending-style:[height:var(--collapsible-panel-height)]",
         className,
       )}
       data-slot="collapsible-panel"
       {...props}
-    />
+    >
+      {animate ? (
+        <div className="transition-opacity duration-(--motion-disclosure) delay-(--motion-content-delay) ease-standard group-data-starting-style/panel:opacity-0">
+          {children}
+        </div>
+      ) : (
+        children
+      )}
+    </CollapsiblePrimitive.Panel>
   );
 }
 

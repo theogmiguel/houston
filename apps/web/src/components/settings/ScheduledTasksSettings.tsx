@@ -44,6 +44,7 @@ import {
 } from "@houston-app/client-runtime/state/runtime";
 
 import { formatRelativeTime } from "../../timestampFormat";
+import { AnimatedHeight } from "../AnimatedHeight";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import { providerInstanceEntriesFor } from "../../providerInstances";
@@ -706,14 +707,18 @@ function ScheduledTaskEnvironmentSection({
               />
             </div>
           ) : (
-            tasks.map((task) => (
-              <ScheduledTaskRow
-                key={task.id}
-                environmentId={environment.environmentId}
-                task={task}
-                onEdit={() => onEdit(environment.environmentId, task)}
-              />
-            ))
+            <AnimatedHeight>
+              <div className="[&>*+*]:relative [&>*+*]:before:pointer-events-none [&>*+*]:before:absolute [&>*+*]:before:top-0 [&>*+*]:before:left-3.5 [&>*+*]:before:right-0 [&>*+*]:before:h-px [&>*+*]:before:bg-border [&>*+*]:before:content-['']">
+                {tasks.map((task) => (
+                  <ScheduledTaskRow
+                    key={task.id}
+                    environmentId={environment.environmentId}
+                    task={task}
+                    onEdit={() => onEdit(environment.environmentId, task)}
+                  />
+                ))}
+              </div>
+            </AnimatedHeight>
           )}
         </>
       )}

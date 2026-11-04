@@ -47,7 +47,7 @@ export function SidebarRailActionRow({
       aria-current={active ? "page" : undefined}
       onClick={onClick}
       className={cn(
-        "flex h-7 w-full shrink-0 cursor-pointer items-center gap-2 rounded-(--control-radius) px-2 text-left text-sm whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:pointer-events-none disabled:opacity-50",
+        "flex h-7 w-full shrink-0 cursor-pointer items-center gap-2 rounded-(--control-radius) px-2 text-left text-sm whitespace-nowrap transition-colors duration-(--motion-feedback) ease-standard outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:pointer-events-none disabled:opacity-50",
         active
           ? "bg-sidebar-row-selected text-sidebar-foreground"
           : "text-secondary-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
@@ -87,7 +87,7 @@ export function SidebarRailSectionHeading({
           type="button"
           aria-label="Add project"
           onClick={() => openCommandPalette({ open: "add-project" })}
-          className="-my-1.5 inline-grid size-6 shrink-0 cursor-pointer place-items-center rounded-(--control-radius) text-secondary-label transition-colors outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+          className="-my-1.5 inline-grid size-6 shrink-0 cursor-pointer place-items-center rounded-(--control-radius) text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         >
           <PlusIcon aria-hidden className="size-[15px]" />
         </button>
@@ -104,7 +104,7 @@ export function SidebarRailSearchButton() {
     <button
       type="button"
       onClick={() => openCommandPalette()}
-      className="flex h-7 w-full shrink-0 cursor-pointer items-center gap-2 rounded-(--control-radius) bg-sidebar-row-hover px-2 text-left text-sm text-secondary-foreground transition-colors outline-none hover:bg-sidebar-row-active hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      className="flex h-7 w-full shrink-0 cursor-pointer items-center gap-2 rounded-(--control-radius) bg-sidebar-row-hover px-2 text-left text-sm text-secondary-foreground transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-active hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
     >
       <SearchIcon aria-hidden className="size-[15px] shrink-0 text-secondary-label" />
       <span className="min-w-0 flex-1 truncate">Search</span>

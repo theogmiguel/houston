@@ -9,6 +9,7 @@ import { isReasoningControl } from "@houston-app/client-runtime/model-traits";
 import { type CustomModelDefinition, normalizeCustomModelSlug } from "@houston-app/shared/model";
 
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { AnimatedHeight } from "../AnimatedHeight";
 import { cn } from "../../lib/utils";
 import { sortModelsForProviderInstance } from "../../modelOrdering";
 import { MAX_CUSTOM_MODEL_LENGTH } from "../../modelSelection";
@@ -383,56 +384,60 @@ export function ProviderModelsSection({
                 ? groupLabel("Hidden from picker", index === 0)
                 : null}
               {renderRow(model)}
-              {editingEntry ? (
-                <CustomModelEditor
-                  key={`${instanceId}:${model.slug}:editor`}
-                  instanceId={instanceId}
-                  driverKind={driverKind}
-                  entry={editingEntry}
-                  builtInModels={builtInModels}
-                  onSave={handleSaveEdit}
-                  onCancel={() => setEditingSlug(null)}
-                />
-              ) : null}
+              <AnimatedHeight>
+                {editingEntry ? (
+                  <CustomModelEditor
+                    key={`${instanceId}:${model.slug}:editor`}
+                    instanceId={instanceId}
+                    driverKind={driverKind}
+                    entry={editingEntry}
+                    builtInModels={builtInModels}
+                    onSave={handleSaveEdit}
+                    onCancel={() => setEditingSlug(null)}
+                  />
+                ) : null}
+              </AnimatedHeight>
             </div>
           );
         })}
       </div>
 
-      {driverKind === "antigravity" || !canManageCustomModels ? null : isAdding ? (
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <Input
-            id={`provider-instance-${instanceId}-custom-model`}
-            size="compact"
-            autoFocus
-            value={input}
-            onChange={(event) => {
-              setInput(event.target.value);
-              if (error) setError(null);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
+      <AnimatedHeight>
+        {driverKind === "antigravity" || !canManageCustomModels ? null : isAdding ? (
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <Input
+              id={`provider-instance-${instanceId}-custom-model`}
+              size="compact"
+              autoFocus
+              value={input}
+              onChange={(event) => {
+                setInput(event.target.value);
+                if (error) setError(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  cancelAdd();
+                  return;
+                }
+                if (event.key !== "Enter") return;
                 event.preventDefault();
-                cancelAdd();
-                return;
-              }
-              if (event.key !== "Enter") return;
-              event.preventDefault();
-              handleAdd();
-            }}
-            placeholder={driverKind ? CUSTOM_MODEL_PLACEHOLDER_BY_KIND[driverKind] : "model-slug"}
-            spellCheck={false}
-          />
-          <div className="flex shrink-0 gap-2">
-            <Button size="sm" variant="outline" onClick={handleAdd}>
-              Add
-            </Button>
-            <Button size="sm" variant="ghost" onClick={cancelAdd}>
-              Cancel
-            </Button>
+                handleAdd();
+              }}
+              placeholder={driverKind ? CUSTOM_MODEL_PLACEHOLDER_BY_KIND[driverKind] : "model-slug"}
+              spellCheck={false}
+            />
+            <div className="flex shrink-0 gap-2">
+              <Button size="sm" variant="outline" onClick={handleAdd}>
+                Add
+              </Button>
+              <Button size="sm" variant="ghost" onClick={cancelAdd}>
+                Cancel
+              </Button>
+            </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </AnimatedHeight>
 
       {driverKind !== "antigravity" && error ? (
         <p className="mt-2 text-xs text-destructive">{error}</p>
@@ -484,7 +489,7 @@ function ProviderModelRow({
     <div
       data-model-slug={model.slug}
       className={cn(
-        "grid h-7 grid-cols-[1.5rem_minmax(0,1fr)_auto_minmax(5.5rem,auto)_auto] items-center gap-2 rounded-md px-2 transition-colors hover:bg-muted/30",
+        "grid h-7 grid-cols-[1.5rem_minmax(0,1fr)_auto_minmax(5.5rem,auto)_auto] items-center gap-2 rounded-md px-2 transition-colors duration-(--motion-feedback) ease-standard hover:bg-muted/30",
         isHidden && "opacity-50",
       )}
     >

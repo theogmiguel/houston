@@ -4,6 +4,7 @@ import { useRef, useState, type ReactNode } from "react";
 import * as Schema from "effect/Schema";
 
 import { useLocalStorage } from "../../hooks/useLocalStorage";
+import { AnimatedHeight } from "../AnimatedHeight";
 import { useThreadDropZone, type ThreadDragSource } from "../../grid/threadDrag";
 import { cn } from "../../lib/utils";
 import { SidebarShelfHeader } from "../sidebar/SidebarListMarkers";
@@ -60,16 +61,18 @@ export function GridShelves({
 
   return (
     <div className="flex flex-col gap-px" data-testid="grid-shelves">
-      {snoozedExpanded ? (
-        <div
-          className="flex max-h-56 flex-col gap-px overflow-y-auto pb-1"
-          data-testid="grid-snoozed-shelf-list"
-        >
-          {held.map((thread) => (
-            <div key={thread.id}>{renderCard(thread, "snoozed")}</div>
-          ))}
-        </div>
-      ) : null}
+      <AnimatedHeight>
+        {snoozedExpanded ? (
+          <div
+            className="flex max-h-56 flex-col gap-px overflow-y-auto pb-1"
+            data-testid="grid-snoozed-shelf-list"
+          >
+            {held.map((thread) => (
+              <div key={thread.id}>{renderCard(thread, "snoozed")}</div>
+            ))}
+          </div>
+        ) : null}
+      </AnimatedHeight>
       <SidebarShelfHeader
         variant="rail"
         shelf="snoozed"
@@ -87,26 +90,28 @@ export function GridShelves({
           closedDropTarget && "bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset",
         )}
       >
-        {settledExpanded ? (
-          <div
-            className="flex max-h-56 flex-col gap-px overflow-y-auto pb-1"
-            data-testid="grid-settled-shelf-list"
-          >
-            {visibleClosed.map((thread) => (
-              <div key={thread.id}>{renderCard(thread, "settled")}</div>
-            ))}
-            {hiddenClosedCount > 0 ? (
-              <button
-                type="button"
-                onClick={() => setSettledVisibleCount((count) => count + SETTLED_TAIL_PAGE_COUNT)}
-                className="flex h-7 items-center gap-2 rounded-(--r-ctl) pr-2 pl-7.5 text-left text-xs text-secondary-label hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-              >
-                <ChevronDownIcon aria-hidden className="size-3 shrink-0" />
-                Show {Math.min(hiddenClosedCount, SETTLED_TAIL_PAGE_COUNT)} more
-              </button>
-            ) : null}
-          </div>
-        ) : null}
+        <AnimatedHeight>
+          {settledExpanded ? (
+            <div
+              className="flex max-h-56 flex-col gap-px overflow-y-auto pb-1"
+              data-testid="grid-settled-shelf-list"
+            >
+              {visibleClosed.map((thread) => (
+                <div key={thread.id}>{renderCard(thread, "settled")}</div>
+              ))}
+              {hiddenClosedCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setSettledVisibleCount((count) => count + SETTLED_TAIL_PAGE_COUNT)}
+                  className="flex h-7 items-center gap-2 rounded-(--r-ctl) pr-2 pl-7.5 text-left text-xs text-secondary-label transition-colors duration-(--motion-feedback) hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                >
+                  <ChevronDownIcon aria-hidden className="size-3 shrink-0" />
+                  Show {Math.min(hiddenClosedCount, SETTLED_TAIL_PAGE_COUNT)} more
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </AnimatedHeight>
         <SidebarShelfHeader
           variant="rail"
           shelf="settled"
