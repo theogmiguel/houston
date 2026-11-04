@@ -55,6 +55,8 @@ NodeTest.test("a signed installer's hash and size replace the stale values", asy
       new RegExp(`sha512: ${sha512(installer).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
     );
     NodeAssert.match(written, new RegExp(`size: ${installer.length}`));
+    NodeAssert.match(written, /^sha512: /m, "the top-level hash stays at column 0");
+    NodeAssert.match(written, /^ {4}sha512: /m, "the file entry keeps its indentation");
     NodeAssert.match(written, /releaseDate: '2026-09-16T00:00:00\.000Z'/);
   } finally {
     NodeFS.rmSync(directory, { recursive: true, force: true });

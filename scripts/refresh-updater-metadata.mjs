@@ -37,27 +37,42 @@ async function refreshFile(directory, metadataPath, check) {
   lines.forEach((line, index) => {
     const entry = ENTRY_PATTERN.exec(line);
     if (entry !== null) {
-      current = { url: entry[2], hashIndex: null, sizeIndex: null };
+      current = {
+        url: entry[2],
+        hashIndex: null,
+        hashIndent: entry[1],
+        sizeIndex: null,
+        sizeIndent: entry[1],
+      };
       pending.push(current);
       return;
     }
     const path = PATH_PATTERN.exec(line);
     if (path !== null) {
-      topLevel = { url: path[1], hashIndex: null };
+      topLevel = { url: path[1], hashIndex: null, hashIndent: "" };
       pending.push(topLevel);
       return;
     }
     const hash = HASH_PATTERN.exec(line);
     if (hash !== null) {
       if (hash[1].length === 0) {
-        if (topLevel !== null) topLevel.hashIndex = index;
+        if (topLevel !== null) {
+          topLevel.hashIndex = index;
+          topLevel.hashIndent = hash[1];
+        }
         return;
       }
-      if (current !== null) current.hashIndex = index;
+      if (current !== null) {
+        current.hashIndex = index;
+        current.hashIndent = hash[1];
+      }
       return;
     }
     const size = SIZE_PATTERN.exec(line);
-    if (size !== null && current !== null) current.sizeIndex = index;
+    if (size !== null && current !== null) {
+      current.sizeIndex = index;
+      current.sizeIndent = size[1];
+    }
   });
 
   const mismatch = [];
@@ -69,14 +84,14 @@ async function refreshFile(directory, metadataPath, check) {
         mismatch.push(
           `${target.url}: sha512 is ${found || "<missing>"}, expected ${actual.sha512}`,
         );
-        lines[target.hashIndex] = `    sha512: ${actual.sha512}`;
+        lines[target.hashIndex] = `${target.hashIndent}sha512: ${actual.sha512}`;
       }
     }
     if (target.sizeIndex !== null) {
       const found = SIZE_PATTERN.exec(lines[target.sizeIndex])?.[2] ?? "";
       if (found !== actual.size) {
         mismatch.push(`${target.url}: size is ${found || "<missing>"}, expected ${actual.size}`);
-        lines[target.sizeIndex] = `    size: ${actual.size}`;
+        lines[target.sizeIndex] = `${target.sizeIndent}size: ${actual.size}`;
       }
     }
   }
