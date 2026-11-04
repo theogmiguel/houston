@@ -12,7 +12,7 @@ import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./lib/chunkR
 
 const router = startAppServices();
 
-if (import.meta.env.DEV) {
+if (import.meta.env.DEV || import.meta.env.VITE_RELEASE_CHANNEL === "dev") {
   void import("./motion/motionProbe").then(({ installMotionProbe }) => installMotionProbe());
 }
 

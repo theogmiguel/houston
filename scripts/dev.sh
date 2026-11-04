@@ -93,6 +93,8 @@ fi
 APP="$ROOT/src-tauri/target/debug/houston-tauri"
 
 echo "[dev] building the v2 web renderer."
+# The dev channel's renderer reports itself as "dev", which also turns on the dev-only motion probe.
+if [ "$HOUSTON_CHANNEL" = "dev" ]; then export VITE_RELEASE_CHANNEL="${VITE_RELEASE_CHANNEL:-dev}"; fi
 (cd "$ROOT" && npx -y pnpm@12.14.0 --filter @houston-app/web build)
 
 echo "[dev] building the v2 server."
