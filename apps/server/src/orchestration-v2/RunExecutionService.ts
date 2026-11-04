@@ -35,6 +35,7 @@ import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
@@ -600,7 +601,8 @@ export interface RunExecutionServiceV2Shape {
     readonly run: OrchestrationV2Run;
   }) => Effect.Effect<
     Effect.Effect<void, CheckpointService.CheckpointServiceV2Error>,
-    CheckpointService.CheckpointServiceV2Error
+    CheckpointService.CheckpointServiceV2Error,
+    Scope.Scope
   >;
 }
 

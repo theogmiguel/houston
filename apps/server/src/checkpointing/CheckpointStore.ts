@@ -2,6 +2,7 @@ import { type CheckpointRef } from "@houston-app/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type * as Scope from "effect/Scope";
 
 import type { CheckpointStoreError } from "./Errors.ts";
 import type { VcsCheckpointOps } from "../vcs/VcsDriver.ts";
@@ -54,7 +55,11 @@ export class CheckpointStore extends Context.Service<
     /** Snapshots now; the returned effect publishes the ref and reports whether it did. */
     readonly prepareCheckpoint: (
       input: CaptureCheckpointInput & { readonly createOnly?: boolean },
-    ) => Effect.Effect<Effect.Effect<boolean, CheckpointStoreError>, CheckpointStoreError>;
+    ) => Effect.Effect<
+      Effect.Effect<boolean, CheckpointStoreError>,
+      CheckpointStoreError,
+      Scope.Scope
+    >;
 
     readonly hasCheckpointRef: (
       input: Omit<RestoreCheckpointInput, "fallbackToHead">,

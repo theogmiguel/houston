@@ -19,6 +19,7 @@ import * as Hex from "effect/encoding/Hex";
 import * as KeyedLock from "@houston-app/shared/KeyedLock";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
 
 import { isGitImport, parseTurnDiffFilesFromNumstat } from "../checkpointing/Diffs.ts";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
@@ -116,14 +117,15 @@ export interface CheckpointServiceV2Shape {
     readonly scope: OrchestrationV2CheckpointScope;
     readonly ordinalWithinScope: number;
   }) => Effect.Effect<void, CheckpointServiceV2Error>;
-  /**
-   * Snapshots the baseline now and returns the effect that publishes it, so the snapshot can
-   * overlap work that does not touch the workspace. Together they act as captureBaseline.
-   */
+  /** Snapshots now; the result publishes, so together they act as captureBaseline. */
   readonly prepareBaseline: (input: {
     readonly scope: OrchestrationV2CheckpointScope;
     readonly ordinalWithinScope: number;
-  }) => Effect.Effect<Effect.Effect<void, CheckpointServiceV2Error>, CheckpointServiceV2Error>;
+  }) => Effect.Effect<
+    Effect.Effect<void, CheckpointServiceV2Error>,
+    CheckpointServiceV2Error,
+    Scope.Scope
+  >;
   readonly materializeBaselineCheckpoint: (input: {
     readonly scope: OrchestrationV2CheckpointScope;
     readonly ordinalWithinScope: number;

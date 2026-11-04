@@ -924,12 +924,14 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
     const headExists = result.exitCode === 0;
     const headChecked = headExists || result.exitCode === 1;
     const lines = result.stdout.split("\n");
-    const [gitCommonDir = "", indexPath = ""] = lines;
+    const [gitCommonDir = "", indexPath = "", headLine = ""] = lines;
     if (headChecked && lines.length === (headExists ? 4 : 3) && lines.at(-1) === "") {
       return {
         gitCommonDir: gitCommonDir.trim(),
         indexPath: indexPath.trim(),
         headExists,
+        // Spelled as status --porcelain=v2 reports `# branch.oid`.
+        headOid: headExists ? headLine.trim() : "(initial)",
       };
     }
     // Git before 2.31 echoes --path-format, and a path containing a newline spans lines.
@@ -938,6 +940,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       gitCommonDir: yield* resolveGitCommonDir(cwd),
       indexPath: undefined,
       headExists: headChecked ? headExists : yield* hasHeadCommit(cwd),
+      headOid: undefined,
     };
   });
 
@@ -959,11 +962,10 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
   // core.longpaths is disabled in the user's Git configuration.
   const longPaths = hostPlatform === "win32" ? ["-c", "core.longpaths=true"] : [];
 
-  const checkpoints: VcsDriver.VcsCheckpointOps = {
-    captureCheckpoint: (input) =>
-      checkpoints.prepareCheckpoint(input).pipe(Effect.flatten, Effect.asVoid),
-
-    prepareCheckpoint: Effect.fn("GitVcsDriver.checkpoints.prepareCheckpoint")(function* (input) {
+  const snapshotWorkspace = Effect.fn("GitVcsDriver.checkpoints.snapshotWorkspace")(function* (
+    input: VcsDriver.VcsCaptureCheckpointInput,
+    keepScratchIndex: boolean,
+  ) {
       const operation = VcsProcess.CHECKPOINT_CAPTURE_OPERATION;
       // Scratch split-index writes can expire sharedindex files still used by the real index.
       const indexConfig = [
@@ -978,7 +980,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       ];
       // Independent reads run in pairs: each Windows spawn costs about 60 ms, and VcsProcess
       // bounds the processes all captures run at once.
-      const [{ gitCommonDir, indexPath, headExists }, sparseConfig] = yield* Effect.all(
+      const [{ gitCommonDir, indexPath, headExists, headOid }, sparseConfig] = yield* Effect.all(
         [
           resolveCaptureRepository(input.cwd),
           execute({
@@ -1006,10 +1008,24 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         (indexFile) => fileSystem.remove(indexFile, { force: true }).pipe(Effect.ignore),
         { discard: true },
       );
+      yield* Effect.addFinalizer(() => cleanupTempIndex);
+      // Repository-wide ignore, attribute and config files can change what add stages.
+      const repositoryInputs = Effect.forEach(
+        ["config", "info/exclude", "info/attributes"],
+        (file) =>
+          fileSystem.stat(path.join(gitCommonDir, file)).pipe(
+            Effect.map(
+              ({ mtime, size }) =>
+                `${Option.getOrUndefined(mtime)?.getTime() ?? "?"}:${String(size)}`,
+            ),
+            Effect.orElseSucceed(() => "missing"),
+          ),
+      ).pipe(Effect.map((stats) => stats.join(" ")));
+      const inputsAtSnapshot = keepScratchIndex ? yield* repositoryInputs : "";
 
       // Whether the workspace is ignored does not depend on the scratch index.
       const unignored = yield* Effect.forkChild(filterIgnoredPaths(input.cwd, ["."]));
-      const commitOid = yield* Effect.gen(function* () {
+      const snapshot = yield* Effect.gen(function* () {
         let sparseCheckout = sparseConfig.stdout.trim() === "true";
         if (sparseCheckout) {
           const help = yield* execute({
@@ -1292,7 +1308,8 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             ...durableWrite,
             "commit-tree",
             treeOid,
-            ...(headExists ? ["-p", "HEAD"] : []),
+            // A kept snapshot names the HEAD its later check compares against.
+            ...(headExists ? ["-p", keepScratchIndex ? (headOid ?? "HEAD") : "HEAD"] : []),
             "-m",
             message,
           ],
@@ -1308,34 +1325,123 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             detail: "git commit-tree returned an empty commit oid.",
           });
         }
-        return commitOid;
-      }).pipe(Effect.ensuring(Effect.andThen(Fiber.interrupt(unignored), cleanupTempIndex)));
+        return { commitOid, sparseCheckout, workspaceIgnored };
+      }).pipe(Effect.ensuring(Fiber.interrupt(unignored)));
 
-      // An empty old value makes update-ref refuse to replace a ref created meanwhile.
-      return execute({
-        operation,
-        cwd: input.cwd,
-        args: [
-          ...durableWrite,
-          "update-ref",
-          input.checkpointRef,
-          commitOid,
-          ...(input.createOnly === true ? [""] : []),
-        ],
-      }).pipe(
-        Effect.as(true),
-        Effect.catchTags({
-          VcsProcessExitError: (error) =>
-            input.createOnly === true
-              ? resolveCheckpointCommit(input.cwd, input.checkpointRef).pipe(
-                  Effect.flatMap((existing) =>
-                    existing === null ? Effect.fail(error) : Effect.succeed(false),
+      // True when adding the workspace now would stage what the scratch index holds: HEAD and
+      // the repository inputs are unchanged, and nothing differs from or is missing in the index.
+      const unchanged = Effect.gen(function* () {
+        // Sparse and ignored workspaces stage from more than the worktree; capture them again.
+        if (headOid === undefined || snapshot.sparseCheckout || snapshot.workspaceIgnored) {
+          return false;
+        }
+        if ((yield* repositoryInputs) !== inputsAtSnapshot) return false;
+        let changed = false;
+        let branchOid: string | undefined;
+        let record: number[] = [];
+        const finishRecord = () => {
+          const text = Buffer.from(record).toString("utf8");
+          if (text.startsWith("# branch.oid ")) branchOid = text.slice("# branch.oid ".length);
+          else if (text.startsWith("1 ")) changed ||= text[3] !== ".";
+          else if (!text.startsWith("# ")) changed = true;
+          record = [];
+        };
+        yield* vcsProcess.run({
+          operation,
+          command: "git",
+          cwd: input.cwd,
+          args: [
+            ...indexConfig,
+            ...longPaths,
+            "-c",
+            "core.untrackedCache=false",
+            "status",
+            "--porcelain=v2",
+            "-z",
+            "--branch",
+            "--untracked-files=all",
+            "--ignore-submodules=none",
+            "--no-renames",
+            "--",
+            ".",
+            // Ignore and attribute files above the workspace also change what add stages.
+            ":(top,glob)**/.gitignore",
+            ":(top,glob)**/.gitattributes",
+          ],
+          env: commitEnv,
+          maxOutputBytes: 4_096,
+          outputMode: "truncate",
+          // Records are NUL-terminated; their first bytes carry the type and the XY status.
+          onStdoutChunk: (chunk) => {
+            let start = 0;
+            while (start < chunk.length) {
+              const end = chunk.indexOf(0, start);
+              const stop = end === -1 ? chunk.length : end;
+              for (let at = start; at < stop && record.length < 128; at += 1) {
+                record.push(chunk[at]!);
+              }
+              if (end === -1) break;
+              finishRecord();
+              start = end + 1;
+            }
+          },
+        });
+        return !changed && branchOid === headOid;
+      }).pipe(Effect.orElseSucceed(() => false));
+
+      return { commitOid: snapshot.commitOid, unchanged, removeScratchIndex: cleanupTempIndex };
+  });
+
+  // An empty old value makes update-ref refuse to replace a ref created meanwhile.
+  const publishCheckpointRef = (input: VcsDriver.VcsPrepareCheckpointInput, commitOid: string) =>
+    execute({
+      operation: VcsProcess.CHECKPOINT_CAPTURE_OPERATION,
+      cwd: input.cwd,
+      args: [
+        ...durableWrite,
+        "update-ref",
+        input.checkpointRef,
+        commitOid,
+        ...(input.createOnly === true ? [""] : []),
+      ],
+    }).pipe(
+      Effect.as(true),
+      Effect.catchTags({
+        VcsProcessExitError: (error) =>
+          input.createOnly === true
+            ? resolveCheckpointCommit(input.cwd, input.checkpointRef).pipe(
+                Effect.flatMap((existing) =>
+                  existing === null ? Effect.fail(error) : Effect.succeed(false),
+                ),
+              )
+            : Effect.fail(error),
+      }),
+    );
+
+  const checkpoints: VcsDriver.VcsCheckpointOps = {
+    captureCheckpoint: (input) =>
+      Effect.scoped(snapshotWorkspace(input, false)).pipe(
+        Effect.flatMap((snapshot) => publishCheckpointRef(input, snapshot.commitOid)),
+        Effect.asVoid,
+      ),
+
+    prepareCheckpoint: (input) =>
+      snapshotWorkspace(input, true).pipe(
+        Effect.map((snapshot) =>
+          snapshot.unchanged.pipe(
+            Effect.ensuring(snapshot.removeScratchIndex),
+            // A workspace that changed since the snapshot is captured again, as a capture would.
+            Effect.flatMap((unchanged) =>
+              unchanged
+                ? Effect.succeed(snapshot.commitOid)
+                : Effect.scoped(snapshotWorkspace(input, false)).pipe(
+                    Effect.map((fresh) => fresh.commitOid),
                   ),
-                )
-              : Effect.fail(error),
-        }),
-      );
-    }),
+            ),
+            Effect.flatMap((commitOid) => publishCheckpointRef(input, commitOid)),
+          ),
+        ),
+      ),
 
     hasCheckpointRef: (input) =>
       resolveCheckpointCommit(input.cwd, input.checkpointRef).pipe(

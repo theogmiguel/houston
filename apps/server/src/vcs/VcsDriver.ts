@@ -1,5 +1,6 @@
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
+import type * as Scope from "effect/Scope";
 
 import type {
   VcsError,
@@ -55,10 +56,10 @@ export interface VcsPrepareCheckpointInput extends VcsCaptureCheckpointInput {
 
 export interface VcsCheckpointOps {
   readonly captureCheckpoint: (input: VcsCaptureCheckpointInput) => Effect.Effect<void, VcsError>;
-  /** Snapshots the workspace now; the returned effect publishes the ref and reports whether it did. */
+  /** Snapshots now; the result publishes the ref (recapturing a changed workspace) and reports it. */
   readonly prepareCheckpoint: (
     input: VcsPrepareCheckpointInput,
-  ) => Effect.Effect<Effect.Effect<boolean, VcsError>, VcsError>;
+  ) => Effect.Effect<Effect.Effect<boolean, VcsError>, VcsError, Scope.Scope>;
   readonly hasCheckpointRef: (
     input: Omit<VcsRestoreCheckpointInput, "fallbackToHead">,
   ) => Effect.Effect<boolean, VcsError>;

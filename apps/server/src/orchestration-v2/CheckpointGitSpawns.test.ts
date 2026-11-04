@@ -35,8 +35,8 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 // Each git process costs about 60 ms on Windows; these budgets keep removed spawns out.
 const FIRST_TURN_BASELINE_GIT_BUDGET = 11;
 const FIRST_TURN_FINALIZE_GIT_BUDGET = 13;
-// The snapshot overlaps the provider session open; only publishing stays before the turn.
-const FIRST_TURN_PUBLISH_GIT_BUDGET = 1;
+// The snapshot overlaps the provider session open; checking and publishing it stay before the turn.
+const FIRST_TURN_PUBLISH_GIT_BUDGET = 2;
 
 const isGitCommand = (command: string) => {
   const name = command.split(/[\\/]/).at(-1)?.toLowerCase();
@@ -377,6 +377,109 @@ it.effect("prepares a baseline off the critical path and publishes it like a cap
       yield* git(cwd, ["update-ref", yield* refOf(raced), "HEAD"]);
       yield* racedPublish;
       assert.strictEqual(yield* resolve(yield* refOf(raced)), yield* resolve("HEAD"));
+    }).pipe(Effect.provide(makeLayer(spawns)));
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("publishes a prepared baseline with the edits made before publication", () =>
+  Effect.gen(function* () {
+    const spawns: Array<ReadonlyArray<string>> = [];
+    yield* Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const cwd = yield* makeRepository;
+      yield* fileSystem.writeFileString(path.join(cwd, "draft.txt"), "uncommitted\n");
+      yield* fileSystem.writeFileString(path.join(cwd, "notes.txt"), "notes\n");
+      const checkpoints = yield* CheckpointService.CheckpointServiceV2;
+      const now = yield* DateTime.now;
+      const scopeFor = (id: string): OrchestrationV2CheckpointScope => ({
+        id: CheckpointScopeId.make(id),
+        threadId,
+        runId,
+        nodeId: rootNodeId,
+        parentScopeId: null,
+        providerThreadId,
+        kind: "root_run",
+        ordinalWithinParent: 0,
+        advancesAppRunCount: true,
+        cwd,
+        createdAt: now,
+      });
+      const treeOf = (scope: OrchestrationV2CheckpointScope) =>
+        Effect.gen(function* () {
+          const ref = yield* CheckpointService.checkpointRefForScopeOrdinal({
+            scopeId: scope.id,
+            ordinalWithinScope: 0,
+          });
+          const process = yield* VcsProcess.VcsProcess;
+          const result = yield* process.run({
+            operation: "test.git",
+            command: "git",
+            args: ["-C", cwd, "ls-tree", "-r", `${ref}^{tree}`],
+            cwd,
+          });
+          return result.stdout;
+        });
+
+      // Same size and second as the snapshot, so only a content check sees the edit.
+      const prepared = scopeFor("checkpoint-scope:edited");
+      const publish = yield* checkpoints.prepareBaseline({
+        scope: prepared,
+        ordinalWithinScope: 0,
+      });
+      yield* fileSystem.writeFileString(path.join(cwd, "draft.txt"), "user edit!!\n");
+      yield* fileSystem.writeFileString(path.join(cwd, "autosave.txt"), "autosaved\n");
+      yield* fileSystem.remove(path.join(cwd, "notes.txt"));
+      yield* publish;
+
+      const captured = scopeFor("checkpoint-scope:after-edits");
+      yield* checkpoints.captureBaseline({ scope: captured, ordinalWithinScope: 0 });
+      const publishedTree = yield* treeOf(prepared);
+      assert.strictEqual(publishedTree, yield* treeOf(captured));
+      assert.include(publishedTree, "autosave.txt");
+      assert.notInclude(publishedTree, "notes.txt");
+    }).pipe(Effect.provide(makeLayer(spawns)));
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("removes a prepared baseline's scratch index when its turn never publishes", () =>
+  Effect.gen(function* () {
+    const spawns: Array<ReadonlyArray<string>> = [];
+    yield* Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const cwd = yield* makeRepository;
+      const checkpoints = yield* CheckpointService.CheckpointServiceV2;
+      const now = yield* DateTime.now;
+      const scratchIndexes = fileSystem
+        .readDirectory(path.join(cwd, ".git"))
+        .pipe(
+          Effect.map((entries) =>
+            entries.filter((entry) => entry.startsWith("houston-checkpoint-index-")),
+          ),
+        );
+      yield* Effect.scoped(
+        checkpoints.prepareBaseline({
+          scope: {
+            id: CheckpointScopeId.make("checkpoint-scope:abandoned"),
+            threadId,
+            runId,
+            nodeId: rootNodeId,
+            parentScopeId: null,
+            providerThreadId,
+            kind: "root_run",
+            ordinalWithinParent: 0,
+            advancesAppRunCount: true,
+            cwd,
+            createdAt: now,
+          },
+          ordinalWithinScope: 0,
+        }).pipe(
+          Effect.andThen(scratchIndexes),
+          Effect.map((kept) => assert.lengthOf(kept, 1, "publishing checks the kept index")),
+        ),
+      );
+      assert.deepEqual(yield* scratchIndexes, []);
     }).pipe(Effect.provide(makeLayer(spawns)));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
