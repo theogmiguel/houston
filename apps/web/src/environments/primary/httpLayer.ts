@@ -1,7 +1,7 @@
 import { layerRemoteHttpClient } from "@houston-app/client-runtime/rpc";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest } from "effect/http";
 
 import { invalidateDesktopPrimaryBearerToken, readDesktopPrimaryBearerToken } from "./desktopAuth";
 import { resolvePrimaryEnvironmentHttpUrl } from "./target";
@@ -21,7 +21,18 @@ function isSameOriginBrowserPrimary(): boolean {
 function withPrimaryBearerToken(client: HttpClient.HttpClient): HttpClient.HttpClient {
   return client.pipe(
     HttpClient.mapRequestEffect((request) =>
-      Effect.promise(readDesktopPrimaryBearerToken).pipe(
+      Effect.tryPromise({
+        try: readDesktopPrimaryBearerToken,
+        // The host fails here while its server is still starting; a transport failure lets callers retry.
+        catch: (cause) =>
+          new HttpClientError.HttpClientError({
+            reason: new HttpClientError.TransportError({
+              request,
+              cause,
+              description: `the desktop host could not provide a session token: ${String(cause)}`,
+            }),
+          }),
+      }).pipe(
         Effect.map((bearerToken) =>
           bearerToken ? HttpClientRequest.bearerToken(request, bearerToken) : request,
         ),
