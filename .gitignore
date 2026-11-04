@@ -89,3 +89,6 @@ handoff/design/boards/.render.html
 # Electron host build output.
 dist-electron/
 .electron-runtime/
+
+# Electron host packaging output (AppImage, deb, NSIS, update manifests).
+release/
