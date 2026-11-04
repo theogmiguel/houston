@@ -927,15 +927,31 @@ impl V2Host {
 
     /// Stop the tracked server and start a fresh one with the current settings.
     pub async fn restart(&self) -> Result<RunningServer, String> {
-        if let Some(running) = self.running() {
-            stop_server(running.pid).await?;
+        self.stop_for_restart().await?;
+        ensure_running(self).await
+    }
+
+    /// The server a restart must stop first. A hung server the monitor forgot is
+    /// still named by the channel's runtime record and still holds the ownership
+    /// lock, so the record's pid is stopped when none is tracked.
+    fn restart_target(&self) -> Option<i32> {
+        self.running()
+            .map(|running| running.pid)
+            .or_else(|| read_runtime(&self.base_dir).map(|record| record.pid))
+            .filter(|pid| *pid > 0)
+    }
+
+    /// The runtime record is removed only once its server is confirmed stopped.
+    async fn stop_for_restart(&self) -> Result<(), String> {
+        if let Some(pid) = self.restart_target() {
+            stop_server(pid).await?;
         }
         let _ = fs::remove_file(runtime_path(&self.base_dir));
         if let Ok(mut state) = self.state.lock() {
             state.running = None;
             state.bearer = None;
         }
-        ensure_running(self).await
+        Ok(())
     }
 
     pub(crate) fn record_error(&self, error: String) {
@@ -1437,14 +1453,7 @@ pub async fn v2_server_restart(
 /// A manual restart stops the tracked server and starts a fresh one, serialized
 /// with the monitor's own starts.
 async fn start_server_restarting(host: &V2Host) -> Result<RunningServer, String> {
-    if let Some(running) = host.running() {
-        stop_server(running.pid).await?;
-    }
-    let _ = fs::remove_file(runtime_path(&host.base_dir));
-    if let Ok(mut state) = host.state.lock() {
-        state.running = None;
-        state.bearer = None;
-    }
+    host.stop_for_restart().await?;
     start_server(host).await
 }
 
@@ -1963,6 +1972,25 @@ mod tests {
             "a replacement started meanwhile is kept"
         );
         assert_eq!(host.status()["pid"], 43);
+    }
+
+    #[test]
+    fn a_restart_stops_a_hung_server_the_monitor_forgot() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let (host, _) = host_with_secret(dir.path(), || Ok("k".repeat(64)));
+        fs::create_dir_all(dir.path().join(RUNTIME_DIR)).expect("runtime dir");
+        fs::write(
+            runtime_path(dir.path()),
+            r#"{"version":1,"pid":42,"port":3773,"origin":"http://127.0.0.1:3773"}"#,
+        )
+        .expect("runtime record");
+        host.set_running(running_server(42));
+        assert!(host.forget_unhealthy(42));
+        assert_eq!(
+            host.restart_target(),
+            Some(42),
+            "the channel's record still names the hung server"
+        );
     }
 
     #[test]
