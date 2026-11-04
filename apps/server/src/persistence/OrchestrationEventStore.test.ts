@@ -76,7 +76,15 @@ layer("OrchestrationEventStore", (it) => {
             project: toShellApplicationEvent,
           }),
         );
-        assert.deepEqual(yield* pull, [{ sequence: replayed!.sequence, event: { threadId } }]);
+        // Houston: the shell footprint is bounded metadata that lets a batch skip its shell read.
+        const shellOnly = (sequence: number) => [
+          { sequence, event: { threadId }, footprint: { kind: "shell" } },
+        ];
+        const assertRetainsShellOnly = (events: ReadonlyArray<unknown>, sequence: number) => {
+          assert.deepEqual(events, shellOnly(sequence));
+          assert.isBelow(JSON.stringify(events).length, 1024);
+        };
+        assertRetainsShellOnly(yield* pull, replayed!.sequence);
         const [live] = yield* store.appendAgentEvents({
           events: [
             {
@@ -87,7 +95,7 @@ layer("OrchestrationEventStore", (it) => {
           ],
         });
         yield* store.publishCommitted([live!]);
-        assert.deepEqual(yield* pull, [{ sequence: live!.sequence, event: { threadId } }]);
+        assertRetainsShellOnly(yield* pull, live!.sequence);
         const durable = yield* store
           .readAgentEvents({ threadId, afterSequence })
           .pipe(Stream.runCollect);
