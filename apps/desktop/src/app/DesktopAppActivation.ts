@@ -289,6 +289,7 @@ export class DesktopAppActivation extends Context.Service<
     readonly start: Effect.Effect<void, DesktopAppActivationStartError, Scope.Scope>;
     readonly setRendererReady: (ready: boolean) => Effect.Effect<void>;
     readonly complete: (response: DesktopAppActivationResponse) => Effect.Effect<void>;
+    readonly activateWorkspace: (workspaceRoot: string) => Effect.Effect<void>;
   }
 >()("@houston-app/desktop/app/DesktopAppActivation") {}
 
@@ -311,6 +312,7 @@ export const make = Effect.gen(function* () {
   });
   let registeredWebContents: Electron.WebContents | null = null;
   let detachRendererListeners: (() => void) | null = null;
+  let nextRequestId = 0;
 
   const broker = new DesktopAppActivationBroker({
     requestTimeoutMs: REQUEST_TIMEOUT_MS,
@@ -329,6 +331,13 @@ export const make = Effect.gen(function* () {
     registeredWebContents = null;
     broker.clearRenderer();
   };
+
+  const activationPlatform =
+    desktopEnvironment.platform === "win32"
+      ? ("win32" as const)
+      : desktopEnvironment.platform === "darwin"
+        ? ("darwin" as const)
+        : ("linux" as const);
 
   return DesktopAppActivation.of({
     start: Effect.acquireRelease(
@@ -389,6 +398,19 @@ export const make = Effect.gen(function* () {
     complete: Effect.fnUntraced(function* (response) {
       return yield* Effect.sync(() => broker.complete(response));
     }),
+    activateWorkspace: Effect.fn("DesktopAppActivation.activateWorkspace")(
+      function* (workspaceRoot) {
+        nextRequestId += 1;
+        const request: DesktopAppActivationRequest = {
+          version: DESKTOP_APP_ACTIVATION_PROTOCOL_VERSION,
+          requestId: `app-activation-${nextRequestId}`,
+          type: "open-workspace",
+          workspaceRoot,
+          platform: activationPlatform,
+        };
+        yield* Effect.promise(() => broker.request(request)).pipe(Effect.asVoid);
+      },
+    ),
   });
 });
 

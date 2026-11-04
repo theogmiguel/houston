@@ -99,6 +99,15 @@ export function renderUrlHandlerDesktopEntry(input: {
 // Docks may look up the Wayland app id without a desktop entry; icon theme lookups are case-sensitive.
 const LINUX_THEME_ICON_SIZE = "256x256";
 
+/** Only the installed release channel replaces the system handler for its own scheme. */
+export function shouldRegisterUrlHandler(input: {
+  readonly platform: NodeJS.Platform;
+  readonly isDevelopment: boolean;
+  readonly channel: string | null;
+}): boolean {
+  return input.platform === "linux" && !input.isDevelopment && input.channel === null;
+}
+
 function linuxThemeIconNames(desktopEntryName: string): readonly string[] {
   const appId = desktopEntryName.replace(/\.desktop$/u, "");
   return [...new Set([appId.toLowerCase(), appId])];
@@ -287,7 +296,15 @@ export const make = Effect.gen(function* () {
   );
 
   const register = Effect.gen(function* () {
-    if (environment.platform !== "linux") {
+    // Only the installed release channel owns the system `houston://` handler; a dev or
+    // named channel must not replace it for the installed app.
+    if (
+      !shouldRegisterUrlHandler({
+        platform: environment.platform,
+        isDevelopment: environment.isDevelopment,
+        channel: Option.getOrNull(environment.channel),
+      })
+    ) {
       return;
     }
     yield* writeDesktopEntry;
