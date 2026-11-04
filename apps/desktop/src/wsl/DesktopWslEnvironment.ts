@@ -873,6 +873,9 @@ const probeWslDistros: Effect.Effect<
       stdin: "ignore",
       stdout: "pipe",
       stderr: "ignore",
+      // Match the host's distro enumeration: one encoding regardless of the Windows locale.
+      env: { WSL_UTF8: "1" },
+      extendEnv: true,
       killSignal: "SIGTERM",
       forceKillAfter: PROCESS_TERMINATE_GRACE,
     });
