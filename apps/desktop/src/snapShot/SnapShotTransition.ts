@@ -310,7 +310,7 @@ export class SnapShotTransition {
         }
       }
       if (this.waitForCompositorFrame) {
-        // Renderer frames alone can leave a transparent gap; composite the snapshot before revealing T3.
+        // Renderer frames alone can leave a transparent gap; composite the snapshot before revealing Houston.
         await Promise.all(
           overlays.map(async (overlay) => {
             if (this.active !== active || overlay.window.isDestroyed()) return;

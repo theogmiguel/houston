@@ -1,6 +1,6 @@
 export const CLIENT_NAMES = [
-  "com.t3tools.T3Code.SnapShot",
-  "com.t3tools.T3Code.Development.SnapShot",
+  "com.houston.Houston.SnapShot",
+  "com.houston.Houston.Development.SnapShot",
 ];
 
 export function isWaylandSession(meta) {
@@ -42,7 +42,7 @@ export class CaptureService {
           break;
         }
       }
-      if (!allowed) throw new Error("Only T3 Code may request a snapshot.");
+      if (!allowed) throw new Error("Only Houston may request a snapshot.");
       const pid = options ? await this._getProcessId(sender) : undefined;
       this._checkSession();
       const snapshot = await this._takeSnapshot(options?.animate ?? false);

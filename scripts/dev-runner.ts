@@ -332,7 +332,7 @@ export const createDevRunnerEnv = Effect.fn("dev-runner.createDevRunnerEnv")(fun
     delete output.HOUSTON_HOME;
   }
 
-  // Managed T3 service shells leak launcher variables that make dev servers fail version checks.
+  // Managed Houston service shells leak launcher variables that make dev servers fail version checks.
   // Dev-runner servers are never launcher-managed (serviceLauncherClient.ts resolveStartup).
   delete output.HOUSTON_SERVICE_LAUNCHER_CONTEXT;
   delete output.HOUSTON_BOOT_SERVICE_UNIT;

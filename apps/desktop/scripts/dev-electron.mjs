@@ -89,19 +89,45 @@ function killChildTreeByPid(pid, signal) {
   NodeChildProcess.spawnSync("pkill", [`-${signal}`, "-P", String(pid)], { stdio: "ignore" });
 }
 
-function cleanupStaleDevApps() {
+function listStaleDevAppPids() {
   if (hostPlatform === "win32") {
-    return;
+    return [];
   }
 
-  const escapedDesktopDir = desktopDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  NodeChildProcess.spawnSync(
-    "pkill",
-    ["-f", "--", `(^| )--houston-dev-root=${escapedDesktopDir}( |$)`],
-    {
-      stdio: "ignore",
-    },
+  const result = NodeChildProcess.spawnSync("ps", ["-eo", "pid=,ppid=,command="], {
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    return [];
+  }
+
+  const rows = result.stdout
+    .split("\n")
+    .map((line) => /^(\d+)\s+(\d+)\s+(.*)$/.exec(line.trim()))
+    .filter((match) => match !== null)
+    .map((match) => ({
+      pid: Number(match[1]),
+      ppid: Number(match[2]),
+      command: match[3],
+    }));
+  // A live dev runner owns its app; the app's single-instance lock focuses it.
+  const liveRunnerPids = new Set(
+    rows.filter((row) => row.command.includes("dev-electron.mjs")).map((row) => row.pid),
   );
+  return rows
+    .filter(
+      (row) =>
+        row.command.includes(`--houston-dev-root=${desktopDir}`) && !liveRunnerPids.has(row.ppid),
+    )
+    .map((row) => row.pid);
+}
+
+function cleanupStaleDevApps() {
+  for (const pid of listStaleDevAppPids()) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {}
+  }
 }
 
 function startApp() {

@@ -40,7 +40,7 @@ export const DesktopConfig = Config.all({
   houstonHome: trimmedString("HOUSTON_HOME"),
   devServerUrl: Config.URL("VITE_DEV_SERVER_URL").pipe(Config.option),
   appUserModelIdOverride: trimmedString("HOUSTON_DESKTOP_APP_USER_MODEL_ID"),
-  devRemoteHoustonServerEntryPath: trimmedString("HOUSTON_DEV_REMOTE_T3_SERVER_ENTRY_PATH"),
+  devRemoteHoustonServerEntryPath: trimmedString("HOUSTON_DEV_REMOTE_SERVER_ENTRY_PATH"),
   configuredBackendPort: Config.Port("HOUSTON_PORT").pipe(Config.option),
   commitHashOverride: trimmedString("HOUSTON_COMMIT_HASH"),
   desktopLanHostOverride: trimmedString("HOUSTON_DESKTOP_LAN_HOST"),

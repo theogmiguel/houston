@@ -5,11 +5,11 @@ interface MergeStorage {
 
 const PROMPT_STASH_KEY = "houston:prompt-stash:v2";
 const COMPOSER_DRAFTS_KEY = "houston:composer-drafts:v1";
-const NOT_IMPORTED_KEYS = new Set([
-  // Identifies one running install to the server; two apps must not share it.
-  "t3.backgroundActivity.clientId",
-  "houston:snap-shot-setup-resume:v1",
-]);
+const NOT_IMPORTED_KEYS = new Set(["houston:snap-shot-setup-resume:v1"]);
+// Identifies one running install to the server; two apps must not share it.
+const CLIENT_ID_KEY_SUFFIX = ".backgroundActivity.clientId";
+const isNotImportedKey = (key: string) =>
+  NOT_IMPORTED_KEYS.has(key) || key.endsWith(CLIENT_ID_KEY_SUFFIX);
 /** Matches MAX_STASH_ENTRIES in apps/web/src/promptStashStore.ts. */
 const MAX_STASH_ENTRIES = 20;
 const DRAFT_RECORD_FIELDS = [
@@ -86,7 +86,7 @@ export function mergeLegacyLocalStorage(
     (left, right) => Number(isMergedKey(right)) - Number(isMergedKey(left)),
   );
   for (const key of keys) {
-    if (NOT_IMPORTED_KEYS.has(key)) continue;
+    if (isNotImportedKey(key)) continue;
     const legacy = legacyItems[key]!;
     const current = storage.getItem(key);
     const next = current === null ? legacy : mergeValue(key, current, legacy);
