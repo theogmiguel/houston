@@ -53,8 +53,9 @@ const applyDevelopmentIconOverrides = Effect.fn("applyDevelopmentIconOverrides")
     const sourcePath = path.join(repoRoot, override.sourceRelativePath);
     const targetPath = path.join(serverDir, override.targetRelativePath);
 
+    // A channel without its own icon sources keeps the production icons.
     if (!(yield* fs.exists(sourcePath))) {
-      return yield* new ServerCliDevelopmentIconSourceMissingError({ sourcePath });
+      continue;
     }
     if (!(yield* fs.exists(targetPath))) {
       return yield* new ServerCliDevelopmentIconTargetMissingError({ targetPath });
