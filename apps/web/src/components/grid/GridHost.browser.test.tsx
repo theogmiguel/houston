@@ -646,6 +646,26 @@ describe("GridHost resize", () => {
     expect(badge.style.display).toBe("inline-block");
   });
 
+  it("keeps both cells visible after clicking the divider without moving", async () => {
+    const onTreeChange = vi.fn();
+    await using screen = await mountRow(onTreeChange);
+    const gutter = screen.container.querySelector<HTMLElement>("[data-grid-gutter]")!;
+    const rect = gutter.getBoundingClientRect();
+    const at = { clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 };
+    using _capture = vi.spyOn(gutter, "setPointerCapture").mockImplementation(() => {});
+    const pointer = { bubbles: true, pointerId: 1, button: 0, ...at };
+
+    for (let click = 0; click < 2; click += 1) {
+      await act(() => gutter.dispatchEvent(new PointerEvent("pointerdown", pointer)));
+      await act(() => gutter.dispatchEvent(new PointerEvent("pointerup", pointer)));
+    }
+
+    expect(onTreeChange).not.toHaveBeenCalled();
+    const slots = screen.container.querySelectorAll<HTMLElement>("[data-grid-slot]");
+    expect(slots).toHaveLength(2);
+    for (const slot of slots) expect(slot.getBoundingClientRect().width).toBeGreaterThan(100);
+  });
+
   it("never collapses a cell below the fraction floor", async () => {
     const onTreeChange = vi.fn();
     await using screen = await mountRow(onTreeChange);

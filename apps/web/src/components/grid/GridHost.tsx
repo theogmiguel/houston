@@ -496,10 +496,12 @@ function SplitView({
     showBadge(drag.index, value, presetOf(value));
   };
 
+  // Writes the committed weights back: React skips an unchanged style prop, so clearing the
+  // preview would leave the slot with no flex-grow and zero width.
   const restoreSlots = () => {
     node.children.forEach((_, index) => {
       const slot = slotRefs.current[index];
-      if (slot != null) slot.style.flexGrow = "";
+      if (slot != null) slot.style.flexGrow = String(node.weights[index] ?? 1);
     });
   };
 
