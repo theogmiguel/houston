@@ -13,7 +13,38 @@ export type MotionConfig =
   | ({ readonly kind: "spring" } & SpringParams)
   | { readonly kind: "easing"; readonly durationMs: number; readonly curve: MotionCurve };
 
-export type MotionName = "grid-cell-movement" | "grid-cell-enter";
+export type MotionName = "grid-cell-movement" | "grid-cell-enter" | "grid-cell-maximize";
+
+/**
+ * The CSS motion roles in index.css (`--motion-*`), for animations driven from script.
+ * A test keeps the two in step; reduced motion is handled by `resolveMotion` here and by
+ * the stylesheet's media query there.
+ */
+export const MOTION_ROLE_MS = {
+  feedback: 100,
+  "overlay-in": 150,
+  "overlay-out": 100,
+  "modal-in": 220,
+  "modal-out": 160,
+  "toast-in": 220,
+  "toast-out": 140,
+  "swap-in": 160,
+  "swap-out": 80,
+  "list-in": 180,
+  "list-out": 140,
+  disclosure: 200,
+  value: 120,
+  stagger: 40,
+  "content-delay": 60,
+} as const;
+
+export type MotionRole = keyof typeof MOTION_ROLE_MS;
+
+/** The stylesheet's `--ease-standard` and `--ease-exit`. */
+export const MOTION_EASE = {
+  standard: [0.2, 0, 0, 1],
+  exit: [0.4, 0, 1, 1],
+} as const satisfies Record<string, readonly [number, number, number, number]>;
 
 const spring = (dampingRatio: number, stiffness: number, epsilon: number): MotionConfig => ({
   kind: "spring",
@@ -31,6 +62,7 @@ const GRID_CELL_SPRING: MotionConfig = spring(0.9, 500, 0.0001);
 const MOTION_DEFAULTS: Readonly<Record<MotionName, MotionConfig>> = {
   "grid-cell-movement": GRID_CELL_SPRING,
   "grid-cell-enter": GRID_CELL_SPRING,
+  "grid-cell-maximize": GRID_CELL_SPRING,
 };
 
 interface MotionSettings {

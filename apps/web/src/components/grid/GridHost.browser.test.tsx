@@ -888,6 +888,9 @@ describe("GridHost stable cells", () => {
       const maximized = stage.cell("thread-c").getBoundingClientRect();
       expect([maximized.width, maximized.height]).toEqual([content.width, content.height]);
     });
-    expect(getComputedStyle(stage.cell("thread-a")).visibility).toBe("hidden");
+    // The neighbours fade out with the morph, then hide.
+    await vi.waitFor(() => {
+      expect(getComputedStyle(stage.cell("thread-a")).visibility).toBe("hidden");
+    });
   });
 });

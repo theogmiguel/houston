@@ -207,3 +207,27 @@ The server owns threads and agent runs independently of connected clients. See t
 - Follow the [style guide](docs/internals/styleguide.md).
 
 <!-- Renderer composition and capture rules (Theo). -->
+
+### Motion
+
+The renderer ships in a WebKitGTK webview, so motion must stay on the compositor.
+
+- Name a role, never a raw value: `duration-(--motion-overlay-in)`, `ease-standard` or
+  `ease-exit`. The roles live in `apps/web/src/index.css` (`--motion-*`), mirrored for
+  script in `MOTION_ROLE_MS`/`MOTION_EASE` (`apps/web/src/motion/registry.ts`); a test keeps
+  them in step. `houston/no-raw-motion` flags raw durations, easings and `transition-all`.
+- Roles: `feedback` (hover, press, checked), `overlay` (menu, popover, tooltip, select),
+  `modal` (dialog, sheet), `toast`, `swap` (content replaced in place), `list` (row in or
+  out), `disclosure` (expand, collapse), `value` (a glyph or number that changes meaning).
+  Exits are faster than entrances and use `ease-exit`.
+- Animate only `transform` and `opacity`. No transitions on width, height, padding, margin,
+  flex-basis or inherited custom properties; no `backdrop-filter` on anything that moves;
+  `will-change` only while something moves.
+- Keyboard highlights, typing, streaming text, timeline rows and thread or route switches
+  stay instant. Hover reveals fade opacity; they never toggle `display`.
+- Grid cells move by FLIP (`motion/paneMotion.ts`) and maximize through a stand-in card
+  (`motion/maximizeMotion.ts`), both on the `registry.ts` spring. Measure grid changes with
+  the frame probe (`source: "frame-probe"` in `~/.houston-dev/app-debug.ndjson`).
+- Reduced motion turns every role to 0ms in CSS and `resolveMotion` returns `off` in script.
+- Run motion tests on both engines: `HOUSTON_TEST_BROWSER=webkit` switches the browser
+  project to WebKit.

@@ -142,7 +142,8 @@ const browserTestProject = {
       enabled: true,
       headless: true,
       provider: playwright(),
-      instances: [{ browser: "chromium" }],
+      // The desktop app renders in WebKitGTK; HOUSTON_TEST_BROWSER=webkit runs the suite on that engine.
+      instances: [{ browser: process.env.HOUSTON_TEST_BROWSER === "webkit" ? "webkit" : "chromium" }],
       screenshotFailures: false,
       commands: {
         // Playwright's mouse outlives each test, so whatever mounts under its last

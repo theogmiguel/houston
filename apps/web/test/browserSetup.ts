@@ -1,6 +1,13 @@
 import { beforeEach } from "vite-plus/test";
 import { commands } from "vite-plus/test/browser";
 
+// Playwright's WebKit build lacks the disposal symbols that `using` in these tests relies on.
+for (const name of ["dispose", "asyncDispose"] as const) {
+  if (Symbol[name] === undefined) {
+    Object.defineProperty(Symbol, name, { value: Symbol.for(`Symbol.${name}`) });
+  }
+}
+
 declare module "vite-plus/test/browser" {
   interface BrowserCommands {
     /** Defined in vite.config.ts. Moves Playwright's mouse off the page. */

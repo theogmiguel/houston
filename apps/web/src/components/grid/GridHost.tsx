@@ -43,7 +43,7 @@ import {
 } from "../../grid/tree";
 import { presetOf, snapSplitRatio, splitFractionLabel, stepSplitPreset } from "../../grid/resize";
 import { beginLayoutResize, endLayoutResize } from "../../motion/layoutResize";
-import { probeCellMoveFrames } from "../../motion/frameProbe";
+import { animateMaximizeMorph, type CellRect } from "../../motion/maximizeMotion";
 import { offsetWithin, useGridCellFlip } from "../../motion/paneMotion";
 import { GRID_BADGE_LINGER_MS, SNAP_DISTANCE_PX } from "../../motion/timings";
 import { announce } from "../../lib/announce";
@@ -131,24 +131,26 @@ export function GridHost(props: GridHostProps) {
     return () => window.clearTimeout(timer);
   }, [enteringThreadIds]);
 
+  // Where each frame was last placed, so a maximize can morph from the box it leaves.
+  const placedRects = useRef(new Map<string, CellRect>());
+  const shownMaximize = useRef({ gridId: grid.id, threadId: maximizedThreadId ?? null });
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- places the cell frames over their layout boxes before paint, and again whenever a box resizes
   useLayoutEffect(() => {
     const root = surfaceRef.current;
     if (root === null) return;
-    placeCellFrames(root);
+    const before = new Map(placedRects.current);
+    placeCellFrames(root, placedRects.current);
+    const was = shownMaximize.current;
+    const now = { gridId: grid.id, threadId: maximizedThreadId ?? null };
+    shownMaximize.current = now;
+    const morphedId = now.threadId ?? was.threadId;
+    if (was.gridId === now.gridId && was.threadId !== now.threadId && morphedId !== null) {
+      morphMaximize(root, morphedId, now.threadId !== null, before, placedRects.current);
+    }
     return observeResize([root, ...root.querySelectorAll("[data-cell-place]")], () =>
-      placeCellFrames(root),
+      placeCellFrames(root, placedRects.current),
     );
   });
-
-  const shownMaximizedId = maximizedThreadId ?? null;
-  const probedMaximize = useRef(shownMaximizedId);
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- samples frame times for the maximize morph; no state is written
-  useLayoutEffect(() => {
-    if (probedMaximize.current === shownMaximizedId) return;
-    probedMaximize.current = shownMaximizedId;
-    probeCellMoveFrames(1, GRID_MORPH_MS, "maximize");
-  }, [shownMaximizedId]);
 
   // Cells that existed before a tree change FLIP into their new slots; a join or
   // a leave already animates through the grid's flex transition.
@@ -446,7 +448,7 @@ const EMPTY_IDS: ReadonlySet<string> = new Set();
  * moves boxes and each cell keeps its DOM, scroll position and React state. A cell
  * hidden behind a maximized one keeps its last size, so showing it costs no relayout.
  */
-function placeCellFrames(root: HTMLElement): void {
+function placeCellFrames(root: HTMLElement, placed: Map<string, CellRect>): void {
   const places = new Map<string, HTMLElement>();
   for (const place of root.querySelectorAll<HTMLElement>("[data-cell-place]")) {
     const threadId = place.dataset.cellPlace;
@@ -463,7 +465,37 @@ function placeCellFrames(root: HTMLElement): void {
     setPx(frame, "top", offset.y);
     setPx(frame, "width", place.offsetWidth);
     setPx(frame, "height", place.offsetHeight);
+    placed.set(place.dataset.cellPlace ?? "", {
+      x: offset.x,
+      y: offset.y,
+      width: place.offsetWidth,
+      height: place.offsetHeight,
+    });
   }
+}
+
+/** Starts the maximize or restore morph of `threadId` from its last box to its new one. */
+function morphMaximize(
+  root: HTMLElement,
+  threadId: string,
+  opening: boolean,
+  before: ReadonlyMap<string, CellRect>,
+  after: ReadonlyMap<string, CellRect>,
+): void {
+  const from = before.get(threadId);
+  const to = after.get(threadId);
+  const frames = [...root.querySelectorAll<HTMLElement>(":scope > [data-grid-cell-frame]")];
+  const frame = frames.find((candidate) => candidate.dataset.gridCellFrame === threadId);
+  const cell = frame?.querySelector<HTMLElement>("[data-grid-cell]");
+  if (from === undefined || to === undefined || cell == null) return;
+  animateMaximizeMorph(
+    root,
+    cell,
+    from,
+    to,
+    opening,
+    frames.filter((candidate) => candidate !== frame),
+  );
 }
 
 function setPx(element: HTMLElement, property: "left" | "top" | "width" | "height", value: number) {

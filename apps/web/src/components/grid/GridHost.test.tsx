@@ -119,11 +119,10 @@ describe("GridHost", () => {
         )}
       />,
     );
-    expect(html.match(/data-testid="cell"/g)).toHaveLength(1);
-    expect(html).toContain('data-thread-id="thread-b"');
-    expect(html).toContain('data-focused="true"');
-    expect(html).toContain("maximized");
-    expect(html).not.toContain("thread-a");
+    // Every cell keeps its frame (and its chat's state); only the maximized one has a place.
+    expect(html.match(/data-cell-place="[^"]*"/g)).toEqual(['data-cell-place="thread-b"']);
+    expect(html).toMatch(/data-thread-id="thread-b" data-focused="true">maximized/);
+    expect(html).toMatch(/data-thread-id="thread-a" data-focused="false">maximized/);
   });
 
   it("hands each cell its thread id and close/split callbacks", () => {

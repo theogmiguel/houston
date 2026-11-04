@@ -225,6 +225,56 @@ html[data-theme-reveal] *::after {
   --font-serif: "Source Serif 4", Georgia, serif;
 }
 
+/* Motion roles. Components name a role (`duration-(--motion-overlay-in) ease-standard`),
+   never a raw duration: one place tunes the whole app, and reduced motion turns every
+   movement off below. Quiet by default: brief, no overshoot, transform and opacity only.
+   motion/registry.ts mirrors these numbers for script-driven animations. */
+:root {
+  /* Hover, press, focus, checked: colour or a tiny scale. */
+  --motion-feedback: 100ms;
+  /* Menus, selects, popovers, tooltips: grow from their anchor. */
+  --motion-overlay-in: 150ms;
+  --motion-overlay-out: 100ms;
+  /* Dialogs and sheets; their content follows the surface by --motion-content-delay. */
+  --motion-modal-in: 220ms;
+  --motion-modal-out: 160ms;
+  --motion-toast-in: 220ms;
+  --motion-toast-out: 140ms;
+  /* Content replaced in place: a crossfade with a small rise. */
+  --motion-swap-in: 160ms;
+  --motion-swap-out: 80ms;
+  --motion-swap-rise: 6px;
+  /* Rows in and out: the space opens with the neighbours, the words follow. */
+  --motion-list-in: 180ms;
+  --motion-list-out: 140ms;
+  --motion-disclosure: 200ms;
+  /* An icon, count or status that changes meaning in place. */
+  --motion-value: 120ms;
+  /* Only for a batch arriving together, never per keystroke. */
+  --motion-stagger: 40ms;
+  --motion-content-delay: 60ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-overlay-in: 0ms;
+    --motion-overlay-out: 0ms;
+    --motion-modal-in: 0ms;
+    --motion-modal-out: 0ms;
+    --motion-toast-in: 0ms;
+    --motion-toast-out: 0ms;
+    --motion-swap-in: 0ms;
+    --motion-swap-out: 0ms;
+    --motion-swap-rise: 0px;
+    --motion-list-in: 0ms;
+    --motion-list-out: 0ms;
+    --motion-disclosure: 0ms;
+    --motion-value: 0ms;
+    --motion-stagger: 0ms;
+    --motion-content-delay: 0ms;
+  }
+}
+
 @theme inline {
   /* Two steps below Tailwind's text-xs (12px) for dense UI: metadata rows,
      badges, counters, keyboard hints and diagnostics tables. 2xs is 11px,
@@ -266,6 +316,10 @@ html[data-theme-reveal] *::after {
   /* Motion. drawer is the decelerating curve for surfaces that slide or pop in
      (composer context, pills). */
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  /* standard settles anything arriving or changing; exit accelerates what leaves.
+     Durations live in the --motion-* roles below. */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   /* The composer's elevation: a soft drop pulled in under the surface, shared
      by the composer, its context strip and attached banners. */
   --shadow-composer: 0 1px 2px rgb(0 0 0 / 5%);
@@ -2924,6 +2978,26 @@ code {
 
 [data-grid-surface][data-multi] [data-grid-cell][data-focused="true"]::before {
   border-color: var(--focus-frame);
+}
+
+/* Maximize and restore: a stand-in card carries the box while every cell's own card snaps
+   to where it ends, so the colour change happens once, inside the same move. */
+[data-grid-morph-card] {
+  position: absolute;
+  pointer-events: none;
+  background-color: var(--grid-card-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-group);
+  transform-origin: 0 0;
+  will-change: transform, opacity;
+}
+
+[data-grid-surface][data-maximize-morph] [data-grid-cell]::before {
+  transition: none;
+}
+
+[data-grid-surface] [data-grid-cell][data-maximize-morph]::before {
+  opacity: 0;
 }
 
 /* The chat inside a cell lets the cell's card show through instead of painting its own. */

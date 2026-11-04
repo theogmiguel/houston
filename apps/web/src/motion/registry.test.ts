@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
-import { configureMotion, motionSettings, resolveMotion } from "./registry";
+import {
+  configureMotion,
+  MOTION_EASE,
+  MOTION_ROLE_MS,
+  motionSettings,
+  resolveMotion,
+} from "./registry";
 
 afterEach(() => configureMotion({ off: false, slowdown: 1 }));
 
@@ -29,5 +35,21 @@ describe("resolveMotion", () => {
     expect(motionSettings().slowdown).toBe(1000);
     configureMotion({ slowdown: 0 });
     expect(motionSettings().slowdown).toBe(0.001);
+  });
+});
+
+describe("motion roles", () => {
+  it("match the stylesheet's tokens", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const css = await readFile(new URL("../index.css", import.meta.url), "utf8");
+    const start = css.indexOf("--motion-feedback");
+    const root = css.slice(start, css.indexOf("@media (prefers-reduced-motion", start));
+    const fromCss = Object.fromEntries(
+      [...root.matchAll(/--motion-([a-z-]+): (\d+)ms;/g)].map(([, name, ms]) => [name, Number(ms)]),
+    );
+    expect(fromCss).toEqual(MOTION_ROLE_MS);
+    for (const [name, points] of Object.entries(MOTION_EASE)) {
+      expect(css).toContain(`--ease-${name}: cubic-bezier(${points.join(", ")});`);
+    }
   });
 });
