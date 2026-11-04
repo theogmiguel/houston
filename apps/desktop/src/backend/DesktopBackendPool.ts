@@ -15,6 +15,9 @@ import { ChildProcessSpawner } from "effect/process";
 
 import * as DesktopBackendConfiguration from "./DesktopBackendConfiguration.ts";
 import * as DesktopBackendManager from "./DesktopBackendManager.ts";
+import * as DesktopServerAttachment from "./DesktopServerAttachment.ts";
+import * as DesktopServerStatus from "./DesktopServerStatus.ts";
+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
@@ -100,6 +103,21 @@ type UnregisterAction =
   | { readonly _tag: "Wait"; readonly done: Deferred.Deferred<void> }
   | { readonly _tag: "Close"; readonly entry: ActiveRegisteredInstance };
 
+const serverAttachmentFailureMessage = (
+  failure: DesktopServerAttachment.ServerAttachmentFailure,
+): string => {
+  switch (failure._tag) {
+    case "NoRecord":
+      return `No running server record was found at ${failure.recordPath}, so Houston cannot tell which server owns ${failure.stateDir}. Stop the other server or remove the stale record, then reopen Houston.`;
+    case "Dead":
+      return `The record at ${failure.recordPath} names pid ${failure.pid}, but that process is not running, and Houston cannot take over ${failure.stateDir} while the record is present. Stop or remove the stale server, then reopen Houston.`;
+    case "Unhealthy":
+      return `The server recorded at ${failure.recordPath} (pid ${failure.pid}, origin ${failure.origin}) does not answer its health endpoint, so Houston cannot use ${failure.stateDir}. Stop that server or fix its health, then reopen Houston.`;
+    case "InvalidOrigin":
+      return `The server recorded at ${failure.recordPath} (pid ${failure.pid}) has origin ${JSON.stringify(failure.origin)}, which is not an HTTP origin. Stop that server, then reopen Houston.`;
+  }
+};
+
 export const layer = Layer.effect(
   DesktopBackendPool,
   Effect.gen(function* () {
@@ -108,6 +126,9 @@ export const layer = Layer.effect(
     const electronDialog = yield* ElectronDialog.ElectronDialog;
     const electronApp = yield* ElectronApp.ElectronApp;
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
+    const serverAttachment = yield* DesktopServerAttachment.DesktopServerAttachment;
+    const serverStatus = yield* DesktopServerStatus.DesktopServerStatus;
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const { primaryBackendStartup } = yield* DesktopState.DesktopState;
     // Parent instance scopes to the pool so shutdown runs stop finalizers before the OS kills backends.
     const layerScope = yield* Scope.Scope;
@@ -159,27 +180,60 @@ export const layer = Layer.effect(
       label: configuration.resolvePrimaryLabel,
       configResolve: configuration.resolvePrimary,
       // Absorb window errors so readiness can reset restartAttempt.
-      onReady: (httpBaseUrl) =>
-        desktopWindow.handleBackendReady(httpBaseUrl).pipe(
-          // Only once the main window exists, so the recovery window never closes into nothing.
+      onReady: Effect.fn("desktop.backendPool.onReady")(function* (httpBaseUrl) {
+        yield* serverStatus.publish({
+          state: "ready",
+          origin: httpBaseUrl.origin,
+          port: Number(httpBaseUrl.port),
+          attached: false,
+          baseDir: environment.baseDir,
+        });
+        // Only once the main window exists, so the recovery window never closes into nothing.
+        yield* desktopWindow.handleBackendReady(httpBaseUrl).pipe(
           Effect.andThen(SubscriptionRef.set(primaryBackendStartup, { _tag: "Ready" })),
           Effect.catch((error) =>
             logBackendPoolWarning("failed to open main window after backend readiness", {
               error: error.message,
             }),
           ),
-        ),
+        );
+      }),
       onStartupFailure: (failure) =>
         SubscriptionRef.set(primaryBackendStartup, { _tag: "Failing", ...failure }),
       onShutdown: () => desktopWindow.handleBackendNotReady,
       onPreflightFailed: handlePrimaryPreflightFailure,
-      onStateDirOwned: () =>
-        electronDialog
-          .showErrorBox(
-            "This Houston home is unavailable",
-            "Another Houston server, such as the background service, is using this data directory, or an older background service is set up for it. Stop that server or try `houston update`. If the older launcher cannot update, run `houston service uninstall` and optionally reinstall with `houston service install` from a current CLI. Use `npx @houston-app/cli@latest` if `houston` is missing or outdated, and pass `--base-dir` with the service's Houston home to each command. Then reopen Houston. You can also set a separate HOUSTON_HOME and pair with the running server.",
-          )
-          .pipe(Effect.andThen(electronApp.quit)),
+      onStateDirOwned: Effect.fn("desktop.backendPool.onStateDirOwned")(function* () {
+        const result = yield* serverAttachment.resolve;
+        if (result._tag === "Attached") {
+          yield* logBackendPoolWarning("attaching to a server that owns the state directory", {
+            pid: result.server.pid,
+            origin: result.server.origin,
+            versionSkew: result.server.versionSkew,
+          });
+          return Option.some({
+            config: result.config,
+            httpBaseUrl: new URL(result.server.origin),
+            pid: result.server.pid,
+            warning: result.warning,
+          } satisfies DesktopBackendManager.DesktopBackendAttachment);
+        }
+        yield* electronDialog.showErrorBox(
+          "This Houston home is unavailable",
+          serverAttachmentFailureMessage(result),
+        );
+        yield* electronApp.quit;
+        return Option.none<DesktopBackendManager.DesktopBackendAttachment>();
+      }),
+      onAttached: (attachment) =>
+        serverStatus.publish({
+          state: "ready",
+          origin: attachment.httpBaseUrl.origin,
+          port: Number(attachment.httpBaseUrl.port),
+          pid: attachment.pid,
+          attached: true,
+          baseDir: environment.baseDir,
+          warning: Option.getOrNull(attachment.warning),
+        }),
     });
 
     const instancesRef = yield* SynchronizedRef.make<

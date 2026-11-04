@@ -4,19 +4,18 @@ import { parsePersistedServerObservabilitySettings } from "@houston-app/shared/s
 import { currentDesktopBootstrapToken } from "@houston-app/shared/desktopBootstrapToken";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
-import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import serverPackageJson from "../../../server/package.json" with { type: "json" };
 
 import * as DesktopBackendManager from "./DesktopBackendManager.ts";
+import * as DesktopBootstrapSecret from "./DesktopBootstrapSecret.ts";
+import { launcherEnvPatch, scrubLauncherEnv } from "./DesktopEnvHygiene.ts";
 import * as DesktopCliShim from "../app/DesktopCliShim.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopServerExposure from "./DesktopServerExposure.ts";
@@ -465,21 +464,6 @@ const isLocalHostIpv4 = (ip: string): boolean => {
   return false;
 };
 
-const buildObservabilityFragment = (observabilitySettings: BackendObservabilitySettings) => ({
-  ...Option.match(observabilitySettings.otlpTracesUrl, {
-    onNone: () => ({}),
-    onSome: (otlpTracesUrl) => ({ otlpTracesUrl }),
-  }),
-  ...Option.match(observabilitySettings.otlpMetricsUrl, {
-    onNone: () => ({}),
-    onSome: (otlpMetricsUrl) => ({ otlpMetricsUrl }),
-  }),
-  ...Option.match(observabilitySettings.otlpLogsUrl, {
-    onNone: () => ({}),
-    onSome: (otlpLogsUrl) => ({ otlpLogsUrl }),
-  }),
-});
-
 const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolvePrimary")(
   function* (
     input: SharedBootstrapInput & {
@@ -527,7 +511,10 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       entryPath: environment.backendEntryPath,
       cwd: environment.backendCwd,
       env: {
+        // Clear inherited launcher identity first; the child gets only what it needs.
+        ...launcherEnvPatch(process.env),
         ...backendChildEnvPatch(),
+        // The server runs through Electron's binary, so this child needs node mode.
         ELECTRON_RUN_AS_NODE: "1",
         HOUSTON_DESKTOP_SHELL_DISCOVERY_PENDING: "1",
         HOUSTON_CLI_PATH: Option.getOrUndefined(input.cliPath),
@@ -635,11 +622,8 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
     }
   }
 
-  const parentEnvWithoutHoustonHome: Record<string, string | undefined> = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (key === "HOUSTON_HOME") continue;
-    parentEnvWithoutHoustonHome[key] = value;
-  }
+  const parentEnvWithoutHoustonHome = scrubLauncherEnv(process.env);
+  delete parentEnvWithoutHoustonHome.HOUSTON_HOME;
   const wslEnv = mergeWslEnv(parentEnvWithoutHoustonHome.WSLENV, forwardedEnvNames);
 
   const baseConfig = {
@@ -719,21 +703,16 @@ export const make = Effect.gen(function* () {
   const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
   const wslServerTree = yield* DesktopWslServerTree.DesktopWslServerTree;
   const settings = yield* DesktopAppSettings.DesktopAppSettings;
-  const crypto = yield* Crypto.Crypto;
-  // Random generation yields; serialize it so concurrent backends cannot capture distinct bootstrap secrets.
-  const secretRef = yield* SynchronizedRef.make(Option.none<string>());
-  const getOrCreateBootstrapSecret = SynchronizedRef.modifyEffect(secretRef, (current) =>
-    Option.match(current, {
-      onSome: (secret) => Effect.succeed([secret, current] as const),
-      onNone: () =>
-        crypto.randomBytes(32).pipe(
-          Effect.map((bytes) => {
-            const secret = Hex.encode(bytes);
-            return [secret, Option.some(secret)] as const;
-          }),
-        ),
-    }),
-  );
+  const secretStore = yield* DesktopBootstrapSecret.DesktopBootstrapSecret;
+  // One secret per base directory so a restarted app reuses the running server's key.
+  const getOrCreateBootstrapSecret = Effect.gen(function* () {
+    const value = yield* secretStore.resolve;
+    yield* Option.match(value.warning, {
+      onNone: () => Effect.void,
+      onSome: (warning) => Effect.logWarning(warning),
+    });
+    return value.secret;
+  });
 
   const sharedInputs = Effect.gen(function* () {
     const bootstrapSecret = yield* getOrCreateBootstrapSecret;

@@ -154,6 +154,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       activePid: Option.none(),
       restartAttempt: 0,
       restartScheduled: false,
+      attached: false,
     })),
     waitForReady: () => Effect.succeed(true),
   };

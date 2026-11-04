@@ -115,9 +115,17 @@ contextBridge.exposeInMainWorld("hostBridge", {
   setLocalEnvironmentEnabled: (enabled) =>
     ipcRenderer.invoke(IpcChannels.SET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL, enabled),
   invalidateLocalEnvironmentBearerToken: () => Promise.resolve(),
-  getServerStatus: () => Promise.resolve(null),
+  getServerStatus: () => ipcRenderer.invoke(IpcChannels.GET_SERVER_STATUS_CHANNEL),
   restartServer: () => Promise.resolve({ state: "ready" }),
-  onServerStatus: () => () => {},
+  onServerStatus: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: unknown) => {
+      if (typeof status === "object" && status !== null) {
+        listener(status as Parameters<typeof listener>[0]);
+      }
+    };
+    ipcRenderer.on(IpcChannels.SERVER_STATUS_CHANGED_CHANNEL, handler);
+    return () => ipcRenderer.removeListener(IpcChannels.SERVER_STATUS_CHANGED_CHANNEL, handler);
+  },
   traySync: () => Promise.resolve(),
   trayState: () => Promise.resolve(null),
   setKeepInTray: () => Promise.resolve(null),

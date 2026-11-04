@@ -212,6 +212,15 @@ export interface DesktopBackendSnapshot {
   readonly activePid: Option.Option<number>;
   readonly restartAttempt: number;
   readonly restartScheduled: boolean;
+  readonly attached: boolean;
+}
+
+/** A server this app found already running and must never stop. */
+export interface DesktopBackendAttachment {
+  readonly config: DesktopBackendStartConfig;
+  readonly httpBaseUrl: URL;
+  readonly pid: number;
+  readonly warning: Option.Option<string>;
 }
 
 export type BackendInstanceId = string & Brand.Brand<"BackendInstanceId">;
@@ -245,7 +254,9 @@ export interface BackendInstanceSpec {
   readonly onReady?: (httpBaseUrl: URL) => Effect.Effect<void>;
   readonly onShutdown?: () => Effect.Effect<void>;
   readonly onPreflightFailed?: (failure: PreflightFailure) => Effect.Effect<boolean>;
-  readonly onStateDirOwned?: () => Effect.Effect<void>;
+  /** Resolve the live server owning the state directory, or fail so the pool can report it. */
+  readonly onStateDirOwned?: () => Effect.Effect<Option.Option<DesktopBackendAttachment>>;
+  readonly onAttached?: (attachment: DesktopBackendAttachment) => Effect.Effect<void>;
   /** Fires on each repeated crash or readiness timeout until the backend becomes ready. */
   readonly onStartupFailure?: (failure: BackendStartupFailure) => Effect.Effect<void>;
 }
@@ -264,6 +275,7 @@ interface BackendManagerState {
   readonly ready: boolean;
   readonly config: Option.Option<DesktopBackendStartConfig>;
   readonly active: Option.Option<ActiveBackendRun>;
+  readonly attached: Option.Option<DesktopBackendAttachment>;
   readonly restartAttempt: number;
   readonly preflightFailureAttempt: number;
   readonly restartFiber: Option.Option<Fiber.Fiber<void, never>>;
@@ -275,6 +287,7 @@ const initialState: BackendManagerState = {
   ready: false,
   config: Option.none(),
   active: Option.none(),
+  attached: Option.none(),
   restartAttempt: 0,
   preflightFailureAttempt: 0,
   restartFiber: Option.none(),
@@ -653,6 +666,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
       activePid: activePid(current.active),
       restartAttempt: current.restartAttempt,
       restartScheduled: Option.isSome(current.restartFiber),
+      attached: Option.isSome(current.attached),
     })),
   );
   const currentConfig = Ref.get(state).pipe(Effect.map((current) => current.config));
@@ -676,6 +690,9 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
     mutex.withPermits(1)(
       Effect.gen(function* () {
         const current = yield* Ref.get(state);
+        if (Option.isSome(current.attached)) {
+          return;
+        }
         if (Option.isSome(current.active)) {
           if (!current.desiredRunning) {
             yield* Ref.update(state, (latest) => ({
@@ -873,8 +890,20 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
 
               if (isCurrentRun && nextState.desiredRunning) {
                 if (stateDirOwned && !stopRequested) {
+                  const attachment = yield* spec.onStateDirOwned?.() ?? Effect.succeedNone;
+                  if (Option.isSome(attachment)) {
+                    yield* Ref.update(state, (latest) => ({
+                      ...latest,
+                      desiredRunning: false,
+                      ready: true,
+                      config: Option.some(attachment.value.config),
+                      attached: attachment,
+                    }));
+                    yield* spec.onReady?.(attachment.value.httpBaseUrl) ?? Effect.void;
+                    yield* spec.onAttached?.(attachment.value) ?? Effect.void;
+                    return;
+                  }
                   yield* Ref.update(state, (latest) => ({ ...latest, desiredRunning: false }));
-                  yield* (spec.onStateDirOwned?.() ?? Effect.void).pipe(Effect.ignore);
                   return;
                 }
                 yield* scheduleRestart(reason);

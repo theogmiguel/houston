@@ -26,6 +26,7 @@ import * as Schema from "effect/Schema";
 import * as DesktopBackendConfiguration from "../../backend/DesktopBackendConfiguration.ts";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
 import * as DesktopLocalEnvironmentAuth from "../../backend/DesktopLocalEnvironmentAuth.ts";
+import * as DesktopServerStatus from "../../backend/DesktopServerStatus.ts";
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
 import * as DesktopManagedPolicy from "../../app/DesktopManagedPolicy.ts";
 import * as DesktopAppSettings from "../../settings/DesktopAppSettings.ts";
@@ -252,6 +253,28 @@ function extractWslDistroFromEnvironmentId(envId: string): string | null {
   const suffix = envId.slice(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX.length);
   return suffix === "default" || suffix.length === 0 ? null : suffix;
 }
+
+const DesktopLocalServerStatusSchema = Schema.Struct({
+  state: Schema.Literals(["starting", "ready", "error"]),
+  origin: Schema.optional(Schema.String),
+  port: Schema.optional(Schema.Number),
+  pid: Schema.optional(Schema.Number),
+  attached: Schema.optional(Schema.Boolean),
+  baseDir: Schema.optional(Schema.String),
+  logPath: Schema.optional(Schema.String),
+  error: Schema.optional(Schema.NullOr(Schema.String)),
+  warning: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+export const getServerStatus = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.GET_SERVER_STATUS_CHANNEL,
+  payload: Schema.Undefined,
+  result: Schema.NullOr(DesktopLocalServerStatusSchema),
+  handler: Effect.fn("desktop.ipc.window.getServerStatus")(function* () {
+    const status = yield* DesktopServerStatus.DesktopServerStatus;
+    return Option.getOrNull(yield* status.get);
+  }),
+});
 
 export const getLocalEnvironmentBearerToken = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL,

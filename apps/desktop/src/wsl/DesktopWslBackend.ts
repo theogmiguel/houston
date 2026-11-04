@@ -132,6 +132,7 @@ export const layer = Layer.effect(
                   ),
                 ),
               ),
+              Effect.as(Option.none()),
             ),
           onReady: () =>
             Ref.set(ownershipRefusedRef, Option.none()).pipe(
