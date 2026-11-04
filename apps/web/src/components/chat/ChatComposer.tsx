@@ -55,7 +55,7 @@ import { isClipboardImagePaste, readHostClipboardImageFile } from "./hostClipboa
 import { splitTransferredFiles } from "./workspaceFileDrop";
 import { pastedPathsConfirmationTitle, transferredPaths } from "../../lib/fileTransfer";
 import { createModelSelection, normalizeModelSlug } from "@houston-app/shared/model";
-import { USAGE_LIMITS_COMMAND } from "@houston-app/shared/usageLimits";
+import { isUsageLimitsCommandName } from "@houston-app/shared/usageLimits";
 import {
   memo,
   use,
@@ -2048,7 +2048,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return;
     }
     if (item.type === "provider-slash-command") {
-      if (item.command.name === USAGE_LIMITS_COMMAND.name && onUsageLimitsCommand) {
+      if (isUsageLimitsCommandName(item.command.name) && onUsageLimitsCommand) {
         const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
           expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
           focusEditorAfterReplace: false,

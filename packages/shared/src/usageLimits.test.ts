@@ -9,6 +9,8 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  isUsageLimitsCommand,
+  isUsageLimitsCommandName,
   type LimitAccount,
   collectProviderUsageLimits,
   sameUsageLimitCommandCoverage,
@@ -1431,5 +1433,20 @@ describe("ChatGPT sharing presentation", () => {
         auth: { status: "unauthenticated", subscriptionSharing: true },
       }),
     ).toBe(false);
+  });
+});
+
+describe("usage limits command names", () => {
+  it("opens the limits panel for /usage as well as /usage-limits", () => {
+    expect(isUsageLimitsCommand("/usage")).toBe(true);
+    expect(isUsageLimitsCommand(" /USAGE-LIMITS ")).toBe(true);
+    expect(isUsageLimitsCommandName("usage")).toBe(true);
+    expect(isUsageLimitsCommandName("usage-limits")).toBe(true);
+  });
+
+  it("leaves other commands and prompts that only start with /usage alone", () => {
+    expect(isUsageLimitsCommand("/usage please")).toBe(false);
+    expect(isUsageLimitsCommand("/usages")).toBe(false);
+    expect(isUsageLimitsCommandName("cost")).toBe(false);
   });
 });
