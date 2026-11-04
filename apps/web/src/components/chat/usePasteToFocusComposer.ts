@@ -1,7 +1,7 @@
 import { pasteTextToFocusComposer, shouldRedirectInputToComposer } from "./composerFocusRedirect";
 import { readPastedComposerContext } from "../composerInlineTokenPaste";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
-import { isEmptyPaste, readHostClipboardImageFile } from "./hostClipboardImage";
+import { isClipboardImagePaste, readHostClipboardImageFile } from "./hostClipboardImage";
 import { splitTransferredFiles } from "./workspaceFileDrop";
 import { isPasteAsTextShortcut } from "@houston-app/client-runtime/text-paste";
 import { transferredPaths } from "../../lib/fileTransfer";
@@ -54,7 +54,7 @@ export function usePasteToFocusComposer(
       }
 
       const readHostClipboardImage = window.hostBridge?.readClipboardImage;
-      if (readHostClipboardImage && isEmptyPaste(clipboardData)) {
+      if (readHostClipboardImage && isClipboardImagePaste(clipboardData)) {
         event.preventDefault();
         event.stopPropagation();
         void readHostClipboardImageFile(readHostClipboardImage)

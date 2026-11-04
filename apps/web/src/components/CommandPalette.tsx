@@ -272,7 +272,7 @@ import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
 import { useActiveThreadRouteTarget } from "../hooks/useThreadRouteTarget";
-import { useGrid, useGridStore } from "../grid/gridStore";
+import { useGrid, useGridStore, workspaceKeyOf } from "../grid/gridStore";
 import { useGridMaximizeStore } from "../grid/gridMaximizeStore";
 import { requestGridCellRename } from "../grid/gridCellCommands";
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -479,6 +479,15 @@ function OpenCommandPaletteDialog(props: {
   const gridIdParam = useParams({ strict: false, select: (params) => params.gridId });
   const openGrid = useGrid(typeof gridIdParam === "string" ? gridIdParam : null);
   const openGridDraft = useOpenGridDraft();
+  const openFirstGridForProject = async (environmentId: EnvironmentId, projectId: string) => {
+    const gridId = useGridStore.getState().createGrid({
+      environmentId,
+      projectId,
+      workspaceKey: workspaceKeyOf(environmentId, projectId),
+    });
+    await openGridDraft({ gridId, focusedThreadId: null });
+    return gridId;
+  };
   const maximizedCellThreadId = useGridMaximizeStore((store) =>
     openGrid === null ? null : (store.maximizedThreadIdByGrid[openGrid.id] ?? null),
   );
@@ -1082,47 +1091,43 @@ function OpenCommandPaletteDialog(props: {
     environmentId: EnvironmentId,
     readinessBySource: AddProjectRemoteSourceReadiness,
   ): CommandPaletteView["groups"] => {
-    const sourceItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [
-      {
-        kind: "action",
-        value: `action:add-project:${environmentId}:local`,
-        searchTerms: ["local", "folder", "directory", "browse"],
-        title: "Local folder",
-        description: "Browse a folder on disk",
-        icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
-        keepOpen: true,
-        run: async () => {
-          await startAddProjectBrowse(environmentId);
-        },
+    const localFolderItem: CommandPaletteActionItem | CommandPaletteSubmenuItem = {
+      kind: "action",
+      value: `action:add-project:${environmentId}:local`,
+      searchTerms: ["open", "local", "folder", "directory", "browse"],
+      title: "Open folder…",
+      description: "Browse a folder on disk",
+      icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
+      keepOpen: true,
+      run: async () => {
+        await startAddProjectBrowse(environmentId);
       },
-    ];
+    };
 
-    if (newProjectsRootFor(environmentId) !== null) {
-      sourceItems.unshift({
-        kind: "action",
-        value: `action:add-project:${environmentId}:new`,
-        searchTerms: ["new project", "create", "empty", "repository", "git init"],
-        title: "New project",
-        description: "Start a new Git repository from a name",
-        icon: <FolderGit2Icon className={ITEM_ICON_CLASS} />,
-        keepOpen: true,
-        run: async () => {
-          startNewProject(environmentId, environmentId);
-        },
-      });
-    }
+    const newProjectItem: CommandPaletteActionItem | CommandPaletteSubmenuItem | null =
+      newProjectsRootFor(environmentId) === null
+        ? null
+        : {
+            kind: "action",
+            value: `action:add-project:${environmentId}:new`,
+            searchTerms: ["new project", "create", "empty", "repository", "git init"],
+            title: "New project…",
+            description: "Start a new Git repository from a name",
+            icon: <FolderGit2Icon className={ITEM_ICON_CLASS} />,
+            keepOpen: true,
+            run: async () => {
+              startNewProject(environmentId, environmentId);
+            },
+          };
 
-    const orderedSources: ReadonlyArray<AddProjectRemoteSource> = [
-      "url",
-      ...sortAddProjectProviderSources(readinessBySource),
-    ];
-
-    for (const source of orderedSources) {
+    const remoteSourceItem = (
+      source: AddProjectRemoteSource,
+    ): CommandPaletteActionItem | CommandPaletteSubmenuItem => {
       const label = addProjectRemoteSourceLabel(source);
-      const title = source === "url" ? "Git URL" : `${label} repository`;
+      const title = source === "url" ? "Clone repository…" : `${label} repository`;
       const description =
         source === "url"
-          ? "Clone from a remote URL"
+          ? "Clone from a Git URL"
           : `Clone ${label} ${addProjectRemoteSourcePathHint(source)}`;
       const readiness = readinessBySource(source);
       const disabledHint = readiness.hint;
@@ -1151,7 +1156,7 @@ function OpenCommandPaletteDialog(props: {
       );
 
       if (!readiness.ready) {
-        sourceItems.push({
+        return {
           kind: "action",
           value: `action:add-project:${environmentId}:${source}:not-ready`,
           searchTerms: ["clone", "remote", "repository", "repo", "git", label, "setup required"],
@@ -1161,11 +1166,10 @@ function OpenCommandPaletteDialog(props: {
           icon: remoteProjectSourceIcon(source, ITEM_ICON_CLASS),
           ...(titleTrailingContent ? { titleTrailingContent } : {}),
           run: async () => {},
-        });
-        continue;
+        };
       }
 
-      sourceItems.push({
+      return {
         kind: "action",
         value: `action:add-project:${environmentId}:${source}`,
         searchTerms: ["clone", "remote", "repository", "repo", "git", label],
@@ -1177,10 +1181,21 @@ function OpenCommandPaletteDialog(props: {
         run: async () => {
           startAddProjectClone(environmentId, source);
         },
-      });
-    }
+      };
+    };
 
-    return [{ value: `sources:${environmentId}`, label: "Sources", items: sourceItems }];
+    return [
+      {
+        value: `sources:${environmentId}`,
+        label: "Sources",
+        items: [
+          localFolderItem,
+          remoteSourceItem("url"),
+          ...(newProjectItem === null ? [] : [newProjectItem]),
+          ...sortAddProjectProviderSources(readinessBySource).map(remoteSourceItem),
+        ],
+      },
+    ];
   };
 
   const startAddProjectSourceSelection = (environmentId: EnvironmentId): void => {
@@ -2191,7 +2206,7 @@ function OpenCommandPaletteDialog(props: {
     }
 
     const navigationResult = await settlePromise(() =>
-      handleNewThread(scopeProjectRef(input.environmentId, projectId)),
+      openFirstGridForProject(input.environmentId, projectId),
     );
     if (navigationResult._tag === "Failure") {
       const error = squashAtomCommandFailure(navigationResult);
@@ -2430,7 +2445,9 @@ function OpenCommandPaletteDialog(props: {
     );
     const projectRef = scopeProjectRef(addProjectCloneFlow.environmentId, projectId);
     await waitForProject(projectRef, 3_000).catch(() => null);
-    const navigationResult = await settlePromise(() => handleNewThread(projectRef));
+    const navigationResult = await settlePromise(() =>
+      openFirstGridForProject(addProjectCloneFlow.environmentId, projectId),
+    );
     if (navigationResult._tag === "Failure") {
       const error = squashAtomCommandFailure(navigationResult);
       toastManager.add(

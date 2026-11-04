@@ -1,13 +1,16 @@
 import "~/index.css";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import type { GridRecord } from "../../grid/gridStore";
-import { beginThreadDrag, endThreadDrag } from "../../grid/threadDrag";
+import { beginThreadDragAt, endThreadDrag, type ThreadDragSource } from "../../grid/threadDrag";
 import { type LayoutNode, preorderLeaves, preorderThreads, threadLeaf } from "../../grid/tree";
 import { act, render } from "../../../test/render";
+import { configureMotion } from "../../motion/registry";
+import { userEvent } from "vite-plus/test/browser";
+import { ThreadDragOverlay } from "../ui/thread-drag-overlay";
 import { GridHost, type GridCellRenderProps } from "./GridHost";
 
-function grid(tree: LayoutNode): GridRecord {
+function grid(tree: LayoutNode, overrides: Partial<GridRecord> = {}): GridRecord {
   return {
     id: "g-1",
     name: "Review",
@@ -19,6 +22,7 @@ function grid(tree: LayoutNode): GridRecord {
     pinnedAt: null,
     hidden: false,
     createdAt: "2026-01-01T00:00:00Z",
+    ...overrides,
   };
 }
 
@@ -34,15 +38,22 @@ function row(...threadIds: string[]): LayoutNode {
 function cellMarkup(cell: GridCellRenderProps) {
   return (
     <div
+      data-grid-cell=""
+      data-thread-id={cell.node.threadId}
       data-testid={`cell-${cell.node.threadId}`}
       data-dragging={cell.dragging ? "true" : "false"}
-      {...cell.dropTargetProps}
       style={{ position: "relative", flex: 1, minWidth: 0, minHeight: 0 }}
     >
-      <div data-testid={`label-${cell.node.threadId}`} {...cell.dragHandleProps}>
+      <div data-testid={`label-${cell.node.threadId}`} onPointerDown={cell.onDragHandlePointerDown}>
         {cell.node.threadId}
       </div>
-      {cell.dropIndicator === null ? null : (
+      {cell.dropRefusal !== null ? (
+        <div
+          data-testid={`indicator-${cell.node.threadId}`}
+          data-side="refusal"
+          data-refusal={cell.dropRefusal}
+        />
+      ) : cell.dropIndicator === null ? null : (
         <div data-testid={`indicator-${cell.node.threadId}`} data-side={cell.dropIndicator} />
       )}
     </div>
@@ -52,23 +63,25 @@ function cellMarkup(cell: GridCellRenderProps) {
 async function mount(
   tree: LayoutNode,
   options?: {
+    grid?: Partial<GridRecord>;
+    maximizedThreadId?: string;
     onTreeChange?: (tree: LayoutNode | null) => void;
-    onDropThread?: (
-      source: { gridId: string; threadId: string },
-      targetThreadId: string,
-      side: string,
-    ) => void;
+    onDropThread?: (source: ThreadDragSource, targetThreadId: string, side: string) => void;
   },
 ) {
   return render(
     <div style={{ display: "flex", width: 900, height: 600 }}>
       <GridHost
-        grid={grid(tree)}
+        grid={grid(tree, options?.grid)}
+        {...(options?.maximizedThreadId === undefined
+          ? {}
+          : { maximizedThreadId: options.maximizedThreadId })}
         onTreeChange={options?.onTreeChange ?? (() => {})}
         onFocusThread={() => {}}
         {...(options?.onDropThread === undefined ? {} : { onDropThread: options.onDropThread })}
         renderThread={cellMarkup}
       />
+      <ThreadDragOverlay />
     </div>,
     { router: false },
   );
@@ -78,17 +91,6 @@ function element(container: HTMLElement, testId: string): HTMLElement {
   const found = container.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
   if (found === null) throw new Error(`missing ${testId}`);
   return found;
-}
-
-function startDrag(label: HTMLElement, dataTransfer: DataTransfer): void {
-  label.dispatchEvent(
-    new DragEvent("dragstart", {
-      bubbles: true,
-      cancelable: true,
-      composed: true,
-      dataTransfer,
-    }),
-  );
 }
 
 type Point = "center" | "left" | "right" | "top" | "bottom";
@@ -111,50 +113,105 @@ function coordinates(target: HTMLElement, point: Point): { clientX: number; clie
   }
 }
 
-function dragOver(target: HTMLElement, dataTransfer: DataTransfer, point: Point): boolean {
-  return target.dispatchEvent(
-    new DragEvent("dragover", {
+const POINTER_ID = 7;
+
+function dragPoint(target: HTMLElement, at: Point): { x: number; y: number } {
+  const point = coordinates(target, at);
+  return { x: point.clientX, y: point.clientY };
+}
+
+function press(
+  element: HTMLElement,
+  point: { clientX: number; clientY: number },
+  button = 0,
+): void {
+  element.dispatchEvent(
+    new PointerEvent("pointerdown", {
       bubbles: true,
       cancelable: true,
-      composed: true,
-      dataTransfer,
-      ...coordinates(target, point),
+      pointerId: POINTER_ID,
+      pointerType: "mouse",
+      button,
+      clientX: point.clientX,
+      clientY: point.clientY,
     }),
   );
 }
 
-function drop(target: HTMLElement, dataTransfer: DataTransfer, point: Point): void {
+function pointerMove(
+  point: { clientX: number; clientY: number },
+  target: EventTarget = window,
+): void {
   target.dispatchEvent(
-    new DragEvent("drop", {
+    new PointerEvent("pointermove", {
       bubbles: true,
       cancelable: true,
-      composed: true,
-      dataTransfer,
-      ...coordinates(target, point),
+      pointerId: POINTER_ID,
+      pointerType: "mouse",
+      clientX: point.clientX,
+      clientY: point.clientY,
     }),
   );
 }
 
-afterEach(() => {
-  endThreadDrag();
-});
+function release(point: { clientX: number; clientY: number }): void {
+  window.dispatchEvent(
+    new PointerEvent("pointerup", {
+      bubbles: true,
+      cancelable: true,
+      pointerId: POINTER_ID,
+      pointerType: "mouse",
+      clientX: point.clientX,
+      clientY: point.clientY,
+    }),
+  );
+}
+
+const OTHER_PROJECT: ThreadDragSource = {
+  gridId: "g-other",
+  threadId: "thread-x",
+  environmentId: "env-1",
+  projectId: "project-2",
+};
+
+const OTHER_GRID: ThreadDragSource = {
+  gridId: "g-other",
+  threadId: "thread-x",
+  environmentId: "env-1",
+  projectId: "project-1",
+};
+
+async function expectAnnouncement(text: string): Promise<void> {
+  await vi.waitFor(() => {
+    const spoken = Array.from(document.querySelectorAll('[aria-live="polite"]'))
+      .map((region) => region.textContent)
+      .join(" ");
+    expect(spoken).toContain(text);
+  });
+}
+
+function threadDragGuard() {
+  return { [Symbol.dispose]: () => endThreadDrag() };
+}
 
 describe("GridHost drag and drop", () => {
   it("swaps two cells when a label is dropped on another cell's centre", async () => {
+    using _drag = threadDragGuard();
     const onTreeChange = vi.fn();
     await using screen = await mount(row("thread-a", "thread-b"), { onTreeChange });
-    const dataTransfer = new DataTransfer();
+    const label = element(screen.container, "label-thread-a");
+    const target = element(screen.container, "cell-thread-b");
+    const start = coordinates(label, "center");
+    const end = coordinates(target, "center");
 
-    await act(() => startDrag(element(screen.container, "label-thread-a"), dataTransfer));
+    await act(() => press(label, start));
+    await act(() => pointerMove({ clientX: start.clientX + 20, clientY: start.clientY }));
     expect(element(screen.container, "cell-thread-a").dataset.dragging).toBe("true");
 
-    const target = element(screen.container, "cell-thread-b");
-    await act(() => {
-      expect(dragOver(target, dataTransfer, "center")).toBe(false);
-    });
+    await act(() => pointerMove(end));
     expect(element(screen.container, "indicator-thread-b").dataset.side).toBe("center");
 
-    await act(() => drop(target, dataTransfer, "center"));
+    await act(() => release(end));
 
     expect(onTreeChange).toHaveBeenCalledTimes(1);
     expect(preorderLeaves(onTreeChange.mock.calls[0]?.[0] as LayoutNode)).toEqual([
@@ -162,64 +219,100 @@ describe("GridHost drag and drop", () => {
       "thread-a",
     ]);
     expect(element(screen.container, "cell-thread-a").dataset.dragging).toBe("false");
+    expect(document.querySelector("[data-thread-drag-overlay]")).toBeNull();
+    await expectAnnouncement("Swapped");
   });
 
   it("splits toward the edge under the pointer", async () => {
+    using _drag = threadDragGuard();
     const onTreeChange = vi.fn();
     await using screen = await mount(row("thread-a", "thread-b", "thread-c"), { onTreeChange });
-    const dataTransfer = new DataTransfer();
-
-    await act(() => startDrag(element(screen.container, "label-thread-a"), dataTransfer));
+    const label = element(screen.container, "label-thread-a");
     const target = element(screen.container, "cell-thread-c");
-    await act(() => dragOver(target, dataTransfer, "left"));
+    const start = coordinates(label, "center");
+    const end = coordinates(target, "left");
+
+    await act(() => press(label, start));
+    await act(() => pointerMove({ clientX: start.clientX + 20, clientY: start.clientY }));
+    await act(() => pointerMove(end));
     expect(element(screen.container, "indicator-thread-c").dataset.side).toBe("left");
 
-    await act(() => drop(target, dataTransfer, "left"));
+    await act(() => release(end));
 
     expect(preorderLeaves(onTreeChange.mock.calls[0]?.[0] as LayoutNode)).toEqual([
       "thread-b",
       "thread-a",
       "thread-c",
     ]);
+    await expectAnnouncement("Docked the dragged thread");
   });
 
-  it("refuses an edge drop that would add a seventh cell but still allows a centre replace", async () => {
+  it("ignores a drop on the cell being dragged", async () => {
+    using _drag = threadDragGuard();
+    const onTreeChange = vi.fn();
     const onDropThread = vi.fn();
-    await using screen = await mount(row("t1", "t2", "houston", "t4", "t5", "t6"), {
-      onDropThread,
-    });
-    const dataTransfer = new DataTransfer();
+    await using screen = await mount(row("thread-a", "thread-b"), { onTreeChange, onDropThread });
+    const label = element(screen.container, "label-thread-a");
+    const self = element(screen.container, "cell-thread-a");
+    const start = coordinates(label, "center");
+    const end = coordinates(self, "center");
 
-    await act(() => beginThreadDrag({ gridId: "g-other", threadId: "thread-x" }));
-    const target = element(screen.container, "cell-t1");
-    await act(() => {
-      expect(dragOver(target, dataTransfer, "right")).toBe(true);
-    });
-    expect(screen.container.querySelector('[data-testid="indicator-t1"]')).toBeNull();
-    await act(() => drop(target, dataTransfer, "right"));
+    await act(() => press(label, start));
+    await act(() => pointerMove({ clientX: start.clientX + 20, clientY: start.clientY }));
+    await act(() => pointerMove(end));
+    expect(screen.container.querySelector('[data-testid="indicator-thread-a"]')).toBeNull();
+    await act(() => release(end));
+
+    expect(onTreeChange).not.toHaveBeenCalled();
     expect(onDropThread).not.toHaveBeenCalled();
+  });
 
-    await act(() => beginThreadDrag({ gridId: "g-other", threadId: "thread-x" }));
-    await act(() => {
-      expect(dragOver(target, dataTransfer, "center")).toBe(false);
-    });
+  it("shows a full-grid refusal on an edge and still lets the drop explain it", async () => {
+    using _drag = threadDragGuard();
+    const onDropThread = vi.fn();
+    await using screen = await mount(row("t1", "t2", "t3", "t4", "t5", "t6"), { onDropThread });
+    const target = element(screen.container, "cell-t1");
+
+    await act(() => beginThreadDragAt(OTHER_GRID, dragPoint(target, "right"), POINTER_ID));
+    expect(element(screen.container, "indicator-t1").dataset.refusal).toBe("grid-full");
+    await act(() => release(coordinates(target, "right")));
+    expect(onDropThread).toHaveBeenCalledWith(OTHER_GRID, "t1", "right");
+    endThreadDrag();
+
+    await act(() => beginThreadDragAt(OTHER_GRID, dragPoint(target, "center"), POINTER_ID));
     expect(element(screen.container, "indicator-t1").dataset.side).toBe("center");
-    await act(() => drop(target, dataTransfer, "center"));
-    expect(onDropThread).toHaveBeenCalledWith(
-      { gridId: "g-other", threadId: "thread-x" },
-      "t1",
-      "center",
+    await act(() => release(coordinates(target, "center")));
+    expect(onDropThread).toHaveBeenCalledWith(OTHER_GRID, "t1", "center");
+  });
+
+  it("refuses a thread from another project during hover", async () => {
+    using _drag = threadDragGuard();
+    const onDropThread = vi.fn();
+    await using screen = await mount(row("thread-a", "thread-b"), { onDropThread });
+    const target = element(screen.container, "cell-thread-b");
+
+    await act(() => beginThreadDragAt(OTHER_PROJECT, dragPoint(target, "center"), POINTER_ID));
+    expect(element(screen.container, "indicator-thread-b").dataset.refusal).toBe(
+      "different-project",
     );
+
+    await act(() => release(coordinates(target, "center")));
+    expect(onDropThread).toHaveBeenCalledWith(OTHER_PROJECT, "thread-b", "center");
+    await expectAnnouncement("Different project");
   });
 
   it("cancels the drag on Escape so the drop does nothing", async () => {
+    using _drag = threadDragGuard();
     const onTreeChange = vi.fn();
     await using screen = await mount(row("thread-a", "thread-b"), { onTreeChange });
-    const dataTransfer = new DataTransfer();
-
-    await act(() => startDrag(element(screen.container, "label-thread-a"), dataTransfer));
+    const label = element(screen.container, "label-thread-a");
     const target = element(screen.container, "cell-thread-b");
-    await act(() => dragOver(target, dataTransfer, "center"));
+    const start = coordinates(label, "center");
+    const end = coordinates(target, "center");
+
+    await act(() => press(label, start));
+    await act(() => pointerMove({ clientX: start.clientX + 20, clientY: start.clientY }));
+    await act(() => pointerMove(end));
     expect(element(screen.container, "indicator-thread-b").dataset.side).toBe("center");
 
     await act(() => {
@@ -229,8 +322,415 @@ describe("GridHost drag and drop", () => {
     });
 
     expect(screen.container.querySelector('[data-testid="indicator-thread-b"]')).toBeNull();
-    await act(() => drop(target, dataTransfer, "center"));
+    await act(() => release(end));
     expect(onTreeChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("GridHost pointer drag conditions", () => {
+  it("keeps a press without movement a click", async () => {
+    using _drag = threadDragGuard();
+    const onTreeChange = vi.fn();
+    await using screen = await mount(row("thread-a", "thread-b"), { onTreeChange });
+    const label = element(screen.container, "label-thread-a");
+    const point = coordinates(label, "center");
+    const click = vi.fn();
+    label.addEventListener("click", click);
+
+    await act(() => press(label, point));
+    expect(element(screen.container, "cell-thread-a").dataset.dragging).toBe("false");
+    await act(() => release(point));
+
+    expect(onTreeChange).not.toHaveBeenCalled();
+    await act(() =>
+      label.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })),
+    );
+    expect(click).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start a drag under the six pixel threshold", async () => {
+    using _drag = threadDragGuard();
+    const onTreeChange = vi.fn();
+    await using screen = await mount(row("thread-a", "thread-b"), { onTreeChange });
+    const label = element(screen.container, "label-thread-a");
+    const point = coordinates(label, "center");
+
+    await act(() => press(label, point));
+    await act(() => pointerMove({ clientX: point.clientX + 4, clientY: point.clientY }));
+    expect(element(screen.container, "cell-thread-a").dataset.dragging).toBe("false");
+    await act(() => release({ clientX: point.clientX + 4, clientY: point.clientY }));
+
+    expect(onTreeChange).not.toHaveBeenCalled();
+  });
+
+  it("never starts a drag from the right or middle button", async () => {
+    using _drag = threadDragGuard();
+    const onTreeChange = vi.fn();
+    await using screen = await mount(row("thread-a", "thread-b"), { onTreeChange });
+    const label = element(screen.container, "label-thread-a");
+    const target = element(screen.container, "cell-thread-b");
+    const start = coordinates(label, "center");
+    const end = coordinates(target, "center");
+
+    for (const button of [1, 2]) {
+      await act(() => press(label, start, button));
+      await act(() => pointerMove(end));
+      await act(() => release(end));
+    }
+
+    expect(element(screen.container, "cell-thread-a").dataset.dragging).toBe("false");
+    expect(onTreeChange).not.toHaveBeenCalled();
+  });
+
+  it("cancels on pointercancel and on window blur", async () => {
+    using _drag = threadDragGuard();
+    const onTreeChange = vi.fn();
+    await using screen = await mount(row("thread-a", "thread-b"), { onTreeChange });
+    const label = element(screen.container, "label-thread-a");
+    const target = element(screen.container, "cell-thread-b");
+    const start = coordinates(label, "center");
+    const end = coordinates(target, "center");
+
+    await act(() => press(label, start));
+    await act(() => pointerMove({ clientX: start.clientX + 20, clientY: start.clientY }));
+    await act(() => pointerMove(end));
+    await act(() => {
+      window.dispatchEvent(new PointerEvent("pointercancel", { pointerId: POINTER_ID }));
+    });
+    expect(screen.container.querySelector('[data-testid="indicator-thread-b"]')).toBeNull();
+    await act(() => release(end));
+
+    await act(() => press(label, start));
+    await act(() => pointerMove({ clientX: start.clientX + 20, clientY: start.clientY }));
+    await act(() => pointerMove(end));
+    await act(() => window.dispatchEvent(new Event("blur")));
+    expect(screen.container.querySelector('[data-testid="indicator-thread-b"]')).toBeNull();
+    await act(() => release(end));
+
+    expect(onTreeChange).not.toHaveBeenCalled();
+  });
+
+  it("changes nothing when the drop lands outside every cell", async () => {
+    using _drag = threadDragGuard();
+    const onTreeChange = vi.fn();
+    await using screen = await mount(row("thread-a", "thread-b"), { onTreeChange });
+    const label = element(screen.container, "label-thread-a");
+    const start = coordinates(label, "center");
+    const outside = { clientX: -50, clientY: -50 };
+
+    await act(() => press(label, start));
+    await act(() => pointerMove({ clientX: start.clientX + 20, clientY: start.clientY }));
+    await act(() => pointerMove(outside));
+    await act(() => release(outside));
+
+    expect(onTreeChange).not.toHaveBeenCalled();
+  });
+
+  it("resolves a drop under the pointer even over a surface inside a cell", async () => {
+    using _drag = threadDragGuard();
+    const onTreeChange = vi.fn();
+    await using screen = await mount(row("thread-a", "thread-b"), { onTreeChange });
+    const label = element(screen.container, "label-thread-a");
+    const target = element(screen.container, "cell-thread-b");
+    const start = coordinates(label, "center");
+    const end = coordinates(target, "center");
+    const surface = document.createElement("div");
+    surface.style.cssText = "position:absolute;inset:0;pointer-events:auto";
+    target.appendChild(surface);
+
+    await act(() => press(label, start));
+    await act(() => pointerMove({ clientX: start.clientX + 20, clientY: start.clientY }));
+    const overlay = document.querySelector<HTMLElement>("[data-thread-drag-overlay]");
+    if (overlay === null) throw new Error("drag overlay missing");
+    expect(getComputedStyle(overlay).cursor).toBe("grabbing");
+    expect(getComputedStyle(overlay).userSelect).toBe("none");
+
+    await act(() => pointerMove(end, overlay));
+    expect(element(screen.container, "indicator-thread-b").dataset.side).toBe("center");
+    await act(() => release(end));
+
+    expect(onTreeChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("swallows the click that ends a drop", async () => {
+    using _drag = threadDragGuard();
+    await using screen = await mount(row("thread-a", "thread-b"));
+    const label = element(screen.container, "label-thread-a");
+    const target = element(screen.container, "cell-thread-b");
+    const start = coordinates(label, "center");
+    const end = coordinates(target, "center");
+    const click = vi.fn();
+    label.addEventListener("click", click);
+
+    await act(() => press(label, start));
+    await act(() => pointerMove({ clientX: start.clientX + 20, clientY: start.clientY }));
+    await act(() => pointerMove(end));
+    // The browser dispatches the click that ends a drag in the same task as the release.
+    await act(() => {
+      release(end);
+      label.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(click).not.toHaveBeenCalled();
+  });
+
+  it("clears any text selection when the drag starts", async () => {
+    using _drag = threadDragGuard();
+    await using screen = await mount(row("thread-a", "thread-b"));
+    const label = element(screen.container, "label-thread-a");
+    const target = element(screen.container, "cell-thread-b");
+    const start = coordinates(label, "center");
+    const end = coordinates(target, "center");
+    const text = element(screen.container, "cell-thread-a").firstChild;
+    if (text === null) throw new Error("cell text missing");
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    expect(selection?.toString().length).toBeGreaterThan(0);
+
+    await act(() => press(label, start));
+    await act(() => pointerMove({ clientX: start.clientX + 20, clientY: start.clientY }));
+    expect(selection?.toString()).toBe("");
+
+    await act(() => pointerMove(end));
+    expect(selection?.toString()).toBe("");
+    await act(() => release(end));
+    expect(selection?.toString()).toBe("");
+  });
+
+  it("does not start a drag from a single cell or a maximized cell", async () => {
+    using _drag = threadDragGuard();
+    await using single = await mount(threadLeaf("thread-a", "p-thread-a"));
+    const singleLabel = element(single.container, "label-thread-a");
+    const singlePoint = coordinates(singleLabel, "center");
+    await act(() => press(singleLabel, singlePoint));
+    await act(() =>
+      pointerMove({ clientX: singlePoint.clientX + 20, clientY: singlePoint.clientY }),
+    );
+    expect(element(single.container, "cell-thread-a").dataset.dragging).toBe("false");
+    await act(() => release({ clientX: singlePoint.clientX + 20, clientY: singlePoint.clientY }));
+
+    await using maximized = await mount(row("thread-a", "thread-b"), {
+      maximizedThreadId: "thread-a",
+    });
+    const maximizedLabel = element(maximized.container, "label-thread-a");
+    const maximizedPoint = coordinates(maximizedLabel, "center");
+    await act(() => press(maximizedLabel, maximizedPoint));
+    await act(() =>
+      pointerMove({ clientX: maximizedPoint.clientX + 20, clientY: maximizedPoint.clientY }),
+    );
+    expect(element(maximized.container, "cell-thread-a").dataset.dragging).toBe("false");
+  });
+});
+
+function flipMarkup(cell: GridCellRenderProps) {
+  return (
+    <div
+      data-grid-cell=""
+      data-thread-id={cell.node.threadId}
+      data-testid={`flip-${cell.node.threadId}`}
+      style={{ position: "relative", flex: 1, minWidth: 0, minHeight: 0 }}
+    >
+      {cell.node.threadId}
+    </div>
+  );
+}
+
+async function mountFlip(tree: LayoutNode) {
+  const element = (node: LayoutNode) => (
+    <div style={{ display: "flex", width: 900, height: 600 }}>
+      <GridHost
+        grid={grid(node)}
+        onTreeChange={() => {}}
+        onFocusThread={() => {}}
+        renderThread={flipMarkup}
+      />
+    </div>
+  );
+  const screen = await render(element(tree), { router: false });
+  return { screen, show: (node: LayoutNode) => screen.rerender(element(node)) };
+}
+
+describe("GridHost cell motion", () => {
+  it("moves a swapped cell with a transform animation", async () => {
+    const { screen, show } = await mountFlip(row("thread-a", "thread-b"));
+    const a = screen.container.querySelector<HTMLElement>('[data-thread-id="thread-a"]')!;
+    await show(row("thread-b", "thread-a"));
+    expect(a.getAnimations().length).toBe(1);
+    expect(a.style.transform).toBe("");
+  });
+
+  it("retargets a cell already moving at its new target", async () => {
+    const { screen, show } = await mountFlip(row("thread-a", "thread-b", "thread-c"));
+    const a = screen.container.querySelector<HTMLElement>('[data-thread-id="thread-a"]')!;
+    await show(row("thread-b", "thread-a", "thread-c"));
+    await show(row("thread-b", "thread-c", "thread-a"));
+    expect(a.getAnimations().length).toBe(1);
+  });
+
+  it("settles instantly under reduced motion", async () => {
+    configureMotion({ off: true });
+    try {
+      const { screen, show } = await mountFlip(row("thread-a", "thread-b"));
+      const a = screen.container.querySelector<HTMLElement>('[data-thread-id="thread-a"]')!;
+      await show(row("thread-b", "thread-a"));
+      expect(a.getAnimations().length).toBe(0);
+    } finally {
+      configureMotion({ off: false });
+    }
+  });
+});
+
+describe("GridHost resize", () => {
+  async function mountRow(onTreeChange: (tree: LayoutNode | null) => void) {
+    return mount(row("thread-a", "thread-b"), { onTreeChange });
+  }
+
+  it("draws one divider for a two-cell grid and none for one cell", async () => {
+    await using screen = await mountRow(() => {});
+    const gutter = screen.container.querySelector<HTMLElement>("[data-grid-gutter]")!;
+    expect(gutter.getBoundingClientRect().width).toBe(8);
+    expect(gutter.getAttribute("role")).toBe("separator");
+    expect(gutter.tabIndex).toBe(0);
+
+    await using single = await mount(threadLeaf("thread-a", "p-thread-a"));
+    expect(single.container.querySelector("[data-grid-gutter]")).toBeNull();
+  });
+
+  it("hides the divider while a cell is maximized", async () => {
+    await using screen = await mount(row("thread-a", "thread-b"), {
+      maximizedThreadId: "thread-a",
+    });
+    expect(screen.container.querySelector("[data-grid-gutter]")).toBeNull();
+  });
+
+  it("previews on the pointer, snaps at a preset, and persists once on release", async () => {
+    const onTreeChange = vi.fn();
+    await using screen = await mountRow(onTreeChange);
+    const gutter = screen.container.querySelector<HTMLElement>("[data-grid-gutter]")!;
+    const rect = gutter.getBoundingClientRect();
+    const y = rect.top + rect.height / 2;
+    const startX = rect.left + rect.width / 2;
+    using _capture = vi.spyOn(gutter, "setPointerCapture").mockImplementation(() => {});
+    const pointer = { bubbles: true, pointerId: 1, button: 0 };
+
+    await act(() => {
+      gutter.dispatchEvent(
+        new PointerEvent("pointerdown", { ...pointer, clientX: startX, clientY: y }),
+      );
+    });
+    await act(() => {
+      gutter.dispatchEvent(
+        new PointerEvent("pointermove", { ...pointer, clientX: startX - 150, clientY: y }),
+      );
+    });
+    const badge = gutter.querySelector<HTMLElement>("[data-grid-resize-badge]")!;
+    await vi.waitFor(() => expect(badge.textContent).toBe("⅓ width"));
+
+    // Live preview only writes the slot widths; the store stays untouched.
+    expect(onTreeChange).not.toHaveBeenCalled();
+    expect(badge.style.display).toBe("inline-block");
+
+    await act(() => {
+      gutter.dispatchEvent(
+        new PointerEvent("pointerup", { ...pointer, clientX: startX - 150, clientY: y }),
+      );
+    });
+
+    expect(onTreeChange).toHaveBeenCalledTimes(1);
+    const next = onTreeChange.mock.calls[0]?.[0] as LayoutNode;
+    expect(next.kind).toBe("split");
+    if (next.kind === "split") expect(next.weights[0]).toBeCloseTo(100 / 3, 2);
+    expect(badge.style.display).toBe("inline-block");
+  });
+
+  it("keeps both cells visible after clicking the divider without moving", async () => {
+    const onTreeChange = vi.fn();
+    await using screen = await mountRow(onTreeChange);
+    const gutter = screen.container.querySelector<HTMLElement>("[data-grid-gutter]")!;
+    const rect = gutter.getBoundingClientRect();
+    const at = { clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 };
+    using _capture = vi.spyOn(gutter, "setPointerCapture").mockImplementation(() => {});
+    const pointer = { bubbles: true, pointerId: 1, button: 0, ...at };
+
+    for (let click = 0; click < 2; click += 1) {
+      await act(() => gutter.dispatchEvent(new PointerEvent("pointerdown", pointer)));
+      await act(() => gutter.dispatchEvent(new PointerEvent("pointerup", pointer)));
+    }
+
+    expect(onTreeChange).not.toHaveBeenCalled();
+    const slots = screen.container.querySelectorAll<HTMLElement>("[data-grid-slot]");
+    expect(slots).toHaveLength(2);
+    for (const slot of slots) expect(slot.getBoundingClientRect().width).toBeGreaterThan(100);
+  });
+
+  it("never collapses a cell below the fraction floor", async () => {
+    const onTreeChange = vi.fn();
+    await using screen = await mountRow(onTreeChange);
+    const gutter = screen.container.querySelector<HTMLElement>("[data-grid-gutter]")!;
+    const rect = gutter.getBoundingClientRect();
+    const y = rect.top + rect.height / 2;
+    const startX = rect.left + rect.width / 2;
+    using _capture = vi.spyOn(gutter, "setPointerCapture").mockImplementation(() => {});
+    const pointer = { bubbles: true, pointerId: 1, button: 0 };
+
+    await act(() => {
+      gutter.dispatchEvent(
+        new PointerEvent("pointerdown", { ...pointer, clientX: startX, clientY: y }),
+      );
+    });
+    await act(() => {
+      gutter.dispatchEvent(
+        new PointerEvent("pointermove", { ...pointer, clientX: -2000, clientY: y }),
+      );
+    });
+    await vi.waitFor(() =>
+      expect(gutter.querySelector<HTMLElement>("[data-grid-resize-badge]")!.style.display).toBe(
+        "inline-block",
+      ),
+    );
+    await act(() => {
+      gutter.dispatchEvent(
+        new PointerEvent("pointerup", { ...pointer, clientX: -2000, clientY: y }),
+      );
+    });
+
+    const next = onTreeChange.mock.calls[0]?.[0] as LayoutNode;
+    if (next.kind !== "split") throw new Error("expected a split");
+    expect(next.weights[0]).toBeGreaterThanOrEqual(20);
+    expect(next.weights[1]).toBeGreaterThanOrEqual(20);
+  });
+
+  it("evens the split on double-click and steps presets from the keyboard", async () => {
+    const onTreeChange = vi.fn();
+    await using screen = await mount(
+      {
+        kind: "split",
+        dir: "row",
+        children: [threadLeaf("thread-a", "p-a"), threadLeaf("thread-b", "p-b")],
+        weights: [30, 70],
+      },
+      { onTreeChange },
+    );
+    const gutter = screen.container.querySelector<HTMLElement>("[data-grid-gutter]")!;
+    using _capture = vi.spyOn(gutter, "setPointerCapture").mockImplementation(() => {});
+
+    await act(() => {
+      gutter.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    });
+    expect(onTreeChange).toHaveBeenCalledTimes(1);
+    const evened = onTreeChange.mock.calls[0]?.[0] as LayoutNode;
+    if (evened.kind !== "split") throw new Error("expected a split");
+    expect(evened.weights[0]).toBeCloseTo(50, 5);
+
+    gutter.focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(onTreeChange).toHaveBeenCalledTimes(2);
+    const stepped = onTreeChange.mock.calls[1]?.[0] as LayoutNode;
+    if (stepped.kind !== "split") throw new Error("expected a split");
+    expect(stepped.weights[0]).toBeCloseTo((1 / 3) * 100, 5);
   });
 });
 
@@ -239,8 +739,6 @@ describe("GridHost surface", () => {
     await using screen = await mount(row("thread-a", "thread-b"));
     const surface = screen.container.querySelector<HTMLElement>("[data-grid-surface]")!;
     expect(surface.hasAttribute("data-multi")).toBe(true);
-    const gutter = screen.container.querySelector<HTMLElement>("[data-grid-gutter]")!;
-    expect(gutter.getBoundingClientRect().width).toBe(8);
 
     await using single = await mount(threadLeaf("thread-a", "p-thread-a"));
     const soloSurface = single.container.querySelector<HTMLElement>("[data-grid-surface]")!;

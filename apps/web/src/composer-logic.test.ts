@@ -22,8 +22,11 @@ import {
   extendReplacementRangeForTrailingSpace,
   formatAssistantCitationForComposer,
   isPathSuggestionCurrent,
+  parseClaudeInChromeCommand,
+  parseShellCommand,
   parseSideChatCommand,
   replaceTextRange,
+  unescapeShellCommand,
 } from "./composer-logic";
 import { slashCommandItemsForPromptPosition } from "./components/chat/composerSlashCommandSearch";
 import { carryDisplacedCustomAnswerIntoPrompt } from "./pendingUserInput";
@@ -574,5 +577,48 @@ describe("parseSideChatCommand", () => {
     expect(slashCommandItemsForPromptPosition(items, false).map((item) => item.id)).toEqual([
       "slash:plan",
     ]);
+  });
+});
+
+describe("parseClaudeInChromeCommand", () => {
+  it("keeps the text after /chrome as the prompt to restore", () => {
+    expect(parseClaudeInChromeCommand("/chrome Ola, chrome esta funcionando?")).toEqual({
+      prompt: "Ola, chrome esta funcionando?",
+    });
+    expect(parseClaudeInChromeCommand("  /CHROME  ")).toEqual({ prompt: "" });
+  });
+
+  it("ignores other commands and /chrome inside a message", () => {
+    expect(parseClaudeInChromeCommand("/chromebook")).toBeNull();
+    expect(parseClaudeInChromeCommand("use /chrome please")).toBeNull();
+  });
+});
+
+describe("parseShellCommand", () => {
+  it("reads the command after a leading !", () => {
+    expect(parseShellCommand("!sudo apt install foo")).toEqual({ command: "sudo apt install foo" });
+    expect(parseShellCommand("!  git status  ")).toEqual({ command: "git status" });
+    expect(parseShellCommand("!git push --force-with-lease")).toEqual({
+      command: "git push --force-with-lease",
+    });
+  });
+
+  it("keeps escaped, indented, multiline and empty text as messages", () => {
+    expect(parseShellCommand("!")).toBeNull();
+    expect(parseShellCommand("!   ")).toBeNull();
+    expect(parseShellCommand(" \\!ls")).toBeNull();
+    expect(parseShellCommand("\\!ls")).toBeNull();
+    expect(parseShellCommand(" !ls")).toBeNull();
+    expect(parseShellCommand("run !ls later")).toBeNull();
+    expect(parseShellCommand("!git status\nthen say hi")).toBeNull();
+  });
+});
+
+describe("unescapeShellCommand", () => {
+  it("drops the backslash that keeps a leading ! in the message", () => {
+    expect(unescapeShellCommand("\\!ls")).toBe("!ls");
+    expect(unescapeShellCommand("!ls")).toBe("!ls");
+    expect(unescapeShellCommand(" \\!ls")).toBe(" \\!ls");
+    expect(unescapeShellCommand("hello \\!ls")).toBe("hello \\!ls");
   });
 });

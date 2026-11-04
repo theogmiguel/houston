@@ -38,6 +38,7 @@ import * as ProviderContinuationService from "./ProviderContinuationService.ts";
 import * as ThreadTitleRegenerationService from "./ThreadTitleRegenerationService.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as MessageDelivery from "../houston/messageDelivery.ts";
+import * as HoustonResumeSessions from "../houston/resumeSessions.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
@@ -255,6 +256,17 @@ const layerAgentSessionImporterProvided = AgentSessionImporter.layer.pipe(
   ),
 );
 
+const layerHoustonResumeSessionsProvided = HoustonResumeSessions.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerAgentSessionImporterProvided,
+      AgentSessionScanner.layer,
+      layerProjectService,
+      ProjectionStore.layer,
+    ),
+  ),
+);
+
 const layerThreadManagementProvided = ThreadManagementService.layerWithLegacyImporter.pipe(
   Layer.provide(
     Layer.mergeAll(
@@ -395,6 +407,7 @@ export const layerProduction = Layer.mergeAll(
   ),
   layerProviderContinuationWorkerProvided,
   layerAgentSessionImporterProvided,
+  layerHoustonResumeSessionsProvided,
   EffectOutbox.layerPruneWorker.pipe(Layer.provide(EffectOutbox.layer)),
 ).pipe(
   Layer.provide(ResourceCleanupService.layer.pipe(Layer.provide(layerScheduledTaskProvided))),

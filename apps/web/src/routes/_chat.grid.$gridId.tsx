@@ -20,7 +20,15 @@ import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { isDesktopHost } from "../env";
 import { isTauriHost } from "../lib/desktopWindow";
-import { MAX_GRID_THREADS, useGrid, useGridStore } from "../grid/gridStore";
+import { MAX_GRID_THREADS, useGrid, useGridStore, workspaceKeyOf } from "../grid/gridStore";
+import { moveThreadToGridOrExplain, moveToGridTargets } from "../grid/moveToGrid";
+import { showThreadMovedToast } from "../grid/moveFeedback";
+import {
+  crossProjectMoveToast,
+  gridFullMoveToast,
+  noProjectMoveToast,
+  sameProject,
+} from "../grid/projectMove";
 import { useOpenGridDraft } from "../grid/useOpenGridDraft";
 import { useGridShortcuts } from "../grid/useGridShortcuts";
 import { rememberLastOpenGridId } from "../grid/lastGrid";
@@ -32,10 +40,16 @@ import { cn } from "../lib/utils";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useStableCallback } from "../hooks/useStableCallback";
+import { useThreadActions } from "../hooks/useThreadActions";
+import { closeGridThread } from "../grid/closeGridThread";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@houston-app/client-runtime/state/runtime";
 import { resolveShortcutCommand } from "../keybindings";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { useRightPanelStore } from "../rightPanelStore";
-import { useQuietThreadShells } from "../state/entities";
+import { useQuietThreadShells, useProjects } from "../state/entities";
 import { effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
 import { isSidebarHiddenThread } from "../components/Sidebar.logic";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
@@ -50,15 +64,17 @@ function GridRoute() {
   const { gridId } = Route.useParams();
   const grid = useGrid(gridId);
   const shells = useQuietThreadShells();
+  const projects = useProjects();
   const allGrids = useGridStore((store) => store.grids);
   const navigate = useNavigate();
   const setTree = useGridStore((store) => store.setTree);
   const addThread = useGridStore((store) => store.addThread);
   const focusThread = useGridStore((store) => store.focusThread);
   const setGridDetailsOpen = useGridStore((store) => store.setGridDetailsOpen);
-  const closeGridCell = useGridStore((store) => store.closeGridCell);
+  const threadActions = useThreadActions();
   const reorderGridThreads = useGridStore((store) => store.reorderGridThreads);
   const moveThreadToCell = useGridStore((store) => store.moveThreadToCell);
+  const createGrid = useGridStore((store) => store.createGrid);
   const openDraft = useOpenGridDraft();
   const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -249,6 +265,35 @@ function GridRoute() {
     );
   }
 
+  const projectTitles = new Map(
+    projects.map((project) => [workspaceKeyOf(project.environmentId, project.id), project.title]),
+  );
+  const projectTitleOf = (owner: { environmentId: string; projectId: string }) =>
+    projectTitles.get(workspaceKeyOf(owner.environmentId, owner.projectId)) ?? owner.projectId;
+  const moveGridTargets = moveToGridTargets(allGrids, {
+    environmentId: grid.environmentId,
+    projectId: grid.projectId,
+    currentGridId: grid.id,
+  });
+  const moveCellThreadToGrid = (threadId: string, targetGridId: string) => {
+    const refusal = moveThreadToGridOrExplain({
+      threadId,
+      threadEnvironmentId: grid.environmentId,
+      threadProjectId: grid.projectId,
+      targetGridId,
+    });
+    if (refusal === null) void navigate({ to: "/grid/$gridId", params: { gridId: targetGridId } });
+    else toastManager.add(stackedThreadToast({ type: "error", ...refusal }));
+  };
+  const moveCellThreadToNewGrid = (threadId: string) => {
+    const createdId = createGrid({
+      environmentId: grid.environmentId,
+      projectId: grid.projectId,
+      workspaceKey: grid.workspaceKey,
+    });
+    moveCellThreadToGrid(threadId, createdId);
+  };
+
   const visibleThreadIds = new Set(
     (grid.tree === null ? [] : preorderThreads(grid.tree)).map((leaf) => leaf.threadId),
   );
@@ -399,16 +444,43 @@ function GridRoute() {
             maximizedThreadId={effectiveMaximized}
             onTreeChange={(tree) => setTree(grid.id, tree)}
             onFocusThread={(threadId) => focusThread(grid.id, threadId)}
-            onCloseThread={(threadId) => closeGridCell(grid.id, threadId)}
-            onDropThread={(source, targetThreadId, side) => {
-              const sourceGrid = allGrids.find((entry) => entry.id === source.gridId);
-              const targetCount = grid.tree === null ? 0 : preorderThreads(grid.tree).length;
-              if (sourceGrid !== undefined && sourceGrid.environmentId !== grid.environmentId) {
+            onCloseThread={(threadId) => {
+              void closeGridThread({
+                gridId: grid.id,
+                threadId,
+                settle: (id) =>
+                  threadActions.settleThread(
+                    scopeThreadRef(grid.environmentId as EnvironmentId, id as ThreadId),
+                  ),
+              }).then((result) => {
+                if (
+                  result === null ||
+                  result._tag !== "Failure" ||
+                  isAtomCommandInterrupted(result)
+                ) {
+                  return;
+                }
+                const error = squashAtomCommandFailure(result);
                 toastManager.add(
                   stackedThreadToast({
                     type: "error",
-                    title: "Thread belongs to another workspace",
-                    description: "Drag it to a grid in its own workspace.",
+                    title: "Failed to close thread",
+                    description: error instanceof Error ? error.message : "An error occurred.",
+                  }),
+                );
+              });
+            }}
+            onDropThread={(source, targetThreadId, side) => {
+              const targetCount = grid.tree === null ? 0 : preorderThreads(grid.tree).length;
+              const sourceProjectKey = workspaceKeyOf(source.environmentId, source.projectId);
+              if (!sameProject(source, grid)) {
+                const sourceTitle = projectTitles.get(sourceProjectKey);
+                toastManager.add(
+                  stackedThreadToast({
+                    type: "error",
+                    ...(sourceTitle === undefined
+                      ? noProjectMoveToast(grid.name)
+                      : crossProjectMoveToast(sourceTitle, projectTitleOf(grid))),
                   }),
                 );
                 return;
@@ -421,18 +493,35 @@ function GridRoute() {
                 toastManager.add(
                   stackedThreadToast({
                     type: "error",
-                    title: `This grid holds its maximum of ${MAX_GRID_THREADS} threads`,
-                    description: `Asked to add another cell to “${grid.name}”.`,
+                    ...gridFullMoveToast(grid.name, targetCount, MAX_GRID_THREADS),
                   }),
                 );
                 return;
               }
-              moveThreadToCell({
+              const moved = moveThreadToCell({
                 threadId: source.threadId,
                 targetGridId: grid.id,
                 targetThreadId,
                 side,
+                threadEnvironmentId: source.environmentId,
+                threadProjectId: source.projectId,
               });
+              // A thread that came from the sidebar or another grid keeps the
+              // user here; the toast offers this grid and the way back.
+              if (moved && source.gridId !== grid.id) {
+                showThreadMovedToast({
+                  threadId: source.threadId,
+                  threadEnvironmentId: source.environmentId,
+                  threadProjectId: source.projectId,
+                  threadTitle:
+                    workspaceThreads.find((thread) => thread.id === source.threadId)?.title ?? null,
+                  sourceGridId: source.gridId,
+                  targetGridId: grid.id,
+                  onOpenTarget: (gridId) => {
+                    void navigate({ to: "/grid/$gridId", params: { gridId } });
+                  },
+                });
+              }
             }}
             renderThread={({
               node,
@@ -442,9 +531,9 @@ function GridRoute() {
               onArchiveClose,
               onSplit,
               dragging,
+              dropRefusal,
               dropIndicator,
-              dragHandleProps,
-              dropTargetProps,
+              onDragHandlePointerDown,
             }) => (
               <GridThreadCell
                 key={node.id}
@@ -472,12 +561,15 @@ function GridRoute() {
                 onSplit={onSplit}
                 dragging={dragging}
                 dropIndicator={dropIndicator}
-                dragHandleProps={dragHandleProps}
-                dropTargetProps={dropTargetProps}
+                dropRefusal={dropRefusal}
+                onDragHandlePointerDown={onDragHandlePointerDown}
                 swapTargets={gridCells.filter((cell) => cell.threadId !== node.threadId)}
                 onSwapWith={(targetThreadId) =>
                   reorderGridThreads(grid.id, node.threadId, targetThreadId)
                 }
+                gridTargets={moveGridTargets}
+                onMoveToGrid={(targetGridId) => moveCellThreadToGrid(node.threadId, targetGridId)}
+                onMoveToNewGrid={() => moveCellThreadToNewGrid(node.threadId)}
                 onNewThread={(side) => createThread(side, node.threadId)}
                 onOpenThread={(ref) => openThread(ref.environmentId, ref.threadId, node.threadId)}
               />

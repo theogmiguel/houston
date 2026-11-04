@@ -540,4 +540,81 @@ describe("single-grid thread placement", () => {
       "thread-a",
     ]);
   });
+
+  it("rejects a cell move that crosses projects in one environment", () => {
+    freshStore();
+    createdGrid();
+    useGridStore.getState().createGrid({
+      environmentId: "env-1",
+      projectId: "project-2",
+      workspaceKey: "env-1:project-2",
+      id: "g-other-project",
+      now: "2026-01-02T00:00:00Z",
+    });
+    useGridStore.getState().addThread("g-1", "thread-a");
+    useGridStore.getState().addThread("g-other-project", "thread-b");
+    expect(
+      useGridStore.getState().moveThreadToCell({
+        threadId: "thread-a",
+        targetGridId: "g-other-project",
+        targetThreadId: "thread-b",
+        side: "right",
+      }),
+    ).toBe(false);
+    expect(preorderLeaves(gridById(useGridStore.getState().grids, "g-1")!.tree)).toEqual([
+      "thread-a",
+    ]);
+    expect(
+      preorderLeaves(gridById(useGridStore.getState().grids, "g-other-project")!.tree),
+    ).toEqual(["thread-b"]);
+  });
+
+  it("moves a thread to another grid in its project", () => {
+    freshStore();
+    createdGrid();
+    useGridStore.getState().createGrid({
+      environmentId: "env-1",
+      projectId: "project-1",
+      workspaceKey,
+      id: "g-2",
+      now: "2026-01-02T00:00:00Z",
+    });
+    useGridStore.getState().addThread("g-1", "thread-a");
+    const moved = useGridStore.getState().moveThreadToGrid({
+      threadId: "thread-a",
+      threadEnvironmentId: "env-1",
+      threadProjectId: "project-1",
+      targetGridId: "g-2",
+    });
+    expect(moved).toBe(true);
+    expect(preorderLeaves(gridById(useGridStore.getState().grids, "g-1")!.tree)).toEqual([]);
+    expect(preorderLeaves(gridById(useGridStore.getState().grids, "g-2")!.tree)).toEqual([
+      "thread-a",
+    ]);
+  });
+
+  it("refuses a move to a grid in another project", () => {
+    freshStore();
+    createdGrid();
+    useGridStore.getState().createGrid({
+      environmentId: "env-1",
+      projectId: "project-2",
+      workspaceKey: "env-1:project-2",
+      id: "g-other-project",
+      now: "2026-01-02T00:00:00Z",
+    });
+    useGridStore.getState().addThread("g-1", "thread-a");
+    expect(
+      useGridStore.getState().moveThreadToGrid({
+        threadId: "thread-a",
+        threadEnvironmentId: "env-1",
+        threadProjectId: "project-1",
+        targetGridId: "g-other-project",
+      }),
+    ).toBe(false);
+    expect(preorderLeaves(gridById(useGridStore.getState().grids, "g-1")!.tree)).toEqual([
+      "thread-a",
+    ]);
+    expect(gridById(useGridStore.getState().grids, "g-other-project")!.tree).toBeNull();
+  });
 });

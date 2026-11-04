@@ -750,9 +750,27 @@ export const ClaudeSettings = makeProviderSettingsSchema(
         title: "Launch arguments",
         description: "Additional CLI arguments passed on session start.",
         providerSettingsForm: {
-          placeholder: "e.g. --chrome",
+          placeholder: "e.g. --verbose",
           clearWhenEmpty: "omit",
         },
+      }),
+    ),
+    claudeInChrome: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({
+        title: "Claude in Chrome",
+        description:
+          "Let Claude use Chrome through the Claude in Chrome extension. Needs the extension and a Chromium browser.",
+        providerSettingsForm: { control: "switch", clearWhenEmpty: "persist" },
+      }),
+    ),
+    claudeArtifacts: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({
+        title: "Artifacts",
+        description:
+          "Let Claude publish pages as private Artifacts on claude.ai. The page's content is sent to your Claude account; needs an account with Artifacts.",
+        providerSettingsForm: { control: "switch", clearWhenEmpty: "persist" },
       }),
     ),
     autoCompactWindow: TrimmedString.check(
@@ -784,7 +802,15 @@ export const ClaudeSettings = makeProviderSettingsSchema(
     ),
   },
   {
-    order: ["binaryPath", "homePath", "autoCompactWindow", "idleCompaction", "launchArgs"],
+    order: [
+      "binaryPath",
+      "homePath",
+      "claudeInChrome",
+      "claudeArtifacts",
+      "autoCompactWindow",
+      "idleCompaction",
+      "launchArgs",
+    ],
   },
 );
 export type ClaudeSettings = typeof ClaudeSettings.Type;

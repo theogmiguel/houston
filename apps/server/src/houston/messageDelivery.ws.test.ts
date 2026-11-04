@@ -110,6 +110,7 @@ import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 
 import { latest, makeHarness, runWith } from "./messageDelivery.testkit.ts";
+import * as HoustonResumeSessions from "./resumeSessions.ts";
 import * as HoustonReviewState from "./reviewState.ts";
 import * as HoustonTaskService from "./tasks/TaskService.ts";
 import * as HoustonTaskRuns from "./tasks/TaskRuns.ts";
@@ -166,6 +167,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(ResourceTelemetry.ResourceTelemetry)({}),
   Layer.mock(ReviewService.ReviewService)({}),
   Layer.mock(HoustonReviewState.HoustonReviewState)({}),
+  Layer.mock(HoustonResumeSessions.HoustonResumeSessions)({}),
   Layer.mock(HoustonTaskService.HoustonTaskService)({}),
   Layer.mock(HoustonTaskRuns.HoustonTaskRuns)({}),
   Layer.mock(HoustonTaskV1Import.HoustonTaskV1Import)({}),

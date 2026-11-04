@@ -39,6 +39,7 @@ import {
 } from "../panelAnimations";
 import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
 import { GridSidebar } from "./grid/GridSidebar";
+import { ThreadDragOverlay } from "./ui/thread-drag-overlay";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
@@ -470,6 +471,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           <SidebarRail onDoubleClick={resetSidebarWidth} />
         </Sidebar>
         {children}
+        <ThreadDragOverlay />
         <BackgroundThreadAnnouncer />
         <SidebarControl />
       </SidebarProvider>

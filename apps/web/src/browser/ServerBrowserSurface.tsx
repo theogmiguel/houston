@@ -45,6 +45,7 @@ import { toastManager } from "~/components/ui/toast";
 import { cn } from "~/lib/utils";
 import { refreshPreviewStreamAccess, usePreviewStreamAccess } from "~/state/previewStream";
 import { observeResize } from "~/lib/observeResize";
+import { isLayoutResizing, onLayoutResizeEnd } from "~/motion/layoutResize";
 
 export interface ServerBrowserHandle {
   readonly navigate: (url: string) => void;
@@ -400,15 +401,34 @@ export function ServerBrowserSurface(props: {
       if (capTimer !== null) clearTimeout(capTimer);
       capTimer = setTimeout(growCap, previous === null ? 0 : RESIZE_THROTTLE_MS * 2);
     };
-    const stopObserving = observeResize(element, () => {
+    // A grid resize moves the surface every pointer move; fit it once on release.
+    let resizedDuringLayout = false;
+    const scheduleMeasure = () => {
       if (timer !== null) return;
       timer = setTimeout(measure, sizeRef.current === null ? 0 : RESIZE_THROTTLE_MS);
+    };
+    const stopObserving = observeResize(element, () => {
+      if (isLayoutResizing()) {
+        resizedDuringLayout = true;
+        return;
+      }
+      scheduleMeasure();
+    });
+    const stopWatchingLayoutResize = onLayoutResizeEnd(() => {
+      if (!resizedDuringLayout) return;
+      resizedDuringLayout = false;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      measure();
     });
     // A surface mounted inside a hidden (or not yet laid out) panel can miss the observer's
     // first delivery; take the measurement now so the stream is not left waiting on `cap`.
     measure();
     return () => {
       stopObserving();
+      stopWatchingLayoutResize();
       if (timer !== null) clearTimeout(timer);
       if (capTimer !== null) clearTimeout(capTimer);
     };

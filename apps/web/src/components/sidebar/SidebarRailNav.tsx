@@ -123,6 +123,7 @@ export function SidebarRailNav({
   sectionTitle,
   sectionActions,
   sectionAddProject = true,
+  sectionHeading = true,
   pullRequestCount = null,
   taskCount = null,
 }: {
@@ -130,6 +131,8 @@ export function SidebarRailNav({
   sectionTitle?: string;
   sectionActions?: ReactNode;
   sectionAddProject?: boolean;
+  /** A rail that draws its own project sections drops the shared heading row. */
+  sectionHeading?: boolean;
   pullRequestCount?: number | null;
   taskCount?: number | null;
 }) {
@@ -190,11 +193,13 @@ export function SidebarRailNav({
         active={pathname === "/usage"}
         onClick={openUsage}
       />
-      <SidebarRailSectionHeading
-        title={sectionTitle}
-        actions={sectionActions}
-        showAddProject={sectionAddProject}
-      />
+      {sectionHeading ? (
+        <SidebarRailSectionHeading
+          title={sectionTitle}
+          actions={sectionActions}
+          showAddProject={sectionAddProject}
+        />
+      ) : null}
     </div>
   );
 }

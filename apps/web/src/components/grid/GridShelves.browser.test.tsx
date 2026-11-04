@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
-import { render } from "../../../test/render";
+import { act, render } from "../../../test/render";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
+import { beginThreadDragAt, endThreadDrag } from "../../grid/threadDrag";
 import { GridShelves } from "./GridShelves";
 
 function shelfThread(id: string, title: string): EnvironmentThreadShell {
@@ -102,8 +103,6 @@ describe("GridShelves", () => {
         closed={closed}
         renderCard={(thread) => <span data-testid="shelf-card">{thread.title}</span>}
         closedDragActive={closedDragActive}
-        onClosedDragOver={noop}
-        onClosedDragLeave={noop}
         onClosedDrop={noop}
       />
     );
@@ -118,5 +117,45 @@ describe("GridShelves", () => {
     await vi.waitFor(() =>
       expect(color("grid-settled-shelf-toggle")).not.toBe(color("grid-snoozed-shelf-toggle")),
     );
+  });
+
+  it("closes the thread dropped on the Closed shelf", async () => {
+    localStorage.clear();
+    using _drag = { [Symbol.dispose]: () => endThreadDrag() };
+    const onClosedDrop = vi.fn();
+    await using screen = await render(
+      <GridShelves
+        held={held}
+        closed={closed}
+        renderCard={(thread) => <span data-testid="shelf-card">{thread.title}</span>}
+        closedDragActive
+        onClosedDrop={onClosedDrop}
+      />,
+      { router: false },
+    );
+
+    const row = screen.container.querySelector<HTMLElement>(
+      '[data-testid="grid-settled-shelf-toggle"]',
+    );
+    if (row === null) throw new Error("closed shelf missing");
+    const rect = row.getBoundingClientRect();
+    const source = {
+      gridId: "g-1",
+      threadId: "thread-a",
+      environmentId: "env-1",
+      projectId: "project-1",
+    };
+    await act(() =>
+      beginThreadDragAt(
+        source,
+        { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+        1,
+      ),
+    );
+    await act(() => {
+      window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1 }));
+    });
+
+    expect(onClosedDrop).toHaveBeenCalledWith(source);
   });
 });

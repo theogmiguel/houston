@@ -78,6 +78,7 @@ import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as ReviewService from "./review/ReviewService.ts";
+import * as HoustonResumeSessions from "./houston/resumeSessions.ts";
 import * as HoustonReviewState from "./houston/reviewState.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
@@ -582,6 +583,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(ResourceTelemetry.ResourceTelemetry)({}),
   Layer.mock(ReviewService.ReviewService)({}),
   Layer.mock(HoustonReviewState.HoustonReviewState)({}),
+  Layer.mock(HoustonResumeSessions.HoustonResumeSessions)({}),
   Layer.mock(HoustonTaskService.HoustonTaskService)({}),
   Layer.mock(HoustonTaskRuns.HoustonTaskRuns)({}),
   Layer.mock(HoustonTaskV1Import.HoustonTaskV1Import)({}),

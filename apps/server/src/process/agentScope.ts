@@ -88,6 +88,78 @@ function parseCgroupCounter(text: string, key: string): number | undefined {
   return match === null ? undefined : Number(match[1]);
 }
 
+export interface ProcessStat {
+  readonly state: string;
+  readonly ppid: number;
+  readonly session: number;
+  readonly startTime: number;
+}
+
+/** Parses /proc/<pid>/stat, whose comm field may contain spaces and parentheses. */
+export function parseProcStat(text: string): ProcessStat | undefined {
+  const close = text.lastIndexOf(")");
+  if (close < 0) return undefined;
+  const fields = text
+    .slice(close + 2)
+    .trim()
+    .split(/\s+/);
+  const state = fields[0] ?? "";
+  const ppid = Number(fields[1]);
+  const session = Number(fields[3]);
+  const startTime = Number(fields[19]);
+  if (
+    state.length === 0 ||
+    !Number.isInteger(ppid) ||
+    !Number.isInteger(session) ||
+    !Number.isInteger(startTime)
+  ) {
+    return undefined;
+  }
+  return { state, ppid, session, startTime };
+}
+
+function descendsFrom(
+  pid: number,
+  root: number,
+  processes: ReadonlyMap<number, ProcessStat>,
+): boolean {
+  const seen = new Set<number>();
+  let current = processes.get(pid)?.ppid;
+  while (current !== undefined && current !== root) {
+    if (seen.has(current)) return false;
+    seen.add(current);
+    current = processes.get(current)?.ppid;
+  }
+  return current === root;
+}
+
+/**
+ * The pids a leftover agent session may stop: its main process and the
+ * descendants still in its session. A setsid child leads its own session, and a
+ * process reparented out of the tree is no longer a descendant, so both survive.
+ */
+export function selectLeftoverVictims(
+  mainPid: number,
+  processes: ReadonlyMap<number, ProcessStat>,
+): ReadonlyArray<number> {
+  const main = processes.get(mainPid);
+  if (main === undefined) return [];
+  const descendants: Array<number> = [];
+  for (const [pid, stat] of processes) {
+    if (pid === mainPid || stat.session !== main.session) continue;
+    if (descendsFrom(pid, mainPid, processes)) descendants.push(pid);
+  }
+  return [mainPid, ...descendants.sort((left, right) => left - right)];
+}
+
+/** A pid keeps its identity only while /proc reports the same start time and a live state. */
+export function isSameLiveProcess(
+  expected: { readonly startTime: number },
+  current: ProcessStat | undefined,
+): boolean {
+  return current !== undefined && current.state !== "Z" && current.startTime === expected.startTime;
+}
+
 // systemd's default 90 s stop timeout would outlast our leftover-agent wait.
 // Delegation lets rootless containers (Podman, kind) manage their own cgroups.
 const SCOPE_OPTIONS = ["--property=TimeoutStopSec=10s", "--property=Delegate=yes"];
@@ -96,6 +168,12 @@ const STOPPING_POLL_ATTEMPTS = 20;
 const CLEAR_FAILED_INTERVAL = "1 second";
 const CLEAR_FAILED_ATTEMPTS = 120;
 const MAX_TRACKED_THREADS = 500;
+// A provider that handles SIGTERM exits well within two seconds; a stuck one is
+// force-killed before the restarted server can resume the same session.
+const LEFTOVER_STOP_GRACE_INTERVAL = "100 millis";
+const LEFTOVER_STOP_GRACE_ATTEMPTS = 20;
+// One signal is one syscall per pid; this only bounds a wedged kill(1).
+const LEFTOVER_SIGNAL_TIMEOUT = "5 seconds";
 
 export const make = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
@@ -124,13 +202,118 @@ export const make = Effect.gen(function* () {
       .readFileString(path.join("/sys/fs/cgroup", controlGroup, file))
       .pipe(Effect.orElseSucceed(() => ""));
 
-  // Old agents keep their scopes when the server is killed, and the restarted
-  // server resumes their sessions. Stop them first, so two copies of one
-  // session never work in the same worktree.
-  const stopLeftoverAgents = Effect.fn("agentScope.stopLeftoverAgents")(function* (
-    systemctl: string,
+  const readProcessStat = (pid: number) =>
+    fileSystem.readFileString(path.join("/proc", String(pid), "stat")).pipe(
+      Effect.map(parseProcStat),
+      Effect.orElseSucceed(() => undefined),
+    );
+
+  const readSessionProcesses = Effect.fn("agentScope.readSessionProcesses")(function* (
+    controlGroup: string,
   ) {
-    const shown = yield* run(systemctl, [
+    const processes = new Map<number, ProcessStat>();
+    for (const line of (yield* readCgroupFile(controlGroup, "cgroup.procs")).split("\n")) {
+      const pid = Number(line.trim());
+      if (!Number.isInteger(pid) || pid <= 0 || processes.has(pid)) continue;
+      const stat = yield* readProcessStat(pid);
+      if (stat !== undefined) processes.set(pid, stat);
+    }
+    return processes;
+  });
+
+  const liveVictims = Effect.fn("agentScope.liveVictims")(function* (
+    victims: ReadonlyArray<{ readonly pid: number; readonly startTime: number }>,
+  ) {
+    const live: Array<{ pid: number; startTime: number }> = [];
+    for (const victim of victims) {
+      const current = yield* readProcessStat(victim.pid);
+      if (isSameLiveProcess(victim, current)) live.push(victim);
+    }
+    return live;
+  });
+
+  const signalVictims = (kill: string, signal: "TERM" | "KILL", pids: ReadonlyArray<number>) =>
+    runner
+      .run({
+        command: kill,
+        args: [`-${signal}`, ...pids.map(String)],
+        timeout: LEFTOVER_SIGNAL_TIMEOUT,
+      })
+      .pipe(Effect.option);
+
+  // Old agents keep their scopes when the server is killed, and the restarted
+  // server resumes their sessions. Stop each leftover provider session so two
+  // copies never work in the same worktree, but leave what it detached
+  // (setsid, nohup, daemons) running: that work is not the session.
+  const stopLeftoverUnit = Effect.fn("agentScope.stopLeftoverUnit")(function* (input: {
+    readonly systemctl: string;
+    readonly kill: string;
+    readonly controlGroup: string;
+    readonly unit: string;
+  }) {
+    const shown = yield* run(input.systemctl, [
+      "--user",
+      "show",
+      input.unit,
+      "--property=ActiveState,MainPID",
+    ]);
+    if (shown._tag === "None" || shown.value.code !== 0) return;
+    const values = parseKeyValues(shown.value.stdout);
+    if (values.get("ActiveState") !== "active") return;
+    const mainPid = Number(values.get("MainPID") ?? "");
+    if (!Number.isInteger(mainPid) || mainPid <= 0) return;
+    const processes = yield* readSessionProcesses(input.controlGroup);
+    const selected = selectLeftoverVictims(mainPid, processes).flatMap((pid) => {
+      const stat = processes.get(pid);
+      return stat === undefined ? [] : [{ pid, startTime: stat.startTime }];
+    });
+    if (selected.length === 0) return;
+    yield* Effect.logWarning("Stopping agents left by a previous server", {
+      unit: input.unit,
+      pids: selected.map((victim) => victim.pid),
+    });
+    const signalled = yield* liveVictims(selected);
+    if (signalled.length === 0) return;
+    const termed = yield* signalVictims(
+      input.kill,
+      "TERM",
+      signalled.map((victim) => victim.pid),
+    );
+    if (termed._tag === "None" || termed.value.code !== 0) {
+      yield* Effect.logWarning("Could not stop agents left by a previous server", {
+        unit: input.unit,
+        signal: "TERM",
+        exitCode: termed._tag === "Some" ? termed.value.code : undefined,
+        stderr: termed._tag === "Some" ? termed.value.stderr.trim() : undefined,
+      });
+    }
+    let remaining = signalled;
+    for (let attempt = 0; attempt < LEFTOVER_STOP_GRACE_ATTEMPTS; attempt++) {
+      remaining = yield* liveVictims(remaining);
+      if (remaining.length === 0) break;
+      yield* Effect.sleep(LEFTOVER_STOP_GRACE_INTERVAL);
+    }
+    if (remaining.length === 0) return;
+    const killed = yield* signalVictims(
+      input.kill,
+      "KILL",
+      remaining.map((victim) => victim.pid),
+    );
+    if (killed._tag === "None" || killed.value.code !== 0) {
+      yield* Effect.logWarning("Could not stop agents left by a previous server", {
+        unit: input.unit,
+        signal: "KILL",
+        exitCode: killed._tag === "Some" ? killed.value.code : undefined,
+        stderr: killed._tag === "Some" ? killed.value.stderr.trim() : undefined,
+      });
+    }
+  });
+
+  const stopLeftoverAgents = Effect.fn("agentScope.stopLeftoverAgents")(function* (input: {
+    readonly systemctl: string;
+    readonly kill: string;
+  }) {
+    const shown = yield* run(input.systemctl, [
       "--user",
       "show",
       ownedSlice,
@@ -140,16 +323,18 @@ export const make = Effect.gen(function* () {
     const values = parseKeyValues(shown.value.stdout);
     if (values.get("ActiveState") !== "active") return;
     const controlGroup = values.get("ControlGroup") ?? "";
-    const events = controlGroup ? yield* readCgroupFile(controlGroup, "cgroup.events") : "";
+    if (controlGroup.length === 0) return;
+    const events = yield* readCgroupFile(controlGroup, "cgroup.events");
     if (parseCgroupCounter(events, "populated") === 0) return;
-    yield* Effect.logWarning("Stopping agents left by a previous server", { slice: ownedSlice });
-    const stopped = yield* runner
-      .run({ command: systemctl, args: ["--user", "stop", ownedSlice], timeout: "30 seconds" })
-      .pipe(Effect.option);
-    if (stopped._tag === "None" || stopped.value.code !== 0) {
-      yield* Effect.logWarning("Could not stop agents left by a previous server", {
-        slice: ownedSlice,
-        stderr: stopped._tag === "Some" ? stopped.value.stderr.trim() : undefined,
+    const entries = yield* fileSystem
+      .readDirectory(path.join("/sys/fs/cgroup", controlGroup))
+      .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
+    for (const unit of entries.filter((entry) => entry.endsWith(".scope")).sort()) {
+      yield* stopLeftoverUnit({
+        systemctl: input.systemctl,
+        kill: input.kill,
+        controlGroup: path.join(controlGroup, unit),
+        unit,
       });
     }
   });
@@ -160,8 +345,16 @@ export const make = Effect.gen(function* () {
       if (runtimeDir === undefined || runtimeDir.length === 0) return undefined;
       const systemdRun = yield* resolve("systemd-run", hostEnvironment);
       const systemctl = yield* resolve("systemctl", hostEnvironment);
+      const kill = yield* resolve("kill", hostEnvironment);
       if (systemdRun === null || systemctl === null) return undefined;
-      yield* stopLeftoverAgents(systemctl);
+      if (kill === null) {
+        yield* Effect.logWarning("Could not stop agents left by a previous server", {
+          slice: ownedSlice,
+          reason: "kill not found in PATH",
+        });
+      } else {
+        yield* stopLeftoverAgents({ systemctl, kill });
+      }
       const probe = (options: ReadonlyArray<string>) =>
         run(systemdRun, [
           "--user",

@@ -14,7 +14,7 @@ import {
   ComposerPromptEditorTiptap,
   type ComposerPromptEditorHandle,
 } from "../ComposerPromptEditorTiptap";
-import { isEmptyPaste, readHostClipboardImageFile } from "../chat/hostClipboardImage";
+import { isClipboardImagePaste, readHostClipboardImageFile } from "../chat/hostClipboardImage";
 import { Button } from "../ui/button";
 import {
   QuickComposerAlert,
@@ -157,7 +157,7 @@ export function QuickComposerView({
       void addImages(files);
       return;
     }
-    if (!isEmptyPaste(event.clipboardData)) return;
+    if (!isClipboardImagePaste(event.clipboardData)) return;
     const readImage = window.hostBridge?.readClipboardImage;
     if (!readImage) return;
     event.preventDefault();

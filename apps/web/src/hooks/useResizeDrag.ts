@@ -1,5 +1,7 @@
 import { type PointerEvent, useState } from "react";
 
+import { suppressTextSelection } from "../lib/suppressTextSelection";
+
 export interface ResizeBounds {
   readonly min: number;
   readonly max: number;
@@ -33,6 +35,7 @@ interface ActiveDrag<T extends HTMLElement> {
 
 function createResizeDrag<T extends HTMLElement>() {
   let drag: ActiveDrag<T> | null = null;
+  let releaseSelection: (() => void) | null = null;
 
   const flush = () => {
     const active = drag;
@@ -58,7 +61,8 @@ function createResizeDrag<T extends HTMLElement>() {
       }
     } catch {}
     document.body.style.removeProperty("cursor");
-    document.body.style.removeProperty("user-select");
+    releaseSelection?.();
+    releaseSelection = null;
     active.session.cleanup?.(commit);
     if (commit) active.session.finish(active.width, active.moved);
   };
@@ -106,7 +110,8 @@ function createResizeDrag<T extends HTMLElement>() {
         onBlur,
       };
       document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
+      releaseSelection?.();
+      releaseSelection = suppressTextSelection(document.body);
     },
     onPointerMove(event: PointerEvent<T>) {
       const active = drag;

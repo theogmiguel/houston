@@ -51,11 +51,11 @@ import { isPasteAsTextShortcut } from "@houston-app/client-runtime/text-paste";
 import { serializeComposerFileLink } from "@houston-app/shared/composerTrigger";
 import { folderDropTarget, resolveDroppedFolderPaths } from "./folderDrop";
 import { droppedPathToFile } from "./droppedPathFile";
-import { isEmptyPaste, readHostClipboardImageFile } from "./hostClipboardImage";
+import { isClipboardImagePaste, readHostClipboardImageFile } from "./hostClipboardImage";
 import { splitTransferredFiles } from "./workspaceFileDrop";
 import { pastedPathsConfirmationTitle, transferredPaths } from "../../lib/fileTransfer";
 import { createModelSelection, normalizeModelSlug } from "@houston-app/shared/model";
-import { USAGE_LIMITS_COMMAND } from "@houston-app/shared/usageLimits";
+import { isUsageLimitsCommandName } from "@houston-app/shared/usageLimits";
 import {
   memo,
   use,
@@ -80,7 +80,9 @@ import {
   formatAssistantCitationForComposer,
   isPathSuggestionCurrent,
   extendReplacementRangeForTrailingSpace,
+  parseShellCommand,
   replaceTextRange,
+  unescapeShellCommand,
 } from "../../composer-logic";
 import { DEFAULT_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 import {
@@ -230,11 +232,13 @@ import {
 } from "./ExpandedImagePreview";
 import { cn, isMacPlatform, randomUUID } from "~/lib/utils";
 import {
+  dispatchShellCommandSubmission,
   getComposerPromptLengthValidationMessage,
   getComposerSubmissionValidationMessage,
   submitComposerDraft,
 } from "./composerSubmission";
 import { ComposerPromptLengthValidation } from "./ComposerPromptLengthValidation";
+import { ComposerShellCommandHint } from "./ComposerShellCommandHint";
 import { pendingDraftWork } from "./pendingDraftWork";
 import { importComposerThreadAttachment } from "./composerThreadImport";
 import { observeResize } from "~/lib/observeResize";
@@ -412,6 +416,12 @@ export interface ChatComposerProps {
   keepFullHistory: boolean;
   onToggleKeepFullHistory: () => void;
   onUsageLimitsCommand?: (() => void) | undefined;
+  onClaudeInChromeCommand?: (() => void) | undefined;
+  /** Runs a `!command` in the thread's terminal; absent when the thread has none. */
+  onRunShellCommand?: ((command: string) => void) | undefined;
+  /** What a `!command` needs that this thread lacks; shown when it cannot run. */
+  shellCommandUnavailableReason?: string | null;
+  onResumeCommand?: (() => void) | undefined;
   sideChatAvailable?: boolean;
   sideChatDisabledReason?: string | null;
   environmentUnavailable: {
@@ -1196,6 +1206,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     sideChatAvailable: props.sideChatAvailable === true,
     sideChatDisabledReason: props.sideChatDisabledReason ?? null,
     compactSlashCommandAvailable,
+    activeProjectId: props.activeProjectId,
     selectedProvider,
     selectedProviderSkills,
     selectedProviderSlashCommands,
@@ -1939,7 +1950,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     };
   };
 
-  const { onUsageLimitsCommand } = props;
+  const {
+    onClaudeInChromeCommand,
+    onResumeCommand,
+    onRunShellCommand,
+    shellCommandUnavailableReason,
+    onUsageLimitsCommand,
+  } = props;
+  const shellCommandHintStatus: "run" | "unavailable" | null =
+    activePendingProgress === null &&
+    activePendingApproval === null &&
+    !isLiteralPendingAnswer &&
+    parseShellCommand(prompt) !== null
+      ? onRunShellCommand
+        ? "run"
+        : "unavailable"
+      : null;
   const onSelectComposerItem = (item: ComposerCommandItem) => {
     if (composerSelectLockRef.current) return;
     composerSelectLockRef.current = true;
@@ -1976,6 +2002,30 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
         return;
       }
+      if (item.command === "chrome") {
+        if (onClaudeInChromeCommand === undefined) return;
+        const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+          expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+          focusEditorAfterReplace: false,
+        });
+        if (applied) {
+          setComposerHighlightedItemId(null);
+          onClaudeInChromeCommand();
+        }
+        return;
+      }
+      if (item.command === "resume") {
+        if (onResumeCommand === undefined) return;
+        const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+          expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+          focusEditorAfterReplace: false,
+        });
+        if (applied) {
+          setComposerHighlightedItemId(null);
+          onResumeCommand();
+        }
+        return;
+      }
       if (item.command === "side" || item.command === "btw") {
         if (props.sideChatDisabledReason) return;
         const applied = applyPromptReplacement(
@@ -1998,7 +2048,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return;
     }
     if (item.type === "provider-slash-command") {
-      if (item.command.name === USAGE_LIMITS_COMMAND.name && onUsageLimitsCommand) {
+      if (isUsageLimitsCommandName(item.command.name) && onUsageLimitsCommand) {
         const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
           expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
           focusEditorAfterReplace: false,
@@ -2164,6 +2214,29 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     dispatchMode?: ComposerDispatchMode,
     submissionIntent?: ComposerSubmissionIntent,
   ) => {
+    // `!command` targets the thread's terminal, so it runs even while a turn is busy or the
+    // provider is unavailable; a pending question, approval or literal answer owns the draft.
+    const shellCommandHandled = dispatchShellCommandSubmission({
+      prompt: promptRef.current,
+      blocked:
+        activePendingProgress !== null || activePendingApproval !== null || isLiteralPendingAnswer,
+      runShellCommand: onRunShellCommand,
+      onUnavailable: () =>
+        toastManager.add({
+          type: "warning",
+          title: "Shell command not run",
+          description: shellCommandUnavailableReason ?? "This thread has no terminal.",
+        }),
+    });
+    if (shellCommandHandled) {
+      event?.preventDefault();
+      if (onRunShellCommand) {
+        promptRef.current = "";
+        setComposerDraftPrompt(composerDraftTarget, "");
+        composerRef.current?.resetCursorState();
+      }
+      return;
+    }
     if (
       noProviderAvailable ||
       isSendDisabled ||
@@ -2192,6 +2265,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         description: "Send again once its chip resolves.",
       });
       return;
+    }
+    const escapedPrompt = unescapeShellCommand(promptRef.current);
+    if (escapedPrompt !== promptRef.current) {
+      promptRef.current = escapedPrompt;
+      setComposerDraftPrompt(composerDraftTarget, escapedPrompt);
     }
     const submission = submitComposerDraft({
       prompt: promptRef.current,
@@ -2743,7 +2821,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
 
     const readHostClipboardImage = window.hostBridge?.readClipboardImage;
-    if (activeThreadId && readHostClipboardImage && isEmptyPaste(event.clipboardData)) {
+    if (activeThreadId && readHostClipboardImage && isClipboardImagePaste(event.clipboardData)) {
       event.preventDefault();
       event.stopPropagation();
       void readHostClipboardImageFile(readHostClipboardImage)
@@ -3674,6 +3752,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 ) : null}
               </div>
             </div>
+
+            <ComposerShellCommandHint
+              status={shellCommandHintStatus}
+              unavailableReason={shellCommandUnavailableReason}
+            />
 
             <ComposerPromptLengthValidation
               message={providerInputSubmissionError ?? composerSubmissionError}

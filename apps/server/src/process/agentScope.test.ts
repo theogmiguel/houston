@@ -16,7 +16,16 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as ServerConfig from "../config.ts";
 import { makeCodexAppServerSpawnCommand } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as ProcessRunner from "../processRunner.ts";
-import { classifyScope, make, ownedAgentSlice, type ScopeState } from "./agentScope.ts";
+import {
+  classifyScope,
+  isSameLiveProcess,
+  make,
+  ownedAgentSlice,
+  parseProcStat,
+  selectLeftoverVictims,
+  type ProcessStat,
+  type ScopeState,
+} from "./agentScope.ts";
 
 const running: ScopeState = {
   loadState: "loaded",
@@ -37,10 +46,87 @@ describe("classifyScope", () => {
   });
 });
 
+const stat = (ppid: number, session: number, startTime: number, state = "S"): ProcessStat => ({
+  state,
+  ppid,
+  session,
+  startTime,
+});
+
+describe("parseProcStat", () => {
+  it("reads the fields after a comm containing spaces and parentheses", () => {
+    expect(
+      parseProcStat("123 (my agent (v2)) S 1 123 456 0 0 0 0 0 0 0 0 0 0 0 0 0 20 0 99"),
+    ).toEqual({ state: "S", ppid: 1, session: 456, startTime: 99 });
+  });
+
+  it("rejects a line whose comm is unterminated", () => {
+    expect(parseProcStat("123 agent S 1 123 456")).toBeUndefined();
+  });
+});
+
+describe("selectLeftoverVictims", () => {
+  const table = new Map<number, ProcessStat>([
+    [100, stat(1, 100, 10)],
+    [101, stat(100, 100, 11)],
+    [102, stat(101, 100, 12)],
+    [200, stat(100, 200, 13)],
+    [201, stat(200, 200, 14)],
+    [300, stat(1, 100, 15)],
+    [400, stat(999, 400, 16)],
+  ]);
+
+  it("keeps the provider and the descendants still in its session", () => {
+    expect(selectLeftoverVictims(100, table)).toEqual([100, 101, 102]);
+  });
+
+  it("leaves a setsid subtree alone", () => {
+    const victims = selectLeftoverVictims(100, table);
+    expect(victims).not.toContain(200);
+    expect(victims).not.toContain(201);
+  });
+
+  it("leaves a reparented nohup child alone", () => {
+    expect(selectLeftoverVictims(100, table)).not.toContain(300);
+  });
+
+  it("returns nothing when the provider is already gone", () => {
+    expect(selectLeftoverVictims(999, table)).toEqual([]);
+  });
+
+  it("does not follow a parent cycle", () => {
+    const cyclic = new Map<number, ProcessStat>([
+      [100, stat(1, 100, 10)],
+      [101, stat(102, 100, 11)],
+      [102, stat(101, 100, 12)],
+    ]);
+    expect(selectLeftoverVictims(100, cyclic)).toEqual([100]);
+  });
+});
+
+describe("isSameLiveProcess", () => {
+  it("accepts the same live process", () => {
+    expect(isSameLiveProcess(stat(1, 1, 10), stat(1, 1, 10))).toBe(true);
+  });
+
+  it("rejects a pid reused by another process", () => {
+    expect(isSameLiveProcess(stat(1, 1, 10), stat(1, 1, 11))).toBe(false);
+  });
+
+  it("rejects a process that vanished", () => {
+    expect(isSameLiveProcess(stat(1, 1, 10), undefined)).toBe(false);
+  });
+
+  it("rejects a zombie that already exited", () => {
+    expect(isSameLiveProcess(stat(1, 1, 10), stat(1, 1, 10, "Z"))).toBe(false);
+  });
+});
+
 interface FakeUnit {
   activeState: string;
   result: string;
   controlGroup?: string;
+  mainPid?: number;
 }
 
 const withFakeSystemd = <A, E>(
@@ -50,21 +136,33 @@ const withFakeSystemd = <A, E>(
     readonly calls: ReadonlyArray<ReadonlyArray<string>>;
     readonly stateDir: string;
     readonly cgroupRoot: string;
+    readonly procRoot: string;
   }) => Effect.Effect<A, E>,
   // A user manager older than systemd 253 rejects OOMPolicy on scopes.
   {
     oomPolicy = true,
     stopFails = false,
-  }: { readonly oomPolicy?: boolean; readonly stopFails?: boolean } = {},
+    survivesSignal = [],
+  }: {
+    readonly oomPolicy?: boolean;
+    readonly stopFails?: boolean;
+    readonly survivesSignal?: ReadonlyArray<number>;
+  } = {},
 ) =>
   Effect.gen(function* () {
     const bin = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-agent-scope-"));
-    for (const name of ["systemd-run", "systemctl", "agent"]) {
+    for (const name of ["systemd-run", "systemctl", "agent", "kill"]) {
       NodeFS.writeFileSync(NodePath.join(bin, name), "", { mode: 0o755 });
     }
     const cgroupRoot = NodePath.join(bin, "cgroup");
+    const procRoot = NodePath.join(bin, "proc");
+    NodeFS.mkdirSync(procRoot, { recursive: true });
     const units = new Map<string, FakeUnit>();
     const calls: Array<ReadonlyArray<string>> = [];
+    const remap = (filePath: string) =>
+      filePath.startsWith("/proc/")
+        ? NodePath.join(procRoot, filePath.slice("/proc/".length))
+        : filePath.replace("/sys/fs/cgroup", cgroupRoot);
     const output = (stdout: string, code = 0): ProcessRunner.ProcessRunOutput => ({
       stdout,
       stderr: "",
@@ -79,6 +177,14 @@ const withFakeSystemd = <A, E>(
       run: ({ args }) =>
         Effect.sync(() => {
           calls.push(args);
+          if (args[0] === "-TERM" || args[0] === "-KILL") {
+            for (const pid of args.slice(1)) {
+              if (!survivesSignal.includes(Number(pid))) {
+                NodeFS.rmSync(NodePath.join(procRoot, pid, "stat"), { force: true });
+              }
+            }
+            return output("");
+          }
           if (!oomPolicy && args.some((arg) => arg.startsWith("--property=OOMPolicy="))) {
             return output("", 1);
           }
@@ -95,9 +201,9 @@ const withFakeSystemd = <A, E>(
           const state = units.get(unit);
           return output(
             state === undefined
-              ? "LoadState=not-found\nActiveState=inactive\nResult=success\n"
+              ? "LoadState=not-found\nActiveState=inactive\nResult=success\nMainPID=0\n"
               : `LoadState=loaded\nActiveState=${state.activeState}\nResult=${state.result}\n` +
-                  `ControlGroup=${state.controlGroup ?? ""}\n`,
+                  `ControlGroup=${state.controlGroup ?? ""}\nMainPID=${state.mainPid ?? 0}\n`,
           );
         }),
     });
@@ -108,14 +214,15 @@ const withFakeSystemd = <A, E>(
       Effect.provideService(HostProcess.Environment, { PATH: bin, XDG_RUNTIME_DIR: "/run/user/1" }),
       Effect.provideService(FileSystem.FileSystem, {
         ...fileSystem,
-        readFileString: (path, encoding) =>
-          fileSystem.readFileString(path.replace("/sys/fs/cgroup", cgroupRoot), encoding),
-        writeFileString: (path, data, options) =>
-          fileSystem.writeFileString(path.replace("/sys/fs/cgroup", cgroupRoot), data, options),
+        readFileString: (filePath, encoding) =>
+          fileSystem.readFileString(remap(filePath), encoding),
+        readDirectory: (filePath) => fileSystem.readDirectory(remap(filePath)),
+        writeFileString: (filePath, data, options) =>
+          fileSystem.writeFileString(remap(filePath), data, options),
       }),
     );
     const { stateDir } = yield* ServerConfig.ServerConfig;
-    return yield* body({ scope, units, calls, stateDir, cgroupRoot }).pipe(
+    return yield* body({ scope, units, calls, stateDir, cgroupRoot, procRoot }).pipe(
       Effect.ensuring(Effect.sync(() => NodeFS.rmSync(bin, { recursive: true, force: true }))),
     );
   }).pipe(
@@ -158,6 +265,38 @@ const exitedAgent = (
 
 const stopsOf = (calls: ReadonlyArray<ReadonlyArray<string>>) =>
   calls.filter(([, verb]) => verb === "stop");
+const signalsOf = (calls: ReadonlyArray<ReadonlyArray<string>>) =>
+  calls.filter((args) => args[0] === "-TERM" || args[0] === "-KILL");
+
+/** Writes a /proc/<pid>/stat line with the fields the selection reads. */
+const writeProcess = (
+  procRoot: string,
+  pid: number,
+  {
+    ppid,
+    session,
+    startTime,
+    state = "S",
+  }: {
+    readonly ppid: number;
+    readonly session: number;
+    readonly startTime: number;
+    readonly state?: string;
+  },
+) => {
+  const directory = NodePath.join(procRoot, String(pid));
+  NodeFS.mkdirSync(directory, { recursive: true });
+  NodeFS.writeFileSync(
+    NodePath.join(directory, "stat"),
+    `${pid} (agent) ${state} ${ppid} ${ppid} ${session} 0 0 0 0 0 0 0 0 0 0 0 0 0 20 0 ${startTime}\n`,
+  );
+};
+
+const writeCgroup = (cgroupRoot: string, controlGroup: string, pids: ReadonlyArray<number>) => {
+  const directory = NodePath.join(cgroupRoot, controlGroup.replace(/^\//, ""));
+  NodeFS.mkdirSync(directory, { recursive: true });
+  NodeFS.writeFileSync(NodePath.join(directory, "cgroup.procs"), pids.map(String).join("\n"));
+};
 const launchCodex = (scope: Effect.Success<typeof make>, threadId: string) =>
   makeCodexAppServerSpawnCommand({ command: "agent", args: ["app-server"], threadId }).pipe(
     Effect.provideService(AgentScope, scope),
@@ -305,15 +444,45 @@ describe("AgentScope service", () => {
     ),
   );
 
-  it.effect("stops agents a killed server left before the first launch", () =>
-    withFakeSystemd(({ scope, units, calls, stateDir }) =>
+  it.effect("stops a previous server's agent session and leaves detached work running", () =>
+    withFakeSystemd(({ scope, units, calls, stateDir, cgroupRoot, procRoot }) =>
       Effect.gen(function* () {
-        units.set(ownedAgentSlice(stateDir), { activeState: "active", result: "success" });
+        const slice = "/app-houston-agents-test.slice";
+        const unit = "houston-claude-abcd1234.scope";
+        units.set(ownedAgentSlice(stateDir), {
+          activeState: "active",
+          result: "success",
+          controlGroup: slice,
+        });
+        units.set(unit, {
+          activeState: "active",
+          result: "success",
+          controlGroup: `${slice}/${unit}`,
+          mainPid: 100,
+        });
+        writeCgroup(cgroupRoot, slice, []);
+        NodeFS.writeFileSync(NodePath.join(cgroupRoot, slice, "cgroup.events"), "populated 1\n");
+        writeCgroup(cgroupRoot, `${slice}/${unit}`, [100, 101, 102, 200, 201, 300]);
+        writeProcess(procRoot, 100, { ppid: 1, session: 100, startTime: 10 });
+        writeProcess(procRoot, 101, { ppid: 100, session: 100, startTime: 11 });
+        writeProcess(procRoot, 102, { ppid: 101, session: 100, startTime: 12 });
+        // A setsid app, its own child, and a nohup job reparented out of the tree.
+        writeProcess(procRoot, 200, { ppid: 100, session: 200, startTime: 13 });
+        writeProcess(procRoot, 201, { ppid: 200, session: 200, startTime: 14 });
+        writeProcess(procRoot, 300, { ppid: 1, session: 100, startTime: 15 });
+
         const agent = yield* scope.wrap({ command: "agent", args: [], name: "t", threadId: "a" });
-        const stops = calls.filter(([, verb]) => verb === "stop");
-        expect(stops).toEqual([["--user", "stop", ownedAgentSlice(stateDir)]]);
+
+        expect(signalsOf(calls)).toEqual([["-TERM", "100", "101", "102"]]);
+        expect(stopsOf(calls)).toEqual([]);
         expect(sliceOf(agent)).toBe(ownedAgentSlice(stateDir));
-        expect(agent.args).toContain("--property=TimeoutStopSec=10s");
+        for (const pid of [200, 201, 300]) {
+          expect(NodeFS.existsSync(NodePath.join(procRoot, String(pid), "stat"))).toBe(true);
+        }
+        for (const pid of [100, 101, 102]) {
+          expect(NodeFS.existsSync(NodePath.join(procRoot, String(pid), "stat"))).toBe(false);
+        }
+
         const terminal = yield* scope.wrap({
           command: "agent",
           args: [],
@@ -321,8 +490,70 @@ describe("AgentScope service", () => {
           survivesRestart: true,
         });
         expect(sliceOf(terminal)).toBe("app-houston-agents.slice");
-        expect(calls.filter(([, verb]) => verb === "stop")).toHaveLength(1);
+        expect(signalsOf(calls)).toHaveLength(1);
       }),
+    ),
+  );
+
+  it.effect("leaves a leftover scope alone when its provider already exited", () =>
+    withFakeSystemd(({ scope, units, calls, stateDir, cgroupRoot, procRoot }) =>
+      Effect.gen(function* () {
+        const slice = "/app-houston-agents-test.slice";
+        const unit = "houston-claude-abcd1234.scope";
+        units.set(ownedAgentSlice(stateDir), {
+          activeState: "active",
+          result: "success",
+          controlGroup: slice,
+        });
+        units.set(unit, {
+          activeState: "active",
+          result: "success",
+          controlGroup: `${slice}/${unit}`,
+          mainPid: 0,
+        });
+        writeCgroup(cgroupRoot, slice, []);
+        NodeFS.writeFileSync(NodePath.join(cgroupRoot, slice, "cgroup.events"), "populated 1\n");
+        writeCgroup(cgroupRoot, `${slice}/${unit}`, [200]);
+        writeProcess(procRoot, 200, { ppid: 1, session: 200, startTime: 13 });
+
+        yield* scope.wrap({ command: "agent", args: [], name: "t", threadId: "a" });
+
+        expect(signalsOf(calls)).toEqual([]);
+        expect(NodeFS.existsSync(NodePath.join(procRoot, "200", "stat"))).toBe(true);
+      }),
+    ),
+  );
+
+  it.live("force-kills a provider that ignores SIGTERM", () =>
+    withFakeSystemd(
+      ({ scope, units, calls, stateDir, cgroupRoot, procRoot }) =>
+        Effect.gen(function* () {
+          const slice = "/app-houston-agents-test.slice";
+          const unit = "houston-claude-abcd1234.scope";
+          units.set(ownedAgentSlice(stateDir), {
+            activeState: "active",
+            result: "success",
+            controlGroup: slice,
+          });
+          units.set(unit, {
+            activeState: "active",
+            result: "success",
+            controlGroup: `${slice}/${unit}`,
+            mainPid: 100,
+          });
+          writeCgroup(cgroupRoot, slice, []);
+          NodeFS.writeFileSync(NodePath.join(cgroupRoot, slice, "cgroup.events"), "populated 1\n");
+          writeCgroup(cgroupRoot, `${slice}/${unit}`, [100]);
+          writeProcess(procRoot, 100, { ppid: 1, session: 100, startTime: 10 });
+
+          yield* scope.wrap({ command: "agent", args: [], name: "t", threadId: "a" });
+
+          expect(signalsOf(calls)).toEqual([
+            ["-TERM", "100"],
+            ["-KILL", "100"],
+          ]);
+        }),
+      { survivesSignal: [100] },
     ),
   );
 
@@ -407,7 +638,8 @@ describe("AgentScope service", () => {
     withFakeSystemd(({ scope, calls }) =>
       Effect.gen(function* () {
         yield* scope.wrap({ command: "agent", args: [], name: "t", threadId: "a" });
-        expect(calls.filter(([, verb]) => verb === "stop")).toEqual([]);
+        expect(signalsOf(calls)).toEqual([]);
+        expect(stopsOf(calls)).toEqual([]);
       }),
     ),
   );

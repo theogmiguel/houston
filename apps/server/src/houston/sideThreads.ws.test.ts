@@ -110,6 +110,7 @@ import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import { layerWsRpc, WS_RPC_SERVER_OPTIONS } from "../ws.ts";
 
+import * as HoustonResumeSessions from "./resumeSessions.ts";
 import * as HoustonReviewState from "./reviewState.ts";
 import { makeHarness, runWith } from "./sideThreads.testkit.ts";
 import * as HoustonTaskService from "./tasks/TaskService.ts";
@@ -144,6 +145,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(GitWorkflowService.GitWorkflowService)({}),
   Layer.mock(HostResources.HostResources)({}),
   Layer.mock(HoustonReviewState.HoustonReviewState)({}),
+  Layer.mock(HoustonResumeSessions.HoustonResumeSessions)({}),
   Layer.mock(HoustonTaskService.HoustonTaskService)({}),
   Layer.mock(HoustonTaskRuns.HoustonTaskRuns)({}),
   Layer.mock(HoustonTaskV1Import.HoustonTaskV1Import)({}),

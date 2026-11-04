@@ -52,6 +52,19 @@ describe("ProviderSettingsForm helpers", () => {
     expect(next).toEqual({ forkOwned: 1 });
   });
 
+  it("stores an explicit off for the Claude in Chrome switch", () => {
+    const claude = providerClients.get(ProviderDriverKind.make("claudeAgent"));
+    expect(claude).toBeDefined();
+    const field = deriveProviderSettingsFields(claude!).find(
+      (candidate) => candidate.key === "claudeInChrome",
+    );
+    expect(field).toMatchObject({ control: "switch", clearWhenEmpty: "persist" });
+
+    expect(nextProviderConfigWithFieldValue(undefined, field!, false)).toEqual({
+      claudeInChrome: false,
+    });
+  });
+
   it("stores false boolean fields when true is the default", () => {
     const next = nextProviderConfigWithFieldValue(
       undefined,

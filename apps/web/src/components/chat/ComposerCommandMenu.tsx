@@ -15,9 +15,13 @@ import {
   type ServerProviderSlashCommand,
 } from "@houston-app/contracts";
 import {
+  ArrowDownIcon,
+  ArrowUpIcon,
   BotIcon,
   ChartNoAxesColumnIcon,
+  ChromeIcon,
   CodeIcon,
+  CornerDownLeftIcon,
   Maximize2Icon,
   MessagesSquareIcon,
   PenLineIcon,
@@ -25,13 +29,24 @@ import {
   TerminalIcon,
   ZapIcon,
 } from "lucide-react";
-import { memo, useLayoutEffect, useRef } from "react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
 
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
 import { cn } from "~/lib/utils";
-import { Command, CommandGroup, CommandItem, CommandList } from "../ui/command";
+import { observeResize } from "~/lib/observeResize";
+import {
+  Command,
+  CommandFooter,
+  CommandGroup,
+  CommandGroupLabel,
+  CommandItem,
+  CommandList,
+} from "../ui/command";
+import { Kbd, KbdGroup } from "../ui/kbd";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { PierreEntryIcon } from "./PierreEntryIcon";
+import { slashCommandSections } from "./composerSlashCommandSearch";
 import { resolvePullRequestState } from "../pullRequest/pullRequestPresentation";
 
 export type ComposerCommandItem =
@@ -92,7 +107,7 @@ export type ComposerCommandItem =
 
 export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   listId: string;
-  items: ComposerCommandItem[];
+  items: ReadonlyArray<ComposerCommandItem>;
   resolvedTheme: "light" | "dark";
   isLoading: boolean;
   triggerKind: ComposerTriggerKind | null;
@@ -112,6 +127,20 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
     el?.scrollIntoView({ block: "nearest" });
   }, [props.activeItemId]);
 
+  const sections = props.triggerKind === "slash-command" ? slashCommandSections(props.items) : null;
+  const renderItem = (item: ComposerCommandItem) => (
+    <ComposerCommandMenuItem
+      key={item.id}
+      optionId={composerSuggestionOptionId(props.listId, item.id)}
+      item={item}
+      triggerKind={props.triggerKind}
+      resolvedTheme={props.resolvedTheme}
+      isActive={props.activeItemId === item.id}
+      onHighlight={props.onHighlightedItemChange}
+      onSelect={props.onSelect}
+    />
+  );
+
   return (
     <Command
       autoHighlight={false}
@@ -128,26 +157,27 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
         data-composer-command-drawer="true"
       >
         {props.items.length > 0 ? (
-          <CommandList
-            id={props.listId}
-            aria-label={props.triggerKind ? LISTBOX_LABEL_BY_TRIGGER[props.triggerKind] : undefined}
-            className="max-h-72 min-h-0 scroll-pb-6"
-          >
-            <CommandGroup>
-              {props.items.map((item) => (
-                <ComposerCommandMenuItem
-                  key={item.id}
-                  optionId={composerSuggestionOptionId(props.listId, item.id)}
-                  item={item}
-                  triggerKind={props.triggerKind}
-                  resolvedTheme={props.resolvedTheme}
-                  isActive={props.activeItemId === item.id}
-                  onHighlight={props.onHighlightedItemChange}
-                  onSelect={props.onSelect}
-                />
-              ))}
-            </CommandGroup>
-          </CommandList>
+          <>
+            <CommandList
+              id={props.listId}
+              aria-label={
+                props.triggerKind ? LISTBOX_LABEL_BY_TRIGGER[props.triggerKind] : undefined
+              }
+              className="max-h-72 min-h-0 scroll-pb-6"
+            >
+              {sections ? (
+                sections.map((section) => (
+                  <CommandGroup key={section.id}>
+                    <CommandGroupLabel>{section.title}</CommandGroupLabel>
+                    {section.items.map(renderItem)}
+                  </CommandGroup>
+                ))
+              ) : (
+                <CommandGroup>{props.items.map(renderItem)}</CommandGroup>
+              )}
+            </CommandList>
+            {sections ? <ComposerCommandMenuHints /> : null}
+          </>
         ) : (
           <div className="px-3 py-2.5">
             <p className="text-(--houston) text-xs">
@@ -241,18 +271,81 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
           props.item.label
         )}
       </span>
-      <span
+      <ComposerCommandItemDescription
+        text={props.item.description}
         className={cn(
           "col-start-2 row-start-2 min-w-0 truncate text-(--houston) text-xs leading-4",
           isPath && "font-mono text-2xs",
         )}
-      >
-        {props.item.description}
-      </span>
+      />
       {skillSourceKind ? <SkillSourceBadge kind={skillSourceKind} /> : null}
     </CommandItem>
   );
 });
+
+const ComposerCommandItemDescription = memo(function ComposerCommandItemDescription(props: {
+  text: string;
+  className: string;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- the tooltip is offered only while the one-line description overflows its cell
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (element) setIsTruncated(element.scrollWidth > element.clientWidth);
+  });
+
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- a narrower composer can truncate the description without the text changing
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    return observeResize(element, () => {
+      setIsTruncated(element.scrollWidth > element.clientWidth);
+    });
+  }, []);
+
+  const description = (
+    <span ref={ref} className={props.className}>
+      {props.text}
+    </span>
+  );
+  if (!props.text || !isTruncated) return description;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={description} />
+      <TooltipPopup>{props.text}</TooltipPopup>
+    </Tooltip>
+  );
+});
+
+function ComposerCommandMenuHints() {
+  return (
+    <CommandFooter>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <KbdGroup>
+          <Kbd>
+            <ArrowUpIcon />
+          </Kbd>
+          <Kbd>
+            <ArrowDownIcon />
+          </Kbd>
+          <span>Navigate</span>
+        </KbdGroup>
+        <KbdGroup>
+          <Kbd>
+            <CornerDownLeftIcon />
+          </Kbd>
+          <span>Run</span>
+        </KbdGroup>
+        <KbdGroup>
+          <Kbd>Esc</Kbd>
+          <span>Close</span>
+        </KbdGroup>
+      </div>
+    </CommandFooter>
+  );
+}
 
 const MENU_ICON_CLASS = "col-start-1 row-start-1 size-4 text-(--houston)";
 
@@ -263,6 +356,8 @@ function ComposerCommandItemGlyph({ item }: { item: ComposerCommandItem }) {
     case "slash-command":
       return item.command === "model" ? (
         <SparklesIcon aria-hidden="true" className={MENU_ICON_CLASS} />
+      ) : item.command === "chrome" ? (
+        <ChromeIcon aria-hidden="true" className={MENU_ICON_CLASS} />
       ) : item.command === "plan" ? (
         <PenLineIcon aria-hidden="true" className={MENU_ICON_CLASS} />
       ) : (

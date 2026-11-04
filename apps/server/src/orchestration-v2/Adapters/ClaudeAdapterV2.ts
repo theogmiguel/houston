@@ -1396,6 +1396,18 @@ function claudeLiveSelectionFlagSettings(
   };
 }
 
+/**
+ * Claude Code hides its Artifact tool in SDK sessions unless CLAUDE_CODE_ARTIFACT is set.
+ * An explicit value in the instance environment wins over the switch.
+ */
+export function withClaudeArtifacts(
+  environment: NodeJS.ProcessEnv,
+  enabled: boolean,
+): NodeJS.ProcessEnv {
+  if (!enabled || environment.CLAUDE_CODE_ARTIFACT !== undefined) return environment;
+  return { ...environment, CLAUDE_CODE_ARTIFACT: "1" };
+}
+
 // A delegated child is its own SDK session, so Claude Code gives it the main-conversation cache
 // TTL. When the user sets Claude's subagentPromptCacheTtl, the child follows it like a native
 // subagent would. An explicit CLAUDE_CODE_PROMPT_CACHE_TTL on the instance still wins.
@@ -1469,6 +1481,8 @@ export function makeClaudeQueryOptions(input: {
   readonly cwd: string | null;
   readonly attachmentsDir?: string;
   readonly settings?: ClaudeSettings;
+  /** The effective Claude in Chrome switch, after any ~/.claude.json default. */
+  readonly claudeInChrome?: boolean;
   readonly sdkSettings?: string | ClaudeSdkSettings;
   readonly environment?: NodeJS.ProcessEnv;
   readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
@@ -1503,6 +1517,14 @@ export function makeClaudeQueryOptions(input: {
   if (input.strictMcpConfig === true) {
     delete extraArgs["mcp-config"];
     delete extraArgs["strict-mcp-config"];
+  }
+  // Launch arguments win: `--chrome` is already there, and `--no-chrome` is an explicit opt-out.
+  if (
+    input.claudeInChrome === true &&
+    extraArgs["chrome"] === undefined &&
+    extraArgs["no-chrome"] === undefined
+  ) {
+    extraArgs["chrome"] = null;
   }
   // Claude Code overwrites its CLI append text with the SDK's initialize
   // appendSystemPrompt, so launch-argument text has to travel in that value.
@@ -10580,6 +10602,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           );
           const queryOptions = makeClaudeQueryOptions({
             modelSelection: turnInput.modelSelection,
+            claudeInChrome: adapterOptions.settings.claudeInChrome,
             nativeThreadId,
             resume: shouldResume,
             ...(resumeSessionAt === undefined ? {} : { resumeSessionAt }),
@@ -10589,12 +10612,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(launchArgSettings === undefined
               ? {}
               : { sdkSettings: claudeSdkLaunchArgSettings(launchArgSettings) }),
-            environment: claudeQueryEnvironment(
-              adapterOptions.environment,
-              turnInput.appThread,
-              turnInput.appThread.lineage.relationshipToParent === "subagent"
-                ? yield* resolveSubagentPromptCacheTtl(turnInput.runtimePolicy.cwd)
-                : undefined,
+            environment: withClaudeArtifacts(
+              claudeQueryEnvironment(
+                adapterOptions.environment,
+                turnInput.appThread,
+                turnInput.appThread.lineage.relationshipToParent === "subagent"
+                  ? yield* resolveSubagentPromptCacheTtl(turnInput.runtimePolicy.cwd)
+                  : undefined,
+              ),
+              adapterOptions.settings.claudeArtifacts,
             ),
             tools: queryPolicy.tools ?? CLAUDE_CODE_PRESET_TOOLS,
             ...(mcpOverrides.allowedTools === undefined

@@ -676,8 +676,19 @@ export const USAGE_LIMITS_COMMAND = {
   description: "Show this provider's usage limits",
 } satisfies ServerProviderSlashCommand;
 
+// Provider CLIs teach "/usage" for limits, so it opens the same panel as Houston's own command.
+const USAGE_LIMITS_COMMAND_NAMES: ReadonlySet<string> = new Set([
+  USAGE_LIMITS_COMMAND.name,
+  "usage",
+]);
+
+export function isUsageLimitsCommandName(name: string): boolean {
+  return USAGE_LIMITS_COMMAND_NAMES.has(name.toLowerCase());
+}
+
 export function isUsageLimitsCommand(prompt: string): boolean {
-  return prompt.trim().toLowerCase() === "/usage-limits";
+  const trimmed = prompt.trim();
+  return trimmed.startsWith("/") && isUsageLimitsCommandName(trimmed.slice(1));
 }
 
 export function hasProviderUsageLimits(

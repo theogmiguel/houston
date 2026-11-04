@@ -350,7 +350,7 @@ function waitForBootstrapRetry(delayMs: number): Promise<void> {
 
 function isTransientBootstrapError(error: unknown): boolean {
   if (isPrimaryEnvironmentRequestError(error)) {
-    return TRANSIENT_BOOTSTRAP_STATUS_CODES.has(error.status);
+    return TRANSIENT_BOOTSTRAP_STATUS_CODES.has(error.status) || isTransportFailure(error.cause);
   }
 
   if (error instanceof TypeError) {
@@ -360,7 +360,34 @@ function isTransientBootstrapError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+// A refused connection means the server is still starting, so it is worth waiting for.
+function isTransportFailure(cause: unknown): boolean {
+  return HttpClientError.isHttpClientError(cause) && cause.reason._tag === "TransportError";
+}
+
+// A cold server start measured about 3 s; the margin covers slow disks and the host's own retries.
+const DESKTOP_SERVER_PUBLISH_TIMEOUT_MS = 30_000;
+
+function hasDesktopPrimaryBootstrap(): boolean {
+  const bootstraps = window.hostBridge?.getLocalEnvironmentBootstraps() ?? [];
+  return bootstraps.some((entry) => entry.id === PRIMARY_LOCAL_ENVIRONMENT_ID);
+}
+
+/**
+ * The desktop host publishes the server's address only once the server is up. The primary HTTP
+ * client fixes its base URL on first use, so a request before then would pin a wrong origin.
+ */
+async function waitForDesktopPrimaryBootstrap(): Promise<void> {
+  if (!window.hostBridge) return;
+  const startedAt = Date.now();
+  while (!hasDesktopPrimaryBootstrap()) {
+    if (Date.now() - startedAt >= DESKTOP_SERVER_PUBLISH_TIMEOUT_MS) return;
+    await waitForBootstrapRetry(BOOTSTRAP_RETRY_STEP_MS);
+  }
+}
+
 async function bootstrapServerAuth(urlCredential: string | null): Promise<ServerAuthGateState> {
+  await waitForDesktopPrimaryBootstrap();
   const currentSession = await fetchSessionState();
   if (currentSession.authenticated && !urlCredential) {
     return { status: "authenticated" };

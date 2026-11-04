@@ -114,6 +114,27 @@ const runRecentThreads = (input: ScannerTestInput & { readonly workspaceRoot: st
     ),
   );
 
+const runRecentSessions = (
+  input: ScannerTestInput & { readonly workspaceRoots: ReadonlyArray<string> },
+) =>
+  Effect.gen(function* () {
+    const scanner = yield* AgentSessionScanner.AgentSessionScanner;
+    return yield* scanner.listRecentSessions(input.workspaceRoots);
+  }).pipe(Effect.provide(layerScannerTest(input)));
+
+const runReadSession = (
+  input: ScannerTestInput & {
+    readonly workspaceRoots: ReadonlyArray<string>;
+    readonly source: Parameters<
+      AgentSessionScanner.AgentSessionScanner["Service"]["readSession"]
+    >[0];
+  },
+) =>
+  Effect.gen(function* () {
+    const scanner = yield* AgentSessionScanner.AgentSessionScanner;
+    return yield* scanner.readSession(input.source, input.workspaceRoots);
+  }).pipe(Effect.provide(layerScannerTest(input)));
+
 const makeTempDir = Effect.fn("AgentSessionScanner.test.makeTempDir")(function* (prefix: string) {
   const fileSystem = yield* FileSystem.FileSystem;
   return yield* fileSystem.makeTempDirectoryScoped({ prefix });
@@ -2423,4 +2444,115 @@ describe("parseAgentSessionTranscript", () => {
 
     expect(thread).toBeNull();
   });
+});
+
+it.layer(NodeServices.layer)("listRecentSessions", (it) => {
+  const claudeTranscript = (cwd: string, sessionId: string, prompt: string) =>
+    `${JSON.stringify({
+      type: "user",
+      cwd,
+      sessionId,
+      timestamp: "2026-08-24T11:00:00.000Z",
+      message: { role: "user", content: prompt },
+    })}\n${JSON.stringify({
+      type: "assistant",
+      sessionId,
+      timestamp: "2026-08-24T11:01:00.000Z",
+      message: { role: "assistant", content: [{ type: "text", text: "Done" }] },
+    })}\n`;
+
+  it.effect("lists sessions for the project root and its worktrees, newest first", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
+      yield* TestClock.setTime(nowMs);
+      const claudeHomePath = yield* makeTempDir("houston-claude-home-");
+      const codexHomePath = yield* makeTempDir("houston-codex-home-");
+      const workspace = yield* makeTempDir("houston-workspace-");
+      const worktree = yield* makeTempDir("houston-worktree-");
+      const otherWorkspace = yield* makeTempDir("houston-workspace-other-");
+
+      yield* writeTranscript({
+        filePath: path.join(claudeHomePath, "projects", "-root", "root-session.jsonl"),
+        contents: claudeTranscript(workspace, "root-session", "Fix the project root"),
+        mtimeMs: nowMs - 2 * 60 * 60 * 1000,
+      });
+      yield* writeTranscript({
+        filePath: path.join(claudeHomePath, "projects", "-worktree", "worktree-session.jsonl"),
+        contents: claudeTranscript(worktree, "worktree-session", "Fix the worktree"),
+        mtimeMs: nowMs - 60 * 60 * 1000,
+      });
+      yield* writeTranscript({
+        filePath: path.join(claudeHomePath, "projects", "-other", "other-session.jsonl"),
+        contents: claudeTranscript(otherWorkspace, "other-session", "Another project"),
+        mtimeMs: nowMs - 30 * 60 * 1000,
+      });
+      yield* fileSystem.makeDirectory(path.join(worktree, ".git"), { recursive: true });
+      yield* fileSystem.writeFileString(
+        path.join(worktree, ".git", "HEAD"),
+        "ref: refs/heads/feature-resume\n",
+      );
+
+      const result = yield* runRecentSessions({
+        claudeHomePath,
+        codexHomePath,
+        workspaceRoots: [workspace, worktree],
+      });
+
+      expect(result.sessions.map((session) => session.thread.providerSessionId)).toEqual([
+        "worktree-session",
+        "root-session",
+      ]);
+      expect(result.sessions[0]?.cwd).toBe(path.resolve(worktree));
+      expect(result.sessions[0]?.branch).toBe("feature-resume");
+      expect(result.sessions[0]?.savedTitle).toBeNull();
+      expect(result.sessions[1]?.cwd).toBe(path.resolve(workspace));
+      expect(result.sessions[1]?.branch).toBeNull();
+      expect(result.truncated).toBe(false);
+    }),
+  );
+
+  it.effect("reads one picked session only while its folder is in the searched roots", () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
+      yield* TestClock.setTime(nowMs);
+      const claudeHomePath = yield* makeTempDir("houston-claude-home-");
+      const codexHomePath = yield* makeTempDir("houston-codex-home-");
+      const workspace = yield* makeTempDir("houston-workspace-");
+      const worktree = yield* makeTempDir("houston-worktree-");
+
+      yield* writeTranscript({
+        filePath: path.join(claudeHomePath, "projects", "-worktree", "worktree-session.jsonl"),
+        contents: claudeTranscript(worktree, "worktree-session", "Fix the worktree"),
+        mtimeMs: nowMs - 60 * 60 * 1000,
+      });
+      const listed = yield* runRecentSessions({
+        claudeHomePath,
+        codexHomePath,
+        workspaceRoots: [workspace, worktree],
+      });
+      const picked = listed.sessions[0];
+      expect(picked).toBeDefined();
+      if (picked === undefined) return;
+
+      const resolved = yield* runReadSession({
+        claudeHomePath,
+        codexHomePath,
+        workspaceRoots: [workspace, worktree],
+        source: picked.source,
+      });
+      expect(resolved?.thread.providerSessionId).toBe("worktree-session");
+      expect(resolved?.cwd).toBe(path.resolve(worktree));
+
+      const outside = yield* runReadSession({
+        claudeHomePath,
+        codexHomePath,
+        workspaceRoots: [workspace],
+        source: picked.source,
+      });
+      expect(outside).toBeNull();
+    }),
+  );
 });

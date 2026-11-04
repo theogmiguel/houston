@@ -2895,6 +2895,8 @@ code {
   --grid-cell-border: transparent;
   --grid-cell-focus-border: transparent;
   --grid-cell-radius: 0px;
+  /* A stable offsetParent for the cell FLIP's layout measurements. */
+  position: relative;
   padding: 0;
   transition:
     padding var(--grid-morph-duration) var(--grid-morph-ease),
@@ -2910,6 +2912,15 @@ code {
   --grid-cell-focus-border: var(--focus-frame);
   --grid-cell-radius: var(--r-group);
   padding: 0 8px 8px;
+}
+
+/* A FLIP moving a cell between slots must show the part outside its slot. */
+[data-grid-surface][data-flipping] {
+  overflow: visible;
+}
+
+[data-grid-surface][data-flipping] [data-grid-slot] {
+  overflow: visible;
 }
 
 [data-grid-surface] [data-grid-cell] {

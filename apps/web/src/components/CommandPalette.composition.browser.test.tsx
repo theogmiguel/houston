@@ -36,6 +36,7 @@ vi.mock("../hooks/useHandleNewThread", () => ({
   useNewThreadHandler: () => async () => undefined,
 }));
 vi.mock("../hooks/useOpenPanelPullRequestUrl", () => ({ useOpenPanelPullRequestUrl: () => null }));
+vi.mock("../grid/useOpenGridDraft", () => ({ useOpenGridDraft: () => async () => null }));
 vi.mock("../connection/useDesktopLocalBootstraps", () => ({ useDesktopLocalBootstraps: () => [] }));
 vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: () => async () => ({ _tag: "Success", value: undefined }),
@@ -55,6 +56,7 @@ vi.mock("../state/environments", async (original) => ({
         serverConfig: {
           environment: { platform: { os: "linux" }, capabilities: { projectCloneTracking: true } },
           settings: { addProjectBaseDirectory: "/workspace/" },
+          newProjectsRoot: "/workspace/projects/",
         },
       },
     ],
@@ -102,6 +104,28 @@ vi.mock("./settings/useAvailableSettingsSearchItems", () => ({
 }));
 
 // The real palette and Base UI input must agree that confirming composition is typing.
+describe("add-project sources", () => {
+  it("offers folders, then cloning, then a new project, then provider repositories", async () => {
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+    await act(() => openCommandPalette({ open: "add-project" }));
+
+    const titles = page
+      .getByRole("option")
+      .elements()
+      .map((element) => element.textContent?.trim() ?? "");
+
+    expect(titles[0]?.startsWith("Open folder…")).toBe(true);
+    expect(titles[1]?.startsWith("Clone repository…")).toBe(true);
+    expect(titles[2]?.startsWith("New project…")).toBe(true);
+
+    const provider = page.getByText("GitHub repository", { exact: true }).element();
+    for (const title of ["Open folder…", "Clone repository…", "New project…"]) {
+      const row = page.getByText(title, { exact: true }).element();
+      expect(row.compareDocumentPosition(provider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+  });
+});
+
 describe.each(["repository", "folder", "destination"] as const)("add-project %s", (step) => {
   it.each([
     { isComposing: true, keyCode: 13 },
@@ -109,7 +133,9 @@ describe.each(["repository", "folder", "destination"] as const)("add-project %s"
   ])("keeps Enter in the input during composition: %j", async (composition) => {
     await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
     await act(() => openCommandPalette({ open: "add-project" }));
-    await page.getByText(step === "folder" ? "Local folder" : "Git URL", { exact: true }).click();
+    await page
+      .getByText(step === "folder" ? "Open folder…" : "Clone repository…", { exact: true })
+      .click();
     const input = () => page.getByRole("combobox");
     if (step === "destination") {
       await input().fill("https://example.com/team/project.git");
