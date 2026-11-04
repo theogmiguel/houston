@@ -1,0 +1,305 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { assert, it } from "@effect/vitest";
+import {
+  CheckpointScopeId,
+  EventId,
+  MessageId,
+  NodeId,
+  type OrchestrationV2CheckpointScope,
+  type OrchestrationV2DomainEvent,
+  ProjectId,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ProviderThreadId,
+  RunId,
+  ThreadId,
+} from "@houston-app/contracts";
+import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
+import { ChildProcessSpawner } from "effect/process";
+import * as Ref from "effect/Ref";
+
+import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
+import * as CheckpointCaptureService from "./CheckpointCaptureService.ts";
+import * as CheckpointService from "./CheckpointService.ts";
+import * as EventSink from "./EventSink.ts";
+import * as ProjectionStore from "./ProjectionStore.ts";
+
+// Each git process costs about 60 ms on Windows; these budgets keep removed spawns out.
+const FIRST_TURN_BASELINE_GIT_BUDGET = 11;
+const FIRST_TURN_FINALIZE_GIT_BUDGET = 13;
+
+const isGitCommand = (command: string) => {
+  const name = command.split(/[\\/]/).at(-1)?.toLowerCase();
+  return name === "git" || name === "git.exe";
+};
+
+const makeLayer = (spawns: Array<ReadonlyArray<string>>) => {
+  const layerCountingSpawner = Layer.effect(
+    ChildProcessSpawner.ChildProcessSpawner,
+    Effect.gen(function* () {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      return ChildProcessSpawner.make((command) => {
+        if (command._tag === "StandardCommand" && isGitCommand(command.command)) {
+          spawns.push(command.args);
+        }
+        return spawner.spawn(command);
+      });
+    }),
+  ).pipe(Layer.provide(NodeServices.layer));
+  return CheckpointService.layer.pipe(
+    Layer.provide(CheckpointStore.layer),
+    Layer.provide(VcsDriverRegistry.layer),
+    Layer.provideMerge(IdAllocator.layer),
+    Layer.provideMerge(VcsProcess.layer),
+    Layer.provide(layerCountingSpawner),
+    Layer.provideMerge(NodeServices.layer),
+  );
+};
+
+const git = (cwd: string, args: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const process = yield* VcsProcess.VcsProcess;
+    yield* process.run({ operation: "test.git", command: "git", args: ["-C", cwd, ...args], cwd });
+  });
+
+const makeRepository = Effect.gen(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "houston-checkpoint-spawns-" });
+  yield* git(cwd, ["init", "-b", "main"]);
+  yield* git(cwd, ["config", "user.email", "test@test.com"]);
+  yield* git(cwd, ["config", "user.name", "Test"]);
+  yield* fileSystem.writeFileString(path.join(cwd, "README.md"), "hello\n");
+  yield* git(cwd, ["add", "."]);
+  yield* git(cwd, ["commit", "-m", "init"]);
+  return cwd;
+});
+
+const threadId = ThreadId.make("thread:checkpoint-spawns");
+const runId = RunId.make("run:checkpoint-spawns:1");
+const rootNodeId = NodeId.make("node:checkpoint-spawns:1");
+const scopeId = CheckpointScopeId.make("checkpoint-scope:checkpoint-spawns");
+const providerThreadId = ProviderThreadId.make("provider-thread:checkpoint-spawns");
+const providerInstanceId = ProviderInstanceId.make("codex");
+const driver = ProviderDriverKind.make("codex");
+const modelSelection = { instanceId: providerInstanceId, model: "gpt-5.4" } as const;
+
+const seedFirstRun = (cwd: string, now: DateTime.Utc) =>
+  Effect.gen(function* () {
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const scope: OrchestrationV2CheckpointScope = {
+      id: scopeId,
+      threadId,
+      runId,
+      nodeId: rootNodeId,
+      parentScopeId: null,
+      providerThreadId,
+      kind: "root_run",
+      ordinalWithinParent: 0,
+      advancesAppRunCount: true,
+      cwd,
+      createdAt: now,
+    };
+    const events: ReadonlyArray<OrchestrationV2DomainEvent> = [
+      {
+        id: EventId.make("event:checkpoint-spawns:thread"),
+        type: "thread.created",
+        threadId,
+        occurredAt: now,
+        payload: {
+          createdBy: "user",
+          creationSource: "web",
+          id: threadId,
+          projectId: ProjectId.make("project:checkpoint-spawns"),
+          title: "Checkpoint spawns",
+          providerInstanceId,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          activeProviderThreadId: null,
+          lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: null,
+          settledOverride: null,
+          settledAt: null,
+          lastVisitedAt: null,
+          deletedAt: null,
+        },
+      },
+      {
+        id: EventId.make("event:checkpoint-spawns:run"),
+        type: "run.updated",
+        threadId,
+        runId,
+        nodeId: rootNodeId,
+        providerInstanceId,
+        occurredAt: now,
+        payload: {
+          id: runId,
+          threadId,
+          ordinal: 1,
+          providerInstanceId,
+          modelSelection,
+          providerThreadId,
+          userMessageId: MessageId.make("message:checkpoint-spawns"),
+          rootNodeId,
+          activeAttemptId: null,
+          status: "waiting",
+          requestedAt: now,
+          startedAt: now,
+          completedAt: null,
+          checkpointId: null,
+          contextHandoffId: null,
+        },
+      },
+      {
+        id: EventId.make("event:checkpoint-spawns:node"),
+        type: "node.updated",
+        threadId,
+        runId,
+        nodeId: rootNodeId,
+        providerInstanceId,
+        occurredAt: now,
+        payload: {
+          id: rootNodeId,
+          threadId,
+          runId,
+          parentNodeId: null,
+          rootNodeId,
+          kind: "root_turn",
+          status: "waiting",
+          countsForRun: true,
+          providerThreadId,
+          providerTurnId: null,
+          nativeItemRef: null,
+          runtimeRequestId: null,
+          checkpointScopeId: scopeId,
+          startedAt: now,
+          completedAt: null,
+        },
+      },
+      {
+        id: EventId.make("event:checkpoint-spawns:provider-thread"),
+        type: "provider-thread.updated",
+        threadId,
+        nodeId: rootNodeId,
+        driver,
+        providerInstanceId,
+        occurredAt: now,
+        payload: {
+          id: providerThreadId,
+          driver,
+          providerInstanceId,
+          providerSessionId: null,
+          appThreadId: threadId,
+          ownerNodeId: rootNodeId,
+          nativeThreadRef: null,
+          nativeConversationHeadRef: null,
+          status: "idle",
+          firstRunOrdinal: 1,
+          lastRunOrdinal: 1,
+          handoffIds: [],
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      },
+      {
+        id: EventId.make("event:checkpoint-spawns:scope"),
+        type: "checkpoint-scope.created",
+        threadId,
+        runId,
+        nodeId: rootNodeId,
+        occurredAt: now,
+        payload: scope,
+      },
+    ];
+    yield* Effect.forEach(events, (event) => projections.apply(event), { discard: true });
+    return scope;
+  });
+
+it.effect("captures a first-turn baseline and finalizes the turn within their git budgets", () =>
+  Effect.gen(function* () {
+    const spawns: Array<ReadonlyArray<string>> = [];
+    const committed = yield* Ref.make<ReadonlyArray<OrchestrationV2DomainEvent>>([]);
+    const layerProjections = ProjectionStore.layer.pipe(
+      Layer.provideMerge(SqlitePersistence.layerMemory),
+    );
+    const layerCapture = CheckpointCaptureService.layer.pipe(
+      Layer.provide(
+        Layer.mock(EventSink.EventSinkV2)({
+          commitCommand: (input) =>
+            Ref.set(committed, input.events).pipe(
+              Effect.as({
+                commandId: input.commandId,
+                committed: true,
+                sequence: 1,
+                events: input.events,
+                effects: [],
+              } as never),
+            ),
+        }),
+      ),
+      Layer.provideMerge(makeLayer(spawns)),
+      Layer.provideMerge(layerProjections),
+    );
+    yield* Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const cwd = yield* makeRepository;
+      const scope = yield* seedFirstRun(cwd, yield* DateTime.now);
+      const checkpoints = yield* CheckpointService.CheckpointServiceV2;
+      const capture = yield* CheckpointCaptureService.CheckpointCaptureServiceV2;
+
+      spawns.length = 0;
+      yield* checkpoints.captureBaseline({ scope, ordinalWithinScope: 0 });
+      const baselineSpawns = spawns.length;
+
+      yield* fileSystem.writeFileString(path.join(cwd, "README.md"), "hello world\n");
+      spawns.length = 0;
+      yield* capture.execute({ threadId, runId, scopeId });
+      const finalizeSpawns = spawns.length;
+
+      const captured = (yield* Ref.get(committed)).flatMap((event) =>
+        event.type === "checkpoint.captured" ? [event.payload] : [],
+      );
+      assert.deepEqual(
+        captured.map((checkpoint) => ({
+          ordinal: checkpoint.ordinalWithinScope,
+          status: checkpoint.status,
+          files: checkpoint.files,
+        })),
+        [
+          { ordinal: 0, status: "ready", files: [] },
+          {
+            ordinal: 1,
+            status: "ready",
+            files: [{ path: "README.md", kind: "modified", additions: 1, deletions: 1 }],
+          },
+        ],
+      );
+      assert.isAtMost(
+        baselineSpawns,
+        FIRST_TURN_BASELINE_GIT_BUDGET,
+        `the baseline started ${baselineSpawns} git processes`,
+      );
+      assert.isAtMost(
+        finalizeSpawns,
+        FIRST_TURN_FINALIZE_GIT_BUDGET,
+        `finalization started ${finalizeSpawns} git processes`,
+      );
+    }).pipe(Effect.provide(layerCapture));
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);

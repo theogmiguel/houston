@@ -970,16 +970,25 @@ it.effect.each(["committed", "unborn"] as const)(
 
       const commands = yield* captureRecordingGitCommands(cwd, checkpointRef);
 
-      assert.deepStrictEqual(commands, [
-        "rev-parse",
-        "config",
-        ...(head === "committed" ? ["read-tree", "ls-files"] : []),
+      // The config and check-ignore reads overlap the chain that does not depend on them.
+      const overlapped = new Set<string | undefined>(["config", "check-ignore"]);
+      assert.deepStrictEqual(
+        commands.filter((command) => !overlapped.has(command)),
+        [
+          "rev-parse",
+          ...(head === "committed" ? ["read-tree", "ls-files"] : []),
+          "add",
+          "write-tree",
+          "commit-tree",
+          "update-ref",
+        ],
+      );
+      assert.deepStrictEqual(commands.filter((command) => overlapped.has(command)).toSorted(), [
         "check-ignore",
-        "add",
-        "write-tree",
-        "commit-tree",
-        "update-ref",
+        "config",
       ]);
+      assert.isBelow(commands.indexOf("config"), commands.indexOf("add"));
+      assert.isBelow(commands.indexOf("check-ignore"), commands.indexOf("add"));
       assert.strictEqual((yield* git(["show", `${checkpointRef}:file.txt`])).stdout, "unstaged\n");
       const [, ...parents] = (yield* git([
         "rev-list",
