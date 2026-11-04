@@ -127,7 +127,7 @@ pub fn process_identity(pid: u32) -> Option<ProcessIdentity> {
 }
 
 /// Reads `/proc`: the creation time is ticks since boot plus the boot time, which
-/// `/proc/stat` keeps to whole seconds.
+/// `/proc/stat` truncates to whole seconds, so it can read up to a second early.
 #[cfg(target_os = "linux")]
 pub fn process_identity(pid: u32) -> Option<ProcessIdentity> {
     let pid = checked_pid(pid).ok()?;
@@ -141,6 +141,18 @@ pub fn process_identity(pid: u32) -> Option<ProcessIdentity> {
     // The command name may hold spaces or ')'; starttime is the 20th field after it.
     let (_, fields) = stat.rsplit_once(')')?;
     let ticks: u64 = fields.split_whitespace().nth(19)?.parse().ok()?;
+    let boot = boot_time()?;
+    // SAFETY: sysconf reads a configuration value and has no side effects.
+    let hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+    let hz = u64::try_from(hz).ok().filter(|hz| *hz > 0)?;
+    let created = boot + std::time::Duration::from_millis(ticks.checked_mul(1000)? / hz);
+    Some(ProcessIdentity { image, created })
+}
+
+/// When this boot began, from `/proc/stat`'s `btime`: whole seconds, derived from the
+/// current wall clock, so a wall-clock step moves it.
+#[cfg(target_os = "linux")]
+pub fn boot_time() -> Option<std::time::SystemTime> {
     let boot: u64 = std::fs::read_to_string("/proc/stat")
         .ok()?
         .lines()
@@ -148,16 +160,11 @@ pub fn process_identity(pid: u32) -> Option<ProcessIdentity> {
         .trim()
         .parse()
         .ok()?;
-    // SAFETY: sysconf reads a configuration value and has no side effects.
-    let hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
-    let hz = u64::try_from(hz).ok().filter(|hz| *hz > 0)?;
-    let created = std::time::UNIX_EPOCH
-        + std::time::Duration::from_secs(boot)
-        + std::time::Duration::from_millis(ticks.checked_mul(1000)? / hz);
-    Some(ProcessIdentity { image, created })
+    Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(boot))
 }
 
-/// No identity query exists here, so a pid read from a file is never confirmed.
+/// No identity query exists here, so no pid is ever confirmed: a server restart never
+/// signals the tracked or recorded server and fails with an error instead.
 #[cfg(all(unix, not(target_os = "linux")))]
 pub fn process_identity(pid: u32) -> Option<ProcessIdentity> {
     let _ = pid;
@@ -652,6 +659,17 @@ mod tests {
         for (pid, what) in BROADCAST_VALUES {
             assert_eq!(process_identity(pid), None, "{what}");
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn boot_time_precedes_this_process() {
+        let boot = boot_time().expect("/proc/stat names btime");
+        let identity = process_identity(std::process::id()).expect("this process is inspectable");
+        assert!(
+            boot <= identity.created,
+            "boot {boot:?}, created {identity:?}"
+        );
     }
 
     #[test]
