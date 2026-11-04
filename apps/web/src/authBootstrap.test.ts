@@ -192,6 +192,42 @@ describe("resolveInitialServerAuthGateState", () => {
     expect(attempts).toBe(2);
   });
 
+  it("waits for the desktop host to publish the server before the first request", async () => {
+    let bootstrapReads = 0;
+    let requestedBeforeBootstrap = false;
+    const testApi = await installAuthApi({
+      session: () => {
+        if (bootstrapReads < 3) requestedBeforeBootstrap = true;
+        return authenticatedSession(DESKTOP_AUTH);
+      },
+    });
+    const testWindow = installTestBrowser("http://localhost/");
+    testWindow.hostBridge = {
+      getLocalEnvironmentBootstraps: () => {
+        bootstrapReads += 1;
+        return bootstrapReads < 3
+          ? []
+          : [
+              {
+                id: "primary",
+                label: "Local",
+                httpBaseUrl: "http://localhost:3773",
+                wsBaseUrl: "ws://localhost:3773",
+                bootstrapToken: "desktop-bootstrap-token",
+              },
+            ];
+      },
+    } as unknown as HostBridge;
+
+    const { resolveInitialServerAuthGateState } = await import("./environments/primary");
+
+    await expect(resolveInitialServerAuthGateState()).resolves.toEqual({
+      status: "authenticated",
+    });
+    expect(requestedBeforeBootstrap).toBe(false);
+    expect(testApi.calls.session).toBe(1);
+  });
+
   it("takes a pairing token from the location hash and strips it immediately", async () => {
     const testWindow = installTestBrowser("http://localhost/#token=pairing-token");
     const { takePairingTokenFromUrl } = await import("./environments/primary");
