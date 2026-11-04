@@ -34,7 +34,7 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 
 // Each git process costs about 60 ms on Windows; these budgets keep removed spawns out.
 const FIRST_TURN_BASELINE_GIT_BUDGET = 11;
-const FIRST_TURN_FINALIZE_GIT_BUDGET = 13;
+const FIRST_TURN_FINALIZE_GIT_BUDGET = 12;
 // The snapshot overlaps the provider session open; checking and publishing it stay before the turn.
 const FIRST_TURN_PUBLISH_GIT_BUDGET = 2;
 
