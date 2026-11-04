@@ -591,7 +591,8 @@ export function TasksPage() {
             </div>
           </div>
         </div>
-        {renderedProjectPanel !== null && !taskRightPanelOpen ? (
+        {/* An open project panel wins over the task's right panel; a closing one yields to it. */}
+        {renderedProjectPanel !== null && (projectPanel !== null || !taskRightPanelOpen) ? (
           <aside
             className={cn(
               "flex shrink-0 flex-col overflow-clip",
