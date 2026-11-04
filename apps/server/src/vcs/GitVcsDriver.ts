@@ -978,8 +978,8 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         "-c",
         "splitIndex.sharedIndexExpire=never",
       ];
-      // Independent reads run in pairs: each Windows spawn costs about 60 ms, and VcsProcess
-      // bounds the processes all captures run at once.
+      // Independent reads overlap, a few at a time: each Windows spawn costs about 60 ms, and
+      // VcsProcess holds its global permit per process, so overlapping reads cannot deadlock.
       const [{ gitCommonDir, indexPath, headExists, headOid }, sparseConfig] = yield* Effect.all(
         [
           resolveCaptureRepository(input.cwd),
@@ -1328,7 +1328,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         return { commitOid, sparseCheckout, workspaceIgnored };
       }).pipe(Effect.ensuring(Fiber.interrupt(unignored)));
 
-      // True when adding the workspace now would stage what the scratch index holds: HEAD and
+      // Houston: true when adding the workspace now stages what the scratch index holds: HEAD and
       // the repository inputs are unchanged, and nothing differs from or is missing in the index.
       const unchanged = Effect.gen(function* () {
         // Sparse and ignored workspaces stage from more than the worktree; capture them again.
@@ -1430,7 +1430,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         Effect.map((snapshot) =>
           snapshot.unchanged.pipe(
             Effect.ensuring(snapshot.removeScratchIndex),
-            // A workspace that changed since the snapshot is captured again, as a capture would.
+            // Houston: a workspace that changed since the snapshot is captured again.
             Effect.flatMap((unchanged) =>
               unchanged
                 ? Effect.succeed(snapshot.commitOid)
