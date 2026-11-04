@@ -173,7 +173,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
 
   const layerEnvironment = DesktopEnvironment.layer({
     dirname: "/repo/apps/desktop/src",
-    homeDirectory: `/tmp/t3-desktop-updates-home-${process.pid}`,
+    homeDirectory: `/tmp/houston-desktop-updates-home-${process.pid}`,
     platform: options.platform ?? "darwin",
     processArch: "x64",
     appVersion: options.appVersion ?? "1.2.3",
@@ -186,7 +186,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       Layer.mergeAll(
         NodeServices.layer,
         DesktopConfig.layerTest({
-          HOUSTON_HOME: `/tmp/t3-desktop-updates-test-${process.pid}`,
+          HOUSTON_HOME: `/tmp/houston-desktop-updates-test-${process.pid}`,
           HOUSTON_DESKTOP_MOCK_UPDATES: "true",
           HOUSTON_DESKTOP_MOCK_UPDATE_SERVER_PORT: "4141",
           ...options.env,
@@ -281,7 +281,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     Layer.provideMerge(layerSettings),
     Layer.provideMerge(
       DesktopConfig.layerTest({
-        HOUSTON_HOME: `/tmp/t3-desktop-updates-test-${process.pid}`,
+        HOUSTON_HOME: `/tmp/houston-desktop-updates-test-${process.pid}`,
         HOUSTON_DESKTOP_MOCK_UPDATES: "true",
         HOUSTON_DESKTOP_MOCK_UPDATE_SERVER_PORT: "4141",
         ...options.env,

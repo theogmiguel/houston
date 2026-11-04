@@ -12,7 +12,7 @@ import { startNativeCaptureFeedback } from "./NativeCaptureFeedback.ts";
 import { HYPRLAND_CAPTURE_ACTION } from "./linuxCaptureSession.ts";
 export { isHyprlandCaptureSession } from "./linuxCaptureSession.ts";
 
-export const HYPRLAND_CAPTURE_EXECUTABLE = "t3-hyprland-snap-shot";
+export const HYPRLAND_CAPTURE_EXECUTABLE = "houston-hyprland-snap-shot";
 export type HyprlandCapturePaths = { readonly bundle: string; readonly dataHome: string };
 export function hyprlandCaptureExecutable(paths: HyprlandCapturePaths) {
   return NodePath.join(paths.dataHome, "houston", "hyprland-capture", HYPRLAND_CAPTURE_EXECUTABLE);
@@ -177,7 +177,9 @@ export async function captureHyprlandWindow(
   }
   if (state.status !== "ready") throw new CaptureSetupRequiredError(state.message);
   const executable = hyprlandCaptureExecutable(paths);
-  const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-hyprland-capture-"));
+  const directory = await NodeFSP.mkdtemp(
+    NodePath.join(NodeOS.tmpdir(), "houston-hyprland-capture-"),
+  );
   const cleanup = () => NodeFSP.rm(directory, { recursive: true, force: true });
   let retained = false;
   try {

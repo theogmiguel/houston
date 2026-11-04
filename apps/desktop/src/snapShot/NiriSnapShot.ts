@@ -168,7 +168,7 @@ async function activateNiriWindow(path: string, title: string, signal: AbortSign
       } else if (isWindowClosed(value)) {
         windows.delete(value.WindowClosed.id);
       } else return undefined;
-      // Never activate another process's lookalike window, or guess between multiple T3 windows.
+      // Never activate another process's lookalike window, or guess between multiple Houston windows.
       const matches = [...windows.values()].filter(
         (window) => window.pid === process.pid && window.title === title,
       );
@@ -187,7 +187,7 @@ async function activateNiriWindow(path: string, title: string, signal: AbortSign
 }
 
 export async function captureNiriWindow(path: string): Promise<LinuxWindowSnapshot> {
-  const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-niri-capture-"));
+  const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "houston-niri-capture-"));
   const imagePath = NodePath.join(directory, "capture.png");
   const events = new NiriConnection(path);
   try {

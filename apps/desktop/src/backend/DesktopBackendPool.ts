@@ -176,8 +176,8 @@ export const layer = Layer.effect(
       onStateDirOwned: () =>
         electronDialog
           .showErrorBox(
-            "This T3 home is unavailable",
-            "Another Houston server, such as the background service, is using this data directory, or an older background service is set up for it. Stop that server or try `t3 update`. If the older launcher cannot update, run `t3 service uninstall` and optionally reinstall with `t3 service install` from a current CLI. Use `npx t3@latest` if `t3` is missing or outdated, and pass `--base-dir` with the service's T3 home to each command. Then reopen Houston. You can also set a separate HOUSTON_HOME and pair with the running server.",
+            "This Houston home is unavailable",
+            "Another Houston server, such as the background service, is using this data directory, or an older background service is set up for it. Stop that server or try `houston update`. If the older launcher cannot update, run `houston service uninstall` and optionally reinstall with `houston service install` from a current CLI. Use `npx @houston-app/cli@latest` if `houston` is missing or outdated, and pass `--base-dir` with the service's Houston home to each command. Then reopen Houston. You can also set a separate HOUSTON_HOME and pair with the running server.",
           )
           .pipe(Effect.andThen(electronApp.quit)),
     });

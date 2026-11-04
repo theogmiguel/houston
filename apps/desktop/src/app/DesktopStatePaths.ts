@@ -16,7 +16,7 @@ export function resolveDesktopBaseDir(input: {
   readonly houstonHome: Option.Option<string>;
 }): string {
   return Option.getOrElse(normalizeConfiguredBaseDir(input.houstonHome), () =>
-    input.joinPath(input.homeDirectory, ".t3"),
+    input.joinPath(input.homeDirectory, ".houston"),
   );
 }
 

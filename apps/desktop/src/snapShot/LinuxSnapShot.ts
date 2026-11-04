@@ -24,8 +24,8 @@ const PORTAL = "org.freedesktop.portal.Desktop";
 const PORTAL_PATH = "/org/freedesktop/portal/desktop";
 const SCREENSHOT = "org.freedesktop.portal.Screenshot";
 const REQUEST = "org.freedesktop.portal.Request";
-const EXTENSION = "org.gnome.Shell.Extensions.T3SnapShot";
-const EXTENSION_PATH = "/org/gnome/Shell/Extensions/T3SnapShot";
+const EXTENSION = "org.gnome.Shell.Extensions.HoustonSnapShot";
+const EXTENSION_PATH = "/org/gnome/Shell/Extensions/HoustonSnapShot";
 const DBUS = "org.freedesktop.DBus";
 const DBUS_PATH = "/org/freedesktop/DBus";
 const UInt = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 0xffff_ffff }));
@@ -221,7 +221,7 @@ class LinuxCaptureConnection {
       body: [PORTAL],
     });
     const sender = decodeString(owner.body[0]);
-    const token = `t3_${NodeCrypto.randomUUID().replaceAll("-", "")}`;
+    const token = `houston_${NodeCrypto.randomUUID().replaceAll("-", "")}`;
     const namespace = `${PORTAL_PATH}/request/${this.uniqueName.slice(1).replaceAll(".", "_")}/`;
     let handle = namespace + token;
     let completed = false;

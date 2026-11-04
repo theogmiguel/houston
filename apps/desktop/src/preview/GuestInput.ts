@@ -106,7 +106,7 @@ const sendPointerPress = async (
   if (!host || host.isDestroyed() || webContents.focusedFrame) {
     return debuggee.sendCommand(method, params, sessionId);
   }
-  const key = JSON.stringify(`__t3PreviewFocus${++focusSequence}`);
+  const key = JSON.stringify(`__houstonPreviewFocus${++focusSequence}`);
   await host.executeJavaScript(`(() => {
     const active = document.activeElement;
     if (!active || active === document.body || active.tagName === "WEBVIEW") return;
