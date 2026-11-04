@@ -131,6 +131,6 @@ if (
     console.error(
       `[refresh-updater-metadata] ${error instanceof Error ? error.message : String(error)}`,
     );
-    NodeProcess.exitCode = 1;
+    process.exitCode = 1;
   });
 }
