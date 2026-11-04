@@ -21,7 +21,7 @@ vi.mock("../state/threads", async () => {
   const { Atom } = await import("effect/reactivity");
   return {
     environmentThreadShells: {
-      threadShellsAtom: Atom.make<ReadonlyArray<EnvironmentThreadShell>>([]),
+      quietThreadShellsAtom: Atom.make<ReadonlyArray<EnvironmentThreadShell>>([]),
     },
     threadEnvironment: { visit: {} },
   };
@@ -44,7 +44,7 @@ function setup(threads: ReadonlyArray<EnvironmentThreadShell>, local = localVisi
       return () => {};
     },
   });
-  const shells = environmentThreadShells.threadShellsAtom;
+  const shells = environmentThreadShells.quietThreadShellsAtom;
   if (!Atom.isWritable(shells)) throw new Error("Expected writable test shell state");
   registry.set(shells, threads);
   const stop = startThreadVisitedMigration(registry);

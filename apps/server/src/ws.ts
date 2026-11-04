@@ -63,6 +63,7 @@ import {
   type OrchestrationProjectShell,
   type OrchestrationV2ShellSnapshot,
   type OrchestrationV2ThreadStreamItem,
+  type OrchestrationV2StoredEvent,
   type ApplicationStoredEvent,
   type ProjectEntriesFailure,
   type ProjectFileFailure,
@@ -139,6 +140,7 @@ import {
   toShellApplicationEvent,
   type ShellApplicationEvent,
 } from "./orchestration-v2/ShellStream.ts";
+import { makeSubscriberShellReads, planShellBatch } from "./houston/shellReads.ts";
 import { ORCHESTRATION_V2_PROJECTION_SCHEMA_VERSION } from "./orchestration-v2/ProjectionStore.ts";
 import {
   coalesceLiveUpdatedEvents,
@@ -788,6 +790,20 @@ function readClientOwners(
   );
 }
 
+// Houston: followers of a thread share one item per live event, so the live budget sizes it once.
+const threadLiveEventItems = new WeakMap<
+  OrchestrationV2StoredEvent,
+  Extract<OrchestrationV2ThreadStreamItem, { readonly kind: "event" }>
+>();
+const threadLiveEventItem = (stored: OrchestrationV2StoredEvent) => {
+  let item = threadLiveEventItems.get(stored);
+  if (item === undefined) {
+    item = { kind: "event", sequence: stored.sequence, event: stored.event };
+    threadLiveEventItems.set(stored, item);
+  }
+  return item;
+};
+
 const canReplayPersistedRange = Effect.fnUntraced(function* (
   afterSequence: number,
   headSequence: number,
@@ -883,11 +899,7 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
           afterSequence,
         })
         .pipe(
-          Stream.map((stored) => ({
-            kind: "event" as const,
-            sequence: stored.sequence,
-            event: stored.event,
-          })),
+          Stream.map(threadLiveEventItem),
           coalesceThreadLiveStream,
           Stream.mapError(
             (cause) =>
@@ -1135,9 +1147,15 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
       });
     });
 
+    // Houston: shell reads are shared across subscribers and skipped for batches that cannot change a shell.
+    const readThreadShell = makeSubscriberShellReads(
+      threadManagement,
+      threadManagement.getThreadShell,
+    );
     const projectShellItems = Effect.fn("ws.orchestrationV2.projectShellItems")(function* (
       events: ReadonlyArray<ShellApplicationEvent>,
     ) {
+      const batches = planShellBatch(events);
       return yield* Effect.forEach(
         coalesceShellApplicationEvents(events),
         (stored) =>
@@ -1145,7 +1163,11 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
             if ("aggregateKind" in stored) {
               return yield* projectItem(stored);
             }
-            const shell = yield* threadManagement.getThreadShell(stored.event.threadId);
+            const shell = yield* readThreadShell(
+              stored.event.threadId,
+              stored.sequence,
+              batches.get(stored.event.threadId),
+            );
             return shellStreamItemFromThreadShell({ stored, shell });
           }),
         { concurrency: 8 },

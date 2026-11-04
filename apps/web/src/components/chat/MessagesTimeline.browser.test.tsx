@@ -26,12 +26,14 @@ import {
   type ReactElement,
 } from "react";
 import * as DateTime from "effect/DateTime";
-import { Atom } from "effect/reactivity";
+import { Atom, AtomRegistry } from "effect/reactivity";
+import { RegistryContext } from "@effect/atom-react";
+import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/shell";
 import { describe, expect, it, onTestFinished, vi } from "vite-plus/test";
 
 import "~/index.css";
 
-import { environmentThreadDetails } from "../../state/threads";
+import { environmentThreadDetails, environmentThreadShells } from "../../state/threads";
 import { act, fakeTimers, render, stubGlobal } from "../../../test/render";
 import { ChangedFilesCard } from "./ChangedFilesTree";
 import { MessagesTimeline } from "./MessagesTimeline";
@@ -1533,5 +1535,82 @@ describe("MessagesTimeline empty surface", () => {
     } finally {
       root.classList.remove("dark");
     }
+  });
+});
+
+describe("MessagesTimeline shell ticks", () => {
+  function shell(id: string, side: unknown = null, overrides: Record<string, unknown> = {}) {
+    return {
+      id: ThreadId.make(id),
+      environmentId: ENVIRONMENT_ID,
+      side,
+      archivedAt: null,
+      deletedAt: null,
+      ...overrides,
+    } as unknown as EnvironmentThreadShell;
+  }
+
+  function replaceShellAtoms(initial: ReadonlyArray<EnvironmentThreadShell>) {
+    const live = Atom.make(initial);
+    const quiet = Atom.make(initial);
+    for (const [name, atom] of [
+      ["threadShellsAtom", live],
+      ["quietThreadShellsAtom", quiet],
+    ] as const) {
+      const original = environmentThreadShells[name];
+      Object.defineProperty(environmentThreadShells, name, { value: atom, configurable: true });
+      onTestFinished(() => {
+        Object.defineProperty(environmentThreadShells, name, {
+          value: original,
+          configurable: true,
+        });
+      });
+    }
+    return { live, quiet };
+  }
+
+  it("leaves an idle timeline's rows alone while another thread streams", async () => {
+    const props = baseProps();
+    const sourceThreadId = props.routeThreadKey.slice(props.routeThreadKey.indexOf(":") + 1);
+    const review = (runId: string, id = `review-${runId}`) =>
+      shell(id, { kind: "secondOpinion", sourceThreadId, sourceRunId: RunId.make(runId) });
+    const streaming = (tick: number) => shell("other", null, { itemCount: tick });
+    const { live, quiet } = replaceShellAtoms([review("run-1"), streaming(0)]);
+    const registry = AtomRegistry.make();
+    onTestFinished(() => registry.dispose());
+    let commits = 0;
+    const entries = Array.from({ length: 12 }, (_, index) =>
+      message(`Reply ${index}`, { role: "assistant" }, `reply-${index}`),
+    );
+    await using screen = await renderElement(
+      <RegistryContext.Provider value={registry}>
+        <Profiler id="timeline" onRender={() => (commits += 1)}>
+          <MessagesTimeline
+            {...props}
+            timelineEntries={entries}
+            secondOpinion={{ entries: [], onRequest: async () => {} }}
+          />
+        </Profiler>
+      </RegistryContext.Provider>,
+    );
+    await vi.waitFor(() => expect(screen.text()).toContain("Reply 11"));
+    // Shell notifications are synchronous, so each tick's renders commit inside its act().
+    let settled = -1;
+    await vi.waitFor(() => {
+      const stable = commits === settled;
+      settled = commits;
+      expect(stable).toBe(true);
+    });
+    commits = 0;
+
+    for (let tick = 1; tick <= 10; tick += 1) {
+      await act(() => registry.set(live, [review("run-1"), streaming(tick)]));
+    }
+    // A quiet change elsewhere that leaves this thread's reviews equal.
+    await act(() => registry.set(quiet, [review("run-1"), shell("other", null, { title: "x" })]));
+    expect(commits).toBe(0);
+
+    await act(() => registry.set(quiet, [review("run-1"), review("run-2")]));
+    expect(commits).toBeGreaterThan(0);
   });
 });

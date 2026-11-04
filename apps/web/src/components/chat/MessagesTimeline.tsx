@@ -15,13 +15,12 @@ import {
   type MessageId,
   type OrchestrationV2TurnItem,
   type RunAttemptId,
-  type ScopedThreadRef,
   type ServerProviderSkill,
   type RunId,
   ThreadId,
 } from "@houston-app/contracts";
-import { parseScopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
-import { useThreadShells } from "../../state/entities";
+import { parseScopedThreadKey } from "@houston-app/client-runtime/environment";
+import { useSecondOpinionReviews } from "../../state/entities";
 import { resolveWorkGroupScrollAnchor } from "@houston-app/client-runtime/work-log/scroll-anchor";
 import type { WorkflowOpening } from "@houston-app/client-runtime/state/subagentRuntime";
 import { observeResize } from "~/lib/observeResize";
@@ -472,22 +471,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   }
   const citationThreadRef = parseScopedThreadKey(routeThreadKey);
   const openPullRequest = useOpenPrLink(citationThreadRef ?? undefined);
-  const threadShells = useThreadShells();
-  const secondOpinionReviews = new Map<RunId, ScopedThreadRef>();
-  if (citationThreadRef !== null) {
-    for (const shell of threadShells) {
-      const side = shell.side;
-      if (
-        side?.kind === "secondOpinion" &&
-        shell.environmentId === citationThreadRef.environmentId &&
-        side.sourceThreadId === citationThreadRef.threadId &&
-        shell.archivedAt === null &&
-        shell.deletedAt === null
-      ) {
-        secondOpinionReviews.set(side.sourceRunId, scopeThreadRef(shell.environmentId, shell.id));
-      }
-    }
-  }
+  const secondOpinionReviews = useSecondOpinionReviews(citationThreadRef);
   const [minimapStripMap] = useState(() => new Map<string, HTMLSpanElement>());
   const [disclosureToggleSettling, setDisclosureToggleSettling] = useState(false);
   const disclosureAnchorKeyRef = useRef<string | null>(null);

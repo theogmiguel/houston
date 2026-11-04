@@ -20,6 +20,7 @@ import {
 import type { ScopedProjectRef, ScopedThreadRef } from "@houston-app/contracts";
 import type {
   EnvironmentId,
+  RunId,
   OrchestrationV2ProjectedTurnItem,
   OrchestrationV2ThreadProjection,
   OrchestrationV2ThreadShell,
@@ -74,6 +75,9 @@ const EMPTY_LAST_VISITED_AT_ATOM = Atom.make<DateTime.Utc | null>(null).pipe(
 const EMPTY_UPDATED_AT_ATOM = Atom.make<DateTime.Utc | null>(null).pipe(
   Atom.withLabel("web-thread-updated-at:empty"),
 );
+const EMPTY_SECOND_OPINION_REVIEWS_ATOM = Atom.make<ReadonlyMap<RunId, ScopedThreadRef>>(
+  new Map(),
+).pipe(Atom.withLabel("web-second-opinion-reviews:empty"));
 const EMPTY_THREAD_HISTORY_ATOM = Atom.make<ThreadHistoryMeta>(EMPTY_THREAD_HISTORY_META).pipe(
   Atom.withLabel("web-thread-history:empty"),
 );
@@ -146,6 +150,58 @@ export function useQuietThreadShell(ref: ScopedThreadRef | null): EnvironmentThr
 /** Every thread shell, held through streaming ticks; see quietThreadShellAtom. */
 export function useQuietThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
   return useAtomValue(environmentThreadShells.quietThreadShellsAtom);
+}
+
+const EMPTY_SECOND_OPINION_REVIEWS: ReadonlyMap<RunId, ScopedThreadRef> = new Map();
+
+function sameSecondOpinionReviews(
+  previous: ReadonlyMap<RunId, ScopedThreadRef>,
+  next: ReadonlyMap<RunId, ScopedThreadRef>,
+): boolean {
+  if (previous.size !== next.size) return false;
+  for (const [runId, ref] of next) {
+    const before = previous.get(runId);
+    if (before?.environmentId !== ref.environmentId || before.threadId !== ref.threadId) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Every open timeline reads this; an equal map keeps its identity so another thread's
+// ticks do not re-render the timeline's rows.
+const secondOpinionReviewsAtomFamily = Atom.family((key: string) => {
+  const source = parseThreadKey(key);
+  let previous = EMPTY_SECOND_OPINION_REVIEWS;
+  return Atom.make((get) => {
+    const next = new Map<RunId, ScopedThreadRef>();
+    for (const shell of get(environmentThreadShells.quietThreadShellsAtom)) {
+      const side = shell.side;
+      if (
+        side?.kind === "secondOpinion" &&
+        shell.environmentId === source.environmentId &&
+        side.sourceThreadId === source.threadId &&
+        shell.archivedAt === null &&
+        shell.deletedAt === null
+      ) {
+        next.set(side.sourceRunId, { environmentId: shell.environmentId, threadId: shell.id });
+      }
+    }
+    if (sameSecondOpinionReviews(previous, next)) return previous;
+    previous = next;
+    return next;
+  }).pipe(Atom.withLabel(`web-second-opinion-reviews:${key}`));
+});
+
+/** Live second-opinion reviews of `ref`'s runs, by the run each one reviewed. */
+export function useSecondOpinionReviews(
+  ref: ScopedThreadRef | null,
+): ReadonlyMap<RunId, ScopedThreadRef> {
+  return useAtomValue(
+    ref === null
+      ? EMPTY_SECOND_OPINION_REVIEWS_ATOM
+      : secondOpinionReviewsAtomFamily(threadKey(ref)),
+  );
 }
 
 export function useChildThreadInputs(ref: ScopedThreadRef | null) {

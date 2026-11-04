@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Plugin } from "unified";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { remarkCodexDirectives } from "@houston-app/shared/codexMarkdownDirectives";
 import { remarkGithubAlerts } from "@houston-app/shared/markdownGithubAlerts";
@@ -133,5 +133,44 @@ describe("incremental Markdown parsing", () => {
         expect(render(start + tail, incremental)).toEqual(render(start + tail));
       }
     }
+  });
+
+  it("freezes fences closed by an indented or longer run, and not by a short or wrong one", () => {
+    for (const [fence, closing, freezes] of [
+      ["```", "`````", true],
+      ["~~~", "   ~~~", true],
+      ["````", "```", false],
+      ["```", "    ```", false],
+      ["```", "``` x", false],
+      ["~~~", "```", false],
+    ] as const) {
+      const incremental = createIncrementalMarkdownPlugin();
+      const start = `${fence}\ncode\n${closing}\n\n`;
+      const parsedSources: string[] = [];
+      // The plugin keeps the first render's parser, so the probe goes in from the start.
+      expect(render(start + "text", incremental, parsedSources)).toEqual(render(start + "text"));
+      parsedSources.length = 0;
+      const next = start + "text more";
+      expect(render(next, incremental)).toEqual(render(next));
+      expect(parsedSources.includes(next), closing).toBe(!freezes);
+    }
+  });
+
+  it("copies the cached prefix without structuredClone on a streamed render", () => {
+    const incremental = createIncrementalMarkdownPlugin();
+    const stream = (source: string) =>
+      renderToStaticMarkup(
+        <ReactMarkdown remarkPlugins={[remarkGfm, incremental]}>{source}</ReactMarkdown>,
+      );
+    stream(prefix + "first");
+    using clones = vi.spyOn(globalThis, "structuredClone");
+    for (const tail of ["first chunk", "first chunk and more", "first chunk and more again"]) {
+      expect(stream(prefix + tail)).toBe(
+        renderToStaticMarkup(
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{prefix + tail}</ReactMarkdown>,
+        ),
+      );
+    }
+    expect(clones).not.toHaveBeenCalled();
   });
 });

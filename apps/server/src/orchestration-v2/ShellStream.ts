@@ -31,6 +31,7 @@ import * as Schema from "effect/Schema";
 import type * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 
+import { shellEventFootprint, type ShellFootprint } from "../houston/shellReads.ts";
 import { bufferLatestLiveStream } from "./LiveStreamBudget.ts";
 import type { ActiveShellIndexEntry } from "./ProjectionStore.ts";
 
@@ -409,6 +410,8 @@ export type ShellApplicationEvent =
   | {
       readonly sequence: number;
       readonly event: Pick<OrchestrationV2StoredEvent["event"], "threadId">;
+      // Houston: lets a batch that cannot change the shell skip its read.
+      readonly footprint?: ShellFootprint;
     };
 
 /** Focused subagents receive these updates through their thread subscription. */
@@ -446,7 +449,11 @@ export function toShellApplicationEvent(stored: ApplicationStoredEvent): ShellAp
         type: stored.type,
         sequence: stored.sequence,
       }
-    : { sequence: stored.sequence, event: { threadId: stored.event.threadId } };
+    : {
+        sequence: stored.sequence,
+        event: { threadId: stored.event.threadId },
+        footprint: shellEventFootprint(stored.event),
+      };
 }
 
 export function coalesceShellApplicationEvents<A extends ShellApplicationEvent>(

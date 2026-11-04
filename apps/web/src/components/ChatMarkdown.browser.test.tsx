@@ -17,6 +17,17 @@ const { workspaceSearch, filesystemMetadata } = vi.hoisted(() => ({
   filesystemMetadata: vi.fn(),
 }));
 const parsedSources = vi.hoisted(() => [] as string[]);
+const linkScans = vi.hoisted(() => [] as string[]);
+vi.mock(import("@houston-app/shared/markdownLinks"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    extractMarkdownLinkHrefs: (markdown: string) => {
+      linkScans.push(markdown);
+      return actual.extractMarkdownLinkHrefs(markdown);
+    },
+  };
+});
 vi.mock(import("mdast-util-from-markdown"), async (original) => {
   const actual = await original();
   return {
@@ -247,6 +258,34 @@ describe("ChatMarkdown favicon privacy", () => {
 });
 
 describe("ChatMarkdown streaming", () => {
+  it("scans only the growing block for file links on each streamed chunk", async () => {
+    setup();
+    const finished = Array.from(
+      { length: 40 },
+      (_, index) => `Step ${index} edits [file ${index}](src/file${index}.ts).`,
+    ).join("\n\n");
+    const message = (tail: string, isStreaming = true) => (
+      <ChatMarkdown cwd="/tmp/project" text={`${finished}\n\n${tail}`} isStreaming={isStreaming} />
+    );
+    await using screen = await render(message("Now"));
+    await expect.element(screen.getByText("Now")).toBeVisible();
+    let tail = "Now";
+    for (let chunk = 0; chunk < 10; chunk += 1) {
+      tail += ` chunk ${chunk}`;
+      linkScans.length = 0;
+      await screen.rerender(message(tail));
+      const scanned = linkScans.reduce((total, scan) => total + scan.length, 0);
+      expect(scanned).toBeLessThanOrEqual(tail.length);
+    }
+    await expect.element(screen.getByText(/chunk 9/)).toBeVisible();
+
+    // Every link stays a file link, streamed or settled: 40 in finished blocks and the last one.
+    for (const isStreaming of [true, false]) {
+      await screen.rerender(message(`${tail} [last](src/last.ts)`, isStreaming));
+      expect(screen.container.querySelectorAll(".chat-markdown-file-link")).toHaveLength(41);
+    }
+  });
+
   it("runs only a complete single-line shell block after a click", async () => {
     setup();
     const onRunShellCommand = vi.fn();
