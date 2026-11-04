@@ -9,6 +9,7 @@ pub mod logging;
 pub mod login_path;
 pub mod paths;
 pub mod pid;
+pub mod server_env;
 pub mod spawn;
 #[cfg(test)]
 pub(crate) mod test_tracing_capture;

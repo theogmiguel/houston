@@ -2,6 +2,7 @@
 //! runtime record, a keychain-held desktop secret, the bearer exchange and the
 //! `hostBridge` shim the web app expects.
 
+use std::ffi::OsString;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -492,6 +493,7 @@ pub fn bootstrap_envelope(
     secret: &str,
     token: &str,
     settings: &DesktopSettings,
+    shell_environment_prepared: bool,
 ) -> Value {
     let host = if settings.exposure_mode == "network-accessible" {
         "0.0.0.0"
@@ -506,7 +508,7 @@ pub fn bootstrap_envelope(
         "host": host,
         "desktopBootstrapToken": token,
         "desktopBootstrapSecret": secret,
-        "shellEnvironmentPrepared": false,
+        "shellEnvironmentPrepared": shell_environment_prepared,
         "tailscaleServeEnabled": settings.tailscale_serve_enabled,
         "tailscaleServePort": settings.tailscale_serve_port,
     })
@@ -646,6 +648,7 @@ fn server_command(
     node: &Path,
     entry: &ServerEntry,
     base_dir: &Path,
+    prepared_env: Option<&[(OsString, OsString)]>,
 ) -> Result<std::process::Command, String> {
     let log = open_log(base_dir)?;
     let stderr = log
@@ -659,6 +662,10 @@ fn server_command(
             cmd
         }
     };
+    if let Some(env) = prepared_env {
+        // A cleared environment keeps the single `PATH` spelling the server expects.
+        cmd.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
+    }
     cmd.arg("--bootstrap-fd")
         .arg("0")
         .env("HOUSTON_DESKTOP_DETACHED", "1")
@@ -689,6 +696,7 @@ fn spawn_server(
     base_dir: &Path,
     port: u16,
     payload: &Value,
+    prepared_env: Option<&[(OsString, OsString)]>,
 ) -> Result<Child, String> {
     let program = match entry {
         ServerEntry::Bundled(executable) => executable,
@@ -698,7 +706,7 @@ fn spawn_server(
     #[cfg(windows)]
     let mut child = {
         use std::os::windows::process::CommandExt;
-        let mut cmd = server_command(node, entry, base_dir)?;
+        let mut cmd = server_command(node, entry, base_dir, prepared_env)?;
         cmd.creation_flags(detached_spawn_flags(true));
         match cmd.spawn() {
             Ok(child) => child,
@@ -711,7 +719,7 @@ fn spawn_server(
                      without CREATE_BREAKAWAY_FROM_JOB. The server will share the app's job \
                      and may not survive the app closing."
                 );
-                let mut retry = server_command(node, entry, base_dir)?;
+                let mut retry = server_command(node, entry, base_dir, prepared_env)?;
                 retry.creation_flags(detached_spawn_flags(false));
                 retry.spawn().map_err(|second| {
                     format!("spawning the v2 server with {program:?}: {second}")
@@ -721,7 +729,7 @@ fn spawn_server(
     };
 
     #[cfg(not(windows))]
-    let mut child = server_command(node, entry, base_dir)?
+    let mut child = server_command(node, entry, base_dir, prepared_env)?
         .spawn()
         .map_err(|e| format!("spawning the v2 server with {program:?}: {e}"))?;
 
@@ -1205,8 +1213,25 @@ async fn ensure_running_locked(host: &V2Host) -> Result<RunningServer, String> {
     };
     let port = pick_port_for(bind_host);
     let token = current_desktop_bootstrap_token(&secret, now_ms());
-    let envelope = bootstrap_envelope(&host.base_dir, port, &secret, &token, &settings);
-    let mut child = spawn_server(&host.node, &host.entry, &host.base_dir, port, &envelope)?;
+    let prepared_env = std::env::current_dir().ok().and_then(|cwd| {
+        crate::sys::server_env::prepared_server_env(&crate::sys::host_env::HostEnv::capture(), &cwd)
+    });
+    let envelope = bootstrap_envelope(
+        &host.base_dir,
+        port,
+        &secret,
+        &token,
+        &settings,
+        prepared_env.is_some(),
+    );
+    let mut child = spawn_server(
+        &host.node,
+        &host.entry,
+        &host.base_dir,
+        port,
+        &envelope,
+        prepared_env.as_deref(),
+    )?;
     let runtime = wait_for_ready(&host.base_dir, &mut child).await?;
     let running = RunningServer {
         origin: runtime.origin,
@@ -1625,6 +1650,7 @@ mod tests {
             "secret",
             "token",
             &DesktopSettings::default(),
+            false,
         );
         assert_eq!(envelope["mode"], "desktop");
         assert_eq!(envelope["noBrowser"], true);
@@ -1708,6 +1734,7 @@ mod tests {
             "secret",
             "token",
             &settings,
+            false,
         );
         assert_eq!(envelope["host"], "0.0.0.0");
         assert_eq!(envelope["tailscaleServeEnabled"], true);
@@ -1762,6 +1789,22 @@ mod tests {
         );
         assert_eq!(status.ipv4, ["100.100.100.100"]);
         assert!(parse_tailscale_status("not json").is_none());
+    }
+
+    #[test]
+    fn the_envelope_claims_a_prepared_environment_only_when_told() {
+        let envelope = |prepared| {
+            bootstrap_envelope(
+                Path::new("/home/u/.houston-dev/v2"),
+                3773,
+                "secret",
+                "token",
+                &DesktopSettings::default(),
+                prepared,
+            )
+        };
+        assert_eq!(envelope(true)["shellEnvironmentPrepared"], true);
+        assert_eq!(envelope(false)["shellEnvironmentPrepared"], false);
     }
 
     #[test]

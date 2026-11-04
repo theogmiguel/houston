@@ -151,3 +151,70 @@ effectIt.effect("replaces a Path-spelled Windows PATH instead of adding a second
     assert.deepEqual(env, { PATH: "C:\\Tools;C:\\Windows" });
   }),
 );
+
+// The host prepares this PATH itself (src-tauri/src/sys/server_env.rs); both sides pin one fixture.
+const HOST_PREPARED_FIXTURE = {
+  inherited: String.raw`C:\Windows;"C:\Program Files\nodejs";c:\windows;;C:\Users\u\.bun\bin`,
+  prepared: [
+    String.raw`C:\Windows`,
+    String.raw`C:\Program Files\nodejs`,
+    String.raw`C:\Users\u\.bun\bin`,
+    String.raw`C:\Users\u\AppData\Roaming\npm`,
+    String.raw`C:\Users\u\AppData\Local\Programs\nodejs`,
+    String.raw`C:\Users\u\AppData\Local\Volta\bin`,
+    String.raw`C:\Users\u\AppData\Local\pnpm`,
+    String.raw`C:\Users\u\.local\bin`,
+    String.raw`C:\Users\u\scoop\shims`,
+  ].join(";"),
+};
+
+function hostFixtureEnv(): NodeJS.ProcessEnv {
+  return {
+    Path: HOST_PREPARED_FIXTURE.inherited,
+    APPDATA: String.raw`C:\Users\u\AppData\Roaming`,
+    LOCALAPPDATA: String.raw`C:\Users\u\AppData\Local`,
+    USERPROFILE: String.raw`C:\Users\u`,
+  };
+}
+
+effectIt.effect("the -NoProfile probe of an inherited PATH yields the host's prepared PATH", () =>
+  Effect.gen(function* () {
+    const env = hostFixtureEnv();
+
+    yield* fixPath().pipe(
+      Effect.provideService(HostProcess.Platform, "win32"),
+      Effect.provideService(HostProcess.Environment, env),
+      // Windows PowerShell answers with the PATH its parent gave it.
+      Effect.provideService(WindowsShellEnvironment, () =>
+        Effect.succeed({ PATH: HOST_PREPARED_FIXTURE.inherited }),
+      ),
+      Effect.provideService(CommandAvailability, () => Effect.succeed(true)),
+      Effect.provide(NodeServices.layer),
+    );
+
+    assert.equal(env.PATH, HOST_PREPARED_FIXTURE.prepared);
+  }),
+);
+
+effectIt.effect("a prepared Windows environment skips the PowerShell probe", () =>
+  Effect.gen(function* () {
+    const env: NodeJS.ProcessEnv = { PATH: HOST_PREPARED_FIXTURE.prepared };
+    let probes = 0;
+
+    yield* fixPath({ shellEnvironmentPrepared: true }).pipe(
+      Effect.provideService(HostProcess.Platform, "win32"),
+      Effect.provideService(HostProcess.Environment, env),
+      Effect.provideService(WindowsShellEnvironment, () =>
+        Effect.sync(() => {
+          probes += 1;
+          return {};
+        }),
+      ),
+      Effect.provideService(CommandAvailability, () => Effect.succeed(true)),
+      Effect.provide(NodeServices.layer),
+    );
+
+    assert.equal(probes, 0);
+    assert.deepEqual(env, { PATH: HOST_PREPARED_FIXTURE.prepared });
+  }),
+);
