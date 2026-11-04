@@ -11,6 +11,14 @@ export interface WslConfig {
 // Literal spaces only; \s would accept controls and corrupt UNC distro paths.
 const DISTRO_NAME_PATTERN = /^\w(?:[\w \-.]*\w)?$/;
 
+// Container engines create these to host themselves; nobody works in them.
+const UTILITY_DISTROS = new Set([
+  "docker-desktop",
+  "docker-desktop-data",
+  "rancher-desktop",
+  "rancher-desktop-data",
+]);
+
 export function parseWslDistroList(stdout: Buffer): readonly WslDistro[] {
   const hasUtf16Bom = stdout.length >= 2 && stdout[0] === 0xff && stdout[1] === 0xfe;
   const likelyUtf16Le =
@@ -31,7 +39,7 @@ export function parseWslDistroList(stdout: Buffer): readonly WslDistro[] {
     if (fields.length < 3) continue;
     const name = fields[0]!.trim();
     const versionNum = parseInt(fields[2]!, 10);
-    if (!name || (versionNum !== 1 && versionNum !== 2)) continue;
+    if (!name || UTILITY_DISTROS.has(name) || (versionNum !== 1 && versionNum !== 2)) continue;
     distros.push({ name, isDefault, version: versionNum as 1 | 2 });
   }
   return distros;

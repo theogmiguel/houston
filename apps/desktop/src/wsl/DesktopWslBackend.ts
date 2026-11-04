@@ -14,6 +14,7 @@ import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopWslEnvironment from "./DesktopWslEnvironment.ts";
+import { WSL_SERVER_START_ENABLED } from "./wslServerSupport.ts";
 
 export const WSL_INSTANCE_ID_PREFIX = "wsl:";
 const WSL_DEFAULT_DISTRO_ID = `${WSL_INSTANCE_ID_PREFIX}default`;
@@ -163,7 +164,8 @@ export const layer = Layer.effect(
       const existingId = Option.map(existing, (instance) => instance.id);
 
       // In wsl-only mode WSL is already primary; do not start a second backend on the same distro.
-      const shouldRun = settings.wslBackendEnabled && available && !settings.wslOnly;
+      const shouldRun =
+        WSL_SERVER_START_ENABLED && settings.wslBackendEnabled && available && !settings.wslOnly;
       const targetId = shouldRun
         ? Option.some(resolveTargetInstanceId(settings.wslDistro))
         : Option.none<DesktopBackendPool.BackendInstanceId>();
