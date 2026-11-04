@@ -1,13 +1,16 @@
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
+import { resolveUserDataDirectoryName } from "./DesktopStatePaths.ts";
+
 export class DesktopUserDataInitializationError extends Schema.TaggedError<DesktopUserDataInitializationError>()(
   "DesktopUserDataInitializationError",
   {
-    operation: Schema.Literals(["inspect", "read", "create-directory", "write"]),
+    operation: Schema.Literals(["inspect", "create-directory"]),
     resourcePath: Schema.String,
     category: Schema.String,
     cause: Schema.Defect(),
@@ -31,47 +34,21 @@ export class DesktopUserDataInitializationError extends Schema.TaggedError<Deskt
   }
 }
 
+/**
+ * A profile per channel keeps two channels apart; a second launch of the same
+ * channel then shares one profile and one single-instance lock.
+ */
 export const resolveUserDataPath = Effect.fn("desktop.userData.resolveUserDataPath")(
   function* (input: {
     readonly appDataDirectory: string;
-    readonly isDevelopment: boolean;
-    readonly platform: NodeJS.Platform;
+    readonly channel: Option.Option<string>;
   }) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const names = input.isDevelopment
-      ? { current: "houston-dev", legacy: "Houston (Dev)" }
-      : { current: "houston-v2", legacy: "Houston (Alpha)" };
-    const destinationPath = path.join(input.appDataDirectory, names.current);
-    const legacyPath = path.join(input.appDataDirectory, names.legacy);
-    const inspect = (resourcePath: string) =>
-      fs
-        .exists(resourcePath)
-        .pipe(
-          Effect.mapError((cause) =>
-            DesktopUserDataInitializationError.fromFileSystem(cause, "inspect", resourcePath),
-          ),
-        );
-    if (input.isDevelopment) {
-      return (yield* inspect(legacyPath)) ? legacyPath : destinationPath;
-    }
-    // Chromium databases require their own profile for each running version.
-    if (input.platform !== "win32") return destinationPath;
-    const destinationState = path.join(destinationPath, "Local State");
-    if (yield* inspect(destinationState)) return destinationPath;
-    const legacyState = path.join(legacyPath, "Local State");
-    const sourceState = (yield* inspect(legacyState))
-      ? legacyState
-      : path.join(input.appDataDirectory, "houston", "Local State");
-    if (!(yield* inspect(sourceState))) return destinationPath;
-    // Windows safeStorage keys live here. Copy only these preferences, never locked databases.
-    const state = yield* fs
-      .readFileString(sourceState)
-      .pipe(
-        Effect.mapError((cause) =>
-          DesktopUserDataInitializationError.fromFileSystem(cause, "read", sourceState),
-        ),
-      );
+    const destinationPath = path.join(
+      input.appDataDirectory,
+      resolveUserDataDirectoryName(input.channel),
+    );
     yield* fs
       .makeDirectory(destinationPath, { recursive: true })
       .pipe(
@@ -83,15 +60,6 @@ export const resolveUserDataPath = Effect.fn("desktop.userData.resolveUserDataPa
           ),
         ),
       );
-    yield* fs.writeFileString(destinationState, state, { flag: "wx" }).pipe(
-      Effect.catchIf(
-        (error) => error.reason._tag === "AlreadyExists",
-        () => Effect.void,
-      ),
-      Effect.mapError((cause) =>
-        DesktopUserDataInitializationError.fromFileSystem(cause, "write", destinationState),
-      ),
-    );
     return destinationPath;
   },
 );

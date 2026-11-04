@@ -10,6 +10,7 @@ import * as Electron from "electron";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 
 import * as DesktopEarlyElectronStartup from "./DesktopEarlyElectronStartup.ts";
+import { validateChannel } from "./DesktopStatePaths.ts";
 import { resolveDesktopAppBranding } from "./DesktopEnvironment.ts";
 import { renderUrlHandlerDesktopEntry } from "./DesktopLinuxUrlHandler.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
@@ -108,6 +109,7 @@ export const make = Effect.gen(function* () {
             displayName: resolveDesktopAppBranding({
               isDevelopment: linux.isDevelopment,
               appVersion: Electron.app.getVersion(),
+              channel: validateChannel(process.env.HOUSTON_CHANNEL),
             }).displayName,
             execTarget:
               process.env.HOUSTON_DESKTOP_LAUNCHER_PATH?.trim() ||

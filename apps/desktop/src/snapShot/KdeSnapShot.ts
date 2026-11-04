@@ -15,7 +15,7 @@ import { startNativeCaptureFeedback } from "./NativeCaptureFeedback.ts";
 export { isKdeCaptureSession } from "./linuxCaptureSession.ts";
 
 export const KDE_CAPTURE_EXECUTABLE = "houston-kde-snap-shot";
-const DESKTOP_FILE = "com.houston.Houston.KdeCapture.desktop";
+const DESKTOP_FILE = "dev.houston.desktop.KdeCapture.desktop";
 const MARKER = "X-Houston-Capture-Helper=true";
 const decodeCapabilities = Schema.decodeUnknownSync(
   Schema.fromJsonString(Schema.Struct({ feedbackAvailable: Schema.optional(Schema.Boolean) })),

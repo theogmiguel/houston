@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>com.houston.Houston</id>
+  <id>dev.houston.desktop</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
   <name>Houston</name>
@@ -18,8 +18,8 @@
       Connect from desktop, web, or mobile to continue working remotely.
     </p>
   </description>
-  <launchable type="desktop-id">com.houston.Houston.desktop</launchable>
-  <icon type="stock">com.houston.Houston</icon>
+  <launchable type="desktop-id">dev.houston.desktop.desktop</launchable>
+  <icon type="stock">dev.houston.desktop</icon>
   <provides>
     <binary>houston</binary>
   </provides>

@@ -12,6 +12,7 @@ import {
 import {
   resolveDesktopBaseDir,
   resolveDesktopStateDir,
+  validateChannel,
   type JoinPath,
 } from "./DesktopStatePaths.ts";
 
@@ -31,7 +32,7 @@ export interface EarlyLinuxElectronOptions {
 }
 
 export const resolveLinuxDesktopEntryName = (isDevelopment: boolean): string =>
-  isDevelopment ? "com.houston.Houston.Development.desktop" : "com.houston.Houston.desktop";
+  isDevelopment ? "dev.houston.desktop.dev.desktop" : "dev.houston.desktop.desktop";
 
 const trimNonEmpty = (value: string | undefined): string | null => {
   const trimmed = value?.trim();
@@ -54,17 +55,14 @@ function resolveEarlyDesktopSettingsPath(input: {
   readonly joinPath: JoinPath;
 }): string {
   const houstonHome = Option.fromUndefinedOr(input.env.HOUSTON_HOME);
+  const channel = validateChannel(input.env.HOUSTON_CHANNEL);
   const baseDir = resolveDesktopBaseDir({
     homeDirectory: input.homeDirectory,
     joinPath: input.joinPath,
     houstonHome,
+    channel,
   });
-  const stateDir = resolveDesktopStateDir({
-    baseDir,
-    isDevelopment: isDevelopmentEnvironment(input.env),
-    joinPath: input.joinPath,
-    houstonHome,
-  });
+  const stateDir = resolveDesktopStateDir({ baseDir, joinPath: input.joinPath });
   return input.joinPath(stateDir, "desktop-settings.json");
 }
 

@@ -13,10 +13,12 @@ const repoRoot = NodePath.resolve(desktopDir, "..", "..");
 const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
-const APP_DISPLAY_NAME = isDevelopment ? "Houston (Dev)" : "Houston (Beta)";
+const channelName = process.env.HOUSTON_CHANNEL?.trim();
+const APP_DISPLAY_NAME =
+  channelName && channelName !== "release" ? `Houston (${channelName})` : "Houston";
 const APP_BUNDLE_ID = isDevelopment
-  ? `com.houston.houston.dev.${devBundleIdSuffix || "local"}`
-  : "com.houston.houston";
+  ? `dev.houston.desktop.dev.${devBundleIdSuffix || "local"}`
+  : "dev.houston.desktop";
 const APP_PROTOCOL_SCHEMES = isDevelopment ? ["houston-dev"] : ["houston"];
 const LAUNCHER_VERSION = 20;
 const developmentMacIconPngPath = NodePath.join(
@@ -111,6 +113,7 @@ export function makeDevelopmentEnvironmentScript(environment) {
     ["VITE_DEV_SERVER_URL", environment.VITE_DEV_SERVER_URL],
     ["HOUSTON_PORT", environment.HOUSTON_PORT],
     ["HOUSTON_HOME", environment.HOUSTON_HOME],
+    ["HOUSTON_CHANNEL", environment.HOUSTON_CHANNEL],
     ["HOUSTON_COMMIT_HASH", environment.HOUSTON_COMMIT_HASH],
     ["HOUSTON_OTLP_TRACES_URL", environment.HOUSTON_OTLP_TRACES_URL],
     ["HOUSTON_OTLP_EXPORT_INTERVAL_MS", environment.HOUSTON_OTLP_EXPORT_INTERVAL_MS],

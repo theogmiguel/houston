@@ -291,6 +291,7 @@ const startup = Effect.gen(function* () {
     }
   }
   const userDataPath = yield* appIdentity.resolveUserDataPath;
+  yield* electronApp.setName(environment.appName);
   yield* electronApp.setPath("userData", userDataPath);
   // A second launch must focus the running window instead of opening another profile.
   if (!(yield* electronApp.requestSingleInstanceLock)) {

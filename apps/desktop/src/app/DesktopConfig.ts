@@ -38,6 +38,7 @@ export const DesktopConfig = Config.all({
   xdgConfigHome: trimmedString("XDG_CONFIG_HOME"),
   xdgDataHome: trimmedString("XDG_DATA_HOME"),
   houstonHome: trimmedString("HOUSTON_HOME"),
+  houstonChannel: Config.String("HOUSTON_CHANNEL").pipe(Config.option),
   devServerUrl: Config.URL("VITE_DEV_SERVER_URL").pipe(Config.option),
   appUserModelIdOverride: trimmedString("HOUSTON_DESKTOP_APP_USER_MODEL_ID"),
   devRemoteHoustonServerEntryPath: trimmedString("HOUSTON_DEV_REMOTE_SERVER_ENTRY_PATH"),

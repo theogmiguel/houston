@@ -14,7 +14,15 @@ import * as Path from "effect/Path";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
 import { resolveLinuxDesktopEntryName } from "./DesktopEarlyElectronStartup.ts";
-import { resolveDesktopBaseDir, resolveDesktopStateDir } from "./DesktopStatePaths.ts";
+import {
+  resolveApplicationName,
+  resolveChannelDir,
+  resolveDesktopBaseDir,
+  resolveDesktopStateDir,
+  resolveServerRuntimeRecordPath,
+  resolveUserDataDirectoryName,
+  validateChannel,
+} from "./DesktopStatePaths.ts";
 import { isNightlyDesktopVersion } from "../updates/updateChannels.ts";
 import type { OtlpProtocol } from "@houston-app/shared/observability";
 
@@ -44,8 +52,14 @@ export class DesktopEnvironment extends Context.Service<
     readonly resourcesPath: string;
     readonly homeDirectory: string;
     readonly appDataDirectory: string;
+    readonly channel: Option.Option<string>;
+    readonly channelDir: string;
     readonly baseDir: string;
     readonly stateDir: string;
+    readonly serverRuntimeRecordPath: string;
+    readonly developmentServerRuntimeRecordPath: Option.Option<string>;
+    readonly appName: string;
+    readonly userDataDirectoryName: string;
     readonly desktopSettingsPath: string;
     readonly clientSettingsPath: string;
     readonly savedEnvironmentRegistryPath: string;
@@ -101,12 +115,13 @@ function resolveDesktopAppStageLabel(input: {
 export function resolveDesktopAppBranding(input: {
   readonly isDevelopment: boolean;
   readonly appVersion: string;
+  readonly channel: Option.Option<string>;
 }): DesktopAppBranding {
   const stageLabel = resolveDesktopAppStageLabel(input);
   return {
     baseName: APP_BASE_NAME,
     stageLabel,
-    displayName: `${APP_BASE_NAME} (${stageLabel})`,
+    displayName: resolveApplicationName(input.channel),
   };
 }
 
@@ -156,10 +171,17 @@ const make = Effect.fn("desktop.environment.make")(function* (
       : input.platform === "darwin"
         ? path.join(homeDirectory, "Library", "Application Support")
         : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
+  const channel = validateChannel(Option.getOrUndefined(config.houstonChannel));
+  const channelDir = resolveChannelDir({
+    homeDirectory,
+    joinPath: path.join,
+    channel,
+  });
   const baseDir = resolveDesktopBaseDir({
     homeDirectory,
     joinPath: path.join,
     houstonHome: config.houstonHome,
+    channel,
   });
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
@@ -170,14 +192,10 @@ const make = Effect.fn("desktop.environment.make")(function* (
   const branding = resolveDesktopAppBranding({
     isDevelopment,
     appVersion: input.appVersion,
+    channel,
   });
   const displayName = branding.displayName;
-  const stateDir = resolveDesktopStateDir({
-    baseDir,
-    isDevelopment,
-    joinPath: path.join,
-    houstonHome: config.houstonHome,
-  });
+  const stateDir = resolveDesktopStateDir({ baseDir, joinPath: path.join });
   const linuxApplicationsDir = path.join(
     Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
     "applications",
@@ -196,8 +214,25 @@ const make = Effect.fn("desktop.environment.make")(function* (
     resourcesPath,
     homeDirectory,
     appDataDirectory,
+    channel,
+    channelDir,
     baseDir,
     stateDir,
+    serverRuntimeRecordPath: resolveServerRuntimeRecordPath({
+      stateDir,
+      joinPath: path.join,
+    }),
+    // A development server keeps its state under `dev/`, because it receives the Vite URL.
+    developmentServerRuntimeRecordPath: isDevelopment
+      ? Option.some(
+          resolveServerRuntimeRecordPath({
+            stateDir: path.join(baseDir, "dev"),
+            joinPath: path.join,
+          }),
+        )
+      : Option.none(),
+    appName: resolveApplicationName(channel),
+    userDataDirectoryName: resolveUserDataDirectoryName(channel),
     desktopSettingsPath: path.join(stateDir, "desktop-settings.json"),
     clientSettingsPath: path.join(stateDir, "client-settings.json"),
     savedEnvironmentRegistryPath: path.join(stateDir, "saved-environments.json"),
@@ -228,7 +263,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     branding,
     displayName,
     appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
-      isDevelopment ? "com.houston.houston.dev" : "com.houston.houston",
+      isDevelopment ? "dev.houston.desktop.dev" : "dev.houston.desktop",
     ),
     linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
     linuxApplicationsDir,
