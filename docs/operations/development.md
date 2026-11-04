@@ -217,17 +217,17 @@ release binary older than `src-tauri`'s sources.
 
 [CI](../internals/ci.md) describes the workflow, its path filter and its runner variables.
 
-| Job                                              | What it does                                                                                                                                                                                                   |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `changes`                                        | classifies the changed paths; an unclassified path runs every job                                                                                                                                              |
-| `static`                                         | the safety scripts, workflow syntax, the offline release-note and updater-signature regression tests, doc and comment hygiene, the web style guards, the upstream licence notice and the third-party inventory |
-| `typecheck`                                      | the cached workspace typecheck                                                                                                                                                                                 |
-| `test-packages`                                  | the workspace package suites and the script tests                                                                                                                                                              |
-| `test-server`                                    | the server suites in six shards                                                                                                                                                                                |
-| `test-web`, `test-web-browser`                   | the renderer build and its unit and browser vitest projects                                                                                                                                                    |
-| `native-linux`, `native-macos`, `native-windows` | the web build, then host formatting, Clippy and tests; only native paths run them on PRs                                                                                                                       |
-| `server-windows`                                 | the server suites nightly and on pushes, never on PRs                                                                                                                                                          |
-| `ci-gate`                                        | the aggregate check every branch requires                                                                                                                                                                      |
+| Job                            | What it does                                                                                                                                                                                                   |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `changes`                      | classifies the changed paths; an unclassified path runs every job                                                                                                                                              |
+| `static`                       | the safety scripts, workflow syntax, the offline release-note and updater-signature regression tests, doc and comment hygiene, the web style guards, the upstream licence notice and the third-party inventory |
+| `typecheck`                    | the cached workspace typecheck                                                                                                                                                                                 |
+| `test-packages`                | the workspace package suites and the script tests                                                                                                                                                              |
+| `test-server`                  | the server suites in six shards                                                                                                                                                                                |
+| `test-web`, `test-web-browser` | the renderer build and its unit and browser vitest projects                                                                                                                                                    |
+| `native-linux`                 | `cargo test` for the Houston 1 cleanup helper and the Linux capture helpers; only native paths run it on PRs                                                                                                   |
+| `server-windows`               | the server suites nightly and on pushes, never on PRs                                                                                                                                                          |
+| `ci-gate`                      | the aggregate check every branch requires                                                                                                                                                                      |
 
 ## Maintaining model data
 

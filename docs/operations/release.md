@@ -126,16 +126,16 @@ not synchronize the manifest; finish editorial review before promoting it.
 | Promote draft to public            | `publish-draft.yml`    | Manual publication after smoke-test attestation and environment approval |
 | Build installers                   | `build-installers.yml` | Manual packaging validation; no version bump, tag or release             |
 | Build Linux packages (internal)    | `release-linux.yml`    | Reusable Linux builds and packaged runtime checks                        |
-| Build Windows installer (internal) | `release-windows.yml`  | Reusable native compilation and subsequent NSIS packaging                |
+| Build Windows installer (internal) | `release-windows.yml`  | Reusable Electron packaging, Authenticode and updater signing            |
 | Create release draft (internal)    | `release-publish.yml`  | Reusable signature verification, updater manifest and draft creation     |
 
 The three internal workflows are called by the manual workflows; their lack of
 independent runs does not mean they are unused. They are not dispatched directly.
 
-CI runs eight jobs: `safety-checks`, `renderer-checks`, `core-checks`,
-`core-integration`, `linux-native-checks`, `windows-renderer-checks`, `windows-checks` and
-`licence-inventory`. Cut release requires a successful run for the exact source
-commit and successful completion of every required job. A green run for an older
+CI runs the jobs in `.github/workflows/ci.yml`: `changes`, `static`, `typecheck`,
+`test-packages`, `test-server`, `test-web`, `test-web-browser`, `native-linux`,
+`server-windows` and the `ci-gate` aggregate. Cut release requires a successful run
+for the exact source commit and successful completion of every required job. A green run for an older
 commit is insufficient. Stable cuts require main CI; RC cuts may use PR CI for
 that exact PR head targeting `main`. Main pushes limited to documentation are
 excluded by CI's path filters; manually run CI for that commit before cutting.
@@ -146,9 +146,10 @@ commit shared by all jobs. Both platforms are selected by default. Selecting
 `windows` still builds the Linux packages. It uploads artifacts only and is the packaging check to run before
 merging changes to the bundle pipeline.
 
-Linux builds x86_64 and aarch64 packages. Windows native compilation starts in
-parallel with Linux, and NSIS packaging waits for the Linux job. The intermediate
-Windows native artifact is internal to Actions and is not a release asset.
+Linux builds x86_64 and aarch64 AppImages and debs. Windows builds its NSIS
+installer in parallel; no platform job waits for another, and no intermediate
+artifact is uploaded. Every job builds the Electron host with
+`scripts/build-desktop-artifact.ts`.
 
 Before filing the draft, Linux packages run headlessly on Ubuntu 22.04, Ubuntu
 24.04, Debian 12 and current Fedora. The packaged x86_64 app also runs
@@ -189,7 +190,7 @@ uses the configured release deploy key. A manually pushed `v*` tag starts no
 workflow. The `stable-release` environment's required reviewer is the publication
 control; configure it as described below rather than relying on the checkbox alone.
 
-### Windows signing: two paths, one secret
+### Windows signing: two signatures, different purposes
 
 The Windows installer, when a cut builds one, gets two independent signatures.
 The updater one is not optional: a Windows cut signs the `.exe` with the
@@ -202,12 +203,17 @@ secret, `AZURE_TRUSTED_SIGNING_ACCOUNT_NAME`:
   and the job summary says so and names the missing secret. This is the
   documented normal state and it never fails the build. `README.md` and
   `docs/user/install.md` tell downloaders to expect the warning.
-- **Present** — `azure/trusted-signing-action` signs the bundled `.exe` in
-  place. That rewrites the file's bytes, which is why the order matters:
-  Authenticode first, then `cargo tauri signer sign` for the updater. A
+- **Present** — `azure/trusted-signing-action` signs the installer in the
+  staging directory. That rewrites the file's bytes, which is why the order
+  matters: Authenticode first, then the Tauri CLI signer for the bridge. A
   Minisign signature over the pre-Authenticode bytes would never verify, so a
-  stale `.sig` is removed before the updater signs. Both paths produce the
-  same `.exe` and `.exe.sig` names, and nothing downstream changes.
+  stale `.sig` is removed before the updater signs.
+
+Authenticode also invalidates electron-builder's sha512 and size in
+`latest.yml`, so `scripts/refresh-updater-metadata.mjs` recomputes them from the
+final bytes. NSIS differential packages are disabled: their block map is built
+before signing and a rewritten installer cannot match it, so Windows updates are
+full downloads.
 
 **The maintainer's decision**, and the only one: whether to buy Azure Trusted
 Signing. It is the cheaper of the two ways to get a signature a fresh Windows
@@ -240,15 +246,24 @@ release payload. Restarting the app performs a full release check.
 `releases/latest/download/latest.json`, picks the entry for this exact bundle
 (`linux-x86_64-deb`, `linux-x86_64-appimage`, `windows-x86_64-nsis`),
 downloads it, verifies the artifact's signature against the public key in
-`src-tauri/tauri.conf.json`, and installs. It refuses by name when the manifest
-publishes nothing for this bundle, when the signature does not verify, when the
-and when the manifest's version is no longer the one the panel showed.
+`scripts/updater-pubkey.txt`, and installs. It refuses by name when the manifest
+publishes nothing for this bundle, when the signature does not verify, and when
+the manifest's version is no longer the one the panel showed.
 
-On Linux a deb install runs the system package manager's usual privileged
-install. An AppImage install replaces the
-running file and relaunches into the new mount. On Windows the NSIS installer
-runs; the progress and the outcome appear in the panel. Nothing installs
-without a click, and nothing unsigned or unverifiable installs at all.
+The manifest is the **update bridge**. Installed Tauri copies keep using it, and
+the entry it selects is the Electron build of the same version: the AppImage or
+deb on Linux, the NSIS installer on Windows. On Linux a deb install runs the
+system package manager's usual privileged install; an AppImage install replaces
+the running file and relaunches into the new mount. On Windows the NSIS
+installer is started the way the Tauri updater starts its own — `/P /UPDATE /R
+/ARGS` — which the Electron installer's `customInit` accepts, reuses
+`%LOCALAPPDATA%\Houston`, removes the Tauri uninstall registry entry, and
+relaunches Houston with the supplied arguments. The progress and the outcome
+appear in the panel. Nothing installs without a click, and nothing unsigned or
+unverifiable installs at all.
+
+An Electron installation updates from electron-updater's `latest*.yml` feed
+instead; both feeds describe the same release.
 
 **Getting the keypair in place** is one maintainer sitting, and releases do not
 run without it:
@@ -261,11 +276,11 @@ run without it:
    `TAURI_SIGNING_PRIVATE_KEY` (the file's contents) and
    `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (the passphrase). Every release
    workflow refuses a run without them; a cut stops before it pushes anything.
-3. Paste the **public** key into `src-tauri/tauri.conf.json` under
-   `plugins → updater → pubkey` (a public key is not a secret and belongs in
-   the tree). The publish and promotion gates verify every artifact and its
-   signed comment against this key with Minisign before publishing anything.
-   A mismatched signing secret stops the release, even if the bundler succeeds.
+3. Paste the **public** key into `scripts/updater-pubkey.txt` (a public key is
+   not a secret and belongs in the tree). The publish and promotion gates verify
+   every artifact and its signed comment against this key with Minisign before
+   publishing anything. A mismatched signing secret stops the release, even if
+   the package build succeeds.
 
 Keep the private key backed up securely. Installed copies trust the public key
 embedded when they were built: replacing it in the repository does not change
@@ -276,31 +291,42 @@ manually to trust a new pair.
 
 ### Public update feed
 
-The updater uses one public release asset:
-`https://github.com/theogmiguel/houston/releases/latest/download/latest.json`.
-Each published release attaches `latest.json` with the signatures of its
-release artifacts, so installed copies can select and verify the matching
-installer. The first published release establishes this feed; an end-to-end
-update is exercised by installing that release and moving to a subsequent one.
+Two feed shapes are published from the same release assets.
+
+`https://github.com/theogmiguel/houston/releases/latest/download/latest.json`
+is the Minisign-signed bridge read by installed Tauri copies. Each published
+release attaches it with the signatures of its Electron artifacts, so an
+installed copy can select and verify the installer for its bundle.
+
+electron-updater reads `latest-linux.yml`, `latest-linux-arm64.yml` and
+`latest.yml` from the same release, with sha512 hashes instead of Minisign
+signatures. An Electron installation updates from those files.
 
 What every release carries:
 
-1. The bundle workflows sign what they build. On Windows that is
-   `cargo tauri signer sign` after the optional Authenticode step; on Linux the
-   bundler signs the AppImage and the deb as it writes them, and the workflow
-   signs any it left unsigned.
-2. `release-publish.yml` verifies the set — one AppImage family and one deb for
-   Linux x86_64 and ARM64, plus one Windows x86_64 NSIS installer when the cut
-   included Windows, a `.sig` beside each, every filename carrying the
-   release's version — and refuses anything else. It also verifies every bundle
-   and signed comment against `plugins.updater.pubkey`. Promotion repeats this
-   verification over the downloaded draft assets before making them public.
-3. `latest.json` embeds each `.sig` file's contents under both the bare
-   `linux-<arch>` / `windows-<arch>` key and the bundle-specific
-   `-appimage`, `-deb` and `-nsis` keys, so a deb install and an AppImage
-   install each resolve their own payload.
-4. The manifest is published as a release asset, which is what makes the URL
-   above resolvable.
+1. The bundle workflows build with `scripts/build-desktop-artifact.ts`, then
+   sign every updater artifact with the Tauri CLI signer: the AppImage and deb
+   on Linux, the NSIS installer on Windows, the `.app.tar.gz` and `.dmg` on
+   macOS. On Windows the Minisign step follows the optional Authenticode step.
+2. Linux ARM64 writes `latest-linux-arm64.yml`; Linux x86_64 writes
+   `latest-linux.yml`; Windows writes `latest.yml`. Electron-builder writes
+   them during packaging, and `release-publish.yml` and promotion check that
+   each hash and size describes the uploaded bytes.
+3. `release-publish.yml` verifies the Minisign set — one AppImage and one deb
+   for Linux x86_64 and ARM64, plus one Windows x86_64 NSIS installer when the
+   cut included Windows, a `.sig` beside each, every filename carrying the
+   release's version — and refuses anything else. It also verifies every
+   bundle and signed comment against `scripts/updater-pubkey.txt`. Promotion
+   repeats this verification over the downloaded draft assets before making
+   them public.
+4. `latest.json` embeds each `.sig` file's contents under the bare
+   `linux-<arch>` / `windows-<arch>` key and the bundle-specific `-appimage`,
+   `-deb` and `-nsis` keys, so a deb install and an AppImage install each
+   resolve their own payload. The artifact names are
+   `Houston-<version>-<arch>.AppImage`, `Houston-<version>-<arch>.deb` and
+   `Houston-<version>-<arch>-setup.exe`.
+5. The manifest and the `latest*.yml` files are published as release assets,
+   which is what makes the URLs above resolvable.
 
 ### Repository settings a maintainer sets by hand
 
@@ -363,52 +389,55 @@ hand, not wrapped in a script.
 
 ### 2. Build artifacts
 
-Linux, via the testbed:
+All platforms use the same packaging script the release workflows call. It
+builds the renderer, the desktop bundle and the server, stages their
+dependencies, and hands the result to electron-builder.
+
+Linux, for the host architecture:
 
 ```
-./scripts/linux-vm.sh build
-./scripts/linux-vm.sh wait build
+pnpm install --frozen-lockfile
+CARGO_BUILD_JOBS=3 node scripts/build-desktop-artifact.ts \
+  --platform linux --target AppImage --arch x64 \
+  --version <X.Y.Z> --output-dir release --verbose
 ```
 
-This calls `scripts/build-app.sh --bundles appimage,deb` on the VM. Use that
-script rather than invoking `cargo tauri build` directly: it builds the
-renderer, checks generated protocol bindings and stages every required Linux
-sidecar before bundling.
+Output: `release/Houston-<version>-x86_64.AppImage`,
+`release/Houston-<version>-amd64.deb` and `release/latest-linux.yml`.
 
-**The testbed's distro is the artifact's glibc floor.** It defaults to Ubuntu
-24.04, which builds bundles needing glibc 2.38 or newer — AppImage included,
-because the bundler copies the host's libraries — and that breaks the promise
-the release workflow keeps by building on 22.04. Before a local cut, gate the result from the
-repo root inside the VM:
+**The build host's distro is the artifact's glibc floor.** Building on Ubuntu
+24.04 produces bundles needing glibc 2.38 or newer — AppImage included, because
+the bundler copies the host's libraries — and that breaks the promise the
+release workflow keeps by building on 22.04. Before a local cut, gate the
+result:
 
 ```
 ./scripts/check-linux-abi.sh <deb> x86_64
 ```
 
-It refuses a too-new bundle and prints the symbol versions that caused it. A
-`LINUX_VM_DISTRO=Ubuntu-22.04` testbed is the other way to keep the floor.
-
-`build-app.sh` re-execs itself under `scripts/oom-shield.sh` (`-j 3`) unless already
-shielded, then runs `CARGO_BUILD_JOBS=3 cargo tauri build --bundles <targets>`. The
-renderer and the bundled server are built beforehand (`pnpm --filter @houston-app/web build`,
-`pnpm --filter @houston-app/cli build:exe` and `node scripts/stage-v2-server.mjs`).
-
-Bundle output: `src-tauri/target/release/bundle/{appimage,deb}/*.{AppImage,deb}`.
+It refuses a too-new bundle and prints the symbol versions that caused it. Use a
+22.04 machine or the `LINUX_VM_DISTRO=Ubuntu-22.04` testbed to keep the floor.
 
 Windows:
 
 ```powershell
-./scripts/build-app.ps1
-cd src-tauri
-cargo tauri bundle --bundles nsis --ci
+node scripts/build-desktop-artifact.ts --platform win --target nsis --arch x64 --version <X.Y.Z> --output-dir release --verbose
 ```
 
-`build-app.ps1` builds the production app through
-`cargo tauri build --no-bundle --ci -- --locked`, with three Cargo jobs.
-The separate bundle step packages that build without recompiling it. A release
-requires updater signing keys; a local unsigned build can use `--no-sign`.
+Output: `release/Houston-<version>-x64-setup.exe` and `release/latest.yml`.
 
-Bundle output: `src-tauri/target/release/bundle/nsis/*.exe`.
+macOS (unsigned internal build):
+
+```
+node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch arm64 --version <X.Y.Z> --output-dir release --verbose
+```
+
+Output: `release/Houston-<version>-arm64.dmg`. Repack
+`release/mac-arm64/Houston.app` as `Houston-<version>-arm64.app.tar.gz` for the
+Tauri bridge, as `release-macos.yml` does.
+
+A release requires updater signing keys. Without `TAURI_SIGNING_PRIVATE_KEY` the
+build still works, but no installed copy can verify its artifacts.
 
 ### 3. Smoke-test the bundle
 
@@ -417,8 +446,8 @@ makes it visible. CI proves the built x86_64 AppImage _loads and answers_ on
 the four distributions above, but not that the window opens: runners are
 headless, so no webview ever initializes there. Manual smoke-test is a hard
 requirement before promoting or handing anything out, local release or not:
-install the artifact and run it (`./scripts/linux-vm.sh app` on the Linux testbed)
-first. Smoke-test every platform included in the draft before promotion.
+install the artifact and run it on a real desktop first. Smoke-test every
+platform included in the draft before promotion.
 
 For Windows, install the NSIS artifact on Windows 10 or 11 and launch it on an
 isolated test channel. Start a thread with each installed agent CLI, close and reopen
@@ -428,15 +457,23 @@ the app, and confirm that the detached server and its agent runs remain availabl
 
 A local cut signs its bundles the same way CI does, so the two secrets have to
 be in the environment when the build runs (`TAURI_SIGNING_PRIVATE_KEY`,
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) — on the VM too, since the Linux build is
-where the `.sig` files come from. Then generate the notes once, build the
-manifest from the files the bundles produced, and file the release with the
-same body `latest.json` carries. Install the `minisign` CLI first; the manifest
-generator requires it for signature verification:
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). Sign every release artifact with the
+Tauri CLI (`cargo tauri signer sign <artifact>`), keeping the `.sig` beside it,
+then refresh electron-builder's feed hashes and generate the notes once. Build
+the manifest from the signed files and file the release with the same body
+`latest.json` carries. Install the `minisign` CLI first; the manifest generator
+requires it for signature verification.
 
 ```bash
 release_tag=v0.10.0
 release_version=${release_tag#v}
+
+for artifact in <artifacts-dir>/*.AppImage <artifacts-dir>/*.deb \
+                <artifacts-dir>/*-setup.exe <artifacts-dir>/*.app.tar.gz \
+                <artifacts-dir>/*.dmg; do
+  cargo tauri signer sign "$artifact"
+done
+node scripts/refresh-updater-metadata.mjs <artifacts-dir>
 
 python3 scripts/release-helper.py notes \
   --repo theogmiguel/houston --source "$release_tag" --tag "$release_tag" \

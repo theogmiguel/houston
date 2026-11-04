@@ -16,9 +16,7 @@ per platform and never ran the renderer's own tests.
 | `test-server`      | server changes                         | `apps/server` `src/` and `scripts/` tests in six vitest shards                                                                                          |
 | `test-web`         | web changes                            | the production renderer build and the `unit` vitest project                                                                                             |
 | `test-web-browser` | web changes                            | the `browser` vitest project in four shards                                                                                                             |
-| `native-linux`     | native changes, and every non-PR run   | renderer build, formatting, Clippy and `src-tauri` tests under an isolated keyring                                                                      |
-| `native-macos`     | native changes, and every non-PR run   | the same host checks on Apple silicon                                                                                                                   |
-| `native-windows`   | native changes, and every non-PR run   | the same host checks on Windows                                                                                                                         |
+| `native-linux`     | native changes, and every non-PR run   | `cargo test` for the Houston 1 cleanup helper and the Linux capture helpers                                                                             |
 | `server-windows`   | nightly, and pushes to `v2` and `main` | the server suites in three Windows shards                                                                                                               |
 | `ci-gate`          | every run                              | the aggregate check to require on branches                                                                                                              |
 
@@ -39,9 +37,10 @@ CI; adding a rule is what makes a path inexpensive.
 `docs_only` is the one output that is false when the filter fails closed. Documentation-only
 PRs run `static` (doc hygiene is the check they need) and skip the heavy jobs.
 
-Native paths are `src-tauri/`, `native/`, `assets/`, `apps/web/public/` and `.cargo/`. A web
-source change is covered by `test-web`, which builds the renderer without paying for three
-native platforms.
+Native paths are `src-tauri/`, `native/`, `apps/desktop/native/`, `assets/`,
+`apps/web/public/` and `.cargo/`. Desktop source changes run the package suites and typecheck
+without the renderer jobs. A web source change is covered by `test-web`, which builds the
+renderer without paying for a Rust build.
 
 ## Runner indirection
 
@@ -52,8 +51,8 @@ Linux jobs select their runner through repository variables:
   `ci-gate`; default `ubuntu-24.04`.
 
 Setting both to a faster provider is a repository-variable change. For example, the four-vCPU
-Blacksmith image is `blacksmith-4vcpu-ubuntu-2404`. macOS and Windows jobs keep GitHub-hosted
-runners because they prove the host compiles on those platforms.
+Blacksmith image is `blacksmith-4vcpu-ubuntu-2404`. Windows jobs keep GitHub-hosted runners
+because they prove the server compiles on that platform.
 
 ## Drafts, nightly work and Windows
 
@@ -68,7 +67,7 @@ on, and re-runs them on each push while the label stays.
 ## Caches
 
 The pnpm store is cached by `actions/setup-node` inside `.github/actions/setup`. Rust builds use
-`Swatinem/rust-cache` keyed per operating system, and Chromium is cached by the resolved
+`Swatinem/rust-cache` keyed per crate workspace, and Chromium is cached by the resolved
 Playwright version. The typecheck job runs each package's own script because the root `vp run`
 form collides with the web package's same-named task.
 
