@@ -1,8 +1,7 @@
 /**
  * FLIP motion for grid cells: measure each cell's box before a layout change,
  * then translate it from where it was to where it is now. Transform only, so
- * the compositor moves the card and WebKitGTK never repaints a resized cell
- * mid-animation.
+ * the compositor moves the card and a resized cell never repaints mid-animation.
  */
 import { probeCellMoveFrames } from "./frameProbe";
 import { useLayoutEffect, useRef, type RefObject } from "react";

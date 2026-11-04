@@ -81,6 +81,8 @@ contextBridge.exposeInMainWorld("hostBridge", {
     ipcRenderer.sendSync(IpcChannels.GET_RELAY_TELEMETRY_ENABLED_CHANNEL) === true,
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   getClientPlatform: () => clientPlatform,
+  logDebug: (source, message, payload) =>
+    ipcRenderer.invoke(IpcChannels.LOG_DEBUG_CHANNEL, { source, message, payload }),
   setNotificationBadge: (badge) =>
     ipcRenderer.invoke(IpcChannels.SET_NOTIFICATION_BADGE_CHANNEL, badge),
   onNotificationBadgeClear: (listener) => {
