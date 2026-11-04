@@ -4,6 +4,7 @@ import type { RefObject } from "react";
 import { cn } from "~/lib/utils";
 
 import { renderClosingPositioner } from "./closing-positioner";
+import { overlayMotion } from "./overlayMotion";
 
 const PopoverCreateHandle = PopoverPrimitive.createHandle;
 
@@ -92,7 +93,7 @@ function PopoverPopup({
         className={cn(
           "h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-transform data-instant:transition-none",
           variant === "panel"
-            ? "z-(--z-sheet) w-[min(calc(var(--thread-details-panel-width)+--spacing(4)),calc(var(--anchor-width)---spacing(2)))] transition-[top] duration-150 ease-out data-instant:transition-[top] motion-reduce:transition-none motion-reduce:data-instant:transition-none"
+            ? "z-(--z-sheet) w-[min(calc(var(--thread-details-panel-width)+--spacing(4)),calc(var(--anchor-width)---spacing(2)))] transition-[top] duration-(--motion-overlay-in) ease-standard data-instant:transition-[top] motion-reduce:transition-none motion-reduce:data-instant:transition-none"
             : "z-[130]",
         )}
         data-slot="popover-positioner"
@@ -102,7 +103,8 @@ function PopoverPopup({
       >
         <PopoverPrimitive.Popup
           className={cn(
-            "relative flex h-(--popup-height,auto) w-(--popup-width,auto) origin-(--transform-origin) rounded-[var(--r-group)] text-popover-foreground outline-none transition-[width,height,scale,opacity] motion-reduce:transition-none has-data-[slot=calendar]:rounded-[var(--r-dialog)] data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0",
+            overlayMotion,
+            "relative flex h-(--popup-height,auto) w-(--popup-width,auto) rounded-[var(--r-group)] text-popover-foreground outline-none has-data-[slot=calendar]:rounded-[var(--r-dialog)]",
             variant === "default" && "dropdown-glass",
             variant === "dialog" && "dialog-glass",
             tooltipStyle && "w-fit text-balance rounded-[var(--r-ctl)] text-xs",

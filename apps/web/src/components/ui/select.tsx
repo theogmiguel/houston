@@ -6,6 +6,7 @@ import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import type * as React from "react";
 
 import { cn } from "~/lib/utils";
+import { overlayMotion } from "./overlayMotion";
 
 const Select = SelectPrimitive.Root;
 
@@ -126,7 +127,7 @@ function SelectPopup({
         sideOffset={sideOffset}
       >
         <SelectPrimitive.Popup
-          className="origin-(--transform-origin) rounded-[var(--r-group)] text-foreground outline-none"
+          className={cn(overlayMotion, "rounded-[var(--r-group)] text-foreground outline-none")}
           data-slot="select-popup"
           {...props}
         >

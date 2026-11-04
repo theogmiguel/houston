@@ -1,6 +1,7 @@
 import { PreviewCard as PreviewCardPrimitive } from "@base-ui/react/preview-card";
 
 import { cn } from "~/lib/utils";
+import { overlayMotion } from "./overlayMotion";
 
 const PreviewCard = PreviewCardPrimitive.Root;
 
@@ -30,7 +31,8 @@ function PreviewCardPopup({
       >
         <PreviewCardPrimitive.Popup
           className={cn(
-            "origin-(--transform-origin) rounded-[var(--r-group)] border border-border bg-popover text-popover-foreground shadow-[var(--shadow-1)] outline-none transition-[scale,opacity] data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0",
+            overlayMotion,
+            "rounded-[var(--r-group)] border border-border bg-popover text-popover-foreground shadow-[var(--shadow-1)] outline-none",
             className,
           )}
           data-slot="preview-card-popup"
