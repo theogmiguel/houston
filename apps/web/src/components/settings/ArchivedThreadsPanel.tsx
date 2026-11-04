@@ -14,6 +14,7 @@ import { useThreadActions } from "../../hooks/useThreadActions";
 import { readLocalApi } from "../../localApi";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { RelativeTime } from "../RelativeTime";
+import { AnimatedHeight } from "../AnimatedHeight";
 import { Button } from "../ui/button";
 import { PageEmptyState, PageEmptyTile, PageEmptyTiles } from "../ui/empty-state";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -222,64 +223,29 @@ export function ArchivedThreadsPanel() {
             id={index === 0 ? searchableSetting("archive").id : undefined}
             title={title}
           >
-            {projectThreads.map((thread) => (
-              <SettingsRow
-                key={`${thread.environmentId}:${thread.id}`}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  void (async () => {
-                    const result = await settlePromise(() =>
-                      handleArchivedThreadContextMenu(
-                        scopeThreadRef(thread.environmentId, thread.id),
-                        {
-                          x: event.clientX,
-                          y: event.clientY,
-                        },
-                      ),
-                    );
-                    if (result._tag === "Failure") {
-                      const error = squashAtomCommandFailure(result);
-                      toastManager.add(
-                        stackedThreadToast({
-                          type: "error",
-                          title: "Archived thread action failed",
-                          description:
-                            error instanceof Error ? error.message : "An error occurred.",
-                        }),
-                      );
-                    }
-                  })();
-                }}
-                title={thread.title}
-                description={
-                  <span className={hasMultipleEnvironments ? "block truncate" : undefined}>
-                    {hasMultipleEnvironments ? `${thread.environmentLabel} · ` : null}
-                    Archived <RelativeTime timestamp={thread.archivedAt ?? thread.createdAt} />
-                    {" \u00b7 Created "}
-                    <RelativeTime timestamp={thread.createdAt} />
-                  </span>
-                }
-                control={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    onClick={() => {
+            <AnimatedHeight>
+              <div className="[&>*+*]:relative [&>*+*]:before:pointer-events-none [&>*+*]:before:absolute [&>*+*]:before:top-0 [&>*+*]:before:left-3.5 [&>*+*]:before:right-0 [&>*+*]:before:h-px [&>*+*]:before:bg-border [&>*+*]:before:content-['']">
+                {projectThreads.map((thread) => (
+                  <SettingsRow
+                    key={`${thread.environmentId}:${thread.id}`}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
                       void (async () => {
-                        const result = await unarchiveThread(
-                          scopeThreadRef(thread.environmentId, thread.id),
+                        const result = await settlePromise(() =>
+                          handleArchivedThreadContextMenu(
+                            scopeThreadRef(thread.environmentId, thread.id),
+                            {
+                              x: event.clientX,
+                              y: event.clientY,
+                            },
+                          ),
                         );
-                        if (result._tag === "Success") {
-                          refreshArchivedThreads();
-                          return;
-                        }
-                        if (!isAtomCommandInterrupted(result)) {
+                        if (result._tag === "Failure") {
                           const error = squashAtomCommandFailure(result);
                           toastManager.add(
                             stackedThreadToast({
                               type: "error",
-                              title: "Failed to unarchive thread",
+                              title: "Archived thread action failed",
                               description:
                                 error instanceof Error ? error.message : "An error occurred.",
                             }),
@@ -287,13 +253,52 @@ export function ArchivedThreadsPanel() {
                         }
                       })();
                     }}
-                  >
-                    <ArchiveX className="size-3.5" />
-                    <span>Unarchive</span>
-                  </Button>
-                }
-              />
-            ))}
+                    title={thread.title}
+                    description={
+                      <span className={hasMultipleEnvironments ? "block truncate" : undefined}>
+                        {hasMultipleEnvironments ? `${thread.environmentLabel} · ` : null}
+                        Archived <RelativeTime timestamp={thread.archivedAt ?? thread.createdAt} />
+                        {" \u00b7 Created "}
+                        <RelativeTime timestamp={thread.createdAt} />
+                      </span>
+                    }
+                    control={
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={() => {
+                          void (async () => {
+                            const result = await unarchiveThread(
+                              scopeThreadRef(thread.environmentId, thread.id),
+                            );
+                            if (result._tag === "Success") {
+                              refreshArchivedThreads();
+                              return;
+                            }
+                            if (!isAtomCommandInterrupted(result)) {
+                              const error = squashAtomCommandFailure(result);
+                              toastManager.add(
+                                stackedThreadToast({
+                                  type: "error",
+                                  title: "Failed to unarchive thread",
+                                  description:
+                                    error instanceof Error ? error.message : "An error occurred.",
+                                }),
+                              );
+                            }
+                          })();
+                        }}
+                      >
+                        <ArchiveX className="size-3.5" />
+                        <span>Unarchive</span>
+                      </Button>
+                    }
+                  />
+                ))}
+              </div>
+            </AnimatedHeight>
           </SettingsSection>
         ))
       )}

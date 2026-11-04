@@ -28,7 +28,7 @@ import {
 
 /** A grid heading reads as one quiet line: name, then workspace, then empty. */
 export const SIDEBAR_GRID_HEADING_CLS =
-  "group/grid flex h-(--h-row) w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg py-0 pr-13 pl-2 text-left text-xs outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "group/grid flex h-(--h-row) w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg py-0 pr-13 pl-2 text-left text-xs transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 export const SIDEBAR_GRID_HEADING_ACTIVE_CLS = "bg-sidebar-row-selected";
 
@@ -46,7 +46,7 @@ export const SIDEBAR_GRID_COUNT_CLS = "ml-auto shrink-0 text-xs text-secondary-l
 export const SIDEBAR_PROJECT_ROW_CLS = "group/project relative mt-3 flex items-center";
 
 export const SIDEBAR_PROJECT_LABEL_CLS =
-  "flex h-(--h-row) w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-8 pl-2 text-left text-2xs font-semibold uppercase tracking-wide text-secondary-label outline-none hover:bg-sidebar-row-hover hover:text-secondary-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "flex h-(--h-row) w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-8 pl-2 text-left text-2xs font-semibold uppercase tracking-wide text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-secondary-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 export const SIDEBAR_PROJECT_LABEL_TEXT_CLS = "min-w-0 flex-1 truncate";
 
@@ -55,10 +55,10 @@ export const SIDEBAR_PROJECT_SUMMARY_CLS =
 
 /** The project label's New grid action, revealed while its row is hovered or focused. */
 export const SIDEBAR_PROJECT_ACTION_CLS =
-  "inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/project:opacity-100 group-focus-within/project:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 transition-opacity duration-(--motion-feedback) ease-standard hover:bg-(--sel) hover:text-foreground group-hover/project:opacity-100 group-focus-within/project:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 export const SIDEBAR_PROJECT_EMPTY_ACTION_CLS =
-  "flex h-(--h-row) w-full cursor-pointer items-center gap-2 rounded-lg py-0 pr-2 pl-2 text-left text-xs text-secondary-label outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "flex h-(--h-row) w-full cursor-pointer items-center gap-2 rounded-lg py-0 pr-2 pl-2 text-left text-xs text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 /** The grid rail's header controls: outside the window drag region so they stay clickable. */
 export const SIDEBAR_HEADER_ACTIONS_CLS =
@@ -72,18 +72,18 @@ export const SIDEBAR_GRID_CHEVRON_BOX_CLS =
   "inline-grid size-3 shrink-0 place-items-center text-secondary-label";
 
 export const SIDEBAR_GRID_CHEVRON_CLS =
-  "size-3 transition-transform duration-150 motion-reduce:transition-none";
+  "size-3 transition-transform duration-(--motion-disclosure) ease-standard";
 
 export const SIDEBAR_GRID_CHEVRON_EXPANDED_CLS = "rotate-90";
 
 export const SIDEBAR_GRID_ACTION_CLS =
-  "inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 group-focus-within/grid:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 transition-opacity duration-(--motion-feedback) ease-standard hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 group-focus-within/grid:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 export const SIDEBAR_GRID_RENAME_CLS =
   "h-7 min-w-0 flex-1 rounded-(--r-ctl) border border-input bg-background px-2 text-xs font-semibold text-foreground outline-none focus:border-ring focus-visible:ring-2 focus-visible:ring-ring";
 
 export const SIDEBAR_SECTION_ACTION_CLS =
-  "-my-1.5 inline-grid size-6 shrink-0 cursor-pointer place-items-center rounded-(--r-ctl) text-secondary-label transition-colors outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "-my-1.5 inline-grid size-6 shrink-0 cursor-pointer place-items-center rounded-(--r-ctl) text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 export const SIDEBAR_NEW_GRID_POPOVER_CLS = "w-58 [&>div]:p-1.5";
 

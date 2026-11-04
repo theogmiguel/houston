@@ -29,8 +29,7 @@ export interface ComposerBannerStackItem {
 
 const GROUPS = ["environment", "attention"] as const;
 
-const FADE_IN =
-  "transition-opacity duration-150 ease-out starting:opacity-0 motion-reduce:transition-none";
+const FADE_IN = "transition-opacity duration-(--motion-toast-in) ease-standard starting:opacity-0";
 
 /**
  * Notices about sending from this composer, each its own attached card. Consecutive cards join
@@ -47,6 +46,7 @@ export function ComposerBannerStack({
   const ordered = GROUPS.flatMap((group) =>
     items.filter((item) => (item.group ?? "attention") === group),
   );
+
   if (detached) {
     return ordered.map((item) => (
       <div key={item.id} data-composer-banner-stack="true" className={FADE_IN}>

@@ -18,6 +18,7 @@ import { PlusIcon, XIcon } from "lucide-react";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { reconcileSnoozeDraft, sortSnoozeRows } from "./SnoozePresetsSettings.logic";
 import { formatShortTimestamp } from "../../timestampFormat";
+import { AnimatedHeight } from "../AnimatedHeight";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import {
@@ -297,71 +298,78 @@ function SnoozePresetList(props: {
   );
 
   return (
-    <div
-      className="flex flex-col gap-1.5 pt-3 pb-2"
-      onBlur={(event) => {
-        const list = event.currentTarget;
-        const next = event.relatedTarget;
-        if (list.contains(next)) return;
-        // Select popups portal out of the list, so focus moving into one is not leaving it.
-        if (next instanceof Element && next.closest('[data-slot="select-popup"]')) return;
-        // Waits for the amount field's blur commit, and skips its Enter blur-and-refocus.
-        queueMicrotask(() => {
-          if (!list.contains(document.activeElement)) props.onSettle();
-        });
-      }}
-    >
-      {props.presets.map((preset, index) => {
-        const preview = previews[index]!;
-        return (
-          <div
-            key={props.keys[index]}
-            role="group"
-            aria-label={`Snooze option ${index + 1}`}
-            className="flex flex-wrap items-center gap-2"
-          >
-            <SnoozePresetFields preset={preset} onChange={(next) => props.onChange(index, next)} />
-            <div className="ml-auto flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-              {preview.tone === "menu" ? (
-                <span className="truncate">
-                  <span className="text-foreground">{preview.label}</span>
-                  <span className="ps-2 tabular-nums">{preview.when}</span>
-                </span>
-              ) : (
-                <span className="truncate">{preview.text}</span>
-              )}
-              <Button
-                variant="ghost-muted"
-                size="icon-sm"
-                aria-label={`Remove snooze option ${index + 1}`}
-                onClick={() => props.onRemove(index)}
-              >
-                <XIcon />
-              </Button>
+    <AnimatedHeight>
+      <div
+        className="flex flex-col gap-1.5 pt-3 pb-2"
+        onBlur={(event) => {
+          const list = event.currentTarget;
+          const next = event.relatedTarget;
+          if (list.contains(next)) return;
+          // Select popups portal out of the list, so focus moving into one is not leaving it.
+          if (next instanceof Element && next.closest('[data-slot="select-popup"]')) return;
+          // Waits for the amount field's blur commit, and skips its Enter blur-and-refocus.
+          queueMicrotask(() => {
+            if (!list.contains(document.activeElement)) props.onSettle();
+          });
+        }}
+      >
+        {props.presets.map((preset, index) => {
+          const preview = previews[index]!;
+          return (
+            <div
+              key={props.keys[index]}
+              role="group"
+              aria-label={`Snooze option ${index + 1}`}
+              className="flex flex-wrap items-center gap-2"
+            >
+              <SnoozePresetFields
+                preset={preset}
+                onChange={(next) => props.onChange(index, next)}
+              />
+              <div className="ml-auto flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                {preview.tone === "menu" ? (
+                  <span className="truncate">
+                    <span className="text-foreground">{preview.label}</span>
+                    <span className="ps-2 tabular-nums">{preview.when}</span>
+                  </span>
+                ) : (
+                  <span className="truncate">{preview.text}</span>
+                )}
+                <Button
+                  variant="ghost-muted"
+                  size="icon-sm"
+                  aria-label={`Remove snooze option ${index + 1}`}
+                  onClick={() => props.onRemove(index)}
+                >
+                  <XIcon />
+                </Button>
+              </div>
             </div>
-          </div>
-        );
-      })}
-      <p className="text-xs text-muted-foreground">
-        {menuOrder.length === 0 ? "Menus offer only Custom…" : `Menu now: ${menuOrder.join(" · ")}`}
-      </p>
-      <div>
-        <Button
-          variant="ghost-muted"
-          size="compact"
-          disabled={props.presets.length >= MAX_SNOOZE_PRESETS}
-          onClick={props.onAdd}
-        >
-          <PlusIcon />
-          Add option
-        </Button>
-        {props.presets.length >= MAX_SNOOZE_PRESETS ? (
-          <span className="ps-2 text-xs text-muted-foreground">
-            Up to {MAX_SNOOZE_PRESETS} options
-          </span>
-        ) : null}
+          );
+        })}
+        <p className="text-xs text-muted-foreground">
+          {menuOrder.length === 0
+            ? "Menus offer only Custom…"
+            : `Menu now: ${menuOrder.join(" · ")}`}
+        </p>
+        <div>
+          <Button
+            variant="ghost-muted"
+            size="compact"
+            disabled={props.presets.length >= MAX_SNOOZE_PRESETS}
+            onClick={props.onAdd}
+          >
+            <PlusIcon />
+            Add option
+          </Button>
+          {props.presets.length >= MAX_SNOOZE_PRESETS ? (
+            <span className="ps-2 text-xs text-muted-foreground">
+              Up to {MAX_SNOOZE_PRESETS} options
+            </span>
+          ) : null}
+        </div>
       </div>
-    </div>
+    </AnimatedHeight>
   );
 }
 
