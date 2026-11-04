@@ -5,6 +5,7 @@ import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
 import {
   DIALOG_BACKDROP_CLASS,
+  DIALOG_CONTENT_ENTER_CLASS as contentEnterClass,
   DIALOG_MEDIA_BACKDROP_CLASS,
   DIALOG_MEDIA_POPUP_CLASS,
   DIALOG_MOBILE_SHEET_CLASS,
@@ -137,6 +138,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
     <div
       className={cn(
         "flex flex-col gap-2 p-6 in-[[data-slot=dialog-popup]:has([data-slot=dialog-panel])]:pb-3 max-sm:pb-4",
+        contentEnterClass,
         className,
       )}
       data-slot="dialog-header"
@@ -156,6 +158,7 @@ function DialogFooter({
     <div
       className={cn(
         "flex flex-col-reverse gap-2 px-6 sm:flex-row sm:justify-end sm:rounded-b-[calc(var(--r-dialog)-1px)]",
+        contentEnterClass,
         variant === "default" && "border-t bg-muted/72 py-4",
         variant === "bare" && "py-4",
         className,
@@ -196,6 +199,7 @@ function DialogPanel({
       <div
         className={cn(
           "space-y-4 p-6 in-[[data-slot=dialog-popup]:has([data-slot=dialog-header])]:pt-1 in-[[data-slot=dialog-popup]:has([data-slot=dialog-footer]:not(.border-t))]:pb-1",
+          contentEnterClass,
           className,
         )}
         data-slot="dialog-panel"
