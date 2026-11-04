@@ -17,7 +17,7 @@ use serde_json::{json, Value};
 use sha2::Sha256;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::sys::pid::{Signal, SignalError, SignalOutcome};
+use crate::sys::pid::{ProcessIdentity, Signal, SignalError, SignalOutcome};
 
 /// The server's base directory below the channel directory: dev is
 /// `~/.houston-dev/v2`, release would be `~/.houston/v2`.
@@ -939,18 +939,47 @@ impl V2Host {
 
     /// The server a restart must stop first. A hung server the monitor forgot is
     /// still named by the channel's runtime record and still holds the ownership
-    /// lock, so the record's pid is stopped when none is tracked.
-    fn restart_target(&self) -> Option<i32> {
-        self.running()
-            .map(|running| running.pid)
-            .or_else(|| read_runtime(&self.base_dir).map(|record| record.pid))
-            .filter(|pid| *pid > 0)
+    /// lock, so the record's server is stopped when none is tracked.
+    fn restart_target(&self) -> Option<RestartTarget> {
+        if let Some(running) = self.running().filter(|running| running.pid > 0) {
+            return Some(RestartTarget::Tracked(running.pid));
+        }
+        read_runtime(&self.base_dir)
+            .filter(|record| record.pid > 0)
+            .map(RestartTarget::Recorded)
     }
 
-    /// The runtime record is removed only once its server is confirmed stopped.
+    /// The program this host launches as the server, which a recorded pid must still run.
+    fn server_program(&self) -> &Path {
+        match &self.entry {
+            ServerEntry::Bundled(executable) => executable,
+            ServerEntry::Node(_) => &self.node,
+        }
+    }
+
+    /// Stops the server a runtime record names, or signals nothing when the pid can no
+    /// longer be confirmed as that server; the caller removes the record either way.
+    async fn stop_recorded_server(&self, record: &ServerRuntime) -> Result<(), String> {
+        let identity = self.processes.identity(record.pid as u32);
+        match confirm_record_identity(record, self.server_program(), identity.as_ref()) {
+            Ok(()) => stop_server(&*self.processes, record.pid).await,
+            Err(reason) => {
+                eprintln!(
+                    "houston-tauri: not signalling pid {} from {}: {reason}; treating the record as stale",
+                    record.pid,
+                    runtime_path(&self.base_dir).display()
+                );
+                Ok(())
+            }
+        }
+    }
+
+    /// The runtime record is removed only once its server is stopped or found stale.
     async fn stop_for_restart(&self) -> Result<(), String> {
-        if let Some(pid) = self.restart_target() {
-            stop_server(&*self.processes, pid).await?;
+        match self.restart_target() {
+            Some(RestartTarget::Tracked(pid)) => stop_server(&*self.processes, pid).await?,
+            Some(RestartTarget::Recorded(record)) => self.stop_recorded_server(&record).await?,
+            None => {}
         }
         let _ = fs::remove_file(runtime_path(&self.base_dir));
         if let Ok(mut state) = self.state.lock() {
@@ -1203,10 +1232,128 @@ fn process_exited(pid: i32) -> bool {
     false
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RestartTarget {
+    /// A server this host spawned or attached to.
+    Tracked(i32),
+    /// Only the runtime record names it, and records outlive crashed servers.
+    Recorded(ServerRuntime),
+}
+
+// A server writes startedAt after it starts, so its creation precedes it; the slack
+// covers Linux deriving creation from a boot time kept to whole seconds.
+const RECORD_START_TOLERANCE: Duration = Duration::from_secs(2);
+
+/// A record outlives a crashed server and pids are reused, so its pid is signalled only
+/// while it runs this host's server program and was created no later than the record
+/// says the server started. File names are compared because an update moves the install.
+fn confirm_record_identity(
+    record: &ServerRuntime,
+    program: &Path,
+    identity: Option<&ProcessIdentity>,
+) -> Result<(), String> {
+    let started = record
+        .started_at
+        .as_deref()
+        .and_then(parse_utc_timestamp)
+        .ok_or_else(|| {
+            format!(
+                "the record's startedAt {:?} is not an ISO-8601 UTC time such as 2026-01-01T00:00:00.000Z",
+                record.started_at
+            )
+        })?;
+    let identity = identity.ok_or_else(|| {
+        format!(
+            "pid {} names no process whose image and creation time can be read",
+            record.pid
+        )
+    })?;
+    if !same_program(&identity.image, program) {
+        return Err(format!(
+            "pid {} runs {}, expected the server program {}",
+            record.pid,
+            identity.image.display(),
+            program.display()
+        ));
+    }
+    if let Ok(late) = identity
+        .created
+        .duration_since(started + RECORD_START_TOLERANCE)
+    {
+        return Err(format!(
+            "pid {} was created {:?} after the record's startedAt {} plus {:?}",
+            record.pid,
+            late,
+            record.started_at.as_deref().unwrap_or_default(),
+            RECORD_START_TOLERANCE
+        ));
+    }
+    Ok(())
+}
+
+/// Compares file stems (case-insensitively on Windows), also against the program's
+/// resolved path, since a `node` symlink runs under its target's name.
+fn same_program(image: &Path, program: &Path) -> bool {
+    let Some(image) = image.file_stem() else {
+        return false;
+    };
+    let matches = |candidate: &Path| {
+        candidate.file_stem().is_some_and(|stem| {
+            if cfg!(windows) {
+                image.eq_ignore_ascii_case(stem)
+            } else {
+                image == stem
+            }
+        })
+    };
+    matches(program) || fs::canonicalize(program).is_ok_and(|resolved| matches(&resolved))
+}
+
+/// Parses the `YYYY-MM-DDTHH:MM:SS[.fff]Z` form the server writes as startedAt.
+fn parse_utc_timestamp(text: &str) -> Option<SystemTime> {
+    let (date, time) = text.strip_suffix('Z')?.split_once('T')?;
+    let number = |part: &str| -> Option<u64> {
+        part.bytes()
+            .all(|b| b.is_ascii_digit())
+            .then(|| part.parse().ok())?
+    };
+    let mut date = date.split('-').map(number);
+    let (year, month, day) = (date.next()??, date.next()??, date.next()??);
+    let (clock, fraction) = time.split_once('.').unwrap_or((time, ""));
+    let mut clock = clock.split(':').map(number);
+    let (hour, minute, second) = (clock.next()??, clock.next()??, clock.next()??);
+    if date.next().is_some()
+        || clock.next().is_some()
+        || !(1970..=9999).contains(&year)
+        || !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || hour > 23
+        || minute > 59
+        || second > 59
+        || !fraction.bytes().all(|b| b.is_ascii_digit())
+    {
+        return None;
+    }
+    let millis: u64 = format!("{fraction:0<3}")[..3].parse().ok()?;
+    // Days since 1970-01-01 in the proleptic Gregorian calendar, counting years from March.
+    let (year, month) = if month <= 2 {
+        (year - 1, month + 9)
+    } else {
+        (year, month - 3)
+    };
+    let (era, year_of_era) = (year / 400, year % 400);
+    let day_of_year = (153 * month + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = (era * 146_097 + day_of_era).checked_sub(719_468)?;
+    let seconds = days * 86_400 + hour * 3_600 + minute * 60 + second;
+    Some(UNIX_EPOCH + Duration::from_secs(seconds) + Duration::from_millis(millis))
+}
+
 /// The process queries and signals a server stop needs. Tests substitute a fake,
 /// so no test ever signals a real process.
 trait ServerProcesses: Send + Sync {
     fn exited(&self, pid: i32) -> bool;
+    fn identity(&self, pid: u32) -> Option<ProcessIdentity>;
     fn signal(&self, pid: u32, signal: Signal) -> Result<SignalOutcome, SignalError>;
 }
 
@@ -1215,6 +1362,10 @@ struct LiveProcesses;
 impl ServerProcesses for LiveProcesses {
     fn exited(&self, pid: i32) -> bool {
         process_exited(pid)
+    }
+
+    fn identity(&self, pid: u32) -> Option<ProcessIdentity> {
+        crate::sys::pid::process_identity(pid)
     }
 
     fn signal(&self, pid: u32, signal: Signal) -> Result<SignalOutcome, SignalError> {
@@ -1312,7 +1463,7 @@ async fn ensure_running_locked(host: &V2Host) -> Result<RunningServer, String> {
                     record.server_version.as_deref().unwrap_or("<unknown>"),
                     current_build_version()
                 );
-                stop_server(&*host.processes, pid).await?;
+                host.stop_recorded_server(&record).await?;
                 let _ = fs::remove_file(runtime_path(&host.base_dir));
             }
             Decision::Spawn => {}
@@ -2021,11 +2172,231 @@ mod tests {
         .expect("runtime record");
         host.set_running(running_server(42));
         assert!(host.forget_unhealthy(42));
-        assert_eq!(
-            host.restart_target(),
-            Some(42),
+        assert!(
+            matches!(host.restart_target(), Some(RestartTarget::Recorded(record)) if record.pid == 42),
             "the channel's record still names the hung server"
         );
+    }
+
+    #[test]
+    fn a_recorded_pid_is_confirmed_by_program_name_and_creation_time() {
+        let mut record = record(RECORDED_PID as i32, "http://127.0.0.1:3773");
+        record.started_at = Some(STARTED_AT.to_string());
+        let node = Path::new("node");
+        let confirm =
+            |identity: &ProcessIdentity| confirm_record_identity(&record, node, Some(identity));
+
+        assert_eq!(confirm(&server_identity(-30)), Ok(()));
+        assert_eq!(confirm(&server_identity(1)), Ok(()), "within the tolerance");
+        let late = confirm(&server_identity(3)).expect_err("created after the record");
+        assert!(late.contains("4242") && late.contains(STARTED_AT), "{late}");
+
+        let foreign = ProcessIdentity {
+            image: PathBuf::from("bin").join("editor.exe"),
+            ..server_identity(-30)
+        };
+        let error = confirm(&foreign).expect_err("another program");
+        assert!(error.contains("editor.exe"), "{error}");
+        assert!(confirm_record_identity(&record, node, None).is_err());
+
+        let installed = Path::new("new-install")
+            .join(BUNDLED_SERVER_DIR)
+            .join(format!(
+                "{BUNDLED_SERVER_NAME}{}",
+                std::env::consts::EXE_SUFFIX
+            ));
+        let moved = ProcessIdentity {
+            image: Path::new("old-install")
+                .join(BUNDLED_SERVER_DIR)
+                .join(format!(
+                    "{BUNDLED_SERVER_NAME}{}",
+                    std::env::consts::EXE_SUFFIX
+                )),
+            ..server_identity(-30)
+        };
+        assert_eq!(
+            confirm_record_identity(&record, &installed, Some(&moved)),
+            Ok(()),
+            "an update moves the install, not the program name"
+        );
+    }
+
+    #[test]
+    fn the_record_start_time_parses_as_utc() {
+        let at = |seconds: u64, millis: u64| {
+            Some(UNIX_EPOCH + Duration::from_secs(seconds) + Duration::from_millis(millis))
+        };
+        assert_eq!(parse_utc_timestamp("1970-01-01T00:00:00Z"), at(0, 0));
+        assert_eq!(
+            parse_utc_timestamp("2024-02-29T00:00:00.5Z"),
+            at(1_709_164_800, 500)
+        );
+        assert_eq!(parse_utc_timestamp(STARTED_AT), at(STARTED_AT_UNIX, 0));
+        assert_eq!(
+            parse_utc_timestamp("2026-11-04T10:00:00.123456Z"),
+            at(STARTED_AT_UNIX, 123)
+        );
+        for malformed in [
+            "",
+            "2026-11-04T10:00:00",
+            "2026-11-04T10:00:00+01:00",
+            "2026-13-04T10:00:00Z",
+            "2026-11-04T24:00:00Z",
+            "2026-11-04T10:00Z",
+            "+2026-11-04T10:00:00Z",
+            "1969-12-31T23:59:59Z",
+        ] {
+            assert_eq!(parse_utc_timestamp(malformed), None, "{malformed:?}");
+        }
+    }
+
+    type Signals = Arc<Mutex<Vec<(u32, Signal)>>>;
+
+    /// Records each signal instead of delivering it; a signalled pid then reads as exited.
+    #[derive(Default)]
+    struct FakeProcesses {
+        identity: Option<ProcessIdentity>,
+        real_identity: bool,
+        signals: Signals,
+    }
+
+    impl ServerProcesses for FakeProcesses {
+        fn exited(&self, _pid: i32) -> bool {
+            !self.signals.lock().unwrap().is_empty()
+        }
+
+        fn identity(&self, pid: u32) -> Option<ProcessIdentity> {
+            if self.real_identity {
+                crate::sys::pid::process_identity(pid)
+            } else {
+                self.identity.clone()
+            }
+        }
+
+        fn signal(&self, pid: u32, signal: Signal) -> Result<SignalOutcome, SignalError> {
+            self.signals.lock().unwrap().push((pid, signal));
+            Ok(SignalOutcome::Delivered)
+        }
+    }
+
+    fn host_with_processes(dir: &Path, processes: FakeProcesses) -> (V2Host, Signals) {
+        let (mut host, _) = host_with_secret(dir, || Ok("k".repeat(64)));
+        let signals = Arc::clone(&processes.signals);
+        host.processes = Box::new(processes);
+        (host, signals)
+    }
+
+    const STARTED_AT: &str = "2026-11-04T10:00:00.000Z";
+    const STARTED_AT_UNIX: u64 = 1_793_786_400;
+    const RECORDED_PID: u32 = 4242;
+
+    fn write_record(dir: &Path, pid: u32, started_at: Option<&str>) {
+        let mut record =
+            json!({"version": 1, "pid": pid, "port": 3773, "origin": "http://127.0.0.1:3773"});
+        if let Some(started_at) = started_at {
+            record["startedAt"] = json!(started_at);
+        }
+        fs::create_dir_all(dir.join(RUNTIME_DIR)).expect("runtime dir");
+        fs::write(runtime_path(dir), record.to_string()).expect("runtime record");
+    }
+
+    /// The host's server program (`node`, as `host_with_secret` builds it), created
+    /// `offset` seconds after `STARTED_AT` (before it when negative).
+    fn server_identity(offset: i64) -> ProcessIdentity {
+        let started = UNIX_EPOCH + Duration::from_secs(STARTED_AT_UNIX);
+        let shift = Duration::from_secs(offset.unsigned_abs());
+        ProcessIdentity {
+            image: Path::new("runtime")
+                .join("bin")
+                .join(format!("node{}", std::env::consts::EXE_SUFFIX)),
+            created: if offset >= 0 {
+                started + shift
+            } else {
+                started - shift
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn a_retry_never_signals_a_live_foreign_pid_named_by_the_record() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        // This test process is alive and is not the server program; a far-future
+        // startedAt leaves the image as the only rule that can refuse it.
+        write_record(
+            dir.path(),
+            std::process::id(),
+            Some("2999-01-01T00:00:00.000Z"),
+        );
+        let (host, signals) = host_with_processes(
+            dir.path(),
+            FakeProcesses {
+                real_identity: true,
+                ..FakeProcesses::default()
+            },
+        );
+        host.stop_for_restart()
+            .await
+            .expect("a stale record is no failure");
+        assert_eq!(*signals.lock().unwrap(), []);
+        assert!(
+            !runtime_path(dir.path()).exists(),
+            "the stale record is removed"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_retry_never_signals_a_pid_created_after_the_record_started() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        write_record(dir.path(), RECORDED_PID, Some(STARTED_AT));
+        let (host, signals) = host_with_processes(
+            dir.path(),
+            FakeProcesses {
+                identity: Some(server_identity(60)),
+                ..FakeProcesses::default()
+            },
+        );
+        host.stop_for_restart()
+            .await
+            .expect("a reused pid is no failure");
+        assert_eq!(*signals.lock().unwrap(), []);
+        assert!(
+            !runtime_path(dir.path()).exists(),
+            "the stale record is removed"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_retry_never_signals_a_record_without_a_start_time() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        write_record(dir.path(), RECORDED_PID, None);
+        let (host, signals) = host_with_processes(
+            dir.path(),
+            FakeProcesses {
+                identity: Some(server_identity(-1)),
+                ..FakeProcesses::default()
+            },
+        );
+        host.stop_for_restart()
+            .await
+            .expect("an unconfirmed record is no failure");
+        assert_eq!(*signals.lock().unwrap(), []);
+        assert!(!runtime_path(dir.path()).exists());
+    }
+
+    #[tokio::test]
+    async fn a_retry_stops_the_recorded_server_when_its_identity_holds() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        write_record(dir.path(), RECORDED_PID, Some(STARTED_AT));
+        let (host, signals) = host_with_processes(
+            dir.path(),
+            FakeProcesses {
+                identity: Some(server_identity(-1)),
+                ..FakeProcesses::default()
+            },
+        );
+        host.stop_for_restart().await.expect("the server stops");
+        assert_eq!(*signals.lock().unwrap(), [(RECORDED_PID, Signal::Term)]);
+        assert!(!runtime_path(dir.path()).exists());
     }
 
     #[test]
