@@ -6,6 +6,7 @@ import {
   MessageId,
   ProviderDriverKind,
   type ProviderReplayEntry,
+  type ProviderReplayTranscript,
 } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 
@@ -15,7 +16,10 @@ import * as Orchestrator from "../Orchestrator.ts";
 import { userFacingDispatchErrorMessage } from "../UserFacingErrors.ts";
 import { provideDeterministicTestRuntime } from "./DeterministicRuntime.ts";
 import { subagentInput } from "./fixtures/subagent/input.ts";
-import { runOrchestratorV2Scenario } from "./OrchestratorScenario.ts";
+import {
+  type OrchestratorV2ScenarioResult,
+  runOrchestratorV2Scenario,
+} from "./OrchestratorScenario.ts";
 import * as ProviderReplayHarness from "./ProviderReplayHarness.ts";
 import { materializeReplayTranscriptRuntimeInstructions } from "./ReplayRuntimeInstructions.ts";
 import {
@@ -106,6 +110,73 @@ describe("Claude Agent SDK replay fixtures", () => {
         provideDeterministicTestRuntime,
         Effect.scoped,
       );
+    }),
+  );
+
+  // Without its text stream frames a transcript takes the snapshot-only path; streaming must
+  // project the same assistant output.
+  const withoutTextStream = (transcript: ProviderReplayTranscript): ProviderReplayTranscript => ({
+    ...transcript,
+    entries: transcript.entries.filter((entry) => {
+      if (entry.type !== "emit_inbound") return true;
+      const frame = entry.frame as Record<string, any>;
+      if (frame.type !== "stream_event") return true;
+      return !(
+        (frame.event?.type === "content_block_start" &&
+          frame.event.content_block?.type === "text") ||
+        (frame.event?.type === "content_block_delta" && frame.event.delta?.type === "text_delta")
+      );
+    }),
+  });
+  it.effect.each([
+    "claude_background_task_interrupt",
+    "claude_background_wake_before_queued_prompt",
+    "claude_background_subagent_lifecycle",
+  ])("projects %s's streamed answer text exactly as its snapshots", (fixtureName) =>
+    Effect.gen(function* () {
+      const fixture = findReplayFixture(fixtureName);
+      const provider = fixture?.providers.find((variant) => variant.driver === "claudeAgent");
+      assert.exists(fixture);
+      assert.exists(provider);
+      const transcript = yield* readTranscript(provider.transcriptFile);
+      assert.isTrue(
+        transcript.entries.some(
+          (entry) =>
+            entry.type === "emit_inbound" &&
+            (entry.frame as Record<string, any>).event?.delta?.type === "text_delta",
+        ),
+        "fixture must record text_delta frames",
+      );
+      const assistantOutput = (result: OrchestratorV2ScenarioResult) => {
+        const projection = projectionFor(result, fixtureName);
+        return {
+          messages: projection.messages.flatMap((message) =>
+            message.role === "assistant" ? [[message.text, message.streaming]] : [],
+          ),
+          // The fixture's interrupt fires from the test driver, so its items race the replay.
+          items: projection.turnItems.flatMap((item) =>
+            item.type === "run_interrupt_request" || item.type === "run_interrupt_result"
+              ? []
+              : [
+                  item.type === "assistant_message"
+                    ? `${item.type}:${item.status}:${item.streaming}:${item.text}`
+                    : item.type,
+                ],
+          ),
+        };
+      };
+      const run = (streamed: boolean) =>
+        runClaudeReplayFixture({
+          fixtureName: fixture.name,
+          buildInput: fixture.buildInput,
+          driver: provider,
+          ...(streamed ? {} : { transformTranscript: withoutTextStream }),
+        }).pipe(Effect.map((result) => assistantOutput(result as OrchestratorV2ScenarioResult)));
+      const snapshotsOnly = yield* run(false);
+      const streamed = yield* run(true);
+      assert.isAbove(snapshotsOnly.messages.length, 0);
+      // Equal lists also rule out a duplicated or still-streaming assistant item.
+      assert.deepEqual(streamed, snapshotsOnly);
     }),
   );
 
