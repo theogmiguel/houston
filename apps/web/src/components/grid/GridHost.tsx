@@ -45,6 +45,7 @@ import { beginLayoutResize, endLayoutResize } from "../../motion/layoutResize";
 import { useGridCellFlip } from "../../motion/paneMotion";
 import { GRID_BADGE_LINGER_MS, SNAP_DISTANCE_PX } from "../../motion/timings";
 import { announce } from "../../lib/announce";
+import { suppressTextSelection } from "../../lib/suppressTextSelection";
 import { GridResizeDivider } from "../ui/grid-resize-divider";
 
 export interface GridCellRenderProps {
@@ -407,6 +408,7 @@ function SplitView({
     [],
   );
   const dragRef = useRef<ResizeDrag | null>(null);
+  const releaseSelectionRef = useRef<(() => void) | null>(null);
   const frameRef = useRef<number | null>(null);
   const coordRef = useRef(0);
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
@@ -508,7 +510,8 @@ function SplitView({
       cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
     }
-    if (containerRef.current !== null) containerRef.current.style.userSelect = "";
+    releaseSelectionRef.current?.();
+    releaseSelectionRef.current = null;
     commit();
     endLayoutResize();
     setDraggingIndex(null);
@@ -615,7 +618,11 @@ function SplitView({
                 if (extent <= 0) return;
                 // No preventDefault: cancelling pointerdown also cancels the click
                 // that double-click needs. The container holds selection instead.
-                if (containerRef.current !== null) containerRef.current.style.userSelect = "none";
+                releaseSelectionRef.current?.();
+                releaseSelectionRef.current =
+                  containerRef.current === null
+                    ? null
+                    : suppressTextSelection(containerRef.current);
                 event.currentTarget.setPointerCapture(event.pointerId);
                 const pairSum = (node.weights[index] ?? 0) + (node.weights[index + 1] ?? 0) || 1;
                 dragRef.current = {

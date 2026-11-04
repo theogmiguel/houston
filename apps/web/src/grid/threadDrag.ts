@@ -1,3 +1,4 @@
+import { suppressTextSelection } from "../lib/suppressTextSelection";
 import {
   useEffect,
   useSyncExternalStore,
@@ -56,7 +57,7 @@ const listeners = new Set<() => void>();
 let state: ThreadDragState | null = null;
 let activeZone: ThreadDropZone | null = null;
 let cancelGesture: (() => void) | null = null;
-let savedUserSelect = "";
+let releaseSelection: (() => void) | null = null;
 
 function emit(): void {
   for (const listener of listeners) listener();
@@ -176,15 +177,15 @@ function updateDrag(source: ThreadDragSource, point: ThreadDragPoint): void {
 function beginDragState(source: ThreadDragSource): void {
   // A press that travelled before the threshold may already have painted a
   // selection; a drag starts with none.
-  window.getSelection()?.removeAllRanges();
-  savedUserSelect = document.documentElement.style.userSelect;
-  document.documentElement.style.userSelect = "none";
+  releaseSelection?.();
+  releaseSelection = suppressTextSelection(document.documentElement);
   publish({ source, target: null });
 }
 
 function endDragState(): void {
   activeZone = null;
-  document.documentElement.style.userSelect = savedUserSelect;
+  releaseSelection?.();
+  releaseSelection = null;
   publish(null);
 }
 
