@@ -36,7 +36,20 @@ export const GITHUB_PUBLISH_CONFIG = {
   repo: "houston",
 } as const;
 export const DESKTOP_ARTIFACT_NAME = "Houston-${version}-${arch}.${ext}";
-export const LINUX_DEB_DEPENDS = ["libasound2t64 | libasound2"] as const;
+// Setting `depends` replaces electron-builder's defaults, so Chromium's runtime
+// libraries are listed here too; libsecret backs the keychain-stored secrets.
+export const LINUX_DEB_DEPENDS = [
+  "libgtk-3-0t64 | libgtk-3-0",
+  "libnotify4",
+  "libnss3",
+  "libxss1",
+  "libxtst6",
+  "xdg-utils",
+  "libatspi2.0-0t64 | libatspi2.0-0",
+  "libuuid1",
+  "libsecret-1-0",
+  "libasound2t64 | libasound2",
+] as const;
 // The bundled server is a Node script inside the app; the desktop main process
 // and the server share one node_modules tree on Linux and macOS.
 export const STAGE_PATCHES = [
