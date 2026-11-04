@@ -270,6 +270,55 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     assert.isUndefined(options.extraArgs?.["dangerously-skip-permissions"]);
   });
 
+  it("passes --chrome when Claude in Chrome is on", () => {
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "native-chrome",
+      resume: false,
+      cwd: "/workspace",
+      settings: DEFAULT_CLAUDE_SETTINGS,
+      claudeInChrome: true,
+    });
+    assert.isNull(options.extraArgs?.["chrome"]);
+  });
+
+  it("leaves --chrome to the launch arguments instead of duplicating it", () => {
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "native-chrome-launch-args",
+      resume: false,
+      cwd: "/workspace",
+      settings: { ...DEFAULT_CLAUDE_SETTINGS, launchArgs: "--chrome" },
+      claudeInChrome: true,
+    });
+    assert.isNull(options.extraArgs?.["chrome"]);
+  });
+
+  it("keeps an explicit --no-chrome launch argument", () => {
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "native-no-chrome",
+      resume: false,
+      cwd: "/workspace",
+      settings: { ...DEFAULT_CLAUDE_SETTINGS, launchArgs: "--no-chrome" },
+      claudeInChrome: true,
+    });
+    assert.isUndefined(options.extraArgs?.["chrome"]);
+    assert.isNull(options.extraArgs?.["no-chrome"]);
+  });
+
+  it("omits --chrome when Claude in Chrome is off", () => {
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "native-chrome-off",
+      resume: false,
+      cwd: "/workspace",
+      settings: DEFAULT_CLAUDE_SETTINGS,
+      claudeInChrome: false,
+    });
+    assert.isUndefined(options.extraArgs?.["chrome"]);
+  });
+
   it("passes every --add-dir launch directory to Claude", () => {
     const options = ClaudeAdapterV2.makeClaudeQueryOptions({
       modelSelection: CLAUDE_TEST_MODEL_SELECTION,
@@ -999,6 +1048,123 @@ describe("ClaudeAdapterV2 Auto-accept edits", () => {
           decision: "accept",
         });
         assert.equal((yield* Fiber.join(decision))?.behavior, "allow");
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+});
+
+describe("ClaudeAdapterV2 Claude in Chrome", () => {
+  const startTurn = Effect.fnUntraced(function* (settings: ClaudeSettings) {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const opened: Array<ClaudeAdapterV2.ClaudeAgentSdkQueryOptions> = [];
+    const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
+      instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
+      settings,
+      environment: {},
+      attachmentsDir: yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "houston-claude-chrome-",
+      }),
+      fileSystem,
+      path: yield* Path.Path,
+      crypto: yield* Crypto.Crypto,
+      idAllocator: yield* IdAllocator.IdAllocatorV2,
+      queryRunner: {
+        allocateSessionId: Effect.succeed("native-thread-claude-chrome"),
+        open: (input) =>
+          Effect.sync(() => {
+            opened.push(input.options);
+            return {
+              messages: Stream.never,
+              offer: () => Effect.void,
+              setModel: () => Effect.void,
+              applyFlagSettings: () => Effect.void,
+              setPermissionMode: () => Effect.void,
+              backgroundTasks: () => Effect.succeed(false),
+              stopTask: () => Effect.void,
+              interrupt: Effect.void,
+              close: Effect.void,
+            };
+          }),
+        forkSession: () => Effect.die("unused"),
+        subagentLaunchToolUseId: () => Effect.succeed(null),
+        assertComplete: Effect.void,
+      },
+    });
+    const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      cwd: "/workspace",
+    });
+    const threadId = ThreadId.make("thread-claude-chrome");
+    const runtime = yield* adapter.openSession({
+      threadId,
+      providerSessionId: ProviderSessionId.make("provider-session-claude-chrome"),
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      runtimePolicy,
+    });
+    const providerThread = yield* runtime.ensureThread({
+      threadId,
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      runtimePolicy,
+    });
+    yield* runtime.startTurn(
+      makeClaudeTestTurnInput({
+        threadId,
+        providerThread,
+        now: yield* DateTime.now,
+        attemptId: RunAttemptId.make("attempt-claude-chrome"),
+        text: "Open the browser",
+        attachments: [],
+        runtimePolicy,
+      }),
+    );
+    return opened;
+  });
+
+  it.effect("passes --chrome when the instance setting is on", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const opened = yield* startTurn({ ...DEFAULT_CLAUDE_SETTINGS, claudeInChrome: true });
+        assert.lengthOf(opened, 1);
+        assert.isNull(opened[0]!.extraArgs?.["chrome"]);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("turns Chrome and Artifacts on by default", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const opened = yield* startTurn(DEFAULT_CLAUDE_SETTINGS);
+        assert.lengthOf(opened, 1);
+        assert.isNull(opened[0]!.extraArgs?.["chrome"]);
+        assert.strictEqual(opened[0]!.env?.CLAUDE_CODE_ARTIFACT, "1");
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("leaves Chrome and Artifacts off when their switches are off", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const opened = yield* startTurn({
+          ...DEFAULT_CLAUDE_SETTINGS,
+          claudeInChrome: false,
+          claudeArtifacts: false,
+        });
+        assert.lengthOf(opened, 1);
+        assert.isUndefined(opened[0]!.extraArgs?.["chrome"]);
+        assert.isUndefined(opened[0]!.env?.CLAUDE_CODE_ARTIFACT);
       }).pipe(
         Effect.provide(
           Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),

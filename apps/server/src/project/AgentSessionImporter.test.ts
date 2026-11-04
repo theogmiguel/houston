@@ -176,6 +176,7 @@ const makeImporter = Effect.fn(function* (
     ServerSettings.ServerSettingsService,
     ServerSettingsError
   > = ServerSettings.layerTest(),
+  readSession?: AgentSessionScanner.AgentSessionScanner["Service"]["readSession"],
 ) {
   const sql = yield* SqlClient.SqlClient;
   const events = yield* EventStore.EventStoreV2;
@@ -219,6 +220,7 @@ const makeImporter = Effect.fn(function* (
           ),
           Layer.mock(AgentSessionScanner.AgentSessionScanner)({
             recentThreads: () => Stream.fromIterable(candidates),
+            ...(readSession === undefined ? {} : { readSession }),
           }),
           Layer.mock(ProjectService.ProjectService)({
             getById: () =>
@@ -248,7 +250,11 @@ const makeImporter = Effect.fn(function* (
     ),
   );
   const importer = Context.get(context, AgentSessionImporter.AgentSessionImporter);
-  return { run: importer.importRecentAgentThreads({ projectId }), published };
+  return {
+    run: importer.importRecentAgentThreads({ projectId }),
+    importAgentSession: importer.importAgentSession,
+    published,
+  };
 });
 
 it.effect(
@@ -447,5 +453,50 @@ it.effect("imports under a policy ceiling in the project's default, kept under t
     expect(Option.getOrThrow(yield* runtimes.getByThreadId({ threadId })).runtimeMode).toBe(
       "auto-accept-edits",
     );
+  }).pipe(Effect.scoped, Effect.provide(persistence)),
+);
+
+it.effect("imports one picked session into its worktree and reuses its thread afterwards", () =>
+  Effect.gen(function* () {
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const events = yield* EventStore.EventStoreV2;
+    const worktree = "/workspace/project-worktree";
+    const picked = candidate(CODEX_MODEL_SELECTION, "picked-worktree");
+    const { importAgentSession } = yield* makeImporter(
+      [],
+      Effect.void,
+      ServerSettings.layerTest(),
+      () =>
+        Effect.succeed({
+          thread: picked.thread,
+          cwd: worktree,
+          savedTitle: null,
+          branch: "feature",
+          source: picked.source,
+        }),
+    );
+    const threadId = yield* importAgentSession({
+      projectId,
+      source: picked.source,
+      workspaceRoots: [worktree],
+    });
+    expect(threadId).toBe(importId(picked));
+    if (threadId === null) return;
+    const imported = yield* projections.getThreadRecords(threadId, []);
+    expect(imported.thread.worktreePath).toBe(worktree);
+    expect(imported.thread.historyOrigin).toBe("v1_import");
+
+    const listCreated = Stream.runCollect(
+      events.read({ threadId, eventType: "thread.created" }),
+    ).pipe(Effect.map((stored) => Array.from(stored)));
+    expect(yield* listCreated).toHaveLength(1);
+
+    const again = yield* importAgentSession({
+      projectId,
+      source: picked.source,
+      workspaceRoots: [worktree],
+    });
+    expect(again).toBe(threadId);
+    expect(yield* listCreated).toHaveLength(1);
   }).pipe(Effect.scoped, Effect.provide(persistence)),
 );

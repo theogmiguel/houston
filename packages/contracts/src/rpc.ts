@@ -188,6 +188,13 @@ import {
   ReviewLineAnchor,
 } from "./houston/reviewState.ts";
 import {
+  HoustonOpenResumeSessionInput,
+  HoustonOpenResumeSessionResult,
+  HoustonResumeSessionError,
+  HoustonResumeSessionsInput,
+  HoustonResumeSessionsResult,
+} from "./houston/resumeSessions.ts";
+import {
   HoustonTask,
   HoustonTaskArchiveInput,
   HoustonTaskCheckInput,
@@ -594,6 +601,8 @@ export const WS_METHODS = {
   houstonReviewSetFilesViewed: "houston.review.setFilesViewed",
   houstonReviewAnchorLines: "houston.review.anchorLines",
   houstonReviewMapAnchors: "houston.review.mapAnchors",
+  houstonResumeSessionsList: "houston.resume.sessions.list",
+  houstonResumeSessionOpen: "houston.resume.session.open",
   houstonTasksSubscribe: "houston.tasks.subscribe",
   houstonTasksGet: "houston.tasks.get",
   houstonTasksSave: "houston.tasks.save",
@@ -1825,6 +1834,18 @@ const WsHoustonReviewMapAnchorsRpc = Rpc.make(WS_METHODS.houstonReviewMapAnchors
   error: Schema.Union([ReviewDiffPreviewError, EnvironmentAuthorizationError]),
 });
 
+const WsHoustonResumeSessionsListRpc = Rpc.make(WS_METHODS.houstonResumeSessionsList, {
+  payload: HoustonResumeSessionsInput,
+  success: HoustonResumeSessionsResult,
+  error: Schema.Union([HoustonResumeSessionError, EnvironmentAuthorizationError]),
+});
+
+const WsHoustonResumeSessionOpenRpc = Rpc.make(WS_METHODS.houstonResumeSessionOpen, {
+  payload: HoustonOpenResumeSessionInput,
+  success: HoustonOpenResumeSessionResult,
+  error: Schema.Union([HoustonResumeSessionError, EnvironmentAuthorizationError]),
+});
+
 const HoustonTaskRpcError = Schema.Union([HoustonTaskError, EnvironmentAuthorizationError]);
 
 const WsHoustonTasksSubscribeRpc = Rpc.make(WS_METHODS.houstonTasksSubscribe, {
@@ -2764,6 +2785,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonReviewSetFilesViewedRpc,
   WsHoustonReviewAnchorLinesRpc,
   WsHoustonReviewMapAnchorsRpc,
+  WsHoustonResumeSessionsListRpc,
+  WsHoustonResumeSessionOpenRpc,
   WsHoustonTasksSubscribeRpc,
   WsHoustonTasksGetRpc,
   WsHoustonTasksSaveRpc,

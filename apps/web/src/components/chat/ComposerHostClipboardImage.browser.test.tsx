@@ -156,6 +156,58 @@ it(
 );
 
 it(
+  "an image copied from a browser arrives as HTML and attaches the clipboard image",
+  async () => {
+    using _environment = installFakeEnvironment([]);
+    using _uploads = advertiseFileUploads();
+    await using _app = await bootDraftComposer();
+    const readClipboardImage = vi.fn(() =>
+      Promise.resolve({ mediaType: "image/png", base64: PIXEL_PNG_BASE64 }),
+    );
+    const editor = page.getByTestId("composer-editor").element();
+    const data = new DataTransfer();
+    data.setData(
+      "text/html",
+      '<meta charset="utf-8"><img src="https://example.com/cat.png" alt="cat">',
+    );
+
+    const paste = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: data,
+    });
+    pasteWithHostBridge(editor, paste, { readClipboardImage });
+
+    expect(paste.defaultPrevented).toBe(true);
+    await vi.waitFor(() => expect(tiles()).toHaveLength(1));
+    expect(readClipboardImage).toHaveBeenCalledTimes(1);
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);
+
+it(
+  "rich text with visible content never asks the host for the clipboard image",
+  async () => {
+    using _environment = installFakeEnvironment([]);
+    using _uploads = advertiseFileUploads();
+    await using _app = await bootDraftComposer();
+    const readClipboardImage = vi.fn(() => Promise.resolve(null));
+    const editor = page.getByTestId("composer-editor").element();
+    const data = new DataTransfer();
+    data.setData("text/html", "<p>Hello <b>there</b></p>");
+
+    pasteWithHostBridge(
+      editor,
+      new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }),
+      { readClipboardImage },
+    );
+
+    expect(readClipboardImage).not.toHaveBeenCalled();
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);
+
+it(
   "a paste that only names paths reads nothing until the user confirms the attachment",
   async () => {
     using _environment = installFakeEnvironment([]);

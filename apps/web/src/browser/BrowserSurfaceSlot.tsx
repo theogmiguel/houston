@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef } from "react";
 
 import { acquireBrowserSurface } from "./browserSurfaceStore";
 import { observeResize } from "../lib/observeResize";
+import { isLayoutResizing, onLayoutResizeEnd } from "../motion/layoutResize";
 
 export function BrowserSurfaceSlot(props: {
   readonly tabId: string;
@@ -58,6 +59,19 @@ export function BrowserSurfaceSlot(props: {
       }
     };
     updateRef.current = update;
+    let updateAfterResize = false;
+    const updateFromLayout = () => {
+      if (isLayoutResizing()) {
+        updateAfterResize = true;
+        return;
+      }
+      update();
+    };
+    const stopWatchingLayoutResize = onLayoutResizeEnd(() => {
+      if (!updateAfterResize) return;
+      updateAfterResize = false;
+      update();
+    });
     update();
     const observed: Element[] = [element];
     // Inline shells animate without resizing the slot, so observe the shell too.
@@ -65,11 +79,12 @@ export function BrowserSurfaceSlot(props: {
     if (panel) observed.push(panel);
     // Sidebar width changes move the slot without changing its size or column offset.
     observed.push(...document.querySelectorAll('[data-slot="sidebar-gap"]'));
-    const stopObserving = observeResize(observed, update);
+    const stopObserving = observeResize(observed, updateFromLayout);
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
     return () => {
       stopObserving();
+      stopWatchingLayoutResize();
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
       if (updateRef.current === update) updateRef.current = null;

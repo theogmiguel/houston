@@ -18,7 +18,14 @@ import {
 import { resolveShortcutCommand, type ShortcutEventLike } from "./keybindings";
 
 export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
-export type ComposerSlashCommand = "model" | "plan" | "default" | "side" | "btw";
+export type ComposerSlashCommand =
+  | "model"
+  | "plan"
+  | "default"
+  | "side"
+  | "btw"
+  | "chrome"
+  | "resume";
 export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 
 export interface ComposerTrigger {
@@ -324,9 +331,35 @@ export function parseSideChatCommand(text: string): { prompt: string } | null {
   return match ? { prompt: match[1]?.trim() ?? "" } : null;
 }
 
-export function parseStandaloneComposerSlashCommand(
-  text: string,
-): Exclude<ComposerSlashCommand, "model" | "side" | "btw"> | null {
+/** `/chrome [prompt]` as the whole message: the prompt is what the user meant to send after it. */
+export function parseClaudeInChromeCommand(text: string): { prompt: string } | null {
+  const match = /^\/chrome(?:\s+([\s\S]*))?$/i.exec(text.trim());
+  return match ? { prompt: match[1]?.trim() ?? "" } : null;
+}
+
+/**
+ * `!command` as the whole message: Houston runs it in the thread's terminal instead of
+ * sending it to the agent. A leading space or `\!` escapes it, so both stay messages, and a
+ * multi-line draft stays a message because the terminal would submit each line separately.
+ */
+export function parseShellCommand(text: string): { command: string } | null {
+  if (!text.startsWith("!") || /[\r\n]/.test(text)) return null;
+  const command = text.replace(/^!\s*/, "").trim();
+  return command.length > 0 ? { command } : null;
+}
+
+/** Removes the `\` from `\!command`, the escape that keeps a leading `!` in the message. */
+export function unescapeShellCommand(text: string): string {
+  return text.startsWith("\\!") ? text.slice(1) : text;
+}
+
+/** `/resume [prompt]` as the whole message: headless providers have no `/resume`. */
+export function parseResumeCommand(text: string): { prompt: string } | null {
+  const match = /^\/resume(?:\s+([\s\S]*))?$/i.exec(text.trim());
+  return match ? { prompt: match[1]?.trim() ?? "" } : null;
+}
+
+export function parseStandaloneComposerSlashCommand(text: string): "plan" | "default" | null {
   const match = /^\/(plan|default)\s*$/i.exec(text.trim());
   if (!match) {
     return null;

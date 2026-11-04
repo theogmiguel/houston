@@ -44,6 +44,7 @@ import {
 } from "../pullRequest/pullRequestList.logic";
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
 import {
+  builtInSlashCommandItems,
   searchSlashCommandItems,
   slashCommandItemsForPromptPosition,
 } from "./composerSlashCommandSearch";
@@ -67,6 +68,7 @@ export function useComposerMenuItems({
   sideChatAvailable,
   sideChatDisabledReason,
   compactSlashCommandAvailable,
+  activeProjectId,
   selectedProvider,
   selectedProviderSkills,
   selectedProviderSlashCommands,
@@ -86,6 +88,7 @@ export function useComposerMenuItems({
   readonly sideChatAvailable: boolean;
   readonly sideChatDisabledReason: string | null;
   readonly compactSlashCommandAvailable: boolean;
+  readonly activeProjectId: ProjectId | null;
   readonly selectedProvider: ProviderDriverKind;
   readonly selectedProviderSkills: ServerProvider["skills"];
   readonly selectedProviderSlashCommands: ServerProvider["slashCommands"];
@@ -216,51 +219,13 @@ export function useComposerMenuItems({
       ];
     }
     if (composerTrigger.kind === "slash-command") {
-      const builtInSlashCommandItems = [
-        {
-          id: "slash:model",
-          type: "slash-command",
-          command: "model",
-          label: "/model",
-          description: "Switch response model for this thread",
-        },
-        ...(planModeUiEnabled
-          ? ([
-              {
-                id: "slash:plan",
-                type: "slash-command",
-                command: "plan",
-                label: "/plan",
-                description: "Switch this thread into plan mode",
-              },
-              {
-                id: "slash:default",
-                type: "slash-command",
-                command: "default",
-                label: "/default",
-                description: "Switch this thread back to normal build mode",
-              },
-            ] as const)
-          : []),
-        ...(sideChatAvailable
-          ? ([
-              {
-                id: "slash:side",
-                type: "slash-command",
-                command: "side",
-                label: "/side",
-                description: sideChatDisabledReason ?? "Ask a side question in a new side chat",
-              },
-              {
-                id: "slash:btw",
-                type: "slash-command",
-                command: "btw",
-                label: "/btw",
-                description: sideChatDisabledReason ?? "Same as /side",
-              },
-            ] as const)
-          : []),
-      ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
+      const builtInCommands = builtInSlashCommandItems({
+        planModeUiEnabled,
+        sideChatAvailable,
+        sideChatDisabledReason,
+        claudeInChrome: selectedProvider === "claudeAgent",
+        resumeAvailable: activeProjectId !== null,
+      });
       const slashMenuSkills = getProviderSkillsForSlashMenu(
         selectedProviderSkills,
         showSkillsInSlashMenu,
@@ -292,7 +257,7 @@ export function useComposerMenuItems({
         (item) => item.command.name !== "compact" || compactSlashCommandAvailable,
       );
       const slashCommandItems = slashCommandItemsForPromptPosition(
-        [...builtInSlashCommandItems, ...visibleProviderSlashCommandItems, ...skillItems],
+        [...builtInCommands, ...visibleProviderSlashCommandItems, ...skillItems],
         composerTrigger.rangeStart === 0,
       );
       return searchSlashCommandItems(slashCommandItems, query);

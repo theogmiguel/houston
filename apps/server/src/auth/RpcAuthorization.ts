@@ -177,6 +177,8 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.reviewGetDiffPreview]: AuthFilesystemReadScope,
   [WS_METHODS.reviewGetDiffFileContents]: AuthFilesystemReadScope,
   [WS_METHODS.houstonReviewFilesViewed]: AuthFilesystemReadScope,
+  [WS_METHODS.houstonResumeSessionsList]: AuthOrchestrationReadScope,
+  [WS_METHODS.houstonResumeSessionOpen]: AuthOrchestrationOperateScope,
   [WS_METHODS.houstonReviewMapAnchors]: AuthFilesystemReadScope,
   [WS_METHODS.houstonTasksSubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonTasksGet]: AuthOrchestrationReadScope,

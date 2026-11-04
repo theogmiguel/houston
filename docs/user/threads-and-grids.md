@@ -14,9 +14,15 @@ folder, or **Clone a repository** to clone a Git URL to a chosen machine and loc
 `Start without a project` opens a thread with no project; a thread without a folder can be
 turned into a project from its thread actions later.
 
-Projects appear in the sidebar under **Projects**. The **+** beside the section adds
-another project. **Project settings** in a thread's action menu or the command palette
-renames a project, pins it, archives it and changes its checkouts.
+The add-project palette, opened from **Add project** at the top of the sidebar or from the
+command palette, lists **Open folder…**, **Clone repository…** and **New project…**,
+followed by the provider repositories Houston can clone from. **New project…** appears when
+the server configures a projects folder. Adding a project creates its **Grid 1** and opens
+it with the composer ready.
+
+Projects appear as sections in the sidebar. **Project settings** in a thread's action menu
+or the command palette renames a project, pins it, archives it and changes its checkouts.
+Pinned projects lead the list.
 
 Project actions are commands a project can run from a thread, such as a dev server, tests
 or lint. Add them under **Settings ▸ Projects ▸ Actions** or from the thread's action menu.
@@ -34,17 +40,17 @@ The default model, fallback model and default permissions for new threads are se
 
 ## Grids
 
-Open a project's grid from the sidebar, or create one with **New grid** in the sidebar.
-A grid holds up to six threads. The seventh is refused and names the limit; start another
-grid for it.
+Each project label offers **New grid** (`+`), and each grid row offers **New thread**
+(`+`). A grid holds up to six threads. The seventh is refused and names the limit; start
+another grid for it.
 
 - **Split** a cell right or down to show another thread beside it. The picker offers only
   threads that are not shown in another grid.
 - **Move to…** swaps a cell with another thread in the same grid.
 - **Maximize cell** gives one thread the whole grid; **Restore cell** returns the layout.
-- **Close cell** removes the thread from the grid; the last closed cell can be put back
-  with **Reopen closed tab** (`Ctrl+Shift+T`), and a thread not in any grid appears under
-  **Ungrouped**.
+- **Close thread** (the cell's ×) closes the thread: it moves to **Closed** and keeps its
+  slot, so reopening it from **Closed** (or **Undo** on the toast) puts it back in the same
+  cell. On a draft cell the × just removes the cell.
 - **Tidy** rearranges the cells: **Balanced grid**, **One row** or **One column**.
   **Equalize** resets every split to an even share. These are also rebindable commands.
 
@@ -53,14 +59,16 @@ using a thread shortcut.
 
 ## The sidebar
 
-The sidebar lists **Pull requests**, **Tasks** and **Usage**, then your projects and their
-grids. Search filters projects, grids and threads. Threads from other clients, from deleted
-grids or from closed cells appear under **Ungrouped**.
+The sidebar lists **Pull requests**, **Tasks** and **Usage**, then one section per project.
+Each section label collapses with **Enter** or **Space** and keeps its state. Under the
+label are the project's grids, then its threads that no grid shows, marked **not in a
+grid**. Grid rows name only the grid. Threads started without a project sit at the foot of
+the list under **No project**. Search filters projects, grids and threads.
 
 A grid's menu offers **New thread**, **Rename grid** (`F2`), **Pin grid** / **Unpin grid**,
 **Move grid up** / **Move grid down**, **Hide grid**, **Delete grid**, **Close all ready**,
 and a submenu to create or show grids in the same project. Hidden grids are restored from
-the **Hidden grids** menu.
+the **Hidden grids** menu in the sidebar header.
 
 The foot of the rail carries two shelves:
 
@@ -119,6 +127,12 @@ Each thread has a terminal drawer for shell commands (`Ctrl+J`). The right panel
 separate set of surfaces; see [The right panel](right-panel.md). A thread's **details**
 control (`Ctrl+Shift+B`) shows its environment, branch, pull requests, scripts, local
 servers, context and usage limits.
+
+A cheap command that needs a real terminal, such as `sudo apt install` or
+`git push --force-with-lease`, can start with `!`: `!sudo apt install foo` opens the
+thread's drawer and runs there instead of going to the agent. Leading the draft with a space
+or `\!` sends it as an ordinary message. Select the command's output and choose **Add to
+chat** to attach it to the next message.
 
 ## Worktrees
 

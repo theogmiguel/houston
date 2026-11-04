@@ -59,6 +59,13 @@ directories, environment variables and models, and set the provider health check
 Each provider shows its readiness and one action to resolve it. See
 [Install](install.md#providers) and [Agent status](agent-status.md).
 
+Claude has two switches, both on by default:
+
+- **Claude in Chrome** lets a thread's Claude use the Claude in Chrome extension to read
+  and drive your Chrome tabs. The extension and a Chromium browser are required.
+- **Artifacts** lets Claude publish pages as private Artifacts on claude.ai. The page's
+  content is sent to your Claude account, and the account must have Artifacts.
+
 ## Threads
 
 Default model, fallback model, default permissions, where new threads start (local checkout

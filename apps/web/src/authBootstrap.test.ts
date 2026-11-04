@@ -8,9 +8,11 @@ import {
 import { createBrowserHistory } from "@tanstack/react-router";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import { HttpClientError, HttpClientRequest } from "effect/http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { installEnvironmentHttpTest } from "../test/environmentHttpTest";
+import { __resetDesktopPrimaryAuthForTests } from "./environments/primary/desktopAuth";
 import { __setPrimaryHttpRunnerForTests } from "./lib/runtime";
 
 type TestWindow = {
@@ -163,6 +165,82 @@ describe("resolveInitialServerAuthGateState", () => {
 
     expect(testApi.calls.session).toBe(2);
     expect(testApi.calls.browserSession).toEqual([{ credential: "desktop-bootstrap-token" }]);
+  });
+
+  it("waits for a server that refuses connections while it starts", async () => {
+    const request = HttpClientRequest.get("http://localhost:3773/api/auth/session");
+    let attempts = 0;
+    __setPrimaryHttpRunnerForTests(<A>() => {
+      attempts += 1;
+      if (attempts === 1) {
+        return Promise.reject(
+          new HttpClientError.HttpClientError({
+            reason: new HttpClientError.TransportError({
+              request,
+              description: "connection refused",
+            }),
+          }),
+        );
+      }
+      return Promise.resolve(authenticatedSession(DESKTOP_AUTH) as A);
+    });
+
+    const { resolveInitialServerAuthGateState } = await import("./environments/primary");
+
+    await expect(resolveInitialServerAuthGateState()).resolves.toEqual({
+      status: "authenticated",
+    });
+    expect(attempts).toBe(2);
+  });
+
+  it("waits for the desktop host to publish the server before the first request", async () => {
+    // The live HTTP client, so the request resolves the server address the way the app does.
+    __setPrimaryHttpRunnerForTests();
+    __resetDesktopPrimaryAuthForTests();
+    let published = false;
+    let requestedBeforeBootstrap = false;
+    const sessionRequests: Array<string> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (!published) requestedBeforeBootstrap = true;
+        sessionRequests.push(new Request(input, init).url);
+        return Response.json({
+          ...authenticatedSession(DESKTOP_AUTH),
+          expiresAt: "2026-04-05T00:00:00.000Z",
+        });
+      }),
+    );
+    // A warm attach: the server is up and grants a bearer, but this window's bootstrap is late.
+    const getServerStatus = vi.fn(async () => ({ state: "ready" }));
+    const testWindow = installTestBrowser("http://localhost/");
+    testWindow.hostBridge = {
+      getLocalEnvironmentEnabled: () => true,
+      getLocalEnvironmentBootstraps: () =>
+        published
+          ? [
+              {
+                id: "primary",
+                label: "Local",
+                httpBaseUrl: "http://localhost:3773",
+                wsBaseUrl: "ws://localhost:3773",
+                bootstrapToken: "desktop-bootstrap-token",
+              },
+            ]
+          : [],
+      getLocalEnvironmentBearerToken: async () => "desktop-bearer",
+      getServerStatus,
+    } as unknown as HostBridge;
+
+    const { resolveInitialServerAuthGateState } = await import("./environments/primary");
+
+    const gate = resolveInitialServerAuthGateState();
+    await vi.waitFor(() => expect(getServerStatus).toHaveBeenCalled());
+    published = true;
+
+    await expect(gate).resolves.toEqual({ status: "authenticated" });
+    expect(requestedBeforeBootstrap).toBe(false);
+    expect(sessionRequests).toEqual(["http://localhost:3773/api/auth/session"]);
   });
 
   it("takes a pairing token from the location hash and strips it immediately", async () => {

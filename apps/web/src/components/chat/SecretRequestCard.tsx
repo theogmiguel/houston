@@ -17,6 +17,7 @@ import { useId, useRef, useState, type FormEvent } from "react";
 
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { ExpandableText } from "../settings/ExpandableText";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { WorkLogRow } from "./WorkLog";
@@ -117,7 +118,11 @@ function PendingSecretRequestForm(props: {
           {item.label}
         </label>
         {item.reason.trim() ? (
-          <p className="text-sm wrap-anywhere text-muted-foreground">{item.reason}</p>
+          <ExpandableText
+            text={item.reason}
+            className="text-sm text-muted-foreground"
+            expandLabel="Show more"
+          />
         ) : null}
       </div>
       <div className="flex min-w-0 items-center gap-2">

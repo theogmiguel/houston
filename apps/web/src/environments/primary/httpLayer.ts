@@ -23,13 +23,14 @@ function withPrimaryBearerToken(client: HttpClient.HttpClient): HttpClient.HttpC
     HttpClient.mapRequestEffect((request) =>
       Effect.tryPromise({
         try: readDesktopPrimaryBearerToken,
-        // A typed failure, not a defect, so callers can retry while the server starts.
+        // The host fails here while its server is still starting; a transport failure lets callers retry.
         catch: (cause) =>
           new HttpClientError.HttpClientError({
             reason: new HttpClientError.TransportError({
               request,
               cause,
-              description: "Could not read the desktop bearer token",
+              // The cause already reads "The desktop host could not provide a credential ...".
+              description: cause instanceof Error ? cause.message : String(cause),
             }),
           }),
       }).pipe(

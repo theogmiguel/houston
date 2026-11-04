@@ -350,7 +350,7 @@ function waitForBootstrapRetry(delayMs: number): Promise<void> {
 
 function isTransientBootstrapError(error: unknown): boolean {
   if (isPrimaryEnvironmentRequestError(error)) {
-    return TRANSIENT_BOOTSTRAP_STATUS_CODES.has(error.status);
+    return TRANSIENT_BOOTSTRAP_STATUS_CODES.has(error.status) || isTransportFailure(error.cause);
   }
 
   if (error instanceof TypeError) {
@@ -358,6 +358,11 @@ function isTransientBootstrapError(error: unknown): boolean {
   }
 
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+// A refused connection means the server is still starting, so it is worth waiting for.
+function isTransportFailure(cause: unknown): boolean {
+  return HttpClientError.isHttpClientError(cause) && cause.reason._tag === "TransportError";
 }
 
 async function bootstrapServerAuth(urlCredential: string | null): Promise<ServerAuthGateState> {

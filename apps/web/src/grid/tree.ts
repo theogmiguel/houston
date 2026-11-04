@@ -49,9 +49,13 @@ export interface SplitterRect {
 // unusable is how little of a timeline fits, and that is pixels.
 export const MIN_PANE_PX = 240;
 
-export function clampSplitRatio(ratio: number, spanPx: number): number {
-  if (spanPx <= 0) return 0.5;
-  const minLocal = Math.min(0.5, MIN_PANE_PX / spanPx);
+/** Neither side of a divider goes below this share, whatever the pixel floor allows. */
+export const MIN_SPLIT_FRACTION = 0.2;
+
+/** `pairPx` is the divider pair's pixel width, so the pixel floor is the pair's. */
+export function clampSplitRatio(ratio: number, pairPx: number): number {
+  if (pairPx <= 0) return 0.5;
+  const minLocal = Math.min(0.5, Math.max(MIN_SPLIT_FRACTION, MIN_PANE_PX / pairPx));
   return Math.max(minLocal, Math.min(1 - minLocal, ratio));
 }
 

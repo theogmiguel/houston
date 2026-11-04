@@ -559,6 +559,7 @@ function ProviderSettingsFieldRow({
 
     return (
       <SettingsRow
+        id={`${inputId}-row`}
         title={
           field.control === "switch" ? field.label : <label htmlFor={inputId}>{field.label}</label>
         }

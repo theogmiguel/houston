@@ -3,7 +3,6 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import type { GridRecord } from "../../grid/gridStore";
-import type { ThreadDragHandleProps, ThreadDropTargetProps } from "../../grid/threadDrag";
 import { threadLeaf, type Side, type SplitSide, type ThreadNode } from "../../grid/tree";
 import { render } from "../../../test/render";
 import { GridThreadCell } from "./GridThreadCell";
@@ -14,6 +13,7 @@ const state = vi.hoisted(() => ({
   archivedSnapshots: [] as unknown[],
   archiveThread: vi.fn(),
   pendingQuestion: false,
+  banner: false,
 }));
 
 vi.mock("../../lib/archivedThreadsState", () => ({
@@ -62,6 +62,13 @@ vi.mock("../ChatView", async () => {
         data-shortcuts-at-window={props.shortcutsAtWindow === true ? "true" : undefined}
         data-visit-active={props.visitActive === true ? "true" : undefined}
       >
+        {state.banner ? (
+          <div data-composer-banner-shelf="true">
+            <ComposerBanner.Root inCard="notice" data-testid="notice">
+              Usage limits
+            </ComposerBanner.Root>
+          </div>
+        ) : null}
         {state.pendingQuestion ? (
           <ComposerBanner.Root data-chat-composer-top-drawer="true" inCard="drawer">
             <ComposerPendingUserInputPanel
@@ -179,10 +186,12 @@ async function renderCell(
     focused?: boolean;
     dragging?: boolean;
     dropIndicator?: Side | null;
-    dragHandleProps?: ThreadDragHandleProps;
-    dropTargetProps?: ThreadDropTargetProps;
+    onDragHandlePointerDown?: (event: React.PointerEvent<HTMLElement>) => void;
     swapTargets?: ReadonlyArray<{ threadId: string; title: string }>;
     onSwapWith?: (threadId: string) => void;
+    gridTargets?: ReadonlyArray<{ gridId: string; name: string }>;
+    onMoveToGrid?: (gridId: string) => void;
+    onMoveToNewGrid?: () => void;
     onSplit?: (side: SplitSide, threadId: string) => void;
     onNewThread?: (side: SplitSide) => void;
     container?: HTMLElement;
@@ -202,14 +211,16 @@ async function renderCell(
       onMaximize={options?.onMaximize}
       dragging={options?.dragging ?? false}
       dropIndicator={options?.dropIndicator ?? null}
-      {...(options?.dragHandleProps === undefined
+      {...(options?.onDragHandlePointerDown === undefined
         ? {}
-        : { dragHandleProps: options.dragHandleProps })}
-      {...(options?.dropTargetProps === undefined
-        ? {}
-        : { dropTargetProps: options.dropTargetProps })}
+        : { onDragHandlePointerDown: options.onDragHandlePointerDown })}
       swapTargets={options?.swapTargets ?? []}
       {...(options?.onSwapWith === undefined ? {} : { onSwapWith: options.onSwapWith })}
+      gridTargets={options?.gridTargets ?? []}
+      {...(options?.onMoveToGrid === undefined ? {} : { onMoveToGrid: options.onMoveToGrid })}
+      {...(options?.onMoveToNewGrid === undefined
+        ? {}
+        : { onMoveToNewGrid: options.onMoveToNewGrid })}
       onSplit={options?.onSplit ?? (() => {})}
       onNewThread={options?.onNewThread}
       onOpenThread={() => {}}
@@ -395,6 +406,28 @@ describe("GridThreadCell surfaces", () => {
     expect(onSplit).toHaveBeenCalledWith("right", "thread-b");
   });
 
+  it("moves the cell's thread to another grid of its project", async () => {
+    state.draftSession = null;
+    const onMoveToGrid = vi.fn();
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      {
+        gridTargets: [{ gridId: "grid-b", name: "Review" }],
+        onMoveToGrid,
+        onMoveToNewGrid: vi.fn(),
+      },
+    );
+
+    await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
+    await userEvent.click(screen.getByRole("button", { name: "More cell actions" }));
+    await userEvent.hover(page.getByRole("menuitem", { name: "Move to grid" }));
+    await expect.element(page.getByRole("menuitem", { name: "Review" })).toBeVisible();
+    await expect.element(page.getByRole("menuitem", { name: "New grid" })).toBeVisible();
+    await userEvent.click(page.getByRole("menuitem", { name: "Review" }));
+    expect(onMoveToGrid).toHaveBeenCalledExactlyOnceWith("grid-b");
+  });
+
   it("orders the label actions more, maximize, close and groups split, move and archive", async () => {
     state.draftSession = null;
     await using screen = await renderCell(
@@ -412,7 +445,7 @@ describe("GridThreadCell surfaces", () => {
     const actions = [...label.querySelectorAll("button")].map((button) =>
       button.getAttribute("aria-label"),
     );
-    expect(actions).toEqual(["More cell actions", "Maximize cell", "Close cell"]);
+    expect(actions).toEqual(["More cell actions", "Maximize cell", "Close thread"]);
     expect(label.querySelector('[aria-label="Split cell"]')).toBeNull();
 
     await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
@@ -478,15 +511,18 @@ describe("GridThreadCell maximize", () => {
     expect(onMaximize).toHaveBeenCalledTimes(1);
   });
 
-  it("drops the label when the cell is shown alone", async () => {
+  it("drops the label when the cell is shown alone and offers the way back", async () => {
     state.draftSession = null;
+    const onMaximize = vi.fn();
     await using screen = await renderCell(
       { kind: "thread", threadId: "thread-a", id: "p1" },
       twoThreadTree(),
-      { maximized: true, onMaximize: () => {} },
+      { maximized: true, onMaximize },
     );
 
     expect(screen.container.querySelector("[data-pane-label]")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Restore cell" }));
+    expect(onMaximize).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -518,14 +554,14 @@ describe("GridThreadCell archive", () => {
 describe("GridThreadCell move", () => {
   it("drags by the pane label and marks the drop side", async () => {
     state.draftSession = null;
+    const onDragHandlePointerDown = vi.fn();
     await using screen = await renderCell(
       { kind: "thread", threadId: "thread-a", id: "p1" },
       twoThreadTree(),
       {
         dragging: true,
         dropIndicator: "right",
-        dragHandleProps: { draggable: true, onDragStart: () => {}, onDragEnd: () => {} },
-        dropTargetProps: { onDragOver: () => {}, onDragLeave: () => {}, onDrop: () => {} },
+        onDragHandlePointerDown,
       },
     );
 
@@ -533,8 +569,11 @@ describe("GridThreadCell move", () => {
     const label = screen.container.querySelector("[data-pane-label]");
     if (cell === null || label === null) throw new Error("grid cell or pane label missing");
     expect(cell.getAttribute("data-dragging")).toBe("true");
-    expect(label.getAttribute("draggable")).toBe("true");
     expect(screen.container.querySelector('[data-drop-indicator="right"]')).not.toBeNull();
+    label.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 1 }),
+    );
+    expect(onDragHandlePointerDown).toHaveBeenCalledTimes(1);
   });
 
   it("offers a keyboard swap with every other cell", async () => {
@@ -544,8 +583,6 @@ describe("GridThreadCell move", () => {
       { kind: "thread", threadId: "thread-a", id: "p1" },
       twoThreadTree(),
       {
-        dragHandleProps: { draggable: true, onDragStart: () => {}, onDragEnd: () => {} },
-        dropTargetProps: { onDragOver: () => {}, onDragLeave: () => {}, onDrop: () => {} },
         swapTargets: [{ threadId: "thread-b", title: "Beta thread" }],
         onSwapWith,
       },
@@ -630,6 +667,37 @@ describe("GridThreadCell keyboard", () => {
 describe("GridThreadCell pending question", () => {
   beforeEach(() => {
     state.pendingQuestion = false;
+    state.banner = false;
+  });
+
+  it("stacks a composer notice above a full-width answer field at compact width", async () => {
+    state.draftSession = null;
+    state.banner = true;
+    const container = document.createElement("div");
+    container.style.width = "520px";
+    container.style.height = "600px";
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      undefined,
+      { container },
+    );
+
+    const cell = screen.container.querySelector<HTMLElement>("[data-grid-cell]");
+    if (cell === null) throw new Error("grid cell missing");
+    await vi.waitFor(() => expect(cell.dataset.density).toBe("compact"));
+    const surface = screen.container.querySelector<HTMLElement>(
+      '[data-chat-composer-surface="true"]',
+    );
+    const notice = screen.container.querySelector<HTMLElement>('[data-testid="notice"]');
+    const body = screen.container.querySelector<HTMLElement>("[data-chat-composer-body]");
+    if (surface === null || notice === null || body === null) {
+      throw new Error("composer fixture incomplete");
+    }
+
+    const surfaceWidth = surface.getBoundingClientRect().width;
+    expect(getComputedStyle(surface).display).toBe("block");
+    expect(notice.getBoundingClientRect().width).toBeGreaterThanOrEqual(surfaceWidth - 1);
+    expect(Math.abs(body.getBoundingClientRect().width - surfaceWidth)).toBeLessThanOrEqual(1);
   });
 
   it("stacks the question above a full-width answer field at compact width", async () => {

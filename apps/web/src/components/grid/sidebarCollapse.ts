@@ -5,6 +5,9 @@ import { useLocalStorage } from "../../hooks/useLocalStorage";
 /** Grid collapse survives a reload, like the shelves' expansion. */
 export const COLLAPSED_GRIDS_STORAGE_KEY = "houston:sidebar:collapsed-grids";
 
+/** Project sections collapse independently and remember it the same way. */
+export const COLLAPSED_PROJECTS_STORAGE_KEY = "houston:sidebar:collapsed-projects";
+
 const EMPTY_COLLAPSED_KEYS: ReadonlyArray<string> = [];
 
 export function toggleCollapsedKey(

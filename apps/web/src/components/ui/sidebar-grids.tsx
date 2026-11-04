@@ -38,9 +38,34 @@ export const SIDEBAR_GRID_HEADING_DROP_CLS =
 export const SIDEBAR_GRID_NAME_CLS =
   "min-w-0 truncate text-xs font-semibold text-sidebar-foreground";
 
-export const SIDEBAR_GRID_WORKSPACE_CLS = "min-w-0 truncate text-xs text-secondary-label";
-
 export const SIDEBAR_GRID_EMPTY_CLS = "ml-auto shrink-0 text-xs text-secondary-label";
+
+export const SIDEBAR_GRID_COUNT_CLS = "ml-auto shrink-0 text-xs text-secondary-label tabular-nums";
+
+/** A project label reads as a quiet section heading above its grids. */
+export const SIDEBAR_PROJECT_ROW_CLS = "group/project relative mt-3 flex items-center";
+
+export const SIDEBAR_PROJECT_LABEL_CLS =
+  "flex h-(--h-row) w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-8 pl-2 text-left text-2xs font-semibold uppercase tracking-wide text-secondary-label outline-none hover:bg-sidebar-row-hover hover:text-secondary-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+
+export const SIDEBAR_PROJECT_LABEL_TEXT_CLS = "min-w-0 flex-1 truncate";
+
+export const SIDEBAR_PROJECT_SUMMARY_CLS =
+  "shrink-0 text-2xs font-normal tracking-normal text-secondary-label normal-case";
+
+/** The project label's New grid action, revealed while its row is hovered or focused. */
+export const SIDEBAR_PROJECT_ACTION_CLS =
+  "inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 hover:bg-(--sel) hover:text-foreground group-hover/project:opacity-100 group-focus-within/project:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+
+export const SIDEBAR_PROJECT_EMPTY_ACTION_CLS =
+  "flex h-(--h-row) w-full cursor-pointer items-center gap-2 rounded-lg py-0 pr-2 pl-2 text-left text-xs text-secondary-label outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+
+/** The grid rail's header controls: outside the window drag region so they stay clickable. */
+export const SIDEBAR_HEADER_ACTIONS_CLS =
+  "relative z-10 flex shrink-0 items-center gap-0.5 [-webkit-app-region:no-drag]";
+
+/** A thread row that no grid shows, sitting directly under the project's grids. */
+export const SIDEBAR_THREAD_NOT_IN_GRID_CLS = "shrink-0 truncate text-2xs text-secondary-label";
 
 /** A fixed 12px box in both states; the chevron rotates inside instead of swapping icons. */
 export const SIDEBAR_GRID_CHEVRON_BOX_CLS =

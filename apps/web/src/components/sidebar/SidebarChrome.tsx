@@ -36,8 +36,11 @@ import { readLastOpenGridId } from "../../grid/lastGrid";
  */
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isDesktopHost,
+  actions,
 }: {
   isDesktopHost: boolean;
+  /** Extra rail controls that sit between the brand and the hide control. */
+  actions?: ReactNode;
 }) {
   const stageLabel = useEnvironmentStageLabel();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
@@ -64,6 +67,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
           </div>
         ) : null}
       </div>
+      {actions}
       <SidebarTrigger
         aria-label="Hide sidebar"
         className="relative z-10 size-7! shrink-0 [-webkit-app-region:no-drag]"

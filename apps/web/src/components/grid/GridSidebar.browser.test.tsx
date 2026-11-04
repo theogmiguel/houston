@@ -3,7 +3,9 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
-import { fakeTimers, render } from "../../../test/render";
+import { useGridStore } from "../../grid/gridStore";
+import { beginThreadDragAt, endThreadDrag, getThreadDragSource } from "../../grid/threadDrag";
+import { act, fakeTimers, render, type Screen } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
 import { ThreadCard } from "./GridSidebar";
 
@@ -43,20 +45,25 @@ function card(
     onSetAutoClose?: (enabled: boolean) => void;
     onRename?: (title: string) => void;
     onOpen?: () => void;
+    onOpenGrid?: (gridId: string) => void;
+    onDropOnThread?: (source: unknown) => void;
     timeLabel?: string | null;
     tooltipDelay?: number;
+    focused?: boolean;
+    selected?: boolean;
+    gridId?: string | null;
   } = {},
 ) {
   return (
     <TooltipProvider delay={overrides.tooltipDelay ?? 0}>
       <ThreadCard
-        gridId="grid-a"
+        gridId={overrides.gridId === undefined ? "grid-a" : overrides.gridId}
         thread={value}
         query=""
         providerEntries={new Map()}
         nowIso="2026-01-01T00:00:00.000Z"
-        focused={false}
-        selected={false}
+        focused={overrides.focused ?? false}
+        selected={overrides.selected ?? false}
         dragging={false}
         workspaceTitle="Houston"
         timeLabel={overrides.timeLabel === undefined ? "9:00" : overrides.timeLabel}
@@ -67,14 +74,89 @@ function card(
         onPickHoldTime={async () => null}
         onRename={overrides.onRename ?? (() => {})}
         onSetAutoClose={overrides.onSetAutoClose ?? (() => {})}
-        onDragStart={() => {}}
-        onDragEnd={() => {}}
-        onDropOnThread={() => {}}
-        readDragged={() => null}
+        onDropOnThread={overrides.onDropOnThread ?? (() => {})}
+        {...(overrides.onOpenGrid === undefined ? {} : { onOpenGrid: overrides.onOpenGrid })}
       />
     </TooltipProvider>
   );
 }
+
+function startRowDrag(row: HTMLElement): void {
+  const rect = row.getBoundingClientRect();
+  const startX = rect.left + rect.width / 2;
+  const startY = rect.top + rect.height / 2;
+  row.dispatchEvent(
+    new PointerEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      pointerId: 1,
+      pointerType: "mouse",
+      button: 0,
+      clientX: startX,
+      clientY: startY,
+    }),
+  );
+  window.dispatchEvent(
+    new PointerEvent("pointermove", {
+      bubbles: true,
+      cancelable: true,
+      pointerId: 1,
+      pointerType: "mouse",
+      clientX: startX + 20,
+      clientY: startY,
+    }),
+  );
+}
+
+describe("ThreadCard drag source", () => {
+  it("carries the thread's project so grid zones can accept or refuse it", async () => {
+    await using screen = await render(card(thread()));
+    const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
+    startRowDrag(row);
+    expect(getThreadDragSource()).toEqual({
+      gridId: "grid-a",
+      threadId: "thread-a",
+      environmentId: "env-1",
+      projectId: "project-1",
+    });
+    endThreadDrag();
+  });
+
+  it("lets a thread no grid shows start a drag", async () => {
+    await using screen = await render(card(thread(), { gridId: null }));
+    const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
+    startRowDrag(row);
+    expect(getThreadDragSource()).toMatchObject({ gridId: null, threadId: "thread-a" });
+    endThreadDrag();
+  });
+
+  it("takes a thread dropped on its row", async () => {
+    using _drag = { [Symbol.dispose]: () => endThreadDrag() };
+    const onDropOnThread = vi.fn();
+    await using screen = await render(card(thread(), { onDropOnThread }));
+    const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
+    const rect = row.getBoundingClientRect();
+    const source = {
+      gridId: "grid-a",
+      threadId: "thread-b",
+      environmentId: "env-1",
+      projectId: "project-1",
+    };
+
+    await act(() =>
+      beginThreadDragAt(
+        source,
+        { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+        1,
+      ),
+    );
+    await act(() => {
+      window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1 }));
+    });
+
+    expect(onDropOnThread).toHaveBeenCalledWith(source);
+  });
+});
 
 describe("ThreadCard", () => {
   it("closes the preview tooltip while the card actions are hovered", async () => {
@@ -274,5 +356,221 @@ describe("ThreadCard status marks", () => {
     expect(getComputedStyle(circle!).fill).toBe("none");
     expect(getComputedStyle(circle!).stroke).not.toBe("none");
     expect(getComputedStyle(circle!).stroke).toBe(tokenColor("--warn-ink"));
+  });
+});
+
+function classColor(className: string): string {
+  const probe = document.createElement("span");
+  probe.className = className;
+  document.body.append(probe);
+  const color = getComputedStyle(probe).color;
+  probe.remove();
+  return color;
+}
+
+function titleOf(screen: Screen): HTMLElement {
+  const title = screen.container.querySelector("[data-thread-key] [data-card-open] > span");
+  if (!(title instanceof HTMLElement)) {
+    throw new Error("The thread card has no title span.");
+  }
+  return title;
+}
+
+describe("ThreadCard layout and contrast", () => {
+  it("keeps the row's bounding box unchanged while hovered", async () => {
+    await using screen = await render(card(thread()));
+    const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
+    const before = row.getBoundingClientRect();
+
+    await userEvent.hover(row);
+    await expect.element(screen.getByRole("button", { name: /Thread actions for/ })).toBeVisible();
+
+    const during = row.getBoundingClientRect();
+    expect({ left: during.left, top: during.top }).toEqual({ left: before.left, top: before.top });
+    expect({ width: during.width, height: during.height }).toEqual({
+      width: before.width,
+      height: before.height,
+    });
+  });
+
+  it("keeps an idle title at normal contrast instead of the quiet secondary tone", async () => {
+    await using screen = await render(card(thread()));
+    const title = titleOf(screen);
+
+    expect(title.className).toContain("text-foreground");
+    expect(title.className).not.toContain("text-secondary-foreground");
+    expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
+  });
+
+  it("keeps a selected idle title at normal contrast over the selection fill", async () => {
+    await using screen = await render(card(thread(), { selected: true }));
+    const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
+    const title = titleOf(screen);
+
+    expect(row.className).toContain("bg-(--row-current)");
+    expect(title.className).toContain("text-foreground");
+    expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
+  });
+
+  it("keeps a focused idle title at normal contrast over the active fill", async () => {
+    await using screen = await render(card(thread(), { focused: true }));
+    const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
+    const title = titleOf(screen);
+
+    expect(row.className).toContain("bg-(--sidebar-row-active)");
+    expect(title.className).toContain("text-foreground");
+    expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
+  });
+
+  it("keeps an attention title at full contrast and semibold", async () => {
+    await using screen = await render(card(thread({ hasPendingUserInput: true })));
+    const title = titleOf(screen);
+
+    expect(title.className).toContain("font-semibold");
+    expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
+  });
+});
+
+const capturesEnabled = import.meta.env.VITE_HOUSTON_CAPTURES === "1";
+
+describe.skipIf(!capturesEnabled)("ThreadCard captures", () => {
+  it.each(["light", "dark"] as const)(
+    "captures idle, selected and running rows in %s",
+    async (appearance) => {
+      document.documentElement.classList.toggle("dark", appearance === "dark");
+      const container = document.createElement("div");
+      container.className = "flex w-[300px] flex-col gap-px bg-(--sidebar) p-2";
+      await using screen = await render(
+        <>
+          {card(thread({ title: "Review the merge queue" }), {
+            timeLabel: "9:42",
+            tooltipDelay: 60_000,
+          })}
+          {card(
+            thread({
+              title: "Split drawer state from the thread store",
+            }),
+            { timeLabel: "9:12", selected: true, tooltipDelay: 60_000 },
+          )}
+          {card(
+            thread({
+              title: "Port the settings search",
+              runtime: { status: "running" } as never,
+            }),
+            { timeLabel: null, tooltipDelay: 60_000 },
+          )}
+        </>,
+        { container },
+      );
+
+      await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
+      await expect
+        .element(
+          screen.getByRole("button", {
+            name: "Thread actions for Review the merge queue",
+          }),
+        )
+        .toBeVisible();
+      await page.screenshot({
+        element: container,
+        path: `../../../../../.slice/captures/thread-rows-${appearance}.png`,
+      });
+      document.documentElement.classList.remove("dark");
+    },
+  );
+});
+
+describe("ThreadCard move to grid", () => {
+  function seedGrids() {
+    useGridStore.setState({ grids: [], threadOrigins: {}, closedCells: {} });
+    const store = useGridStore.getState();
+    store.createGrid({
+      environmentId: "env-1",
+      projectId: "project-1",
+      workspaceKey: "env-1:project-1",
+      id: "grid-a",
+      name: "Alpha",
+      now: "2026-01-01T00:00:00Z",
+    });
+    store.createGrid({
+      environmentId: "env-1",
+      projectId: "project-1",
+      workspaceKey: "env-1:project-1",
+      id: "grid-b",
+      name: "Review",
+      now: "2026-01-02T00:00:00Z",
+    });
+    store.createGrid({
+      environmentId: "env-1",
+      projectId: "project-2",
+      workspaceKey: "env-1:project-2",
+      id: "grid-other",
+      name: "Elsewhere",
+      now: "2026-01-03T00:00:00Z",
+    });
+    useGridStore.getState().addThread("grid-a", "thread-a");
+  }
+
+  async function openMoveMenu() {
+    const screen = await render(card(thread(), { onOpenGrid: () => {} }));
+    await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
+    await userEvent.click(screen.getByRole("button", { name: /Thread actions for/ }));
+    await userEvent.hover(page.getByRole("menuitem", { name: /Move to grid/ }));
+    return screen;
+  }
+
+  it("lists the project's other grids and no other project's grid", async () => {
+    seedGrids();
+    await using _screen = await openMoveMenu();
+
+    await expect.element(page.getByRole("menuitem", { name: "Review" })).toBeVisible();
+    await expect.element(page.getByRole("menuitem", { name: "New grid" })).toBeVisible();
+    expect(page.getByRole("menuitem", { name: "Alpha" }).elements()).toHaveLength(0);
+    expect(page.getByRole("menuitem", { name: "Elsewhere" }).elements()).toHaveLength(0);
+  });
+
+  it("hides the submenu when the thread has no project", async () => {
+    seedGrids();
+    await using screen = await render(
+      card(thread({ projectId: "" as never }), { onOpenGrid: () => {} }),
+    );
+    await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
+    await userEvent.click(screen.getByRole("button", { name: /Thread actions for/ }));
+    await expect.element(page.getByRole("menuitem", { name: /Open in grid/ })).toBeVisible();
+    expect(page.getByRole("menuitem", { name: /Move to grid/ }).elements()).toHaveLength(0);
+  });
+
+  it("moves the thread to the chosen grid and opens it", async () => {
+    seedGrids();
+    const onOpenGrid = vi.fn();
+    await using screen = await render(card(thread(), { onOpenGrid }));
+    await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
+    await userEvent.click(screen.getByRole("button", { name: /Thread actions for/ }));
+    await userEvent.hover(page.getByRole("menuitem", { name: /Move to grid/ }));
+    await userEvent.click(page.getByRole("menuitem", { name: "Review" }));
+
+    expect(onOpenGrid).toHaveBeenCalledExactlyOnceWith("grid-b");
+    const grids = useGridStore.getState().grids;
+    expect(grids.find((grid) => grid.id === "grid-a")?.tree).toBeNull();
+    expect(grids.find((grid) => grid.id === "grid-b")?.tree).toMatchObject({
+      kind: "thread",
+      threadId: "thread-a",
+    });
+  });
+
+  it("creates a new grid in the thread's project", async () => {
+    seedGrids();
+    const onOpenGrid = vi.fn();
+    await using screen = await render(card(thread(), { onOpenGrid }));
+    await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
+    await userEvent.click(screen.getByRole("button", { name: /Thread actions for/ }));
+    await userEvent.hover(page.getByRole("menuitem", { name: /Move to grid/ }));
+    await userEvent.click(page.getByRole("menuitem", { name: "New grid" }));
+
+    const createdId = onOpenGrid.mock.calls[0]?.[0] as string | undefined;
+    expect(createdId).toBeDefined();
+    const created = useGridStore.getState().grids.find((grid) => grid.id === createdId);
+    expect(created).toMatchObject({ environmentId: "env-1", projectId: "project-1" });
+    expect(created?.tree).toMatchObject({ kind: "thread", threadId: "thread-a" });
   });
 });

@@ -6,7 +6,8 @@ import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { useGridStore, type GridRecord } from "../../grid/gridStore";
 import { clearThreadSelection } from "../../grid/sidebar";
-import { render, type Screen } from "../../../test/render";
+import { beginThreadDragAt, endThreadDrag } from "../../grid/threadDrag";
+import { act, render, type Screen } from "../../../test/render";
 import { DEFAULT_CLIENT_SETTINGS } from "@houston-app/contracts/settings";
 import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { SidebarNewGridMenu, SidebarOptionsMenu } from "../ui/sidebar-grids";
@@ -68,6 +69,7 @@ function group(
     collapsed?: boolean;
     onToggleCollapsed?: () => void;
     onOpenThread?: (gridId: string, threadId: string) => void;
+    onDropOnGrid?: (source: unknown, gridId: string) => void;
   } = {},
 ) {
   return (
@@ -92,13 +94,8 @@ function group(
         onCloseThread={() => {}}
         onHoldThread={() => {}}
         onPickHoldTime={async () => null}
-        onDragStart={() => {}}
-        onDragEnd={() => {}}
-        onDragOverGrid={() => {}}
-        onDropOnGrid={() => {}}
+        onDropOnGrid={overrides.onDropOnGrid ?? (() => {})}
         onDropOnThread={() => {}}
-        onDragLeave={() => {}}
-        readDragged={() => null}
         onCreateThread={() => {}}
         onRenameThread={() => {}}
         onSetAutoClose={() => {}}
@@ -157,7 +154,7 @@ function CollapsibleGroup({
 }
 
 describe("grid sidebar", () => {
-  it("lists grids flat with their workspace instead of a workspace row", async () => {
+  it("lists a grid without repeating its project name", async () => {
     const first = grid({ id: "grid-a", name: "v2 port" });
     const second = grid({
       id: "grid-b",
@@ -173,9 +170,9 @@ describe("grid sidebar", () => {
       </>,
     );
 
-    expect(screen.getByRole("button", { name: /^v2 port Houston$/ }).element()).toBeVisible();
-    expect(screen.getByRole("button", { name: /^Grid 2 notes empty$/ }).element()).toBeVisible();
-    expect(screen.getByText("notes").element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^v2 port$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Grid 2 empty$/ }).element()).toBeVisible();
+    expect(screen.container.textContent).not.toContain("notes");
     expect(screen.container.textContent).not.toContain("Workspaces");
   });
 
@@ -188,10 +185,8 @@ describe("grid sidebar", () => {
       }),
     );
 
-    expect(
-      screen.getByRole("button", { name: /^Landing copy houston-site$/ }).element(),
-    ).toBeVisible();
-    expect(screen.container.textContent).not.toContain("houston-site ·");
+    expect(screen.getByRole("button", { name: /^Landing copy$/ }).element()).toBeVisible();
+    expect(screen.container.textContent).not.toContain("houston-site");
     const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
     expect(row.className).toContain("pl-7.5");
 
@@ -251,8 +246,8 @@ describe("grid sidebar", () => {
       </>,
     );
 
-    const open = screen.getByRole("button", { name: /^v2 port Houston$/ }).element();
-    const closed = screen.getByRole("button", { name: /^Review Houston$/ }).element();
+    const open = screen.getByRole("button", { name: /^v2 port$/ }).element();
+    const closed = screen.getByRole("button", { name: /^Review$/ }).element();
     expect(open.className).toContain("bg-sidebar-row-selected");
     expect(closed.className).not.toContain("bg-sidebar-row-selected");
   });
@@ -265,7 +260,7 @@ describe("grid sidebar", () => {
       }),
     );
 
-    const heading = screen.getByRole("button", { name: /^v2 port Houston$/ }).element();
+    const heading = screen.getByRole("button", { name: /^v2 port$/ }).element();
     expect(heading.className).not.toContain("bg-sidebar-row-selected");
   });
 
@@ -278,7 +273,7 @@ describe("grid sidebar", () => {
       }),
     );
 
-    const heading = screen.getByRole("button", { name: /^v2 port Houston$/ }).element();
+    const heading = screen.getByRole("button", { name: /^v2 port 2$/ }).element();
     expect(heading.className).toContain("bg-sidebar-row-selected");
   });
 
@@ -562,5 +557,32 @@ describe("Sidebar options", () => {
     } finally {
       __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
     }
+  });
+
+  it("moves a dragged thread onto the grid whose heading is under the pointer", async () => {
+    using _drag = { [Symbol.dispose]: () => endThreadDrag() };
+    const onDropOnGrid = vi.fn();
+    await using screen = await render(group(grid(), [], { onDropOnGrid }), { router: false });
+    const heading = headingFor(screen, "grid-a");
+    const rect = heading.getBoundingClientRect();
+    const source = {
+      gridId: "grid-other",
+      threadId: "thread-a",
+      environmentId: "env-1",
+      projectId: "project-1",
+    };
+
+    await act(() =>
+      beginThreadDragAt(
+        source,
+        { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+        1,
+      ),
+    );
+    await act(() => {
+      window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1 }));
+    });
+
+    expect(onDropOnGrid).toHaveBeenCalledWith(source, "grid-a");
   });
 });

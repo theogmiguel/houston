@@ -1,7 +1,13 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@houston-app/contracts";
-import { EllipsisIcon, Maximize2Icon, XIcon } from "lucide-react";
-import { useEffect, useState, type CSSProperties, type RefObject } from "react";
+import { EllipsisIcon, Maximize2Icon, Minimize2Icon, XIcon } from "lucide-react";
+import {
+  useEffect,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+} from "react";
 
 import ChatView, { type RightPanelPortalTarget } from "../ChatView";
 import { resolveThreadStatusPill } from "../Sidebar.logic";
@@ -15,8 +21,10 @@ import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { paneDensityLayout } from "../../grid/density";
 import { subscribeGridCellRename } from "../../grid/gridCellCommands";
 import { MAX_GRID_THREADS, type GridRecord, useGridStore } from "../../grid/gridStore";
+import type { ThreadDropRefusal } from "../../grid/projectMove";
+import type { MoveToGridTarget } from "../../grid/moveToGrid";
 import { type Side, type SplitSide, type ThreadNode, preorderThreads } from "../../grid/tree";
-import type { ThreadDragHandleProps, ThreadDropTargetProps } from "../../grid/threadDrag";
+import { getThreadDragSource } from "../../grid/threadDrag";
 import { Button } from "../ui/button";
 import { GridPaneActions, GridPaneRename, GridPaneRenameInput } from "../ui/grid-pane";
 import { GridDropIndicator } from "../ui/grid-drop-indicator";
@@ -33,6 +41,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 import { TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR } from "../chat/composerFocusRedirect";
+import { MoveToGridMenuItems } from "./MoveToGridMenuItems";
 import { ThreadOpenProvider } from "./threadOpenContext";
 import { usePaneDensity } from "./usePaneDensity";
 
@@ -56,10 +65,13 @@ export function GridThreadCell({
   onDetailsOpenChange,
   dragging = false,
   dropIndicator = null,
-  dragHandleProps,
-  dropTargetProps,
+  dropRefusal = null,
+  onDragHandlePointerDown,
   swapTargets = [],
   onSwapWith,
+  gridTargets = [],
+  onMoveToGrid,
+  onMoveToNewGrid,
 }: {
   node: ThreadNode;
   grid: GridRecord;
@@ -87,11 +99,17 @@ export function GridThreadCell({
   dragging?: boolean;
   /** Where a thread dropped on this cell would land. */
   dropIndicator?: Side | null;
-  dragHandleProps?: ThreadDragHandleProps;
-  dropTargetProps?: ThreadDropTargetProps;
+  /** The cell refuses the drop, and why. */
+  dropRefusal?: ThreadDropRefusal | null;
+  /** Starts a pointer drag from the label; absent when the cell cannot move. */
+  onDragHandlePointerDown?: ((event: ReactPointerEvent<HTMLElement>) => void) | undefined;
   /** The other cells in this grid, for the label's keyboard move action. */
   swapTargets?: ReadonlyArray<{ threadId: string; title: string }>;
   onSwapWith?: ((threadId: string) => void) | undefined;
+  /** The project's other grids, for the cell menu's Move to grid action. */
+  gridTargets?: ReadonlyArray<MoveToGridTarget>;
+  onMoveToGrid?: ((gridId: string) => void) | undefined;
+  onMoveToNewGrid?: (() => void) | undefined;
 }) {
   const environmentId = grid.environmentId as EnvironmentId;
   const threadId = node.threadId as ThreadId;
@@ -178,7 +196,8 @@ export function GridThreadCell({
   const moveTargets = onSwapWith === undefined ? [] : swapTargets;
   const canArchive = draftId === undefined;
   const showSplit = availableThreads.length > 0 || onNewThread !== undefined;
-  const showOverflow = showSplit || moveTargets.length > 0 || canArchive;
+  const showOverflow =
+    showSplit || moveTargets.length > 0 || onMoveToGrid !== undefined || canArchive;
   const archived = useArchivedThreadSnapshots([environmentId]);
   const closeCellStable = useStableCallback(closeArchivedCell);
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- drops a cell whose thread was archived elsewhere (the sidebar or another window)
@@ -214,6 +233,9 @@ export function GridThreadCell({
           }
           targets={moveTargets}
           onPick={onSwapWith}
+          gridTargets={gridTargets}
+          onMoveToGrid={onMoveToGrid}
+          onMoveToNewGrid={onMoveToNewGrid}
           onArchive={
             canArchive
               ? () => void archiveThread(threadRef, { onArchived: closeArchivedCell })
@@ -248,7 +270,7 @@ export function GridThreadCell({
               />
             }
           >
-            <Maximize2Icon />
+            {maximized ? <Minimize2Icon /> : <Maximize2Icon />}
           </TooltipTrigger>
           <TooltipPopup side="bottom">{maximized ? "Restore cell" : "Maximize cell"}</TooltipPopup>
         </Tooltip>
@@ -259,14 +281,16 @@ export function GridThreadCell({
             <Button
               variant="ghost-muted"
               size="icon-sm"
-              aria-label="Close cell"
+              aria-label={draftId === undefined ? "Close thread" : "Close cell"}
               onClick={discardDraft}
             />
           }
         >
           <XIcon />
         </TooltipTrigger>
-        <TooltipPopup side="bottom">Close cell</TooltipPopup>
+        <TooltipPopup side="bottom">
+          {draftId === undefined ? "Close thread" : "Close cell"}
+        </TooltipPopup>
       </Tooltip>
     </>
   );
@@ -301,6 +325,8 @@ export function GridThreadCell({
     if (draftId === undefined) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      // Escape cancels a cell drag; it must not also discard the draft that is being dragged.
+      if (getThreadDragSource() !== null) return;
       if (document.querySelector(TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR) !== null) return;
       event.preventDefault();
       event.stopPropagation();
@@ -318,7 +344,6 @@ export function GridThreadCell({
       data-thread-id={node.threadId}
       data-focused={focused ? "true" : "false"}
       data-dragging={dragging ? "true" : undefined}
-      {...dropTargetProps}
       onPointerDownCapture={onFocus}
       onFocusCapture={onFocus}
       style={
@@ -335,10 +360,10 @@ export function GridThreadCell({
       className={cn(
         "group/pane relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden",
         density === "solo" && "[&_.chat-content-lane]:max-w-[45rem]",
-        // A composer drawer keeps the stacked card: the compact row would squeeze the
-        // question panel and textarea into zero-width flex columns.
+        // A composer drawer or notice keeps the stacked card: the compact row would squeeze
+        // the question panel, the notices and the textarea into zero-width flex columns.
         density === "compact" &&
-          "[&_[data-thread-find-text]]:line-clamp-5 [&_[data-chat-composer-resting-row]]:hidden [&_[data-chat-composer-surface]:not(:has([data-chat-composer-top-drawer]))]:flex [&_[data-chat-composer-surface]:not(:has([data-chat-composer-top-drawer]))]:items-center [&_[data-chat-composer-body]]:min-w-0 [&_[data-chat-composer-body]]:flex-1 [&_[data-chat-composer-body]]:pt-2 [&_[data-chat-composer-body]]:pb-2 [&_[data-chat-composer-footer]]:w-auto [&_[data-chat-composer-footer]]:shrink-0 [&_[data-chat-composer-footer]]:pb-2",
+          "[&_[data-thread-find-text]]:line-clamp-5 [&_[data-chat-composer-resting-row]]:hidden [&_[data-chat-composer-surface]:not(:has([data-chat-composer-top-drawer],[data-composer-banner-shelf]))]:flex [&_[data-chat-composer-surface]:not(:has([data-chat-composer-top-drawer],[data-composer-banner-shelf]))]:items-center [&_[data-chat-composer-body]]:min-w-0 [&_[data-chat-composer-body]]:flex-1 [&_[data-chat-composer-body]]:pt-2 [&_[data-chat-composer-body]]:pb-2 [&_[data-chat-composer-footer]]:w-auto [&_[data-chat-composer-footer]]:shrink-0 [&_[data-chat-composer-footer]]:pb-2",
         density === "glance" &&
           "[&_[data-chat-composer-resting-row]]:hidden [&_[data-thread-find-text]]:line-clamp-3 [&_[data-changed-files-state=tree]]:hidden [&_[data-changed-files-bar]]:hidden",
       )}
@@ -346,8 +371,8 @@ export function GridThreadCell({
       {showLabel ? (
         <div
           data-pane-label=""
-          {...dragHandleProps}
-          style={dragHandleProps?.draggable === true ? { cursor: "grab" } : undefined}
+          onPointerDown={onDragHandlePointerDown}
+          style={onDragHandlePointerDown === undefined ? undefined : { cursor: "grab" }}
           className="group/label absolute top-2 left-2 z-20 flex h-(--h-pill) max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-(--r-selection) border border-(--divider) bg-(--pane-head) ps-2 pe-1"
         >
           <span className="grid size-3.5 shrink-0 place-items-center">
@@ -390,7 +415,8 @@ export function GridThreadCell({
               />
             </GridPaneRename>
           ) : null}
-          <GridPaneActions>{paneActions(false)}</GridPaneActions>
+          {/* A maximized cell has no label, so its way back sits with the other actions. */}
+          <GridPaneActions>{paneActions(maximized)}</GridPaneActions>
         </>
       )}
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-(--pane-label-inset)">
@@ -427,7 +453,11 @@ export function GridThreadCell({
           )}
         </ThreadOpenProvider>
       </div>
-      {dropIndicator === null ? null : <GridDropIndicator side={dropIndicator} />}
+      {dropRefusal !== null ? (
+        <GridDropIndicator refusal={dropRefusal} />
+      ) : dropIndicator === null ? null : (
+        <GridDropIndicator side={dropIndicator} />
+      )}
     </section>
   );
 }
@@ -449,6 +479,9 @@ function MoreCellMenu({
   split,
   targets,
   onPick,
+  gridTargets,
+  onMoveToGrid,
+  onMoveToNewGrid,
   onArchive,
   onRename,
   onMarkUnread,
@@ -467,6 +500,9 @@ function MoreCellMenu({
   split: SplitChoices | null;
   targets: ReadonlyArray<{ threadId: string; title: string }>;
   onPick?: ((threadId: string) => void) | undefined;
+  gridTargets: ReadonlyArray<MoveToGridTarget>;
+  onMoveToGrid?: ((gridId: string) => void) | undefined;
+  onMoveToNewGrid?: (() => void) | undefined;
   onArchive?: (() => void) | undefined;
   onRename?: (() => void) | undefined;
   onMarkUnread?: (() => void) | undefined;
@@ -498,6 +534,7 @@ function MoreCellMenu({
   const groups = [
     split === null ? null : "split",
     targets.length === 0 ? null : "move",
+    onMoveToGrid === undefined ? null : "grid",
     hasThreadActions ? "thread" : null,
     onArchive === undefined ? null : "archive",
   ].filter((group) => group !== null);
@@ -561,6 +598,27 @@ function MoreCellMenu({
                     Swap with {target.title}
                   </MenuItem>
                 ))}
+              </MenuSubPopup>
+            </MenuSub>
+          </>
+        )}
+        {onMoveToGrid === undefined ? null : (
+          <>
+            {separatorBefore("grid") ? <MenuSeparator /> : null}
+            <MenuSub>
+              <MenuSubTrigger>Move to grid</MenuSubTrigger>
+              <MenuSubPopup>
+                <MoveToGridMenuItems
+                  targets={gridTargets}
+                  onMove={(gridId) => {
+                    setOpen(false);
+                    onMoveToGrid(gridId);
+                  }}
+                  onNewGrid={() => {
+                    setOpen(false);
+                    onMoveToNewGrid?.();
+                  }}
+                />
               </MenuSubPopup>
             </MenuSub>
           </>

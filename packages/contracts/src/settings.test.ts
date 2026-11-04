@@ -242,6 +242,20 @@ describe("custom model settings", () => {
   });
 });
 
+describe("Claude in Chrome and Artifacts settings", () => {
+  it("turns both switches on when they are absent", () => {
+    const settings = decodeClaudeSettings({});
+    expect(settings.claudeInChrome).toBe(true);
+    expect(settings.claudeArtifacts).toBe(true);
+  });
+
+  it("keeps either explicit value", () => {
+    expect(decodeClaudeSettings({ claudeInChrome: false }).claudeInChrome).toBe(false);
+    expect(decodeClaudeSettings({ claudeArtifacts: false }).claudeArtifacts).toBe(false);
+    expect(decodeClaudeSettings({ claudeArtifacts: true }).claudeArtifacts).toBe(true);
+  });
+});
+
 describe("resolveIdleCompaction", () => {
   it("lets a Claude instance override the global default", () => {
     const settings = decodeServerSettings({

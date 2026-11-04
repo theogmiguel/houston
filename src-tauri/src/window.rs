@@ -132,10 +132,20 @@ pub fn window_is_fullscreen<R: Runtime>(window: Window<R>) -> Result<bool, Strin
     })
 }
 
+/// Linux applies a window theme through the process-wide `GtkSettings`
+/// `gtk-application-prefer-dark-theme` property, which makes a live WebKitGTK view
+/// rebuild its theme; the renderer themes itself and has no native decorations.
+fn native_theme_to_apply(theme: Option<tauri::Theme>, os: &str) -> Option<Option<tauri::Theme>> {
+    (os != "linux").then_some(theme)
+}
+
 #[tauri::command]
 pub fn window_set_theme<R: Runtime>(window: Window<R>, theme: String) -> Result<(), String> {
     let theme = parse_theme(&theme)?;
-    window.set_theme(theme).map_err(|e| {
+    let Some(native_theme) = native_theme_to_apply(theme, std::env::consts::OS) else {
+        return Ok(());
+    };
+    window.set_theme(native_theme).map_err(|e| {
         format!(
             "window_set_theme: failed to set theme on window {:?} ({}): {e}",
             window.label(),
@@ -417,6 +427,62 @@ mod tests {
         assert_eq!(parse_theme("system").unwrap(), None);
         let error = parse_theme("sepia").expect_err("unknown theme must be refused");
         assert!(error.contains("sepia"), "{error}");
+    }
+
+    #[test]
+    fn linux_keeps_the_native_theme_untouched() {
+        assert_eq!(
+            native_theme_to_apply(Some(tauri::Theme::Dark), "linux"),
+            None
+        );
+        assert_eq!(
+            native_theme_to_apply(Some(tauri::Theme::Light), "linux"),
+            None
+        );
+        assert_eq!(native_theme_to_apply(None, "linux"), None);
+        assert_eq!(
+            native_theme_to_apply(Some(tauri::Theme::Dark), "macos"),
+            Some(Some(tauri::Theme::Dark))
+        );
+        assert_eq!(
+            native_theme_to_apply(Some(tauri::Theme::Light), "windows"),
+            Some(Some(tauri::Theme::Light))
+        );
+        assert_eq!(
+            native_theme_to_apply(None, "macos"),
+            Some(None),
+            "system must still reach the native window outside Linux"
+        );
+    }
+
+    #[test]
+    fn window_set_theme_resolves_for_every_contract_value() {
+        let window =
+            build_mock_window(|b| b.invoke_handler(tauri::generate_handler![window_set_theme]));
+        for theme in ["light", "dark", "system"] {
+            let response = invoke(
+                &window,
+                "window_set_theme",
+                serde_json::json!({ "theme": theme }),
+            );
+            assert!(
+                response.is_ok(),
+                "window_set_theme({theme}) must resolve: {response:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn window_set_theme_refuses_an_unknown_value() {
+        let window =
+            build_mock_window(|b| b.invoke_handler(tauri::generate_handler![window_set_theme]));
+        let error = invoke(
+            &window,
+            "window_set_theme",
+            serde_json::json!({ "theme": "sepia" }),
+        )
+        .expect_err("an unknown theme must be refused");
+        assert!(error.to_string().contains("sepia"), "{error}");
     }
 
     #[test]
