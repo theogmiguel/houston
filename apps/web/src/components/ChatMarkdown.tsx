@@ -455,11 +455,16 @@ const markdownServerConfigFieldsAtom = Atom.family((environmentId: EnvironmentId
   }).pipe(Atom.withLabel("markdown-server-config-fields")),
 );
 
-function fileLinkSourcesKey(
+interface FileLinkSources {
+  readonly hrefs: ReadonlyArray<string>;
+  readonly spans: ReadonlyArray<string>;
+}
+
+function scanFileLinkSources(
   text: string,
   cwd: string | undefined,
   imageBaseDir: string | undefined,
-): string {
+): FileLinkSources {
   const hrefs = extractMarkdownLinkHrefs(renderCodexInlineDirectivesAsMarkdown(text))
     .filter((href) => !parseComposerContextHref(href))
     .map(normalizeMarkdownLinkHrefKey)
@@ -467,7 +472,54 @@ function fileLinkSourcesKey(
   const spans = extractInlineCodeSpans(text).filter((span) =>
     resolveInlineCodeFileLinkMeta(span, cwd, imageBaseDir ?? cwd),
   );
-  return JSON.stringify([[...new Set(hrefs)], [...new Set(spans)]]);
+  return { hrefs, spans };
+}
+
+// Finished blocks of streaming messages; a few long answers streaming at once fit.
+const FINISHED_BLOCK_SOURCES_LIMIT = 512;
+const finishedBlockSources = new Map<string, FileLinkSources>();
+
+function finishedBlockFileLinkSources(
+  block: string,
+  cwd: string | undefined,
+  imageBaseDir: string | undefined,
+): FileLinkSources {
+  const key = `${cwd}\u0000${imageBaseDir}\u0000${block}`;
+  const cached = finishedBlockSources.get(key);
+  if (cached !== undefined) {
+    finishedBlockSources.delete(key);
+    finishedBlockSources.set(key, cached);
+    return cached;
+  }
+  const sources = scanFileLinkSources(block, cwd, imageBaseDir);
+  finishedBlockSources.set(key, sources);
+  if (finishedBlockSources.size > FINISHED_BLOCK_SOURCES_LIMIT) {
+    finishedBlockSources.delete(finishedBlockSources.keys().next().value!);
+  }
+  return sources;
+}
+
+/**
+ * While streaming renders each block apart, links are found per block too, so a tick scans only
+ * the last block and reuses the finished ones.
+ */
+function fileLinkSourcesKey(
+  text: string,
+  streamingBlocks: ReadonlyArray<string> | null,
+  cwd: string | undefined,
+  imageBaseDir: string | undefined,
+): string {
+  const parts =
+    streamingBlocks === null
+      ? [scanFileLinkSources(text, cwd, imageBaseDir)]
+      : streamingBlocks.map((block, index) =>
+          index === streamingBlocks.length - 1
+            ? scanFileLinkSources(block, cwd, imageBaseDir)
+            : finishedBlockFileLinkSources(block, cwd, imageBaseDir),
+        );
+  const hrefs = new Set(parts.flatMap((part) => part.hrefs));
+  const spans = new Set(parts.flatMap((part) => part.spans));
+  return JSON.stringify([[...hrefs], [...spans]]);
 }
 
 function resolveFileLinkSources(
@@ -511,7 +563,8 @@ function useChatMarkdownState({
   renderContextReference,
   headingLevelOffset = 0,
   sourceControlMedia = false,
-}: ChatMarkdownProps) {
+  streamingBlocks = null,
+}: ChatMarkdownProps & { readonly streamingBlocks?: ReadonlyArray<string> | null }) {
   const resolvedTheme = useRenderedAppearance();
   const markdownRef = useRef<HTMLElement>(null);
   const mediaRequestId = useRef(0);
@@ -688,7 +741,7 @@ function useChatMarkdownState({
   // Keyed by the file links found, not the text, so streamed text that adds none keeps the
   // renderer context, and every block reading it, unchanged.
   // A template literal marks the key as a string, so the compiler memoizes the maps on its value.
-  const fileLinksKey = `${fileLinkSourcesKey(text, cwd, imageBaseDir)}`;
+  const fileLinksKey = `${fileLinkSourcesKey(text, streamingBlocks, cwd, imageBaseDir)}`;
   const { markdownFileLinkMetaByHref, inlineCodeFileLinkMetaByText, fileLinkParentSuffixByPath } =
     resolveFileLinkSources(fileLinksKey, cwd, imageBaseDir);
   const resolveThreadPullRequest = (
@@ -1736,8 +1789,6 @@ function ChatMarkdown({
   extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
   ...props
 }: ChatMarkdownProps) {
-  const { componentState, handleCopy, markdownRef, localMediaPreview, closeLocalMediaPreview } =
-    useChatMarkdownState({ text, inline, ...props });
   // Streaming re-renders only the last block; offsets for task edits need the whole text.
   const streamingBlocks =
     props.isStreaming === true &&
@@ -1746,6 +1797,8 @@ function ChatMarkdown({
     !props.onTaskListChange
       ? splitMarkdownBlocks(text)
       : null;
+  const { componentState, handleCopy, markdownRef, localMediaPreview, closeLocalMediaPreview } =
+    useChatMarkdownState({ text, inline, streamingBlocks, ...props });
   const incrementalParsing =
     props.isStreaming === true &&
     streamingBlocks === null &&
