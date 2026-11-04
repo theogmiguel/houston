@@ -39,6 +39,7 @@ import {
   type OrchestrationV2AppThread,
   type OrchestrationV2PendingBackgroundTask,
   OrchestrationV2ProviderThread,
+  type OrchestrationV2TurnItem,
   ProjectId,
   ProviderInstanceId,
   type ResolvedProviderInstanceEnvironment,
@@ -5481,6 +5482,365 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           ),
         );
         for (const item of latest.values()) assert.notInclude(item.text, "secret-signature");
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+  );
+
+  const assistantTurnItems = (events: ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event>) =>
+    events.flatMap((event) =>
+      event.type === "turn_item.updated" && event.turnItem.type === "assistant_message"
+        ? [event.turnItem]
+        : [],
+    );
+  const assistantMessages = (events: ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event>) =>
+    events.flatMap((event) =>
+      event.type === "message.updated" && event.message.role === "assistant" ? [event.message] : [],
+    );
+
+  // Recorded frames: the answer's text block streams, then its snapshot lands before its stop.
+  const recordedTextBlockFrames = () => {
+    const transcript = NodeFS.readFileSync(
+      new URL(
+        "../testkit/fixtures/claude_background_task_interrupt/claude_transcript.ndjson",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const frames = transcript
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as { type: string; frame?: Record<string, any> })
+      .flatMap((entry) => (entry.type === "emit_inbound" && entry.frame ? [entry.frame] : []));
+    const start = frames.findIndex((frame) => frame.event?.type === "message_start");
+    const stop = frames.findIndex(
+      (frame) => frame.event?.type === "content_block_stop" && frame.event.index === 1,
+    );
+    if (start < 0 || stop < start) throw new Error("transcript shape changed");
+    return frames
+      .slice(start, stop + 1)
+      .map((frame) => claudeSdkFrame({ ...frame, session_id: WAKE_NATIVE_SESSION }));
+  };
+
+  it.effect("streams recorded Claude answer text before its block stops", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarness;
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("text-stream-attempt"),
+          text: "Start the background task",
+          attachments: [],
+        }),
+      );
+      const answer = "Starting the background task first.";
+      let streamedBeforeStop: ReadonlyArray<OrchestrationV2TurnItem> = [];
+      let snapshotUuid: string | undefined;
+      for (const frame of recordedTextBlockFrames()) {
+        const raw = frame as unknown as Record<string, any>;
+        if (raw.type === "stream_event" && raw.event.type === "content_block_stop") {
+          streamedBeforeStop = assistantTurnItems(harness.events);
+        }
+        if (raw.type === "assistant" && raw.message.content[0]?.type === "text") {
+          snapshotUuid = raw.uuid;
+          // The snapshot completes the item; capture what streamed ahead of it.
+          streamedBeforeStop = assistantTurnItems(harness.events);
+        }
+        yield* harness.offerAndWait(frame);
+        if (raw.type === "stream_event" && raw.event.delta?.type === "text_delta") {
+          yield* TestClock.adjust(50);
+          yield* Effect.yieldNow;
+        }
+      }
+      assert.isAbove(streamedBeforeStop.length, 0, "text must stream before its block stops");
+      for (const item of streamedBeforeStop) {
+        assert.isTrue(item.type === "assistant_message" && item.streaming);
+        assert.isTrue(answer.startsWith(item.type === "assistant_message" ? item.text : ""));
+      }
+      yield* Queue.offer(
+        harness.sdkMessages,
+        makeResultFrame({ uuid: "text-stream-result", result: answer }),
+      );
+      const terminal = yield* Queue.take(harness.terminalReceipts);
+      assert.equal(terminal.status, "completed");
+
+      const items = assistantTurnItems(harness.events);
+      assert.deepEqual([...new Set(items.map((item) => item.id))], [items[0]?.id]);
+      const final = items.at(-1);
+      assert.equal(final?.type === "assistant_message" ? final.text : undefined, answer);
+      assert.equal(final?.type === "assistant_message" ? final.streaming : undefined, false);
+      assert.equal(final?.status, "completed");
+      const messages = assistantMessages(harness.events);
+      assert.deepEqual(
+        messages.map((message) => [message.text, message.streaming]),
+        [[answer, false]],
+      );
+      assert.equal(
+        final?.type === "assistant_message" ? final.messageId : undefined,
+        messages[0]?.id,
+      );
+      assert.isDefined(snapshotUuid);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
+
+  it.effect.each(["completed", "interrupted"] as const)(
+    "reconciles streamed Claude text blocks with their snapshots when %s",
+    (status) =>
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("text-blocks-attempt"),
+            text: "Answer in parts",
+            attachments: [],
+          }),
+        );
+        const stream = (event: unknown) =>
+          claudeSdkFrame({
+            type: "stream_event",
+            event,
+            parent_tool_use_id: null,
+            session_id: WAKE_NATIVE_SESSION,
+            uuid: "stream-frame",
+          });
+        const snapshot = (id: string, uuid: string, block: Record<string, unknown>) =>
+          claudeSdkFrame({
+            type: "assistant",
+            uuid,
+            session_id: WAKE_NATIVE_SESSION,
+            parent_tool_use_id: null,
+            message: { id, model: "claude-sonnet-4-6", content: [block] },
+          });
+        const textBlock = (input: {
+          readonly id: string;
+          readonly index: number;
+          readonly uuid: string;
+          readonly deltas: ReadonlyArray<string>;
+          readonly snapshot: boolean;
+        }) => [
+          stream({
+            type: "content_block_start",
+            index: input.index,
+            content_block: { type: "text", text: "" },
+          }),
+          ...input.deltas.map((text) =>
+            stream({
+              type: "content_block_delta",
+              index: input.index,
+              delta: { type: "text_delta", text },
+            }),
+          ),
+          ...(input.snapshot
+            ? [
+                snapshot(input.id, input.uuid, { type: "text", text: input.deltas.join("") }),
+                snapshot(input.id, input.uuid, { type: "text", text: input.deltas.join("") }),
+                stream({ type: "content_block_stop", index: input.index }),
+              ]
+            : []),
+        ];
+        const thinkingBlock = (id: string, index: number, uuid: string, thinking: string) => [
+          stream({
+            type: "content_block_start",
+            index,
+            content_block: { type: "thinking", thinking },
+          }),
+          snapshot(id, uuid, { type: "thinking", thinking, signature: "sig" }),
+          stream({ type: "content_block_stop", index }),
+        ];
+        const frames = [
+          stream({ type: "message_start", message: { id: "answer-message" } }),
+          ...thinkingBlock("answer-message", 0, "thinking-0", "Plan the first part"),
+          ...textBlock({
+            id: "answer-message",
+            index: 1,
+            uuid: "text-1",
+            deltas: ["First ", "part."],
+            snapshot: true,
+          }),
+          ...thinkingBlock("answer-message", 2, "thinking-2", "Plan the second part"),
+          ...textBlock({
+            id: "answer-message",
+            index: 3,
+            uuid: "text-3",
+            deltas: ["Second ", "part."],
+            snapshot: true,
+          }),
+          stream({ type: "message_start", message: { id: "cut-message" } }),
+          ...textBlock({
+            id: "cut-message",
+            index: 0,
+            uuid: "text-cut",
+            deltas: ["Cut ", "short"],
+            snapshot: status === "completed",
+          }),
+        ];
+        for (const frame of frames) {
+          yield* harness.offerAndWait(frame);
+          yield* TestClock.adjust(50);
+          yield* Effect.yieldNow;
+        }
+        yield* Queue.offer(
+          harness.sdkMessages,
+          makeResultFrame({
+            uuid: "text-blocks-result",
+            result: "Cut short",
+            ...(status === "interrupted" ? { terminalReason: "aborted_streaming" as const } : {}),
+          }),
+        );
+        const terminal = yield* Queue.take(harness.terminalReceipts);
+        assert.equal(terminal.status, status);
+
+        const latest = new Map(assistantTurnItems(harness.events).map((item) => [item.id, item]));
+        assert.deepEqual(
+          [...latest.values()]
+            .toSorted((left, right) => left.ordinal - right.ordinal)
+            .map((item) => [item.type === "assistant_message" ? item.text : "", item.status]),
+          [
+            ["First part.", "completed"],
+            ["Second part.", "completed"],
+            ["Cut short", "completed"],
+          ],
+        );
+        const messages = assistantMessages(harness.events);
+        assert.deepEqual(
+          messages.map((message) => message.text),
+          ["First part.", "Second part.", "Cut short"],
+          "each block completes once",
+        );
+        const reasoningOrdinals = harness.events.flatMap((event) =>
+          event.type === "turn_item.updated" && event.turnItem.type === "reasoning"
+            ? [event.turnItem.ordinal]
+            : [],
+        );
+        const ordinals = [...latest.values()].map((item) => item.ordinal);
+        assert.isBelow(Math.min(...reasoningOrdinals), Math.min(...ordinals));
+        assert.equal(new Set([...reasoningOrdinals, ...ordinals]).size, 5);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+  );
+
+  // regression: a streamed block abandoned by a retried request never completes as an answer.
+  it.effect.each(["message_start", "api_retry", "turn_end"] as const)(
+    "cancels Claude text abandoned before its snapshot when %s supersedes it",
+    (closedBy) =>
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("text-orphan-attempt"),
+            text: "Answer once",
+            attachments: [],
+          }),
+        );
+        const stream = (event: unknown) =>
+          claudeSdkFrame({
+            type: "stream_event",
+            event,
+            parent_tool_use_id: null,
+            session_id: WAKE_NATIVE_SESSION,
+            uuid: "stream-frame",
+          });
+        const answer = "The full answer.";
+        const retried = [
+          ...(closedBy === "message_start"
+            ? [stream({ type: "message_start", message: { id: "retried-message" } })]
+            : []),
+          ...(closedBy === "api_retry"
+            ? [
+                claudeSdkFrame({
+                  type: "system",
+                  subtype: "api_retry",
+                  attempt: 1,
+                  max_retries: 10,
+                  retry_delay_ms: 500,
+                  error_status: 529,
+                  error: "overloaded",
+                  uuid: "00000000-0000-4000-8000-000000000301",
+                  session_id: WAKE_NATIVE_SESSION,
+                }),
+              ]
+            : []),
+          // The retried request's snapshot; the non-streaming retry sends only this.
+          claudeSdkFrame({
+            type: "assistant",
+            uuid: "retried-text",
+            session_id: WAKE_NATIVE_SESSION,
+            parent_tool_use_id: null,
+            message: {
+              id: "retried-message",
+              model: "claude-sonnet-4-6",
+              content: [{ type: "text", text: answer }],
+            },
+          }),
+        ];
+        const frames = [
+          stream({ type: "message_start", message: { id: "abandoned-message" } }),
+          stream({
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "text", text: "" },
+          }),
+          stream({
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "text_delta", text: "The fu" },
+          }),
+          ...retried,
+        ];
+        for (const frame of frames) {
+          yield* harness.offerAndWait(frame);
+          yield* TestClock.adjust(50);
+          yield* Effect.yieldNow;
+        }
+        const latestItems = () =>
+          new Map(assistantTurnItems(harness.events).map((item) => [item.id, item]));
+        const abandonedId = assistantTurnItems(harness.events)[0]?.id;
+        assert.isDefined(abandonedId, "the abandoned block streamed before the retry");
+        if (closedBy !== "turn_end") {
+          assert.equal(latestItems().get(abandonedId!)?.status, "cancelled");
+        }
+        yield* Queue.offer(
+          harness.sdkMessages,
+          makeResultFrame({ uuid: "text-orphan-result", result: answer }),
+        );
+        const terminal = yield* Queue.take(harness.terminalReceipts);
+        assert.equal(terminal.status, "completed");
+
+        const latest = latestItems();
+        const abandoned = latest.get(abandonedId!);
+        assert.equal(abandoned?.status, "cancelled");
+        assert.equal(abandoned?.type === "assistant_message" ? abandoned.text : undefined, "");
+        assert.deepEqual(
+          [...latest.values()]
+            .filter((item) => item.status === "completed")
+            .map((item) => (item.type === "assistant_message" ? item.text : "")),
+          [answer],
+        );
+        assert.deepEqual(
+          assistantMessages(harness.events).map((message) => message.text),
+          [answer],
+          "only the retried answer becomes a message",
+        );
       }).pipe(
         Effect.scoped,
         Effect.provide(

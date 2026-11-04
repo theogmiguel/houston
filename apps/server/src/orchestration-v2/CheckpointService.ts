@@ -14,6 +14,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
+import * as Fiber from "effect/Fiber";
 import * as Hex from "effect/encoding/Hex";
 import * as KeyedLock from "@houston-app/shared/KeyedLock";
 import * as Layer from "effect/Layer";
@@ -129,6 +130,8 @@ export interface CheckpointServiceV2Shape {
     readonly appRunOrdinal: number | null;
     readonly capturedAt: DateTime.Utc;
     readonly forceMissing?: boolean;
+    /** The caller has just found the previous ordinal's ref, so capture need not look it up. */
+    readonly previousCheckpointReady?: boolean;
   }) => Effect.Effect<OrchestrationV2Checkpoint, CheckpointServiceV2Error>;
   readonly restore: (input: {
     readonly scope: OrchestrationV2CheckpointScope;
@@ -384,6 +387,18 @@ export const layer: Layer.Layer<
             });
           }
 
+          // Past ordinal 0 the previous ref is another ref, so its lookup overlaps the capture.
+          const previousLookup =
+            input.previousCheckpointReady === true || input.ordinalWithinScope === 0
+              ? undefined
+              : yield* Effect.forkChild(
+                  Effect.result(
+                    checkpointStore.hasCheckpointRef({
+                      cwd: input.scope.cwd,
+                      checkpointRef: previousCheckpointRef,
+                    }),
+                  ),
+                );
           const captureStatus = yield* checkpointStore
             .captureCheckpoint({
               cwd: input.scope.cwd,
@@ -404,6 +419,7 @@ export const layer: Layer.Layer<
             );
 
           if (captureStatus !== "ready") {
+            if (previousLookup !== undefined) yield* Fiber.interrupt(previousLookup);
             return makeCheckpoint({
               id: checkpointId,
               scope: input.scope,
@@ -419,12 +435,16 @@ export const layer: Layer.Layer<
             });
           }
 
-          const previousExists = yield* checkpointStore
-            .hasCheckpointRef({
-              cwd: input.scope.cwd,
-              checkpointRef: previousCheckpointRef,
-            })
-            .pipe(
+          const previousExists =
+            input.previousCheckpointReady === true ||
+            (yield* (
+              previousLookup === undefined
+                ? checkpointStore.hasCheckpointRef({
+                    cwd: input.scope.cwd,
+                    checkpointRef: previousCheckpointRef,
+                  })
+                : Fiber.join(previousLookup).pipe(Effect.flatMap(Effect.fromResult))
+            ).pipe(
               Effect.catch((cause) =>
                 Effect.logWarning("orchestration V2 previous checkpoint ref lookup failed", {
                   scopeId: input.scope.id,
@@ -432,7 +452,7 @@ export const layer: Layer.Layer<
                   cause: String(cause),
                 }).pipe(Effect.as(false)),
               ),
-            );
+            ));
           const refs = {
             cwd: input.scope.cwd,
             fromCheckpointRef: previousCheckpointRef,

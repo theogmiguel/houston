@@ -97,20 +97,78 @@ impl std::error::Error for SignalError {}
 pub fn process_image_path(pid: u32) -> Option<String> {
     let pid = checked_pid(pid).ok()?;
     let handle = win::open(pid, win::QUERY).ok()?;
-    let mut buffer = vec![0u16; 32_768];
-    let mut length = buffer.len() as u32;
-    // SAFETY: the handle comes from this module's open(), and the buffer length is
-    // passed in the units QueryFullProcessImageNameW expects (UTF-16 code units).
-    let found = unsafe {
-        windows_sys::Win32::System::Threading::QueryFullProcessImageNameW(
-            handle,
-            0,
-            buffer.as_mut_ptr(),
-            &mut length,
-        )
-    };
+    let image = win::image(handle);
     win::close(handle);
-    (found != 0).then(|| String::from_utf16_lossy(&buffer[..length as usize]))
+    image.map(|image| String::from_utf16_lossy(&image))
+}
+
+/// What a pid names right now: its executable and when it was created. A pid read
+/// from a file is compared against these before it is signalled, because pids are reused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcessIdentity {
+    pub image: std::path::PathBuf,
+    pub created: std::time::SystemTime,
+}
+
+/// Opens the process for `PROCESS_QUERY_LIMITED_INFORMATION` only; one handle
+/// answers both queries, so they describe the same process.
+#[cfg(windows)]
+pub fn process_identity(pid: u32) -> Option<ProcessIdentity> {
+    use std::os::windows::ffi::OsStringExt;
+    let pid = checked_pid(pid).ok()?;
+    let handle = win::open(pid, win::QUERY).ok()?;
+    let identity = win::image(handle).zip(win::created(handle));
+    win::close(handle);
+    let (image, created) = identity?;
+    Some(ProcessIdentity {
+        image: std::ffi::OsString::from_wide(&image).into(),
+        created,
+    })
+}
+
+/// Reads `/proc`: the creation time is ticks since boot plus the boot time, which
+/// `/proc/stat` truncates to whole seconds, so it can read up to a second early.
+#[cfg(target_os = "linux")]
+pub fn process_identity(pid: u32) -> Option<ProcessIdentity> {
+    let pid = checked_pid(pid).ok()?;
+    let image = std::fs::read_link(format!("/proc/{pid}/exe")).ok()?;
+    // A replaced executable reads as "<path> (deleted)"; the path is still its image.
+    let image = match image.to_str().and_then(|s| s.strip_suffix(" (deleted)")) {
+        Some(path) => std::path::PathBuf::from(path),
+        None => image,
+    };
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    // The command name may hold spaces or ')'; starttime is the 20th field after it.
+    let (_, fields) = stat.rsplit_once(')')?;
+    let ticks: u64 = fields.split_whitespace().nth(19)?.parse().ok()?;
+    let boot = boot_time()?;
+    // SAFETY: sysconf reads a configuration value and has no side effects.
+    let hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+    let hz = u64::try_from(hz).ok().filter(|hz| *hz > 0)?;
+    let created = boot + std::time::Duration::from_millis(ticks.checked_mul(1000)? / hz);
+    Some(ProcessIdentity { image, created })
+}
+
+/// When this boot began, from `/proc/stat`'s `btime`: whole seconds, derived from the
+/// current wall clock, so a wall-clock step moves it.
+#[cfg(target_os = "linux")]
+pub fn boot_time() -> Option<std::time::SystemTime> {
+    let boot: u64 = std::fs::read_to_string("/proc/stat")
+        .ok()?
+        .lines()
+        .find_map(|line| line.strip_prefix("btime "))?
+        .trim()
+        .parse()
+        .ok()?;
+    Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(boot))
+}
+
+/// No identity query exists here, so no pid is ever confirmed: a server restart never
+/// signals the tracked or recorded server and fails with an error instead.
+#[cfg(all(unix, not(target_os = "linux")))]
+pub fn process_identity(pid: u32) -> Option<ProcessIdentity> {
+    let _ = pid;
+    None
 }
 
 #[cfg(unix)]
@@ -216,6 +274,49 @@ mod win {
     pub(super) fn close(handle: HANDLE) {
         // SAFETY: closing a handle this module opened.
         unsafe { windows_sys::Win32::Foundation::CloseHandle(handle) };
+    }
+
+    pub(super) fn image(handle: HANDLE) -> Option<Vec<u16>> {
+        let mut buffer = vec![0u16; 32_768];
+        let mut length = buffer.len() as u32;
+        // SAFETY: the handle comes from open(), and the buffer length is passed in the
+        // units QueryFullProcessImageNameW expects (UTF-16 code units).
+        let found = unsafe {
+            windows_sys::Win32::System::Threading::QueryFullProcessImageNameW(
+                handle,
+                0,
+                buffer.as_mut_ptr(),
+                &mut length,
+            )
+        };
+        (found != 0).then(|| {
+            buffer.truncate(length as usize);
+            buffer
+        })
+    }
+
+    pub(super) fn created(handle: HANDLE) -> Option<std::time::SystemTime> {
+        use windows_sys::Win32::Foundation::FILETIME;
+        // FILETIME counts 100 ns intervals since 1601-01-01; this many separate it from 1970.
+        const UNIX_EPOCH_IN_FILETIME: u64 = 116_444_736_000_000_000;
+        let mut times = [FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        }; 4];
+        let [creation, exit, kernel, user] = &mut times;
+        // SAFETY: the handle comes from open() with query access; each out-parameter is a
+        // distinct, writable FILETIME.
+        let ok = unsafe {
+            windows_sys::Win32::System::Threading::GetProcessTimes(
+                handle, creation, exit, kernel, user,
+            )
+        };
+        if ok == 0 {
+            return None;
+        }
+        let ticks = (u64::from(times[0].dwHighDateTime) << 32) | u64::from(times[0].dwLowDateTime);
+        let since_epoch = ticks.checked_sub(UNIX_EPOCH_IN_FILETIME)?;
+        Some(std::time::UNIX_EPOCH + std::time::Duration::from_nanos(since_epoch.checked_mul(100)?))
     }
 
     pub(super) fn is_access_denied(err: &io::Error) -> bool {
@@ -534,6 +635,41 @@ mod tests {
     fn checked_process_group_returns_the_negation() {
         assert_eq!(checked_process_group(1), Ok(-1));
         assert_eq!(checked_process_group(i32::MAX as u32), Ok(-(i32::MAX)));
+    }
+
+    #[cfg(any(windows, target_os = "linux"))]
+    #[test]
+    fn process_identity_names_this_process_and_its_creation() {
+        let identity = process_identity(std::process::id()).expect("this process is inspectable");
+        let exe = std::env::current_exe().expect("current exe");
+        assert_eq!(
+            identity.image.canonicalize().ok(),
+            exe.canonicalize().ok(),
+            "image {:?}",
+            identity.image
+        );
+        let now = std::time::SystemTime::now();
+        let age = now
+            .duration_since(identity.created)
+            .unwrap_or_else(|ahead| panic!("created {:?} in the future", ahead.duration()));
+        assert!(
+            age < std::time::Duration::from_secs(3600),
+            "created {age:?} ago"
+        );
+        for (pid, what) in BROADCAST_VALUES {
+            assert_eq!(process_identity(pid), None, "{what}");
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn boot_time_precedes_this_process() {
+        let boot = boot_time().expect("/proc/stat names btime");
+        let identity = process_identity(std::process::id()).expect("this process is inspectable");
+        assert!(
+            boot <= identity.created,
+            "boot {boot:?}, created {identity:?}"
+        );
     }
 
     #[test]

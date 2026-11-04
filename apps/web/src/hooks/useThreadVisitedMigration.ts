@@ -32,7 +32,7 @@ export function startThreadVisitedMigration(registry: AtomRegistry.AtomRegistry)
       );
     }
   };
-  return registry.subscribe(environmentThreadShells.threadShellsAtom, migrate, {
+  return registry.subscribe(environmentThreadShells.quietThreadShellsAtom, migrate, {
     immediate: true,
   });
 }

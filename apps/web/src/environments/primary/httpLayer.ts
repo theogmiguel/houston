@@ -29,7 +29,8 @@ function withPrimaryBearerToken(client: HttpClient.HttpClient): HttpClient.HttpC
             reason: new HttpClientError.TransportError({
               request,
               cause,
-              description: `the desktop host could not provide a session token: ${String(cause)}`,
+              // The cause already reads "The desktop host could not provide a credential ...".
+              description: cause instanceof Error ? cause.message : String(cause),
             }),
           }),
       }).pipe(
