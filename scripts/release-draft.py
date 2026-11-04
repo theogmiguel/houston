@@ -99,7 +99,7 @@ def promote(repository, tag, assets, shipped_path, notes_path, output, config, s
     args = [sys.executable, str(Path(__file__).with_name("gen-update-manifest.py")),
             "--repository", repository, "--tag", tag, "--version", tag.removeprefix("v"),
             "--notes-file", str(notes_path), "--artifacts-dir", str(assets),
-            "--output", str(output), "--tauri-config", str(config)]
+            "--output", str(output), "--public-key", str(config)]
     if not any(key.startswith("windows-") for key in shipped["platforms"]):
         args.append("--no-windows")
     if not any(key.startswith("darwin-") for key in shipped["platforms"]):
@@ -150,7 +150,11 @@ def main():
             cmd.add_argument("--shipped", type=Path, required=True)
             cmd.add_argument("--notes-file", type=Path, required=True)
             cmd.add_argument("--output", type=Path, required=True)
-            cmd.add_argument("--tauri-config", type=Path, default=Path("src-tauri/tauri.conf.json"))
+            cmd.add_argument(
+                "--public-key",
+                type=Path,
+                default=Path(__file__).with_name("updater-pubkey.txt"),
+            )
     args = parser.parse_args()
     try:
         if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:-rc\.[0-9]+)?", args.tag):
@@ -163,7 +167,7 @@ def main():
         elif args.operation == "file":
             file_draft(args.repository, args.tag, args.title, args.artifacts, args.notes_file, args.resume, args.prerelease)
         elif args.operation == "promote":
-            promote(args.repository, args.tag, args.assets, args.shipped, args.notes_file, args.output, args.tauri_config, args.snapshot)
+            promote(args.repository, args.tag, args.assets, args.shipped, args.notes_file, args.output, args.public_key, args.snapshot)
         else:
             current = release(args.repository, args.tag)
             if current is not None:
