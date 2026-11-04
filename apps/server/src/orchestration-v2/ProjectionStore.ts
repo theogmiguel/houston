@@ -1022,6 +1022,16 @@ const encodeThreadPayload = Schema.encodeEffect(
 const encodeThreadUpdatedAt = Schema.encodeEffect(
   OrchestrationV2AppThreadJsonSchema.fields.updatedAt,
 );
+// Houston: the hot apply cases encode their timestamp columns with the payload's own field schemas
+// instead of parsing the payload they just encoded.
+const encodeMessageTimestamp = Schema.encodeEffect(
+  OrchestrationV2ConversationMessageJsonSchema.fields.updatedAt,
+);
+// Every turn item variant takes `updatedAt` from the shared JSON base fields.
+const encodeTurnItemUpdatedAt = Schema.encodeEffect(Schema.DateTimeUtcFromString);
+const encodeCheckpointCapturedAt = Schema.encodeEffect(
+  OrchestrationV2CheckpointJsonSchema.fields.capturedAt,
+);
 const encodeRunPayload = Schema.encodeEffect(Schema.fromJsonString(OrchestrationV2RunJsonSchema));
 const encodeRestartCancelledBackgroundWork = Schema.encodeEffect(
   Schema.fromJsonString(OrchestrationV2RunJsonSchema.fields.restartCancelledBackgroundWork),
@@ -2426,7 +2436,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             }
             case "message.updated": {
               const payloadJson = yield* encodeMessagePayload(event.payload);
-              const payload = parseEncodedPayload(payloadJson);
+              const createdAt = yield* encodeMessageTimestamp(event.payload.createdAt);
+              const updatedAt = yield* encodeMessageTimestamp(event.payload.updatedAt);
               yield* sql`
               INSERT INTO orchestration_v2_projection_messages (
                 message_id,
@@ -2446,8 +2457,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 ${event.payload.nodeId},
                 ${event.payload.role},
                 ${booleanInt(event.payload.streaming)},
-                ${stringField(payload, "createdAt")},
-                ${stringField(payload, "updatedAt")},
+                ${createdAt},
+                ${updatedAt},
                 ${payloadJson}
               )
               ON CONFLICT(message_id)
@@ -2497,7 +2508,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             }
             case "turn-item.updated": {
               const payloadJson = yield* encodeTurnItemPayload(event.payload);
-              const payload = parseEncodedPayload(payloadJson);
+              const updatedAt = yield* encodeTurnItemUpdatedAt(event.payload.updatedAt);
               yield* sql`
               INSERT INTO orchestration_v2_projection_turn_items (
                 turn_item_id,
@@ -2524,7 +2535,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 ${event.payload.ordinal},
                 ${event.payload.type},
                 ${event.payload.status},
-                ${stringField(payload, "updatedAt")},
+                ${updatedAt},
                 ${payloadJson}
               )
               ON CONFLICT(turn_item_id)
@@ -2587,7 +2598,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             }
             case "checkpoint.captured": {
               const payloadJson = yield* encodeCheckpointPayload(event.payload);
-              const payload = parseEncodedPayload(payloadJson);
+              const capturedAt = yield* encodeCheckpointCapturedAt(event.payload.capturedAt);
               yield* sql`
               INSERT INTO orchestration_v2_projection_checkpoints (
                 checkpoint_id,
@@ -2610,7 +2621,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 ${event.payload.ordinalWithinScope},
                 ${event.payload.appRunOrdinal},
                 ${event.payload.status},
-                ${stringField(payload, "capturedAt")},
+                ${capturedAt},
                 ${payloadJson}
               )
               ON CONFLICT(checkpoint_id)
