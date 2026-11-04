@@ -45,8 +45,10 @@ jobs:
         include:
           - runner: ubuntu-22.04
             arch: x86_64
+            build_arch: x64
           - runner: ubuntu-22.04-arm
             arch: aarch64
+            build_arch: arm64
     runs-on: ${{ matrix.runner }}
     env:
       HOUSTON_CHANNEL: dev
@@ -163,14 +165,14 @@ jobs:
         env:
           CARGO_BUILD_JOBS: "3"
           VERSION: ${{ inputs.version }}
-          ARCH: ${{ matrix.arch }}
+          BUILD_ARCH: ${{ matrix.build_arch }}
         run: |
           set -euo pipefail
           # A restored cache must not contribute an older artifact or .sig.
           rm -rf release
           base="${VERSION%%+*}"
           ./scripts/oom-shield.sh node scripts/build-desktop-artifact.ts \
-            --platform linux --target AppImage --arch "$ARCH" \
+            --platform linux --target AppImage --arch "$BUILD_ARCH" \
             --version "$base" --output-dir release --verbose
 
       # Minisign signatures are the update bridge: an installed Tauri copy
