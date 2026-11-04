@@ -5,9 +5,36 @@ import type {
   ProviderInstanceId,
   ThreadId,
 } from "@houston-app/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import type { AnyRouter } from "@tanstack/react-router";
+import { Atom, AtomRegistry } from "effect/reactivity";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { buildTrayPayload, trayConnection, trayThreadKey } from "./tray";
+import { environmentThreadShells } from "../state/threads";
+import { buildTrayPayload, startTraySync, trayConnection, trayThreadKey } from "./tray";
+
+vi.mock("../state/threads", async () => {
+  const { Atom } = await import("effect/reactivity");
+  return {
+    environmentThreadShells: {
+      threadShellsAtom: Atom.make<ReadonlyArray<unknown>>([]),
+      quietThreadShellsAtom: Atom.make<ReadonlyArray<unknown>>([]),
+      delegatedUnderParentAtom: Atom.make<ReadonlySet<string>>(new Set<string>()),
+    },
+  };
+});
+vi.mock("../state/projects", async () => {
+  const { Atom } = await import("effect/reactivity");
+  return { environmentProjects: { projectsAtom: Atom.make<ReadonlyArray<unknown>>([]) } };
+});
+vi.mock("../state/presentation", async () => {
+  const { Atom } = await import("effect/reactivity");
+  return {
+    environmentPresentations: {
+      presentationsAtom: Atom.make(new Map([["primary", { connection: { phase: "connected" } }]])),
+      providersByEnvironmentAtom: Atom.make(new Map()),
+    },
+  };
+});
 
 function thread(
   overrides: {
@@ -122,5 +149,93 @@ describe("tray payload", () => {
     );
     expect(payload.sessions[0]?.workspace).toBe("Houston");
     expect(payload.sessions[0]?.agent).toBe("claude");
+  });
+});
+
+describe("startTraySync", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function setup(initial: ReadonlyArray<EnvironmentThreadShell>) {
+    vi.useFakeTimers();
+    const traySync = vi.fn(async (_payload: unknown) => {});
+    vi.stubGlobal("window", {
+      hostBridge: { traySync },
+      setTimeout: (callback: () => void, ms: number) => setTimeout(callback, ms),
+      clearTimeout: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
+    });
+    const tasks: Array<() => void> = [];
+    const registry = AtomRegistry.make({
+      scheduleTask: (task) => {
+        tasks.push(task);
+        return () => {};
+      },
+    });
+    const live = environmentThreadShells.threadShellsAtom;
+    const quiet = environmentThreadShells.quietThreadShellsAtom;
+    if (!Atom.isWritable(live) || !Atom.isWritable(quiet)) {
+      throw new Error("Expected writable test shell state");
+    }
+    registry.set(live, initial);
+    registry.set(quiet, initial);
+    const stop = startTraySync(registry, {} as AnyRouter);
+    const flush = () => {
+      for (let task = tasks.shift(); task !== undefined; task = tasks.shift()) task();
+    };
+    return {
+      traySync,
+      setLive(next: ReadonlyArray<EnvironmentThreadShell>) {
+        registry.set(live, next);
+        flush();
+      },
+      setShells(next: ReadonlyArray<EnvironmentThreadShell>) {
+        registry.set(live, next);
+        registry.set(quiet, next);
+        flush();
+      },
+      [Symbol.dispose]() {
+        stop();
+        registry.dispose();
+      },
+    };
+  }
+
+  const running = (overrides: Record<string, unknown> = {}) =>
+    thread({ id: "t1", environmentId: "primary", runtime: { status: "running" }, ...overrides });
+
+  it("sends nothing on streaming ticks that leave the tray unchanged", () => {
+    using tray = setup([running()]);
+    expect(tray.traySync).toHaveBeenCalledTimes(1);
+
+    for (let tick = 0; tick < 8; tick += 1) {
+      tray.setLive([running({ updatedAt: `2026-01-01T00:00:0${tick}Z`, itemCount: tick })]);
+      vi.advanceTimersByTime(300);
+    }
+
+    expect(tray.traySync).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips a payload equal to the last one sent and still sends a status change", () => {
+    using tray = setup([running()]);
+    tray.setShells([running({ updatedAt: "2026-01-01T00:00:05Z" })]);
+    vi.advanceTimersByTime(300);
+    expect(tray.traySync).toHaveBeenCalledTimes(1);
+
+    tray.setShells([running({ hasPendingApprovals: true })]);
+    vi.advanceTimersByTime(300);
+    expect(tray.traySync).toHaveBeenCalledTimes(2);
+    expect(tray.traySync.mock.calls[1]?.[0]).toMatchObject({
+      sessions: [{ id: "primary:t1", status: "needsInput", needsInput: true }],
+    });
+  });
+
+  it("drops a pending payload when the tray returns to what it last sent", () => {
+    using tray = setup([running()]);
+    tray.setShells([running({ title: "Renamed" })]);
+    tray.setShells([running()]);
+    vi.advanceTimersByTime(300);
+    expect(tray.traySync).toHaveBeenCalledTimes(1);
   });
 });
