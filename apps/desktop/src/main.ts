@@ -77,6 +77,10 @@ import * as DesktopBrowserHost from "./preview/DesktopBrowserHost.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PreviewPasskeys from "./preview/Passkeys.ts";
 import * as DesktopWindow from "./window/DesktopWindow.ts";
+import * as DesktopNotifications from "./notifications/DesktopNotifications.ts";
+import * as QuickComposer from "./quickComposer/QuickComposer.ts";
+import * as DesktopTray from "./tray/DesktopTray.ts";
+import * as TrayHost from "./tray/TrayHost.ts";
 import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
 import * as DesktopWslServerTree from "./wsl/DesktopWslServerTree.ts";
@@ -175,9 +179,25 @@ const layerDesktopPreview = PreviewManager.layer.pipe(
   Layer.provideMerge(layerDesktopFoundation),
 );
 
+const layerDesktopTrayHost = TrayHost.layer.pipe(Layer.provideMerge(layerDesktopFoundation));
+
 const layerDesktopWindow = DesktopWindow.layer.pipe(
   Layer.provideMerge(layerDesktopServerExposure),
   Layer.provideMerge(layerDesktopPreview),
+  Layer.provideMerge(layerDesktopTrayHost),
+);
+
+const layerDesktopQuickComposer = QuickComposer.layer.pipe(
+  Layer.provideMerge(layerDesktopTrayHost),
+);
+
+const layerDesktopTray = DesktopTray.layer.pipe(
+  Layer.provideMerge(layerDesktopQuickComposer),
+  Layer.provideMerge(layerDesktopWindow),
+);
+
+const layerDesktopNotifications = DesktopNotifications.layer.pipe(
+  Layer.provideMerge(layerDesktopWindow),
 );
 
 const layerDesktopSnapShot = DesktopSnapShot.layer.pipe(
@@ -229,6 +249,8 @@ const layerDesktopApplication = Layer.mergeAll(
   ),
   Layer.provideMerge(layerDesktopWslBackend),
   Layer.provideMerge(layerDesktopLocalEnvironmentAuth),
+  Layer.provideMerge(layerDesktopTray),
+  Layer.provideMerge(layerDesktopNotifications),
 );
 
 // Pre-ready setup must not yield before Electron registers the privileged scheme.
