@@ -264,7 +264,11 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y qemu-user
+          sudo apt-get install -y qemu-user \
+            libgtk-3-0 libgl1 libegl1 libgbm1 libfribidi0 libnss3 libxss1 \
+            libasound2 libatk-bridge2.0-0 libdrm2 libxkbcommon0 libxcomposite1 \
+            libxdamage1 libxfixes3 libxrandr2 libpango-1.0-0 libcairo2 \
+            libatspi2.0-0 libsecret-1-0
           package_root=$(mktemp -d)
           trap 'rm -rf "$package_root"' EXIT
           deb=$(find dist -name '*.deb' -print -quit)
