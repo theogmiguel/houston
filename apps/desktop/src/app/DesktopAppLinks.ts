@@ -1,102 +1,39 @@
-import { createClerkBridge } from "@clerk/electron";
 import * as NodeURL from "node:url";
-import { storage } from "@clerk/electron/storage";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
 import { codexAuthDeliveryUrl, readCodexAuthHandoff } from "@houston-app/shared/codexAuthHandoff";
-import { receiveCodexAuthCallback, CodexAuthCallbackError } from "./CodexAuthCallback.ts";
-import * as ElectronShell from "../electron/ElectronShell.ts";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import { providerAuthReturnUrl } from "@houston-app/shared/providerAuthReturnUrl";
 import { promptLinkAppPath } from "@houston-app/shared/promptLinks";
 import { readPairingAppLink } from "@houston-app/shared/remote";
-import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
+import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import * as DesktopUserData from "./DesktopUserData.ts";
+import { CodexAuthCallbackError, receiveCodexAuthCallback } from "./CodexAuthCallback.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
-import { openClerkTokenStorage } from "./ClerkTokenStore.ts";
 import * as DesktopWebLinks from "./DesktopWebLinks.ts";
 
-export class DesktopClerkBridgeInitializationError extends Schema.TaggedError<DesktopClerkBridgeInitializationError>()(
-  "DesktopClerkBridgeInitializationError",
-  {
-    stateDir: Schema.String,
-    isDevelopment: Schema.Boolean,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Failed to initialize the desktop Clerk bridge for state directory "${this.stateDir}" (development: ${this.isDevelopment}).`;
-  }
-}
-
-export class DesktopClerkBridgeCleanupError extends Schema.TaggedError<DesktopClerkBridgeCleanupError>()(
-  "DesktopClerkBridgeCleanupError",
-  {
-    stateDir: Schema.String,
-    isDevelopment: Schema.Boolean,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Failed to clean up the desktop Clerk bridge for state directory "${this.stateDir}" (development: ${this.isDevelopment}).`;
-  }
-}
-
-export class DesktopClerk extends Context.Service<
-  DesktopClerk,
+export class DesktopAppLinks extends Context.Service<
+  DesktopAppLinks,
   {
     readonly configure: Effect.Effect<
       void,
       never,
-      | ElectronApp.ElectronApp
-      | ElectronWindow.ElectronWindow
-      | DesktopWebLinks.DesktopWebLinks
-      | Scope.Scope
+      ElectronWindow.ElectronWindow | DesktopWebLinks.DesktopWebLinks | Scope.Scope
     >;
   }
->()("@houston-app/desktop/app/DesktopClerk") {}
-
-// Houston has no relay backend, so the Clerk frontend API hostname is always absent.
-export const desktopClerkFrontendApiHostname: string | undefined = undefined;
-
-function createDesktopClerkBridge(stateDir: string, isDevelopment: boolean, userDataPath: string) {
-  return createClerkBridge({
-    storage: openClerkTokenStorage(
-      stateDir,
-      (directory) => storage({ path: directory }),
-      userDataPath,
-    ),
-    manageSingleInstanceLock: false,
-    passkeys: true,
-    renderer: {
-      scheme: ElectronProtocol.getDesktopScheme(isDevelopment),
-      host: ElectronProtocol.DESKTOP_HOST,
-    },
-  });
-}
+>()("@houston-app/desktop/app/DesktopAppLinks") {}
 
 /** @public */
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const electronApp = yield* ElectronApp.ElectronApp;
   const shell = yield* ElectronShell.ElectronShell;
-
-  // Must not yield: the bridge registers a scheme Electron rejects once ready.
-  const userDataPath = yield* DesktopUserData.resolveUserDataPath(environment);
-  yield* electronApp.setPath("userData", userDataPath);
-
-  // Clerk skips the profile lock on macOS. Interrupt before runtime construction because quit is asynchronous.
-  if (!(yield* electronApp.requestSingleInstanceLock)) {
-    yield* electronApp.quit;
-    return yield* Effect.interrupt;
-  }
 
   const pendingSecondInstances: Array<readonly string[]> = [];
   let handleSecondInstance = (argv: readonly string[]) => {
@@ -105,8 +42,9 @@ export const make = Effect.gen(function* () {
   yield* electronApp.on("second-instance", (_event: unknown, argv: readonly string[]) => {
     handleSecondInstance(argv);
   });
+
   // macOS hands a launch link to open-url, which can fire before configure runs.
-  const pendingOpenUrls: Array<string> = [];
+  const pendingOpenUrls: string[] = [];
   let handleOpenUrl = (url: string) => {
     pendingOpenUrls.push(url);
     return true;
@@ -115,32 +53,8 @@ export const make = Effect.gen(function* () {
     if (handleOpenUrl(url)) event.preventDefault();
   });
 
-  yield* Effect.acquireRelease(
-    Effect.try({
-      try: () =>
-        createDesktopClerkBridge(environment.stateDir, environment.isDevelopment, userDataPath),
-      catch: (cause) =>
-        new DesktopClerkBridgeInitializationError({
-          stateDir: environment.stateDir,
-          isDevelopment: environment.isDevelopment,
-          cause,
-        }),
-    }),
-    (bridge) =>
-      Effect.try({
-        try: () => bridge.cleanup(),
-        catch: (cause) =>
-          new DesktopClerkBridgeCleanupError({
-            stateDir: environment.stateDir,
-            isDevelopment: environment.isDevelopment,
-            cause,
-          }),
-      }).pipe(Effect.orDie),
-  );
-
-  return DesktopClerk.of({
+  return DesktopAppLinks.of({
     configure: Effect.gen(function* () {
-      const electronApp = yield* ElectronApp.ElectronApp;
       const electronWindow = yield* ElectronWindow.ElectronWindow;
       const webLinks = yield* DesktopWebLinks.DesktopWebLinks;
       const context = yield* Effect.context<ElectronWindow.ElectronWindow>();
@@ -196,8 +110,6 @@ export const make = Effect.gen(function* () {
         void runPromise(webLinks.receive(value));
         return true;
       };
-      const args = yield* HostProcess.Arguments;
-      args.some((value) => startProviderAuthHandoff(value) || openAppLink(value));
       const openWebLink = (url: string) => {
         if (!DesktopWebLinks.isWebLink(url)) return false;
         void runPromise(webLinks.receive(url));
@@ -230,8 +142,11 @@ export const make = Effect.gen(function* () {
         );
       };
       for (const argv of pendingSecondInstances.splice(0)) handleSecondInstance(argv);
-    }).pipe(Effect.withSpan("desktop.clerk.configure")),
+
+      const args = yield* HostProcess.Arguments;
+      args.some((value) => startProviderAuthHandoff(value) || openAppLink(value));
+    }).pipe(Effect.withSpan("desktop.appLinks.configure")),
   });
 });
 
-export const layer = Layer.effect(DesktopClerk, make);
+export const layer = Layer.effect(DesktopAppLinks, make);
