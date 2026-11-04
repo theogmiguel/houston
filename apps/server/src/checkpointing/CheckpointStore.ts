@@ -51,6 +51,11 @@ export class CheckpointStore extends Context.Service<
       input: CaptureCheckpointInput,
     ) => Effect.Effect<void, CheckpointStoreError>;
 
+    /** Snapshots now; the returned effect publishes the ref and reports whether it did. */
+    readonly prepareCheckpoint: (
+      input: CaptureCheckpointInput & { readonly createOnly?: boolean },
+    ) => Effect.Effect<Effect.Effect<boolean, CheckpointStoreError>, CheckpointStoreError>;
+
     readonly hasCheckpointRef: (
       input: Omit<RestoreCheckpointInput, "fallbackToHead">,
     ) => Effect.Effect<boolean, CheckpointStoreError>;
@@ -97,6 +102,13 @@ export const make = Effect.gen(function* () {
     return yield* checkpoints.captureCheckpoint(input);
   });
 
+  const prepareCheckpoint: CheckpointStore["Service"]["prepareCheckpoint"] = Effect.fn(
+    "prepareCheckpoint",
+  )(function* (input) {
+    const checkpoints = yield* resolveCheckpoints(input.cwd);
+    return yield* checkpoints.prepareCheckpoint(input);
+  });
+
   const hasCheckpointRef: CheckpointStore["Service"]["hasCheckpointRef"] = Effect.fn(
     "hasCheckpointRef",
   )(function* (input) {
@@ -135,6 +147,7 @@ export const make = Effect.gen(function* () {
   return CheckpointStore.of({
     isGitRepository,
     captureCheckpoint,
+    prepareCheckpoint,
     hasCheckpointRef,
     restoreCheckpoint,
     diffCheckpoints,

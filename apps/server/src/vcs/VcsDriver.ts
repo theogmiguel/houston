@@ -48,8 +48,17 @@ export interface VcsDeleteCheckpointRefsInput {
   readonly checkpointRefs: ReadonlyArray<CheckpointRef>;
 }
 
+export interface VcsPrepareCheckpointInput extends VcsCaptureCheckpointInput {
+  /** Publishing leaves an existing ref alone and reports false. */
+  readonly createOnly?: boolean;
+}
+
 export interface VcsCheckpointOps {
   readonly captureCheckpoint: (input: VcsCaptureCheckpointInput) => Effect.Effect<void, VcsError>;
+  /** Snapshots the workspace now; the returned effect publishes the ref and reports whether it did. */
+  readonly prepareCheckpoint: (
+    input: VcsPrepareCheckpointInput,
+  ) => Effect.Effect<Effect.Effect<boolean, VcsError>, VcsError>;
   readonly hasCheckpointRef: (
     input: Omit<VcsRestoreCheckpointInput, "fallbackToHead">,
   ) => Effect.Effect<boolean, VcsError>;

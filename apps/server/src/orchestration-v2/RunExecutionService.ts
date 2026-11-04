@@ -568,6 +568,8 @@ export interface RunExecutionServiceV2StartRootRunInput {
   readonly run: OrchestrationV2Run;
   readonly rootNode: OrchestrationV2ExecutionNode;
   readonly checkpointScope: OrchestrationV2CheckpointScope;
+  /** Publishes a baseline prepared by prepareRootRunBaseline in place of capturing one. */
+  readonly baselineCheckpoint?: Effect.Effect<void, CheckpointService.CheckpointServiceV2Error>;
   readonly providerThread: OrchestrationV2ProviderThread;
   readonly attempt: OrchestrationV2RunAttempt;
   readonly attemptId: RunAttemptId;
@@ -592,6 +594,14 @@ export interface RunExecutionServiceV2Shape {
   readonly startRootRun: (
     input: RunExecutionServiceV2StartRootRunInput,
   ) => Effect.Effect<void, RunExecutionServiceV2Error>;
+  /** Snapshots the baseline startRootRun would capture; the result publishes it. */
+  readonly prepareRootRunBaseline: (input: {
+    readonly checkpointScope: OrchestrationV2CheckpointScope;
+    readonly run: OrchestrationV2Run;
+  }) => Effect.Effect<
+    Effect.Effect<void, CheckpointService.CheckpointServiceV2Error>,
+    CheckpointService.CheckpointServiceV2Error
+  >;
 }
 
 export class RunExecutionServiceV2 extends Context.Service<
@@ -884,6 +894,11 @@ export const layer: Layer.Layer<
     );
 
     return RunExecutionServiceV2.of({
+      prepareRootRunBaseline: (input) =>
+        checkpointService.prepareBaseline({
+          scope: input.checkpointScope,
+          ordinalWithinScope: Math.max(0, input.run.ordinal - 1),
+        }),
       startRootRun: Effect.fn("RunExecutionService.startRootRun")(function* (input) {
         const rootTurnOrigin: ProviderEventIngestor.ProviderTurnOrigin = {
           createdBy: input.message.createdBy,
@@ -934,10 +949,11 @@ export const layer: Layer.Layer<
           yield* (
             input.appThread.lineage.sideChat === true
               ? Effect.void
-              : checkpointService.captureBaseline({
+              : (input.baselineCheckpoint ??
+                checkpointService.captureBaseline({
                   scope: input.checkpointScope,
                   ordinalWithinScope: Math.max(0, input.run.ordinal - 1),
-                })
+                }))
           ).pipe(
             Effect.catchCauseIf(
               (cause) => !Cause.hasInterruptsOnly(cause),

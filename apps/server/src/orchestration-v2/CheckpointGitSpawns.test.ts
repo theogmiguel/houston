@@ -35,6 +35,8 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 // Each git process costs about 60 ms on Windows; these budgets keep removed spawns out.
 const FIRST_TURN_BASELINE_GIT_BUDGET = 11;
 const FIRST_TURN_FINALIZE_GIT_BUDGET = 13;
+// The snapshot overlaps the provider session open; only publishing stays before the turn.
+const FIRST_TURN_PUBLISH_GIT_BUDGET = 1;
 
 const isGitCommand = (command: string) => {
   const name = command.split(/[\\/]/).at(-1)?.toLowerCase();
@@ -301,5 +303,80 @@ it.effect("captures a first-turn baseline and finalizes the turn within their gi
         `finalization started ${finalizeSpawns} git processes`,
       );
     }).pipe(Effect.provide(layerCapture));
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("prepares a baseline off the critical path and publishes it like a capture", () =>
+  Effect.gen(function* () {
+    const spawns: Array<ReadonlyArray<string>> = [];
+    yield* Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const cwd = yield* makeRepository;
+      yield* fileSystem.writeFileString(path.join(cwd, "draft.txt"), "uncommitted\n");
+      const checkpoints = yield* CheckpointService.CheckpointServiceV2;
+      const now = yield* DateTime.now;
+      const scopeFor = (id: string): OrchestrationV2CheckpointScope => ({
+        id: CheckpointScopeId.make(id),
+        threadId,
+        runId,
+        nodeId: rootNodeId,
+        parentScopeId: null,
+        providerThreadId,
+        kind: "root_run",
+        ordinalWithinParent: 0,
+        advancesAppRunCount: true,
+        cwd,
+        createdAt: now,
+      });
+      const refOf = (scope: OrchestrationV2CheckpointScope) =>
+        CheckpointService.checkpointRefForScopeOrdinal({
+          scopeId: scope.id,
+          ordinalWithinScope: 0,
+        });
+      const resolve = (rev: string) =>
+        Effect.gen(function* () {
+          const process = yield* VcsProcess.VcsProcess;
+          const result = yield* process.run({
+            operation: "test.git",
+            command: "git",
+            args: ["-C", cwd, "rev-parse", "--verify", "--quiet", rev],
+            cwd,
+            allowNonZeroExit: true,
+          });
+          return result.exitCode === 0 ? result.stdout.trim() : null;
+        });
+
+      const captured = scopeFor("checkpoint-scope:captured");
+      yield* checkpoints.captureBaseline({ scope: captured, ordinalWithinScope: 0 });
+
+      const prepared = scopeFor("checkpoint-scope:prepared");
+      const publish = yield* checkpoints.prepareBaseline({
+        scope: prepared,
+        ordinalWithinScope: 0,
+      });
+      assert.isNull(yield* resolve(yield* refOf(prepared)), "preparing must not publish the ref");
+      spawns.length = 0;
+      yield* publish;
+      assert.isAtMost(
+        spawns.length,
+        FIRST_TURN_PUBLISH_GIT_BUDGET,
+        `publishing started ${spawns.length} git processes`,
+      );
+      assert.strictEqual(
+        yield* resolve(`${yield* refOf(prepared)}^{tree}`),
+        yield* resolve(`${yield* refOf(captured)}^{tree}`),
+      );
+
+      // A ref created between preparing and publishing is kept, as captureBaseline keeps it.
+      const raced = scopeFor("checkpoint-scope:raced");
+      const racedPublish = yield* checkpoints.prepareBaseline({
+        scope: raced,
+        ordinalWithinScope: 0,
+      });
+      yield* git(cwd, ["update-ref", yield* refOf(raced), "HEAD"]);
+      yield* racedPublish;
+      assert.strictEqual(yield* resolve(yield* refOf(raced)), yield* resolve("HEAD"));
+    }).pipe(Effect.provide(makeLayer(spawns)));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

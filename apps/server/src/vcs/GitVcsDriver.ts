@@ -960,7 +960,10 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
   const longPaths = hostPlatform === "win32" ? ["-c", "core.longpaths=true"] : [];
 
   const checkpoints: VcsDriver.VcsCheckpointOps = {
-    captureCheckpoint: Effect.fn("GitVcsDriver.checkpoints.captureCheckpoint")(function* (input) {
+    captureCheckpoint: (input) =>
+      checkpoints.prepareCheckpoint(input).pipe(Effect.flatten, Effect.asVoid),
+
+    prepareCheckpoint: Effect.fn("GitVcsDriver.checkpoints.prepareCheckpoint")(function* (input) {
       const operation = VcsProcess.CHECKPOINT_CAPTURE_OPERATION;
       // Scratch split-index writes can expire sharedindex files still used by the real index.
       const indexConfig = [
@@ -1006,7 +1009,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
 
       // Whether the workspace is ignored does not depend on the scratch index.
       const unignored = yield* Effect.forkChild(filterIgnoredPaths(input.cwd, ["."]));
-      yield* Effect.gen(function* () {
+      const commitOid = yield* Effect.gen(function* () {
         let sparseCheckout = sparseConfig.stdout.trim() === "true";
         if (sparseCheckout) {
           const help = yield* execute({
@@ -1305,13 +1308,32 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             detail: "git commit-tree returned an empty commit oid.",
           });
         }
-
-        yield* execute({
-          operation,
-          cwd: input.cwd,
-          args: [...durableWrite, "update-ref", input.checkpointRef, commitOid],
-        });
+        return commitOid;
       }).pipe(Effect.ensuring(Effect.andThen(Fiber.interrupt(unignored), cleanupTempIndex)));
+
+      // An empty old value makes update-ref refuse to replace a ref created meanwhile.
+      return execute({
+        operation,
+        cwd: input.cwd,
+        args: [
+          ...durableWrite,
+          "update-ref",
+          input.checkpointRef,
+          commitOid,
+          ...(input.createOnly === true ? [""] : []),
+        ],
+      }).pipe(
+        Effect.as(true),
+        Effect.catchTag("VcsProcessExitError", (error) =>
+          input.createOnly === true
+            ? resolveCheckpointCommit(input.cwd, input.checkpointRef).pipe(
+                Effect.flatMap((existing) =>
+                  existing === null ? Effect.fail(error) : Effect.succeed(false),
+                ),
+              )
+            : Effect.fail(error),
+        ),
+      );
     }),
 
     hasCheckpointRef: (input) =>
