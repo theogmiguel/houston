@@ -213,6 +213,14 @@ import {
   ComposerRestingImagePreviews,
 } from "./ComposerAttachmentStrip";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
+import {
+  ComposerSpeechMicButton,
+  ComposerSpeechTray,
+  ComposerSpeechUnavailableMic,
+} from "./ComposerSpeechButton";
+import { VoiceInputSetup } from "./VoiceInputSetup";
+import { useEnvironmentSpeechInput } from "../../speech/useEnvironmentSpeechInput";
+import { useDictationShortcut } from "../../speech/useDictationShortcut";
 import { ComposerFooterPrimaryActions } from "./ComposerFooterControls";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
@@ -1937,6 +1945,56 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const readComposerSnapshotStable = useStableCallback(readComposerSnapshot);
 
+  const speechInput = useEnvironmentSpeechInput({
+    environmentId,
+    ownerKey: JSON.stringify([composerDraftTarget, activePendingProgress?.activeQuestion?.id]),
+    draftText: prompt,
+    readDraft: () => {
+      const snapshot = readComposerSnapshot();
+      return {
+        text: snapshot.value,
+        selection: { start: snapshot.expandedCursor, end: snapshot.expandedCursor },
+      };
+    },
+    commitDraft: (text, selection) => {
+      const snapshot = readComposerSnapshot();
+      const applied = applyPromptReplacement(0, snapshot.value.length, text, {
+        expectedText: snapshot.value,
+        focusEditorAfterReplace: false,
+      });
+      if (!applied) return;
+      const cursor = collapseExpandedComposerCursor(text, selection.start, isLiteralPendingAnswer);
+      setComposerCursor(cursor);
+      window.requestAnimationFrame(() => composerEditorRef.current?.focusAt(cursor));
+    },
+  });
+  const dictationDisabled =
+    projectSelectionRequired || activePendingProgress?.activeQuestion?.allowCustomAnswer === false;
+  const dictationShortcutLabel = useDictationShortcut({
+    keybindings,
+    speech: speechInput,
+    disabled: dictationDisabled,
+    terminalOpen,
+    modelPickerOpen: isComposerModelPickerOpen,
+  });
+  // Sits beside the send button in the footer and in the phone's collapsed row.
+  const speechMicAction = speechInput.available ? (
+    <ComposerSpeechMicButton
+      state={speechInput.state}
+      shortcutLabel={dictationShortcutLabel}
+      disabled={dictationDisabled}
+      onStart={() => void speechInput.start()}
+      onStop={() => void speechInput.stop()}
+      onCancel={() => void speechInput.cancel()}
+    />
+  ) : speechInput.unavailableReason ? (
+    <ComposerSpeechUnavailableMic reason={speechInput.unavailableReason} />
+  ) : null;
+  const voiceSendDisabledReason = speechInput.blocksSubmission
+    ? "Finish or discard voice input before sending"
+    : sendDisabledReason;
+  const isSubmissionDisabled = isSendDisabled || speechInput.blocksSubmission;
+
   const resolveActiveComposerTrigger = (): {
     snapshot: { value: string; cursor: number; expandedCursor: number };
     trigger: ComposerTrigger | null;
@@ -2196,7 +2254,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (!isSoftwareKeyboardOpen) return false;
     if (
       isSendBusy ||
-      isSendDisabled ||
+      isSubmissionDisabled ||
       noProviderAvailable ||
       environmentUnavailable !== null ||
       phase === "running"
@@ -2239,7 +2297,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     if (
       noProviderAvailable ||
-      isSendDisabled ||
+      isSubmissionDisabled ||
       !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)
     ) {
       event?.preventDefault();
@@ -3491,6 +3549,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               composerProviderState.composerSurfaceClassName,
             )}
           >
+            <VoiceInputSetup
+              environmentId={speechInput.transcriptionEnvironmentId}
+              open={speechInput.setup.open}
+              step={speechInput.setup.step}
+              status={speechInput.status}
+              model={speechInput.setup.model}
+              downloading={speechInput.setup.downloading}
+              cancelled={speechInput.setup.cancelled}
+              error={speechInput.setup.error}
+              onOpenChange={speechInput.setup.setOpen}
+              onDownload={() => void speechInput.setup.download()}
+              onCancelDownload={() => void speechInput.setup.cancelDownload()}
+              onStartRecording={() => void speechInput.setup.startRecording()}
+            />
+            <ComposerSpeechTray
+              state={speechInput.state}
+              progress={speechInput.progress}
+              level={speechInput.level}
+              preview={speechInput.preview}
+              onCancel={() => void speechInput.cancel()}
+              onSkipPostProcessing={() => speechInput.skipPostProcessing()}
+            />
             <ComposerBannerStack items={shelfItems} />
             {showComposerTopDrawer ? (
               <ComposerBanner.Root
@@ -3546,6 +3626,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   pulseKey={stashPulseKey}
                   onToggleMenu={toggleStashMenuStable}
                 />
+                {speechMicAction}
                 <button
                   type="button"
                   data-chat-composer-transition-actions="true"
@@ -3717,7 +3798,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     disabled={
                       projectSelectionRequired ||
                       isChoiceOnlyPendingQuestion ||
-                      activePendingIsResponding
+                      activePendingIsResponding ||
+                      speechInput.freezesEditor
                     }
                   />
                 </ComposerContextActionsContext>
@@ -3816,6 +3898,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       />
                     </span>
                   ) : null}
+                  {speechMicAction ? (
+                    <div className="me-0.5 flex shrink-0 items-center">{speechMicAction}</div>
+                  ) : null}
                   <ComposerFooterPrimaryActions
                     compact={isComposerPrimaryActionsCompact}
                     canOperateThread={canOperateThread}
@@ -3849,7 +3934,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     }
                     promptHasText={prompt.trim().length > 0}
                     isSendBusy={isSendBusy}
-                    sendDisabledReason={sendDisabledReason}
+                    sendDisabledReason={voiceSendDisabledReason}
                     isEnvironmentUnavailable={
                       environmentUnavailable !== null ||
                       noProviderAvailable ||

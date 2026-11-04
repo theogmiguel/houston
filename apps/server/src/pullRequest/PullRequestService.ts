@@ -1868,6 +1868,9 @@ export const make = Effect.gen(function* () {
               reviewThreads: activity.reviewThreads,
               commits: activity.commits,
               ...(activity.reactions === undefined ? {} : { reactions: activity.reactions }),
+              ...(activity.reviewRequests === undefined
+                ? {}
+                : { reviewRequests: activity.reviewRequests }),
             })),
           ),
       ),

@@ -4589,3 +4589,46 @@ it.effect.each(["expiry", "commit expiry", "cache hit", "commit cache hit", "ref
       assert.strictEqual(diffReads, 2);
     }),
 );
+
+it.effect("passes the host's review requests through to the activity", () =>
+  Effect.gen(function* () {
+    const reviewRequests = [
+      {
+        actor: { login: "maria", name: null, avatarUrl: null },
+        reviewer: { login: "octocat", name: null, avatarUrl: null },
+        createdAt: "2026-10-16T01:00:00Z",
+      },
+    ];
+    const service = yield* makeService({
+      projects: [
+        project({
+          id: "p1",
+          title: "web",
+          workspaceRoot: "/repo",
+          repository: "acme/web",
+          provider: "github",
+          host: "github.example.test",
+        }),
+      ],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          getChangeRequestActivity: () =>
+            Effect.succeed({
+              comments: [],
+              commentCount: 0,
+              commentsTruncated: false,
+              reviewThreads: [],
+              commits: [],
+              reviewRequests,
+            }),
+        }),
+      ],
+    });
+    const activity = yield* service.activity({
+      projectId: "p1" as ProjectId,
+      repository: "acme/web",
+      number: 1,
+    });
+    assert.deepStrictEqual(activity.reviewRequests, reviewRequests);
+  }),
+);

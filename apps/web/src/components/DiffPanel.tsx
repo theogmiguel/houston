@@ -78,6 +78,8 @@ import {
   WorkingTreeFileActions,
   WorkingTreeGroupBar,
 } from "./ui/diff-review-controls";
+import { DiffReviewTray } from "./ui/diff-review-tray";
+import { DiffViewControls } from "./ui/diff-view-controls";
 import { diffFileTreeEntries } from "./diffs/diffFileTree.logic";
 import { CopyButton } from "./ui/copy-button";
 import { Button } from "./ui/button";
@@ -94,11 +96,8 @@ import {
 } from "./ui/combobox";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -123,7 +122,7 @@ import { DiffFileLoadingBoundary } from "./diffs/DiffFileLoadingBoundary";
 import { DiffFileStatus } from "./diffs/DiffFileStatus";
 import { useThreadRouteRef } from "../hooks/useThreadRouteTarget";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { scopeProjectRef } from "@houston-app/client-runtime/environment";
+import { scopeProjectRef, scopedThreadKey } from "@houston-app/client-runtime/environment";
 import { projectCommitUrl } from "@houston-app/client-runtime/change-request-links";
 import { useOpenLink } from "../browser/useOpenLink";
 
@@ -152,6 +151,7 @@ function getCachedFileEntry(fileDiff: FileDiffMetadata) {
 }
 
 const EMPTY_COLLAPSED_DIFF_FILE_KEYS: ReadonlySet<string> = new Set();
+const EMPTY_REVIEW_BATCH_IDS: ReadonlyArray<string> = [];
 
 function DiffFileCollapseToggle({
   filePath,
@@ -277,6 +277,25 @@ export default function DiffPanel({
   // The open commit menu keeps the list it opened with, so rows do not move under the pointer.
   const [openCommitMenu, setOpenCommitMenu] = useState<ReviewBranchCommitsResult | null>(null);
   const [codeViewRevision, setCodeViewRevision] = useState(0);
+  // The comments written here since the review tray was last dismissed, for its one-press Undo.
+  // Tied to the draft they went into, so switching threads does not carry a batch across.
+  const composerDraftKey =
+    typeof composerDraftTarget === "string"
+      ? composerDraftTarget
+      : scopedThreadKey(composerDraftTarget);
+  const [reviewBatch, setReviewBatch] = useState<{
+    draftKey: string;
+    commentIds: ReadonlyArray<string>;
+  } | null>(null);
+  const reviewBatchIds =
+    reviewBatch?.draftKey === composerDraftKey ? reviewBatch.commentIds : EMPTY_REVIEW_BATCH_IDS;
+  const addToReviewBatch = (commentId: string) =>
+    setReviewBatch((current) => ({
+      draftKey: composerDraftKey,
+      commentIds:
+        current?.draftKey === composerDraftKey ? [...current.commentIds, commentId] : [commentId],
+    }));
+  const dismissReviewBatch = () => setReviewBatch(null);
   // The flat list marks the file the code view last revealed; the scope key keeps a
   // selection from a previous diff from highlighting a path that no longer exists.
   const [activeDiffPath, setActiveDiffPath] = useState<{ key: string; path: string } | null>(null);
@@ -1246,6 +1265,27 @@ export default function DiffPanel({
             layout="inline"
           />
         ) : null}
+        <DiffViewControls
+          diffLayout={diffLayout}
+          onDiffLayoutChange={(layout) => updateClientSettings({ diffLayout: layout })}
+          wordWrap={wordWrap}
+          onWordWrapChange={setWordWrap}
+          ignoreWhitespace={diffIgnoreWhitespace}
+          onIgnoreWhitespaceChange={setDiffIgnoreWhitespace}
+          hasFiles={diffFileKeys.length > 0}
+          testFileCount={testFileCount}
+          hideTestFiles={hideTestFiles}
+          onHideTestFilesChange={setHideTestFiles}
+          fileTreeOpen={fileTreeOpen}
+          onFileTreeOpenChange={setFileTreeOpen}
+          allFilesCollapsed={allDiffFilesCollapsed}
+          onToggleAllFiles={toggleDiffFileCollapse}
+          refresh={
+            canRefreshGitDiff
+              ? { refreshing: isRefreshingDiff, onRefresh: refreshDiffFromUserAction }
+              : undefined
+          }
+        />
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -1414,57 +1454,8 @@ export default function DiffPanel({
               </>
             ) : null}
             <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>View</DropdownMenuLabel>
-            </DropdownMenuGroup>
-            <DropdownMenuCheckboxItem
-              checked={diffLayout === "split"}
-              onCheckedChange={(checked) =>
-                updateClientSettings({ diffLayout: checked ? "split" : "stacked" })
-              }
-            >
-              Split view
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={wordWrap}
-              onCheckedChange={(checked) => setWordWrap(Boolean(checked))}
-            >
-              Wrap long lines
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={diffIgnoreWhitespace}
-              onCheckedChange={(checked) => setDiffIgnoreWhitespace(Boolean(checked))}
-            >
-              Hide whitespace changes
-            </DropdownMenuCheckboxItem>
-            {testFileCount > 0 ? (
-              <DropdownMenuCheckboxItem
-                checked={hideTestFiles}
-                onCheckedChange={(checked) => setHideTestFiles(Boolean(checked))}
-              >
-                {`Hide ${testFileCount} test ${testFileCount === 1 ? "file" : "files"}`}
-              </DropdownMenuCheckboxItem>
-            ) : null}
-            {diffFileKeys.length > 0 ? (
-              <DropdownMenuCheckboxItem
-                checked={fileTreeOpen}
-                onCheckedChange={(checked) => setFileTreeOpen(Boolean(checked))}
-              >
-                File tree
-              </DropdownMenuCheckboxItem>
-            ) : null}
-            {diffFileKeys.length > 0 ? (
-              <DropdownMenuItem onClick={toggleDiffFileCollapse}>
-                {allDiffFilesCollapsed ? "Expand all files" : "Collapse all files"}
-              </DropdownMenuItem>
-            ) : null}
             <DropdownMenuItem onClick={() => setFindOpen(true)}>Find in diff</DropdownMenuItem>
             <DropdownMenuItem onClick={() => setFilterOpen(true)}>Filter files…</DropdownMenuItem>
-            {canRefreshGitDiff ? (
-              <DropdownMenuItem onClick={refreshDiffFromUserAction}>
-                {isRefreshingDiff ? "Refreshing…" : "Refresh diff"}
-              </DropdownMenuItem>
-            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
         {onClose ? (
@@ -1764,6 +1755,7 @@ export default function DiffPanel({
                       sectionId={reviewSectionId}
                       sectionTitle={reviewSectionTitle}
                       composerDraftTarget={composerDraftTarget}
+                      onCommentAdded={addToReviewBatch}
                       unsafeCSSExtra={SINGLE_FILE_DIFF_HEADER_CSS}
                       renderHeaderFilenameSuffix={() => null}
                       onRevealSearchMatch={unfoldDiffFile}
@@ -1802,6 +1794,11 @@ export default function DiffPanel({
                 </div>
               </div>
             )}
+            <DiffReviewTray
+              composerDraftTarget={composerDraftTarget}
+              commentIds={reviewBatchIds}
+              onDismiss={dismissReviewBatch}
+            />
           </div>
         </>
       )}

@@ -47,7 +47,12 @@ const threadFamilyRead = {
   threads: [{ id: task.threadId, title: "Fix login bug" }],
 };
 
-const state = vi.hoisted(() => ({ connected: true, tasksLoaded: true, secondary: false }));
+const state = vi.hoisted(() => ({
+  connected: true,
+  tasksLoaded: true,
+  secondary: false,
+  noEnvironments: false,
+}));
 const secondaryId = EnvironmentId.make("secondary");
 const permissions = new Map<string, Atom.Writable<boolean>>();
 
@@ -55,6 +60,7 @@ function setup() {
   state.connected = true;
   state.tasksLoaded = true;
   state.secondary = false;
+  state.noEnvironments = false;
   permissions.clear();
   permissions.set(environmentId, Atom.make(true));
   permissions.set(secondaryId, Atom.make(true));
@@ -79,13 +85,16 @@ function environment() {
 vi.mock(import("./SettingsScopeContext"), async (original) => {
   const scope = () => {
     const entry = environment();
+    const environments = state.noEnvironments
+      ? []
+      : state.secondary
+        ? [entry, secondaryEnvironment()]
+        : [entry];
     return {
       scope: { kind: "all", label: "All", members: [], environmentIds: [environmentId] },
-      environments: state.secondary ? [entry, secondaryEnvironment()] : [entry],
+      environments,
       connectedEnvironments: state.connected
-        ? state.secondary
-          ? [entry, secondaryEnvironment()]
-          : [entry]
+        ? environments.filter((candidate) => candidate.connection.phase === "connected")
         : [],
       environment: entry,
       target: null,
@@ -214,5 +223,25 @@ describe("ScheduledTasksSettings", () => {
 
     await expect.element(dialog.getByRole("heading", { name: "New task" })).toBeInTheDocument();
     await expect.element(name).toHaveValue("My draft");
+  });
+
+  it("shows the page empty state when no environment is available", async () => {
+    setup();
+    state.noEnvironments = true;
+    await using screen = await render(<ScheduledTasksSettings />);
+    await expect.element(screen.getByText("No environments available")).toBeVisible();
+    await expect
+      .element(screen.getByText("Connect an environment to manage scheduled tasks."))
+      .toBeVisible();
+  });
+
+  it("shows the empty state when the environment has no scheduled tasks", async () => {
+    setup();
+    state.tasksLoaded = false;
+    await using screen = await render(<ScheduledTasksSettings />);
+    await expect.element(screen.getByText("No scheduled tasks")).toBeVisible();
+    await expect
+      .element(screen.getByText("No tasks match this environment and project selection."))
+      .toBeVisible();
   });
 });

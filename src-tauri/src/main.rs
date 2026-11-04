@@ -11,6 +11,8 @@ mod dialog;
 mod dropped_paths;
 mod fs;
 mod fs_allowlist;
+#[cfg(any(target_os = "linux", test))]
+mod microphone;
 mod notifications;
 mod provider_auth;
 mod quick_composer;
@@ -699,6 +701,15 @@ fn main() {
                         "houston-tauri: cannot observe native drops ({err}); dropped paths stay unreadable"
                     );
                 }
+            }
+
+            // WebKitGTK denies getUserMedia until the webview enables media streams
+            // and answers the permission request; dictation runs on that capture.
+            #[cfg(target_os = "linux")]
+            if let Err(err) = microphone::install_media_capture(&main_window) {
+                eprintln!(
+                    "houston-tauri: cannot enable microphone capture ({err}); dictation stays unavailable"
+                );
             }
 
             if let window_state::StartupGeometry::Restore {

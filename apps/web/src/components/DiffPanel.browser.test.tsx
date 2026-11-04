@@ -81,17 +81,49 @@ vi.mock("~/editorPreferences", () => ({ useOpenInPreferredEditor: () => async ()
 vi.mock("~/fileContextMenu", () => ({ useFileContextMenuHandler: () => () => {} }));
 vi.mock("~/browser/useOpenLink", () => ({ useOpenLink: () => async () => {} }));
 // The test drives comparison controls, without mounting virtualized diff viewers or their workers.
-vi.mock("./diffs/AnnotatableCodeView", () => ({ AnnotatableCodeView: () => null }));
+vi.mock("./diffs/AnnotatableCodeView", async () => {
+  const { useComposerDraftStore } = await import("~/composerDraftStore");
+  return {
+    AnnotatableCodeView: ({
+      composerDraftTarget,
+      onCommentAdded,
+    }: {
+      composerDraftTarget: ScopedThreadRef | DraftId;
+      onCommentAdded?: (commentId: string) => void;
+    }) => (
+      <button
+        type="button"
+        onClick={() => {
+          useComposerDraftStore.getState().addReviewComment(composerDraftTarget, {
+            id: "diff-comment-1",
+            sectionId: "branch",
+            sectionTitle: "Changes",
+            filePath: "src/app.ts",
+            startIndex: 0,
+            endIndex: 1,
+            rangeLabel: "L1 to L2",
+            text: "Check this",
+            diff: "@@ -1,2 +1,2 @@\n-old\n+new\n",
+          });
+          onCommentAdded?.("diff-comment-1");
+        }}
+      >
+        Add diff comment
+      </button>
+    ),
+  };
+});
 vi.mock("./diffs/DiffFileTree", () => ({ DiffFileTree: () => null }));
 vi.mock("./DiffFilePathCopyButton", () => ({ DiffFilePathCopyButton: () => null }));
 
 import DiffPanel from "./DiffPanel";
+import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useDiffPanelSessionStore, useDiffPanelStore } from "~/diffPanelStore";
 
 const cwd = "/project-worktree";
 const errorMessage = "Could not find a common commit between 'origin/orphan' and HEAD.";
 
-function preview(): ReviewDiffPreviewResult {
+function preview(diff = ""): ReviewDiffPreviewResult {
   return {
     cwd,
     generatedAt: DateTime.makeUnsafe("2026-10-30T00:00:00Z"),
@@ -102,15 +134,15 @@ function preview(): ReviewDiffPreviewResult {
         title: "Changes",
         baseRef: "main",
         headRef: "dev",
-        diff: "",
-        diffHash: "empty",
+        diff,
+        diffHash: diff ? "patch" : "empty",
         truncated: false,
       },
     ],
   };
 }
 
-function setup(failedBaseRef: string | null) {
+function setup(failedBaseRef: string | null, diff = "") {
   const reset = () => {
     useDiffPanelStore.setState({
       byThreadKey: {},
@@ -118,6 +150,7 @@ function setup(failedBaseRef: string | null) {
       keepSelectionOnOpenThreadKey: null,
     });
     useDiffPanelSessionStore.setState({ collapsedFileKeysByScopeKey: {} });
+    useComposerDraftStore.setState(useComposerDraftStore.getInitialState(), true);
   };
   reset();
   state.threadRef = {
@@ -132,8 +165,8 @@ function setup(failedBaseRef: string | null) {
     worktreePath: cwd,
   });
   state.previews.clear();
-  state.previews.set(null, Atom.make(AsyncResult.success(preview())));
-  state.previews.set("main", Atom.make(AsyncResult.success(preview())));
+  state.previews.set(null, Atom.make(AsyncResult.success(preview(diff))));
+  state.previews.set("main", Atom.make(AsyncResult.success(preview(diff))));
   state.previews.set(failedBaseRef, Atom.make(AsyncResult.fail(new Error(errorMessage))));
   state.config = Atom.make(null);
   state.status = Atom.make(
@@ -216,3 +249,68 @@ it.each([
     });
   },
 );
+
+const samplePatch = [
+  "diff --git a/src/app.ts b/src/app.ts",
+  "--- a/src/app.ts",
+  "+++ b/src/app.ts",
+  "@@ -1,2 +1,2 @@",
+  "-old",
+  "+new",
+  " context",
+  "",
+].join("\n");
+
+function panel(
+  registry: ReturnType<typeof AtomRegistry.make>,
+  threadRef: ScopedThreadRef,
+  mode?: "sheet",
+) {
+  return (
+    <RegistryContext.Provider value={registry}>
+      <DiffPanel
+        {...(mode ? { mode } : {})}
+        composerDraftTarget={threadRef}
+        workspaceMutationId={null}
+        visible
+      />
+    </RegistryContext.Provider>
+  );
+}
+
+it("keeps the view controls in the header and folds them into a menu when narrow", async () => {
+  using context = setup("origin/orphan", samplePatch);
+  const wide = document.createElement("div");
+  wide.style.width = "700px";
+  await using wideScreen = await render(panel(context.registry, context.threadRef, "sheet"), {
+    container: wide,
+  });
+  await expect
+    .element(wideScreen.getByRole("button", { name: "Disable diff line wrapping" }))
+    .toBeVisible();
+
+  const narrow = document.createElement("div");
+  narrow.style.width = "320px";
+  await using narrowScreen = await render(panel(context.registry, context.threadRef, "sheet"), {
+    container: narrow,
+  });
+  await expect
+    .element(narrowScreen.getByRole("button", { name: "More diff actions" }))
+    .toBeVisible();
+  expect(
+    narrowScreen.getByRole("button", { name: "Disable diff line wrapping" }).elements(),
+  ).toHaveLength(0);
+});
+
+it("offers undo for the comments it added to the composer", async () => {
+  using context = setup(null, samplePatch);
+  useDiffPanelStore.getState().selectBranchBaseRef(context.threadRef, "main");
+  await using screen = await render(panel(context.registry, context.threadRef));
+  await userEvent.click(screen.getByRole("button", { name: "Add diff comment" }));
+  await expect.element(screen.getByText("1 comment added to the composer")).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Undo" }));
+  await expect.element(screen.getByText("1 comment added to the composer")).not.toBeInTheDocument();
+  expect(
+    useComposerDraftStore.getState().getComposerDraft(context.threadRef)?.reviewComments ?? [],
+  ).toEqual([]);
+});

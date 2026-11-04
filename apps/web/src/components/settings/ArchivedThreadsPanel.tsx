@@ -1,6 +1,6 @@
 import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 import { Spinner } from "~/components/ui/spinner";
-import { ArchiveIcon, ArchiveX } from "lucide-react";
+import { ArchiveIcon, ArchiveRestoreIcon, ArchiveX } from "lucide-react";
 import { type ScopedThreadRef } from "@houston-app/contracts";
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { presentThreadShell } from "@houston-app/client-runtime/state/shell";
@@ -15,6 +15,7 @@ import { readLocalApi } from "../../localApi";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { RelativeTime } from "../RelativeTime";
 import { Button } from "../ui/button";
+import { PageEmptyState, PageEmptyTile, PageEmptyTiles } from "../ui/empty-state";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
@@ -171,7 +172,7 @@ export function ArchivedThreadsPanel() {
 
   return (
     <SettingsPageContainer>
-      {archivedGroups.length === 0 ? (
+      {archivedGroups.length === 0 && (isLoadingArchive || archiveError !== null) ? (
         <SettingsSection
           id={isLoadingArchive ? undefined : searchableSetting("archive").id}
           title={searchableSetting("archive").title}
@@ -184,20 +185,36 @@ export function ArchivedThreadsPanel() {
                 ) : (
                   <ArchiveIcon className="size-3.5 text-muted-foreground" />
                 )}
-                {isLoadingArchive
-                  ? "Loading archived threads"
-                  : archiveError
-                    ? "Could not load archived threads"
-                    : "No archived threads"}
+                {isLoadingArchive ? "Loading archived threads" : "Could not load archived threads"}
               </span>
             }
             description={
-              isLoadingArchive
-                ? "Checking connected environments."
-                : (archiveError ?? "Archived threads will appear here.")
+              isLoadingArchive ? "Checking connected environments." : (archiveError ?? "")
             }
           />
         </SettingsSection>
+      ) : archivedGroups.length === 0 ? (
+        <section id={searchableSetting("archive").id} tabIndex={-1}>
+          <PageEmptyState
+            align="start"
+            ghostRows={3}
+            title="No archived threads"
+            description="Threads you archive stay searchable here and can be restored at any time."
+          >
+            <PageEmptyTiles narrow>
+              <PageEmptyTile
+                icon={<ArchiveIcon />}
+                title="Archive a thread"
+                description="From its menu in the sidebar."
+              />
+              <PageEmptyTile
+                icon={<ArchiveRestoreIcon />}
+                title="Restore anytime"
+                description="Unarchive a thread from this list."
+              />
+            </PageEmptyTiles>
+          </PageEmptyState>
+        </section>
       ) : (
         archivedGroups.map(({ key, title, threads: projectThreads }, index) => (
           <SettingsSection

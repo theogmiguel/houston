@@ -25,6 +25,7 @@ For an installed build, use the documentation at its version tag from the
 - [Pull requests](user/pull-requests.md) — requests, review, checks and the merge queue
 - [Usage](user/usage.md) — token, cost and limit figures, and what they do not cover
 - [Keybindings](user/keybindings.md) — defaults, conditions and terminal keys
+- [Dictation](user/dictation.md) — voice input, the speech model download and where audio goes
 - [Appearance](user/appearance.md) — themes, typography, chat and diff settings
 - [Notifications](user/notifications.md) — thread and in-app notices
 - [Updating Houston](user/updating.md) — the update check, and the one-time Houston 1 import

@@ -127,6 +127,7 @@ writeFileSync(
   [
     "nodeLinker: hoisted",
     "allowBuilds:",
+    "  koffi: true",
     "  node-pty: true",
     "patchedDependencies:",
     `  "@ff-labs/fff-node@0.11.0": patches/@ff-labs__fff-node@0.11.0.patch`,

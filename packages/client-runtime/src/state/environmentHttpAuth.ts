@@ -33,13 +33,19 @@ export function withOrchestrationProtocolHeader(
  * Cookie-authenticated environments need credentialed mode for cross-origin fetches; bearer uses headers.
  * `FetchHttpClient` reads `RequestInit` from the fiber context per request.
  */
-const withEnvironmentCredentials = <A, E, R>(
+const withEnvironmentRequestInit = <A, E, R>(
   authorization: PreparedHttpAuthorization | null,
+  requestInit: RequestInit | undefined,
   request: Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, R> =>
-  authorization === null
-    ? request.pipe(Effect.provideService(FetchHttpClient.RequestInit, { credentials: "include" }))
-    : request;
+): Effect.Effect<A, E, R> => {
+  if (authorization !== null && requestInit === undefined) return request;
+  return request.pipe(
+    Effect.provideService(FetchHttpClient.RequestInit, {
+      ...requestInit,
+      ...(authorization === null ? { credentials: "include" as const } : {}),
+    }),
+  );
+};
 
 function buildEnvironmentAuthHeaders(
   authorization: PreparedHttpAuthorization | null,
@@ -68,10 +74,16 @@ const executeEnvironmentRequest = Effect.fnUntraced(function* <
   readonly method: HttpMethod.HttpMethod;
   /**
    * The URL to sign, from the group's contract URL builder. It encodes path
-   * params exactly like the request client.
+   * params exactly like the request client. The base URL is the one this
+   * attempt targets.
    */
-  readonly url: (urls: ReturnType<typeof makeEnvironmentHttpApiUrlBuilder>[Group]) => string;
+  readonly url: (
+    urls: ReturnType<typeof makeEnvironmentHttpApiUrlBuilder>[Group],
+    httpBaseUrl: string,
+  ) => string;
   readonly timeoutMs: number;
+  readonly requestInit?: RequestInit;
+  readonly validateUrl?: (url: string) => Effect.Effect<void, RemoteEnvironmentRequestError>;
   readonly group: Group;
   readonly request: (input: {
     readonly client: Effect.Success<ReturnType<typeof makeEnvironmentHttpApiGroupClient<Group>>>;
@@ -86,16 +98,21 @@ const executeEnvironmentRequest = Effect.fnUntraced(function* <
 > {
   const httpBaseUrl = input.prepared.httpBaseUrl;
   const requestUrlFor = (baseUrl: string) =>
-    input.url(makeEnvironmentHttpApiUrlBuilder(baseUrl)[input.group]);
+    input.url(makeEnvironmentHttpApiUrlBuilder(baseUrl)[input.group], baseUrl);
   return yield* Effect.gen(function* () {
     const authorization = input.prepared.httpAuthorization;
+    if (input.validateUrl) yield* input.validateUrl(httpBaseUrl);
     const requestUrl = requestUrlFor(httpBaseUrl);
     const client = yield* makeEnvironmentHttpApiGroupClient(httpBaseUrl, input.group);
     const headers = buildEnvironmentAuthHeaders(authorization);
     return yield* executeEnvironmentHttpRequest(
       requestUrl,
       input.timeoutMs,
-      withEnvironmentCredentials(authorization, input.request({ client, headers })),
+      withEnvironmentRequestInit(
+        authorization,
+        input.requestInit,
+        input.request({ client, headers }),
+      ),
     );
   }).pipe(
     Effect.timeoutOrElse({

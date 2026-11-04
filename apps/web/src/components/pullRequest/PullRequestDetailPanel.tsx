@@ -148,6 +148,8 @@ import {
 } from "./pullRequestDetail.logic";
 import { resolvePickableEnvironments } from "./pullRequestProjectAssignment.logic";
 import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
+import { PullRequestReadinessCard } from "./PullRequestReadinessCard";
+import { useInlineActionConfirm } from "./useInlineActionConfirm";
 import { PullRequestChecksTab } from "./PullRequestChecksTab";
 import {
   PullRequestActorLabel,
@@ -654,6 +656,7 @@ export function PullRequestDetailPanel({
   });
   const [pendingAction, setPendingAction] = useState<PullRequestAction | null>(null);
   const actionPending = pendingAction !== null;
+  const inlineConfirm = useInlineActionConfirm(pullRequestKey);
   const newThread = useNewThreadHandler();
   const { environments } = useEnvironments();
   const pickableEnvironments =
@@ -1282,6 +1285,36 @@ export function PullRequestDetailPanel({
     />
   );
 
+  const readinessCard =
+    detail === null ? null : (
+      <PullRequestReadinessCard
+        environmentId={environmentId}
+        threadRef={threadRef}
+        reference={reference}
+        detail={detail}
+        activityPending={activityPending}
+        checksState={checksState}
+        checksStale={checksStale}
+        checksSummary={checksSummary}
+        canApproveWorkflows={showsApproveWorkflows}
+        approvingWorkflows={pendingAction === "approve-workflows"}
+        approveWorkflows={{
+          armed: inlineConfirm.isArmed("approve-workflows"),
+          ...inlineConfirm.props("approve-workflows", () => void perform("approve-workflows")),
+        }}
+        onRefreshChecks={() => void refreshFromHost()}
+        pendingFinding={handoff}
+        fixCheckLabel={handoffLabels.fixCheck}
+        {...(canFixFindings ? { onFixFinding: startFixFinding } : {})}
+        freshness={freshness}
+        actionPending={actionPending}
+        onUpdateBranch={(method) => void perform("update-branch", undefined, method)}
+        resolveConflicts={primaryAction === "resolve" ? null : resolveConflictsControl}
+        primary={null}
+        primaryMenu={null}
+      />
+    );
+
   if (detailQuery.isPending && !detail) {
     return (
       <PullRequestDetailGhost
@@ -1799,6 +1832,7 @@ export function PullRequestDetailPanel({
               <div className={cn("absolute inset-0", tab !== "summary" && "invisible")}>
                 <PullRequestSummaryTab
                   scrollerRef={scrollerRefs.summary}
+                  readiness={readinessCard}
                   environmentId={environmentId}
                   threadRef={threadRef}
                   reference={reference}

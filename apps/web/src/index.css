@@ -3012,3 +3012,8 @@ html[data-theme-reveal] [data-grid-surface] {
 [data-preview-panel-mode="inline"] {
   background-color: var(--sidebar);
 }
+
+/* Dictation mic: red ink marks a live recording, the same role destructive actions use. */
+[data-listening] {
+  color: var(--error-foreground);
+}

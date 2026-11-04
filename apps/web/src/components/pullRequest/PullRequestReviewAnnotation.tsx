@@ -16,6 +16,13 @@ import { RelativeTime } from "~/components/RelativeTime";
 import { cn } from "~/lib/utils";
 
 import { Button } from "../ui/button";
+import {
+  SNIPPET_FRAME,
+  SNIPPET_LINE_ADDED,
+  SNIPPET_LINE_DELETED,
+  SNIPPET_LINE_NUMBER,
+  SNIPPET_LINE_TEXT,
+} from "../ui/diff-snippet-recipes";
 import { MorphIcon } from "~/components/MorphIcon";
 import { PullRequestEditButton } from "./PullRequestEditButton";
 import { Textarea } from "../ui/textarea";
@@ -257,6 +264,29 @@ export function ReviewThreadCard({
           </Button>
         ) : null}
       </div>
+
+      {thread.snippet && thread.snippet.length > 0 ? (
+        <div className={cn("mx-3 mb-3 py-1", SNIPPET_FRAME)}>
+          {thread.snippet.map((line, index) => {
+            const lineClass =
+              line.kind === "added"
+                ? SNIPPET_LINE_ADDED
+                : line.kind === "deleted"
+                  ? SNIPPET_LINE_DELETED
+                  : undefined;
+            return (
+              <div
+                // oxlint-disable-next-line react/no-array-index-key -- Snippet lines can repeat; these stateless rows never reorder.
+                key={index}
+                className={cn("flex min-w-max gap-3 px-3", lineClass)}
+              >
+                <span className={cn("w-8 shrink-0", SNIPPET_LINE_NUMBER)}>{line.line ?? ""}</span>
+                <span className={SNIPPET_LINE_TEXT}>{line.text}</span>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
 
       {expanded ? (
         <>

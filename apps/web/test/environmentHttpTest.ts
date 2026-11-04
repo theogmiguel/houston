@@ -4,6 +4,7 @@ import {
   EnvironmentAuthenticatedAuth,
   EnvironmentAuthenticatedPrincipal,
   EnvironmentHttpApi,
+  EnvironmentVoiceBodyLimit,
   type AuthBrowserSessionRequest,
   type AuthBrowserSessionResult,
   type AuthCreatePairingCredentialInput,
@@ -19,6 +20,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import { HttpApiTest } from "effect/http-api";
+import { HttpClientError, HttpClientRequest } from "effect/http";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
 import { PrimaryEnvironmentHttpClient } from "../src/environments/primary/httpClient";
@@ -35,6 +37,8 @@ interface EnvironmentHttpTestScenario {
   readonly pairingCredential?: (
     payload: AuthCreatePairingCredentialInput,
   ) => Effect.Effect<AuthPairingCredentialResult>;
+  /** Fails this many requests at the transport level, as a server that is not listening yet does. */
+  readonly refusedConnections?: number;
 }
 
 export interface EnvironmentHttpTestCalls {
@@ -72,6 +76,7 @@ export async function installEnvironmentHttpTest(scenario: EnvironmentHttpTestSc
     HttpApiTest.groups(EnvironmentHttpApi, ["metadata", "auth"]).pipe(
       Effect.provide([
         NodeHttpServer.layerHttpServices,
+        Layer.succeed(EnvironmentVoiceBodyLimit, () => unexpectedEndpoint("voice")),
         HttpApiBuilder.group(EnvironmentHttpApi, "metadata", (handlers) =>
           handlers.handle(
             "descriptor",
@@ -123,7 +128,21 @@ export async function installEnvironmentHttpTest(scenario: EnvironmentHttpTestSc
   );
 
   const runtime = ManagedRuntime.make(Layer.succeed(PrimaryEnvironmentHttpClient, client));
-  __setPrimaryHttpRunnerForTests((effect) => runtime.runPromise(effect));
+  let refusedConnections = scenario.refusedConnections ?? 0;
+  __setPrimaryHttpRunnerForTests((effect) => {
+    if (refusedConnections > 0) {
+      refusedConnections -= 1;
+      return Promise.reject(
+        new HttpClientError.HttpClientError({
+          reason: new HttpClientError.TransportError({
+            request: HttpClientRequest.get("http://localhost:3773/"),
+            description: "connection refused",
+          }),
+        }),
+      );
+    }
+    return runtime.runPromise(effect);
+  });
 
   return {
     calls,

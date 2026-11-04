@@ -18,6 +18,7 @@ import {
   FileCode2Icon,
   GitCommitHorizontalIcon,
   MessageSquareIcon,
+  UserPlusIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
@@ -56,7 +57,7 @@ import {
   pullRequestReviewOutcomeStaleLabel,
   pullRequestReviewOutcomeToneClassName,
 } from "./pullRequestPresentation";
-import { PullRequestGlyph } from "./pullRequestIcons";
+import { PullRequestChecksGlyph, PullRequestGlyph } from "./pullRequestIcons";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 
 interface ReactionSurface {
@@ -493,6 +494,15 @@ function CommitEvent({
             <span>
               <RelativeTime timestamp={event.at} />
             </span>
+            {event.checks ? (
+              <span
+                className="flex items-center gap-1"
+                aria-label={`Checks: ${event.checks.passed} of ${event.checks.total} passed`}
+              >
+                <PullRequestChecksGlyph state={event.checks.state} />
+                {event.checks.passed.toLocaleString()}/{event.checks.total.toLocaleString()}
+              </span>
+            ) : null}
           </div>
         </div>
         {event.additions !== null && event.deletions !== null ? (
@@ -520,10 +530,15 @@ function LifecycleEvent({ event, term }: { event: PullRequestTimelineEvent; term
             icon: <PullRequestGlyph.merged className="size-3.5" />,
             label: `${title} merged`,
           }
-        : {
-            icon: <PullRequestGlyph.closed className="size-3.5" />,
-            label: `${title} closed`,
-          };
+        : event.kind === "review-request"
+          ? {
+              icon: <UserPlusIcon className="size-3.5" />,
+              label: `${event.again ? "asked for another review from" : "requested a review from"} ${(event.reviewers ?? []).map((reviewer) => reviewer.login).join(", ")}`,
+            }
+          : {
+              icon: <PullRequestGlyph.closed className="size-3.5" />,
+              label: `${title} closed`,
+            };
 
   return (
     <div className="relative mb-5 pl-12 [contain-intrinsic-block-size:48px] [content-visibility:auto]">

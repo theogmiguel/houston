@@ -25,6 +25,11 @@ import {
 
 export type Operation = keyof ProviderTextGeneration;
 
+/** The structured reply every provider returns for voice transcript cleanup. */
+export const TranscriptionPostProcessingOutput = Schema.Struct({
+  transcription: Schema.String,
+});
+
 export interface Request<S extends Schema.Top> {
   readonly operation: Operation;
   readonly cwd: string;
@@ -159,6 +164,16 @@ export function fromRunner(name: string, run: Runner): ProviderTextGeneration {
     };
   });
 
+  const generateTranscriptionPostProcessing: ProviderTextGeneration["generateTranscriptionPostProcessing"] =
+    Effect.fn(`${name}.generateTranscriptionPostProcessing`)(function* (input) {
+      return yield* run({
+        operation: "generateTranscriptionPostProcessing",
+        cwd: input.cwd,
+        prompt: input.prompt,
+        outputSchema: TranscriptionPostProcessingOutput,
+        modelSelection: input.modelSelection,
+      });
+    });
   const generateReviewGuide: ProviderTextGeneration["generateReviewGuide"] = Effect.fn(
     `${name}.generateReviewGuide`,
   )(function* (input) {
@@ -176,6 +191,7 @@ export function fromRunner(name: string, run: Runner): ProviderTextGeneration {
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateTranscriptionPostProcessing,
     generateReviewGuide,
   } satisfies ProviderTextGeneration;
 }

@@ -3,13 +3,13 @@
 Settings is organized in groups. Every page has its own search terms; the search field in
 the settings sidebar finds a page, a section or a single setting by name.
 
-| Group       | Pages                                                                    |
-| ----------- | ------------------------------------------------------------------------ |
-| —           | General, Appearance, Chat, Diffs & pull requests, Keybindings, SnapShots |
-| Agents      | Providers, Threads, Browser, Devices, Scheduled tasks                    |
-| Code        | Projects, Source control, Worktrees                                      |
-| Connections | Environments, Task sources, Sharing & access, Secrets                    |
-| —           | Maintenance, Labs, About, Archive                                        |
+| Group       | Pages                                                                           |
+| ----------- | ------------------------------------------------------------------------------- |
+| —           | General, Appearance, Chat, Voice, Diffs & pull requests, Keybindings, SnapShots |
+| Agents      | Providers, Threads, Browser, Devices, Scheduled tasks                           |
+| Code        | Projects, Source control, Worktrees                                             |
+| Connections | Environments, Task sources, Sharing & access, Secrets                           |
+| —           | Maintenance, Labs, About, Archive                                               |
 
 Search Settings by feature or setting name. `Esc` clears an active search.
 
@@ -35,6 +35,12 @@ imported; VS Code theme files can be imported. See [Appearance](appearance.md).
 
 The rich-text composer, the send shortcut, whether skills appear in the `/` menu, and
 **Follow-up behavior** for a message sent while an agent is working.
+
+## Voice
+
+The transcription environment and microphone, speech models and their downloads, language and
+translation, acceleration, model unload, the dictionary, filler-word removal and transcript
+cleanup. See [Dictation](dictation.md).
 
 ## Diffs & pull requests
 

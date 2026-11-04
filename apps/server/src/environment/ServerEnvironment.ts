@@ -266,6 +266,7 @@ export const make = Effect.gen(function* () {
       triage: true,
       oneTimeSchedules: true,
       npmReleaseLookup: true,
+      voiceTranscription: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverInstallation === null ? {} : { serverInstallation }),
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate
