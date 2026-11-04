@@ -90,6 +90,26 @@ function installServer() {
   return requests;
 }
 
+/** Advances fake time in steps until `promise` settles or `budgetMs` of fake time has passed. */
+async function settleWithin(
+  promise: Promise<unknown>,
+  budgetMs: number,
+): Promise<{ resolved: unknown } | { rejected: unknown } | "pending"> {
+  let outcome: { resolved: unknown } | { rejected: unknown } | "pending" = "pending";
+  promise.then(
+    (resolved) => {
+      outcome = { resolved };
+    },
+    (rejected: unknown) => {
+      outcome = { rejected };
+    },
+  );
+  for (let advancedMs = 0; advancedMs < budgetMs && outcome === "pending"; advancedMs += 100) {
+    await vi.advanceTimersByTimeAsync(100);
+  }
+  return outcome;
+}
+
 describe("desktop cold start", () => {
   beforeEach(async () => {
     vi.useRealTimers();
@@ -156,32 +176,30 @@ describe("desktop cold start", () => {
     await vi.waitFor(() => expect(host.bridge.getServerStatus).toHaveBeenCalled());
     host.publishBootstrap();
     await expect(gate).resolves.toEqual({ status: "authenticated" });
-  }, 5_000);
+  });
 
   it("gives up quickly when a ready server keeps refusing the credential", async () => {
     // The host refuses with the same error when the running server rejects its credential.
+    vi.useFakeTimers();
     const host = installStartingHost("ready", { bearerRefused: true });
     installServer();
     const { resolveInitialServerAuthGateState } = await import("./auth");
 
-    const startedAt = Date.now();
-    await expect(resolveInitialServerAuthGateState()).rejects.toMatchObject({
-      _tag: "PrimaryEnvironmentRequestError",
-    });
-    expect(Date.now() - startedAt).toBeLessThan(8_000);
+    const outcome = await settleWithin(resolveInitialServerAuthGateState(), 5_000);
+    expect(outcome).toMatchObject({ rejected: { _tag: "PrimaryEnvironmentRequestError" } });
     expect(host.bridge.getLocalEnvironmentBearerToken.mock.calls.length).toBeLessThan(20);
-  }, 12_000);
+  });
 
   it("gives up quickly when a ready host never publishes this window's bootstrap", async () => {
     // A secondary webview whose bootstrap global the host does not refresh.
+    vi.useFakeTimers();
     installStartingHost("ready", { bootstrapPublished: false });
     installServer();
     const { resolveInitialServerAuthGateState } = await import("./auth");
 
-    const startedAt = Date.now();
-    await expect(resolveInitialServerAuthGateState()).rejects.toBeDefined();
-    expect(Date.now() - startedAt).toBeLessThan(8_000);
-  }, 12_000);
+    const outcome = await settleWithin(resolveInitialServerAuthGateState(), 5_000);
+    expect(outcome).toHaveProperty("rejected");
+  });
 
   it("recovers on Try again after a failed start, without a reload", async () => {
     const host = installStartingHost("error");
