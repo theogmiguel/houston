@@ -29,9 +29,10 @@ import * as ThreadManagement from "./ThreadManagementService.ts";
 import * as ThreadTitles from "./ThreadTitleRegenerationService.ts";
 
 it.effect.each([
-  ["starts the next turn after a post-capture Git status failure", false],
-  ["keeps the next turn queued when checkpoint capture fails", true],
-] as const)("%s", ([, captureFails]) => {
+  ["starts the next turn after a post-capture Git status failure", false, false],
+  ["keeps the next turn queued when checkpoint capture fails", true, false],
+  ["starts the next turn while the post-capture Git status never returns", false, true],
+] as const)("%s", ([, captureFails, refreshHangs]) => {
   const threadId = ThreadId.make("thread:finalization-queue");
   const runId = RunId.make("run:finalization-queue");
   const scopeId = CheckpointScopeId.make("scope:finalization-queue");
@@ -60,6 +61,7 @@ it.effect.each([
           refreshLocalStatus: () =>
             Effect.gen(function* () {
               calls.push("refresh");
+              if (refreshHangs) return yield* Effect.never;
               return yield* new GitCommandError({
                 operation: "statusDetailsLocal",
                 command: "git",
