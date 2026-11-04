@@ -3,6 +3,7 @@ import { AlertDialog as AlertDialogPrimitive } from "@base-ui/react/alert-dialog
 import { cn } from "~/lib/utils";
 import {
   DIALOG_BACKDROP_CLASS,
+  DIALOG_CONTENT_ENTER_CLASS,
   DIALOG_MOBILE_SHEET_CLASS,
   DIALOG_POPUP_CLASS,
 } from "~/components/ui/dialog-styles";
@@ -78,6 +79,7 @@ function AlertDialogHeader({ className, ...props }: React.ComponentProps<"div">)
     <div
       className={cn(
         "flex min-h-0 flex-col gap-2 p-6 text-center max-sm:pb-4 sm:text-left",
+        DIALOG_CONTENT_ENTER_CLASS,
         className,
       )}
       data-slot="alert-dialog-header"
@@ -97,6 +99,7 @@ function AlertDialogFooter({
     <div
       className={cn(
         "flex flex-col-reverse gap-2 px-6 sm:flex-row sm:justify-end sm:rounded-b-[calc(var(--radius-2xl)-1px)]",
+        DIALOG_CONTENT_ENTER_CLASS,
         variant === "default" && "border-t bg-muted/72 py-4",
         variant === "bare" && "pb-6",
         className,
