@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Alert, AlertAction, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
+import { hostBridgeErrorMessage } from "./hostBridgeError";
 
 const STATUS_POLL_MS = 4_000;
 
@@ -66,7 +67,7 @@ export function LocalServerStatusBanner() {
       const next = await bridge.restartServer();
       setStatus(next);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not restart the local server.");
+      setError(hostBridgeErrorMessage(cause, "Could not restart the local server."));
     }
     setRestarting(false);
   };

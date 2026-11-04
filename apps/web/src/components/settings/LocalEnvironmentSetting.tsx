@@ -3,6 +3,7 @@ import { ServerIcon } from "lucide-react";
 
 import { usePrimaryEnvironment } from "../../state/environments";
 import { Button } from "../ui/button";
+import { hostBridgeErrorMessage } from "../desktop/hostBridgeError";
 import { Spinner } from "../ui/spinner";
 import { SettingsRow } from "./settingsLayout";
 
@@ -23,7 +24,7 @@ export function LocalEnvironmentSetting() {
     try {
       await restartServer();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Couldn't restart the local server.");
+      setError(hostBridgeErrorMessage(cause, "Couldn't restart the local server."));
     }
     setIsRestarting(false);
   };
