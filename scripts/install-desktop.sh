@@ -9,25 +9,27 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APPS="$HOME/.local/share/applications"
 LIBDIR="$HOME/.local/lib/houston"
-APP_SRC="$ROOT/src-tauri/target/release/houston"
+if [ -n "${TR_APP:-}" ]; then
+  APP_SRC="$TR_APP"
+else
+  APP_SRC="$(find "$ROOT/release" -maxdepth 1 -type f -name 'Houston-*.AppImage' 2>/dev/null | sort | tail -1)"
+fi
 
-[ -x "$APP_SRC" ] || { echo "app binary missing at $APP_SRC — run: ./scripts/build-app.sh" >&2; exit 1; }
-
-"$ROOT/scripts/check-binary-fresh.sh" >/dev/null || {
-  echo "refusing to install: the app binary is stale (details above)." >&2
+[ -n "$APP_SRC" ] && [ -x "$APP_SRC" ] || {
+  echo "app binary missing (looked for release/Houston-*.AppImage) — run: pnpm dist:desktop:linux" >&2
   exit 1
 }
 
 mkdir -p "$LIBDIR"
-cp "$APP_SRC" "$LIBDIR/houston"
-chmod +x "$LIBDIR/houston"
+cp "$APP_SRC" "$LIBDIR/houston.AppImage"
+chmod +x "$LIBDIR/houston.AppImage"
 
 cp "$ROOT/scripts/start.sh" "$LIBDIR/start.sh"
 chmod +x "$LIBDIR/start.sh"
 
 cat >"$LIBDIR/launch.sh" <<LAUNCH_EOF
 #!/usr/bin/env bash
-export TR_APP="$LIBDIR/houston"
+export TR_APP="$LIBDIR/houston.AppImage"
 exec "$LIBDIR/start.sh" "\$@"
 LAUNCH_EOF
 chmod +x "$LIBDIR/launch.sh"
@@ -76,9 +78,9 @@ if [ "$repo_leak" -ne 0 ]; then
   exit 1
 fi
 
-app_size="$(du -sh "$LIBDIR/houston" | cut -f1)"
+app_size="$(du -sh "$LIBDIR/houston.AppImage" | cut -f1)"
 start_size="$(du -sh "$LIBDIR/start.sh" | cut -f1)"
-echo "installed: $LIBDIR/houston ($app_size) <- $APP_SRC"
+echo "installed: $LIBDIR/houston.AppImage ($app_size) <- $APP_SRC"
 echo "installed: $LIBDIR/start.sh ($start_size) <- $ROOT/scripts/start.sh"
 echo "installed: $LIBDIR/launch.sh (wrapper, sets TR_APP, execs $LIBDIR/start.sh)"
 

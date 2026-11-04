@@ -48,7 +48,6 @@ const PACKAGE_PATHS = [
   /^vite\.config\.ts$/,
 ];
 const NATIVE_PATHS = [
-  /^src-tauri\//,
   /^native\//,
   /^apps\/desktop\/native\//,
   /^assets\//,

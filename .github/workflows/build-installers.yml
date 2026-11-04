@@ -47,9 +47,8 @@ jobs:
         run: |
           set -euo pipefail
           version=$(./scripts/check-manifest-versions.sh)
-          # The three manifests are what the bundle filenames and server archive
-          # names read; src-tauri/Cargo.lock carries the host crate's own version
-          # and must move with them.
+          # The three manifests are what the bundle filenames and runtime
+          # versions read, and they must agree before anything is built.
           ./scripts/set-version.sh --check "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"

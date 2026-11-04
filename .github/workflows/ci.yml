@@ -141,7 +141,7 @@ jobs:
       - name: Upstream MIT notice is present
         run: |
           notice='Copyright (c) 2026 T3 Tools Inc.'
-          for file in NOTICE third-party-licenses.config.json src-tauri/resources/third-party-licenses.json; do
+          for file in NOTICE third-party-licenses.config.json apps/desktop/resources/third-party-licenses.json; do
             if ! grep -qF "$notice" "$file"; then
               echo "static: $file lacks the upstream licence line \"$notice\"; ported code cannot ship without it." >&2
               echo "  Restore it in NOTICE and third-party-licenses.config.json, then run: node scripts/gen-third-party-licenses.mjs" >&2

@@ -13,7 +13,7 @@ NodeTest.test("a server-only change does not set native", () => {
 });
 
 NodeTest.test("a native-only change does not set the server or web jobs", () => {
-  const outputs = decide(["src-tauri/src/lib.rs"]);
+  const outputs = decide(["native/kde-snap-shot/src/lib.rs"]);
   NodeAssert.equal(outputs.native, true);
   NodeAssert.equal(outputs.server, false);
   NodeAssert.equal(outputs.web, false);

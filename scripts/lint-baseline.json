@@ -87,8 +87,6 @@
   "scripts/ci/lint-ratchet.test.mjs": 2,
   "scripts/gen-third-party-licenses.mjs": 5,
   "scripts/gen-third-party-licenses.test.mjs": 2,
-  "scripts/stage-v2-server.mjs": 10,
   "scripts/web-style-fixtures/icon-imports/bad/case.tsx": 1,
-  "scripts/web-style-fixtures/title-tooltip/bad/case.tsx": 1,
-  "src-tauri/src/v2_bridge.js": 4
+  "scripts/web-style-fixtures/title-tooltip/bad/case.tsx": 1
 }

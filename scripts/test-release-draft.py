@@ -38,7 +38,7 @@ class DraftTests(unittest.TestCase):
         return ""
 
     def promote(self):
-        m.promote("owner/repo", "v1.2.3", self.assets, self.shipped, self.notes, self.output, self.root / "tauri.json", self.snapshot)
+        m.promote("owner/repo", "v1.2.3", self.assets, self.shipped, self.notes, self.output, self.root / "updater.json", self.snapshot)
 
     def test_reviewed_notes_are_uploaded_before_publication_and_date_is_preserved(self):
         with patch.object(m, "release", return_value=self.draft), patch.object(m, "run", side_effect=self.command):

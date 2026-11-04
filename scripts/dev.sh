@@ -90,22 +90,10 @@ if [ "$FRESH" = "1" ]; then
   fi
 fi
 
-APP="$ROOT/src-tauri/target/debug/houston-tauri"
-
-echo "[dev] building the v2 web renderer."
+echo "[dev] building the v2 web renderer, server and desktop host."
 # The dev channel's renderer reports itself as "dev", which also turns on the dev-only motion probe.
 if [ "$HOUSTON_CHANNEL" = "dev" ]; then export VITE_RELEASE_CHANNEL="${VITE_RELEASE_CHANNEL:-dev}"; fi
-(cd "$ROOT" && npx -y pnpm@12.14.0 --filter @houston-app/web build)
+(cd "$ROOT" && npx -y pnpm@12.14.0 run build:desktop)
 
-echo "[dev] building the v2 server."
-(cd "$ROOT" && npx -y pnpm@12.14.0 --filter @houston-app/cli build:bundle)
-
-echo "[dev] building the app (debug)…"
-(cd "$ROOT/src-tauri" && cargo build)
-
-[ -x "$APP" ] || { echo "[dev] app binary missing at $APP after a successful build — did the bin name change in src-tauri/Cargo.toml?" >&2; exit 1; }
-
-ARGS=(--channel "$HOUSTON_CHANNEL")
-
-echo "[dev] starting the app on channel '$HOUSTON_CHANNEL'… (Ctrl+C ends the app; sessions and the daemon keep running)"
-exec "$APP" "${ARGS[@]}"
+echo "[dev] starting the desktop app on channel '$HOUSTON_CHANNEL'… (Ctrl+C ends the app; sessions and the daemon keep running)"
+exec node "$ROOT/apps/desktop/scripts/start-electron.mjs"

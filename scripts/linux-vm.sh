@@ -11,8 +11,8 @@ command -v wsl.exe >/dev/null 2>&1 || {
 
 VM_PREAMBLE='
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
-export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
-export PATH="$BUN_INSTALL/bin:$PATH"
+export PNPM_HOME="${PNPM_HOME:-$HOME/.local/share/pnpm}"
+export PATH="$PNPM_HOME:$PATH"
 vmcd() {
   cd "$1" || { echo "[linux-vm] FATAL: cd to $1 failed" >&2; exit 1; }
   case "$PWD" in
@@ -70,7 +70,7 @@ case "${1:-}" in
         echo '--- systemd (oom-shield needs it) ---'; systemctl is-system-running || true
         echo '--- wslg sockets (empty => wsl --shutdown and relaunch) ---'
         ls /mnt/wslg/.X11-unix/ 2>&1; ls /mnt/wslg/runtime-dir/ 2>&1 | head -4
-        echo '--- toolchain ---'; echo \"cargo=\$(command -v cargo || echo MISSING)  nextest=\$(command -v cargo-nextest || echo MISSING)  bun=\$(command -v bun || echo MISSING)  node=\$(command -v node || echo MISSING)\"
+        echo '--- toolchain ---'; echo \"cargo=\$(command -v cargo || echo MISSING)  pnpm=\$(command -v pnpm || echo MISSING)  node=\$(command -v node || echo MISSING)\"
         echo '--- clone ---'; vmcd $VM_REPO && git log --oneline -1 && git status --short | head"
     ;;
 
@@ -117,17 +117,12 @@ case "${1:-}" in
         }
         echo \"### HEAD: \$(git rev-parse --short HEAD)\"
 
-        step 'src-tauri: fmt --check' \
-          cargo fmt --manifest-path src-tauri/Cargo.toml --check
-        step 'src-tauri: clippy -D warnings' \
-          cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-        step 'src-tauri: cargo test (shielded)' \
+        step 'native: cargo test (shielded)' \
           env HOUSTON_CHANNEL=dev ./scripts/oom-shield.sh \
-              cargo test --manifest-path src-tauri/Cargo.toml
+              sh -c 'cargo test --locked --manifest-path apps/desktop/native/houston-v1-cleanup/Cargo.toml && cargo test --locked --manifest-path native/kde-snap-shot/Cargo.toml && cargo test --locked --manifest-path native/hyprland-snap-shot/Cargo.toml'
 
-        for s in check-dev-channel check-kill-guard check-spawn-window check-env-ratchet; do
-          step \"safety: \$s\" \"./scripts/\$s.sh\"
-        done
+        step 'safety: check-dev-channel' './scripts/check-dev-channel.sh'
+        step 'safety: check-comment-hygiene' './scripts/check-comment-hygiene.sh'
 
         echo ''
         if [ \"\$fail\" -eq 0 ]; then
@@ -140,7 +135,7 @@ case "${1:-}" in
 
   build)
     vm_detach build "vmcd $VM_REPO
-./scripts/build-app.sh --bundles appimage,deb"
+pnpm dist:desktop:linux"
     echo "[linux-vm] follow with: ./scripts/linux-vm.sh wait build"
     ;;
 
@@ -150,12 +145,10 @@ case "${1:-}" in
 
   app)
     vm "set -e; vmcd $VM_REPO
-        deb=\$(find src-tauri/target/release/bundle/deb -name '*.deb' | head -1)
-        [ -n \"\$deb\" ] || { echo 'no .deb -- run: linux-vm.sh build'; exit 1; }
-        sudo dpkg -i \"\$deb\" >/dev/null 2>&1 || sudo apt-get -f install -y -qq
-        ldd /usr/bin/houston | grep -i 'not found' && echo 'MISSING LIBS' || echo 'libs OK'
-        export WEBKIT_DISABLE_DMABUF_RENDERER=1
-        setsid nohup /usr/bin/houston > \$HOME/app.log 2>&1 < /dev/null &
+        appimage=\$(find release -maxdepth 1 -name 'Houston-*.AppImage' | head -1)
+        [ -n \"\$appimage\" ] || { echo 'no AppImage -- run: linux-vm.sh build'; exit 1; }
+        chmod +x \"\$appimage\"
+        setsid nohup \"\$appimage\" --no-sandbox > \$HOME/app.log 2>&1 < /dev/null &
         echo \$! > \$HOME/app.pid
         sleep 12
         if kill -0 \$(cat \$HOME/app.pid) 2>/dev/null; then

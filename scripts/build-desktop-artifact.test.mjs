@@ -102,7 +102,7 @@ NodeTest.test("the NSIS hook removes the Tauri uninstall registry entry", () => 
   );
 });
 
-NodeTest.test("the Linux config builds the AppImage and deb with the Tauri dependency", () => {
+NodeTest.test("the Linux config builds the AppImage and deb", () => {
   const config = buildConfig("linux", "AppImage");
   NodeAssert.deepEqual(resolveDesktopTargets("linux", "AppImage"), ["AppImage", "deb"]);
   NodeAssert.deepEqual(config.linux, {
@@ -119,7 +119,7 @@ NodeTest.test("the Linux config builds the AppImage and deb with the Tauri depen
   NodeAssert.equal(config.asar, false);
 });
 
-NodeTest.test("the packaged metadata matches the Tauri bundle strings", () => {
+NodeTest.test("the packaged metadata matches the bundle strings", () => {
   const config = buildConfig("linux", "deb");
   NodeAssert.equal(DESKTOP_SHORT_DESCRIPTION, "Mission control for CLI coding agents");
   NodeAssert.equal(

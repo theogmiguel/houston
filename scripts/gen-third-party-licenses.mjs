@@ -1,18 +1,28 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, realpathSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  mkdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CONFIG = join(ROOT, "third-party-licenses.config.json");
-const DEFAULT_OUT = join(ROOT, "src-tauri", "resources", "third-party-licenses.json");
+const DEFAULT_OUT = join(ROOT, "apps", "desktop", "resources", "third-party-licenses.json");
 // --out lets the staleness gate regenerate beside the committed file and diff the two,
 // rather than overwriting the tree it is checking.
 const outFlag = process.argv.indexOf("--out");
 if (outFlag !== -1 && !process.argv[outFlag + 1]) {
-  process.stderr.write("gen-third-party-licenses: --out needs a path, e.g. --out /tmp/inventory.json\n");
+  process.stderr.write(
+    "gen-third-party-licenses: --out needs a path, e.g. --out /tmp/inventory.json\n",
+  );
   process.exit(2);
 }
 const OUT = outFlag === -1 ? DEFAULT_OUT : resolve(process.argv[outFlag + 1]);
@@ -65,8 +75,8 @@ function applyOverride(entry) {
   return entry;
 }
 
-// Cargo: the normal-dependency closure of the workspace's own crates. Build and dev
-// dependencies run on the build machine and are never linked into what ships.
+// Cargo: the normal-dependency closure of each native crate that ships. Build and
+// dev dependencies run on the build machine and are never linked into what ships.
 function cargoPackages(manifest) {
   const raw = execFileSync(
     "cargo",
@@ -96,12 +106,10 @@ function cargoPackages(manifest) {
     const p = byId.get(id);
     // A crate of ours reached as a path dependency is a member of the other
     // workspace, not a third party, so `workspace_members` alone misses it.
-    // Vendored upstream crates under src-tauri/patches/ stay third party.
     if (!p) continue;
     const fromRoot = relative(ROOT, resolve(p.manifest_path));
     const outside = isAbsolute(fromRoot) || fromRoot === ".." || fromRoot.startsWith(`..${sep}`);
-    const vendored = fromRoot.startsWith(join("src-tauri", "patches") + sep);
-    if (!outside && !vendored) continue;
+    if (!outside) continue;
     out.push(
       applyOverride({
         origin: "cargo",
@@ -154,7 +162,8 @@ function collectNpmClosure(seeds, boundary) {
   const out = [];
   for (const [dir, p] of seen) {
     const license = typeof p.license === "string" ? p.license : (p.license?.type ?? null);
-    const repository = typeof p.repository === "string" ? p.repository : (p.repository?.url ?? null);
+    const repository =
+      typeof p.repository === "string" ? p.repository : (p.repository?.url ?? null);
     out.push(
       applyOverride({
         origin: "npm",
@@ -176,7 +185,9 @@ const SUPPORTED_MEMBER = /^[\w.@-]+(?:\/[\w.@-]+)*(?:\/\*)?$/;
 function memberOf(line) {
   const entry = line.replace(/\s+#.*$/, "").match(/^\s*-\s+(.+?)\s*$/);
   if (!entry) {
-    throw new Error(`pnpm-workspace.yaml: \`packages:\` entry is not a "- path" line: ${line.trim()}`);
+    throw new Error(
+      `pnpm-workspace.yaml: \`packages:\` entry is not a "- path" line: ${line.trim()}`,
+    );
   }
   const member = entry[1].replace(/^(["'])(.*)\1$/, "$2");
   if (!SUPPORTED_MEMBER.test(member)) {
@@ -197,7 +208,9 @@ export function parseWorkspaceMembers(text) {
     if (/^packages:\s*(#.*)?$/.test(line)) {
       inList = true;
     } else if (/^packages:/.test(line)) {
-      throw new Error(`pnpm-workspace.yaml: \`packages:\` must be a block list, got: ${line.trim()}`);
+      throw new Error(
+        `pnpm-workspace.yaml: \`packages:\` must be a block list, got: ${line.trim()}`,
+      );
     } else if (inList && /^-\s/.test(line)) {
       globs.push(memberOf(line));
     } else if (inList && /^\S/.test(line)) {
@@ -272,9 +285,14 @@ function assetPackages() {
 }
 
 function main() {
+  const nativeManifests = [
+    join(ROOT, "apps", "desktop", "native", "houston-v1-cleanup", "Cargo.toml"),
+    join(ROOT, "native", "kde-snap-shot", "Cargo.toml"),
+    join(ROOT, "native", "hyprland-snap-shot", "Cargo.toml"),
+  ];
   const packages = [
     ...assetPackages(),
-    ...cargoPackages(join(ROOT, "src-tauri", "Cargo.toml")),
+    ...nativeManifests.flatMap((manifest) => cargoPackages(manifest)),
     ...workspaceNpmPackages(),
   ];
 
@@ -294,7 +312,9 @@ function main() {
 
   const used = new Set(sorted.flatMap((p) => p.textIds));
   const doc = {
-    texts: Object.fromEntries([...texts].filter(([id]) => used.has(id)).sort(([a], [b]) => a.localeCompare(b, "en"))),
+    texts: Object.fromEntries(
+      [...texts].filter(([id]) => used.has(id)).sort(([a], [b]) => a.localeCompare(b, "en")),
+    ),
     packages: sorted,
   };
 

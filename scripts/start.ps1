@@ -8,8 +8,8 @@ $ErrorActionPreference = 'Stop'
 
 if (-not $App) {
     $candidates = @(
-        (Join-Path $env:LOCALAPPDATA 'Houston\houston.exe'),
-        (Join-Path $PSScriptRoot '..\src-tauri\target\release\houston.exe')
+        (Join-Path $env:LOCALAPPDATA 'Programs\Houston\houston.exe'),
+        (Join-Path $PSScriptRoot '..\release\win-unpacked\houston.exe')
     )
     foreach ($c in $candidates) {
         if (Test-Path -LiteralPath $c) { $App = $c; break }
