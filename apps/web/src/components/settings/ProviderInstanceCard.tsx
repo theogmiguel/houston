@@ -1219,11 +1219,6 @@ export function ProviderInstanceCard({
       onChange={updateConfig}
       managed={instanceLocks && { keys: instanceLocks.configKeys, reason: instanceLocks.reason }}
       environmentId={environmentId}
-      unsetBooleanValues={
-        liveProvider?.claudeInChromeDefault === undefined
-          ? undefined
-          : { claudeInChrome: liveProvider.claudeInChromeDefault }
-      }
     />
   ) : (
     <SettingsRow

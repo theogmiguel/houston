@@ -236,8 +236,6 @@ export const ServerProvider = Schema.Struct({
     }),
   ),
   configurableProviders: Schema.optional(Schema.Boolean),
-  // Claude Code's own claudeInChromeDefaultEnabled, so a never-set Houston switch shows what applies.
-  claudeInChromeDefault: Schema.optionalKey(Schema.Boolean),
   runtimePaths: Schema.optionalKey(
     Schema.Struct({
       homePath: TrimmedNonEmptyString,

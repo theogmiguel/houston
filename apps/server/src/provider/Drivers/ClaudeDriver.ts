@@ -58,8 +58,6 @@ import {
   makeClaudeCapabilitiesCacheKey,
   makeClaudeContinuationGroupKey,
   mergeClaudeProcessEnvironment,
-  readClaudeInChromeDefault,
-  resolveClaudeGlobalConfigPath,
   resolveClaudeHomePath,
 } from "./ClaudeHome.ts";
 import * as HostProcess from "@houston-app/shared/HostProcess";
@@ -260,10 +258,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       Effect.map((result) => result.capabilities),
     );
 
-    const claudeGlobalConfigPath = yield* resolveClaudeGlobalConfigPath(
-      effectiveConfig,
-      processEnv,
-    ).pipe(Effect.provideService(Path.Path, path));
     const checkProvider = catalogService.refreshInBackground.pipe(
       Effect.andThen(
         modelCatalog.pipe(
@@ -281,11 +275,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
                   Effect.provideService(FileSystem.FileSystem, fileSystem),
                   Effect.provideService(Path.Path, path),
                 ),
-            ),
-          ),
-          Effect.flatMap((provider) =>
-            readClaudeInChromeDefault(claudeGlobalConfigPath).pipe(
-              Effect.map((claudeInChromeDefault) => ({ ...provider, claudeInChromeDefault })),
             ),
           ),
           Effect.tap((provider) =>

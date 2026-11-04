@@ -157,8 +157,6 @@ import {
   claudeSignedOutMessage,
   makeClaudeEnvironment,
   mergeClaudeProcessEnvironment,
-  readClaudeInChromeDefault,
-  resolveClaudeGlobalConfigPath,
   resolveClaudeHomePath,
 } from "../../provider/Drivers/ClaudeHome.ts";
 import {
@@ -1396,6 +1394,18 @@ function claudeLiveSelectionFlagSettings(
     fastMode: selection.settings.fastMode ?? null,
     ultracode: selection.settings.ultracode ?? null,
   };
+}
+
+/**
+ * Claude Code hides its Artifact tool in SDK sessions unless CLAUDE_CODE_ARTIFACT is set.
+ * An explicit value in the instance environment wins over the switch.
+ */
+export function withClaudeArtifacts(
+  environment: NodeJS.ProcessEnv,
+  enabled: boolean,
+): NodeJS.ProcessEnv {
+  if (!enabled || environment.CLAUDE_CODE_ARTIFACT !== undefined) return environment;
+  return { ...environment, CLAUDE_CODE_ARTIFACT: "1" };
 }
 
 // A delegated child is its own SDK session, so Claude Code gives it the main-conversation cache
@@ -4585,18 +4595,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   const customHome =
     adapterOptions.settings.homePath.trim().length > 0 ||
     adapterOptions.environment.CLAUDE_CONFIG_DIR !== hostEnvironment.CLAUDE_CONFIG_DIR;
-  const claudeGlobalConfigPath = yield* resolveClaudeGlobalConfigPath(
-    adapterOptions.settings,
-    adapterOptions.environment,
-  ).pipe(Effect.provideService(Path.Path, path));
-  const resolveClaudeInChrome = Effect.fnUntraced(function* () {
-    return (
-      adapterOptions.settings.claudeInChrome ??
-      (yield* readClaudeInChromeDefault(claudeGlobalConfigPath).pipe(
-        Effect.provideService(FileSystem.FileSystem, fileSystem),
-      ))
-    );
-  });
   const announcedBypassDowngrades = new Set<ThreadId>();
   const readBypassSettings = (filePath: string) =>
     fileSystem.readFileString(filePath).pipe(
@@ -10396,10 +10394,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             turnInput.runtimePolicy.cwd,
             launchArgSettings,
           );
-          const claudeInChrome = yield* resolveClaudeInChrome();
           const queryOptions = makeClaudeQueryOptions({
             modelSelection: turnInput.modelSelection,
-            claudeInChrome,
+            claudeInChrome: adapterOptions.settings.claudeInChrome,
             nativeThreadId,
             resume: shouldResume,
             ...(resumeSessionAt === undefined ? {} : { resumeSessionAt }),
@@ -10409,12 +10406,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(launchArgSettings === undefined
               ? {}
               : { sdkSettings: claudeSdkLaunchArgSettings(launchArgSettings) }),
-            environment: claudeQueryEnvironment(
-              adapterOptions.environment,
-              turnInput.appThread,
-              turnInput.appThread.lineage.relationshipToParent === "subagent"
-                ? yield* resolveSubagentPromptCacheTtl(turnInput.runtimePolicy.cwd)
-                : undefined,
+            environment: withClaudeArtifacts(
+              claudeQueryEnvironment(
+                adapterOptions.environment,
+                turnInput.appThread,
+                turnInput.appThread.lineage.relationshipToParent === "subagent"
+                  ? yield* resolveSubagentPromptCacheTtl(turnInput.runtimePolicy.cwd)
+                  : undefined,
+              ),
+              adapterOptions.settings.claudeArtifacts,
             ),
             tools: queryPolicy.tools ?? CLAUDE_CODE_PRESET_TOOLS,
             ...(mcpOverrides.allowedTools === undefined

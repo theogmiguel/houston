@@ -1138,48 +1138,32 @@ describe("ClaudeAdapterV2 Claude in Chrome", () => {
     ),
   );
 
-  it.effect(
-    "follows claudeInChromeDefaultEnabled from .claude.json while the switch is unset",
-    () =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const fileSystem = yield* FileSystem.FileSystem;
-          const home = yield* fileSystem.makeTempDirectoryScoped({
-            prefix: "houston-claude-chrome-home-",
-          });
-          yield* fileSystem.writeFileString(
-            NodePath.join(home, ".claude.json"),
-            JSON.stringify({ claudeInChromeDefaultEnabled: true }),
-          );
-          const opened = yield* startTurn({ ...DEFAULT_CLAUDE_SETTINGS, homePath: home });
-          assert.lengthOf(opened, 1);
-          assert.isNull(opened[0]!.extraArgs?.["chrome"]);
-        }).pipe(
-          Effect.provide(
-            Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
-          ),
-        ),
-      ),
-  );
-
-  it.effect("keeps the switch off over a true .claude.json default", () =>
+  it.effect("turns Chrome and Artifacts on by default", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const fileSystem = yield* FileSystem.FileSystem;
-        const home = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "houston-claude-chrome-off-",
-        });
-        yield* fileSystem.writeFileString(
-          NodePath.join(home, ".claude.json"),
-          JSON.stringify({ claudeInChromeDefaultEnabled: true }),
-        );
+        const opened = yield* startTurn(DEFAULT_CLAUDE_SETTINGS);
+        assert.lengthOf(opened, 1);
+        assert.isNull(opened[0]!.extraArgs?.["chrome"]);
+        assert.strictEqual(opened[0]!.env?.CLAUDE_CODE_ARTIFACT, "1");
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("leaves Chrome and Artifacts off when their switches are off", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
         const opened = yield* startTurn({
           ...DEFAULT_CLAUDE_SETTINGS,
-          homePath: home,
           claudeInChrome: false,
+          claudeArtifacts: false,
         });
         assert.lengthOf(opened, 1);
         assert.isUndefined(opened[0]!.extraArgs?.["chrome"]);
+        assert.isUndefined(opened[0]!.env?.CLAUDE_CODE_ARTIFACT);
       }).pipe(
         Effect.provide(
           Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),

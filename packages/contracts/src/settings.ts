@@ -755,13 +755,21 @@ export const ClaudeSettings = makeProviderSettingsSchema(
         },
       }),
     ),
-    // Absent means "follow Claude Code's claudeInChromeDefaultEnabled"; the server reads
-    // ~/.claude.json in that case, so an explicit off is the only way to override it.
-    claudeInChrome: Schema.optionalKey(Schema.Boolean).pipe(
+    claudeInChrome: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({
         title: "Claude in Chrome",
         description:
-          "Let Claude use Chrome through the Claude in Chrome extension. Follows your Claude Code setting until you change it; requires the extension and a Chromium browser.",
+          "Let Claude use Chrome through the Claude in Chrome extension. Needs the extension and a Chromium browser.",
+        providerSettingsForm: { control: "switch", clearWhenEmpty: "persist" },
+      }),
+    ),
+    claudeArtifacts: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({
+        title: "Artifacts",
+        description:
+          "Let Claude publish pages as private Artifacts on claude.ai. The page's content is sent to your Claude account; needs an account with Artifacts.",
         providerSettingsForm: { control: "switch", clearWhenEmpty: "persist" },
       }),
     ),
@@ -798,6 +806,7 @@ export const ClaudeSettings = makeProviderSettingsSchema(
       "binaryPath",
       "homePath",
       "claudeInChrome",
+      "claudeArtifacts",
       "autoCompactWindow",
       "idleCompaction",
       "launchArgs",

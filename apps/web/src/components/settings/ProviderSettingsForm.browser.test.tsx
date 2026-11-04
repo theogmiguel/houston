@@ -6,31 +6,34 @@ import { render } from "../../../test/render";
 import { providerClients } from "./providerDriverMeta";
 import { ProviderSettingsForm } from "./ProviderSettingsForm";
 
-function claudeForm(unsetBooleanValues?: Readonly<Record<string, boolean>>) {
+function claudeForm(value: Record<string, unknown>) {
   const claude = providerClients.get(ProviderDriverKind.make("claudeAgent"));
   if (claude === undefined) throw new Error("The claudeAgent provider client is not registered.");
   return (
     <ProviderSettingsForm
       definition={claude}
-      value={{}}
+      value={value}
       idPrefix="claude"
       variant="settings"
       onChange={() => {}}
-      unsetBooleanValues={unsetBooleanValues}
     />
   );
 }
 
-describe("ProviderSettingsForm unset switches", () => {
-  it("shows Claude in Chrome on when Claude Code's own default is on", async () => {
-    await using screen = await render(claudeForm({ claudeInChrome: true }));
+describe("Claude provider switches", () => {
+  it("shows Claude in Chrome and Artifacts on when never changed", async () => {
+    await using screen = await render(claudeForm({}));
     await expect.element(screen.getByRole("switch", { name: "Claude in Chrome" })).toBeChecked();
+    await expect.element(screen.getByRole("switch", { name: "Artifacts" })).toBeChecked();
   });
 
-  it("shows Claude in Chrome off when nothing says otherwise", async () => {
-    await using screen = await render(claudeForm());
+  it("shows a switch the user turned off as off", async () => {
+    await using screen = await render(
+      claudeForm({ claudeInChrome: false, claudeArtifacts: false }),
+    );
     await expect
       .element(screen.getByRole("switch", { name: "Claude in Chrome" }))
       .not.toBeChecked();
+    await expect.element(screen.getByRole("switch", { name: "Artifacts" })).not.toBeChecked();
   });
 });
