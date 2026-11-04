@@ -1,10 +1,8 @@
 # Linux testbed (WSL2)
 
-Houston supports Linux and Windows. When developing on Windows, code behind
-`#[cfg(target_os = "linux")]` (`gtk_host.rs`, `webkit.rs`,
-`watchdog/gtk_signals.rs`, …) never compiles on the host machine — only a
-Linux compile catches a break there. `scripts/linux-vm.sh` drives a WSL2
-clone from the Windows side for exactly that.
+Houston supports Linux and Windows. When developing on Windows, the Linux native helper
+crates never compile on the host machine — only a Linux compile catches a break there.
+`scripts/linux-vm.sh` drives a WSL2 clone from the Windows side for exactly that.
 
 ```
 ./scripts/linux-vm.sh status
@@ -25,9 +23,9 @@ name and VM-side clone path override via `LINUX_VM_DISTRO`/`LINUX_VM_REPO`
 ## Safety constraints enforced by the script
 
 - **PATH.** `bash -lc` is a login shell, but Ubuntu's `~/.bashrc`
-  early-returns for non-interactive shells before reaching the cargo/bun
+  early-returns for non-interactive shells before reaching the cargo/pnpm
   exports, so a naive login shell never sees either. Every remote command
-  sources `~/.cargo/env` and prepends `~/.bun/bin` explicitly first.
+  sources `~/.cargo/env` and prepends pnpm's bin directory explicitly first.
 - **Wrong directory.** A `cd` that silently no-ops leaves later commands
   running against the 9p-mounted `/mnt/c/...` view of the Windows tree
   instead of the VM's own clone — every file there reads as modified over 9p
@@ -47,10 +45,10 @@ name and VM-side clone path override via `LINUX_VM_DISTRO`/`LINUX_VM_REPO`
   `pgrep -f` for completion — a watcher whose own command line contains the
   search pattern can match itself and wait indefinitely after the build has
   already exited.
-- **`WEBKIT_DISABLE_DMABUF_RENDERER=1`.** WSLg maps no GPU, so
-  `linux-vm.sh app` exports this to avoid a blank WebKitGTK window;
-  libEGL/MESA warnings in the resulting log are expected software-rendering
-  noise. Never measure UI performance in this VM.
+- **Software rendering.** WSLg maps no GPU, so `linux-vm.sh app` launches the
+  AppImage with `--no-sandbox` and Chromium falls back to software rendering.
+  libEGL/MESA warnings in the resulting log are expected noise. Never measure
+  UI performance in this VM.
 - **Stop by recorded pid only.** `app-stop` kills only the pid `app`
   recorded to `~/app.pid` — never by pattern (AGENTS.md danger #1).
 
@@ -63,14 +61,11 @@ it discards whatever is sitting there uncommitted, on the VM only.
 
 ## `gate`
 
-Runs, sequentially (core and src-tauri never concurrently — AGENTS.md's
-"never two cargo workloads at once" extends across the VM boundary too):
-`core` (`fmt --check`, `clippy -D warnings`, `cargo nextest run` and `cargo test --doc` shielded under
-`oom-shield.sh` + `dbus-run-session` + unlocked `gnome-keyring`), `src-tauri`
-(`fmt --check`, `clippy` default + `--features bench`, `cargo test`
-shielded), `ui` (`bun install --frozen-lockfile`, `typecheck`, `test`,
-`build`, `check:css`, `check:bundle` — build before `check:bundle`, since
-that reads `bundle-stats.json`, which build emits).
+Runs, sequentially (no two cargo workloads concurrently — AGENTS.md's rule extends
+across the VM boundary too):
+`native` (the Houston 1 cleanup crate and the Linux capture helpers, `cargo test` shielded
+under `oom-shield.sh` + `dbus-run-session` + unlocked `gnome-keyring`) and the
+`check-dev-channel` and `check-comment-hygiene` safety scripts.
 
 `gate` runs only a subset of CI's safety scripts. Passing it does not establish
 that the complete CI gate passes. Use the full safety-script list in the
@@ -82,9 +77,8 @@ the first `FAIL`.
 
 ## VM prerequisites
 
-- **Node/toolchain**: needs a current Node — an old Node 18 breaks
-  `check:css`/vitest. Confirm via `linux-vm.sh status`, which prints
-  `cargo`/`bun`/`node` resolution.
+- **Node/toolchain**: needs the Node version in the root `package.json` and pnpm 12.14.0.
+  Confirm via `linux-vm.sh status`, which prints `cargo`/`pnpm`/`node` resolution.
 - **Secret Service / gnome-keyring**: host keychain tests need a Secret Service. Inside
   the VM or CI, `dbus-run-session` with `gnome-keyring-daemon --unlock` is safe; on a desktop
   host use `scripts/with-test-keyring.sh` (see the development runbook's full gate
@@ -94,10 +88,7 @@ the first `FAIL`.
 
 ## `app` / `app-stop`
 
-`app` installs the built `.deb` and proves it boots: only actually running it proves
-that. Reads `~/.linux-vm-task.sh`-style state, launches with
-`WEBKIT_DISABLE_DMABUF_RENDERER=1`, records the pid to `~/app.pid`, and
-reports whether the process is alive after a short wait. The window surfaces
-on the Windows desktop through WSLg (not visible to `wmctrl`/`xwininfo` — GTK
-takes the Wayland backend under WSLg). `app-stop` kills only that recorded
-pid.
+`app` runs the built AppImage and proves it boots: only actually running it proves that.
+It records the pid to `~/app.pid` and reports whether the process is alive after a short
+wait. The window surfaces on the Windows desktop through WSLg (not visible to
+`wmctrl`/`xwininfo`). `app-stop` kills only that recorded pid.

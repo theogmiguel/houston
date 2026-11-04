@@ -37,7 +37,7 @@ CI; adding a rule is what makes a path inexpensive.
 `docs_only` is the one output that is false when the filter fails closed. Documentation-only
 PRs run `static` (doc hygiene is the check they need) and skip the heavy jobs.
 
-Native paths are `src-tauri/`, `native/`, `apps/desktop/native/`, `assets/`,
+Native paths are `native/`, `apps/desktop/native/`, `assets/`,
 `apps/web/public/` and `.cargo/`. Desktop source changes run the package suites and typecheck
 without the renderer jobs. A web source change is covered by `test-web`, which builds the
 renderer without paying for a Rust build.

@@ -14,7 +14,7 @@ and approval. Merging a PR or pushing a tag does not publish a release.
    Linux and Windows release. Leave `resume_tag` empty and `preview_only` unchecked.
 3. Run the workflow. Its summary shows the source commit, next version, previous
    public release, selected platforms and release notes. It checks source CI,
-   updates the three manifests and `src-tauri/Cargo.lock`, pushes the release commit and
+   updates the three manifests, pushes the release commit and
    tag, builds the installers and creates a **draft**. Nothing is public yet.
 4. Follow the draft link in the summary, or open **Releases** in the repository.
    Review the grouped notes, expand any legacy title-only entries, and save edits
@@ -161,12 +161,11 @@ smoke tests on real Linux and Windows desktops.
 
 Only a release changes versions. Feature PRs do not edit the version manifests:
 
-- `src-tauri/tauri.conf.json`
-- `src-tauri/Cargo.toml`
+- `apps/desktop/package.json` (the Electron app's version and the bundle filenames)
 - `apps/server/package.json` (the server archives and `houston` runtime read it)
+- `apps/web/package.json` (the renderer bundle the desktop host serves)
 
-`scripts/set-version.sh X.Y.Z` updates all three and `src-tauri/Cargo.lock` using
-`cargo update --workspace`, without updating dependencies. It accepts `X.Y.Z` or
+`scripts/set-version.sh X.Y.Z` updates all three. It accepts `X.Y.Z` or
 `X.Y.Z-rc.N`. `scripts/check-manifest-versions.sh` verifies agreement and checks a
 resumed tag's expected version. Cut release runs these scripts; contributors do
 not bump versions by hand.
@@ -376,8 +375,8 @@ Linux, from a Windows host, via the WSL2 testbed:
 ./scripts/linux-vm.sh gate
 ```
 
-Or natively on Linux, the same commands `docs/operations/development.md` names for
-`core`/`src-tauri`/`ui`.
+Or natively on Linux, the same commands `docs/operations/development.md` names for the
+workspace and the native crates.
 
 `linux-vm.sh gate` runs only a subset of the CI safety scripts. It does
 not replace the complete local gate in
@@ -507,24 +506,15 @@ The local-install step, separate from packaging:
 ./scripts/install-desktop.sh
 ```
 
-Refuses, in order, on:
+Refuses on:
 
-- Missing promo-art PNG.
-- Missing app binary at `src-tauri/target/release/houston` (told to run
-  `build-app.sh`).
-- **Renderer staleness** — re-runs `check-renderer-fresh.sh`.
-- **Binary staleness** — re-runs `check-binary-fresh.sh` (mtime-compares the
-  binary against the Rust source, `Cargo.toml`/`Cargo.lock`, and
-  `tauri.conf.json`).
+- Missing AppImage at `release/Houston-*.AppImage` (told to run
+  `pnpm dist:desktop:linux`), unless `TR_APP` names one.
 - **Repo-path leak** — after writing `launch.sh`, `start.sh`, and the
   `.desktop` file into `~/.local/lib/houston/` and
   `~/.local/share/applications/`, greps all three for the repo's own
   absolute path and refuses to finish if found. This is what keeps the
-  installed app from ever executing a path inside the repo — an ordinary
-  `cargo build --release` in this tree must never be able to relink what the
-  installed app runs.
+  installed app from ever executing a path inside the repo.
 
-Installs: `~/.local/lib/houston/{houston, start.sh, launch.sh}`,
-`~/.local/share/applications/houston.desktop`
-(`StartupWMClass=houston`), and night-tile PNGs at 48/64/128/256/512px under
-`~/.local/share/icons/hicolor/**/apps/houston.png`.
+Installs: `~/.local/lib/houston/{houston.AppImage, start.sh, launch.sh}` and
+`~/.local/share/applications/houston.desktop` (`StartupWMClass=houston`).

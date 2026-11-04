@@ -2,7 +2,7 @@
 
 > For maintainers. Using Houston? Start at the [README](../../README.md).
 
-Houston runs one Tauri host and, per channel, one detached TypeScript server. The host
+Houston runs one Electron host and, per channel, one detached TypeScript server. The host
 starts the server, or attaches to the one already running, and embeds the renderer, a built
 Vite bundle. The renderer talks to the server over one authenticated loopback WebSocket and
 to the host through a small desktop bridge. Agents run as provider sessions owned by the
@@ -13,13 +13,13 @@ codebase.
 
 ```
 ┌──────────────────────────────┐   WebSocket RPC    ┌─────────────────────────────────────┐
-│ houston (Tauri host)         │ (loopback, token)  │ server (apps/server, detached)       │
+│ houston (Electron host)      │ (loopback, token)  │ server (apps/server, detached)       │
 │  ┌────────────────────────┐  │◄──────────────────►│  threads · turns · runs              │
 │  │ renderer (apps/web)     │  │                    │  provider adapters · orchestration-v2│
 │  └────────────────────────┘  │                    │  MCP toolkits · SQLite · keychain    │
-│  v2_server (start/attach),   │   spawns detached  └──────────────┬───────────────────────┘
-│  desktop bridge, tray, sys/, │                                   │ SDK / app-server / ACP
-│  v1_cleanup                  │                    ┌──────────────▼───────────────────────┐
+│  backend (start/attach),     │   spawns detached  └──────────────┬───────────────────────┘
+│  desktop bridge, tray,       │                                   │ SDK / app-server / ACP
+│  v1 cleanup, native crates   │                    ┌──────────────▼───────────────────────┐
 └──────────────────────────────┘                    │ agent runtimes: Claude, Codex, ...    │
                                                      └──────────────────────────────────────┘
 ```
@@ -57,7 +57,7 @@ to v2.
 
 Once per start, on its own thread, the host stops the channel's v1 daemon units and removes
 its v1 hook and MCP entries from the Claude, Codex, OpenCode, Antigravity and ZCode configs
-(`src-tauri/src/v1_cleanup/`). Houston 1 runs its daemon and supervisor in one transient user
+(`apps/desktop/native/houston-v1-cleanup`). Houston 1 runs its daemon and supervisor in one transient user
 systemd unit named `houston-daemon-<channel>-<nonce>.service`; the host stops and disables that
 exact unit, and signals the `daemon.json` pid only when no unit answered. It stands down while
 a v1 daemon still runs, which would reinstall the entries, and it never writes the channel
@@ -84,7 +84,7 @@ server uses the PID that file names.
   `packages/contracts` does not exist; a new WebSocket method is also listed in
   `RpcInstrumentation.ts` and given a scope in `RpcAuthorization.ts`.
 - **The host owns no agent state.** It supervises the server and bridges desktop features;
-  host utilities (`spawn`, `pid`, `paths`, `keychain`, …) live in `src-tauri/src/sys/`.
+  host utilities and native helpers live under `apps/desktop/src` and `apps/desktop/native`.
 
 ## Repository map
 
@@ -95,7 +95,8 @@ server uses the PID that file names.
 | `packages/contracts`   | the server ↔ renderer schema; Houston's under `src/houston/`         |
 | `packages/*`           | the provider, source-control, client and shared packages             |
 | `native/libghostty-vt` | the pinned terminal-emulation library the renderer's WASM build uses |
-| `src-tauri`            | the desktop host                                                     |
+| `apps/desktop`         | the Electron host, desktop bridge, tray and native helper crates     |
+| `native`               | the Linux snapshot helper crates                                     |
 | `scripts/`             | development, build, installation and safety checks                   |
 
 ## Data
@@ -109,6 +110,6 @@ read-only.
 
 ## Platform notes
 
-Linux and Windows are supported release platforms: WebKitGTK and an AppImage or `.deb` on
-Linux, WebView2 and an NSIS installer on Windows. A platform-specific behaviour has an
+Linux and Windows are supported release platforms: Chromium packaged as an AppImage or
+`.deb` on Linux, and Chromium packaged by an NSIS installer on Windows. A platform-specific behaviour has an
 equivalent elsewhere or a named limitation.
