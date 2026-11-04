@@ -1324,15 +1324,16 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         ],
       }).pipe(
         Effect.as(true),
-        Effect.catchTag("VcsProcessExitError", (error) =>
-          input.createOnly === true
-            ? resolveCheckpointCommit(input.cwd, input.checkpointRef).pipe(
-                Effect.flatMap((existing) =>
-                  existing === null ? Effect.fail(error) : Effect.succeed(false),
-                ),
-              )
-            : Effect.fail(error),
-        ),
+        Effect.catchTags({
+          VcsProcessExitError: (error) =>
+            input.createOnly === true
+              ? resolveCheckpointCommit(input.cwd, input.checkpointRef).pipe(
+                  Effect.flatMap((existing) =>
+                    existing === null ? Effect.fail(error) : Effect.succeed(false),
+                  ),
+                )
+              : Effect.fail(error),
+        }),
       );
     }),
 
