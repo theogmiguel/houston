@@ -88,9 +88,17 @@ contextBridge.exposeInMainWorld("hostBridge", {
     ipcRenderer.on(IpcChannels.SET_NOTIFICATION_BADGE_CHANNEL, handler);
     return () => ipcRenderer.removeListener(IpcChannels.SET_NOTIFICATION_BADGE_CHANNEL, handler);
   },
-  notificationsSupported: () => Promise.resolve({ supported: true, reason: null }),
-  notifyThread: () => Promise.resolve(),
-  onThreadNotificationFocus: () => () => {},
+  notificationsSupported: () => ipcRenderer.invoke(IpcChannels.NOTIFICATIONS_SUPPORTED_CHANNEL),
+  notifyThread: (payload) => ipcRenderer.invoke(IpcChannels.NOTIFY_THREAD_CHANNEL, payload),
+  onThreadNotificationFocus: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, threadKey: unknown) => {
+      if (typeof threadKey === "string") listener(threadKey);
+    };
+    ipcRenderer.on(IpcChannels.THREAD_NOTIFICATION_FOCUS_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.THREAD_NOTIFICATION_FOCUS_CHANNEL, wrappedListener);
+    };
+  },
   onTrackpadScrollEnd: (listener) => {
     const handler = () => listener();
     ipcRenderer.on(IpcChannels.TRACKPAD_SCROLL_END_CHANNEL, handler);
@@ -118,17 +126,34 @@ contextBridge.exposeInMainWorld("hostBridge", {
   getServerStatus: () => Promise.resolve(null),
   restartServer: () => Promise.resolve({ state: "ready" }),
   onServerStatus: () => () => {},
-  traySync: () => Promise.resolve(),
-  trayState: () => Promise.resolve(null),
-  setKeepInTray: () => Promise.resolve(null),
-  onTrayFocus: () => () => {},
+  traySync: (payload) => ipcRenderer.invoke(IpcChannels.TRAY_SYNC_CHANNEL, payload),
+  trayState: () => ipcRenderer.invoke(IpcChannels.TRAY_STATE_CHANNEL, undefined),
+  setKeepInTray: (enabled) =>
+    ipcRenderer.invoke(IpcChannels.TRAY_SET_KEEP_IN_TRAY_CHANNEL, enabled),
+  onTrayFocus: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, threadKey: unknown) => {
+      if (typeof threadKey === "string") listener(threadKey);
+    };
+    ipcRenderer.on(IpcChannels.TRAY_FOCUS_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.TRAY_FOCUS_CHANNEL, wrappedListener);
+    };
+  },
   getQuickComposerStatus: () =>
-    Promise.resolve({ enabled: false, shortcut: null, registered: false, reason: null }),
-  setQuickComposerShortcut: () =>
-    Promise.resolve({ enabled: false, shortcut: null, registered: false, reason: null }),
-  openQuickComposer: () => Promise.resolve(),
-  closeQuickComposer: () => Promise.resolve(),
-  onWindowHiddenChange: () => () => {},
+    ipcRenderer.invoke(IpcChannels.GET_QUICK_COMPOSER_STATUS_CHANNEL, undefined),
+  setQuickComposerShortcut: (shortcut) =>
+    ipcRenderer.invoke(IpcChannels.SET_QUICK_COMPOSER_SHORTCUT_CHANNEL, shortcut),
+  openQuickComposer: () => ipcRenderer.invoke(IpcChannels.OPEN_QUICK_COMPOSER_CHANNEL, undefined),
+  closeQuickComposer: () => ipcRenderer.invoke(IpcChannels.CLOSE_QUICK_COMPOSER_CHANNEL, undefined),
+  onWindowHiddenChange: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, hidden: unknown) => {
+      if (typeof hidden === "boolean") listener(hidden);
+    };
+    ipcRenderer.on(IpcChannels.TRAY_WINDOW_HIDDEN_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.TRAY_WINDOW_HIDDEN_CHANNEL, wrappedListener);
+    };
+  },
   houstonV1Cleanup: { getReport: () => Promise.resolve(null) },
   getClientSettings: () => ipcRenderer.invoke(IpcChannels.GET_CLIENT_SETTINGS_CHANNEL),
   setClientSettings: (settings) =>

@@ -23,8 +23,11 @@ import {
   MENU_ACTION_CHANNEL,
   QUIT_SHORTCUT_CHANNEL,
   SNAP_SHOT_EVENT_CHANNEL,
+  THREAD_NOTIFICATION_FOCUS_CHANNEL,
   TRACKPAD_SCROLL_BEGIN_CHANNEL,
   TRACKPAD_SCROLL_END_CHANNEL,
+  TRAY_FOCUS_CHANNEL,
+  TRAY_WINDOW_HIDDEN_CHANNEL,
   WINDOW_FULLSCREEN_STATE_CHANNEL,
   WINDOW_MAXIMIZED_STATE_CHANNEL,
 } from "../ipc/channels.ts";
@@ -35,6 +38,7 @@ import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
+import * as TrayHost from "../tray/TrayHost.ts";
 import { makeQuitShortcutHandler } from "./QuitHold.ts";
 import { copyContextMenuImage } from "./ContextMenuImage.ts";
 
@@ -77,6 +81,7 @@ type DesktopWindowRuntimeServices =
   | ElectronTheme.ElectronTheme
   | ElectronWindow.ElectronWindow
   | DesktopRendererHistory.DesktopRendererHistory
+  | TrayHost.TrayHost
   | PreviewManager.PreviewManager;
 
 export type DesktopWindowError =
@@ -92,6 +97,12 @@ export class DesktopWindow extends Context.Service<
     readonly createMain: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
     readonly ensureMain: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
     readonly revealOrCreateMain: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
+    /** Reveals the main window and tells the renderer it is no longer hidden to the tray. */
+    readonly showMain: Effect.Effect<void, DesktopWindowError>;
+    readonly dispatchThreadFocus: (threadKey: string) => Effect.Effect<void, DesktopWindowError>;
+    readonly dispatchThreadNotificationFocus: (
+      threadKey: string,
+    ) => Effect.Effect<void, DesktopWindowError>;
     readonly activate: Effect.Effect<void, DesktopWindowError>;
     readonly createMainIfBackendReady: Effect.Effect<void, DesktopWindowError>;
     readonly showConnectingSplash: Effect.Effect<void>;
@@ -282,6 +293,7 @@ export const make = Effect.gen(function* () {
   const electronShell = yield* ElectronShell.ElectronShell;
   const electronTheme = yield* ElectronTheme.ElectronTheme;
   const electronWindow = yield* ElectronWindow.ElectronWindow;
+  const trayHost = yield* TrayHost.TrayHost;
   const previewManager = yield* PreviewManager.PreviewManager;
   const previewPasskeys = yield* PreviewPasskeys.PreviewPasskeys;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
@@ -672,8 +684,26 @@ export const make = Effect.gen(function* () {
     // a double-click on the drag region maximizes without going through them.
     window.on("maximize", sendMaximizedState);
     window.on("unmaximize", sendMaximizedState);
-    window.on("close", () => {
+    window.on("close", (event) => {
       runFork(flushBoundsPersist);
+      const quitting = Effect.runSyncWith(context)(Ref.get(desktopState.quitting));
+      if (quitting || !trayHost.hidesOnCloseNow()) {
+        return;
+      }
+      try {
+        window.hide();
+      } catch (cause) {
+        void runPromise(
+          logWindowWarning("could not hide the window to the tray; leaving it open", {
+            message: cause instanceof Error ? cause.message : String(cause),
+          }),
+        );
+        return;
+      }
+      event.preventDefault();
+      if (!window.isDestroyed()) {
+        window.webContents.send(TRAY_WINDOW_HIDDEN_CHANNEL, true);
+      }
     });
 
     if (environment.platform === "darwin") {
@@ -961,6 +991,22 @@ export const make = Effect.gen(function* () {
     createMain: createMain.pipe(Effect.flatMap(requireWindow)),
     ensureMain: ensureMain.pipe(Effect.flatMap(requireWindow)),
     revealOrCreateMain,
+    showMain: Effect.gen(function* () {
+      const window = yield* revealOrCreateMain;
+      if (!window.isDestroyed()) {
+        window.webContents.send(TRAY_WINDOW_HIDDEN_CHANNEL, false);
+      }
+    }).pipe(Effect.withSpan("desktop.window.showMain")),
+    dispatchThreadFocus: Effect.fn("desktop.window.dispatchThreadFocus")(function* (threadKey) {
+      yield* dispatchRendererEvent(TRAY_FOCUS_CHANNEL, threadKey, { reveal: false });
+    }),
+    dispatchThreadNotificationFocus: Effect.fn("desktop.window.dispatchThreadNotificationFocus")(
+      function* (threadKey) {
+        yield* dispatchRendererEvent(THREAD_NOTIFICATION_FOCUS_CHANNEL, threadKey, {
+          reveal: false,
+        });
+      },
+    ),
     prepareCaptureReveal: Effect.gen(function* () {
       const existingWindow = yield* currentMainWindow;
       if (Option.isSome(existingWindow)) {

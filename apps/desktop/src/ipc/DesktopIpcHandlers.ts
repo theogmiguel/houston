@@ -79,6 +79,17 @@ import {
 } from "./methods/legacyLocalStorage.ts";
 import { getWslState, setWslBackendEnabled, setWslDistro, setWslOnly } from "./methods/wsl.ts";
 import {
+  closeQuickComposer,
+  getQuickComposerStatus,
+  notificationsSupported,
+  notifyThread,
+  openQuickComposer,
+  setKeepInTray,
+  setQuickComposerShortcut,
+  trayState,
+  traySync,
+} from "./methods/tray.ts";
+import {
   getCliCommandState,
   installCliCommand,
   uninstallCliCommand,
@@ -139,6 +150,16 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(setServerExposureMode);
   yield* ipc.handle(setTailscaleServeEnabled);
   yield* ipc.handle(getAdvertisedEndpoints);
+
+  yield* ipc.handle(traySync);
+  yield* ipc.handle(trayState);
+  yield* ipc.handle(setKeepInTray);
+  yield* ipc.handle(getQuickComposerStatus);
+  yield* ipc.handle(setQuickComposerShortcut);
+  yield* ipc.handle(openQuickComposer);
+  yield* ipc.handle(closeQuickComposer);
+  yield* ipc.handle(notificationsSupported);
+  yield* ipc.handle(notifyThread);
 
   yield* ipc.handle(getWslState);
   yield* ipc.handle(setWslBackendEnabled);
