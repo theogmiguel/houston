@@ -6,6 +6,7 @@ import {
   OrchestrationV2ShellStreamItem,
   ThreadId,
 } from "@houston-app/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -252,6 +253,27 @@ describe("shell stream reads over a replayed Claude turn", () => {
       const closed = yield* Fiber.join(closing);
       yield* Deferred.succeed(retryGate, undefined);
       assert.isTrue(Option.isSome(closed), "closing the window waited for the retried read");
+    }),
+  );
+
+  it.effect("a thread whose shell is gone is read again rather than remembered", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("thread:gone");
+      let reads = 0;
+      const readThreadShell = makeSubscriberShellReads({}, () =>
+        Effect.sync(() => {
+          reads += 1;
+          return null;
+        }),
+      );
+      const inert = {
+        inert: true,
+        itemKeys: [],
+        occurredAt: DateTime.makeUnsafe("2026-01-01T00:00:00Z"),
+      };
+      assert.isNull(yield* readThreadShell(threadId, 1, undefined));
+      assert.isNull(yield* readThreadShell(threadId, 2, inert));
+      assert.equal(reads, 2);
     }),
   );
 

@@ -148,7 +148,10 @@ export function makeSubscriberShellReads<E>(
     sharedReadsByOwner.set(owner, reads);
   }
   const shared = reads;
-  const last = new Map<string, { readonly shell: Shell; readonly items: Set<string> }>();
+  const last = new Map<
+    string,
+    { readonly shell: OrchestrationV2ThreadShell; readonly items: Set<string> }
+  >();
   return (
     threadId: ThreadId,
     sequence: number,
@@ -164,10 +167,13 @@ export function makeSubscriberShellReads<E>(
         batch.itemKeys.every((key) => prior.items.has(key));
       const shell =
         reuse && batch.occurredAt !== undefined
-          ? prior.shell === null
-            ? null
-            : { ...prior.shell, updatedAt: DateTime.max(prior.shell.updatedAt, batch.occurredAt) }
+          ? { ...prior.shell, updatedAt: DateTime.max(prior.shell.updatedAt, batch.occurredAt) }
           : yield* readShared(shared, getThreadShell, threadId, sequence);
+      // A missing shell is read again next time instead of being kept for a thread that is gone.
+      if (shell === null) {
+        last.delete(threadId);
+        return shell;
+      }
       const items =
         prior === undefined || prior.items.size >= KNOWN_ITEMS_LIMIT
           ? new Set<string>()
