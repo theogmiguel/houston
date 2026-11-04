@@ -71,6 +71,24 @@ export class PrimaryEnvironmentDisabledError extends Schema.TaggedError<PrimaryE
   }
 }
 
+/** The desktop host has not published the local server's address yet. */
+export class PrimaryEnvironmentNotReadyError extends Schema.TaggedError<PrimaryEnvironmentNotReadyError>()(
+  "PrimaryEnvironmentNotReadyError",
+  {},
+) {
+  override get message(): string {
+    return "The local server has not published its address yet.";
+  }
+}
+
+/** Everything `resolvePrimaryEnvironmentHttpUrl` throws. */
+export type PrimaryEnvironmentTargetError =
+  | PrimaryEnvironmentUrlInvalidError
+  | PrimaryEnvironmentProtocolUnsupportedError
+  | DesktopEnvironmentBootstrapIncompleteError
+  | PrimaryEnvironmentDisabledError
+  | PrimaryEnvironmentNotReadyError;
+
 export interface PrimaryEnvironmentTarget {
   readonly source: PrimaryEnvironmentTargetSource;
   readonly target: {
@@ -292,14 +310,17 @@ export function resolvePrimaryEnvironmentHttpUrl(
   return url.toString();
 }
 
-/** Null only for desktop with its local environment disabled; other hosts fall back to page origin. */
+/** Null only when the local environment is disabled; only a browser falls back to its page origin. */
 export function readPrimaryEnvironmentTarget(): PrimaryEnvironmentTarget | null {
   if (isLocalEnvironmentDisabled()) {
     return null;
   }
-  return (
-    resolveDesktopPrimaryTarget() ??
-    resolveConfiguredPrimaryTarget() ??
-    resolveWindowOriginPrimaryTarget()
-  );
+  const target = resolveDesktopPrimaryTarget() ?? resolveConfiguredPrimaryTarget();
+  if (target !== null) {
+    return target;
+  }
+  if (window.hostBridge !== undefined) {
+    throw new PrimaryEnvironmentNotReadyError();
+  }
+  return resolveWindowOriginPrimaryTarget();
 }
