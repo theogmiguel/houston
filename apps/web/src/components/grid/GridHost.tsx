@@ -43,9 +43,11 @@ import {
 } from "../../grid/tree";
 import { presetOf, snapSplitRatio, splitFractionLabel, stepSplitPreset } from "../../grid/resize";
 import { beginLayoutResize, endLayoutResize } from "../../motion/layoutResize";
+import { probeCellMoveFrames } from "../../motion/frameProbe";
 import { offsetWithin, useGridCellFlip } from "../../motion/paneMotion";
 import { GRID_BADGE_LINGER_MS, SNAP_DISTANCE_PX } from "../../motion/timings";
 import { announce } from "../../lib/announce";
+import { observeResize } from "../../lib/observeResize";
 import { suppressTextSelection } from "../../lib/suppressTextSelection";
 import { GridResizeDivider } from "../ui/grid-resize-divider";
 
@@ -131,15 +133,22 @@ export function GridHost(props: GridHostProps) {
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- places the cell frames over their layout boxes before paint, and again whenever a box resizes
   useLayoutEffect(() => {
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- a ref object is stable; its current must not retrigger the effect
     const root = surfaceRef.current;
     if (root === null) return;
     placeCellFrames(root);
-    const observer = new ResizeObserver(() => placeCellFrames(root));
-    observer.observe(root);
-    for (const place of root.querySelectorAll("[data-cell-place]")) observer.observe(place);
-    return () => observer.disconnect();
+    return observeResize([root, ...root.querySelectorAll("[data-cell-place]")], () =>
+      placeCellFrames(root),
+    );
   });
+
+  const shownMaximizedId = maximizedThreadId ?? null;
+  const probedMaximize = useRef(shownMaximizedId);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- samples frame times for the maximize morph; no state is written
+  useLayoutEffect(() => {
+    if (probedMaximize.current === shownMaximizedId) return;
+    probedMaximize.current = shownMaximizedId;
+    probeCellMoveFrames(1, GRID_MORPH_MS, "maximize");
+  }, [shownMaximizedId]);
 
   // Cells that existed before a tree change FLIP into their new slots; a join or
   // a leave already animates through the grid's flex transition.
@@ -433,11 +442,9 @@ function CellPlace({ threadId }: { threadId: string }) {
 const EMPTY_IDS: ReadonlySet<string> = new Set();
 
 /**
- * Puts every cell frame over its layout box. Cells live in one flat list beside the
- * layout, so a swap, a split or a maximize only moves boxes: the cell's DOM, its
- * scroll position and its React state stay where they are. A cell without a box
- * (hidden behind a maximized cell) keeps its last size, so showing it again costs
- * no relayout.
+ * Puts every cell frame over its layout box, so a swap, a split or a maximize only
+ * moves boxes and each cell keeps its DOM, scroll position and React state. A cell
+ * hidden behind a maximized one keeps its last size, so showing it costs no relayout.
  */
 function placeCellFrames(root: HTMLElement): void {
   const places = new Map<string, HTMLElement>();

@@ -2864,70 +2864,71 @@ code {
 
 /* Grid surface. One thread on screen reads as one surface with the top strip: no card, the
    strip's colour, edge to edge. Two or more become cards on that colour with an 8px gutter.
-   The cell values are registered properties set on the persistent surface, so they animate
-   even though a cell remounts when the tree changes shape. */
-@property --grid-cell-surface {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: transparent;
-}
-@property --grid-cell-border {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: transparent;
-}
-@property --grid-cell-focus-border {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: transparent;
-}
-@property --grid-cell-radius {
-  syntax: "<length>";
-  inherits: true;
-  initial-value: 0px;
-}
+   Going solo or back fades the cells' card layer; nothing else in the chat repaints. */
 
 [data-grid-surface] {
   /* One curve and duration for every property that changes, so the scene moves as one. */
   --grid-morph-duration: 260ms;
   --grid-morph-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* The card a cell shows in a crowded grid, read here so a cell's own --pane can't recolour it. */
+  --grid-card-surface: var(--pane);
   --grid-cell-surface: var(--background);
-  --grid-cell-border: transparent;
-  --grid-cell-focus-border: transparent;
   --grid-cell-radius: 0px;
   /* A stable offsetParent for the cell FLIP's layout measurements. */
   position: relative;
+  background-color: var(--background);
+  /* The gutter snaps: easing it would relayout every cell's chat on every frame. */
   padding: 0;
-  transition:
-    padding var(--grid-morph-duration) var(--grid-morph-ease),
-    --grid-cell-surface var(--grid-morph-duration) var(--grid-morph-ease),
-    --grid-cell-border var(--grid-morph-duration) var(--grid-morph-ease),
-    --grid-cell-focus-border var(--grid-morph-duration) var(--grid-morph-ease),
-    --grid-cell-radius var(--grid-morph-duration) var(--grid-morph-ease);
 }
 
 [data-grid-surface][data-multi] {
   --grid-cell-surface: var(--pane);
-  --grid-cell-border: var(--border);
-  --grid-cell-focus-border: var(--focus-frame);
   --grid-cell-radius: var(--r-group);
   padding: 0 8px 8px;
 }
 
-/* A FLIP moving a cell between slots must show the part outside its slot. */
-[data-grid-surface][data-flipping] {
-  overflow: visible;
-}
-
-[data-grid-surface][data-flipping] [data-grid-slot] {
-  overflow: visible;
+/* Cells that can swap keep their own compositing layer, so a move neither creates nor
+   drops one: either would repaint the whole chat on the move's first or last frame. */
+[data-grid-surface][data-multi] [data-grid-cell] {
+  will-change: transform;
 }
 
 [data-grid-surface] [data-grid-cell] {
   --pane: var(--grid-cell-surface);
-  background-color: var(--grid-cell-surface);
-  border: 1px solid var(--grid-cell-border);
+  border: 1px solid transparent;
   border-radius: var(--grid-cell-radius);
+  isolation: isolate;
+}
+
+/* The card behind a cell. Going solo or back fades this one layer: an opacity change the
+   compositor runs alone, where easing the colours would repaint the whole chat each frame. */
+[data-grid-surface] [data-grid-cell]::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  pointer-events: none;
+  background-color: var(--grid-card-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-group);
+  opacity: 0;
+  will-change: opacity;
+  transition:
+    opacity var(--grid-morph-duration) var(--grid-morph-ease),
+    border-color var(--grid-morph-duration) var(--grid-morph-ease);
+}
+
+[data-grid-surface][data-multi] [data-grid-cell]::before {
+  opacity: 1;
+}
+
+[data-grid-surface][data-multi] [data-grid-cell][data-focused="true"]::before {
+  border-color: var(--focus-frame);
+}
+
+/* The chat inside a cell lets the cell's card show through instead of painting its own. */
+[data-grid-surface] [data-grid-cell] :is([data-chat-workspace], .bg-pane) {
+  background-color: transparent;
 }
 
 /* An empty grid's centred draft is its first thread, so it reads as one surface with the strip too. */
@@ -2947,12 +2948,9 @@ code {
 }
 
 /* The reveal's new snapshot is live; let the grid's surface colours land at once inside it. */
-html[data-theme-reveal] [data-grid-surface] {
+html[data-theme-reveal] [data-grid-surface],
+html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::before {
   transition: none;
-}
-
-[data-grid-surface] [data-grid-cell][data-focused="true"] {
-  border-color: var(--grid-cell-focus-border);
 }
 
 [data-grid-surface] [data-pane-label] {
@@ -3015,6 +3013,7 @@ html[data-theme-reveal] [data-grid-surface] {
 
 @media (prefers-reduced-motion: reduce) {
   [data-grid-surface],
+  [data-grid-surface] [data-grid-cell]::before,
   [data-grid-surface] [data-pane-label],
   [data-grid-surface] [data-grid-slot],
   [data-grid-surface] [data-grid-gutter] {

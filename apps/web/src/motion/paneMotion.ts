@@ -22,20 +22,6 @@ interface Running {
 }
 
 const runs = new WeakMap<HTMLElement, Running>();
-/** How many cells of each surface are mid-move; the surface clips only when none are. */
-const flipping = new WeakMap<HTMLElement, number>();
-
-function markFlipping(root: HTMLElement, delta: 1 | -1): void {
-  const next = Math.max(0, (flipping.get(root) ?? 0) + delta);
-  if (next === 0) {
-    flipping.delete(root);
-    delete root.dataset.flipping;
-    return;
-  }
-  flipping.set(root, next);
-  // A moving cell leaves its slot; the surface and its slots must not clip it.
-  root.dataset.flipping = "";
-}
 
 /** The cell's offset inside `root`'s layout box, ignoring any transform in flight. */
 export function offsetWithin(element: HTMLElement, root: HTMLElement): { x: number; y: number } | null {
@@ -71,7 +57,6 @@ export function cancelCellMoves(root: HTMLElement): void {
     running.run.cancel();
     runs.delete(element);
     element.style.transform = "";
-    markFlipping(root, -1);
   }
 }
 
@@ -107,12 +92,10 @@ export function animateCellMove(
     });
     probedCells += 1;
     probedMs = Math.max(probedMs, motion.durationMs);
-    markFlipping(root, 1);
     const entry: Running = {
       dx,
       dy,
       run: playMotion(now.element, motion, keyframe, () => {
-        markFlipping(root, -1);
         if (runs.get(now.element) !== entry) return;
         runs.delete(now.element);
         now.element.style.transform = "";

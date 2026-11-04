@@ -2,6 +2,7 @@
 
 interface FrameStats {
   readonly engine: string;
+  readonly kind: string;
   readonly cells: number;
   readonly motionMs: number;
   readonly firstFrameMs: number;
@@ -11,6 +12,8 @@ interface FrameStats {
   readonly p95Ms: number;
   readonly maxMs: number;
   readonly over33Ms: number;
+  /** Each frame over 33 ms as [ms after the move started, frame length]. */
+  readonly longFrames: ReadonlyArray<readonly [number, number]>;
 }
 
 declare global {
@@ -35,7 +38,7 @@ function percentile(sorted: readonly number[], p: number): number {
   return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))]!;
 }
 
-export function probeCellMoveFrames(cells: number, motionMs: number): void {
+export function probeCellMoveFrames(cells: number, motionMs: number, kind = "move"): void {
   if (active || cells === 0) return;
   active = true;
   const start = performance.now();
@@ -53,6 +56,7 @@ export function probeCellMoveFrames(cells: number, motionMs: number): void {
     const elapsed = (stamps.at(-1) ?? start) - (stamps[0] ?? start);
     const stats: FrameStats = {
       engine: engineName(),
+      kind,
       cells,
       motionMs: Math.round(motionMs),
       firstFrameMs: Math.round((stamps[0] ?? start) - start),
@@ -62,6 +66,11 @@ export function probeCellMoveFrames(cells: number, motionMs: number): void {
       p95Ms: Math.round(percentile(sorted, 0.95) * 10) / 10,
       maxMs: Math.round((sorted.at(-1) ?? 0) * 10) / 10,
       over33Ms: intervals.filter((interval) => interval > 33.4).length,
+      longFrames: intervals.flatMap((interval, index) =>
+        interval > 33.4
+          ? [[Math.round(stamps[index]! - start), Math.round(interval)] as const]
+          : [],
+      ),
     };
     (window.__houstonFrameStats ??= []).push(stats);
     console.info("[frame-probe]", JSON.stringify(stats));

@@ -46,13 +46,26 @@ describe("grid cell FLIP", () => {
     animateCellMove(root, before);
     expect(a.getAnimations().length).toBe(1);
     expect(b.getAnimations().length).toBe(1);
-    expect(root.dataset.flipping).toBe("");
     const animations = [...a.getAnimations(), ...b.getAnimations()];
     await Promise.all(animations.map((animation) => animation.finished));
     await vi.waitFor(() => {
       expect(a.style.transform).toBe("");
-      expect(root.dataset.flipping).toBeUndefined();
     });
+  });
+
+  it("leaves the surface's attributes alone while cells move", () => {
+    using _guard = motionGuard();
+    const { root, a, b } = surface();
+    const before = measureCells(root);
+    const attributes = [...root.attributes].map((attribute) => `${attribute.name}=${attribute.value}`);
+    a.style.left = "300px";
+    b.style.left = "0px";
+    animateCellMove(root, before);
+    expect(a.getAnimations().length).toBe(1);
+    // Any style change on the surface restyles every cell's chat on the first and last frame.
+    expect([...root.attributes].map((attribute) => `${attribute.name}=${attribute.value}`)).toEqual(
+      attributes,
+    );
   });
 
   it("does nothing under reduced motion", () => {
