@@ -1,4 +1,5 @@
 packages:
+  - apps/desktop
   - apps/server
   - apps/web
   - oxlint-plugin-houston
