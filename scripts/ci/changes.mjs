@@ -42,6 +42,7 @@ const WEB_PATHS = [
 ];
 const PACKAGE_PATHS = [
   /^packages\//,
+  /^apps\/desktop\//,
   /^scripts\//,
   /^oxlint-plugin-houston\//,
   /^vite\.config\.ts$/,
@@ -49,6 +50,7 @@ const PACKAGE_PATHS = [
 const NATIVE_PATHS = [
   /^src-tauri\//,
   /^native\//,
+  /^apps\/desktop\/native\//,
   /^assets\//,
   /^apps\/web\/public\//,
   /^\.cargo\//,

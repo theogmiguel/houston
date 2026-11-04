@@ -3,10 +3,6 @@ name: Build Windows installer (internal)
 on:
   workflow_call:
     inputs:
-      stage:
-        description: Compile the native application, or bundle a previously compiled build
-        type: string
-        required: true
       version:
         description: "Manifest version from the caller, used to name the uploaded artifact"
         type: string
@@ -17,7 +13,7 @@ on:
         required: false
         default: ""
       tauri_cli_version:
-        description: "Pinned Tauri CLI version, threaded through from the caller so the pin has one source of truth"
+        description: "Pinned Tauri CLI version, used only for Minisign signing so installed Tauri copies can update"
         type: string
         required: true
       require_signing:
@@ -49,8 +45,7 @@ permissions:
   contents: read
 
 jobs:
-  windows-compile:
-    if: inputs.stage == 'compile'
+  windows-bundle:
     runs-on: windows-2022
     timeout-minutes: 90
     env:
@@ -61,12 +56,20 @@ jobs:
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
         shell: bash
 
+      # Packaging fixes on the workflow branch apply when an older tag is
+      # rebuilt; the application source still comes from the tag.
       - name: Check out packaging automation
         uses: actions/checkout@v5
       - name: Preserve packaging scripts when rebuilding an older tag
         shell: pwsh
         run: |
-          Copy-Item scripts/build-app.ps1 "$env:RUNNER_TEMP/release-build-app.ps1"
+          $staged = Join-Path $env:RUNNER_TEMP 'release-packaging'
+          New-Item -ItemType Directory -Force $staged | Out-Null
+          Copy-Item scripts/build-desktop-artifact.ts $staged
+          Copy-Item scripts/refresh-updater-metadata.mjs $staged
+          Copy-Item -Recurse scripts/lib (Join-Path $staged 'lib')
+          New-Item -ItemType Directory -Force (Join-Path $staged 'installer') | Out-Null
+          Copy-Item apps/desktop/resources/installer.nsh (Join-Path $staged 'installer')
       - name: Check out the application source
         uses: actions/checkout@v5
         with:
@@ -74,7 +77,11 @@ jobs:
       - name: Use the workflow's packaging scripts
         shell: pwsh
         run: |
-          Copy-Item "$env:RUNNER_TEMP/release-build-app.ps1" scripts/build-app.ps1 -Force
+          $staged = Join-Path $env:RUNNER_TEMP 'release-packaging'
+          Copy-Item (Join-Path $staged 'build-desktop-artifact.ts') scripts/ -Force
+          Copy-Item (Join-Path $staged 'refresh-updater-metadata.mjs') scripts/ -Force
+          Copy-Item (Join-Path $staged 'lib') scripts/ -Recurse -Force
+          Copy-Item (Join-Path $staged 'installer/installer.nsh') apps/desktop/resources/installer.nsh -Force
 
       - name: Require the checked-out tree to carry the release version
         shell: bash
@@ -90,137 +97,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: apps/desktop/native/houston-v1-cleanup
           key: release-windows
           cache-on-failure: true
-
-      - name: Cache the pinned Tauri CLI
-        id: tauri-cli-cache
-        uses: actions/cache@v5
-        with:
-          path: ~/.cargo/bin/cargo-tauri.exe
-          key: cargo-tauri-prebuilt-${{ inputs.tauri_cli_version }}-windows-2022
-
-      - name: Install the pinned Tauri CLI
-        if: steps.tauri-cli-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAURI_CLI_VERSION: ${{ inputs.tauri_cli_version }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $release = gh api "repos/tauri-apps/tauri/releases/tags/tauri-cli-v$env:TAURI_CLI_VERSION" | ConvertFrom-Json
-          if ($LASTEXITCODE) { throw 'Unable to read the pinned Tauri CLI release' }
-          $assets = @($release.assets | Where-Object name -EQ 'cargo-tauri-x86_64-pc-windows-msvc.zip')
-          if ($assets.Count -ne 1 -or $assets[0].digest -notmatch '^sha256:[a-f0-9]{64}$') {
-            throw "Expected one Windows Tauri CLI asset with a SHA-256 digest for $env:TAURI_CLI_VERSION"
-          }
-          $archive = Join-Path $env:RUNNER_TEMP 'cargo-tauri.zip'
-          Invoke-WebRequest $assets[0].browser_download_url -OutFile $archive
-          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ("sha256:$actual" -ne $assets[0].digest) { throw 'Tauri CLI archive checksum mismatch' }
-          $expanded = Join-Path $env:RUNNER_TEMP 'cargo-tauri'
-          Expand-Archive -LiteralPath $archive -DestinationPath $expanded -Force
-          Copy-Item -LiteralPath (Join-Path $expanded 'cargo-tauri.exe') -Destination "$HOME/.cargo/bin/cargo-tauri.exe" -Force
-
-      - name: Verify the pinned Tauri CLI
-        shell: pwsh
-        env:
-          TAURI_CLI_VERSION: ${{ inputs.tauri_cli_version }}
-        run: |
-          $actual = cargo tauri --version
-          if ($LASTEXITCODE -or $actual -ne "tauri-cli $env:TAURI_CLI_VERSION") {
-            throw "Expected tauri-cli $env:TAURI_CLI_VERSION, got '$actual'"
-          }
-
-      # The embedded v2 server is built with the Node version its SEA build pins
-      # in package.json engines.node, not the runner's default.
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 12.14.0
-      - uses: actions/setup-node@v5
-        with:
-          node-version-file: package.json
-          cache: pnpm
-      - name: Install the server workspace
-        run: pnpm install --frozen-lockfile
-      - name: Build and stage the bundled v2 server
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          pnpm --filter @houston-app/cli build:exe
-          if ($LASTEXITCODE) { throw "build:exe failed with exit code $LASTEXITCODE" }
-          node scripts/stage-v2-server.mjs
-          if ($LASTEXITCODE) { throw "stage-v2-server.mjs failed with exit code $LASTEXITCODE" }
-
-      - name: Compile native application
-        shell: pwsh
-        run: ./scripts/build-app.ps1
-
-      - name: Archive native binaries for the installer job
-        shell: pwsh
-        run: |
-          tar -cf windows-native.tar src-tauri/target/release/houston.exe src-tauri/v2-server
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          git rev-parse HEAD | Set-Content -NoNewline windows-native-sha.txt
-      - uses: actions/upload-artifact@v7
-        with:
-          name: windows-native-${{ inputs.version }}
-          path: |
-            windows-native.tar
-            windows-native-sha.txt
-          if-no-files-found: error
-
-      - name: Record job timing
-        if: always()
-        continue-on-error: true
-        shell: bash
-        run: |
-          elapsed=$(( $(date +%s) - JOB_START ))
-          {
-            echo "| Job | Elapsed (s) |"
-            echo "|---|---|"
-            echo "| windows-compile | $elapsed |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  windows-bundle:
-    if: inputs.stage == 'bundle'
-    runs-on: windows-2022
-    timeout-minutes: 90
-    env:
-      HOUSTON_CHANNEL: dev
-      CARGO_BUILD_JOBS: 3
-    steps:
-      - name: Record start time
-        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
-        shell: bash
-
-      - name: Check out packaging automation
-        uses: actions/checkout@v5
-      - name: Preserve packaging scripts when rebuilding an older tag
-        shell: pwsh
-        run: |
-          Copy-Item scripts/build-app.ps1 "$env:RUNNER_TEMP/release-build-app.ps1"
-      - name: Check out the application source
-        uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.ref }}
-      - name: Use the workflow's packaging scripts
-        shell: pwsh
-        run: |
-          Copy-Item "$env:RUNNER_TEMP/release-build-app.ps1" scripts/build-app.ps1 -Force
-
-      - name: Require the checked-out tree to carry the release version
-        shell: bash
-        env:
-          VERSION: ${{ inputs.version }}
-        run: |
-          set -euo pipefail
-          base="${VERSION%%+*}"
-          [ -n "$base" ] || { echo "::error::version input '$VERSION' has no base before its + build metadata"; exit 1; }
-          ./scripts/set-version.sh --check "$base"
-
-      - uses: dtolnay/rust-toolchain@stable
 
       - name: Cache the pinned Tauri CLI
         id: tauri-cli-cache
@@ -324,9 +203,6 @@ jobs:
             updater=true
           fi
           echo "updater=$updater" >> "$GITHUB_OUTPUT"
-          # The bundler hard-fails without a key ("A public key has been found,
-          # but no private key"), so the key must be in scope before the build;
-          # the keyless dry run is carried by --no-sign instead.
           if [ "$updater" = "true" ]; then
             {
               echo "TAURI_SIGNING_PRIVATE_KEY<<HOUSTON_SIGNING_KEY_EOF"
@@ -342,46 +218,46 @@ jobs:
             fi
           fi
 
-      - name: Download native binaries from this run
-        uses: actions/download-artifact@v7
+      # The embedded desktop and server bundles use the Node version the
+      # workspace pins in package.json engines.node, not the runner's default.
+      - uses: pnpm/action-setup@v4
         with:
-          name: windows-native-${{ inputs.version }}
-          path: ${{ runner.temp }}/windows-native
-      - name: Restore and verify the compiled commit
-        shell: pwsh
-        run: |
-          $expected = (git rev-parse HEAD).Trim()
-          $actual = (Get-Content "$env:RUNNER_TEMP/windows-native/windows-native-sha.txt" -Raw).Trim()
-          if ($actual -ne $expected) { throw "Native artifact commit $actual differs from checkout $expected" }
-          tar -xf "$env:RUNNER_TEMP/windows-native/windows-native.tar"
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: package.json
+          cache: pnpm
+      - name: Install the workspace
+        run: pnpm install --frozen-lockfile
 
-      - name: Assert the bundled v2 server was staged
+      - name: Build the NSIS installer
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item -Recurse -Force release -ErrorAction SilentlyContinue
+          $base = $env:VERSION.Split('+')[0]
+          node scripts/build-desktop-artifact.ts --platform win --target nsis --arch x64 --version $base --output-dir release --verbose
+          if ($LASTEXITCODE) { throw "the desktop artifact build failed with exit code $LASTEXITCODE" }
+
+      - name: Stage the installer and its electron-updater feed
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $server = Join-Path (Get-Location) 'src-tauri/v2-server/houston-v2-server.exe'
-          if (-not (Test-Path $server)) {
-            throw "$server missing -- the compile job did not stage the v2 server"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $installers = @(Get-ChildItem release -Filter '*-setup.exe')
+          if ($installers.Count -ne 1) {
+            Write-Error "expected exactly one NSIS installer in release, found $($installers.Count): $($installers.FullName -join ', ')"
+            exit 1
           }
-
-      - name: Bundle the NSIS installer
-        shell: pwsh
-        working-directory: src-tauri
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $bundleDir = 'target/release/bundle/nsis'
-          if (Test-Path $bundleDir) {
-            Remove-Item -Recurse -Force $bundleDir
+          Copy-Item $installers[0].FullName dist/
+          $metadata = Join-Path (Get-Location) 'release/latest.yml'
+          if (-not (Test-Path $metadata)) {
+            Write-Error "$metadata missing -- electron-builder did not write the Windows update feed"
+            exit 1
           }
-          if ('${{ steps.signing.outputs.updater }}' -eq 'true') {
-            cargo tauri bundle --bundles nsis --ci
-          } else {
-            cargo tauri bundle --bundles nsis --ci --no-sign
-          }
-          if ($LASTEXITCODE -ne 0) {
-            throw "cargo tauri bundle --bundles nsis failed with exit code $LASTEXITCODE"
-          }
+          Copy-Item $metadata dist/
 
       - name: Sign the NSIS installer with Azure Trusted Signing
         if: steps.signing.outputs.azure == 'true'
@@ -393,27 +269,24 @@ jobs:
           endpoint: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
           trusted-signing-account-name: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
           certificate-profile-name: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
-          files-folder: src-tauri/target/release/bundle/nsis
+          files-folder: dist
           files-folder-filter: exe
 
       - name: Sign the NSIS installer for the updater
         if: steps.signing.outputs.updater == 'true'
         shell: pwsh
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $installers = @(Get-ChildItem -Recurse src-tauri/target/release/bundle/nsis -Filter *.exe)
+          $installers = @(Get-ChildItem dist -Filter *.exe)
           if ($installers.Count -eq 0) {
-            Write-Error "no NSIS installer under src-tauri/target/release/bundle/nsis -- cargo tauri bundle did not produce one"
+            Write-Error "no NSIS installer under dist -- nothing to sign"
             exit 1
           }
           foreach ($installer in $installers) {
             $signature = "$($installer.FullName).sig"
             Remove-Item $signature -Force -ErrorAction SilentlyContinue
             cargo tauri signer sign $installer.FullName
-            if ($LASTEXITCODE -ne 0) {
+            if ($LASTEXITCODE) {
               throw "cargo tauri signer sign failed for $($installer.FullName) with exit code $LASTEXITCODE"
             }
             if (-not (Test-Path $signature) -or (Get-Item $signature).Length -eq 0) {
@@ -421,6 +294,12 @@ jobs:
               exit 1
             }
           }
+
+      # Authenticode rewrites the installer, so the feed must describe the bytes
+      # that are actually uploaded.
+      - name: Refresh the electron-updater feed hashes
+        shell: bash
+        run: node scripts/refresh-updater-metadata.mjs dist
 
       - name: Note that the installer is unsigned
         if: steps.signing.outputs.azure == 'false'
@@ -435,23 +314,6 @@ jobs:
         run: |
           set -euo pipefail
           echo "The NSIS installer has no updater Minisign signature: this run did not require signing and the TAURI_SIGNING_PRIVATE_KEY secret is not set." >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Collect artifacts
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force dist | Out-Null
-          $installers = @(Get-ChildItem -Recurse src-tauri/target/release/bundle/nsis -Filter *.exe)
-          if ($installers.Count -ne 1) {
-            Write-Error "expected exactly one NSIS installer, found $($installers.Count): $($installers.FullName -join ', ')"
-            exit 1
-          }
-          Copy-Item $installers[0].FullName dist/
-          $signature = "$($installers[0].FullName).sig"
-          if (Test-Path $signature) {
-            Copy-Item $signature dist/
-          }
-          Get-ChildItem dist
 
       - uses: actions/upload-artifact@v7
         with:

@@ -19,6 +19,20 @@ NodeTest.test("a native-only change does not set the server or web jobs", () => 
   NodeAssert.equal(outputs.web, false);
 });
 
+NodeTest.test("a desktop change runs the package suite, not the renderer jobs", () => {
+  const outputs = decide(["apps/desktop/src/main.ts"]);
+  NodeAssert.equal(outputs.packages, true);
+  NodeAssert.equal(outputs.native, false);
+  NodeAssert.equal(outputs.web, false);
+  NodeAssert.equal(outputs.server, false);
+});
+
+NodeTest.test("a desktop native crate change also runs the native job", () => {
+  const outputs = decide(["apps/desktop/native/houston-v1-cleanup/src/lib.rs"]);
+  NodeAssert.equal(outputs.packages, true);
+  NodeAssert.equal(outputs.native, true);
+});
+
 NodeTest.test("a path matching no rule sets every job", () => {
   const outputs = decide(["mystery/file.xyz"]);
   for (const key of OUTPUTS) {

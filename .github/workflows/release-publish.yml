@@ -7,33 +7,33 @@ on:
   workflow_call:
     inputs:
       tag:
-        description: 'Git tag the release is filed under (vX.Y.Z or vX.Y.Z-rc.N)'
+        description: "Git tag the release is filed under (vX.Y.Z or vX.Y.Z-rc.N)"
         type: string
         required: true
       version:
-        description: 'Version latest.json advertises; may carry the -rc.N suffix'
+        description: "Version latest.json advertises; may carry the -rc.N suffix"
         type: string
         required: true
       title:
-        description: 'Release title'
+        description: "Release title"
         type: string
         required: true
       prerelease:
-        description: 'Mark as a prerelease; releases/latest is documented to skip those'
+        description: "Mark as a prerelease; releases/latest is documented to skip those"
         type: boolean
         required: true
       replace_existing:
-        description: 'Resume an existing draft, preserving its reviewed notes and release identity'
+        description: "Resume an existing draft, preserving its reviewed notes and release identity"
         type: boolean
         required: false
         default: false
       include_windows:
-        description: 'Require and publish the Windows installer alongside Linux'
+        description: "Require and publish the Windows installer alongside Linux"
         type: boolean
         required: false
         default: true
       include_macos:
-        description: 'Require and publish the macOS .app/.dmg alongside Linux'
+        description: "Require and publish the macOS .app/.dmg alongside Linux"
         type: boolean
         required: false
         default: true
@@ -63,6 +63,11 @@ jobs:
           pattern: houston-*
           path: artifacts
           merge-multiple: true
+
+      # electron-updater's feed must describe the bytes that were signed and
+      # uploaded; a stale sha512 refuses the update after publication.
+      - name: Check the electron-updater metadata
+        run: node scripts/refresh-updater-metadata.mjs artifacts --check
 
       - name: Download the prepared release notes
         uses: actions/download-artifact@v7

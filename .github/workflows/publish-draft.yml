@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag of the draft release to publish'
+        description: "Tag of the draft release to publish"
         type: string
         required: true
       smoke_tested:
-        description: 'A person installed this build and ran it on a desktop'
+        description: "A person installed this build and ran it on a desktop"
         type: boolean
         required: true
         default: false
@@ -63,6 +63,7 @@ jobs:
             echo "::error::release $TAG carries no latest.json; a draft without one cannot be promoted"
             exit 1
           fi
+          node scripts/refresh-updater-metadata.mjs release-assets --check
           # Held out of the generator's input: it refuses an artifact set that
           # already contains a latest.json, since it is the file's author.
           mv release-assets/latest.json shipped-latest.json

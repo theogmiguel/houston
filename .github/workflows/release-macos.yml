@@ -13,7 +13,7 @@ on:
         required: false
         default: ""
       tauri_cli_version:
-        description: "Pinned Tauri CLI version, threaded through from the caller so the pin has one source of truth"
+        description: "Pinned Tauri CLI version, used only for Minisign signing so installed Tauri copies can update"
         type: string
         required: true
       require_signing:
@@ -22,32 +22,13 @@ on:
         required: false
         default: true
     secrets:
-      # Declared so a caller can see the contract; all are optional because a dry
-      # run passes no secrets. Apple signing and notarization are skipped when
-      # their secrets are absent, leaving an unsigned but runnable bundle.
+      # Declared so a caller can see the contract; both are optional because a
+      # dry run passes no secrets. Callers use `secrets: inherit`.
       TAURI_SIGNING_PRIVATE_KEY:
-        description: "Updater signing key. Set, the macOS updater .app.tar.gz ships a .sig beside it"
+        description: "Updater signing key. Set, the macOS .app.tar.gz and .dmg ship a .sig beside them"
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
         description: "Passphrase for TAURI_SIGNING_PRIVATE_KEY; leave unset for an unencrypted key"
-        required: false
-      APPLE_CERTIFICATE:
-        description: "Base64 Developer ID Application certificate; with its password, Tauri signs the .app"
-        required: false
-      APPLE_CERTIFICATE_PASSWORD:
-        description: "Password for the .p12 in APPLE_CERTIFICATE"
-        required: false
-      APPLE_SIGNING_IDENTITY:
-        description: "Exact codesign identity; defaults to the identity inside APPLE_CERTIFICATE"
-        required: false
-      APPLE_ID:
-        description: "Apple account for notarization; needs APPLE_PASSWORD and APPLE_TEAM_ID too"
-        required: false
-      APPLE_PASSWORD:
-        description: "App-specific password for APPLE_ID notarization"
-        required: false
-      APPLE_TEAM_ID:
-        description: "Apple Developer team ID for notarization"
         required: false
 
 permissions:
@@ -55,15 +36,15 @@ permissions:
 
 jobs:
   macos-bundle:
-    # One native runner per architecture: the Rust binary, the Node
-    # single-executable server and its native packages are not portable across
-    # arches. Intel uses the only label GitHub still publishes for x86_64.
+    # One native runner per architecture: the Node server and its native
+    # packages are not portable across arches. Intel uses the only label GitHub
+    # still publishes for x86_64. macOS is an unsigned internal build.
     strategy:
       fail-fast: false
       matrix:
         include:
           - runner: macos-latest
-            arch: aarch64
+            arch: arm64
           - runner: macos-15-intel
             arch: x64
     runs-on: ${{ matrix.runner }}
@@ -91,8 +72,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            src-tauri
+          workspaces: apps/desktop/native/houston-v1-cleanup
           key: release-macos-${{ matrix.arch }}
           cache-on-failure: true
 
@@ -102,25 +82,19 @@ jobs:
         with:
           path: ~/.cargo/bin/cargo-tauri
           key: cargo-tauri-${{ inputs.tauri_cli_version }}-macos-${{ matrix.arch }}
-      - name: Install the pinned Tauri CLI
+      - name: Install the pinned Tauri CLI for Minisign signing
         if: steps.tauri-cli-cache.outputs.cache-hit != 'true'
         run: cargo install tauri-cli --version ${{ inputs.tauri_cli_version }} --locked
 
       # Secrets cannot be used in an `if:`, so they are read into env here and
-      # tested; the decisions travel on as step outputs. Updater signing is
-      # required for a cut; Apple signing and notarization stay optional.
-      - name: Decide which signing paths this run takes
+      # tested; the decision travels on as a step output. Updater signing is
+      # required for a cut.
+      - name: Decide which signing path this run takes
         id: signing
         env:
           REQUIRE_SIGNING: ${{ inputs.require_signing }}
           SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           SIGNING_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          NOTARY_ID: ${{ secrets.APPLE_ID }}
-          NOTARY_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          NOTARY_TEAM: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           if [ -z "$SIGNING_KEY" ]; then
@@ -128,11 +102,8 @@ jobs:
               echo "::error::this release is signed and TAURI_SIGNING_PRIVATE_KEY is missing. Set it under Settings -> Secrets and variables -> Actions; latest.json cannot carry a verifiable macOS signature without it."
               exit 1
             fi
-            jq '.bundle.createUpdaterArtifacts = false' src-tauri/tauri.conf.json \
-              > src-tauri/tauri.conf.json.unsigned
-            mv src-tauri/tauri.conf.json.unsigned src-tauri/tauri.conf.json
             echo "updater_signed=false" >> "$GITHUB_OUTPUT"
-            echo "TAURI_SIGNING_PRIVATE_KEY is not set and this run does not require signing: the macOS bundle ships without updater artifacts, and no updater can verify it." >> "$GITHUB_STEP_SUMMARY"
+            echo "TAURI_SIGNING_PRIVATE_KEY is not set and this run does not require signing: the macOS bundle ships without updater signatures, and no updater can verify it." >> "$GITHUB_STEP_SUMMARY"
           else
             {
               echo "TAURI_SIGNING_PRIVATE_KEY<<HOUSTON_SIGNING_KEY_EOF"
@@ -148,41 +119,8 @@ jobs:
             fi
             echo "updater_signed=true" >> "$GITHUB_OUTPUT"
           fi
-          if [ -n "$CERTIFICATE" ] && [ -n "$CERTIFICATE_PASSWORD" ]; then
-            {
-              echo "APPLE_CERTIFICATE<<HOUSTON_APPLE_CERT_EOF"
-              printf '%s\n' "$CERTIFICATE"
-              echo "HOUSTON_APPLE_CERT_EOF"
-              echo "APPLE_CERTIFICATE_PASSWORD<<HOUSTON_APPLE_CERT_PASSWORD_EOF"
-              printf '%s\n' "$CERTIFICATE_PASSWORD"
-              echo "HOUSTON_APPLE_CERT_PASSWORD_EOF"
-            } >> "$GITHUB_ENV"
-            # The config's ad-hoc "-" must not reach keychain(): it would be
-            # compared against the certificate's identity. An explicit empty
-            # value lets Tauri use the identity inside the certificate.
-            if [ -n "$SIGNING_IDENTITY" ]; then
-              echo "APPLE_SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
-            else
-              echo "APPLE_SIGNING_IDENTITY=" >> "$GITHUB_ENV"
-            fi
-            if [ -n "$NOTARY_ID" ] && [ -n "$NOTARY_PASSWORD" ] && [ -n "$NOTARY_TEAM" ]; then
-              {
-                echo "APPLE_ID=$NOTARY_ID"
-                echo "APPLE_TEAM_ID=$NOTARY_TEAM"
-                echo "APPLE_PASSWORD<<HOUSTON_APPLE_PASSWORD_EOF"
-                printf '%s\n' "$NOTARY_PASSWORD"
-                echo "HOUSTON_APPLE_PASSWORD_EOF"
-              } >> "$GITHUB_ENV"
-            else
-              echo "Apple notarization is skipped: APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID are not all set." >> "$GITHUB_STEP_SUMMARY"
-            fi
-            echo "apple_signed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "apple_signed=false" >> "$GITHUB_OUTPUT"
-            echo "APPLE_CERTIFICATE and APPLE_CERTIFICATE_PASSWORD are not set: the app ships ad-hoc signed by the config's signingIdentity \"-\" and is not notarized." >> "$GITHUB_STEP_SUMMARY"
-          fi
 
-      # The embedded v2 server is built with the Node version its SEA build pins
+      # The desktop and server bundles use the Node version the workspace pins
       # in package.json engines.node, not the runner's default.
       - uses: pnpm/action-setup@v4
         with:
@@ -191,21 +129,23 @@ jobs:
         with:
           node-version-file: package.json
           cache: pnpm
-      - name: Install the server workspace
+      - name: Install the workspace
         run: pnpm install --frozen-lockfile
-      - name: Build and stage the bundled v2 server
+
+      - name: Build the DMG
+        env:
+          VERSION: ${{ inputs.version }}
+          ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          pnpm --filter @houston-app/cli build:exe
-          node scripts/stage-v2-server.mjs
+          rm -rf release
+          base="${VERSION%%+*}"
+          node scripts/build-desktop-artifact.ts \
+            --platform mac --target dmg --arch "$ARCH" \
+            --version "$base" --output-dir release --verbose
 
-      - name: Build the bundles (renderer + app,dmg)
-        run: |
-          set -euo pipefail
-          rm -rf src-tauri/target/release/bundle/macos \
-                 src-tauri/target/release/bundle/dmg
-          cargo tauri build --bundles app,dmg --verbose
-
+      # The DMG is the installer a person opens; the bridge gives installed
+      # Tauri copies a signed .app.tar.gz for their own updater.
       - name: Collect the app, DMG and updater archive
         env:
           VERSION: ${{ inputs.version }}
@@ -214,46 +154,22 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           mkdir -p dist
-          app="src-tauri/target/release/bundle/macos/Houston.app"
-          [ -d "$app" ] || { echo "::error::expected $app after cargo tauri build"; exit 1; }
-          # The resources are what makes the bundle self-contained; prove they
-          # landed rather than assuming the resource list was honoured.
-          for name in v2-server/houston-v2-server resources/third-party-licenses.json; do
-            [ -e "$app/Contents/Resources/$name" ] || { echo "::error::$app does not contain Contents/Resources/$name"; exit 1; }
-          done
-          binary="$app/Contents/MacOS/houston"
-          archs="$(lipo -archs "$binary")"
-          case "$ARCH:$archs" in
-            aarch64:*arm64*) ;;
-            x64:*x86_64*) ;;
-            *) echo "::error::built binary is '$archs', expected $ARCH"; exit 1 ;;
-          esac
+          base="${VERSION%%+*}"
+          unpacked="release/mac"
+          [ "$ARCH" = "arm64" ] && unpacked="release/mac-arm64"
+          [ -d "$unpacked/Houston.app" ] || { echo "::error::expected $unpacked/Houston.app after the desktop build"; exit 1; }
+          tar -czf "dist/Houston-${base}-${ARCH}.app.tar.gz" -C "$unpacked" Houston.app
 
-          dmgs=(src-tauri/target/release/bundle/dmg/*.dmg)
-          [ "${#dmgs[@]}" -eq 1 ] || { echo "::error::cargo tauri build produced ${#dmgs[@]} DMGs, expected one"; exit 1; }
-          cp "${dmgs[0]}" "dist/Houston_${VERSION%%+*}_${ARCH}.dmg"
+          dmgs=(release/*.dmg)
+          [ "${#dmgs[@]}" -eq 1 ] || { echo "::error::the desktop build produced ${#dmgs[@]} DMGs, expected one: ${dmgs[*]}"; exit 1; }
+          cp "${dmgs[0]}" "dist/Houston-${base}-${ARCH}.dmg"
 
-          updater="src-tauri/target/release/bundle/macos/Houston.app.tar.gz"
-          if [ -f "$updater" ]; then
-            cp "$updater" "dist/Houston_${VERSION%%+*}_${ARCH}.app.tar.gz"
-            if [ -f "$updater.sig" ]; then
-              cp "$updater.sig" "dist/Houston_${VERSION%%+*}_${ARCH}.app.tar.gz.sig"
-            fi
-          fi
-
-      # The bundler signs the updater archive it creates; sign the DMG as well so
-      # every uploaded bundle carries the same verifiable signature contract as
-      # the Linux artifacts.
-      - name: Sign any artifact the bundler left unsigned
+      - name: Sign the DMG and the updater archive
         if: steps.signing.outputs.updater_signed == 'true'
         run: |
           set -euo pipefail
           shopt -s nullglob
           for artifact in dist/*.dmg dist/*.app.tar.gz; do
-            if [ -f "$artifact.sig" ]; then
-              echo "already signed by the bundler: $artifact"
-              continue
-            fi
             cargo tauri signer sign "$artifact"
           done
 
