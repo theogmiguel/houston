@@ -7,6 +7,18 @@
   !define HoustonStrRep '${StrRep}'
 !endif
 
+; The Tauri updater starts the downloaded installer with /P /UPDATE /R /ARGS and
+; expects it to relaunch the app. Houston owns that relaunch so the /ARGS payload
+; reaches the new process; electron-builder's own start is suppressed here and
+; still honours --force-run from electron-updater.
+!ifdef RUN_AFTER_FINISH
+  !undef RUN_AFTER_FINISH
+!endif
+
+Var /GLOBAL houstonUpdateMode
+Var /GLOBAL houstonRestart
+Var /GLOBAL houstonLaunchArgs
+
 !macro customAppRunningMessages
   Push $0
   Push $1
@@ -39,11 +51,68 @@
       WinShell::SetLnkAUMI "$newStartMenuLink" "${APP_ID}"
     ${EndIf}
   !endif
+
+  ; A Tauri install registers its uninstaller under the product name; remove that
+  ; entry so Add/Remove Programs lists only the Electron uninstaller. The guard
+  ; keeps an unrelated entry that merely shares the folder name.
+  ReadRegStr $R0 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Houston" "DisplayName"
+  ${If} $R0 == "Houston"
+    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Houston"
+  ${EndIf}
+
+  ; A silent install stays silent unless the caller asked for a relaunch. Any
+  ; other install starts the app, as electron-builder's run-after-finish would.
+  ${If} ${isForceRun}
+    ; electron-builder starts it with --updated.
+  ${ElseIf} $houstonRestart == "1"
+    StrCpy $R0 "$houstonLaunchArgs"
+    ${If} $R0 == ""
+    ${AndIf} $houstonUpdateMode == "1"
+      StrCpy $R0 "--updated"
+    ${EndIf}
+    ${StdUtils.ExecShellAsUser} $1 "$launchLink" "open" "$R0"
+  ${ElseIfNot} ${Silent}
+    StrCpy $R0 "$houstonLaunchArgs"
+    ${If} $R0 == ""
+    ${AndIf} $houstonUpdateMode == "1"
+      StrCpy $R0 "--updated"
+    ${EndIf}
+    ${StdUtils.ExecShellAsUser} $1 "$launchLink" "open" "$R0"
+  ${EndIf}
 !macroend
 
 ; Install beside an existing per-user Houston install so the files replace it.
+; Tauri's NSIS installer uses the same $LOCALAPPDATA\Houston directory.
 !macro customInit
   StrCpy $INSTDIR "$LOCALAPPDATA\Houston"
+  StrCpy $houstonUpdateMode "0"
+  StrCpy $houstonRestart "0"
+  StrCpy $houstonLaunchArgs ""
+
+  ; Tauri's updater passes its mode and relaunch arguments on this command line.
+  ${GetParameters} $R0
+  ${GetOptions} $R0 "/UPDATE" $R1
+  ${IfNot} ${Errors}
+    StrCpy $houstonUpdateMode "1"
+  ${EndIf}
+  ${GetOptions} $R0 "/R" $R1
+  ${IfNot} ${Errors}
+    StrCpy $houstonRestart "1"
+  ${EndIf}
+  ${GetOptions} $R0 "/ARGS" $R1
+  ${IfNot} ${Errors}
+    StrCpy $houstonLaunchArgs "$R1"
+  ${EndIf}
+
+  ; electron-updater uses its own spellings for the same two decisions.
+  ${StdUtils.TestParameter} $R1 "updated"
+  ${If} $R1 == "true"
+    StrCpy $houstonUpdateMode "1"
+  ${EndIf}
+  ${StdUtils.TestParameter} $R1 "force-run"
+  ${If} $R1 == "true"
+    StrCpy $houstonRestart "1"
+  ${EndIf}
 !macroend
 
 ; Stop the Houston 1 daemon by the pid its channel state records. Matching by
