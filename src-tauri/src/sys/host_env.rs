@@ -74,6 +74,10 @@ impl HostEnv {
             .map(str::to_string)
     }
 
+    pub fn entries(&self) -> impl Iterator<Item = (&OsStr, &OsStr)> {
+        self.0.iter().map(|(k, v)| (k.as_os_str(), v.as_os_str()))
+    }
+
     #[cfg(all(test, windows))]
     pub fn names(&self) -> impl Iterator<Item = &OsStr> {
         self.0.keys().map(OsString::as_os_str)

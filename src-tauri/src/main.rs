@@ -795,7 +795,9 @@ fn main() {
             Ok(())
         })
         .on_page_load(move |_webview, _payload| {
-            if _webview.label() == "main" && _payload.event() == PageLoadEvent::Finished {
+            if v2_server::BOOTSTRAP_WEBVIEWS.contains(&_webview.label())
+                && _payload.event() == PageLoadEvent::Finished
+            {
                 // The page's initialization script carries the bootstrap captured at
                 // setup; refresh it once the document exists so a server that started
                 // in the meantime reaches the renderer's synchronous poll.

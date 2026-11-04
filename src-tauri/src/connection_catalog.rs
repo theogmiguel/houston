@@ -77,17 +77,27 @@ pub fn write_catalog(store: &impl CatalogStore, value: &str) -> Result<(), Strin
     store.write(value)
 }
 
+// Keychain I/O runs on a blocking worker, never the main thread. The renderer's
+// catalog store awaits each call under one lock, so its reads and writes keep their order.
 #[tauri::command]
-pub fn v2_get_connection_catalog(host: State<'_, Arc<V2Host>>) -> Result<Option<String>, String> {
-    read_catalog(&KeychainStore::new(host.base_dir()))
+pub async fn v2_get_connection_catalog(
+    host: State<'_, Arc<V2Host>>,
+) -> Result<Option<String>, String> {
+    let store = KeychainStore::new(host.base_dir());
+    tokio::task::spawn_blocking(move || read_catalog(&store))
+        .await
+        .map_err(|e| format!("reading the saved environment catalog stopped unexpectedly: {e}"))?
 }
 
 #[tauri::command]
-pub fn v2_set_connection_catalog(
+pub async fn v2_set_connection_catalog(
     host: State<'_, Arc<V2Host>>,
     catalog: String,
 ) -> Result<bool, String> {
-    write_catalog(&KeychainStore::new(host.base_dir()), &catalog)?;
+    let store = KeychainStore::new(host.base_dir());
+    tokio::task::spawn_blocking(move || write_catalog(&store, &catalog))
+        .await
+        .map_err(|e| format!("saving the environment catalog stopped unexpectedly: {e}"))??;
     Ok(true)
 }
 
