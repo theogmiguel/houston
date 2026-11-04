@@ -7,6 +7,7 @@ import { __resetDesktopPrimaryAuthForTests } from "./desktopAuth";
 const WINDOW_ORIGIN = "http://tauri.localhost";
 const SERVER_ORIGIN = "http://127.0.0.1:3773";
 const NOT_RUNNING = "the v2 server is not running yet";
+const REJECTED = "the v2 server rejected the desktop credential";
 
 const DESKTOP_AUTH = {
   policy: "desktop-managed-local",
@@ -16,13 +17,20 @@ const DESKTOP_AUTH = {
 } as const;
 
 /** The Tauri host as the renderer sees it while its local server starts. */
-function installStartingHost(initialState: DesktopLocalServerStatus["state"] = "starting") {
+function installStartingHost(
+  initialState: DesktopLocalServerStatus["state"] = "starting",
+  {
+    bearerRefused = false,
+    bootstrapPublished = true,
+  }: { bearerRefused?: boolean; bootstrapPublished?: boolean } = {},
+) {
   let state = initialState;
+  let published = bootstrapPublished;
   const listeners = new Set<(status: DesktopLocalServerStatus) => void>();
   const bridge = {
     getLocalEnvironmentEnabled: () => true,
     getLocalEnvironmentBootstraps: () =>
-      state === "ready"
+      state === "ready" && published
         ? [
             {
               id: "primary",
@@ -35,6 +43,7 @@ function installStartingHost(initialState: DesktopLocalServerStatus["state"] = "
         : [],
     getLocalEnvironmentBearerToken: vi.fn(async () => {
       if (state !== "ready") throw NOT_RUNNING;
+      if (bearerRefused) throw REJECTED;
       return "desktop-bearer";
     }),
     invalidateLocalEnvironmentBearerToken: vi.fn(async () => undefined),
@@ -56,7 +65,10 @@ function installStartingHost(initialState: DesktopLocalServerStatus["state"] = "
     state = next;
     for (const listener of listeners) listener({ state: next });
   };
-  return { bridge, setState, listenerCount: () => listeners.size };
+  const publishBootstrap = () => {
+    published = true;
+  };
+  return { bridge, setState, publishBootstrap, listenerCount: () => listeners.size };
 }
 
 function installServer() {
@@ -127,6 +139,49 @@ describe("desktop cold start", () => {
     host.setState("ready");
     await expect(gate).resolves.toEqual({ status: "authenticated" });
   });
+
+  it("retries at once when the server is already ready, without waiting for an event", async () => {
+    // The ready event can fire before the bridge's listener subscribes; only state reads remain.
+    const realSetTimeout = globalThis.setTimeout;
+    vi.stubGlobal("setTimeout", ((handler: () => void, delay?: number) =>
+      realSetTimeout(
+        (delay ?? 0) >= 1_000 ? () => undefined : handler,
+        delay,
+      )) as typeof setTimeout);
+    const host = installStartingHost("ready", { bootstrapPublished: false });
+    installServer();
+    const { resolveInitialServerAuthGateState } = await import("./auth");
+
+    const gate = resolveInitialServerAuthGateState();
+    await vi.waitFor(() => expect(host.bridge.getServerStatus).toHaveBeenCalled());
+    host.publishBootstrap();
+    await expect(gate).resolves.toEqual({ status: "authenticated" });
+  }, 5_000);
+
+  it("gives up quickly when a ready server keeps refusing the credential", async () => {
+    // The host refuses with the same error when the running server rejects its credential.
+    const host = installStartingHost("ready", { bearerRefused: true });
+    installServer();
+    const { resolveInitialServerAuthGateState } = await import("./auth");
+
+    const startedAt = Date.now();
+    await expect(resolveInitialServerAuthGateState()).rejects.toMatchObject({
+      _tag: "PrimaryEnvironmentRequestError",
+    });
+    expect(Date.now() - startedAt).toBeLessThan(8_000);
+    expect(host.bridge.getLocalEnvironmentBearerToken.mock.calls.length).toBeLessThan(20);
+  }, 12_000);
+
+  it("gives up quickly when a ready host never publishes this window's bootstrap", async () => {
+    // A secondary webview whose bootstrap global the host does not refresh.
+    installStartingHost("ready", { bootstrapPublished: false });
+    installServer();
+    const { resolveInitialServerAuthGateState } = await import("./auth");
+
+    const startedAt = Date.now();
+    await expect(resolveInitialServerAuthGateState()).rejects.toBeDefined();
+    expect(Date.now() - startedAt).toBeLessThan(8_000);
+  }, 12_000);
 
   it("recovers on Try again after a failed start, without a reload", async () => {
     const host = installStartingHost("error");

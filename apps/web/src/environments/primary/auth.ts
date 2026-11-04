@@ -273,28 +273,43 @@ async function waitForAuthenticatedSessionAfterBootstrap(): Promise<AuthSessionS
 const TRANSIENT_BOOTSTRAP_STATUS_CODES = new Set([502, 503, 504]);
 const BOOTSTRAP_RETRY_TIMEOUT_MS = 15_000;
 const BOOTSTRAP_RETRY_STEP_MS = 500;
-// Cold starts measured ready within 3 s; a first launch also runs migrations. Past this the
-// error view takes over, and the host's own start timeout is longer still.
+// Applies only while the host reports "starting". Cold starts measured ready within 3 s; a first
+// launch also runs migrations. Past this the error view takes over.
 const DESKTOP_SERVER_START_RETRY_BUDGET_MS = 60_000;
 // Fallback poll only: the host's status event normally ends the wait as soon as the server is up.
 const DESKTOP_SERVER_START_RETRY_STEP_MS = 1_000;
+// A ready host publishes the bootstrap right after its status, so a longer refusal means the
+// server rejected the credential or this window never receives the bootstrap.
+const DESKTOP_SERVER_READY_RETRY_BUDGET_MS = 3_000;
 
 async function retryTransientBootstrap<T>(operation: () => Promise<T>): Promise<T> {
   const startedAt = Date.now();
+  let readySinceMs: number | null = null;
   while (true) {
     try {
       return await operation();
     } catch (error) {
       const elapsedMs = Date.now() - startedAt;
       if (isDesktopServerNotReadyError(error)) {
-        if (
-          elapsedMs >= DESKTOP_SERVER_START_RETRY_BUDGET_MS ||
-          !(await isDesktopServerExpected())
-        ) {
-          throw error;
+        const state = await readDesktopServerState();
+        if (state === "starting" && elapsedMs < DESKTOP_SERVER_START_RETRY_BUDGET_MS) {
+          readySinceMs = null;
+          await waitForDesktopServerStatus(DESKTOP_SERVER_START_RETRY_STEP_MS);
+          continue;
         }
-        await waitForDesktopServerStatus(DESKTOP_SERVER_START_RETRY_STEP_MS);
-        continue;
+        if (state === "ready") {
+          // The first retry after ready runs at once; later ones space out.
+          if (readySinceMs === null) {
+            readySinceMs = Date.now();
+            continue;
+          }
+          if (Date.now() - readySinceMs < DESKTOP_SERVER_READY_RETRY_BUDGET_MS) {
+            await waitForBootstrapRetry(BOOTSTRAP_RETRY_STEP_MS);
+            continue;
+          }
+        }
+        // A failed start ends the wait: the error view names it and offers a retry.
+        throw error;
       }
 
       if (!isTransientBootstrapError(error)) {
@@ -308,12 +323,6 @@ async function retryTransientBootstrap<T>(operation: () => Promise<T>): Promise<
       await waitForBootstrapRetry(BOOTSTRAP_RETRY_STEP_MS);
     }
   }
-}
-
-/** A failed start ends the wait: the error view names it and offers a retry. */
-async function isDesktopServerExpected(): Promise<boolean> {
-  const state = await readDesktopServerState();
-  return state === "starting" || state === "ready";
 }
 
 function isDesktopServerNotReadyError(error: unknown): boolean {
