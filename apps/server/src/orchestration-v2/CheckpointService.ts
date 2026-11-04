@@ -19,7 +19,6 @@ import * as Hex from "effect/encoding/Hex";
 import * as KeyedLock from "@houston-app/shared/KeyedLock";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import type * as Scope from "effect/Scope";
 
 import { isGitImport, parseTurnDiffFilesFromNumstat } from "../checkpointing/Diffs.ts";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
@@ -117,15 +116,6 @@ export interface CheckpointServiceV2Shape {
     readonly scope: OrchestrationV2CheckpointScope;
     readonly ordinalWithinScope: number;
   }) => Effect.Effect<void, CheckpointServiceV2Error>;
-  /** Snapshots now; the result publishes, so together they act as captureBaseline. */
-  readonly prepareBaseline: (input: {
-    readonly scope: OrchestrationV2CheckpointScope;
-    readonly ordinalWithinScope: number;
-  }) => Effect.Effect<
-    Effect.Effect<void, CheckpointServiceV2Error>,
-    CheckpointServiceV2Error,
-    Scope.Scope
-  >;
   readonly materializeBaselineCheckpoint: (input: {
     readonly scope: OrchestrationV2CheckpointScope;
     readonly ordinalWithinScope: number;
@@ -301,39 +291,6 @@ export const layer: Layer.Layer<
             }),
         ),
       );
-
-    const prepareBaseline: CheckpointServiceV2Shape["prepareBaseline"] = (input) => {
-      const baselineError = (cause: unknown) =>
-        new CheckpointBaselineCaptureError({
-          scopeId: input.scope.id,
-          ordinalWithinScope: input.ordinalWithinScope,
-          cause,
-        });
-      return withWorkspaceLock(
-        input.scope.cwd,
-        Effect.gen(function* () {
-          if (!(yield* isGitCheckpointable(input.scope.cwd))) {
-            return Effect.void;
-          }
-          const checkpointRef = yield* checkpointRefFor({
-            scopeId: input.scope.id,
-            ordinalWithinScope: input.ordinalWithinScope,
-          });
-          if (yield* checkpointStore.hasCheckpointRef({ cwd: input.scope.cwd, checkpointRef })) {
-            return Effect.void;
-          }
-          const publish = yield* checkpointStore
-            .prepareCheckpoint({ cwd: input.scope.cwd, checkpointRef, createOnly: true })
-            .pipe(Effect.catchTags({ VcsUnsupportedOperationError: () => Effect.succeed(null) }));
-          return publish === null
-            ? Effect.void
-            : withWorkspaceLock(input.scope.cwd, publish).pipe(
-                Effect.asVoid,
-                Effect.mapError(baselineError),
-              );
-        }),
-      ).pipe(Effect.mapError(baselineError));
-    };
 
     const materializeBaselineCheckpoint: CheckpointServiceV2Shape["materializeBaselineCheckpoint"] =
       (input) =>
@@ -632,7 +589,6 @@ export const layer: Layer.Layer<
           ),
         ),
       captureBaseline,
-      prepareBaseline,
       materializeBaselineCheckpoint,
       capture,
       restore,

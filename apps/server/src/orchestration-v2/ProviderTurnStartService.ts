@@ -18,7 +18,6 @@ import {
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -791,16 +790,6 @@ export const layer: Layer.Layer<
         });
         if (!repaired.committed) return;
       }
-      // Opening a session sends no prompt, so the agent cannot write yet: the baseline snapshot
-      // overlaps the open, and startRootRun still publishes it before the turn starts.
-      const baselineCheckpoint =
-        projection.thread.lineage.sideChat === true
-          ? undefined
-          : Fiber.join(
-              yield* Effect.forkScoped(
-                runExecution.prepareRootRunBaseline({ checkpointScope, run }),
-              ),
-            ).pipe(Effect.flatten);
       const sessionResult = yield* Effect.result(
         providerSessions.open({
           threadId: projection.thread.id,
@@ -1672,7 +1661,6 @@ export const layer: Layer.Layer<
         run: runningRun,
         rootNode: runningRootNode,
         checkpointScope,
-        ...(baselineCheckpoint === undefined ? {} : { baselineCheckpoint }),
         providerThread: runningProviderThread,
         attempt: runningAttempt,
         attemptId: attempt.id,
@@ -1730,8 +1718,6 @@ export const layer: Layer.Layer<
         },
         (effect, input) =>
           effect.pipe(
-            // A baseline snapshot started for this turn ends with it.
-            Effect.scoped,
             Effect.mapError((cause) =>
               isProviderTurnStartError(cause)
                 ? cause

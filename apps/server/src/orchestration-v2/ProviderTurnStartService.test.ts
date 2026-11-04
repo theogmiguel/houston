@@ -189,10 +189,7 @@ function startWithMissingWorktree(
         Layer.mock(ProviderAuthService.ProviderAuthService)({
           tryHandlePromptCommand: () => Effect.succeed(false),
         }),
-        Layer.mock(RunExecutionService.RunExecutionServiceV2)({
-          startRootRun,
-          prepareRootRunBaseline: () => Effect.succeed(Effect.void),
-        }),
+        Layer.mock(RunExecutionService.RunExecutionServiceV2)({ startRootRun }),
         Layer.mock(RuntimePolicy.RuntimePolicyV2)({}),
       ),
     ),
@@ -285,9 +282,6 @@ function makeLocalCommandHarness(input: {
   readonly interruptRunBeforeOpenFailure?: boolean;
   readonly writeFailure?: unknown;
   readonly failReadsAfterRunning?: boolean;
-  readonly prepareRootRunBaseline?: RunExecutionService.RunExecutionServiceV2Shape["prepareRootRunBaseline"];
-  /** Runs inside the provider session open, before it returns. */
-  readonly duringOpen?: Effect.Effect<void>;
   readonly duringRecoveryRead?: Effect.Effect<void>;
   readonly duringPolicyResolve?: Effect.Effect<void>;
   readonly previousTurn?: {
@@ -764,39 +758,36 @@ function makeLocalCommandHarness(input: {
     startTurn,
   };
   const open = vi.fn(() =>
-    Effect.andThen(
-      input.duringOpen ?? Effect.void,
-      input.sideChat !== undefined
-        ? Effect.succeed(sideChatSession as never)
-        : input.interruptOpen === true
-          ? Effect.interrupt
-          : "historyReadFailureAfterFallback" in input
-            ? Effect.succeed(resumeFallbackSession as never)
-            : "ensureThreadFailure" in input
-              ? Effect.succeed({ driver: providerThread.driver, ensureThread } as never)
-              : "openFailure" in input
-                ? Effect.sync(() => {
-                    if (input.interruptRunBeforeOpenFailure === true) interruptRun();
-                  }).pipe(
-                    Effect.andThen(
-                      Effect.fail(
-                        new ProviderSessionManager.ProviderSessionOpenError({
-                          instanceId: newInstanceId,
-                          providerSessionId,
-                          cause: input.openFailure,
-                        }),
-                      ),
+    input.sideChat !== undefined
+      ? Effect.succeed(sideChatSession as never)
+      : input.interruptOpen === true
+        ? Effect.interrupt
+        : "historyReadFailureAfterFallback" in input
+          ? Effect.succeed(resumeFallbackSession as never)
+          : "ensureThreadFailure" in input
+            ? Effect.succeed({ driver: providerThread.driver, ensureThread } as never)
+            : "openFailure" in input
+              ? Effect.sync(() => {
+                  if (input.interruptRunBeforeOpenFailure === true) interruptRun();
+                }).pipe(
+                  Effect.andThen(
+                    Effect.fail(
+                      new ProviderSessionManager.ProviderSessionOpenError({
+                        instanceId: newInstanceId,
+                        providerSessionId,
+                        cause: input.openFailure,
+                      }),
                     ),
-                  )
-                : input.failReadsAfterRunning === true || input.previousTurn !== undefined
-                  ? Effect.succeed({
-                      driver: providerThread.driver,
-                      providerSession,
-                      ensureThread: () => Effect.succeed(providerThread),
-                      resumeThread: () => Effect.succeed(projection.providerThreads[0]),
-                    } as never)
-                  : Effect.die("A local command must not open a native session."),
-    ),
+                  ),
+                )
+              : input.failReadsAfterRunning === true || input.previousTurn !== undefined
+                ? Effect.succeed({
+                    driver: providerThread.driver,
+                    providerSession,
+                    ensureThread: () => Effect.succeed(providerThread),
+                    resumeThread: () => Effect.succeed(projection.providerThreads[0]),
+                  } as never)
+                : Effect.die("A local command must not open a native session."),
   );
   const startRootRun = vi.fn<
     (input: RunExecutionService.RunExecutionServiceV2StartRootRunInput) => Effect.Effect<void>
@@ -805,9 +796,7 @@ function makeLocalCommandHarness(input: {
       ? runInput.session.startTurn(runInput as never).pipe(Effect.orDie)
       : input.failReadsAfterRunning === true || input.previousTurn !== undefined
         ? Effect.suspend(() =>
-            providerBusy
-              ? Effect.die("The previous provider turn is still running.")
-              : (runInput.baselineCheckpoint ?? Effect.void).pipe(Effect.orDie),
+            providerBusy ? Effect.die("The previous provider turn is still running.") : Effect.void,
           )
         : Effect.die("A local command must not start a native turn."),
   );
@@ -959,11 +948,7 @@ function makeLocalCommandHarness(input: {
             ),
         }),
         Layer.mock(ProviderAuthService.ProviderAuthService)({ tryHandlePromptCommand }),
-        Layer.mock(RunExecutionService.RunExecutionServiceV2)({
-          startRootRun,
-          prepareRootRunBaseline:
-            input.prepareRootRunBaseline ?? (() => Effect.succeed(Effect.void)),
-        }),
+        Layer.mock(RunExecutionService.RunExecutionServiceV2)({ startRootRun }),
         Layer.mock(RuntimePolicy.RuntimePolicyV2)({
           resolve: resolveRuntimePolicy,
         }),
@@ -1222,34 +1207,23 @@ effectIt.effect("recovers an abandoned failed turn before continuing its native 
   }),
 );
 
-effectIt.live(
-  "snapshots the baseline while the provider session opens and publishes it only at run start",
-  () =>
-    Effect.gen(function* () {
-      const order: Array<string> = [];
-      const snapshotStarted = yield* Deferred.make<void>();
-      const harness = makeLocalCommandHarness({
-        text: "Continue",
-        previousTurn: { runStatus: "failed", turnStatus: "running" },
-        prepareRootRunBaseline: () =>
-          Deferred.succeed(snapshotStarted, undefined).pipe(
-            Effect.as(Effect.sync(() => order.push("publish"))),
-          ),
-        // The session open does not touch the workspace, so it must not hold the snapshot back.
-        duringOpen: Deferred.await(snapshotStarted).pipe(
-          Effect.timeoutOption("2 seconds"),
-          Effect.map((started) =>
-            order.push(Option.isSome(started) ? "snapshot during open" : "open alone"),
-          ),
-        ),
-      });
+effectIt.effect("starts the root run, which captures the baseline, after the session opens", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Continue",
+      previousTurn: { runStatus: "failed", turnStatus: "running" },
+    });
 
-      yield* harness.start;
+    yield* harness.start;
 
-      // The harness run start publishes the prepared baseline, as startRootRun does.
-      expect(order).toEqual(["snapshot during open", "publish"]);
-      expect(harness.startRootRun.mock.calls[0]?.[0].baselineCheckpoint).toBeDefined();
-    }),
+    // Nothing snapshots the workspace before startRootRun, so an edit made while the session
+    // opens belongs to the baseline, not to the turn.
+    expect(harness.open).toHaveBeenCalledOnce();
+    expect(harness.startRootRun).toHaveBeenCalledOnce();
+    expect(harness.open.mock.invocationCallOrder[0]).toBeLessThan(
+      harness.startRootRun.mock.invocationCallOrder[0]!,
+    );
+  }),
 );
 
 effectIt.live("reads recovery state and resolves the runtime policy together", () =>
