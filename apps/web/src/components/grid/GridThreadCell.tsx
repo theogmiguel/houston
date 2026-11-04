@@ -1,7 +1,13 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@houston-app/contracts";
 import { EllipsisIcon, Maximize2Icon, XIcon } from "lucide-react";
-import { useEffect, useState, type CSSProperties, type RefObject } from "react";
+import {
+  useEffect,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+} from "react";
 
 import ChatView, { type RightPanelPortalTarget } from "../ChatView";
 import { resolveThreadStatusPill } from "../Sidebar.logic";
@@ -18,7 +24,7 @@ import { MAX_GRID_THREADS, type GridRecord, useGridStore } from "../../grid/grid
 import type { ThreadDropRefusal } from "../../grid/projectMove";
 import type { MoveToGridTarget } from "../../grid/moveToGrid";
 import { type Side, type SplitSide, type ThreadNode, preorderThreads } from "../../grid/tree";
-import type { ThreadDragHandleProps, ThreadDropTargetProps } from "../../grid/threadDrag";
+import { getThreadDragSource } from "../../grid/threadDrag";
 import { Button } from "../ui/button";
 import { GridPaneActions, GridPaneRename, GridPaneRenameInput } from "../ui/grid-pane";
 import { GridDropIndicator } from "../ui/grid-drop-indicator";
@@ -60,8 +66,7 @@ export function GridThreadCell({
   dragging = false,
   dropIndicator = null,
   dropRefusal = null,
-  dragHandleProps,
-  dropTargetProps,
+  onDragHandlePointerDown,
   swapTargets = [],
   onSwapWith,
   gridTargets = [],
@@ -96,8 +101,8 @@ export function GridThreadCell({
   dropIndicator?: Side | null;
   /** The cell refuses the drop, and why. */
   dropRefusal?: ThreadDropRefusal | null;
-  dragHandleProps?: ThreadDragHandleProps;
-  dropTargetProps?: ThreadDropTargetProps;
+  /** Starts a pointer drag from the label; absent when the cell cannot move. */
+  onDragHandlePointerDown?: ((event: ReactPointerEvent<HTMLElement>) => void) | undefined;
   /** The other cells in this grid, for the label's keyboard move action. */
   swapTargets?: ReadonlyArray<{ threadId: string; title: string }>;
   onSwapWith?: ((threadId: string) => void) | undefined;
@@ -318,6 +323,8 @@ export function GridThreadCell({
     if (draftId === undefined) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      // Escape cancels a cell drag; it must not also discard the draft that is being dragged.
+      if (getThreadDragSource() !== null) return;
       if (document.querySelector(TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR) !== null) return;
       event.preventDefault();
       event.stopPropagation();
@@ -335,7 +342,6 @@ export function GridThreadCell({
       data-thread-id={node.threadId}
       data-focused={focused ? "true" : "false"}
       data-dragging={dragging ? "true" : undefined}
-      {...dropTargetProps}
       onPointerDownCapture={onFocus}
       onFocusCapture={onFocus}
       style={
@@ -363,8 +369,8 @@ export function GridThreadCell({
       {showLabel ? (
         <div
           data-pane-label=""
-          {...dragHandleProps}
-          style={dragHandleProps?.draggable === true ? { cursor: "grab" } : undefined}
+          onPointerDown={onDragHandlePointerDown}
+          style={onDragHandlePointerDown === undefined ? undefined : { cursor: "grab" }}
           className="group/label absolute top-2 left-2 z-20 flex h-(--h-pill) max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-(--r-selection) border border-(--divider) bg-(--pane-head) ps-2 pe-1"
         >
           <span className="grid size-3.5 shrink-0 place-items-center">

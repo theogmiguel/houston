@@ -502,8 +502,7 @@ function GridRoute() {
               dragging,
               dropRefusal,
               dropIndicator,
-              dragHandleProps,
-              dropTargetProps,
+              onDragHandlePointerDown,
             }) => (
               <GridThreadCell
                 key={node.id}
@@ -532,8 +531,7 @@ function GridRoute() {
                 dragging={dragging}
                 dropIndicator={dropIndicator}
                 dropRefusal={dropRefusal}
-                dragHandleProps={dragHandleProps}
-                dropTargetProps={dropTargetProps}
+                onDragHandlePointerDown={onDragHandlePointerDown}
                 swapTargets={gridCells.filter((cell) => cell.threadId !== node.threadId)}
                 onSwapWith={(targetThreadId) =>
                   reorderGridThreads(grid.id, node.threadId, targetThreadId)

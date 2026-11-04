@@ -1,9 +1,10 @@
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { ChevronDownIcon } from "lucide-react";
-import { useState, type DragEvent as ReactDragEvent, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import * as Schema from "effect/Schema";
 
 import { useLocalStorage } from "../../hooks/useLocalStorage";
+import { useThreadDropZone, type ThreadDragSource } from "../../grid/threadDrag";
 import { cn } from "../../lib/utils";
 import { SidebarShelfHeader } from "../sidebar/SidebarListMarkers";
 import {
@@ -22,9 +23,7 @@ export interface GridShelvesProps {
   closedDropTarget?: boolean;
   /** A thread is being dragged, so Closed reads as a place it can go. */
   closedDragActive?: boolean;
-  onClosedDragOver?: (event: ReactDragEvent<HTMLElement>) => void;
-  onClosedDragLeave?: () => void;
-  onClosedDrop?: (event: ReactDragEvent<HTMLElement>) => void;
+  onClosedDrop?: (source: ThreadDragSource) => void;
 }
 
 /**
@@ -37,10 +36,14 @@ export function GridShelves({
   renderCard,
   closedDropTarget = false,
   closedDragActive = false,
-  onClosedDragOver,
-  onClosedDragLeave,
   onClosedDrop,
 }: GridShelvesProps) {
+  const closedRef = useRef<HTMLDivElement | null>(null);
+  useThreadDropZone(
+    closedRef,
+    () => ({ kind: "closed" }),
+    (source) => onClosedDrop?.(source),
+  );
   const [snoozedExpanded, setSnoozedExpanded] = useLocalStorage(
     SNOOZED_SHELF_EXPANDED_KEY,
     false,
@@ -78,13 +81,11 @@ export function GridShelves({
         }}
       />
       <div
+        ref={closedRef}
         className={cn(
           "flex flex-col gap-px rounded-(--r-ctl)",
           closedDropTarget && "bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset",
         )}
-        onDragOver={onClosedDragOver}
-        onDragLeave={onClosedDragLeave}
-        onDrop={onClosedDrop}
       >
         {settledExpanded ? (
           <div

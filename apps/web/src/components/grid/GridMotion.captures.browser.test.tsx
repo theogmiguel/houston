@@ -2,7 +2,7 @@ import "~/index.css";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
-import { beginThreadDrag, endThreadDrag, type ThreadDragSource } from "../../grid/threadDrag";
+import { beginThreadDragAt, endThreadDrag, type ThreadDragSource } from "../../grid/threadDrag";
 import type { GridRecord } from "../../grid/gridStore";
 import { threadLeaf, type LayoutNode, type Side } from "../../grid/tree";
 import { act, render } from "../../../test/render";
@@ -45,7 +45,6 @@ function Cell({ cell }: { cell: GridCellRenderProps }) {
     <section
       data-grid-cell=""
       data-thread-id={cell.node.threadId}
-      {...cell.dropTargetProps}
       className="relative flex h-full w-full flex-col overflow-hidden"
     >
       <div className="flex h-[34px] shrink-0 items-center gap-2 border-b border-(--divider) px-3">
@@ -116,7 +115,6 @@ async function hoverZone(
   side: Side,
   source: ThreadDragSource,
 ): Promise<void> {
-  await act(() => beginThreadDrag(source));
   const cell = container.querySelector<HTMLElement>(`[data-thread-id="${threadId}"]`);
   if (cell === null) throw new Error(`missing cell ${threadId}`);
   const rect = cell.getBoundingClientRect();
@@ -126,17 +124,7 @@ async function hoverZone(
       : side === "left"
         ? { x: rect.left + rect.width * 0.1, y: rect.top + rect.height / 2 }
         : { x: rect.left + rect.width * 0.9, y: rect.top + rect.height / 2 };
-  await act(() => {
-    cell.dispatchEvent(
-      new DragEvent("dragover", {
-        bubbles: true,
-        cancelable: true,
-        dataTransfer: new DataTransfer(),
-        clientX: point.x,
-        clientY: point.y,
-      }),
-    );
-  });
+  await act(() => beginThreadDragAt(source, point));
 }
 
 const OWNER = { environmentId: "env-1", projectId: "project-1" } as const;

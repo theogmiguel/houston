@@ -31,9 +31,10 @@ import {
 } from "lucide-react";
 import {
   useEffect,
+  useRef,
   useState,
-  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 
@@ -63,9 +64,9 @@ import {
 } from "../../grid/rail";
 import {
   beginThreadDrag,
-  endThreadDrag,
-  readThreadDrag,
-  THREAD_DRAG_TYPE,
+  useThreadDragSource,
+  useThreadDropTarget,
+  useThreadDropZone,
   type ThreadDragSource,
 } from "../../grid/threadDrag";
 import {
@@ -290,8 +291,16 @@ export function GridSidebar() {
   const [selection, setSelection] = useState<ThreadSelection>(clearThreadSelection);
   const collapsedGrids = useCollapsedKeys(COLLAPSED_GRIDS_STORAGE_KEY);
   const collapsedProjects = useCollapsedKeys(COLLAPSED_PROJECTS_STORAGE_KEY);
-  const [dragging, setDragging] = useState<DraggedThread | null>(null);
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const dragging = useThreadDragSource();
+  const dropTargetSide = useThreadDropTarget();
+  const dropTarget =
+    dropTargetSide === null
+      ? null
+      : dropTargetSide.kind === "grid"
+        ? `grid:${dropTargetSide.gridId}`
+        : dropTargetSide.kind === "closed"
+          ? "shelf:closed"
+          : null;
   const openGridDraft = useOpenGridDraft();
 
   const actions = useThreadActions();
@@ -613,23 +622,6 @@ export function GridSidebar() {
           selectedHoldEnvironmentId,
         );
 
-  const handleDragStart = (gridId: string | null, thread: EnvironmentThreadShell) => {
-    const source = {
-      gridId,
-      threadId: thread.id,
-      environmentId: thread.environmentId,
-      projectId: thread.projectId,
-    };
-    beginThreadDrag(source);
-    setDragging(source);
-  };
-  const handleDragEnd = () => {
-    endThreadDrag();
-    setDragging(null);
-    setDropTarget(null);
-  };
-  const readDragged = (event: ReactDragEvent): DraggedThread | null =>
-    readThreadDrag(event.dataTransfer);
   // A drag lands the thread in the target grid but does not move the user; the
   // toast offers the grid and the way back.
   const moveThreadToGrid = (source: DraggedThread, targetGridId: string) => {
@@ -942,13 +934,8 @@ export function GridSidebar() {
                 onCloseThread={(thread) => closeThreads([thread])}
                 onHoldThread={(thread, preset) => holdThreads([thread], preset.snoozedUntil)}
                 onPickHoldTime={pickHoldTime}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-                onDragOverGrid={setDropTarget}
                 onDropOnGrid={(source, targetGridId) => moveThreadToGrid(source, targetGridId)}
                 onDropOnThread={dropThreadOnThread}
-                onDragLeave={() => setDropTarget(null)}
-                readDragged={readDragged}
                 onCreateGrid={() =>
                   createGridInWorkspace(workspaceKeyOf(section.environmentId, section.projectId))
                 }
@@ -979,19 +966,7 @@ export function GridSidebar() {
           closed={shelves.closed}
           closedDropTarget={dropTarget === "shelf:closed"}
           closedDragActive={dragging !== null}
-          onClosedDragOver={(event) => {
-            if (readDragged(event) === null) return;
-            event.preventDefault();
-            setDropTarget("shelf:closed");
-          }}
-          onClosedDragLeave={() => {
-            if (dropTarget === "shelf:closed") setDropTarget(null);
-          }}
-          onClosedDrop={(event) => {
-            const source = readDragged(event);
-            event.preventDefault();
-            setDropTarget(null);
-            if (source === null) return;
+          onClosedDrop={(source) => {
             const thread = threadById.get(source.threadId);
             if (thread !== undefined) closeThreads([thread]);
           }}
@@ -1032,10 +1007,7 @@ export function GridSidebar() {
               onSetAutoClose={() => {}}
               onWake={() => wakeShelfThread(thread)}
               onReopen={() => reopenShelfThread(thread)}
-              onDragStart={() => {}}
-              onDragEnd={() => {}}
               onDropOnThread={() => {}}
-              readDragged={readDragged}
             />
           )}
         />
@@ -1205,13 +1177,8 @@ export function SidebarProjectSection({
   onCloseThread,
   onHoldThread,
   onPickHoldTime,
-  onDragStart,
-  onDragEnd,
-  onDragOverGrid,
   onDropOnGrid,
   onDropOnThread,
-  onDragLeave,
-  readDragged,
   onCreateGrid,
   onCreateThread,
   onRenameThread,
@@ -1243,13 +1210,8 @@ export function SidebarProjectSection({
     preset: Pick<SnoozePreset, "snoozedUntil">,
   ) => void;
   onPickHoldTime: () => Promise<Pick<SnoozePreset, "snoozedUntil"> | null>;
-  onDragStart: (gridId: string | null, thread: EnvironmentThreadShell) => void;
-  onDragEnd: () => void;
-  onDragOverGrid: (key: string | null) => void;
   onDropOnGrid: (source: DraggedThread, targetGridId: string) => void;
   onDropOnThread: (source: DraggedThread, targetGridId: string, targetThreadId: string) => void;
-  onDragLeave: () => void;
-  readDragged: (event: ReactDragEvent) => DraggedThread | null;
   onCreateGrid: () => void;
   onCreateThread: (gridId: string) => void;
   onRenameThread: (thread: EnvironmentThreadShell, title: string) => void;
@@ -1331,13 +1293,8 @@ export function SidebarProjectSection({
               onCloseThread={onCloseThread}
               onHoldThread={onHoldThread}
               onPickHoldTime={onPickHoldTime}
-              onDragStart={onDragStart}
-              onDragEnd={onDragEnd}
-              onDragOverGrid={onDragOverGrid}
               onDropOnGrid={onDropOnGrid}
               onDropOnThread={onDropOnThread}
-              onDragLeave={onDragLeave}
-              readDragged={readDragged}
               onCreateThread={() => onCreateThread(grid.id)}
               onRenameThread={onRenameThread}
               onSetAutoClose={onSetAutoClose}
@@ -1379,11 +1336,8 @@ export function SidebarProjectSection({
               onPickHoldTime={onPickHoldTime}
               onRename={(title) => onRenameThread(thread, title)}
               onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
-              onDragStart={() => onDragStart(null, thread)}
-              onDragEnd={onDragEnd}
               onDropOnThread={() => {}}
               onOpenGrid={() => onOpenUngroupedThread(thread)}
-              readDragged={readDragged}
             />
           ))}
         </div>
@@ -1412,13 +1366,8 @@ export function GridGroup({
   onCloseThread,
   onHoldThread,
   onPickHoldTime,
-  onDragStart,
-  onDragEnd,
-  onDragOverGrid,
   onDropOnGrid,
   onDropOnThread,
-  onDragLeave,
-  readDragged,
   onCreateThread,
   onRenameThread,
   onSetAutoClose,
@@ -1452,13 +1401,8 @@ export function GridGroup({
     preset: Pick<SnoozePreset, "snoozedUntil">,
   ) => void;
   onPickHoldTime: () => Promise<Pick<SnoozePreset, "snoozedUntil"> | null>;
-  onDragStart: (gridId: string, thread: EnvironmentThreadShell) => void;
-  onDragEnd: () => void;
-  onDragOverGrid: (key: string | null) => void;
   onDropOnGrid: (source: DraggedThread, targetGridId: string) => void;
   onDropOnThread: (source: DraggedThread, targetGridId: string, targetThreadId: string) => void;
-  onDragLeave: () => void;
-  readDragged: (event: ReactDragEvent) => DraggedThread | null;
   onCreateThread: () => void;
   onShowGrid: (gridId: string) => void;
   onCreateGrid: () => void;
@@ -1475,6 +1419,12 @@ export function GridGroup({
   const newThreadShortcut = shortcutLabelForCommand(keybindings, "chat.new");
   const manualOrder = useClientSettings((settings) => settings.sidebarGridSortOrder === "manual");
   const isDropTarget = dropTarget === `grid:${grid.id}`;
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  useThreadDropZone(
+    headerRef,
+    () => ({ kind: "grid", gridId: grid.id }),
+    (source) => onDropOnGrid(source, grid.id),
+  );
   const readyThreads = threads.filter(
     (thread) => resolveGridThreadState(thread, nowIso) === "ready",
   );
@@ -1545,24 +1495,7 @@ export function GridGroup({
 
   return (
     <div className="mt-1 flex flex-col gap-px" data-grid-key={grid.id}>
-      <div
-        className="group/grid relative flex items-center"
-        onDragOver={(event) => {
-          if (readDragged(event) === null) return;
-          event.preventDefault();
-          onDragOverGrid(`grid:${grid.id}`);
-        }}
-        onDragLeave={(event) => {
-          if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-          onDragLeave();
-        }}
-        onDrop={(event) => {
-          const source = readDragged(event);
-          event.preventDefault();
-          onDragOverGrid(null);
-          if (source !== null) onDropOnGrid(source, grid.id);
-        }}
-      >
+      <div ref={headerRef} className="group/grid relative flex items-center">
         {renaming ? (
           <input
             autoFocus
@@ -1696,11 +1629,8 @@ export function GridGroup({
               onPickHoldTime={onPickHoldTime}
               onRename={(title) => onRenameThread(thread, title)}
               onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
-              onDragStart={() => onDragStart(grid.id, thread)}
-              onDragEnd={onDragEnd}
               onDropOnThread={(source) => onDropOnThread(source, grid.id, thread.id)}
               onOpenGrid={(targetGridId) => onOpenThread(targetGridId, thread.id)}
-              readDragged={readDragged}
             />
           ))}
         </div>
@@ -1763,11 +1693,8 @@ export function ThreadCard({
   onSetAutoClose,
   onWake,
   onReopen,
-  onDragStart,
-  onDragEnd,
   onDropOnThread,
   onOpenGrid,
-  readDragged,
 }: {
   gridId: string | null;
   thread: EnvironmentThreadShell;
@@ -1792,12 +1719,9 @@ export function ThreadCard({
   onSetAutoClose: (enabled: boolean) => void;
   onWake?: () => void;
   onReopen?: () => void;
-  onDragStart: () => void;
-  onDragEnd: () => void;
   onDropOnThread: (source: DraggedThread) => void;
   /** Opens the grid a menu move landed in; absent hides the Move to grid submenu. */
   onOpenGrid?: ((gridId: string) => void) | undefined;
-  readDragged: (event: ReactDragEvent) => DraggedThread | null;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(thread.title);
@@ -1872,38 +1796,39 @@ export function ThreadCard({
   // leaving the row, so a hover open still pending would land after the pointer was gone.
   const previewSuppressed = actionsHovered || holdMenuOpen || actionsMenuOpen;
 
+  const startRowDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (renaming || shelf !== null) return;
+    const target = event.target;
+    if (target instanceof Element) {
+      if (target.closest("input, textarea, [contenteditable='true']") !== null) return;
+      // The title button starts the drag; the row's other controls keep their click.
+      const control = target.closest("button, a, [role='button']");
+      if (control !== null && !control.hasAttribute("data-card-open")) return;
+    }
+    beginThreadDrag(event, {
+      gridId,
+      threadId: thread.id,
+      environmentId: thread.environmentId,
+      projectId: thread.projectId,
+    });
+  };
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  useThreadDropZone(
+    rowRef,
+    (_point, source) =>
+      shelf === null && source.threadId !== thread.id
+        ? { kind: "thread", gridId, threadId: thread.id }
+        : null,
+    (source) => onDropOnThread(source),
+  );
+
   return (
     <Tooltip open={previewOpen && !previewSuppressed} onOpenChange={setPreviewOpen}>
       <TooltipTrigger
         render={
           <div
-            draggable={!renaming && shelf === null}
-            onDragStart={(event) => {
-              event.dataTransfer.setData(
-                THREAD_DRAG_TYPE,
-                JSON.stringify({
-                  gridId,
-                  threadId: thread.id,
-                  environmentId: thread.environmentId,
-                  projectId: thread.projectId,
-                }),
-              );
-              event.dataTransfer.effectAllowed = "move";
-              onDragStart();
-            }}
-            onDragEnd={onDragEnd}
-            onDragOver={(event) => {
-              if (readDragged(event) === null) return;
-              event.preventDefault();
-              event.stopPropagation();
-            }}
-            onDrop={(event) => {
-              const source = readDragged(event);
-              if (source === null) return;
-              event.preventDefault();
-              event.stopPropagation();
-              onDropOnThread(source);
-            }}
+            ref={rowRef}
+            onPointerDown={startRowDrag}
             data-thread-key={threadKey}
             onClick={(event) => {
               if (

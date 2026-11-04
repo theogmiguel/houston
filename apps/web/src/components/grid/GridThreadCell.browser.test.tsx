@@ -3,7 +3,6 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import type { GridRecord } from "../../grid/gridStore";
-import type { ThreadDragHandleProps, ThreadDropTargetProps } from "../../grid/threadDrag";
 import { threadLeaf, type Side, type SplitSide, type ThreadNode } from "../../grid/tree";
 import { render } from "../../../test/render";
 import { GridThreadCell } from "./GridThreadCell";
@@ -179,8 +178,7 @@ async function renderCell(
     focused?: boolean;
     dragging?: boolean;
     dropIndicator?: Side | null;
-    dragHandleProps?: ThreadDragHandleProps;
-    dropTargetProps?: ThreadDropTargetProps;
+    onDragHandlePointerDown?: (event: React.PointerEvent<HTMLElement>) => void;
     swapTargets?: ReadonlyArray<{ threadId: string; title: string }>;
     onSwapWith?: (threadId: string) => void;
     gridTargets?: ReadonlyArray<{ gridId: string; name: string }>;
@@ -205,12 +203,9 @@ async function renderCell(
       onMaximize={options?.onMaximize}
       dragging={options?.dragging ?? false}
       dropIndicator={options?.dropIndicator ?? null}
-      {...(options?.dragHandleProps === undefined
+      {...(options?.onDragHandlePointerDown === undefined
         ? {}
-        : { dragHandleProps: options.dragHandleProps })}
-      {...(options?.dropTargetProps === undefined
-        ? {}
-        : { dropTargetProps: options.dropTargetProps })}
+        : { onDragHandlePointerDown: options.onDragHandlePointerDown })}
       swapTargets={options?.swapTargets ?? []}
       {...(options?.onSwapWith === undefined ? {} : { onSwapWith: options.onSwapWith })}
       gridTargets={options?.gridTargets ?? []}
@@ -548,14 +543,14 @@ describe("GridThreadCell archive", () => {
 describe("GridThreadCell move", () => {
   it("drags by the pane label and marks the drop side", async () => {
     state.draftSession = null;
+    const onDragHandlePointerDown = vi.fn();
     await using screen = await renderCell(
       { kind: "thread", threadId: "thread-a", id: "p1" },
       twoThreadTree(),
       {
         dragging: true,
         dropIndicator: "right",
-        dragHandleProps: { draggable: true, onDragStart: () => {}, onDragEnd: () => {} },
-        dropTargetProps: { onDragOver: () => {}, onDragLeave: () => {}, onDrop: () => {} },
+        onDragHandlePointerDown,
       },
     );
 
@@ -563,8 +558,11 @@ describe("GridThreadCell move", () => {
     const label = screen.container.querySelector("[data-pane-label]");
     if (cell === null || label === null) throw new Error("grid cell or pane label missing");
     expect(cell.getAttribute("data-dragging")).toBe("true");
-    expect(label.getAttribute("draggable")).toBe("true");
     expect(screen.container.querySelector('[data-drop-indicator="right"]')).not.toBeNull();
+    label.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 1 }),
+    );
+    expect(onDragHandlePointerDown).toHaveBeenCalledTimes(1);
   });
 
   it("offers a keyboard swap with every other cell", async () => {
@@ -574,8 +572,6 @@ describe("GridThreadCell move", () => {
       { kind: "thread", threadId: "thread-a", id: "p1" },
       twoThreadTree(),
       {
-        dragHandleProps: { draggable: true, onDragStart: () => {}, onDragEnd: () => {} },
-        dropTargetProps: { onDragOver: () => {}, onDragLeave: () => {}, onDrop: () => {} },
         swapTargets: [{ threadId: "thread-b", title: "Beta thread" }],
         onSwapWith,
       },

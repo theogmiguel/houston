@@ -4,7 +4,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type DragEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 
@@ -17,12 +17,11 @@ import {
 } from "../../grid/projectMove";
 import {
   beginThreadDrag,
-  endThreadDrag,
   useThreadDragSource,
-  writeThreadDrag,
-  type ThreadDragHandleProps,
+  useThreadDropTarget,
+  useThreadDropZone,
   type ThreadDragSource,
-  type ThreadDropTargetProps,
+  type ThreadDropTarget,
 } from "../../grid/threadDrag";
 import {
   type LayoutNode,
@@ -63,8 +62,8 @@ export interface GridCellRenderProps {
   dropIndicator: Side | null;
   /** The cell refuses the drop; the indicator replaces the landing hint. */
   dropRefusal: ThreadDropRefusal | null;
-  dragHandleProps: ThreadDragHandleProps;
-  dropTargetProps: ThreadDropTargetProps;
+  /** Starts the drag from the cell's label; absent when the cell cannot move. */
+  onDragHandlePointerDown?: ((event: ReactPointerEvent<HTMLElement>) => void) | undefined;
 }
 
 /** The gap between cards; it is also each resize handle's width. */
@@ -100,12 +99,8 @@ export function GridHost(props: GridHostProps) {
   } = props;
   const tree = grid.tree;
   const dragSource = useThreadDragSource();
+  const dragTarget = useThreadDropTarget();
   const reducedMotion = useReducedMotion();
-  const [hover, setHover] = useState<{
-    threadId: string;
-    side: Side;
-    refusal: ThreadDropRefusal | null;
-  } | null>(null);
   const [leavingThreadId, setLeavingThreadId] = useState<string | null>(null);
 
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -141,19 +136,6 @@ export function GridHost(props: GridHostProps) {
     !reducedMotion && enteringThreadIds.size === 0 && leavingThreadId === null,
   );
 
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Escape must cancel a drag whose source cell the pointer left
-  useEffect(() => {
-    if (dragSource === null) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      event.preventDefault();
-      endThreadDrag();
-      setHover(null);
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [dragSource]);
-
   const refusalForDrop = (source: ThreadDragSource, side: Side): ThreadDropRefusal | null =>
     threadDropRefusal({
       threadProject: { environmentId: source.environmentId, projectId: source.projectId },
@@ -164,11 +146,6 @@ export function GridHost(props: GridHostProps) {
       maxThreads: MAX_GRID_THREADS,
     });
 
-  const sideForDrop = (threadId: string, event: DragEvent<HTMLElement>): Side | null => {
-    if (dragSource === null || dragSource.threadId === threadId) return null;
-    return quadrant(event.currentTarget.getBoundingClientRect(), event.clientX, event.clientY);
-  };
-
   const announceMove = (side: Side) => {
     announce(
       side === "center"
@@ -178,90 +155,81 @@ export function GridHost(props: GridHostProps) {
     );
   };
 
-  const handleDragStart =
+  const resolveCellDrop = (
+    point: { x: number; y: number },
+    source: ThreadDragSource,
+  ): ThreadDropTarget | null => {
+    const surfaceElement = surfaceRef.current;
+    if (surfaceElement === null) return null;
+    for (const cell of surfaceElement.querySelectorAll<HTMLElement>(
+      "[data-grid-cell][data-thread-id]",
+    )) {
+      const threadId = cell.dataset.threadId;
+      if (threadId === undefined) continue;
+      const rect = cell.getBoundingClientRect();
+      if (
+        point.x < rect.left ||
+        point.x > rect.right ||
+        point.y < rect.top ||
+        point.y > rect.bottom
+      ) {
+        continue;
+      }
+      // A cell never takes its own thread: the drop would change nothing.
+      if (source.threadId === threadId) return null;
+      const side = quadrant(rect, point.x, point.y);
+      return {
+        kind: "cell",
+        gridId: grid.id,
+        threadId,
+        side,
+        refusal: refusalForDrop(source, side),
+      };
+    }
+    return null;
+  };
+
+  const dropOnCell = (source: ThreadDragSource, target: ThreadDropTarget): void => {
+    if (target.kind !== "cell") return;
+    const { threadId, side, refusal } = target;
+    if (refusal !== null) {
+      announce(`Drop refused: ${THREAD_DROP_REFUSAL_LABEL[refusal]}.`, `grid-move:${grid.id}`);
+      onDropThread?.(source, threadId, side);
+      return;
+    }
+    if (tree !== null && findThread(tree, source.threadId) !== null) {
+      onTreeChange(
+        side === "center"
+          ? swapThread(tree, source.threadId, threadId)
+          : moveThread(tree, source.threadId, threadId, side),
+      );
+      onFocusThread(source.threadId);
+      announceMove(side);
+      return;
+    }
+    announceMove(side);
+    onDropThread?.(source, threadId, side);
+  };
+
+  useThreadDropZone(surfaceRef, resolveCellDrop, dropOnCell);
+
+  const beginCellDrag =
     (threadId: string) =>
-    (event: DragEvent<HTMLElement>): void => {
+    (event: ReactPointerEvent<HTMLElement>): void => {
       const target = event.target;
       if (
         target instanceof Element &&
         target.closest("button, [role='button'], a, input, textarea, [contenteditable='true']") !==
           null
       ) {
-        event.preventDefault();
         return;
       }
-      const source: ThreadDragSource = {
+      beginThreadDrag(event, {
         gridId: grid.id,
         threadId,
         environmentId: grid.environmentId,
         projectId: grid.projectId,
-      };
-      writeThreadDrag(event.dataTransfer, source);
-      beginThreadDrag(source);
-    };
-
-  const handleDragEnd = (): void => {
-    endThreadDrag();
-    setHover(null);
-  };
-
-  const handleDragOver =
-    (threadId: string) =>
-    (event: DragEvent<HTMLElement>): void => {
-      if (dragSource === null) return;
-      const source = dragSource;
-      const side = sideForDrop(threadId, event);
-      if (side === null) {
-        event.dataTransfer.dropEffect = "none";
-        setHover(null);
-        return;
-      }
-      event.preventDefault();
-      const refusal = refusalForDrop(source, side);
-      // A refused zone still accepts the drop so its toast can explain the refusal.
-      event.dataTransfer.dropEffect = refusal === null ? "move" : "none";
-      setHover((current) =>
-        current?.threadId === threadId && current.side === side && current.refusal === refusal
-          ? current
-          : { threadId, side, refusal },
-      );
-    };
-
-  const handleDragLeave =
-    (threadId: string) =>
-    (event: DragEvent<HTMLElement>): void => {
-      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-      setHover((current) => (current?.threadId === threadId ? null : current));
-    };
-
-  const handleDrop =
-    (threadId: string) =>
-    (event: DragEvent<HTMLElement>): void => {
-      const source = dragSource;
-      const side = source === null ? null : sideForDrop(threadId, event);
-      setHover(null);
-      endThreadDrag();
-      if (source === null || side === null) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const refusal = refusalForDrop(source, side);
-      if (refusal !== null) {
-        announce(`Drop refused: ${THREAD_DROP_REFUSAL_LABEL[refusal]}.`, `grid-move:${grid.id}`);
-        onDropThread?.(source, threadId, side);
-        return;
-      }
-      if (tree !== null && findThread(tree, source.threadId) !== null) {
-        onTreeChange(
-          side === "center"
-            ? swapThread(tree, source.threadId, threadId)
-            : moveThread(tree, source.threadId, threadId, side),
-        );
-        onFocusThread(source.threadId);
-        announceMove(side);
-        return;
-      }
-      announceMove(side);
-      onDropThread?.(source, threadId, side);
+      });
     };
 
   const maximizedLeaf =
@@ -324,8 +292,15 @@ export function GridHost(props: GridHostProps) {
     }, GRID_MORPH_MS);
   };
 
-  const renderLeaf = (node: ThreadNode, focused: boolean, maximized = false): ReactNode =>
-    renderThread({
+  const renderLeaf = (node: ThreadNode, focused: boolean, maximized = false): ReactNode => {
+    const cellTarget =
+      dragTarget?.kind === "cell" &&
+      dragTarget.gridId === grid.id &&
+      dragTarget.threadId === node.threadId
+        ? dragTarget
+        : null;
+    const canDrag = threadCount > 1 && maximizedThreadId == null;
+    return renderThread({
       node,
       focused,
       maximized,
@@ -333,19 +308,11 @@ export function GridHost(props: GridHostProps) {
       onArchiveClose: () => onTreeChange(removeThread(tree, node.threadId)),
       onSplit: (side, threadId) => splitThread(node.threadId, side, threadId),
       dragging: dragSource?.threadId === node.threadId,
-      dropIndicator: dragSource !== null && hover?.threadId === node.threadId ? hover.side : null,
-      dropRefusal: dragSource !== null && hover?.threadId === node.threadId ? hover.refusal : null,
-      dragHandleProps: {
-        draggable: threadCount > 1 && maximizedThreadId == null,
-        onDragStart: handleDragStart(node.threadId),
-        onDragEnd: handleDragEnd,
-      },
-      dropTargetProps: {
-        onDragOver: handleDragOver(node.threadId),
-        onDragLeave: handleDragLeave(node.threadId),
-        onDrop: handleDrop(node.threadId),
-      },
+      dropIndicator: cellTarget?.side ?? null,
+      dropRefusal: cellTarget?.refusal ?? null,
+      ...(canDrag ? { onDragHandlePointerDown: beginCellDrag(node.threadId) } : {}),
     });
+  };
 
   if (maximizedLeaf !== null) {
     return surface(

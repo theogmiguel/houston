@@ -6,7 +6,8 @@ import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { useGridStore, type GridRecord } from "../../grid/gridStore";
 import { clearThreadSelection } from "../../grid/sidebar";
-import { render, type Screen } from "../../../test/render";
+import { beginThreadDragAt, endThreadDrag } from "../../grid/threadDrag";
+import { act, render, type Screen } from "../../../test/render";
 import { DEFAULT_CLIENT_SETTINGS } from "@houston-app/contracts/settings";
 import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { SidebarNewGridMenu, SidebarOptionsMenu } from "../ui/sidebar-grids";
@@ -68,6 +69,7 @@ function group(
     collapsed?: boolean;
     onToggleCollapsed?: () => void;
     onOpenThread?: (gridId: string, threadId: string) => void;
+    onDropOnGrid?: (source: unknown, gridId: string) => void;
   } = {},
 ) {
   return (
@@ -92,13 +94,8 @@ function group(
         onCloseThread={() => {}}
         onHoldThread={() => {}}
         onPickHoldTime={async () => null}
-        onDragStart={() => {}}
-        onDragEnd={() => {}}
-        onDragOverGrid={() => {}}
-        onDropOnGrid={() => {}}
+        onDropOnGrid={overrides.onDropOnGrid ?? (() => {})}
         onDropOnThread={() => {}}
-        onDragLeave={() => {}}
-        readDragged={() => null}
         onCreateThread={() => {}}
         onRenameThread={() => {}}
         onSetAutoClose={() => {}}
@@ -560,5 +557,32 @@ describe("Sidebar options", () => {
     } finally {
       __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
     }
+  });
+
+  it("moves a dragged thread onto the grid whose heading is under the pointer", async () => {
+    using _drag = { [Symbol.dispose]: () => endThreadDrag() };
+    const onDropOnGrid = vi.fn();
+    await using screen = await render(group(grid(), [], { onDropOnGrid }), { router: false });
+    const heading = headingFor(screen, "grid-a");
+    const rect = heading.getBoundingClientRect();
+    const source = {
+      gridId: "grid-other",
+      threadId: "thread-a",
+      environmentId: "env-1",
+      projectId: "project-1",
+    };
+
+    await act(() =>
+      beginThreadDragAt(
+        source,
+        { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+        1,
+      ),
+    );
+    await act(() => {
+      window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1 }));
+    });
+
+    expect(onDropOnGrid).toHaveBeenCalledWith(source, "grid-a");
   });
 });
