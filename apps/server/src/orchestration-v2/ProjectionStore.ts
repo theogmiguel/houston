@@ -5931,29 +5931,13 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               ) AS latest_run_stop_requested,
               active.run_id AS active_run_id,
               active.status AS active_run_status,
-              (
-                SELECT r.status
-                FROM orchestration_v2_projection_runs r
-                WHERE r.thread_id = t.thread_id
-                  AND r.status IN ('preparing', 'starting', 'running', 'waiting')
-                  AND NOT ${isSilentShellRun("r")}
-                ORDER BY r.ordinal DESC, r.run_id DESC
-                LIMIT 1
-              ) AS activity_run_status,
-              (
-                -- Mirrors orchestrationV2RunWorkStartedAt.
-                SELECT COALESCE(
-                  json_extract(r.payload_json, '$.workStartedAt'),
-                  json_extract(r.payload_json, '$.startedAt'),
-                  r.requested_at
-                )
-                FROM orchestration_v2_projection_runs r
-                WHERE r.thread_id = t.thread_id
-                  AND r.status IN ('preparing', 'starting', 'running', 'waiting')
-                  AND NOT ${isSilentShellRun("r")}
-                ORDER BY r.ordinal DESC, r.run_id DESC
-                LIMIT 1
-              ) AS activity_run_started_at,
+              activity.status AS activity_run_status,
+              -- Mirrors orchestrationV2RunWorkStartedAt.
+              CASE WHEN activity.run_id IS NULL THEN NULL ELSE COALESCE(
+                json_extract(activity.payload_json, '$.workStartedAt'),
+                json_extract(activity.payload_json, '$.startedAt'),
+                activity.requested_at
+              ) END AS activity_run_started_at,
               (
                 SELECT json_extract(session.payload_json, '$.lastError')
                 -- Keep bindings outermost: one provider instance can hold every session.
@@ -6062,6 +6046,16 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               ORDER BY r.ordinal DESC, r.run_id DESC
               LIMIT 1
             )
+            -- Houston: one walk of the live runs feeds both activity columns.
+            LEFT JOIN orchestration_v2_projection_runs activity ON activity.run_id = (
+              SELECT r.run_id
+              FROM orchestration_v2_projection_runs r
+              WHERE r.thread_id = t.thread_id
+                AND r.status IN ('preparing', 'starting', 'running', 'waiting')
+                AND NOT ${isSilentShellRun("r")}
+              ORDER BY r.ordinal DESC, r.run_id DESC
+              LIMIT 1
+            )
             -- The newest run not waiting in a held queue, matching latestUnheldRun.
             LEFT JOIN orchestration_v2_projection_runs presented ON presented.run_id = (
               SELECT candidate.run_id
@@ -6092,10 +6086,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             WHERE t.deleted_at IS NULL${threadId === undefined ? sql`` : sql` AND t.thread_id = ${threadId}`}${
               projectId === undefined ? sql`` : sql` AND t.project_id = ${projectId}`
             }${
+              // Houston: every thread write keeps archived_at equal to $.archivedAt; reading it parses no payload.
               location === "active"
-                ? sql` AND json_extract(t.payload_json, '$.archivedAt') IS NULL`
+                ? sql` AND t.archived_at IS NULL`
                 : location === "archive"
-                  ? sql` AND json_extract(t.payload_json, '$.archivedAt') IS NOT NULL`
+                  ? sql` AND t.archived_at IS NOT NULL`
                   : sql``
             }${
               unsettledOnly

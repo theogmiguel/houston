@@ -4,7 +4,6 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   type OrchestrationV2DomainEvent,
   OrchestrationV2ShellStreamItem,
-  ProviderDriverKind,
   ThreadId,
 } from "@houston-app/contracts";
 import * as Deferred from "effect/Deferred";
@@ -21,7 +20,6 @@ import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectEnrichment from "../project/ProjectEnrichmentService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
-import { ClaudeOrchestratorReplayHarness } from "../orchestration-v2/Adapters/ClaudeAdapterV2.testkit.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import {
@@ -29,32 +27,12 @@ import {
   skipUnchangedThreadShells,
 } from "../orchestration-v2/ShellStream.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
-import {
-  findReplayFixture,
-  runReplayFixture,
-} from "../orchestration-v2/testkit/ProviderReplayFixtures.ts";
 import { subscribeOrchestrationV2Shell } from "../ws.ts";
 import { makeSubscriberShellReads } from "./shellReads.ts";
+import { replayedTurnEvents } from "./shellReads.testkit.ts";
 
 const encodeItem = Schema.encodeSync(Schema.toCodecJson(OrchestrationV2ShellStreamItem));
 const wire = (item: OrchestrationV2ShellStreamItem) => JSON.stringify(encodeItem(item));
-
-/** The domain events of a replayed two-turn Claude conversation, in commit order. */
-const replayedTurnEvents = Effect.gen(function* () {
-  const fixture = findReplayFixture("multi_turn");
-  const driver = fixture?.providers.find(
-    (provider) => provider.driver === ProviderDriverKind.make("claudeAgent"),
-  );
-  assert.isDefined(fixture);
-  assert.isDefined(driver);
-  const result = yield* runReplayFixture({
-    fixtureName: fixture.name,
-    buildInput: fixture.buildInput,
-    driver,
-    harness: ClaudeOrchestratorReplayHarness,
-  });
-  return result.storedEvents.map((stored) => stored.event);
-});
 
 interface ShellRun {
   readonly reads: number;
