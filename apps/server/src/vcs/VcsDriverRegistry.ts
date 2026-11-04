@@ -156,7 +156,10 @@ export const make = Effect.gen(function* () {
 
   const detect: VcsDriverRegistry["Service"]["detect"] = Effect.fn("VcsDriverRegistry.detect")(
     function* (input) {
-      const requestedKind = yield* projectConfig.resolveKind(input);
+      const configuredKind = yield* projectConfig.resolveKind(input);
+      // Automatic detection only tries Git, so it shares the explicit Git entry.
+      const requestedKind =
+        configuredKind === "auto" || configuredKind === "unknown" ? "git" : configuredKind;
       const key = detectionCacheKey({ cwd: input.cwd, requestedKind });
       const cached = yield* Cache.get(detectionCache, key);
       if (cached === null) return null;
