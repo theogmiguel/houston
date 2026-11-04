@@ -127,7 +127,7 @@ pub fn process_identity(pid: u32) -> Option<ProcessIdentity> {
 }
 
 /// Reads `/proc`: the creation time is ticks since boot plus the boot time, which
-/// `/proc/stat` keeps to whole seconds.
+/// `/proc/stat` truncates to whole seconds, so it can read up to a second early.
 #[cfg(target_os = "linux")]
 pub fn process_identity(pid: u32) -> Option<ProcessIdentity> {
     let pid = checked_pid(pid).ok()?;
