@@ -11,9 +11,11 @@ import {
   type ProviderUpdateSidebarPillView,
 } from "../ProviderUpdateLaunchNotification.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { MOTION_ROLE_MS } from "~/motion/registry";
 
-// Matches the pill's `duration-180` class.
-const PROVIDER_UPDATE_PILL_EXIT_MS = 180;
+// Matches the exit transition's `--motion-toast-out` duration; the timer finishes the exit
+// when the CSS transition never ends.
+const PROVIDER_UPDATE_PILL_EXIT_MS = MOTION_ROLE_MS["toast-out"];
 
 const PROVIDER_UPDATE_PILL_STYLES = {
   loading:
@@ -140,7 +142,7 @@ export function SidebarProviderUpdatePill() {
 
   return (
     <div
-      className={`group/provider-update relative flex min-h-7 w-full shrink-0 items-center overflow-hidden rounded-md text-2xs leading-4 font-medium transform-gpu transition-all duration-180 ease-drawer will-change-transform ${
+      className={`group/provider-update relative flex min-h-7 w-full shrink-0 items-center overflow-hidden rounded-md text-2xs leading-4 font-medium transition-[translate,opacity] duration-(--motion-toast-out) ease-exit ${
         PROVIDER_UPDATE_PILL_STYLES[displayedView.tone]
       } ${
         exitingKey === displayedView.key
@@ -152,12 +154,14 @@ export function SidebarProviderUpdatePill() {
         <div
           key={displayedView.key}
           aria-hidden="true"
-          className={`pointer-events-none absolute inset-y-0 left-0 w-full origin-left scale-x-0 transition-transform duration-(--provider-update-pill-dismiss-ms) ease-linear starting:scale-x-100 border-r border-current/15 inset-shadow-2xs inset-shadow-white/8 ${
+          className={`pointer-events-none absolute inset-y-0 left-0 w-full origin-left scale-x-0 transition-transform duration-(--provider-update-pill-dismiss-ms) starting:scale-x-100 border-r border-current/15 inset-shadow-2xs inset-shadow-white/8 ${
             PROVIDER_UPDATE_PILL_PROGRESS_STYLES[displayedView.tone]
           }`}
           style={
             {
               "--provider-update-pill-dismiss-ms": `${dismissAfterVisibleMs}ms`,
+              // A countdown bar empties at a constant rate, so it cannot use an ease role.
+              transitionTimingFunction: "linear",
             } as CSSProperties
           }
         />
