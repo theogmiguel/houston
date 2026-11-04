@@ -4049,10 +4049,19 @@ interface ActiveClaudeTurnContext {
     noticeTexts: Set<string>;
     // Houston: streamed text blocks, keyed `<message id>:text:<n>`. Each block's
     // snapshot (which arrives before its content_block_stop) completes the same item.
+    // A block a retried request abandons never gets one; it is cancelled, not completed.
     readonly streamBlocks: Map<number, string>;
     readonly nextTextBlockIndex: Map<string, number>;
     readonly snapshotTextBlockIndex: Map<string, number>;
-    readonly streamed: Map<string, { readonly startedAt: DateTime.Utc; readonly ordinal: number }>;
+    readonly streamed: Map<
+      string,
+      {
+        readonly startedAt: DateTime.Utc;
+        readonly ordinal: number;
+        shown: boolean;
+        abandoned: boolean;
+      }
+    >;
     readonly streamedSnapshots: Map<
       string,
       ReadonlyArray<{ readonly itemId: string; readonly text: string }>
@@ -7419,6 +7428,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ) {
                 return;
               }
+              const now = yield* DateTime.now;
               const artifacts = buildAssistantArtifacts({
                 idAllocator,
                 turnInput: context.input,
@@ -7427,10 +7437,29 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 text: update.text,
                 ordinal: block.ordinal,
                 startedAt: block.startedAt,
-                completedAt: yield* DateTime.now,
+                completedAt: now,
                 streaming: !update.completed,
               });
+              if (block.abandoned) {
+                // Only an item the renderer saw needs closing; its text is not an answer.
+                const turnItem = artifacts.turnItem;
+                if (update.completed && block.shown && turnItem.type === "assistant_message") {
+                  yield* emitProviderEvent({
+                    type: "turn_item.updated",
+                    driver: CLAUDE_PROVIDER,
+                    turnItem: {
+                      ...turnItem,
+                      status: "cancelled",
+                      completedAt: now,
+                      text: "",
+                      streaming: false,
+                    },
+                  });
+                }
+                return;
+              }
               if (!update.completed) {
+                block.shown = true;
                 // A running assistant node is never delivered, so only the item streams.
                 yield* emitProviderEvent({
                   type: "turn_item.updated",
@@ -7472,9 +7501,32 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             context.assistant.streamed.set(itemId, {
               startedAt: yield* DateTime.now,
               ordinal: yield* resolveItemOrdinal(context, itemId),
+              shown: false,
+              abandoned: false,
             });
           }
           yield* assistantTextDeltas.append({ turnId: context.nativeTurnId, itemId, delta });
+        });
+        // Cancels streamed blocks outside `keepMessageId` that never got a snapshot.
+        const abandonStreamedText = Effect.fnUntraced(function* (
+          context: ActiveClaudeTurnContext,
+          keepMessageId: string | null,
+        ) {
+          for (const [itemId, block] of context.assistant.streamed) {
+            if (
+              context.assistant.emittedNativeItemIds.has(itemId) ||
+              (keepMessageId !== null && itemId.startsWith(`${keepMessageId}:text:`))
+            ) {
+              continue;
+            }
+            block.abandoned = true;
+            yield* assistantTextDeltas.complete({
+              turnId: context.nativeTurnId,
+              itemId,
+              emitEmpty: false,
+            });
+            context.assistant.streamed.delete(itemId);
+          }
         });
 
         const endToolCalls = Effect.fnUntraced(function* (input: {
@@ -7538,7 +7590,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly result?: SDKResultMessage;
         }) {
           yield* reasoningDeltas.flushTurn(input.context.nativeTurnId);
-          // Houston: text cut off before its snapshot completes as streamed so far.
+          // Houston: a completed turn answered without the unsnapshotted text; a stopped
+          // turn keeps the text cut off before its snapshot, as streamed so far.
+          if (input.status === "completed") yield* abandonStreamedText(input.context, null);
           yield* assistantTextDeltas.flushTurn(input.context.nativeTurnId);
           if (input.context.compaction?.status === "running") {
             const reason = input.result?.subtype === "success" ? input.result.result.trim() : "";
@@ -8541,6 +8595,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               reasoning.messageId = event.message.id;
               reasoning.streamBlocks.clear();
               context.assistant.streamBlocks.clear();
+              // Houston: a new request supersedes earlier blocks still awaiting a snapshot.
+              yield* abandonStreamedText(context, event.message.id);
               const usage: ClaudeMessageUsage | undefined = event.message.usage;
               context.streamUsage =
                 usage === undefined ? null : { messageId: event.message.id, usage };
@@ -8906,6 +8962,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }
 
           if (message.type === "system" && message.subtype === "api_retry") {
+            // Houston: the retried request answers again; text it cut off is not an answer.
+            yield* abandonStreamedText(context, null);
             const updatedAt = yield* DateTime.now;
             const previous = (yield* Ref.get(providerRetries)).get(context.providerTurnId);
             const retry: OrchestrationV2ProviderRetry = {

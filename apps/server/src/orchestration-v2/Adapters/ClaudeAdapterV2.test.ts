@@ -5570,6 +5570,119 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
   );
 
+  // regression: a streamed block abandoned by a retried request never completes as an answer.
+  it.effect.each(["message_start", "api_retry", "turn_end"] as const)(
+    "cancels Claude text abandoned before its snapshot when %s supersedes it",
+    (closedBy) =>
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("text-orphan-attempt"),
+            text: "Answer once",
+            attachments: [],
+          }),
+        );
+        const stream = (event: unknown) =>
+          claudeSdkFrame({
+            type: "stream_event",
+            event,
+            parent_tool_use_id: null,
+            session_id: WAKE_NATIVE_SESSION,
+            uuid: "stream-frame",
+          });
+        const answer = "The full answer.";
+        const retried = [
+          ...(closedBy === "message_start"
+            ? [stream({ type: "message_start", message: { id: "retried-message" } })]
+            : []),
+          ...(closedBy === "api_retry"
+            ? [
+                claudeSdkFrame({
+                  type: "system",
+                  subtype: "api_retry",
+                  attempt: 1,
+                  max_retries: 10,
+                  retry_delay_ms: 500,
+                  error_status: 529,
+                  error: "overloaded",
+                  uuid: "00000000-0000-4000-8000-000000000301",
+                  session_id: WAKE_NATIVE_SESSION,
+                }),
+              ]
+            : []),
+          // The retried request's snapshot; the non-streaming retry sends only this.
+          claudeSdkFrame({
+            type: "assistant",
+            uuid: "retried-text",
+            session_id: WAKE_NATIVE_SESSION,
+            parent_tool_use_id: null,
+            message: {
+              id: "retried-message",
+              model: "claude-sonnet-4-6",
+              content: [{ type: "text", text: answer }],
+            },
+          }),
+        ];
+        const frames = [
+          stream({ type: "message_start", message: { id: "abandoned-message" } }),
+          stream({
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "text", text: "" },
+          }),
+          stream({
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "text_delta", text: "The fu" },
+          }),
+          ...retried,
+        ];
+        for (const frame of frames) {
+          yield* harness.offerAndWait(frame);
+          yield* TestClock.adjust(50);
+          yield* Effect.yieldNow;
+        }
+        const latestItems = () =>
+          new Map(assistantTurnItems(harness.events).map((item) => [item.id, item]));
+        const abandonedId = assistantTurnItems(harness.events)[0]?.id;
+        assert.isDefined(abandonedId, "the abandoned block streamed before the retry");
+        if (closedBy !== "turn_end") {
+          assert.equal(latestItems().get(abandonedId!)?.status, "cancelled");
+        }
+        yield* Queue.offer(
+          harness.sdkMessages,
+          makeResultFrame({ uuid: "text-orphan-result", result: answer }),
+        );
+        const terminal = yield* Queue.take(harness.terminalReceipts);
+        assert.equal(terminal.status, "completed");
+
+        const latest = latestItems();
+        const abandoned = latest.get(abandonedId!);
+        assert.equal(abandoned?.status, "cancelled");
+        assert.equal(abandoned?.type === "assistant_message" ? abandoned.text : undefined, "");
+        assert.deepEqual(
+          [...latest.values()]
+            .filter((item) => item.status === "completed")
+            .map((item) => (item.type === "assistant_message" ? item.text : "")),
+          [answer],
+        );
+        assert.deepEqual(
+          assistantMessages(harness.events).map((message) => message.text),
+          [answer],
+          "only the retried answer becomes a message",
+        );
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+  );
+
   // regression: #15892 non-execution metadata is carried through, not guessed from result text
   it.effect.each(["cancelled", "denied", "permission_denied", undefined])(
     "preserves native tool non-execution metadata %s without inferring a denial from text",
