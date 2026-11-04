@@ -963,15 +963,17 @@ impl V2Host {
         }
     }
 
-    /// Stops the server a runtime record names, or signals nothing when the pid can no
-    /// longer be confirmed as that server; the caller removes the record either way.
+    /// Stops the server a runtime record names, or signals nothing when its pid is gone or
+    /// runs another program; the caller then removes the record. Fails while unconfirmed.
     async fn stop_recorded_server(&self, record: &ServerRuntime) -> Result<(), String> {
         let source = format!("named by {}", runtime_path(&self.base_dir).display());
         self.stop_confirmed_server(record.pid, record.started_at.as_deref(), &source)
             .await
     }
 
-    /// Signals `pid` only while it is still the server that started at `started_at`.
+    /// Signals `pid` only while it is still the server that started at `started_at`. A pid
+    /// proven gone or foreign is `Ok` without a signal; one that may still be the server
+    /// is an error, so the caller keeps its record instead of orphaning a live server.
     async fn stop_confirmed_server(
         &self,
         pid: i32,
@@ -985,16 +987,24 @@ impl V2Host {
         let identity = self.processes.identity(pid as u32);
         match confirm_server_identity(pid, started_at, self.server_program(), identity.as_ref()) {
             Ok(()) => stop_server(&*self.processes, pid).await,
-            Err(reason) => {
+            Err(Refusal::Foreign(reason)) => {
                 eprintln!(
                     "houston-tauri: not signalling pid {pid} ({source}): {reason}; treating its server as gone"
                 );
                 Ok(())
             }
+            Err(Refusal::Unconfirmed(reason)) => {
+                let error = format!(
+                    "not restarting the v2 server: pid {pid} ({source}) may still be it, but {reason}; stop that process yourself if it is not the server, then retry"
+                );
+                self.record_error(error.clone());
+                Err(error)
+            }
         }
     }
 
-    /// The runtime record is removed only once its server is stopped or found gone.
+    /// The runtime record is removed only once its server is stopped or found gone; an
+    /// unconfirmed server fails the restart and keeps both its record and its tracking.
     async fn stop_for_restart(&self) -> Result<(), String> {
         match self.restart_target() {
             Some(RestartTarget::Tracked(running)) => {
@@ -1265,9 +1275,19 @@ enum RestartTarget {
 }
 
 // A server writes startedAt after it starts, so its creation precedes it. Linux's
-// truncated boot time only makes creation read earlier; the slack absorbs a wall-clock
-// step between the start and the check, which moves the boot time Linux reports.
+// truncated boot time only reads earlier; the slack absorbs a small wall-clock step,
+// which moves Linux's boot time. A larger one refuses the restart with an error.
 const RECORD_START_TOLERANCE: Duration = Duration::from_secs(2);
+
+/// Why a pid is not signalled as the server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Refusal {
+    /// The pid runs another program, so its server is gone and its record is stale.
+    Foreign(String),
+    /// The pid may still be the server: its identity is unreadable (always so on macOS,
+    /// where a tracked server is never signalled), or its start time cannot vouch for it.
+    Unconfirmed(String),
+}
 
 /// A server's pid is reused once it exits, so the pid is signalled only while it runs
 /// this host's server program and was created no later than the server's runtime record
@@ -1277,30 +1297,35 @@ fn confirm_server_identity(
     started_at: Option<&str>,
     program: &Path,
     identity: Option<&ProcessIdentity>,
-) -> Result<(), String> {
-    let started = started_at.and_then(parse_utc_timestamp).ok_or_else(|| {
-        format!(
-            "the record's startedAt {started_at:?} is not an ISO-8601 UTC time such as 2026-01-01T00:00:00.000Z"
+) -> Result<(), Refusal> {
+    let identity = identity.ok_or_else(|| {
+        Refusal::Unconfirmed(
+            "its image and creation time cannot be read on this system".to_string(),
         )
     })?;
-    let identity = identity.ok_or_else(|| {
-        format!("pid {pid} names no process whose image and creation time can be read")
-    })?;
     if !same_program(&identity.image, program) {
-        return Err(format!(
+        return Err(Refusal::Foreign(format!(
             "pid {pid} runs {}, expected the server program {}",
             identity.image.display(),
             program.display()
-        ));
+        )));
     }
-    if let Ok(late) = identity
+    let started = started_at.and_then(parse_utc_timestamp).ok_or_else(|| {
+        Refusal::Unconfirmed(format!(
+            "its startedAt {started_at:?} is not an ISO-8601 UTC time such as 2026-01-01T00:00:00.000Z"
+        ))
+    })?;
+    if identity
         .created
         .duration_since(started + RECORD_START_TOLERANCE)
+        .is_ok()
     {
-        return Err(format!(
-            "pid {pid} was created {late:?} after the record's startedAt {} plus {RECORD_START_TOLERANCE:?}",
+        return Err(Refusal::Unconfirmed(format!(
+            "it runs the server program and reads as created at {}, later than its startedAt {} plus the {}s limit (a wall-clock step since it started reads this way too)",
+            format_utc_timestamp(identity.created),
             started_at.unwrap_or_default(),
-        ));
+            RECORD_START_TOLERANCE.as_secs(),
+        )));
     }
     Ok(())
 }
@@ -1361,6 +1386,33 @@ fn parse_utc_timestamp(text: &str) -> Option<SystemTime> {
     let days = (era * 146_097 + day_of_era).checked_sub(719_468)?;
     let seconds = days * 86_400 + hour * 3_600 + minute * 60 + second;
     Some(UNIX_EPOCH + Duration::from_secs(seconds) + Duration::from_millis(millis))
+}
+
+/// Formats a time as `YYYY-MM-DDTHH:MM:SS.fffZ`, the inverse of `parse_utc_timestamp`.
+fn format_utc_timestamp(time: SystemTime) -> String {
+    let since = time.duration_since(UNIX_EPOCH).unwrap_or_default();
+    let (days, rest) = (since.as_secs() / 86_400, since.as_secs() % 86_400);
+    // Civil date from days since 1970-01-01, with years counted from March.
+    let z = days + 719_468;
+    let (era, day_of_era) = (z / 146_097, z % 146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted_month = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * shifted_month + 2) / 5 + 1;
+    let month = if shifted_month < 10 {
+        shifted_month + 3
+    } else {
+        shifted_month - 9
+    };
+    let year = era * 400 + year_of_era + u64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}Z",
+        rest / 3_600,
+        rest % 3_600 / 60,
+        rest % 60,
+        since.subsec_millis()
+    )
 }
 
 /// The process queries and signals a server stop needs. Tests substitute a fake,
@@ -2209,18 +2261,29 @@ mod tests {
 
         assert_eq!(confirm(&server_identity(-30)), Ok(()));
         assert_eq!(confirm(&server_identity(1)), Ok(()), "within the tolerance");
-        let late = confirm(&server_identity(3)).expect_err("created after the record");
-        assert!(late.contains("4242") && late.contains(STARTED_AT), "{late}");
-
-        let foreign = ProcessIdentity {
-            image: PathBuf::from("bin").join("editor.exe"),
-            ..server_identity(-30)
+        let Err(Refusal::Unconfirmed(late)) = confirm(&server_identity(3)) else {
+            panic!("a late creation may be a wall-clock step, not another process");
         };
-        let error = confirm(&foreign).expect_err("another program");
-        assert!(error.contains("editor.exe"), "{error}");
         assert!(
-            confirm_server_identity(record.pid, record.started_at.as_deref(), node, None).is_err()
+            late.contains(STARTED_AT) && late.contains("2026-11-04T10:00:03.000Z"),
+            "{late}"
         );
+
+        let Err(Refusal::Foreign(error)) = confirm(&foreign_identity()) else {
+            panic!("another program");
+        };
+        assert!(
+            error.contains("4242") && error.contains("editor.exe"),
+            "{error}"
+        );
+        assert!(matches!(
+            confirm_server_identity(record.pid, record.started_at.as_deref(), node, None),
+            Err(Refusal::Unconfirmed(_))
+        ));
+        assert!(matches!(
+            confirm_server_identity(record.pid, None, node, Some(&foreign_identity())),
+            Err(Refusal::Foreign(_))
+        ));
 
         let installed = Path::new("new-install")
             .join(BUNDLED_SERVER_DIR)
@@ -2260,6 +2323,15 @@ mod tests {
             at(1_709_164_800, 500)
         );
         assert_eq!(parse_utc_timestamp(STARTED_AT), at(STARTED_AT_UNIX, 0));
+        for text in [
+            STARTED_AT,
+            "1970-01-01T00:00:00.000Z",
+            "2024-02-29T23:59:59.999Z",
+            "2000-03-01T00:00:00.000Z",
+        ] {
+            let time = parse_utc_timestamp(text).expect(text);
+            assert_eq!(format_utc_timestamp(time), text);
+        }
         assert_eq!(
             parse_utc_timestamp("2026-11-04T10:00:00.123456Z"),
             at(STARTED_AT_UNIX, 123)
@@ -2283,6 +2355,7 @@ mod tests {
     /// Records each signal instead of delivering it; a signalled pid then reads as exited.
     #[derive(Default)]
     struct FakeProcesses {
+        exited: bool,
         identity: Option<ProcessIdentity>,
         real_identity: bool,
         refuse_signals: bool,
@@ -2291,7 +2364,7 @@ mod tests {
 
     impl ServerProcesses for FakeProcesses {
         fn exited(&self, _pid: i32) -> bool {
-            !self.signals.lock().unwrap().is_empty()
+            self.exited || !self.signals.lock().unwrap().is_empty()
         }
 
         fn identity(&self, pid: u32) -> Option<ProcessIdentity> {
@@ -2378,8 +2451,14 @@ mod tests {
         );
     }
 
+    fn last_error(host: &V2Host) -> Option<String> {
+        host.state.lock().unwrap().last_error.clone()
+    }
+
+    /// The pid runs the server program, so a creation time that reads late (a wall-clock
+    /// step moves Linux's boot time) proves nothing: the record and the server stay.
     #[tokio::test]
-    async fn a_retry_never_signals_a_pid_created_after_the_record_started() {
+    async fn a_retry_keeps_the_record_of_a_server_program_whose_creation_reads_late() {
         let dir = tempfile::tempdir().expect("temp dir");
         write_record(dir.path(), RECORDED_PID, Some(STARTED_AT));
         let (host, signals) = host_with_processes(
@@ -2389,32 +2468,66 @@ mod tests {
                 ..FakeProcesses::default()
             },
         );
-        host.stop_for_restart()
+        let error = host
+            .stop_for_restart()
             .await
-            .expect("a reused pid is no failure");
+            .expect_err("an unconfirmed server stops the restart");
         assert_eq!(*signals.lock().unwrap(), []);
-        assert!(
-            !runtime_path(dir.path()).exists(),
-            "the stale record is removed"
-        );
+        assert!(runtime_path(dir.path()).exists(), "the record is kept");
+        for part in ["4242", STARTED_AT, "2026-11-04T10:01:00.000Z", "2s"] {
+            assert!(error.contains(part), "{part} in {error}");
+        }
+        assert_eq!(last_error(&host).as_deref(), Some(error.as_str()));
     }
 
     #[tokio::test]
-    async fn a_retry_never_signals_a_record_without_a_start_time() {
+    async fn a_retry_keeps_a_record_whose_server_cannot_be_confirmed() {
+        for (what, identity, started_at) in [
+            ("no readable process", None, Some(STARTED_AT)),
+            ("no start time", Some(server_identity(-1)), None),
+        ] {
+            let dir = tempfile::tempdir().expect("temp dir");
+            write_record(dir.path(), RECORDED_PID, started_at);
+            let (host, signals) = host_with_processes(
+                dir.path(),
+                FakeProcesses {
+                    identity,
+                    ..FakeProcesses::default()
+                },
+            );
+            let error = host
+                .stop_for_restart()
+                .await
+                .expect_err("an unconfirmed server stops the restart");
+            assert_eq!(*signals.lock().unwrap(), [], "{what}");
+            assert!(
+                runtime_path(dir.path()).exists(),
+                "{what}: the record is kept"
+            );
+            assert!(error.contains("4242"), "{what}: {error}");
+            assert_eq!(last_error(&host).as_deref(), Some(error.as_str()), "{what}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_retry_removes_the_record_of_a_server_that_already_exited() {
         let dir = tempfile::tempdir().expect("temp dir");
-        write_record(dir.path(), RECORDED_PID, None);
+        write_record(dir.path(), RECORDED_PID, Some(STARTED_AT));
+        // Its identity would refuse the pid, so only the early exit check lets it pass.
         let (host, signals) = host_with_processes(
             dir.path(),
             FakeProcesses {
-                identity: Some(server_identity(-1)),
+                exited: true,
+                identity: Some(server_identity(60)),
                 ..FakeProcesses::default()
             },
         );
         host.stop_for_restart()
             .await
-            .expect("an unconfirmed record is no failure");
+            .expect("an exited server is stopped");
         assert_eq!(*signals.lock().unwrap(), []);
         assert!(!runtime_path(dir.path()).exists());
+        assert_eq!(last_error(&host), None);
     }
 
     #[tokio::test]
@@ -2482,12 +2595,44 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn a_restart_never_signals_a_tracked_pid_that_no_longer_runs_its_server() {
-        let foreign = ProcessIdentity {
+    fn foreign_identity() -> ProcessIdentity {
+        ProcessIdentity {
             image: PathBuf::from("bin").join("editor.exe"),
             ..server_identity(-30)
-        };
+        }
+    }
+
+    #[tokio::test]
+    async fn a_restart_forgets_a_tracked_pid_that_runs_another_program_or_exited() {
+        for (what, exited, identity) in [
+            ("another program", false, Some(foreign_identity())),
+            ("already exited", true, Some(server_identity(60))),
+        ] {
+            let dir = tempfile::tempdir().expect("temp dir");
+            write_record(dir.path(), RECORDED_PID, Some(STARTED_AT));
+            let (host, signals) = host_with_processes(
+                dir.path(),
+                FakeProcesses {
+                    exited,
+                    identity,
+                    ..FakeProcesses::default()
+                },
+            );
+            host.set_running(tracked_server());
+            host.stop_for_restart()
+                .await
+                .expect("a gone server is no failure");
+            assert_eq!(*signals.lock().unwrap(), [], "{what}");
+            assert!(host.running().is_none(), "{what}: the server is forgotten");
+            assert!(
+                !runtime_path(dir.path()).exists(),
+                "{what}: the record is removed"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_restart_keeps_a_tracked_server_it_cannot_confirm() {
         let unconfirmed = RunningServer {
             started_at: None,
             ..tracked_server()
@@ -2498,7 +2643,6 @@ mod tests {
                 Some(server_identity(60)),
                 tracked_server(),
             ),
-            ("another program", Some(foreign), tracked_server()),
             ("no readable process", None, tracked_server()),
             (
                 "no recorded start time",
@@ -2507,6 +2651,7 @@ mod tests {
             ),
         ] {
             let dir = tempfile::tempdir().expect("temp dir");
+            write_record(dir.path(), RECORDED_PID, Some(STARTED_AT));
             let (host, signals) = host_with_processes(
                 dir.path(),
                 FakeProcesses {
@@ -2514,12 +2659,23 @@ mod tests {
                     ..FakeProcesses::default()
                 },
             );
-            host.set_running(tracked);
-            host.stop_for_restart()
+            host.set_running(tracked.clone());
+            let error = host
+                .stop_for_restart()
                 .await
-                .expect("a reused pid is no failure");
+                .expect_err("an unconfirmed server stops the restart");
             assert_eq!(*signals.lock().unwrap(), [], "{what}");
-            assert!(host.running().is_none(), "{what}: the server is forgotten");
+            assert_eq!(
+                host.running(),
+                Some(tracked),
+                "{what}: the server stays tracked"
+            );
+            assert!(
+                runtime_path(dir.path()).exists(),
+                "{what}: the record is kept"
+            );
+            assert!(error.contains("4242"), "{what}: {error}");
+            assert_eq!(last_error(&host).as_deref(), Some(error.as_str()), "{what}");
         }
     }
 
@@ -2545,7 +2701,7 @@ mod tests {
             exposure_mode: "network-accessible".to_string(),
             ..DesktopSettings::default()
         };
-        let reused = (server_identity(60), vec![]);
+        let reused = (foreign_identity(), vec![]);
         let holds = (server_identity(-1), vec![(RECORDED_PID, Signal::Term)]);
         for (identity, expected) in [reused, holds] {
             for via_settings in [false, true] {

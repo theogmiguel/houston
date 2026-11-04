@@ -157,7 +157,8 @@ pub fn process_identity(pid: u32) -> Option<ProcessIdentity> {
     Some(ProcessIdentity { image, created })
 }
 
-/// No identity query exists here, so a pid read from a file is never confirmed.
+/// No identity query exists here, so no pid is ever confirmed: a server restart never
+/// signals the tracked or recorded server and fails with an error instead.
 #[cfg(all(unix, not(target_os = "linux")))]
 pub fn process_identity(pid: u32) -> Option<ProcessIdentity> {
     let _ = pid;
