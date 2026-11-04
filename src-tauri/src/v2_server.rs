@@ -564,6 +564,8 @@ fn process_alive(pid: i32) -> bool {
 /// No idle connections are kept, so a probe never reuses a socket to a server
 /// that has since died and misreads that as a crash.
 fn http_client() -> &'static reqwest::Client {
+    #[cfg(test)]
+    tests::CLIENT_USES.with(|uses| uses.set(uses.get() + 1));
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
@@ -1393,6 +1395,21 @@ pub const BOOTSTRAP_WEBVIEWS: [&str; 2] = ["main", crate::quick_composer::WINDOW
 /// Refreshes the bridge's bootstrap and status globals and tells the renderer.
 /// The renderer's environment poll reads the globals synchronously every few seconds.
 pub fn publish_snapshot(app: &AppHandle, host: &V2Host) {
+    let status = refresh_webviews(host, |label, script| {
+        app.get_webview(label)
+            .map(|webview| webview.eval(script).map_err(|error| error.to_string()))
+    });
+    if let Err(error) = app.emit(EVENT_STATUS, &status) {
+        eprintln!("houston-tauri: could not emit {EVENT_STATUS}: {error}");
+    }
+}
+
+/// Evaluates the globals in every app webview; `eval` answers `None` for one
+/// that is not open. Returns the status it published.
+fn refresh_webviews(
+    host: &V2Host,
+    mut eval: impl FnMut(&str, &str) -> Option<Result<(), String>>,
+) -> Value {
     let bootstrap = host
         .bootstrap_list()
         .unwrap_or_else(|_| serde_json::json!([]));
@@ -1401,17 +1418,11 @@ pub fn publish_snapshot(app: &AppHandle, host: &V2Host) {
         "window.__HOUSTON_V2_BOOTSTRAP__ = {bootstrap};\nwindow.__HOUSTON_V2_STATUS__ = {status};"
     );
     for label in BOOTSTRAP_WEBVIEWS {
-        if let Some(webview) = app.get_webview(label) {
-            if let Err(error) = webview.eval(&script) {
-                eprintln!(
-                    "houston-tauri: could not refresh the {label} webview's bootstrap: {error}"
-                );
-            }
+        if let Some(Err(error)) = eval(label, &script) {
+            eprintln!("houston-tauri: could not refresh the {label} webview's bootstrap: {error}");
         }
     }
-    if let Err(error) = app.emit(EVENT_STATUS, &status) {
-        eprintln!("houston-tauri: could not emit {EVENT_STATUS}: {error}");
-    }
+    status
 }
 
 #[tauri::command]
@@ -1995,8 +2006,22 @@ mod tests {
 
     #[test]
     fn the_bootstrap_reaches_every_app_webview() {
-        assert!(BOOTSTRAP_WEBVIEWS.contains(&"main"));
-        assert!(BOOTSTRAP_WEBVIEWS.contains(&crate::quick_composer::WINDOW_LABEL));
+        let dir = tempfile::tempdir().expect("temp dir");
+        let (host, _) = host_with_secret(dir.path(), || Ok("k".repeat(64)));
+        host.set_running(running_server(42));
+        let mut evaluated = Vec::new();
+        refresh_webviews(&host, |label, script| {
+            evaluated.push((label.to_string(), script.to_string()));
+            Some(Ok(()))
+        });
+        let labels: Vec<&str> = evaluated.iter().map(|(label, _)| label.as_str()).collect();
+        assert_eq!(labels, ["main", crate::quick_composer::WINDOW_LABEL]);
+        for (label, script) in &evaluated {
+            assert!(
+                script.contains("http://127.0.0.1:3773"),
+                "{label} receives the running origin: {script}"
+            );
+        }
     }
 
     #[test]
@@ -2016,9 +2041,30 @@ mod tests {
         assert_eq!(ready_poll_delay(Duration::from_secs(170)), READY_POLL);
     }
 
-    #[test]
-    fn probes_share_one_http_client() {
+    thread_local! {
+        pub(super) static CLIENT_USES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+
+    #[tokio::test]
+    async fn probes_share_one_http_client() {
         assert!(std::ptr::eq(http_client(), http_client()));
+        let dir = tempfile::tempdir().expect("temp dir");
+        let (host, _) = host_with_secret(dir.path(), || Ok("k".repeat(64)));
+        // Nothing listens on loopback port 9 here, so each request fails fast.
+        host.set_running(RunningServer {
+            origin: "http://127.0.0.1:9".to_string(),
+            port: 9,
+            pid: 42,
+            attached: false,
+        });
+        let before = CLIENT_USES.with(|uses| uses.get());
+        assert!(!health_ok("http://127.0.0.1:9").await);
+        assert!(host.fetch_bearer().await.is_err());
+        assert_eq!(
+            CLIENT_USES.with(|uses| uses.get()) - before,
+            2,
+            "the health probe and the credential exchange use the shared client"
+        );
     }
 
     #[test]
