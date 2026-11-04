@@ -4,6 +4,7 @@
  * the compositor moves the card and WebKitGTK never repaints a resized cell
  * mid-animation.
  */
+import { probeCellMoveFrames } from "./frameProbe";
 import { useLayoutEffect, useRef, type RefObject } from "react";
 
 import { MotionAnimation, playMotion, toDevicePixel, type MotionRun } from "./animation";
@@ -83,6 +84,8 @@ export function animateCellMove(
   root: HTMLElement,
   previous: ReadonlyMap<string, CellPosition>,
 ): void {
+  let probedCells = 0;
+  let probedMs = 0;
   for (const [threadId, now] of measureCells(root)) {
     const was = previous.get(threadId);
     if (was === undefined) continue;
@@ -102,6 +105,8 @@ export function animateCellMove(
     const keyframe = (progress: number): Keyframe => ({
       transform: `translate(${toDevicePixel(dx * progress)}px, ${toDevicePixel(dy * progress)}px)`,
     });
+    probedCells += 1;
+    probedMs = Math.max(probedMs, motion.durationMs);
     markFlipping(root, 1);
     const entry: Running = {
       dx,
@@ -115,6 +120,7 @@ export function animateCellMove(
     };
     runs.set(now.element, entry);
   }
+  probeCellMoveFrames(probedCells, probedMs);
 }
 
 /**
