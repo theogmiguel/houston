@@ -1,6 +1,6 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@houston-app/contracts";
-import { EllipsisIcon, Maximize2Icon, XIcon } from "lucide-react";
+import { EllipsisIcon, Maximize2Icon, Minimize2Icon, XIcon } from "lucide-react";
 import {
   useEffect,
   useState,
@@ -270,7 +270,7 @@ export function GridThreadCell({
               />
             }
           >
-            <Maximize2Icon />
+            {maximized ? <Minimize2Icon /> : <Maximize2Icon />}
           </TooltipTrigger>
           <TooltipPopup side="bottom">{maximized ? "Restore cell" : "Maximize cell"}</TooltipPopup>
         </Tooltip>
@@ -360,10 +360,10 @@ export function GridThreadCell({
       className={cn(
         "group/pane relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden",
         density === "solo" && "[&_.chat-content-lane]:max-w-[45rem]",
-        // A composer drawer keeps the stacked card: the compact row would squeeze the
-        // question panel and textarea into zero-width flex columns.
+        // A composer drawer or notice keeps the stacked card: the compact row would squeeze
+        // the question panel, the notices and the textarea into zero-width flex columns.
         density === "compact" &&
-          "[&_[data-thread-find-text]]:line-clamp-5 [&_[data-chat-composer-resting-row]]:hidden [&_[data-chat-composer-surface]:not(:has([data-chat-composer-top-drawer]))]:flex [&_[data-chat-composer-surface]:not(:has([data-chat-composer-top-drawer]))]:items-center [&_[data-chat-composer-body]]:min-w-0 [&_[data-chat-composer-body]]:flex-1 [&_[data-chat-composer-body]]:pt-2 [&_[data-chat-composer-body]]:pb-2 [&_[data-chat-composer-footer]]:w-auto [&_[data-chat-composer-footer]]:shrink-0 [&_[data-chat-composer-footer]]:pb-2",
+          "[&_[data-thread-find-text]]:line-clamp-5 [&_[data-chat-composer-resting-row]]:hidden [&_[data-chat-composer-surface]:not(:has([data-chat-composer-top-drawer],[data-composer-banner-shelf]))]:flex [&_[data-chat-composer-surface]:not(:has([data-chat-composer-top-drawer],[data-composer-banner-shelf]))]:items-center [&_[data-chat-composer-body]]:min-w-0 [&_[data-chat-composer-body]]:flex-1 [&_[data-chat-composer-body]]:pt-2 [&_[data-chat-composer-body]]:pb-2 [&_[data-chat-composer-footer]]:w-auto [&_[data-chat-composer-footer]]:shrink-0 [&_[data-chat-composer-footer]]:pb-2",
         density === "glance" &&
           "[&_[data-chat-composer-resting-row]]:hidden [&_[data-thread-find-text]]:line-clamp-3 [&_[data-changed-files-state=tree]]:hidden [&_[data-changed-files-bar]]:hidden",
       )}
@@ -415,7 +415,8 @@ export function GridThreadCell({
               />
             </GridPaneRename>
           ) : null}
-          <GridPaneActions>{paneActions(false)}</GridPaneActions>
+          {/* A maximized cell has no label, so its way back sits with the other actions. */}
+          <GridPaneActions>{paneActions(maximized)}</GridPaneActions>
         </>
       )}
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-(--pane-label-inset)">
