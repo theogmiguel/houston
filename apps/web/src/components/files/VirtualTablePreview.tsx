@@ -134,7 +134,7 @@ export default function VirtualTablePreview(props: {
           {!props.source ? (
             <div
               role="row"
-              className="relative z-10 flex min-h-[29px] shrink-0 border-b border-border bg-muted/60 font-medium backdrop-blur"
+              className="relative z-10 flex min-h-[29px] shrink-0 border-b border-border bg-background font-medium"
             >
               <div className="sticky left-0 z-10 w-14 shrink-0 border-r border-border bg-background" />
               <div style={{ width: offset(firstColumn), flexShrink: 0 }} />

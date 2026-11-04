@@ -256,7 +256,7 @@ function OpenContentSearchDialog(props: {
               const path = splitPath(group.path);
               return (
                 <section className="pb-2" key={group.path}>
-                  <div className="sticky top-0 z-10 flex h-8 items-center gap-2 bg-popover/95 px-3 text-xs backdrop-blur-sm">
+                  <div className="sticky top-0 z-10 flex h-8 items-center gap-2 bg-popover px-3 text-xs">
                     <PierreEntryIcon
                       pathValue={group.path}
                       kind="file"
