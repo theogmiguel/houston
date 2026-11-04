@@ -12,6 +12,10 @@ import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./lib/chunkR
 
 const router = startAppServices();
 
+if (import.meta.env.DEV) {
+  void import("./motion/motionProbe").then(({ installMotionProbe }) => installMotionProbe());
+}
+
 let chunkLoadFailed = false;
 let reloadScheduled = false;
 window.addEventListener("vite:preloadError", (event) => {
