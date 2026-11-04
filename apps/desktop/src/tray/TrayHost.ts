@@ -99,7 +99,7 @@ function messageText(item: Exclude<TrayItem, { type: "separator" }>): string {
     case "submenu":
       return item.label;
     case "quit":
-      return "Quit and keep sessions";
+      return "Quit Houston";
   }
 }
 
