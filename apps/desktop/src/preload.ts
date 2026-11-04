@@ -268,6 +268,25 @@ contextBridge.exposeInMainWorld("hostBridge", {
   getWindowFullscreenState: () =>
     ipcRenderer.sendSync(IpcChannels.GET_WINDOW_FULLSCREEN_STATE_CHANNEL) === true,
   getWindowZoomFactor: () => webFrame.getZoomFactor(),
+  closeWindow: () => ipcRenderer.invoke(IpcChannels.CLOSE_WINDOW_CHANNEL, undefined),
+  minimizeWindow: () => ipcRenderer.invoke(IpcChannels.MINIMIZE_WINDOW_CHANNEL, undefined),
+  toggleMaximizeWindow: () =>
+    ipcRenderer.invoke(IpcChannels.TOGGLE_MAXIMIZE_WINDOW_CHANNEL, undefined),
+  getWindowMaximizedState: () =>
+    ipcRenderer.sendSync(IpcChannels.GET_WINDOW_MAXIMIZED_STATE_CHANNEL) === true,
+  onWindowMaximizedStateChange: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, maximized: unknown) => {
+      if (typeof maximized !== "boolean") return;
+      listener(maximized);
+    };
+
+    ipcRenderer.on(IpcChannels.WINDOW_MAXIMIZED_STATE_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.WINDOW_MAXIMIZED_STATE_CHANNEL, wrappedListener);
+    };
+  },
+  getWindowButtonLayout: () =>
+    ipcRenderer.invoke(IpcChannels.GET_WINDOW_BUTTON_LAYOUT_CHANNEL, undefined),
   onWindowFullscreenStateChange: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, fullscreen: unknown) => {
       if (typeof fullscreen !== "boolean") return;

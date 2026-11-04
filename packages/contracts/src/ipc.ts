@@ -1225,6 +1225,17 @@ export interface HostBridge {
   getWindowFullscreenState: () => boolean;
   onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
   getWindowZoomFactor: () => number;
+  /** Houston draws the window chrome under a frameless window. */
+  closeWindow: () => Promise<void>;
+  minimizeWindow: () => Promise<void>;
+  toggleMaximizeWindow: () => Promise<void>;
+  getWindowMaximizedState: () => boolean;
+  onWindowMaximizedStateChange: (listener: (maximized: boolean) => void) => () => void;
+  /**
+   * The desktop's window button layout (`close,minimize:` style), or null when the
+   * platform fixes the buttons itself.
+   */
+  getWindowButtonLayout: () => Promise<string | null>;
   getUpdateState: () => Promise<DesktopUpdateState>;
   /** `minimumVersion` is a track switch's checked release; nothing older is offered after. */
   setUpdateChannel: (

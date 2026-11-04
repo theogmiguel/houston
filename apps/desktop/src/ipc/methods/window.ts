@@ -41,7 +41,12 @@ import * as Electron from "electron";
 import * as MacPermissions from "../../permissions/MacPermissions.ts";
 import { safariPermissionCheck } from "../../preview/BrowserImport/SafariPermission.ts";
 import * as IpcChannels from "../channels.ts";
+import type { DesktopIpcInvokeEvent } from "../DesktopIpc.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
+import {
+  readWindowButtonLayout,
+  runWindowButtonLayoutCommand,
+} from "../../window/windowButtonLayout.ts";
 import {
   extractDistroFromUncPath,
   resolveWslPickFolderDefaultPath,
@@ -112,6 +117,80 @@ export const getWindowFullscreenState = DesktopIpc.makeSyncIpcMethod({
     const electronWindow = yield* ElectronWindow.ElectronWindow;
     const window = yield* electronWindow.currentMainOrFirst;
     return Option.isSome(window) && window.value.isFullScreen();
+  }),
+});
+
+/** The window that sent the request, so a command cannot act on another one. */
+function senderWindow(event: DesktopIpcInvokeEvent | undefined): Electron.BrowserWindow | null {
+  if (event === undefined) {
+    return null;
+  }
+  const contents = Electron.webContents.fromId(event.sender.id);
+  if (contents === undefined) {
+    return null;
+  }
+  const window = Electron.BrowserWindow.fromWebContents(contents);
+  return window !== null && !window.isDestroyed() ? window : null;
+}
+
+export const closeWindow = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.CLOSE_WINDOW_CHANNEL,
+  payload: Schema.Undefined,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.closeWindow")((_input, event) =>
+    Effect.sync(() => {
+      senderWindow(event)?.close();
+    }),
+  ),
+});
+
+export const minimizeWindow = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.MINIMIZE_WINDOW_CHANNEL,
+  payload: Schema.Undefined,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.minimizeWindow")((_input, event) =>
+    Effect.sync(() => {
+      senderWindow(event)?.minimize();
+    }),
+  ),
+});
+
+export const toggleMaximizeWindow = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.TOGGLE_MAXIMIZE_WINDOW_CHANNEL,
+  payload: Schema.Undefined,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.toggleMaximizeWindow")((_input, event) =>
+    Effect.sync(() => {
+      const window = senderWindow(event);
+      if (window === null) {
+        return;
+      }
+      if (window.isMaximized()) {
+        window.unmaximize();
+      } else {
+        window.maximize();
+      }
+    }),
+  ),
+});
+
+export const getWindowMaximizedState = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_WINDOW_MAXIMIZED_STATE_CHANNEL,
+  result: Schema.Boolean,
+  handler: Effect.fn("desktop.ipc.window.getWindowMaximizedState")(function* () {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const window = yield* electronWindow.currentMainOrFirst;
+    return Option.isSome(window) && window.value.isMaximized();
+  }),
+});
+
+export const getWindowButtonLayout = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.GET_WINDOW_BUTTON_LAYOUT_CHANNEL,
+  payload: Schema.Undefined,
+  result: Schema.NullOr(Schema.String),
+  handler: Effect.fn("desktop.ipc.window.getWindowButtonLayout")(function* () {
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    return yield* readWindowButtonLayout(environment.platform, runWindowButtonLayoutCommand);
   }),
 });
 

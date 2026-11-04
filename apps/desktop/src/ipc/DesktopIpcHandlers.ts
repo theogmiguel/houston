@@ -38,7 +38,11 @@ import {
   getLocalEnvironmentBearerToken,
   installRelayTelemetryEnabled,
   getSystemLocale,
+  closeWindow,
+  getWindowButtonLayout,
   getWindowFullscreenState,
+  getWindowMaximizedState,
+  minimizeWindow,
   openExternal,
   openSystemSettings,
   checkSystemPermission,
@@ -50,6 +54,7 @@ import {
   pickThemeFiles,
   setTheme,
   showContextMenu,
+  toggleMaximizeWindow,
 } from "./methods/window.ts";
 import {
   acknowledgeSnapShot,
@@ -94,6 +99,11 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* installRelayTelemetryEnabled();
   yield* ipc.handleSync(getSystemLocale);
   yield* ipc.handleSync(getWindowFullscreenState);
+  yield* ipc.handleSync(getWindowMaximizedState);
+  yield* ipc.handle(closeWindow);
+  yield* ipc.handle(minimizeWindow);
+  yield* ipc.handle(toggleMaximizeWindow);
+  yield* ipc.handle(getWindowButtonLayout);
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
   yield* ipc.handleSync(getLocalEnvironmentEnabled);
   yield* ipc.handle(setLocalEnvironmentEnabled);
