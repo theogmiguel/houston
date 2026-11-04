@@ -799,6 +799,9 @@ struct HostState {
     settings: DesktopSettings,
 }
 
+/// Reads (or creates) the desktop secret; the keychain in production, a fake in tests.
+type SecretSource = dyn Fn(&Path) -> Result<String, String> + Send + Sync;
+
 pub struct V2Host {
     base_dir: PathBuf,
     node: PathBuf,
@@ -806,11 +809,24 @@ pub struct V2Host {
     state: Mutex<HostState>,
     start_lock: tokio::sync::Mutex<()>,
     starting: AtomicBool,
+    secret_source: Box<SecretSource>,
+    /// The keychain secret once read: it is written only when first created, so
+    /// it stays valid for the process and later reads cost no keychain I/O.
+    secret: Mutex<Option<String>>,
     fallback_secret: Mutex<Option<String>>,
 }
 
 impl V2Host {
     pub fn new(base_dir: PathBuf, node: PathBuf, entry: ServerEntry) -> Self {
+        Self::with_secret_source(base_dir, node, entry, Box::new(load_or_create_secret))
+    }
+
+    fn with_secret_source(
+        base_dir: PathBuf,
+        node: PathBuf,
+        entry: ServerEntry,
+        secret_source: Box<SecretSource>,
+    ) -> Self {
         let settings = load_settings(&base_dir).unwrap_or_else(|error| {
             eprintln!("houston-tauri: v2 desktop settings: {error}; using defaults");
             DesktopSettings::default()
@@ -828,6 +844,8 @@ impl V2Host {
             }),
             start_lock: tokio::sync::Mutex::new(()),
             starting: AtomicBool::new(false),
+            secret_source,
+            secret: Mutex::new(None),
             fallback_secret: Mutex::new(None),
         }
     }
@@ -911,9 +929,16 @@ impl V2Host {
 
     /// The keychain secret is preferred; a session without a Secret Service provider
     /// still gets a server, with a visible warning that the credential is temporary.
+    /// The lock is held across the read so concurrent first reads cannot create two.
     fn desktop_secret(&self) -> String {
-        match load_or_create_secret(&self.base_dir) {
+        let mut cached = self.secret.lock().expect("desktop secret mutex");
+        if let Some(secret) = cached.as_ref() {
+            return secret.clone();
+        }
+        match (self.secret_source)(&self.base_dir) {
             Ok(secret) => {
+                *cached = Some(secret.clone());
+                drop(cached);
                 self.set_warning(None);
                 secret
             }
@@ -1169,6 +1194,9 @@ async fn ensure_running_locked(host: &V2Host) -> Result<RunningServer, String> {
             host.base_dir.display()
         )
     })?;
+    // Read before `running` is set, so the bootstrap reads that follow (page load
+    // and quick composer on the main thread) find the secret cached.
+    let secret = host.desktop_secret();
 
     if let Some(record) = read_runtime(&host.base_dir) {
         match decide(
@@ -1204,7 +1232,6 @@ async fn ensure_running_locked(host: &V2Host) -> Result<RunningServer, String> {
         }
     }
 
-    let secret = host.desktop_secret();
     let settings = host.settings();
     let bind_host = if settings.exposure_mode == "network-accessible" {
         "0.0.0.0"
@@ -1789,6 +1816,69 @@ mod tests {
         );
         assert_eq!(status.ipv4, ["100.100.100.100"]);
         assert!(parse_tailscale_status("not json").is_none());
+    }
+
+    fn host_with_secret(
+        dir: &Path,
+        source: impl Fn() -> Result<String, String> + Send + Sync + 'static,
+    ) -> (V2Host, Arc<std::sync::atomic::AtomicUsize>) {
+        let reads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = Arc::clone(&reads);
+        let host = V2Host::with_secret_source(
+            dir.to_path_buf(),
+            PathBuf::from("node"),
+            ServerEntry::Node(dir.join("bin.mjs")),
+            Box::new(move |_| {
+                counter.fetch_add(1, Ordering::SeqCst);
+                source()
+            }),
+        );
+        (host, reads)
+    }
+
+    fn running_server(pid: i32) -> RunningServer {
+        RunningServer {
+            origin: "http://127.0.0.1:3773".to_string(),
+            port: 3773,
+            pid,
+            attached: false,
+        }
+    }
+
+    #[test]
+    fn a_launch_reads_the_keychain_secret_once() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let (host, reads) = host_with_secret(dir.path(), || Ok("k".repeat(64)));
+        // The start reads it, then the startup publish, the page-load publish, a
+        // quick composer open and the bearer exchange read it again.
+        let secret = host.desktop_secret();
+        host.set_running(running_server(42));
+        for _ in 0..3 {
+            let bootstrap = host.bootstrap_list().expect("running");
+            assert_eq!(
+                bootstrap[0]["bootstrapToken"],
+                current_desktop_bootstrap_token(&secret, now_ms())
+            );
+        }
+        assert_eq!(host.desktop_secret(), secret);
+        assert_eq!(reads.load(Ordering::SeqCst), 1, "keychain reads per launch");
+    }
+
+    #[test]
+    fn an_unavailable_keychain_is_retried_behind_one_temporary_secret() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let (host, reads) = host_with_secret(dir.path(), || Err("locked".to_string()));
+        let first = host.desktop_secret();
+        let second = host.desktop_secret();
+        assert_eq!(first, second, "the temporary secret is stable for the run");
+        assert_eq!(
+            reads.load(Ordering::SeqCst),
+            2,
+            "an unlocked keychain is picked up"
+        );
+        assert!(host.status()["warning"]
+            .as_str()
+            .is_some_and(|w| w.contains("locked")));
     }
 
     #[test]
