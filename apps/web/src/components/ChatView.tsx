@@ -28,6 +28,7 @@ import { useThreadOpen } from "./grid/threadOpenContext";
 import { useRightPanelActions } from "./chat/useRightPanelActions";
 import { type TerminalLaunchContext, useChatTerminalActions } from "./chat/useChatTerminalActions";
 import { useComposerSend } from "./chat/useComposerSend";
+import { ResumeSessionDialog } from "./ui/resume-session-dialog";
 import { useComposerResume } from "./chat/useComposerResume";
 import { useImplementPlanInNewThread } from "./chat/useProposedPlanSend";
 import { ThreadFind, ThreadFindCanvas } from "./chat/ThreadFindProvider";
@@ -721,6 +722,7 @@ export default function ChatView(props: ChatViewProps) {
   };
   const citeAssistantTextStable = useStableCallback(citeAssistantText);
   const [isWorkspaceFileDragActive, setIsWorkspaceFileDragActive] = useState(false);
+  const [resumeSessionOpen, setResumeSessionOpen] = useState(false);
   const [optimisticBlobPreviews] = useState(createOptimisticBlobPreviews);
   const [heldOptimisticUserMessages, setHeldOptimisticUserMessages] = useState(() =>
     emptyOptimisticUserMessages(threadId),
@@ -1418,6 +1420,8 @@ export default function ChatView(props: ChatViewProps) {
   const handleOpenClaudeInChromeSettingsStable = useStableCallback(
     handleOpenClaudeInChromeSettings,
   );
+  const handleOpenResumeSession = () => setResumeSessionOpen(true);
+  const handleOpenResumeSessionStable = useStableCallback(handleOpenResumeSession);
   const { enabled: interactionModeEnabled, interactionMode } = resolveComposerInteractionMode({
     planModeEnabled: settings.planModeEnabled,
     provider: activeProviderStatus,
@@ -3181,6 +3185,7 @@ export default function ChatView(props: ChatViewProps) {
     onSideChat: sideChat.available ? sendSideChatStable : undefined,
     onClaudeInChromeCommand:
       selectedProvider === "claudeAgent" ? handleOpenClaudeInChromeSettingsStable : undefined,
+    onResumeCommand: activeProject !== null ? handleOpenResumeSessionStable : undefined,
     sideChatDisabledReason,
     handleNewThreadInActiveProject,
     persistThreadSettingsForNextTurn,
@@ -3917,6 +3922,9 @@ export default function ChatView(props: ChatViewProps) {
                                   : undefined
                               }
                               shellCommandUnavailableReason={composerShellCommandUnavailableReason}
+                              onResumeCommand={
+                                activeProject !== null ? handleOpenResumeSessionStable : undefined
+                              }
                               environmentUnavailable={activeEnvironmentUnavailableState}
                               activePendingApproval={activePendingApproval}
                               pendingApprovals={pendingApprovals}
@@ -4217,6 +4225,13 @@ export default function ChatView(props: ChatViewProps) {
         : null}
 
       <RevertConfirmHost threadKey={routeThreadKey} onConfirm={onConfirmRevertStable} />
+      <ResumeSessionDialog
+        open={resumeSessionOpen}
+        onOpenChange={setResumeSessionOpen}
+        environmentId={environmentId}
+        projectId={activeProject?.id ?? null}
+        projectWorkspaceRoot={activeProject?.workspaceRoot ?? null}
+      />
       {embedded ? null : <LinkPullRequestDialogHost />}
       <ThreadVisitWatermark
         threadRef={routeThreadRef}

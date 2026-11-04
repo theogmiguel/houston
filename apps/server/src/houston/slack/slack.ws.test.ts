@@ -120,6 +120,7 @@ import * as WorktreeSetupTracker from "../../project/WorktreeSetupTracker.ts";
 import { layerWsRpc, WS_RPC_SERVER_OPTIONS } from "../../ws.ts";
 import * as ServerConfig from "../../config.ts";
 import { layerJsonWithoutEcho } from "../rpcSerialization.ts";
+import * as HoustonResumeSessions from "../resumeSessions.ts";
 import * as HoustonReviewState from "../reviewState.ts";
 import * as HoustonMergeQueueService from "../mergeQueue/Service.ts";
 import { makeMemory } from "../secrets/HoustonKeychain.ts";
@@ -167,6 +168,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(GitWorkflowService.GitWorkflowService)({}),
   Layer.mock(HostResources.HostResources)({}),
   Layer.mock(HoustonReviewState.HoustonReviewState)({}),
+  Layer.mock(HoustonResumeSessions.HoustonResumeSessions)({}),
   Layer.mock(HoustonTaskSourceService.HoustonTaskSourceService)({}),
   Layer.mock(HoustonTaskSourceV1Import.HoustonTaskSourceV1Import)({}),
   Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),

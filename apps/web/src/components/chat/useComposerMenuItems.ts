@@ -68,6 +68,7 @@ export function useComposerMenuItems({
   sideChatAvailable,
   sideChatDisabledReason,
   compactSlashCommandAvailable,
+  activeProjectId,
   selectedProvider,
   selectedProviderSkills,
   selectedProviderSlashCommands,
@@ -87,6 +88,7 @@ export function useComposerMenuItems({
   readonly sideChatAvailable: boolean;
   readonly sideChatDisabledReason: string | null;
   readonly compactSlashCommandAvailable: boolean;
+  readonly activeProjectId: ProjectId | null;
   readonly selectedProvider: ProviderDriverKind;
   readonly selectedProviderSkills: ServerProvider["skills"];
   readonly selectedProviderSlashCommands: ServerProvider["slashCommands"];
@@ -222,6 +224,7 @@ export function useComposerMenuItems({
         sideChatAvailable,
         sideChatDisabledReason,
         claudeInChrome: selectedProvider === "claudeAgent",
+        resumeAvailable: activeProjectId !== null,
       });
       const slashMenuSkills = getProviderSkillsForSlashMenu(
         selectedProviderSkills,

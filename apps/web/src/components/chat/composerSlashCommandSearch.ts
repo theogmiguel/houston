@@ -179,6 +179,7 @@ export function builtInSlashCommandItems(input: {
   readonly sideChatAvailable: boolean;
   readonly sideChatDisabledReason: string | null;
   readonly claudeInChrome: boolean;
+  readonly resumeAvailable: boolean;
 }): ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>> {
   return [
     {
@@ -188,6 +189,17 @@ export function builtInSlashCommandItems(input: {
       label: "/model",
       description: "Switch response model for this thread",
     },
+    ...(input.resumeAvailable
+      ? ([
+          {
+            id: "slash:resume",
+            type: "slash-command",
+            command: "resume",
+            label: "/resume",
+            description: "Open an earlier Claude Code or Codex session",
+          },
+        ] as const)
+      : []),
     ...(input.claudeInChrome
       ? ([
           {

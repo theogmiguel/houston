@@ -84,6 +84,7 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import type * as Statement from "effect/sql/Statement";
@@ -515,6 +516,11 @@ export interface ProjectionStoreV2Shape {
     readonly includeArchived?: boolean;
   }) => Effect.Effect<
     ReadonlyArray<{ readonly threadId: ThreadId; readonly worktreePath: string }>,
+    ProjectionStoreV2Error
+  >;
+  /** Every app thread's provider threads, for resolving a native session to its thread. */
+  readonly listProviderThreadRefs: () => Effect.Effect<
+    ReadonlyArray<OrchestrationV2ProviderThread>,
     ProjectionStoreV2Error
   >;
   /**
@@ -6463,6 +6469,23 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
       );
 
+    const listProviderThreadRefs: ProjectionStoreV2Shape["listProviderThreadRefs"] = Effect.fn(
+      "ProjectionStore.listProviderThreadRefs",
+    )(
+      function* () {
+        const rows = yield* sql<PayloadRow>`
+          SELECT payload_json
+          FROM orchestration_v2_projection_provider_threads
+          WHERE thread_id IS NOT NULL
+        `;
+        const decoded = yield* Effect.forEach(rows, (row) =>
+          Effect.option(decodeProviderThreadPayload(row.payload_json)),
+        );
+        return decoded.flatMap(Option.toArray);
+      },
+      Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
+    );
+
     const shellThreadStateFromRow =
       /* Runs once per shell row; the enclosing snapshot or thread read owns the span. */
       Effect.fnUntraced(function* (input: {
@@ -7032,6 +7055,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       listActiveSubagentThreadIds: readOnReader(listActiveSubagentThreadIds),
       countThreads: readOnReader(countThreads),
       listActiveShellIndex: readOnReader(listActiveShellIndex),
+      listProviderThreadRefs: readOnReader(listProviderThreadRefs),
       readShellSnapshot: readOnReader(readShellSnapshot),
       listOlderSettledThreads: readOnReader(listOlderSettledThreads),
       getThreadShell: readOnReader(getThreadShell),

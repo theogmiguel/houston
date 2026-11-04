@@ -60,20 +60,37 @@ function skillItem(name: string, description: string): Extract<SlashItem, { type
 }
 
 describe("builtInSlashCommandItems", () => {
-  const commands = (claudeInChrome: boolean) =>
+  const commands = (claudeInChrome: boolean, resumeAvailable = true) =>
     builtInSlashCommandItems({
       planModeUiEnabled: true,
       sideChatAvailable: true,
       sideChatDisabledReason: null,
       claudeInChrome,
+      resumeAvailable,
     }).map((item) => item.command);
 
   it("offers /chrome when the Claude provider can use it", () => {
-    expect(commands(true)).toEqual(["model", "chrome", "plan", "default", "side", "btw"]);
+    expect(commands(true)).toEqual(["model", "resume", "chrome", "plan", "default", "side", "btw"]);
   });
 
   it("omits /chrome for other providers", () => {
-    expect(commands(false)).toEqual(["model", "plan", "default", "side", "btw"]);
+    expect(commands(false)).toEqual(["model", "resume", "plan", "default", "side", "btw"]);
+  });
+
+  it("offers /resume only when a project is selected", () => {
+    expect(commands(true, false)).toEqual(["model", "chrome", "plan", "default", "side", "btw"]);
+  });
+
+  it("explains what /resume does", () => {
+    const item = builtInSlashCommandItems({
+      planModeUiEnabled: false,
+      sideChatAvailable: false,
+      sideChatDisabledReason: null,
+      claudeInChrome: false,
+      resumeAvailable: true,
+    }).find((command) => command.command === "resume");
+    expect(item?.label).toBe("/resume");
+    expect(item?.description).toBe("Open an earlier Claude Code or Codex session");
   });
 
   it("explains what /chrome does", () => {
@@ -82,6 +99,7 @@ describe("builtInSlashCommandItems", () => {
       sideChatAvailable: false,
       sideChatDisabledReason: null,
       claudeInChrome: true,
+      resumeAvailable: false,
     }).find((command) => command.command === "chrome");
     expect(item?.label).toBe("/chrome");
     expect(item?.description).toBe("Use Chrome in this thread; opens the Claude provider setting");

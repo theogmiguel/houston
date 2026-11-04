@@ -55,6 +55,7 @@ import {
   type ComposerSubmissionIntent,
   collapseExpandedComposerCursor,
   parseClaudeInChromeCommand,
+  parseResumeCommand,
   parseSideChatCommand,
   parseStandaloneComposerSlashCommand,
 } from "../../composer-logic";
@@ -245,6 +246,7 @@ interface ComposerSendInput {
   readonly onSideChat?: ((prompt: string) => Promise<boolean>) | undefined;
   /** Opens the Claude in Chrome setting; set only for Claude threads. */
   readonly onClaudeInChromeCommand?: (() => void) | undefined;
+  readonly onResumeCommand?: (() => void) | undefined;
   /** Refuses `/side` with this reason and keeps the draft. */
   readonly sideChatDisabledReason: string | null;
   readonly handleNewThreadInActiveProject: () => void;
@@ -334,6 +336,7 @@ export function useComposerSend(input: ComposerSendInput) {
     handleInteractionModeChange,
     onSideChat,
     onClaudeInChromeCommand,
+    onResumeCommand,
     sideChatDisabledReason,
     handleNewThreadInActiveProject,
     persistThreadSettingsForNextTurn,
@@ -502,6 +505,17 @@ export function useComposerSend(input: ComposerSendInput) {
       promptRef.current = claudeInChromeCommand.prompt;
       setComposerDraftPrompt(composerDraftTarget, claudeInChromeCommand.prompt);
       onClaudeInChromeCommand();
+      return;
+    }
+    // Headless Claude has no `/resume`: open the picker and keep the rest of the message as the draft.
+    const resumeCommand =
+      onResumeCommand && !answeringQuestion && !directAnnotation && !queuedRunEdit.isEditing
+        ? parseResumeCommand(promptAtSend)
+        : null;
+    if (onResumeCommand && resumeCommand) {
+      promptRef.current = resumeCommand.prompt;
+      setComposerDraftPrompt(composerDraftTarget, resumeCommand.prompt);
+      onResumeCommand();
       return;
     }
     // Where side chats are unavailable, `/side` text can still be a literal answer.

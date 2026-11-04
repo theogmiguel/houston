@@ -18,7 +18,14 @@ import {
 import { resolveShortcutCommand, type ShortcutEventLike } from "./keybindings";
 
 export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
-export type ComposerSlashCommand = "model" | "plan" | "default" | "side" | "btw" | "chrome";
+export type ComposerSlashCommand =
+  | "model"
+  | "plan"
+  | "default"
+  | "side"
+  | "btw"
+  | "chrome"
+  | "resume";
 export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 
 export interface ComposerTrigger {
@@ -344,6 +351,12 @@ export function parseShellCommand(text: string): { command: string } | null {
 /** Removes the `\` from `\!command`, the escape that keeps a leading `!` in the message. */
 export function unescapeShellCommand(text: string): string {
   return text.startsWith("\\!") ? text.slice(1) : text;
+}
+
+/** `/resume [prompt]` as the whole message: headless providers have no `/resume`. */
+export function parseResumeCommand(text: string): { prompt: string } | null {
+  const match = /^\/resume(?:\s+([\s\S]*))?$/i.exec(text.trim());
+  return match ? { prompt: match[1]?.trim() ?? "" } : null;
 }
 
 export function parseStandaloneComposerSlashCommand(text: string): "plan" | "default" | null {

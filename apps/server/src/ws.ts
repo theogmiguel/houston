@@ -211,6 +211,7 @@ import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import { refreshPushedPullRequests } from "./git/refreshPushedPullRequests.ts";
 import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
 import * as ReviewService from "./review/ReviewService.ts";
+import * as HoustonResumeSessions from "./houston/resumeSessions.ts";
 import * as HoustonReviewState from "./houston/reviewState.ts";
 import * as HoustonRpcSerialization from "./houston/rpcSerialization.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
@@ -1379,6 +1380,7 @@ export const layerWsRpc = (
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
       const review = yield* ReviewService.ReviewService;
       const houstonReview = yield* HoustonReviewState.HoustonReviewState;
+      const houstonResumeSessions = yield* HoustonResumeSessions.HoustonResumeSessions;
       const houstonTasks = yield* HoustonTaskService.HoustonTaskService;
       const houstonTaskImport = yield* HoustonTaskV1Import.HoustonTaskV1Import;
       const houstonTaskRuns = yield* HoustonTaskRuns.HoustonTaskRuns;
@@ -3133,6 +3135,8 @@ export const layerWsRpc = (
         [WS_METHODS.houstonReviewSetFilesViewed]: (input) => houstonReview.setFilesViewed(input),
         [WS_METHODS.houstonReviewAnchorLines]: (input) => houstonReview.anchorLines(input),
         [WS_METHODS.houstonReviewMapAnchors]: (input) => houstonReview.mapAnchors(input),
+        [WS_METHODS.houstonResumeSessionsList]: (input) => houstonResumeSessions.list(input),
+        [WS_METHODS.houstonResumeSessionOpen]: (input) => houstonResumeSessions.open(input),
         [WS_METHODS.houstonTasksSubscribe]: (input) => houstonTasks.subscribe(input),
         [WS_METHODS.houstonTasksGet]: (input) => houstonTasks.get(input),
         [WS_METHODS.houstonTasksSave]: (input) => houstonTasks.save(input),

@@ -421,6 +421,7 @@ export interface ChatComposerProps {
   onRunShellCommand?: ((command: string) => void) | undefined;
   /** What a `!command` needs that this thread lacks; shown when it cannot run. */
   shellCommandUnavailableReason?: string | null;
+  onResumeCommand?: (() => void) | undefined;
   sideChatAvailable?: boolean;
   sideChatDisabledReason?: string | null;
   environmentUnavailable: {
@@ -1205,6 +1206,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     sideChatAvailable: props.sideChatAvailable === true,
     sideChatDisabledReason: props.sideChatDisabledReason ?? null,
     compactSlashCommandAvailable,
+    activeProjectId: props.activeProjectId,
     selectedProvider,
     selectedProviderSkills,
     selectedProviderSlashCommands,
@@ -1950,6 +1952,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const {
     onClaudeInChromeCommand,
+    onResumeCommand,
     onRunShellCommand,
     shellCommandUnavailableReason,
     onUsageLimitsCommand,
@@ -2008,6 +2011,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         if (applied) {
           setComposerHighlightedItemId(null);
           onClaudeInChromeCommand();
+        }
+        return;
+      }
+      if (item.command === "resume") {
+        if (onResumeCommand === undefined) return;
+        const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+          expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+          focusEditorAfterReplace: false,
+        });
+        if (applied) {
+          setComposerHighlightedItemId(null);
+          onResumeCommand();
         }
         return;
       }

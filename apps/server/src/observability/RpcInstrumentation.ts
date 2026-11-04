@@ -202,6 +202,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.houstonReviewFilesViewed]: "review",
   [WS_METHODS.houstonReviewSetFilesViewed]: "review",
   [WS_METHODS.houstonReviewAnchorLines]: "review",
+  [WS_METHODS.houstonResumeSessionsList]: "workspace",
+  [WS_METHODS.houstonResumeSessionOpen]: "workspace",
   [WS_METHODS.houstonReviewMapAnchors]: "review",
   [WS_METHODS.houstonTasksSubscribe]: "houstonTasks",
   [WS_METHODS.houstonTasksGet]: "houstonTasks",
