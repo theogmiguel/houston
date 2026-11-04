@@ -19,7 +19,13 @@ import {
   stripPairingTokenFromUrl as stripPairingTokenUrl,
 } from "@houston-app/shared/remote";
 
+import {
+  DesktopPrimaryBearerUnavailableError,
+  readDesktopServerState,
+  waitForDesktopServerStatus,
+} from "./desktopAuth";
 import { PrimaryEnvironmentHttpClient } from "./httpClient";
+import { PrimaryEnvironmentNotReadyError } from "./target";
 import { runPrimaryHttp } from "../../lib/runtime";
 
 const PrimaryEnvironmentRequestOperation = Schema.Literals([
@@ -67,6 +73,8 @@ export class PrimaryEnvironmentRequestError extends Schema.TaggedError<PrimaryEn
 }
 
 const isPrimaryEnvironmentRequestError = Schema.is(PrimaryEnvironmentRequestError);
+const isPrimaryEnvironmentNotReadyError = Schema.is(PrimaryEnvironmentNotReadyError);
+const isDesktopPrimaryBearerUnavailableError = Schema.is(DesktopPrimaryBearerUnavailableError);
 
 export class PrimaryEnvironmentPairingCredentialRejectedError extends Schema.TaggedError<PrimaryEnvironmentPairingCredentialRejectedError>()(
   "PrimaryEnvironmentPairingCredentialRejectedError",
@@ -265,6 +273,11 @@ async function waitForAuthenticatedSessionAfterBootstrap(): Promise<AuthSessionS
 const TRANSIENT_BOOTSTRAP_STATUS_CODES = new Set([502, 503, 504]);
 const BOOTSTRAP_RETRY_TIMEOUT_MS = 15_000;
 const BOOTSTRAP_RETRY_STEP_MS = 500;
+// Cold starts measured ready within 3 s; a first launch also runs migrations. Past this the
+// error view takes over, and the host's own start timeout is longer still.
+const DESKTOP_SERVER_START_RETRY_BUDGET_MS = 60_000;
+// Fallback poll only: the host's status event normally ends the wait as soon as the server is up.
+const DESKTOP_SERVER_START_RETRY_STEP_MS = 1_000;
 
 async function retryTransientBootstrap<T>(operation: () => Promise<T>): Promise<T> {
   const startedAt = Date.now();
@@ -272,17 +285,52 @@ async function retryTransientBootstrap<T>(operation: () => Promise<T>): Promise<
     try {
       return await operation();
     } catch (error) {
+      const elapsedMs = Date.now() - startedAt;
+      if (isDesktopServerNotReadyError(error)) {
+        if (
+          elapsedMs >= DESKTOP_SERVER_START_RETRY_BUDGET_MS ||
+          !(await isDesktopServerExpected())
+        ) {
+          throw error;
+        }
+        await waitForDesktopServerStatus(DESKTOP_SERVER_START_RETRY_STEP_MS);
+        continue;
+      }
+
       if (!isTransientBootstrapError(error)) {
         throw error;
       }
 
-      if (Date.now() - startedAt >= BOOTSTRAP_RETRY_TIMEOUT_MS) {
+      if (elapsedMs >= BOOTSTRAP_RETRY_TIMEOUT_MS) {
         throw error;
       }
 
       await waitForBootstrapRetry(BOOTSTRAP_RETRY_STEP_MS);
     }
   }
+}
+
+/** A failed start ends the wait: the error view names it and offers a retry. */
+async function isDesktopServerExpected(): Promise<boolean> {
+  const state = await readDesktopServerState();
+  return state === "starting" || state === "ready";
+}
+
+function isDesktopServerNotReadyError(error: unknown): boolean {
+  let cause: unknown = error;
+  for (let depth = 0; depth < 4 && cause !== undefined; depth += 1) {
+    if (isPrimaryEnvironmentNotReadyError(cause) || isDesktopPrimaryBearerUnavailableError(cause)) {
+      return true;
+    }
+    if (isPrimaryEnvironmentRequestError(cause)) {
+      cause = cause.cause;
+    } else if (HttpClientError.isHttpClientError(cause)) {
+      cause = cause.reason.cause;
+    } else {
+      return false;
+    }
+  }
+  return false;
 }
 
 function waitForBootstrapRetry(delayMs: number): Promise<void> {

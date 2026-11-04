@@ -31,16 +31,16 @@ type RuntimeLayerSource =
   | typeof Socket.layerWebSocketConstructorGlobal
   | typeof ClientTracer.layer;
 
-const primaryHttpRuntime = ManagedRuntime.make(
-  PrimaryEnvironmentHttpClient.layer.pipe(Layer.provide(PrimaryEnvironmentHttpLayer.layer)),
-);
+const primaryHttpRuntime = ManagedRuntime.make(PrimaryEnvironmentHttpLayer.layer);
 
 export type PrimaryHttpEffectRunner = <A, E>(
   effect: Effect.Effect<A, E, PrimaryEnvironmentHttpClient.PrimaryEnvironmentHttpClient>,
 ) => Promise<A>;
 
+// The API client is built per request: one built before the desktop server published its
+// address would keep the wrong one for the page's lifetime.
 const livePrimaryHttpRunner: PrimaryHttpEffectRunner = (effect) =>
-  primaryHttpRuntime.runPromise(effect);
+  primaryHttpRuntime.runPromise(Effect.provide(effect, PrimaryEnvironmentHttpClient.layer));
 
 let primaryHttpRunner = livePrimaryHttpRunner;
 
