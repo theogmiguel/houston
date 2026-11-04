@@ -8,6 +8,7 @@ import {
 import { createBrowserHistory } from "@tanstack/react-router";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import { HttpClientError, HttpClientRequest } from "effect/http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { installEnvironmentHttpTest } from "../test/environmentHttpTest";
@@ -163,6 +164,32 @@ describe("resolveInitialServerAuthGateState", () => {
 
     expect(testApi.calls.session).toBe(2);
     expect(testApi.calls.browserSession).toEqual([{ credential: "desktop-bootstrap-token" }]);
+  });
+
+  it("waits for a server that refuses connections while it starts", async () => {
+    const request = HttpClientRequest.get("http://localhost:3773/api/auth/session");
+    let attempts = 0;
+    __setPrimaryHttpRunnerForTests(<A>() => {
+      attempts += 1;
+      if (attempts === 1) {
+        return Promise.reject(
+          new HttpClientError.HttpClientError({
+            reason: new HttpClientError.TransportError({
+              request,
+              description: "connection refused",
+            }),
+          }),
+        );
+      }
+      return Promise.resolve(authenticatedSession(DESKTOP_AUTH) as A);
+    });
+
+    const { resolveInitialServerAuthGateState } = await import("./environments/primary");
+
+    await expect(resolveInitialServerAuthGateState()).resolves.toEqual({
+      status: "authenticated",
+    });
+    expect(attempts).toBe(2);
   });
 
   it("takes a pairing token from the location hash and strips it immediately", async () => {
