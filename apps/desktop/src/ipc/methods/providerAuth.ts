@@ -25,10 +25,9 @@ export const receiveProviderAuthCallback = DesktopIpc.makeIpcMethod({
     const callbackUrl = yield* Effect.tryPromise({
       try: () =>
         receiveCodexAuthCallback(authorizationUrl, (url) => runPromise(shell.openExternal(url))),
-      catch: () =>
+      catch: (cause) =>
         new CodexAuthCallbackError({
-          detail:
-            "Could not receive ChatGPT sign-in on this computer. Try again or paste the redirect URL.",
+          detail: cause instanceof Error ? cause.message : String(cause),
         }),
     });
     const window = yield* windows.currentMainOrFirst;
