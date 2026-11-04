@@ -11,7 +11,7 @@ import {
 } from "@houston-app/shared/assistantCitations";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { submitComposerDraft } from "./composerSubmission";
+import { dispatchShellCommandSubmission, submitComposerDraft } from "./composerSubmission";
 
 const assistantCitation = {
   version: 1 as const,
@@ -206,5 +206,59 @@ describe("submitComposerDraft", () => {
 
     expect(result).toEqual({ validationMessage: null, didDispatch: true });
     expect(onSend).toHaveBeenCalledOnce();
+  });
+});
+
+describe("dispatchShellCommandSubmission", () => {
+  it("sends !command to the terminal and never to the agent", () => {
+    const runShellCommand = vi.fn<(command: string) => void>();
+    const onUnavailable = vi.fn();
+    const onSend = vi.fn();
+
+    const handled = dispatchShellCommandSubmission({
+      prompt: "!sudo apt install foo",
+      blocked: false,
+      runShellCommand,
+      onUnavailable,
+    });
+
+    // The caller sends to the agent only when this returns false.
+    if (!handled) onSend();
+    expect(handled).toBe(true);
+    expect(runShellCommand).toHaveBeenCalledExactlyOnceWith("sudo apt install foo");
+    expect(onUnavailable).not.toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("keeps ordinary, escaped and pending-answer text on the agent path", () => {
+    const runShellCommand = vi.fn<(command: string) => void>();
+
+    for (const prompt of ["hello", "\\!ls", " !ls", "!git status\nsecond line"]) {
+      expect(dispatchShellCommandSubmission({ prompt, blocked: false, runShellCommand })).toBe(
+        false,
+      );
+    }
+    expect(
+      dispatchShellCommandSubmission({
+        prompt: "!ls",
+        blocked: true,
+        runShellCommand,
+      }),
+    ).toBe(false);
+    expect(runShellCommand).not.toHaveBeenCalled();
+  });
+
+  it("reports the missing terminal instead of running the command", () => {
+    const onUnavailable = vi.fn();
+
+    expect(
+      dispatchShellCommandSubmission({
+        prompt: "!ls",
+        blocked: false,
+        runShellCommand: undefined,
+        onUnavailable,
+      }),
+    ).toBe(true);
+    expect(onUnavailable).toHaveBeenCalledOnce();
   });
 });

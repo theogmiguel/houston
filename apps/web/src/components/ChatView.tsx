@@ -2905,6 +2905,21 @@ export default function ChatView(props: ChatViewProps) {
     if (activeThreadRef) useRightPanelStore.getState().setMaximized(activeThreadRef, false);
     runShellCommandStable(command);
   });
+  // A composer `!command` opens the drawer too, which a maximized panel would cover. Side chats
+  // render no drawer, and a draft has no server thread to own a terminal session.
+  const composerShellCommandEnabled =
+    isServerThread && parentPanel === undefined && activeProject !== null && canOperateTerminal;
+  const runComposerShellCommandStable = useStableCallback((command: string) => {
+    if (activeThreadRef) useRightPanelStore.getState().setMaximized(activeThreadRef, false);
+    runShellCommandStable(command);
+  });
+  const composerShellCommandUnavailableReason = !isServerThread
+    ? "A shell command needs a started thread. Send a message first."
+    : parentPanel !== undefined
+      ? "Side chats cannot run shell commands."
+      : activeProject === null
+        ? "Shell commands need a project folder."
+        : "This connection cannot open terminals.";
   // Main-thread surfaces show this reason; `/side` sent anyway gets it as a toast.
   const sideChatDisabledReason =
     activeThread?.lineage.sideChat === true
@@ -3896,6 +3911,12 @@ export default function ChatView(props: ChatViewProps) {
                                   ? handleOpenClaudeInChromeSettingsStable
                                   : undefined
                               }
+                              onRunShellCommand={
+                                composerShellCommandEnabled
+                                  ? runComposerShellCommandStable
+                                  : undefined
+                              }
+                              shellCommandUnavailableReason={composerShellCommandUnavailableReason}
                               environmentUnavailable={activeEnvironmentUnavailableState}
                               activePendingApproval={activePendingApproval}
                               pendingApprovals={pendingApprovals}

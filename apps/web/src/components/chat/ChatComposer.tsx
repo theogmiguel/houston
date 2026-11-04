@@ -80,7 +80,9 @@ import {
   formatAssistantCitationForComposer,
   isPathSuggestionCurrent,
   extendReplacementRangeForTrailingSpace,
+  parseShellCommand,
   replaceTextRange,
+  unescapeShellCommand,
 } from "../../composer-logic";
 import { DEFAULT_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 import {
@@ -230,11 +232,13 @@ import {
 } from "./ExpandedImagePreview";
 import { cn, isMacPlatform, randomUUID } from "~/lib/utils";
 import {
+  dispatchShellCommandSubmission,
   getComposerPromptLengthValidationMessage,
   getComposerSubmissionValidationMessage,
   submitComposerDraft,
 } from "./composerSubmission";
 import { ComposerPromptLengthValidation } from "./ComposerPromptLengthValidation";
+import { ComposerShellCommandHint } from "./ComposerShellCommandHint";
 import { pendingDraftWork } from "./pendingDraftWork";
 import { importComposerThreadAttachment } from "./composerThreadImport";
 import { observeResize } from "~/lib/observeResize";
@@ -413,6 +417,10 @@ export interface ChatComposerProps {
   onToggleKeepFullHistory: () => void;
   onUsageLimitsCommand?: (() => void) | undefined;
   onClaudeInChromeCommand?: (() => void) | undefined;
+  /** Runs a `!command` in the thread's terminal; absent when the thread has none. */
+  onRunShellCommand?: ((command: string) => void) | undefined;
+  /** What a `!command` needs that this thread lacks; shown when it cannot run. */
+  shellCommandUnavailableReason?: string | null;
   sideChatAvailable?: boolean;
   sideChatDisabledReason?: string | null;
   environmentUnavailable: {
@@ -1940,7 +1948,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     };
   };
 
-  const { onClaudeInChromeCommand, onUsageLimitsCommand } = props;
+  const {
+    onClaudeInChromeCommand,
+    onRunShellCommand,
+    shellCommandUnavailableReason,
+    onUsageLimitsCommand,
+  } = props;
+  const shellCommandHintStatus: "run" | "unavailable" | null =
+    activePendingProgress === null &&
+    activePendingApproval === null &&
+    !isLiteralPendingAnswer &&
+    parseShellCommand(prompt) !== null
+      ? onRunShellCommand
+        ? "run"
+        : "unavailable"
+      : null;
   const onSelectComposerItem = (item: ComposerCommandItem) => {
     if (composerSelectLockRef.current) return;
     composerSelectLockRef.current = true;
@@ -2177,6 +2199,29 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     dispatchMode?: ComposerDispatchMode,
     submissionIntent?: ComposerSubmissionIntent,
   ) => {
+    // `!command` targets the thread's terminal, so it runs even while a turn is busy or the
+    // provider is unavailable; a pending question, approval or literal answer owns the draft.
+    const shellCommandHandled = dispatchShellCommandSubmission({
+      prompt: promptRef.current,
+      blocked:
+        activePendingProgress !== null || activePendingApproval !== null || isLiteralPendingAnswer,
+      runShellCommand: onRunShellCommand,
+      onUnavailable: () =>
+        toastManager.add({
+          type: "warning",
+          title: "Shell command not run",
+          description: shellCommandUnavailableReason ?? "This thread has no terminal.",
+        }),
+    });
+    if (shellCommandHandled) {
+      event?.preventDefault();
+      if (onRunShellCommand) {
+        promptRef.current = "";
+        setComposerDraftPrompt(composerDraftTarget, "");
+        composerRef.current?.resetCursorState();
+      }
+      return;
+    }
     if (
       noProviderAvailable ||
       isSendDisabled ||
@@ -2205,6 +2250,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         description: "Send again once its chip resolves.",
       });
       return;
+    }
+    const escapedPrompt = unescapeShellCommand(promptRef.current);
+    if (escapedPrompt !== promptRef.current) {
+      promptRef.current = escapedPrompt;
+      setComposerDraftPrompt(composerDraftTarget, escapedPrompt);
     }
     const submission = submitComposerDraft({
       prompt: promptRef.current,
@@ -3687,6 +3737,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 ) : null}
               </div>
             </div>
+
+            <ComposerShellCommandHint
+              status={shellCommandHintStatus}
+              unavailableReason={shellCommandUnavailableReason}
+            />
 
             <ComposerPromptLengthValidation
               message={providerInputSubmissionError ?? composerSubmissionError}

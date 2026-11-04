@@ -330,6 +330,22 @@ export function parseClaudeInChromeCommand(text: string): { prompt: string } | n
   return match ? { prompt: match[1]?.trim() ?? "" } : null;
 }
 
+/**
+ * `!command` as the whole message: Houston runs it in the thread's terminal instead of
+ * sending it to the agent. A leading space or `\!` escapes it, so both stay messages, and a
+ * multi-line draft stays a message because the terminal would submit each line separately.
+ */
+export function parseShellCommand(text: string): { command: string } | null {
+  if (!text.startsWith("!") || /[\r\n]/.test(text)) return null;
+  const command = text.replace(/^!\s*/, "").trim();
+  return command.length > 0 ? { command } : null;
+}
+
+/** Removes the `\` from `\!command`, the escape that keeps a leading `!` in the message. */
+export function unescapeShellCommand(text: string): string {
+  return text.startsWith("\\!") ? text.slice(1) : text;
+}
+
 export function parseStandaloneComposerSlashCommand(text: string): "plan" | "default" | null {
   const match = /^\/(plan|default)\s*$/i.exec(text.trim());
   if (!match) {

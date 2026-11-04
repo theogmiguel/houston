@@ -128,6 +128,12 @@ separate set of surfaces; see [The right panel](right-panel.md). A thread's **de
 control (`Ctrl+Shift+B`) shows its environment, branch, pull requests, scripts, local
 servers, context and usage limits.
 
+A cheap command that needs a real terminal, such as `sudo apt install` or
+`git push --force-with-lease`, can start with `!`: `!sudo apt install foo` opens the
+thread's drawer and runs there instead of going to the agent. Leading the draft with a space
+or `\!` sends it as an ordinary message. Select the command's output and choose **Add to
+chat** to attach it to the next message.
+
 ## Worktrees
 
 A thread that starts in a new worktree gets its own checkout and branch, so several threads
