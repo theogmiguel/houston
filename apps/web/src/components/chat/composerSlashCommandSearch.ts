@@ -1,3 +1,4 @@
+import { PROVIDER_DISPLAY_NAMES } from "@houston-app/contracts";
 import {
   insertRankedSearchResult,
   normalizeSearchQuery,
@@ -11,6 +12,66 @@ type SlashSearchItem = Extract<
   ComposerCommandItem,
   { type: "slash-command" | "provider-slash-command" | "skill" }
 >;
+
+export type SlashCommandSectionId = "houston" | "provider" | "skills";
+
+export type SlashCommandSection = {
+  readonly id: SlashCommandSectionId;
+  readonly title: string;
+  readonly items: ReadonlyArray<SlashSearchItem>;
+};
+
+const SLASH_COMMAND_SECTION_ORDER: ReadonlyArray<SlashCommandSectionId> = [
+  "houston",
+  "provider",
+  "skills",
+];
+
+function isSlashSearchItem(item: ComposerCommandItem): item is SlashSearchItem {
+  return (
+    item.type === "slash-command" || item.type === "provider-slash-command" || item.type === "skill"
+  );
+}
+
+export function slashCommandSectionId(item: SlashSearchItem): SlashCommandSectionId {
+  switch (item.type) {
+    case "slash-command":
+      return "houston";
+    case "provider-slash-command":
+      return "provider";
+    case "skill":
+      return "skills";
+  }
+}
+
+function slashCommandSectionTitle(
+  id: SlashCommandSectionId,
+  items: ReadonlyArray<SlashSearchItem>,
+): string {
+  if (id === "houston") return "Houston";
+  if (id === "skills") return "Skills";
+  const provider = items.find((item) => item.type === "provider-slash-command")?.provider;
+  return provider ? (PROVIDER_DISPLAY_NAMES[provider] ?? provider) : "Provider";
+}
+
+/** Sections in menu order; an origin with no item left after filtering is omitted. */
+export function slashCommandSections(
+  items: ReadonlyArray<ComposerCommandItem>,
+): SlashCommandSection[] {
+  const slashItems = items.filter(isSlashSearchItem);
+  return SLASH_COMMAND_SECTION_ORDER.flatMap((id) => {
+    const sectionItems = slashItems.filter((item) => slashCommandSectionId(item) === id);
+    return sectionItems.length === 0
+      ? []
+      : [{ id, title: slashCommandSectionTitle(id, sectionItems), items: sectionItems }];
+  });
+}
+
+function orderSlashCommandItemsBySection(items: ReadonlyArray<SlashSearchItem>): SlashSearchItem[] {
+  return SLASH_COMMAND_SECTION_ORDER.flatMap((id) =>
+    items.filter((item) => slashCommandSectionId(item) === id),
+  );
+}
 
 /** Provider commands, `/side` and `/btw` work only at the message start. */
 export function slashCommandItemsForPromptPosition(
@@ -109,7 +170,7 @@ export function searchSlashCommandItems(
     );
   }
 
-  return ranked.map((entry) => entry.item);
+  return orderSlashCommandItemsBySection(ranked.map((entry) => entry.item));
 }
 
 /** Houston commands that do not come from a provider. */
