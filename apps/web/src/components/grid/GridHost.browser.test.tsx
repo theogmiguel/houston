@@ -773,3 +773,121 @@ describe("GridHost surface", () => {
     expect(preorderThreads(changes[0] ?? null).map((leaf) => leaf.threadId)).toEqual(["thread-a"]);
   });
 });
+
+describe("GridHost stable cells", () => {
+  async function mountStable(tree: LayoutNode, maximizedThreadId?: string) {
+    const view = (node: LayoutNode, maximized?: string) => (
+      <div style={{ display: "flex", width: 900, height: 600 }}>
+        <GridHost
+          grid={grid(node)}
+          {...(maximized === undefined ? {} : { maximizedThreadId: maximized })}
+          onTreeChange={() => {}}
+          onFocusThread={() => {}}
+          renderThread={cellMarkup}
+        />
+      </div>
+    );
+    const screen = await render(view(tree, maximizedThreadId), { router: false });
+    const detached: string[] = [];
+    // Moving a cell's DOM restyles and relayouts its whole subtree, which is what stalls a swap.
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.removedNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+          const cells = node.matches("[data-grid-cell]")
+            ? [node]
+            : [...node.querySelectorAll<HTMLElement>("[data-grid-cell]")];
+          for (const cell of cells) detached.push(cell.dataset.threadId ?? "?");
+        }
+      }
+    });
+    observer.observe(screen.container, { childList: true, subtree: true });
+    return {
+      screen,
+      detached,
+      show: (node: LayoutNode, maximized?: string) => screen.rerender(view(node, maximized)),
+      cell: (threadId: string) =>
+        screen.container.querySelector<HTMLElement>(`[data-grid-cell][data-thread-id="${threadId}"]`)!,
+      [Symbol.asyncDispose]: async () => {
+        observer.disconnect();
+        await screen[Symbol.asyncDispose]();
+      },
+    };
+  }
+
+  function nested(): LayoutNode {
+    return {
+      kind: "split",
+      dir: "row",
+      children: [
+        threadLeaf("thread-a", "p-thread-a"),
+        {
+          kind: "split",
+          dir: "col",
+          children: [threadLeaf("thread-b", "p-thread-b"), threadLeaf("thread-c", "p-thread-c")],
+          weights: [50, 50],
+        },
+      ],
+      weights: [50, 50],
+    };
+  }
+
+  it("keeps every cell's DOM in place when two cells swap", async () => {
+    await using stage = await mountStable(row("thread-a", "thread-b"));
+    const a = stage.cell("thread-a");
+    await stage.show(row("thread-b", "thread-a"));
+    expect(stage.cell("thread-a")).toBe(a);
+    expect(stage.detached).toEqual([]);
+  });
+
+  it("keeps every cell's DOM in place when a cell moves into another split", async () => {
+    await using stage = await mountStable(nested());
+    const a = stage.cell("thread-a");
+    const c = stage.cell("thread-c");
+    const tree = nested();
+    if (tree.kind !== "split" || tree.children[1]?.kind !== "split") throw new Error("bad tree");
+    const swapped: LayoutNode = {
+      ...tree,
+      children: [
+        threadLeaf("thread-c", "p-thread-c"),
+        { ...tree.children[1], children: [threadLeaf("thread-b", "p-thread-b"), threadLeaf("thread-a", "p-thread-a")] },
+      ],
+    };
+    await stage.show(swapped);
+    expect(stage.cell("thread-a")).toBe(a);
+    expect(stage.cell("thread-c")).toBe(c);
+    expect(stage.detached).toEqual([]);
+  });
+
+  it("keeps every cell's DOM in place when a cell is maximized and restored", async () => {
+    await using stage = await mountStable(row("thread-a", "thread-b"));
+    const a = stage.cell("thread-a");
+    const b = stage.cell("thread-b");
+    await stage.show(row("thread-a", "thread-b"), "thread-b");
+    await stage.show(row("thread-a", "thread-b"));
+    expect(stage.cell("thread-a")).toBe(a);
+    expect(stage.cell("thread-b")).toBe(b);
+    expect(stage.detached).toEqual([]);
+  });
+
+  it("places each cell exactly over its slot and a maximized cell over the whole surface", async () => {
+    await using stage = await mountStable(nested());
+    const surface = stage.screen.container.querySelector<HTMLElement>("[data-grid-surface]")!;
+    for (const threadId of ["thread-a", "thread-b", "thread-c"]) {
+      const slot = stage.screen.container.querySelector<HTMLElement>(
+        `[data-cell-place="${threadId}"]`,
+      )!;
+      expect(stage.cell(threadId).getBoundingClientRect().toJSON()).toEqual(
+        slot.getBoundingClientRect().toJSON(),
+      );
+    }
+    await stage.show(nested(), "thread-c");
+    // The surface drops its card padding over a short transition; the cell follows it.
+    await vi.waitFor(() => {
+      const content = surface.getBoundingClientRect();
+      const maximized = stage.cell("thread-c").getBoundingClientRect();
+      expect([maximized.width, maximized.height]).toEqual([content.width, content.height]);
+    });
+    expect(getComputedStyle(stage.cell("thread-a")).visibility).toBe("hidden");
+  });
+});

@@ -38,7 +38,7 @@ function markFlipping(root: HTMLElement, delta: 1 | -1): void {
 }
 
 /** The cell's offset inside `root`'s layout box, ignoring any transform in flight. */
-function offsetWithin(element: HTMLElement, root: HTMLElement): { x: number; y: number } | null {
+export function offsetWithin(element: HTMLElement, root: HTMLElement): { x: number; y: number } | null {
   let x = 0;
   let y = 0;
   let node: HTMLElement | null = element;

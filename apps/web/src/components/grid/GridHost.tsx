@@ -1,6 +1,7 @@
 import { LayoutGridIcon } from "lucide-react";
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -42,7 +43,7 @@ import {
 } from "../../grid/tree";
 import { presetOf, snapSplitRatio, splitFractionLabel, stepSplitPreset } from "../../grid/resize";
 import { beginLayoutResize, endLayoutResize } from "../../motion/layoutResize";
-import { useGridCellFlip } from "../../motion/paneMotion";
+import { offsetWithin, useGridCellFlip } from "../../motion/paneMotion";
 import { GRID_BADGE_LINGER_MS, SNAP_DISTANCE_PX } from "../../motion/timings";
 import { announce } from "../../lib/announce";
 import { suppressTextSelection } from "../../lib/suppressTextSelection";
@@ -128,6 +129,18 @@ export function GridHost(props: GridHostProps) {
     return () => window.clearTimeout(timer);
   }, [enteringThreadIds]);
 
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- places the cell frames over their layout boxes before paint, and again whenever a box resizes
+  useLayoutEffect(() => {
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- a ref object is stable; its current must not retrigger the effect
+    const root = surfaceRef.current;
+    if (root === null) return;
+    placeCellFrames(root);
+    const observer = new ResizeObserver(() => placeCellFrames(root));
+    observer.observe(root);
+    for (const place of root.querySelectorAll("[data-cell-place]")) observer.observe(place);
+    return () => observer.disconnect();
+  });
+
   // Cells that existed before a tree change FLIP into their new slots; a join or
   // a leave already animates through the grid's flex transition.
   useGridCellFlip(
@@ -166,7 +179,7 @@ export function GridHost(props: GridHostProps) {
       "[data-grid-cell][data-thread-id]",
     )) {
       const threadId = cell.dataset.threadId;
-      if (threadId === undefined) continue;
+      if (threadId === undefined || cell.closest("[inert]") !== null) continue;
       const rect = cell.getBoundingClientRect();
       if (
         point.x < rect.left ||
@@ -315,57 +328,164 @@ export function GridHost(props: GridHostProps) {
     });
   };
 
-  if (maximizedLeaf !== null) {
-    return surface(
-      <div className="flex h-full min-h-0 w-full min-w-0 flex-1 overflow-hidden">
-        {renderLeaf(maximizedLeaf, true, true)}
-      </div>,
-    );
-  }
+  // Sorted by id, not by place: a cell's frame never moves in the DOM, whatever the layout does.
+  const leaves = preorderThreads(tree).toSorted((left, right) =>
+    left.threadId < right.threadId ? -1 : left.threadId > right.threadId ? 1 : 0,
+  );
+  // Each frame starts at its layout box, so whatever a cell measures on mount is already right.
+  const boxes = cellBoxes(tree, threadCount > 1);
 
   return surface(
-    <GridBranch
-      node={tree}
-      path={[]}
-      focusedThreadId={grid.focusedThreadId}
-      leavingThreadId={shownLeaving ? leavingThreadId : null}
-      enteringThreadIds={enteringThreadIds}
-      renderLeaf={renderLeaf}
-      onTreeChange={(next) => onTreeChange(next)}
-    />,
+    <>
+      {maximizedLeaf !== null ? (
+        <CellPlace threadId={maximizedLeaf.threadId} />
+      ) : (
+        <GridBranch
+          node={tree}
+          path={[]}
+          leavingThreadId={shownLeaving ? leavingThreadId : null}
+          enteringThreadIds={enteringThreadIds}
+          onTreeChange={(next) => onTreeChange(next)}
+        />
+      )}
+      {leaves.map((leaf) => (
+        <div
+          key={leaf.threadId}
+          data-grid-cell-frame={leaf.threadId}
+          data-leaving={shownLeaving && leaf.threadId === leavingThreadId ? "" : undefined}
+          data-entering={enteringThreadIds.has(leaf.threadId) ? "" : undefined}
+          className="absolute flex min-h-0 min-w-0"
+          style={
+            maximizedLeaf !== null && leaf.threadId === maximizedLeaf.threadId
+              ? { left: 0, top: 0, width: "100%", height: "100%" }
+              : boxes.get(leaf.threadId)
+          }
+        >
+          {maximizedLeaf !== null
+            ? renderLeaf(leaf, leaf.threadId === maximizedLeaf.threadId, true)
+            : renderLeaf(leaf, leaf.threadId === grid.focusedThreadId)}
+        </div>
+      ))}
+    </>,
   );
+}
+
+interface Linear {
+  /** Share of the surface's padding box. */
+  readonly share: number;
+  readonly px: number;
+}
+
+function linear(share: number, px: number): Linear {
+  return { share, px };
+}
+
+function cssLength({ share, px }: Linear): string {
+  return `calc(${share * 100}% + ${px}px)`;
+}
+
+/**
+ * Every cell's box as CSS lengths of the surface, worked out from the split weights the
+ * way flex lays the slots out (flex-basis 0, fixed gutters). The frames follow the
+ * measured slots after mount; this is what they show before that first measurement.
+ */
+function cellBoxes(tree: LayoutNode, multi: boolean): Map<string, CSSProperties> {
+  const padX = multi ? GUTTER_PX : 0;
+  const padBottom = multi ? GUTTER_PX : 0;
+  const boxes = new Map<string, CSSProperties>();
+  const visit = (node: LayoutNode, x: Linear, y: Linear, width: Linear, height: Linear) => {
+    if (node.kind === "thread") {
+      boxes.set(node.threadId, {
+        left: cssLength(x),
+        top: cssLength(y),
+        width: cssLength(width),
+        height: cssLength(height),
+      });
+      return;
+    }
+    const along = node.dir === "row" ? width : height;
+    const gutters = (node.children.length - 1) * GUTTER_PX;
+    const total = node.weights.reduce((sum, weight) => sum + weight, 0) || 1;
+    let offset = node.dir === "row" ? x : y;
+    node.children.forEach((child, index) => {
+      const ratio = (node.weights[index] ?? 0) / total;
+      const size = linear(along.share * ratio, (along.px - gutters) * ratio);
+      if (node.dir === "row") visit(child, offset, y, size, height);
+      else visit(child, x, offset, width, size);
+      offset = linear(offset.share + size.share, offset.px + size.px + GUTTER_PX);
+    });
+  };
+  visit(
+    tree,
+    linear(0, padX),
+    linear(0, 0),
+    linear(1, -2 * padX),
+    linear(1, -padBottom),
+  );
+  return boxes;
+}
+
+/** Where a cell shows: the layout sizes this box, and the cell's frame is placed over it. */
+function CellPlace({ threadId }: { threadId: string }) {
+  return <div data-cell-place={threadId} className="flex min-h-0 min-w-0 flex-1" />;
 }
 
 const EMPTY_IDS: ReadonlySet<string> = new Set();
 
+/**
+ * Puts every cell frame over its layout box. Cells live in one flat list beside the
+ * layout, so a swap, a split or a maximize only moves boxes: the cell's DOM, its
+ * scroll position and its React state stay where they are. A cell without a box
+ * (hidden behind a maximized cell) keeps its last size, so showing it again costs
+ * no relayout.
+ */
+function placeCellFrames(root: HTMLElement): void {
+  const places = new Map<string, HTMLElement>();
+  for (const place of root.querySelectorAll<HTMLElement>("[data-cell-place]")) {
+    const threadId = place.dataset.cellPlace;
+    if (threadId !== undefined) places.set(threadId, place);
+  }
+  for (const frame of root.querySelectorAll<HTMLElement>(":scope > [data-grid-cell-frame]")) {
+    const place = places.get(frame.dataset.gridCellFrame ?? "");
+    const offset = place === undefined ? null : offsetWithin(place, root);
+    const shown = place !== undefined && offset !== null;
+    if (frame.inert === shown) frame.inert = !shown;
+    frame.style.visibility = shown ? "" : "hidden";
+    if (!shown) continue;
+    setPx(frame, "left", offset.x);
+    setPx(frame, "top", offset.y);
+    setPx(frame, "width", place.offsetWidth);
+    setPx(frame, "height", place.offsetHeight);
+  }
+}
+
+function setPx(element: HTMLElement, property: "left" | "top" | "width" | "height", value: number) {
+  const next = `${value}px`;
+  if (element.style[property] !== next) element.style[property] = next;
+}
+
 function GridBranch({
   node,
   path,
-  focusedThreadId,
   leavingThreadId,
   enteringThreadIds,
-  renderLeaf,
   onTreeChange,
 }: {
   node: LayoutNode;
   path: number[];
-  focusedThreadId: string | null;
   leavingThreadId: string | null;
   enteringThreadIds: ReadonlySet<string>;
-  renderLeaf: (node: ThreadNode, focused: boolean) => ReactNode;
   onTreeChange: (tree: LayoutNode) => void;
 }) {
   if (node.kind === "thread") {
-    return <>{renderLeaf(node, node.threadId === focusedThreadId)}</>;
+    return <CellPlace threadId={node.threadId} />;
   }
   return (
     <SplitView
       node={node}
       path={path}
-      focusedThreadId={focusedThreadId}
       leavingThreadId={leavingThreadId}
       enteringThreadIds={enteringThreadIds}
-      renderLeaf={renderLeaf}
       onTreeChange={onTreeChange}
     />
   );
@@ -386,18 +506,14 @@ interface ResizeDrag {
 function SplitView({
   node,
   path,
-  focusedThreadId,
   leavingThreadId,
   enteringThreadIds,
-  renderLeaf,
   onTreeChange,
 }: {
   node: SplitNode;
   path: number[];
-  focusedThreadId: string | null;
   leavingThreadId: string | null;
   enteringThreadIds: ReadonlySet<string>;
-  renderLeaf: (node: ThreadNode, focused: boolean) => ReactNode;
   onTreeChange: (tree: LayoutNode) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -582,10 +698,8 @@ function SplitView({
             <GridBranch
               node={child}
               path={[...path, index]}
-              focusedThreadId={focusedThreadId}
               leavingThreadId={leavingThreadId}
               enteringThreadIds={enteringThreadIds}
-              renderLeaf={renderLeaf}
               onTreeChange={onTreeChange}
             />
           </div>

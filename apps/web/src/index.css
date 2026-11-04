@@ -2994,6 +2994,20 @@ html[data-theme-reveal] [data-grid-surface] {
   }
 }
 
+/* Cells sit in frames over the slots, so they fade with their slot from there. */
+[data-grid-surface] [data-grid-cell-frame][data-leaving] {
+  opacity: 0;
+  transition: opacity var(--grid-morph-duration) var(--grid-morph-ease);
+}
+
+[data-grid-surface][data-morphing] [data-grid-cell-frame][data-entering] {
+  transition: opacity var(--grid-morph-duration) var(--grid-morph-ease);
+
+  @starting-style {
+    opacity: 0;
+  }
+}
+
 [data-grid-surface] [data-grid-gutter][data-leaving] {
   flex-basis: 0 !important;
   transition: flex-basis var(--grid-morph-duration) var(--grid-morph-ease);
