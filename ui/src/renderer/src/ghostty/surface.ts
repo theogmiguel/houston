@@ -2126,7 +2126,8 @@ export class GhosttyTerminalSurface {
       paddingRight: CONTENT_PADDING,
       paddingTop: this.originY,
       paddingBottom: Math.max(0, bounds.height - this.originY - this.rows * this.metrics.height),
-      anyButtonPressed: event.buttons !== 0
+      anyButtonPressed: event.buttons !== 0,
+      devicePixelRatio: window.devicePixelRatio || 1
     })
     if (data.length > 0) this.options.onData(data)
   }

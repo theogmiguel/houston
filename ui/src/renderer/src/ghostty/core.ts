@@ -152,6 +152,8 @@ export interface GhosttyMouseInput {
   readonly paddingTop: number;
   readonly paddingBottom: number;
   readonly anyButtonPressed: boolean;
+  /** The encoder's sizes are whole pixels; a device-snapped cell is whole only in device pixels. */
+  readonly devicePixelRatio: number;
 }
 
 const decoder = new TextDecoder();
@@ -725,10 +727,11 @@ export class GhosttyTerminalCore {
       this.terminal,
     );
 
+    const scale = input.devicePixelRatio > 0 ? input.devicePixelRatio : 1;
     const sizeLayout = this.runtime.layout("GhosttyMouseEncoderSize");
     const size = this.runtime.alloc(sizeLayout.size);
+    this.runtime.setField(size, "GhosttyMouseEncoderSize", "size", sizeLayout.size);
     for (const [field, value] of [
-      ["size", sizeLayout.size],
       ["screen_width", input.screenWidth],
       ["screen_height", input.screenHeight],
       ["cell_width", input.cellWidth],
@@ -738,7 +741,8 @@ export class GhosttyTerminalCore {
       ["padding_right", input.paddingRight],
       ["padding_left", input.paddingLeft],
     ] as const) {
-      this.runtime.setField(size, "GhosttyMouseEncoderSize", field, Math.max(0, Math.round(value)));
+      const pixels = Math.max(0, Math.round(value * scale));
+      this.runtime.setField(size, "GhosttyMouseEncoderSize", field, pixels);
     }
     this.runtime.call("ghostty_mouse_encoder_setopt", this.mouseEncoder, 2, size);
     this.runtime.free(size, sizeLayout.size);
@@ -762,8 +766,8 @@ export class GhosttyTerminalCore {
     const positionLayout = this.runtime.layout("GhosttyMousePosition");
     const position = this.runtime.alloc(positionLayout.size);
     const positionView = this.runtime.view(position, positionLayout.size);
-    positionView.setFloat32(positionLayout.fields.x!.offset, input.x, true);
-    positionView.setFloat32(positionLayout.fields.y!.offset, input.y, true);
+    positionView.setFloat32(positionLayout.fields.x!.offset, input.x * scale, true);
+    positionView.setFloat32(positionLayout.fields.y!.offset, input.y * scale, true);
     this.runtime.call("ghostty_mouse_event_set_position", this.mouseEvent, position);
     this.runtime.free(position, positionLayout.size);
 
