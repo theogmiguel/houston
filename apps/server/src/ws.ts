@@ -139,6 +139,7 @@ import {
   toShellApplicationEvent,
   type ShellApplicationEvent,
 } from "./orchestration-v2/ShellStream.ts";
+import { makeSubscriberShellReads, planShellBatch } from "./houston/shellReads.ts";
 import { ORCHESTRATION_V2_PROJECTION_SCHEMA_VERSION } from "./orchestration-v2/ProjectionStore.ts";
 import {
   coalesceLiveUpdatedEvents,
@@ -1135,9 +1136,15 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
       });
     });
 
+    // Houston: shell reads are shared across subscribers and skipped for batches that cannot change a shell.
+    const readThreadShell = makeSubscriberShellReads(
+      threadManagement,
+      threadManagement.getThreadShell,
+    );
     const projectShellItems = Effect.fn("ws.orchestrationV2.projectShellItems")(function* (
       events: ReadonlyArray<ShellApplicationEvent>,
     ) {
+      const batches = planShellBatch(events);
       return yield* Effect.forEach(
         coalesceShellApplicationEvents(events),
         (stored) =>
@@ -1145,7 +1152,11 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
             if ("aggregateKind" in stored) {
               return yield* projectItem(stored);
             }
-            const shell = yield* threadManagement.getThreadShell(stored.event.threadId);
+            const shell = yield* readThreadShell(
+              stored.event.threadId,
+              stored.sequence,
+              batches.get(stored.event.threadId),
+            );
             return shellStreamItemFromThreadShell({ stored, shell });
           }),
         { concurrency: 8 },
