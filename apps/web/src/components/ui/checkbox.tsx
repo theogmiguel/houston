@@ -3,10 +3,10 @@ import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { cn } from "~/lib/utils";
 
 const rootClassName =
-  "relative inline-flex size-4.5 shrink-0 items-center justify-center rounded-[var(--r-badge)] border border-border bg-(--control-fill) outline-none transition-[border-color,box-shadow] focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-ring aria-invalid:border-destructive/36 focus-visible:aria-invalid:border-destructive/64 focus-visible:aria-invalid:outline-destructive/48 data-disabled:opacity-64 sm:size-4";
+  "relative inline-flex size-4.5 shrink-0 items-center justify-center rounded-[var(--r-badge)] border border-border bg-(--control-fill) outline-none transition-[border-color,box-shadow] duration-(--motion-feedback) ease-standard focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-ring aria-invalid:border-destructive/36 focus-visible:aria-invalid:border-destructive/64 focus-visible:aria-invalid:outline-destructive/48 data-disabled:opacity-64 sm:size-4";
 
 const indicatorClassName =
-  "-inset-px absolute flex items-center justify-center rounded-[var(--r-badge)] text-primary-foreground data-unchecked:hidden data-checked:bg-primary data-indeterminate:text-foreground in-[[data-slot=checkbox]:focus-visible]:inset-shadow-[0_0_0_3px_var(--background)] in-[[data-slot=checkbox]:focus-visible]:outline-2 in-[[data-slot=checkbox]:focus-visible]:outline-solid in-[[data-slot=checkbox]:focus-visible]:-outline-offset-2 in-[[data-slot=checkbox]:focus-visible]:outline-inherit";
+  "-inset-px absolute flex scale-75 items-center justify-center rounded-[var(--r-badge)] text-primary-foreground opacity-0 transition-[opacity,scale] duration-(--motion-value) ease-standard data-checked:scale-100 data-checked:bg-primary data-checked:opacity-100 data-indeterminate:scale-100 data-indeterminate:text-foreground data-indeterminate:opacity-100 in-[[data-slot=checkbox]:focus-visible]:inset-shadow-[0_0_0_3px_var(--background)] in-[[data-slot=checkbox]:focus-visible]:outline-2 in-[[data-slot=checkbox]:focus-visible]:outline-solid in-[[data-slot=checkbox]:focus-visible]:-outline-offset-2 in-[[data-slot=checkbox]:focus-visible]:outline-inherit";
 
 function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
   return (
@@ -19,6 +19,7 @@ function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
       <CheckboxPrimitive.Indicator
         className={indicatorClassName}
         data-slot="checkbox-indicator"
+        keepMounted
         render={(props, state) => (
           <span {...props}>
             {state.indeterminate ? (

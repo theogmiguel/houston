@@ -611,11 +611,11 @@ describe("GridThreadCell status mark", () => {
 
       const label = screen.container.querySelector("[data-pane-label]");
       const mark = label?.querySelector('[role="img"][aria-label="Needs you"]');
-      const circle = mark?.querySelector("circle");
+      const outline = mark?.querySelector("path");
       expect(mark).not.toBeNull();
-      expect(circle).not.toBeNull();
-      expect(getComputedStyle(circle!).fill).toBe("none");
-      expect(getComputedStyle(circle!).stroke).not.toBe("none");
+      expect(outline).not.toBeNull();
+      expect(getComputedStyle(outline!).fill).toBe("none");
+      expect(getComputedStyle(outline!).stroke).not.toBe("none");
       expect(label?.querySelector(".rounded-full")).toBeNull();
     } finally {
       state.pill = null;

@@ -351,11 +351,11 @@ describe("ThreadCard status marks", () => {
     );
 
     const label = screen.getByText("Needs you").element();
-    const circle = label.parentElement?.querySelector("circle");
-    expect(circle).not.toBeNull();
-    expect(getComputedStyle(circle!).fill).toBe("none");
-    expect(getComputedStyle(circle!).stroke).not.toBe("none");
-    expect(getComputedStyle(circle!).stroke).toBe(tokenColor("--warn-ink"));
+    const outline = label.parentElement?.querySelector("svg path");
+    expect(outline).not.toBeNull();
+    expect(getComputedStyle(outline!).fill).toBe("none");
+    expect(getComputedStyle(outline!).stroke).not.toBe("none");
+    expect(getComputedStyle(outline!).stroke).toBe(tokenColor("--warn-ink"));
   });
 });
 

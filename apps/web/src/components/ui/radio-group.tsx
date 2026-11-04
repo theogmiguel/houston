@@ -17,15 +17,16 @@ function Radio({ className, ...props }: RadioPrimitive.Root.Props) {
   return (
     <RadioPrimitive.Root
       className={cn(
-        "relative inline-flex size-4.5 shrink-0 items-center justify-center rounded-full border border-border bg-(--control-fill) outline-none transition-[border-color,box-shadow] focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-ring aria-invalid:border-destructive/36 focus-visible:aria-invalid:border-destructive/64 focus-visible:aria-invalid:outline-destructive/48 data-disabled:opacity-64 sm:size-4",
+        "relative inline-flex size-4.5 shrink-0 items-center justify-center rounded-full border border-border bg-(--control-fill) outline-none transition-[border-color,box-shadow] duration-(--motion-feedback) ease-standard focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-ring aria-invalid:border-destructive/36 focus-visible:aria-invalid:border-destructive/64 focus-visible:aria-invalid:outline-destructive/48 data-disabled:opacity-64 sm:size-4",
         className,
       )}
       data-slot="radio"
       {...props}
     >
       <RadioPrimitive.Indicator
-        className="-inset-px absolute flex size-4.5 items-center justify-center rounded-full before:size-2 before:rounded-full before:bg-primary-foreground data-unchecked:hidden data-checked:bg-primary sm:size-4 sm:before:size-1.5 in-[[data-slot=radio]:focus-visible]:inset-shadow-[0_0_0_3px_var(--background)] in-[[data-slot=radio]:focus-visible]:outline-2 in-[[data-slot=radio]:focus-visible]:outline-solid in-[[data-slot=radio]:focus-visible]:-outline-offset-2 in-[[data-slot=radio]:focus-visible]:outline-inherit"
+        className="-inset-px absolute flex size-4.5 scale-75 items-center justify-center rounded-full opacity-0 transition-[opacity,scale] duration-(--motion-value) ease-standard before:size-2 before:rounded-full before:bg-primary-foreground data-checked:scale-100 data-checked:bg-primary data-checked:opacity-100 sm:size-4 sm:before:size-1.5 in-[[data-slot=radio]:focus-visible]:inset-shadow-[0_0_0_3px_var(--background)] in-[[data-slot=radio]:focus-visible]:outline-2 in-[[data-slot=radio]:focus-visible]:outline-solid in-[[data-slot=radio]:focus-visible]:-outline-offset-2 in-[[data-slot=radio]:focus-visible]:outline-inherit"
         data-slot="radio-indicator"
+        keepMounted
       />
     </RadioPrimitive.Root>
   );

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
+import { userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { render } from "../../../test/render";
 import { Badge } from "./badge";
 import { Button } from "./button";
+import { Checkbox } from "./checkbox";
 import { Input } from "./input";
 import { Kbd } from "./kbd";
 import { SelectButton } from "./select";
@@ -174,5 +176,69 @@ describe("Houston primitives", () => {
     expect(getComputedStyle(group).borderRadius).toBe("6px");
     expect(height(chat)).toBe(24);
     expect(getComputedStyle(chat).borderRadius).toBe("4px");
+  });
+
+  it("moves one indicator onto the pressed segment with transform", async () => {
+    await using screen = await render(
+      <ToggleGroup aria-label="Mode" defaultValue={["chat"]}>
+        <Toggle value="chat">Chat</Toggle>
+        <Toggle value="plan">Plan</Toggle>
+      </ToggleGroup>,
+      { router: false },
+    );
+
+    const group = screen.getByRole("group", { name: "Mode" }).element();
+    const indicator = screen.container.querySelector<HTMLElement>(
+      '[data-slot="toggle-group-indicator"]',
+    )!;
+    const chat = screen.getByRole("button", { name: "Chat" }).element();
+    const plan = screen.getByRole("button", { name: "Plan" }).element();
+    const placement = (item: Element) => {
+      const groupRect = group.getBoundingClientRect();
+      const itemRect = item.getBoundingClientRect();
+      return {
+        x: itemRect.left - groupRect.left,
+        y: itemRect.top - groupRect.top,
+        width: itemRect.width,
+      };
+    };
+    const placed = () => {
+      const match = /^translate\(([-\d.]+)px, ([-\d.]+)px\)$/u.exec(indicator.style.transform);
+      return match === null
+        ? null
+        : { x: Number(match[1]), y: Number(match[2]), width: parseFloat(indicator.style.width) };
+    };
+    const expectPlacedOn = (item: Element) => {
+      const target = placement(item);
+      expect(placed()).not.toBeNull();
+      expect(placed()!.x).toBeCloseTo(target.x);
+      expect(placed()!.y).toBeCloseTo(target.y);
+      expect(placed()!.width).toBeCloseTo(target.width);
+    };
+
+    expect(indicator.getAttribute("aria-hidden")).toBe("true");
+    expectPlacedOn(chat);
+    expect(getComputedStyle(indicator).transitionProperty).toContain("transform");
+
+    await userEvent.click(plan);
+
+    expectPlacedOn(plan);
+  });
+
+  it("keeps the checkbox mark mounted so it fades and scales", async () => {
+    await using screen = await render(
+      <div>
+        <Checkbox aria-label="Include" />
+      </div>,
+      { router: false },
+    );
+
+    const indicator = screen.container.querySelector<HTMLElement>(
+      '[data-slot="checkbox-indicator"]',
+    )!;
+
+    expect(indicator).not.toBeNull();
+    expect(getComputedStyle(indicator).opacity).toBe("0");
+    expect(getComputedStyle(indicator).transitionProperty).toContain("opacity");
   });
 });

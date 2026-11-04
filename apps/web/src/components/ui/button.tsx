@@ -6,7 +6,7 @@ import type * as React from "react";
 import { cn } from "~/lib/utils";
 
 const buttonVariants = cva(
-  "[--control-icon-color:currentColor] [&_svg]:-mx-0.5 relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--r-ctl)] border font-medium text-[13px] outline-none transition-[background-color,color] pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-[0.45] aria-disabled:cursor-not-allowed aria-disabled:opacity-[0.45] [&_svg:not([class*='text-'])]:text-[var(--control-icon-color)] [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "[--control-icon-color:currentColor] [&_svg]:-mx-0.5 relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--r-ctl)] border font-medium text-[13px] outline-none transition-[background-color,color,scale] duration-(--motion-feedback) ease-standard [&:active:not([aria-haspopup])]:scale-[0.97] pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-[0.45] aria-disabled:cursor-not-allowed aria-disabled:opacity-[0.45] [&_svg:not([class*='text-'])]:text-[var(--control-icon-color)] [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     defaultVariants: {
       size: "default",
