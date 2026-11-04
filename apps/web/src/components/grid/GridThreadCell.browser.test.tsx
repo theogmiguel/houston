@@ -437,7 +437,7 @@ describe("GridThreadCell surfaces", () => {
     const actions = [...label.querySelectorAll("button")].map((button) =>
       button.getAttribute("aria-label"),
     );
-    expect(actions).toEqual(["More cell actions", "Maximize cell", "Close cell"]);
+    expect(actions).toEqual(["More cell actions", "Maximize cell", "Close thread"]);
     expect(label.querySelector('[aria-label="Split cell"]')).toBeNull();
 
     await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);

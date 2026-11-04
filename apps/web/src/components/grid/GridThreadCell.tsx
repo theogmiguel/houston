@@ -281,14 +281,16 @@ export function GridThreadCell({
             <Button
               variant="ghost-muted"
               size="icon-sm"
-              aria-label="Close cell"
+              aria-label={draftId === undefined ? "Close thread" : "Close cell"}
               onClick={discardDraft}
             />
           }
         >
           <XIcon />
         </TooltipTrigger>
-        <TooltipPopup side="bottom">Close cell</TooltipPopup>
+        <TooltipPopup side="bottom">
+          {draftId === undefined ? "Close thread" : "Close cell"}
+        </TooltipPopup>
       </Tooltip>
     </>
   );

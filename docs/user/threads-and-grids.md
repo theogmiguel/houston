@@ -48,9 +48,9 @@ another grid for it.
   threads that are not shown in another grid.
 - **Move to…** swaps a cell with another thread in the same grid.
 - **Maximize cell** gives one thread the whole grid; **Restore cell** returns the layout.
-- **Close cell** removes the thread from the grid; the last closed cell can be put back
-  with **Reopen closed tab** (`Ctrl+Shift+T`), and a thread not in any grid appears under
-  its project with the note **not in a grid**.
+- **Close thread** (the cell's ×) closes the thread: it moves to **Closed** and keeps its
+  slot, so reopening it from **Closed** (or **Undo** on the toast) puts it back in the same
+  cell. On a draft cell the × just removes the cell.
 - **Tidy** rearranges the cells: **Balanced grid**, **One row** or **One column**.
   **Equalize** resets every split to an even share. These are also rebindable commands.
 

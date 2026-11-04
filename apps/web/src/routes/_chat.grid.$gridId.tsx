@@ -40,6 +40,12 @@ import { cn } from "../lib/utils";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useStableCallback } from "../hooks/useStableCallback";
+import { useThreadActions } from "../hooks/useThreadActions";
+import { closeGridThread } from "../grid/closeGridThread";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@houston-app/client-runtime/state/runtime";
 import { resolveShortcutCommand } from "../keybindings";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { useRightPanelStore } from "../rightPanelStore";
@@ -65,7 +71,7 @@ function GridRoute() {
   const addThread = useGridStore((store) => store.addThread);
   const focusThread = useGridStore((store) => store.focusThread);
   const setGridDetailsOpen = useGridStore((store) => store.setGridDetailsOpen);
-  const closeGridCell = useGridStore((store) => store.closeGridCell);
+  const threadActions = useThreadActions();
   const reorderGridThreads = useGridStore((store) => store.reorderGridThreads);
   const moveThreadToCell = useGridStore((store) => store.moveThreadToCell);
   const createGrid = useGridStore((store) => store.createGrid);
@@ -438,7 +444,32 @@ function GridRoute() {
             maximizedThreadId={effectiveMaximized}
             onTreeChange={(tree) => setTree(grid.id, tree)}
             onFocusThread={(threadId) => focusThread(grid.id, threadId)}
-            onCloseThread={(threadId) => closeGridCell(grid.id, threadId)}
+            onCloseThread={(threadId) => {
+              void closeGridThread({
+                gridId: grid.id,
+                threadId,
+                settle: (id) =>
+                  threadActions.settleThread(
+                    scopeThreadRef(grid.environmentId as EnvironmentId, id as ThreadId),
+                  ),
+              }).then((result) => {
+                if (
+                  result === null ||
+                  result._tag !== "Failure" ||
+                  isAtomCommandInterrupted(result)
+                ) {
+                  return;
+                }
+                const error = squashAtomCommandFailure(result);
+                toastManager.add(
+                  stackedThreadToast({
+                    type: "error",
+                    title: "Failed to close thread",
+                    description: error instanceof Error ? error.message : "An error occurred.",
+                  }),
+                );
+              });
+            }}
             onDropThread={(source, targetThreadId, side) => {
               const targetCount = grid.tree === null ? 0 : preorderThreads(grid.tree).length;
               const sourceProjectKey = workspaceKeyOf(source.environmentId, source.projectId);
