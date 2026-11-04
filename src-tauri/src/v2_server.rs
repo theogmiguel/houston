@@ -915,16 +915,23 @@ impl V2Host {
         self.store_settings(settings)
     }
 
-    /// Apply a settings change that affects how the server is spawned. The old
-    /// value is restored if the new server does not become healthy.
+    /// Apply a settings change that affects how the server is spawned. A server that
+    /// cannot be stopped keeps the old value; one that does not start again restores it.
     pub async fn apply_settings_restarting(&self, next: DesktopSettings) -> Result<(), String> {
         let previous = self.settings();
+        let _start = self.start_lock.lock().await;
+        self.stop_for_restart()
+            .await
+            .map_err(|error| format!("{error}; the exposure settings are unchanged"))?;
         self.store_settings(next)?;
-        match self.restart().await {
+        match ensure_running_locked(self).await {
             Ok(_) => Ok(()),
             Err(error) => {
                 let _ = self.store_settings(previous);
-                let recovery = self.restart().await;
+                let recovery = match self.stop_for_restart().await {
+                    Ok(()) => ensure_running_locked(self).await.map(|_| ()),
+                    Err(error) => Err(error),
+                };
                 Err(match recovery {
                     Ok(_) => format!("{error}; the previous exposure settings were restored"),
                     Err(second) => format!(
@@ -2679,6 +2686,39 @@ mod tests {
             .expect("a reused pid does not block startup");
         assert_eq!(*signals.lock().unwrap(), []);
         assert!(!runtime_path(dir.path()).exists());
+    }
+
+    /// A refused stop changes nothing, so the settings change reports only that refusal.
+    #[tokio::test]
+    async fn a_settings_change_the_server_refuses_leaves_the_settings_unchanged() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        write_record(dir.path(), RECORDED_PID, Some(STARTED_AT));
+        let (host, signals) = host_with_processes(
+            dir.path(),
+            FakeProcesses {
+                identity: Some(server_identity(60)),
+                ..FakeProcesses::default()
+            },
+        );
+        host.set_running(tracked_server());
+        let network = DesktopSettings {
+            exposure_mode: "network-accessible".to_string(),
+            ..DesktopSettings::default()
+        };
+        let error = host
+            .apply_settings_restarting(network)
+            .await
+            .expect_err("the server is not confirmed");
+        assert_eq!(*signals.lock().unwrap(), []);
+        assert!(error.contains("not restarting"), "{error}");
+        assert!(error.contains("settings are unchanged"), "{error}");
+        assert!(!error.contains("also failed"), "{error}");
+        assert_eq!(host.settings(), DesktopSettings::default());
+        assert_eq!(
+            load_settings(dir.path()).unwrap(),
+            DesktopSettings::default()
+        );
+        assert_eq!(host.running(), Some(tracked_server()));
     }
 
     fn last_error(host: &V2Host) -> Option<String> {
