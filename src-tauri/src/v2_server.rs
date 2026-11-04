@@ -1004,6 +1004,23 @@ impl V2Host {
         }
     }
 
+    /// A server found dead is no longer ready: forget its origin so `status()`
+    /// reports `starting` during the restart. A newer server (another pid) stays.
+    fn forget_unhealthy(&self, pid: i32) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        if state
+            .running
+            .as_ref()
+            .is_some_and(|running| running.pid == pid)
+        {
+            state.running = None;
+            return true;
+        }
+        false
+    }
+
     pub fn running(&self) -> Option<RunningServer> {
         self.state
             .lock()
@@ -1319,10 +1336,15 @@ pub async fn monitor(host: std::sync::Arc<V2Host>, app: tauri::AppHandle) {
                 tokio::time::sleep(HEALTHY_POLL).await;
                 continue;
             }
-            Some(running) => eprintln!(
-                "houston-tauri: v2 server (pid {}) is no longer healthy; restarting it",
-                running.pid
-            ),
+            Some(running) => {
+                eprintln!(
+                    "houston-tauri: v2 server (pid {}) is no longer healthy; restarting it",
+                    running.pid
+                );
+                if host.forget_unhealthy(running.pid) {
+                    publish_snapshot(&app, &host);
+                }
+            }
             None => {}
         }
         match start_server(&host).await {
@@ -1909,6 +1931,30 @@ mod tests {
         assert!(host.status()["warning"]
             .as_str()
             .is_some_and(|w| w.contains("locked")));
+    }
+
+    #[test]
+    fn a_crashed_server_reports_starting_until_its_replacement_is_ready() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let (host, _) = host_with_secret(dir.path(), || Ok("k".repeat(64)));
+        host.set_running(running_server(42));
+        assert_eq!(host.status()["state"], "ready");
+
+        assert!(host.forget_unhealthy(42));
+        let status = host.status();
+        assert_eq!(status["state"], "starting");
+        assert!(status.get("origin").is_none(), "{status}");
+        assert!(
+            host.bootstrap_list().is_err(),
+            "no bootstrap names the dead origin"
+        );
+
+        host.set_running(running_server(43));
+        assert!(
+            !host.forget_unhealthy(42),
+            "a replacement started meanwhile is kept"
+        );
+        assert_eq!(host.status()["pid"], 43);
     }
 
     #[test]
