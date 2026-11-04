@@ -9,8 +9,11 @@ import type {
   PullRequestState,
 } from "@houston-app/contracts";
 import { formatDiffCount } from "@houston-app/client-runtime/diff-count";
+import { GitMerge, GitPullRequestArrow, GitPullRequestClosed, GitPullRequestDraft } from "lucide";
+import type { IconNode } from "morphicons/react";
 import { Children, type CSSProperties, isValidElement, type ReactNode, useState } from "react";
 
+import { MorphIcon } from "~/components/MorphIcon";
 import { cn } from "~/lib/utils";
 
 import { Badge } from "../ui/badge";
@@ -71,12 +74,22 @@ export function PullRequestReviewDecisionGlyph({
   );
 }
 
+const PULL_REQUEST_STATE_ICON = {
+  open: GitPullRequestArrow,
+  draft: GitPullRequestDraft,
+  merged: GitMerge,
+  closed: GitPullRequestClosed,
+} as const satisfies Record<"open" | "draft" | "merged" | "closed", IconNode>;
+
+function pullRequestStateKey(state: PullRequestState, isDraft: boolean) {
+  return state === "open" && isDraft ? "draft" : state;
+}
+
 export function resolvePullRequestState(input: {
   readonly state: PullRequestState;
   readonly isDraft: boolean;
 }): PullRequestStatePresentation {
-  const key = input.state === "open" && input.isDraft ? "draft" : input.state;
-  return PULL_REQUEST_PRESENTATION[key];
+  return PULL_REQUEST_PRESENTATION[pullRequestStateKey(input.state, input.isDraft)];
 }
 
 export interface PullRequestConflictPresentation {
@@ -114,10 +127,10 @@ export function PullRequestStateGlyph({
   return (
     <Tooltip>
       <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
-        <presentation.Icon
-          role="img"
-          aria-label={presentation.label}
+        <MorphIcon
           className={cn("size-4 shrink-0", presentation.toneClassName, className)}
+          icon={PULL_REQUEST_STATE_ICON[pullRequestStateKey(state, isDraft)]}
+          label={presentation.label}
         />
       </TooltipTrigger>
       <TooltipPopup>{presentation.label}</TooltipPopup>

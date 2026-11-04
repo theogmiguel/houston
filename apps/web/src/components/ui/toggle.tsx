@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "~/lib/utils";
 
 const toggleVariants = cva(
-  "[&_svg]:-mx-0.5 relative inline-flex shrink-0 cursor-pointer select-none items-center justify-center gap-2 whitespace-nowrap rounded-[var(--r-ctl)] border font-medium text-[13px] text-foreground outline-none transition-shadow before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 hover:bg-hover focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-64 aria-disabled:opacity-64 data-pressed:bg-input/64 data-pressed:text-hover-foreground [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "[&_svg]:-mx-0.5 relative inline-flex shrink-0 cursor-pointer select-none items-center justify-center gap-2 whitespace-nowrap rounded-[var(--r-ctl)] border font-medium text-[13px] text-foreground outline-none transition-[color,background-color,box-shadow] duration-(--motion-feedback) ease-standard before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 hover:bg-hover focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-64 aria-disabled:opacity-64 data-pressed:bg-input/64 data-pressed:text-hover-foreground [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     defaultVariants: {
       size: "default",
@@ -27,7 +27,7 @@ const toggleVariants = cva(
           "border-transparent text-foreground shadow-none [:disabled,:active,[data-pressed]]:shadow-none before:shadow-none data-pressed:bg-hover data-pressed:text-hover-foreground disabled:opacity-100 disabled:text-muted-foreground disabled:[&_svg]:opacity-100",
         outline: "border-border bg-card hover:bg-[var(--surface-raised)] data-pressed:bg-hover",
         segmented:
-          "border-transparent text-secondary-foreground shadow-none transition-colors before:shadow-none hover:bg-hover hover:text-foreground data-pressed:bg-[var(--surface-raised)] data-pressed:text-foreground data-pressed:shadow-[var(--shadow-seg)]",
+          "border-transparent text-secondary-foreground shadow-none transition-[color,background-color] duration-(--motion-feedback) ease-standard before:shadow-none hover:bg-hover hover:text-foreground data-pressed:bg-transparent data-pressed:text-foreground data-pressed:shadow-none data-pressed:hover:bg-transparent",
       },
     },
   },
