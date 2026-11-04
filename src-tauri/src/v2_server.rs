@@ -32,6 +32,13 @@ const LAST_PROBED_PORT: u16 = 3809;
 // A large state database can take over a minute to become ready, so a shorter
 // window would show the recovery screen while the server is still starting.
 const READY_TIMEOUT: Duration = Duration::from_secs(180);
+// A cold server answers in a few hundred milliseconds; a probe before its runtime
+// record exists is one small file read, so the first second polls tightly and
+// a slow start (a large database) falls back to the old pace.
+const READY_POLL_FAST: Duration = Duration::from_millis(25);
+const READY_POLL_FAST_FOR: Duration = Duration::from_secs(1);
+const READY_POLL_MEDIUM: Duration = Duration::from_millis(100);
+const READY_POLL_MEDIUM_UNTIL: Duration = Duration::from_secs(5);
 const READY_POLL: Duration = Duration::from_millis(250);
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 const TOKEN_WINDOW_MS: u128 = 12 * 60 * 60 * 1000;
@@ -553,14 +560,36 @@ fn process_alive(pid: i32) -> bool {
     pid > 0 && crate::sys::pid::process_is_alive(pid as u32)
 }
 
+/// One client for every probe and exchange: building one loads the TLS roots.
+/// No idle connections are kept, so a probe never reuses a socket to a server
+/// that has since died and misreads that as a crash.
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .pool_max_idle_per_host(0)
+            .build()
+            .unwrap_or_else(|error| {
+                eprintln!("houston-tauri: building the v2 HTTP client failed ({error}); using the default client");
+                reqwest::Client::new()
+            })
+    })
+}
+
+/// The delay before the next readiness probe, given the time since spawn.
+fn ready_poll_delay(elapsed: Duration) -> Duration {
+    if elapsed < READY_POLL_FAST_FOR {
+        READY_POLL_FAST
+    } else if elapsed < READY_POLL_MEDIUM_UNTIL {
+        READY_POLL_MEDIUM
+    } else {
+        READY_POLL
+    }
+}
+
 async fn health_ok(origin: &str) -> bool {
     let url = format!("{}{}", origin.trim_end_matches('/'), READINESS_PATH);
-    match reqwest::Client::new()
-        .get(&url)
-        .timeout(HEALTH_TIMEOUT)
-        .send()
-        .await
-    {
+    match http_client().get(&url).timeout(HEALTH_TIMEOUT).send().await {
         Ok(response) => response.status().is_success(),
         Err(_) => false,
     }
@@ -748,7 +777,8 @@ fn spawn_server(
 }
 
 async fn wait_for_ready(base_dir: &Path, child: &mut Child) -> Result<ServerRuntime, String> {
-    let deadline = Instant::now() + READY_TIMEOUT;
+    let started = Instant::now();
+    let deadline = started + READY_TIMEOUT;
     loop {
         if let Some(runtime) = read_runtime(base_dir) {
             if process_alive(runtime.pid) && health_ok(&runtime.origin).await {
@@ -771,7 +801,7 @@ async fn wait_for_ready(base_dir: &Path, child: &mut Child) -> Result<ServerRunt
                 log_tail(base_dir)
             ));
         }
-        tokio::time::sleep(READY_POLL).await;
+        tokio::time::sleep(ready_poll_delay(started.elapsed())).await;
     }
 }
 
@@ -1054,7 +1084,7 @@ impl V2Host {
             form_encode(ACCESS_TOKEN_TYPE),
         );
         let url = format!("{}/oauth/token", running.origin.trim_end_matches('/'));
-        let response = reqwest::Client::new()
+        let response = http_client()
             .post(&url)
             .header(
                 reqwest::header::CONTENT_TYPE,
@@ -1879,6 +1909,28 @@ mod tests {
         assert!(host.status()["warning"]
             .as_str()
             .is_some_and(|w| w.contains("locked")));
+    }
+
+    #[test]
+    fn readiness_polls_tightly_for_the_first_second_then_backs_off() {
+        let mut elapsed = Duration::ZERO;
+        let mut probes = 0;
+        while elapsed < Duration::from_secs(1) {
+            elapsed += ready_poll_delay(elapsed);
+            probes += 1;
+        }
+        assert!(
+            probes >= 20,
+            "{probes} probes in the first second; a ready server waits at most one interval"
+        );
+        assert_eq!(ready_poll_delay(Duration::from_secs(2)), READY_POLL_MEDIUM);
+        assert_eq!(ready_poll_delay(Duration::from_secs(5)), READY_POLL);
+        assert_eq!(ready_poll_delay(Duration::from_secs(170)), READY_POLL);
+    }
+
+    #[test]
+    fn probes_share_one_http_client() {
+        assert!(std::ptr::eq(http_client(), http_client()));
     }
 
     #[test]
