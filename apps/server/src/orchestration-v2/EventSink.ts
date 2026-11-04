@@ -200,6 +200,17 @@ export class EventSinkV2 extends Context.Service<EventSinkV2, EventSinkV2Shape>(
   "@houston-app/cli/orchestration-v2/EventSink/EventSinkV2",
 ) {}
 
+// Houston: every follower of a thread shares one wire copy of a live event, so the budget sizes it once.
+const wireCopies = new WeakMap<OrchestrationV2StoredEvent, OrchestrationV2StoredEvent>();
+const projectStoredEventForWire = (stored: OrchestrationV2StoredEvent) => {
+  let projected = wireCopies.get(stored);
+  if (projected === undefined) {
+    projected = { ...stored, event: projectDomainEventForWire(stored.event) };
+    wireCopies.set(stored, projected);
+  }
+  return projected;
+};
+
 const layerBase: Layer.Layer<
   EventSinkV2,
   never,
@@ -863,7 +874,7 @@ const layerBase: Layer.Layer<
               afterSequence,
               filter: matches,
               replay,
-              project: (stored) => ({ ...stored, event: projectDomainEventForWire(stored.event) }),
+              project: projectStoredEventForWire,
             });
           }
           const subscription = yield* PubSub.subscribe(pubsub);
