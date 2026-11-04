@@ -1370,6 +1370,10 @@ pub async fn monitor(host: std::sync::Arc<V2Host>, app: tauri::AppHandle) {
 /// Emitted when the local server's state changes, for the renderer's startup banner.
 pub const EVENT_STATUS: &str = "v2-server-status";
 
+/// The app's own webviews, which load the renderer with the bootstrap globals.
+/// Never a webview that shows other content: the bootstrap carries a credential.
+pub const BOOTSTRAP_WEBVIEWS: [&str; 2] = ["main", crate::quick_composer::WINDOW_LABEL];
+
 /// Refreshes the bridge's bootstrap and status globals and tells the renderer.
 /// The renderer's environment poll reads the globals synchronously every few seconds.
 pub fn publish_snapshot(app: &AppHandle, host: &V2Host) {
@@ -1377,12 +1381,16 @@ pub fn publish_snapshot(app: &AppHandle, host: &V2Host) {
         .bootstrap_list()
         .unwrap_or_else(|_| serde_json::json!([]));
     let status = host.status();
-    if let Some(webview) = app.get_webview("main") {
-        let script = format!(
-            "window.__HOUSTON_V2_BOOTSTRAP__ = {bootstrap};\nwindow.__HOUSTON_V2_STATUS__ = {status};"
-        );
-        if let Err(error) = webview.eval(&script) {
-            eprintln!("houston-tauri: could not refresh the renderer bootstrap: {error}");
+    let script = format!(
+        "window.__HOUSTON_V2_BOOTSTRAP__ = {bootstrap};\nwindow.__HOUSTON_V2_STATUS__ = {status};"
+    );
+    for label in BOOTSTRAP_WEBVIEWS {
+        if let Some(webview) = app.get_webview(label) {
+            if let Err(error) = webview.eval(&script) {
+                eprintln!(
+                    "houston-tauri: could not refresh the {label} webview's bootstrap: {error}"
+                );
+            }
         }
     }
     if let Err(error) = app.emit(EVENT_STATUS, &status) {
@@ -1955,6 +1963,12 @@ mod tests {
             "a replacement started meanwhile is kept"
         );
         assert_eq!(host.status()["pid"], 43);
+    }
+
+    #[test]
+    fn the_bootstrap_reaches_every_app_webview() {
+        assert!(BOOTSTRAP_WEBVIEWS.contains(&"main"));
+        assert!(BOOTSTRAP_WEBVIEWS.contains(&crate::quick_composer::WINDOW_LABEL));
     }
 
     #[test]
