@@ -96,6 +96,7 @@ import {
 } from "./scheduledTasksSettings.logic";
 import { Label } from "../ui/label";
 import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "../ui/menu";
+import { Swap } from "../ui/swap";
 import { ToggleGroup, Toggle } from "../ui/toggle-group";
 import { PageEmptyState } from "../ui/empty-state";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
@@ -669,60 +670,69 @@ function ScheduledTaskEnvironmentSection({
     matchesScheduledTaskScope(scope, environment.environmentId, task.projectId),
   );
   const linkedTask = tasks?.find((task) => task.id === taskId);
+  const viewKey = !connected
+    ? "disconnected"
+    : tasksQuery.error
+      ? "error"
+      : !tasks
+        ? "loading"
+        : "loaded";
   return (
-    <SettingsSection
-      title={environment.label}
-      hideTitle
-      icon={
-        <EnvironmentMachineIcon
-          kind={resolveEnvironmentMachineKind(environment.serverConfig)}
-          className="size-3.5"
-        />
-      }
-    >
-      {!connected ? (
-        <SettingsRow
-          title="Environment disconnected"
-          description={`Reconnect ${environment.label} to view its scheduled tasks.`}
-        />
-      ) : tasksQuery.error ? (
-        <SettingsRow title="Could not load scheduled tasks" description={tasksQuery.error} />
-      ) : !tasks ? (
-        <SettingsRow title="Loading scheduled tasks…" role="status" />
-      ) : (
-        <>
-          {taskId && !linkedTask ? (
-            <SettingsRow
-              title="Task unavailable"
-              description="This task was deleted or belongs to a different project. Check your project filter."
-              role="status"
-            />
-          ) : null}
-          {tasks.length === 0 ? (
-            <div className="py-8">
-              <PageEmptyState
-                icon={<Clock3Icon />}
-                title="No scheduled tasks"
-                description="No tasks match this environment and project selection."
+    <Swap swapKey={viewKey} className="flex flex-col" contentClassName="flex flex-col">
+      <SettingsSection
+        title={environment.label}
+        hideTitle
+        icon={
+          <EnvironmentMachineIcon
+            kind={resolveEnvironmentMachineKind(environment.serverConfig)}
+            className="size-3.5"
+          />
+        }
+      >
+        {!connected ? (
+          <SettingsRow
+            title="Environment disconnected"
+            description={`Reconnect ${environment.label} to view its scheduled tasks.`}
+          />
+        ) : tasksQuery.error ? (
+          <SettingsRow title="Could not load scheduled tasks" description={tasksQuery.error} />
+        ) : !tasks ? (
+          <SettingsRow title="Loading scheduled tasks…" role="status" />
+        ) : (
+          <>
+            {taskId && !linkedTask ? (
+              <SettingsRow
+                title="Task unavailable"
+                description="This task was deleted or belongs to a different project. Check your project filter."
+                role="status"
               />
-            </div>
-          ) : (
-            <AnimatedHeight>
-              <div className="[&>*+*]:relative [&>*+*]:before:pointer-events-none [&>*+*]:before:absolute [&>*+*]:before:top-0 [&>*+*]:before:left-3.5 [&>*+*]:before:right-0 [&>*+*]:before:h-px [&>*+*]:before:bg-border [&>*+*]:before:content-['']">
-                {tasks.map((task) => (
-                  <ScheduledTaskRow
-                    key={task.id}
-                    environmentId={environment.environmentId}
-                    task={task}
-                    onEdit={() => onEdit(environment.environmentId, task)}
-                  />
-                ))}
+            ) : null}
+            {tasks.length === 0 ? (
+              <div className="py-8">
+                <PageEmptyState
+                  icon={<Clock3Icon />}
+                  title="No scheduled tasks"
+                  description="No tasks match this environment and project selection."
+                />
               </div>
-            </AnimatedHeight>
-          )}
-        </>
-      )}
-    </SettingsSection>
+            ) : (
+              <AnimatedHeight>
+                <div className="[&>*+*]:relative [&>*+*]:before:pointer-events-none [&>*+*]:before:absolute [&>*+*]:before:top-0 [&>*+*]:before:left-3.5 [&>*+*]:before:right-0 [&>*+*]:before:h-px [&>*+*]:before:bg-border [&>*+*]:before:content-['']">
+                  {tasks.map((task) => (
+                    <ScheduledTaskRow
+                      key={task.id}
+                      environmentId={environment.environmentId}
+                      task={task}
+                      onEdit={() => onEdit(environment.environmentId, task)}
+                    />
+                  ))}
+                </div>
+              </AnimatedHeight>
+            )}
+          </>
+        )}
+      </SettingsSection>
+    </Swap>
   );
 }
 

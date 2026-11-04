@@ -1,6 +1,7 @@
 import type { EnvironmentId, PullRequestRef, PullRequestReviewGuide } from "@houston-app/contracts";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
+import { Swap } from "~/components/ui/swap";
 import { createPullRequestDiffFileContentsLoader } from "~/lib/diffFileContents";
 import { isEditableFocused } from "~/lib/editableFocus";
 import { pullRequestEnvironment } from "~/state/pullRequests";
@@ -107,42 +108,47 @@ export function GuideTour({
               The diff could not be loaded, so excerpts are missing: {diff.error}
             </p>
           ) : null}
-          {stop === null ? (
-            <p className="text-sm text-muted-foreground">This change has no files to tour.</p>
-          ) : (
-            <GuideStop
-              key={position}
-              stop={stop}
-              index={position}
-              stopCount={stopCount}
-              railOpen={railOpen}
-              onRailOpenChange={setRailOpen}
-              stopList={
-                <GuideRail
-                  stops={guide.stops}
-                  position={position}
-                  seen={tour.seen}
-                  onSelect={goTo}
-                />
-              }
-              nextTitle={guide.stops[position + 1]?.title ?? null}
-              files={diff.files}
-              loadDiffFiles={loadDiffFiles}
-              diffLoading={diff.loading}
-              commenting={commenting}
-              onStep={step}
-              onAsk={onAsk === null ? null : (question) => onAsk(position, question)}
-              onFinish={
-                onFinish === null
-                  ? null
-                  : () => {
-                      update((current) => ({ seen: new Set(current.seen).add(position) }));
-                      onFinish();
-                    }
-              }
-              onOpenFile={onOpenFile}
-            />
-          )}
+          <Swap
+            swapKey={stop === null ? "empty" : position}
+            className="flex min-w-0 flex-col"
+            contentClassName="flex min-w-0 flex-col"
+          >
+            {stop === null ? (
+              <p className="text-sm text-muted-foreground">This change has no files to tour.</p>
+            ) : (
+              <GuideStop
+                stop={stop}
+                index={position}
+                stopCount={stopCount}
+                railOpen={railOpen}
+                onRailOpenChange={setRailOpen}
+                stopList={
+                  <GuideRail
+                    stops={guide.stops}
+                    position={position}
+                    seen={tour.seen}
+                    onSelect={goTo}
+                  />
+                }
+                nextTitle={guide.stops[position + 1]?.title ?? null}
+                files={diff.files}
+                loadDiffFiles={loadDiffFiles}
+                diffLoading={diff.loading}
+                commenting={commenting}
+                onStep={step}
+                onAsk={onAsk === null ? null : (question) => onAsk(position, question)}
+                onFinish={
+                  onFinish === null
+                    ? null
+                    : () => {
+                        update((current) => ({ seen: new Set(current.seen).add(position) }));
+                        onFinish();
+                      }
+                }
+                onOpenFile={onOpenFile}
+              />
+            )}
+          </Swap>
         </main>
       </div>
     </div>

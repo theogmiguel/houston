@@ -1,5 +1,6 @@
 import { SettingsGroup } from "./SettingsGroup";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { Swap } from "~/components/ui/swap";
 import {
   AuthSettingsWriteScope,
   AuthProvidersManageScope,
@@ -501,24 +502,32 @@ function AccessGatedProviderSettings({
     hasServerConfig: environment.serverConfig !== null,
     operateAccess,
   });
-  if (access.kind !== "editable" && access.kind !== "read-only") {
-    return (
-      <EnvironmentUnavailablePlaceholder
-        environment={environment}
-        access={access}
-        deviceTabs={deviceTabs}
-      />
-    );
-  }
+  const available = access.kind === "editable" || access.kind === "read-only";
   return (
-    <EnvironmentProviderSettings
-      environmentId={environment.environmentId}
-      environmentLabel={environment.label}
-      readOnly={access.kind === "read-only"}
-      deviceTabs={deviceTabs}
-      targetInstanceId={targetInstanceId}
-      projectIds={projectIds}
-    />
+    <Swap
+      swapKey={available ? "available" : `unavailable:${access.kind}`}
+      className="flex flex-col"
+      contentClassName="flex flex-col"
+    >
+      <div className="flex flex-col gap-8">
+        {available ? (
+          <EnvironmentProviderSettings
+            environmentId={environment.environmentId}
+            environmentLabel={environment.label}
+            readOnly={access.kind === "read-only"}
+            deviceTabs={deviceTabs}
+            targetInstanceId={targetInstanceId}
+            projectIds={projectIds}
+          />
+        ) : (
+          <EnvironmentUnavailablePlaceholder
+            environment={environment}
+            access={access}
+            deviceTabs={deviceTabs}
+          />
+        )}
+      </div>
+    </Swap>
   );
 }
 

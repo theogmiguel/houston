@@ -323,6 +323,7 @@ import { useIncrementalTimelineEntries } from "../hooks/useIncrementalTimelineEn
 import { useRightPanelSurfaceClose } from "../hooks/useRightPanelSurfaceClose";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { ComposerTaskStatus } from "./ui/composer-task-status";
+import { Swap } from "./ui/swap";
 import { modelFallbackBannerItem } from "./chat/ComposerUsageLimits";
 import { ComposerSurface } from "./chat/ComposerSurface";
 import { resolveThreadSyncPhase } from "../threadSync";
@@ -3697,13 +3698,12 @@ export default function ChatView(props: ChatViewProps) {
                   : { historyControls: threadHistoryControls })}
               />
 
-              {showScrollToBottom && !isThreadFindActive && (
-                <ScrollToEndButton
-                  bottom={scrollToEndClearance + 4}
-                  summary={scrollToEndSummary}
-                  onScrollToEnd={() => scrollToEnd(true)}
-                />
-              )}
+              <ScrollToEndButton
+                bottom={scrollToEndClearance + 4}
+                summary={scrollToEndSummary}
+                open={showScrollToBottom && !isThreadFindActive}
+                onScrollToEnd={() => scrollToEnd(true)}
+              />
             </div>
 
             <div
@@ -3754,7 +3754,9 @@ export default function ChatView(props: ChatViewProps) {
                   >
                     <ChildThreadApprovals threadRef={activeThreadRef} />
                     {changedFilesBar}
-                    {composerApprovalCard}
+                    <Swap swapKey={activePendingApproval?.requestId ?? "none"}>
+                      {composerApprovalCard}
+                    </Swap>
                     {!isDraftHeroState && environmentComposerBanners.length > 0 ? (
                       <div className="mb-1">
                         <ComposerBannerStack items={environmentComposerBanners} detached />

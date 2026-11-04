@@ -20,6 +20,7 @@ import { DiscoveryList } from "~/components/ui/discovery-list";
 import { Dialog } from "~/components/ui/dialog";
 import { WizardPopup } from "~/components/ui/wizard";
 import { Spinner } from "~/components/ui/spinner";
+import { Swap } from "~/components/ui/swap";
 import { cn } from "~/lib/utils";
 import { focusPanelTerminalAfterClose } from "~/lib/terminalFocus";
 import {
@@ -234,139 +235,150 @@ export function DevicePanel(props: {
           ) : null}
         </div>
         <div className="@container relative flex min-h-0 flex-1">
-          {activeDevice && activeSession ? (
-            <DeviceWorkspace
-              key={`${environmentId}\u0000${deviceKey(activeDevice)}`}
-              environmentId={environmentId}
-              device={activeDevice}
-              hostLabel={activeHost?.label ?? "Device host"}
-              hostKind={activeHost?.kind}
-              hostDiagnostics={
-                diagnostics.find(({ hostId }) => hostId === activeDevice.hostId)?.detail
-              }
-              visible={props.visible}
-              onFloat={floatActive}
-              onClose={() => closeActive(false)}
-              onPowerOff={() => closeActive(true)}
-            />
-          ) : loading ? (
-            <DeviceLoadingView
-              name={pendingDevice?.name ?? "Devices"}
-              description={
-                pendingDevice
-                  ? `${state.hosts.find((host) => host.id === pendingDevice.hostId)?.label ?? "Device host"} · ${pendingDevice.version}`
-                  : ""
-              }
-              stage="opening"
-              message={
-                loadError ??
-                (pendingDevice
-                  ? pendingDevice.booted
-                    ? "Opening device…"
-                    : "Starting device…"
-                  : state.hostStatus === "installing"
-                    ? (state.hostStatusDetail ?? "Installing device support…")
-                    : "Finding devices…")
-              }
-              error={loadError !== null}
-            >
-              {loadError !== null ? (
-                <Button size="sm" variant="outline" onClick={refreshState}>
-                  Retry
-                </Button>
-              ) : null}
-            </DeviceLoadingView>
-          ) : (
-            <div className="scrollbar-gutter-both flex size-full flex-col overflow-y-auto px-5 py-8 text-sm text-muted-foreground">
-              <div
-                className={cn(
-                  "mx-auto flex w-full max-w-xl flex-col gap-6",
-                  grouped.length === 0 && "my-auto items-center text-center",
-                )}
+          <Swap
+            swapKey={
+              activeDevice && activeSession
+                ? `device:${environmentId}:${deviceKey(activeDevice)}`
+                : loading
+                  ? "loading"
+                  : "discovery"
+            }
+            className="flex min-h-0 flex-1 flex-col"
+            contentClassName="flex min-h-0 flex-1 flex-col"
+          >
+            {activeDevice && activeSession ? (
+              <DeviceWorkspace
+                environmentId={environmentId}
+                device={activeDevice}
+                hostLabel={activeHost?.label ?? "Device host"}
+                hostKind={activeHost?.kind}
+                hostDiagnostics={
+                  diagnostics.find(({ hostId }) => hostId === activeDevice.hostId)?.detail
+                }
+                visible={props.visible}
+                onFloat={floatActive}
+                onClose={() => closeActive(false)}
+                onPowerOff={() => closeActive(true)}
+              />
+            ) : loading ? (
+              <DeviceLoadingView
+                name={pendingDevice?.name ?? "Devices"}
+                description={
+                  pendingDevice
+                    ? `${state.hosts.find((host) => host.id === pendingDevice.hostId)?.label ?? "Device host"} · ${pendingDevice.version}`
+                    : ""
+                }
+                stage="opening"
+                message={
+                  loadError ??
+                  (pendingDevice
+                    ? pendingDevice.booted
+                      ? "Opening device…"
+                      : "Starting device…"
+                    : state.hostStatus === "installing"
+                      ? (state.hostStatusDetail ?? "Installing device support…")
+                      : "Finding devices…")
+                }
+                error={loadError !== null}
               >
-                {grouped.length === 0 ? (
-                  <>
-                    <Smartphone className="size-6 opacity-60" />
-                    <p
-                      className="max-h-32 w-full max-w-sm overflow-y-auto whitespace-pre-line break-words"
-                      tabIndex={state.hostStatus === "failed" ? 0 : undefined}
-                    >
-                      {state.hostStatus === "failed"
-                        ? (state.hostStatusDetail ?? "The device hub failed to start.")
-                        : "No simulators or emulators were found on this environment."}
-                    </p>
-                  </>
-                ) : null}
-                {hostReady && grouped.length > 0 ? (
-                  <div className="w-full space-y-6 text-left">
-                    {grouped.map((group) => (
-                      <section key={group.platform} className="space-y-3">
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Smartphone className="size-4 shrink-0" />
-                          <h3 className="font-medium">{platformLabel(group.platform)}</h3>
-                        </div>
-                        <DiscoveryList>
-                          {group.devices.map((device) => (
-                            <div
-                              key={deviceKey(device)}
-                              className="flex items-center gap-3 px-3 py-3"
-                            >
-                              <span className="grid size-8 shrink-0 place-items-center rounded-md border border-border/60">
-                                <Smartphone className="size-4" />
-                              </span>
-                              <div className="flex min-w-0 flex-1 flex-col">
-                                <span className="truncate text-sm font-medium text-foreground">
-                                  {device.name}
-                                </span>
-                                <span className="truncate text-xs text-muted-foreground">
-                                  {`${state.hosts.find((host) => host.id === device.hostId)?.label} · ${device.version} · ${device.booted ? "Running" : "Stopped"}`}
-                                </span>
-                              </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={pendingDeviceKey !== null}
-                                aria-label={`${device.booted ? "Open" : "Start"} ${device.name}`}
-                                onClick={() => void selectDevice(deviceKey(device))}
-                              >
-                                {pendingDeviceKey === deviceKey(device) ? (
-                                  <Spinner size="xs" />
-                                ) : device.booted ? (
-                                  <ArrowUpRight />
-                                ) : (
-                                  <Play />
-                                )}
-                                {device.booted ? "Open" : "Start"}
-                              </Button>
-                            </div>
-                          ))}
-                        </DiscoveryList>
-                      </section>
-                    ))}
-                  </div>
-                ) : null}
-                {hostReady &&
-                !isAndroidDiscoveryUncertain(state) &&
-                !state.devices.some((device) => device.platform === "android") &&
-                !unavailablePlatforms.some((platform) => platform.platform === "android") ? (
-                  <p className="max-w-sm text-xs">
-                    No Android virtual devices found. Create one in Android Studio's Device Manager,
-                    then refresh.
-                  </p>
-                ) : null}
-                {loaded && !hostBusy ? (
-                  <Button
-                    className={grouped.length > 0 ? "self-start" : "self-center"}
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void list({ environmentId, input: {} })}
-                  >
-                    Refresh devices
+                {loadError !== null ? (
+                  <Button size="sm" variant="outline" onClick={refreshState}>
+                    Retry
                   </Button>
                 ) : null}
+              </DeviceLoadingView>
+            ) : (
+              <div className="scrollbar-gutter-both flex size-full flex-col overflow-y-auto px-5 py-8 text-sm text-muted-foreground">
+                <div
+                  className={cn(
+                    "mx-auto flex w-full max-w-xl flex-col gap-6",
+                    grouped.length === 0 && "my-auto items-center text-center",
+                  )}
+                >
+                  {grouped.length === 0 ? (
+                    <>
+                      <Smartphone className="size-6 opacity-60" />
+                      <p
+                        className="max-h-32 w-full max-w-sm overflow-y-auto whitespace-pre-line break-words"
+                        tabIndex={state.hostStatus === "failed" ? 0 : undefined}
+                      >
+                        {state.hostStatus === "failed"
+                          ? (state.hostStatusDetail ?? "The device hub failed to start.")
+                          : "No simulators or emulators were found on this environment."}
+                      </p>
+                    </>
+                  ) : null}
+                  {hostReady && grouped.length > 0 ? (
+                    <div className="w-full space-y-6 text-left">
+                      {grouped.map((group) => (
+                        <section key={group.platform} className="space-y-3">
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Smartphone className="size-4 shrink-0" />
+                            <h3 className="font-medium">{platformLabel(group.platform)}</h3>
+                          </div>
+                          <DiscoveryList>
+                            {group.devices.map((device) => (
+                              <div
+                                key={deviceKey(device)}
+                                className="flex items-center gap-3 px-3 py-3"
+                              >
+                                <span className="grid size-8 shrink-0 place-items-center rounded-md border border-border/60">
+                                  <Smartphone className="size-4" />
+                                </span>
+                                <div className="flex min-w-0 flex-1 flex-col">
+                                  <span className="truncate text-sm font-medium text-foreground">
+                                    {device.name}
+                                  </span>
+                                  <span className="truncate text-xs text-muted-foreground">
+                                    {`${state.hosts.find((host) => host.id === device.hostId)?.label} · ${device.version} · ${device.booted ? "Running" : "Stopped"}`}
+                                  </span>
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={pendingDeviceKey !== null}
+                                  aria-label={`${device.booted ? "Open" : "Start"} ${device.name}`}
+                                  onClick={() => void selectDevice(deviceKey(device))}
+                                >
+                                  {pendingDeviceKey === deviceKey(device) ? (
+                                    <Spinner size="xs" />
+                                  ) : device.booted ? (
+                                    <ArrowUpRight />
+                                  ) : (
+                                    <Play />
+                                  )}
+                                  {device.booted ? "Open" : "Start"}
+                                </Button>
+                              </div>
+                            ))}
+                          </DiscoveryList>
+                        </section>
+                      ))}
+                    </div>
+                  ) : null}
+                  {hostReady &&
+                  !isAndroidDiscoveryUncertain(state) &&
+                  !state.devices.some((device) => device.platform === "android") &&
+                  !unavailablePlatforms.some((platform) => platform.platform === "android") ? (
+                    <p className="max-w-sm text-xs">
+                      No Android virtual devices found. Create one in Android Studio's Device
+                      Manager, then refresh.
+                    </p>
+                  ) : null}
+                  {loaded && !hostBusy ? (
+                    <Button
+                      className={grouped.length > 0 ? "self-start" : "self-center"}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void list({ environmentId, input: {} })}
+                    >
+                      Refresh devices
+                    </Button>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </Swap>
         </div>
       </div>
     </PreviewPanelShell>
