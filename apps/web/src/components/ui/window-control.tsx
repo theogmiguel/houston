@@ -127,13 +127,3 @@ export function WindowControls({
     </div>
   );
 }
-
-export function WindowResizeGrip({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      aria-hidden="true"
-      className={cn("fixed z-(--z-window-resize) [-webkit-app-region:no-drag]", className)}
-      {...props}
-    />
-  );
-}

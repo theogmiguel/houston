@@ -22,7 +22,7 @@ function pathBasename(path: string): string {
 }
 
 /**
- * WebKitGTK File objects carry no path, so a drag that also advertises `text/uri-list` is the only
+ * File objects can carry no path, so a drag that also advertises `text/uri-list` is the only
  * source of the folder's real path. Entries and folders share the drag's order; a name match keeps
  * a mixed file-and-folder drag aligned.
  */

@@ -228,7 +228,7 @@ export class GhosttyRuntime {
       throw new Error("libghostty-vt did not expose its callback table");
     }
     const index = table.length;
-    // WebKit grow(1, fn) stores broken type info and traps on call_indirect; table.set canonicalizes it.
+    // The engine's grow(1, fn) stores broken type info and traps on call_indirect; table.set canonicalizes it.
     table.grow(1);
     table.set(index, trampoline);
     this.writePtyFunctionIndex = index;

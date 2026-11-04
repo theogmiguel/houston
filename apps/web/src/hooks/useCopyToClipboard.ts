@@ -183,7 +183,7 @@ export async function readTextFromClipboard(target = "text"): Promise<string> {
     try {
       return await navigator.clipboard.readText();
     } catch (cause) {
-      // WebKitGTK can refuse `readText` outside a native paste gesture, such as from a context
+      // A webview can refuse `readText` outside a native paste gesture, such as from a context
       // menu click; the host reads the same clipboard without that restriction.
       if (!readFromHost) {
         throw new ClipboardReadError({

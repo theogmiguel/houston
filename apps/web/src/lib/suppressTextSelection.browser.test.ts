@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { suppressTextSelection } from "./suppressTextSelection";
 
-/** A style object that, like WebKitGTK, keeps only what was set under each spelling. */
+/** A style object that keeps only what was set under each spelling. */
 function recordingElement(): { element: HTMLElement; set: Map<string, string> } {
   const set = new Map<string, string>();
   const style = {
@@ -18,7 +18,7 @@ function recordingElement(): { element: HTMLElement; set: Map<string, string> } 
 }
 
 describe("suppressTextSelection", () => {
-  it("sets the WebKit-prefixed property that WebKitGTK reads, then restores both", () => {
+  it("sets the prefixed property and restores both", () => {
     const { element, set } = recordingElement();
     const release = suppressTextSelection(element);
     expect(set.get("-webkit-user-select")).toBe("none");

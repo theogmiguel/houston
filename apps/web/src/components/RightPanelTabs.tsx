@@ -1537,7 +1537,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
         )}
         data-right-panel-tabbar
-        data-tauri-drag-region={ownsDesktopTitleBar ? "deep" : undefined}
+        data-drag-region={ownsDesktopTitleBar ? "deep" : undefined}
       >
         {tabStripContent}
         {props.layoutControls}

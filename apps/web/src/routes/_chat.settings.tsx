@@ -123,7 +123,7 @@ function SettingsContentLayout() {
         <SettingsSidebarNav pathname={location.pathname} />
         <div {...contentArea} className="flex min-h-0 min-w-0 flex-1 flex-col">
           <header
-            data-tauri-drag-region="deep"
+            data-drag-region="deep"
             className="flex h-10 shrink-0 items-center gap-2 ps-3.5 pe-2 custom-chrome:pe-(--workspace-native-controls-inset)"
           >
             <SettingsBreadcrumb pathname={location.pathname} />

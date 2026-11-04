@@ -12,8 +12,8 @@ import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/te
 import "vite-plus/test/config";
 import { defineConfig, type Connect, type Plugin } from "vite-plus";
 import * as Hash from "effect/Hash";
-// The app version releases stamp (scripts/set-version.sh); this package keeps upstream's own.
-import desktopConfig from "../../src-tauri/tauri.conf.json" with { type: "json" };
+// The app version releases stamp (scripts/set-version.sh); the renderer reports it.
+import desktopPackageJson from "../../apps/desktop/package.json" with { type: "json" };
 import pdfjsPkg from "pdfjs-dist/package.json" with { type: "json" };
 
 import {
@@ -48,7 +48,7 @@ const configuredRelayTracingToken = repoEnv.VITE_RELAY_OTLP_TRACES_TOKEN?.trim()
 const configuredHostedAppChannel = process.env.VITE_HOSTED_APP_CHANNEL?.trim() || "";
 const configuredReleaseChannel =
   process.env.HOUSTON_BUILT_DEV === "1" ? "dev" : process.env.VITE_RELEASE_CHANNEL?.trim() || "";
-const configuredAppVersion = process.env.APP_VERSION?.trim() || desktopConfig.version;
+const configuredAppVersion = process.env.APP_VERSION?.trim() || desktopPackageJson.version;
 const configuredDesktopUpdateRepository =
   process.env.HOUSTON_DESKTOP_UPDATE_REPOSITORY?.trim() ||
   process.env.GITHUB_REPOSITORY?.trim() ||
@@ -142,10 +142,7 @@ const browserTestProject = {
       enabled: true,
       headless: true,
       provider: playwright(),
-      // The desktop app renders in WebKitGTK; HOUSTON_TEST_BROWSER=webkit runs the suite on that engine.
-      instances: [
-        { browser: process.env.HOUSTON_TEST_BROWSER === "webkit" ? "webkit" : "chromium" },
-      ],
+      instances: [{ browser: "chromium" }],
       screenshotFailures: false,
       commands: {
         // Playwright's mouse outlives each test, so whatever mounts under its last
@@ -258,8 +255,8 @@ function chunkCycleGuardPlugin(): Plugin {
 }
 
 // The in-app licence manifest resolves SPDX templates from upstream's corpus,
-// which is excluded from the Houston import. Without it the Tauri app's own
-// inventory (src-tauri/resources/third-party-licenses.json) is authoritative,
+// which is excluded from the Houston import. Without it the desktop host's own
+// inventory (apps/desktop/resources/third-party-licenses.json) is authoritative,
 // and the renderer's manifest is built from it.
 function hasUpstreamLicenseCorpus(): boolean {
   return NodeFS.existsSync(new URL("../../third-party-licenses/spdx", import.meta.url));
@@ -289,15 +286,15 @@ export default defineConfig(() => {
       chunkCycleGuardPlugin(),
       !hasUpstreamLicenseCorpus()
         ? hostLicenseManifestPlugin(
-            new URL("../../src-tauri/resources/third-party-licenses.json", import.meta.url),
+            new URL("../../apps/desktop/resources/third-party-licenses.json", import.meta.url),
           )
         : builtDev
           ? undefined
           : thirdPartyLicensesPlugin({
               bundleName: "web",
               configFile: new URL("../../third-party-licenses.config.json", import.meta.url),
-              // Houston has no apps/desktop: the Tauri host replaces it, so its
-              // manifest is not a licence source here.
+              // The desktop host reports its own inventory separately, so its
+              // manifest is not a licence source for the renderer bundle.
               packageManifests: [
                 { bundle: "web", path: new URL("./package.json", import.meta.url) },
                 { bundle: "server", path: new URL("../server/package.json", import.meta.url) },

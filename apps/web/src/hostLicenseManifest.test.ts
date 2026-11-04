@@ -1,7 +1,7 @@
 import { decodeThirdPartyLicenseManifest } from "@houston-app/shared/thirdPartyLicenses";
 import { expect, it } from "vite-plus/test";
 
-import inventory from "../../../src-tauri/resources/third-party-licenses.json" with { type: "json" };
+import inventory from "../../../apps/desktop/resources/third-party-licenses.json" with { type: "json" };
 import { hostLicenseManifest, type HostLicenseInventory } from "../vite/hostLicenseManifest";
 
 it("builds a manifest the licenses page decodes from the committed host inventory", () => {

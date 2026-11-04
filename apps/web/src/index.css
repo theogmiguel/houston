@@ -2081,10 +2081,10 @@ code {
   --pele-critical: var(--destructive);
 }
 
-/* Window drag region (frameless titlebar). `data-tauri-drag-region` is the
-   Tauri host's marker; the class covers hosts that use the same regions. */
+/* Window drag region (frameless titlebar). `data-drag-region` is the
+   host's marker; the class covers hosts that use the same regions. */
 .drag-region,
-[data-tauri-drag-region] {
+[data-drag-region] {
   -webkit-app-region: drag;
 }
 
@@ -2094,7 +2094,7 @@ code {
    The base layer lets explicit drag/no-drag utilities take precedence. */
 @layer base {
   .drag-region > *,
-  [data-tauri-drag-region] > * {
+  [data-drag-region] > * {
     -webkit-app-region: initial;
   }
 }
@@ -2104,11 +2104,11 @@ code {
 .drag-region textarea,
 .drag-region select,
 .drag-region a,
-[data-tauri-drag-region] button,
-[data-tauri-drag-region] input,
-[data-tauri-drag-region] textarea,
-[data-tauri-drag-region] select,
-[data-tauri-drag-region] a {
+[data-drag-region] button,
+[data-drag-region] input,
+[data-drag-region] textarea,
+[data-drag-region] select,
+[data-drag-region] a {
   -webkit-app-region: no-drag;
 }
 

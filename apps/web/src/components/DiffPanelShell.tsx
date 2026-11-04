@@ -39,7 +39,7 @@ export function DiffPanelShell(props: {
       )}
     >
       {shouldUseDragRegion ? (
-        <div data-tauri-drag-region="deep" className={getDiffPanelHeaderRowClassName(props.mode)}>
+        <div data-drag-region="deep" className={getDiffPanelHeaderRowClassName(props.mode)}>
           {props.header}
         </div>
       ) : (

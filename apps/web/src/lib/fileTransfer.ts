@@ -14,7 +14,7 @@ export interface FileTransferData {
 
 /**
  * Types-only gate. Deliberately optimistic: a false accept costs one empty drop, a false reject
- * lets WebKitGTK navigate the webview to the file. `items[].kind` still works when types are hidden.
+ * lets the webview navigate to the file. `items[].kind` still works when types are hidden.
  */
 export function isFileTransfer(data: FileTransferData | null | undefined): boolean {
   if (!data) return false;
@@ -96,7 +96,7 @@ export function transferredPaths(data: FileTransferData | null | undefined): str
 }
 
 /**
- * A file drag that the app does not accept must not reach the webview's default handling: WebKitGTK
+ * A file drag that the app does not accept must not reach the webview's default handling: it
  * would navigate away to the file. Capture-phase listeners prevent that without stopping the app's
  * own handlers, which still receive the event.
  */

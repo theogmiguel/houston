@@ -4,9 +4,7 @@ import { stubGlobal } from "../../test/render";
 import {
   hasCustomWindowChrome,
   isNativeDesktopHost,
-  isTauriHost,
   onWindowMaximizedChange,
-  startResizeDragging,
   windowButtonLayout,
   windowControl,
   windowIsMaximized,
@@ -33,7 +31,6 @@ describe("desktopWindow under the Electron host", () => {
 
     expect(hasCustomWindowChrome()).toBe(true);
     expect(isNativeDesktopHost()).toBe(true);
-    expect(isTauriHost()).toBe(false);
 
     await windowControl("close");
     await windowControl("minimize");
@@ -44,7 +41,6 @@ describe("desktopWindow under the Electron host", () => {
 
     expect(await windowIsMaximized()).toBe(true);
     expect(await windowButtonLayout()).toBe("appmenu:minimize,maximize,close");
-    await expect(startResizeDragging("east")).resolves.toBeUndefined();
   });
 
   it("forwards maximize changes from the host", () => {
@@ -79,49 +75,14 @@ describe("desktopWindow under the Electron host", () => {
   });
 });
 
-describe("desktopWindow under the Tauri host", () => {
-  it("falls back to the Tauri window commands", async () => {
-    const invoke = vi.fn((command: string) => {
-      if (command === "window_button_layout") return Promise.resolve(":minimize,maximize,close");
-      if (command === "plugin:window|is_maximized") return Promise.resolve(true);
-      return Promise.resolve(undefined);
-    });
-    using _tauri = stubGlobal("__TAURI__", { core: { invoke } });
-
-    expect(hasCustomWindowChrome()).toBe(true);
-    expect(isNativeDesktopHost()).toBe(true);
-    expect(isTauriHost()).toBe(true);
-
-    await windowControl("close");
-    await windowControl("minimize");
-    await windowControl("maximize");
-    expect(invoke).toHaveBeenCalledWith("plugin:window|close", {});
-    expect(invoke).toHaveBeenCalledWith("plugin:window|minimize", {});
-    expect(invoke).toHaveBeenCalledWith("plugin:window|toggle_maximize", {});
-
-    expect(await windowIsMaximized()).toBe(true);
-    expect(await windowButtonLayout()).toBe(":minimize,maximize,close");
-
-    await startResizeDragging("east");
-    expect(invoke).toHaveBeenCalledWith("window_start_resize_dragging", { direction: "east" });
-  });
-
-  it("keeps the Tauri maximized-state fallback inert", () => {
-    using _tauri = stubGlobal("__TAURI__", { core: { invoke: vi.fn() } });
-
-    expect(onWindowMaximizedChange(vi.fn())).toBeTypeOf("function");
-  });
-});
-
 describe("desktopWindow outside a desktop host", () => {
   it("reports no host and leaves every command inert", async () => {
     expect(hasCustomWindowChrome()).toBe(false);
     expect(isNativeDesktopHost()).toBe(false);
-    expect(isTauriHost()).toBe(false);
 
     await expect(windowControl("close")).resolves.toBeUndefined();
-    await expect(startResizeDragging("south-east")).resolves.toBeUndefined();
     expect(await windowIsMaximized()).toBe(false);
     expect(await windowButtonLayout()).toBeNull();
+    expect(onWindowMaximizedChange(vi.fn())).toBeTypeOf("function");
   });
 });

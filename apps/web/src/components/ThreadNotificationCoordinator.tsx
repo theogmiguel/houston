@@ -235,7 +235,7 @@ export function startThreadNotifications(
       return;
     const requireInteraction = kind === "completion" && isWindowsPlatform(navigator.platform);
     const bridge = window.hostBridge;
-    // WebKitGTK does not wire the web Notification API; the host's native notifier
+    // Some webviews do not wire the web Notification API; the host's native notifier
     // takes the thread key and reports a click through onThreadNotificationFocus.
     if (bridge?.notifyThread && nativeSupported !== false) {
       const key = threadNotificationKey(environmentId, thread.id);

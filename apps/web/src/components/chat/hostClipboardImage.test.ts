@@ -14,7 +14,7 @@ function clipboardData(input: {
 }
 
 describe("isClipboardImagePaste", () => {
-  it("reads the host clipboard for the empty paste WebKitGTK produces", () => {
+  it("reads the host clipboard for an empty image paste", () => {
     expect(isClipboardImagePaste(clipboardData({}))).toBe(true);
   });
 

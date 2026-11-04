@@ -14,7 +14,7 @@ export function WorkspacePageHeader({
 }) {
   return (
     <header
-      data-tauri-drag-region="deep"
+      data-drag-region="deep"
       className={cn(
         "flex h-[var(--workspace-topbar-height)]! min-h-[var(--workspace-topbar-height)]! max-h-[var(--workspace-topbar-height)]! shrink-0 items-center gap-3 pl-(--workspace-gutter-start) pr-(--workspace-gutter-end) [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left,padding-right] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
         desktop && "drag-region",
