@@ -15,23 +15,35 @@ export const KEYCHAIN_PROFILE = "desktop-bootstrap-secret";
 // Match the server-side check: anything shorter cannot carry the rotating token.
 const MIN_SECRET_LENGTH = 32;
 
-export interface BootstrapSecretKeychainEntry {
+export interface DesktopKeychainEntry {
   getPassword(): Promise<string | null | undefined>;
   setPassword(password: string): Promise<void>;
 }
 
-export interface BootstrapSecretKeychain {
-  entry(service: string, account: string): BootstrapSecretKeychainEntry;
+export interface DesktopKeychain {
+  entry(service: string, account: string): DesktopKeychainEntry;
 }
+
+export type BootstrapSecretKeychainEntry = DesktopKeychainEntry;
+export type BootstrapSecretKeychain = DesktopKeychain;
 
 export interface DesktopBootstrapSecretValue {
   readonly secret: string;
   readonly warning: Option.Option<string>;
 }
 
-export function bootstrapSecretServiceName(baseDir: string): string {
+/** `<prefix>-<first 16 hex of sha256(trimmed base dir)>`: one service per state directory. */
+export function keychainServiceName(prefix: string, baseDir: string): string {
   const digest = NodeCrypto.createHash("sha256").update(baseDir.trim()).digest("hex");
-  return `${KEYCHAIN_SERVICE_PREFIX}-${digest.slice(0, 16)}`;
+  return `${prefix}-${digest.slice(0, 16)}`;
+}
+
+export function bootstrapSecretServiceName(baseDir: string): string {
+  return keychainServiceName(KEYCHAIN_SERVICE_PREFIX, baseDir);
+}
+
+export function isMissingKeychainEntry(error: unknown): boolean {
+  return /no (matching )?entry|not found/i.test(keychainErrorMessage(error));
 }
 
 export function newBootstrapSecret(): string {
@@ -69,8 +81,8 @@ export async function loadOrCreateDesktopBootstrapSecret(input: {
   try {
     existing = await entry.getPassword();
   } catch (error) {
-    if (!isMissingEntry(error)) {
-      return keychainUnavailableWarning(errorMessage(error), fallbackSecret);
+    if (!isMissingKeychainEntry(error)) {
+      return keychainUnavailableWarning(keychainErrorMessage(error), fallbackSecret);
     }
   }
 
@@ -84,19 +96,15 @@ export async function loadOrCreateDesktopBootstrapSecret(input: {
     await entry.setPassword(secret);
     return { secret, warning: Option.none() };
   } catch (error) {
-    return keychainUnavailableWarning(errorMessage(error), fallbackSecret);
+    return keychainUnavailableWarning(keychainErrorMessage(error), fallbackSecret);
   }
 }
 
-function errorMessage(error: unknown): string {
+export function keychainErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function isMissingEntry(error: unknown): boolean {
-  return /no (matching )?entry|not found/i.test(errorMessage(error));
-}
-
-async function loadKeychain(): Promise<{
+export async function loadDesktopKeychain(): Promise<{
   readonly keychain: BootstrapSecretKeychain | null;
   readonly unavailableReason?: string;
 }> {
@@ -108,7 +116,7 @@ async function loadKeychain(): Promise<{
       },
     };
   } catch (error) {
-    return { keychain: null, unavailableReason: errorMessage(error) };
+    return { keychain: null, unavailableReason: keychainErrorMessage(error) };
   }
 }
 
@@ -132,7 +140,7 @@ export const make = Effect.gen(function* () {
         if (Option.isSome(current)) {
           return current.value;
         }
-        const loaded = yield* Effect.promise(loadKeychain);
+        const loaded = yield* Effect.promise(loadDesktopKeychain);
         const value = yield* Effect.promise(() =>
           loadOrCreateDesktopBootstrapSecret({
             baseDir: environment.baseDir,
