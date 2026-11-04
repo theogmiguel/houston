@@ -108,7 +108,7 @@ export function WindowControls({
       data-testid="window-controls"
       data-window-controls=""
       className={cn("flex h-(--h-top) items-center", className)}
-      style={{ ["-webkit-app-region" as string]: "no-drag" } as CSSProperties}
+      style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
     >
       {layout.buttons.map((kind) => {
         const label = windowControlLabel(kind, maximized);

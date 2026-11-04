@@ -6,7 +6,8 @@ import {
   type WindowButtonLayout,
 } from "~/lib/windowButtonLayout";
 import {
-  isTauriHost,
+  hasCustomWindowChrome,
+  onWindowMaximizedChange,
   windowButtonLayout,
   windowControl,
   windowIsMaximized,
@@ -24,7 +25,7 @@ export function DesktopWindowControls() {
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- reads the native button layout and maximized state for this window chrome
   useEffect(() => {
-    if (!isTauriHost()) return;
+    if (!hasCustomWindowChrome()) return;
 
     let alive = true;
     void windowButtonLayout().then((raw) => {
@@ -47,15 +48,19 @@ export function DesktopWindowControls() {
     };
 
     readMaximized();
+    const stopWatchingMaximized = onWindowMaximizedChange((value) => {
+      if (alive) setMaximized(value);
+    });
     window.addEventListener("resize", onResize);
     return () => {
       alive = false;
       clearTimeout(timer);
+      stopWatchingMaximized();
       window.removeEventListener("resize", onResize);
     };
   }, []);
 
-  if (!isTauriHost()) return null;
+  if (!hasCustomWindowChrome()) return null;
 
   return (
     <div

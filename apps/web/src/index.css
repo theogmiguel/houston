@@ -5,8 +5,8 @@
 @custom-variant light (&:not(.dark, .dark *));
 /* Window Controls Overlay: active when the desktop host exposes native titlebar control geometry. */
 @custom-variant wco (&:is(.wco, .wco *));
-/* Tauri frameless window: Houston draws the title bar and its window controls. */
-@custom-variant tauri (&:is(.tauri, .tauri *));
+/* Custom frameless window chrome: Houston draws the title bar and its window controls. */
+@custom-variant custom-chrome (&:is(.custom-chrome, .custom-chrome *));
 
 /* Secondary hovering pointers reveal sidebar actions on touch-primary devices. */
 @custom-variant any-hover {
@@ -201,10 +201,10 @@ html[data-theme-reveal] *::after {
   );
 }
 
-/* `decorations: false` removes the native title bar, so Houston's own 30px
+/* A frameless window removes the native title bar, so Houston's own 30px
    window buttons occupy the right end of the 40px top bar and reserve a gap
    before the content that shares it. */
-.tauri {
+.custom-chrome {
   --desktop-window-right-resize-inset: 0px;
   --workspace-controls-right: calc(3 * var(--w-window-control) + 0.75rem);
   --workspace-native-controls-inset: calc(3 * var(--w-window-control) + 0.75rem);
@@ -2081,8 +2081,10 @@ code {
   --pele-critical: var(--destructive);
 }
 
-/* Window drag region (frameless titlebar) */
-.drag-region {
+/* Window drag region (frameless titlebar). `data-tauri-drag-region` is the
+   Tauri host's marker; the class covers hosts that use the same regions. */
+.drag-region,
+[data-tauri-drag-region] {
   -webkit-app-region: drag;
 }
 
@@ -2091,7 +2093,8 @@ code {
    as `no-drag` and breaks titlebar dragging; `initial` emits no rectangle.
    The base layer lets explicit drag/no-drag utilities take precedence. */
 @layer base {
-  .drag-region > * {
+  .drag-region > *,
+  [data-tauri-drag-region] > * {
     -webkit-app-region: initial;
   }
 }
@@ -2100,7 +2103,12 @@ code {
 .drag-region input,
 .drag-region textarea,
 .drag-region select,
-.drag-region a {
+.drag-region a,
+[data-tauri-drag-region] button,
+[data-tauri-drag-region] input,
+[data-tauri-drag-region] textarea,
+[data-tauri-drag-region] select,
+[data-tauri-drag-region] a {
   -webkit-app-region: no-drag;
 }
 
