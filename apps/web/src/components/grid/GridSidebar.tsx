@@ -1237,13 +1237,7 @@ export function SidebarProjectSection({
                 onClick={onToggleCollapsed}
                 className={SIDEBAR_PROJECT_LABEL_CLS}
               >
-                <ChevronRightIcon
-                  aria-hidden
-                  className={cn(
-                    "size-3 shrink-0 transition-transform duration-(--motion-disclosure) ease-standard",
-                    !collapsed && "rotate-90",
-                  )}
-                />
+                {collapsed ? <ChevronRightIcon aria-hidden className="size-3 shrink-0" /> : null}
                 <span className={SIDEBAR_PROJECT_LABEL_TEXT_CLS}>{section.title}</span>
                 {collapsed ? <span className={SIDEBAR_PROJECT_SUMMARY_CLS}>{summary}</span> : null}
               </button>
