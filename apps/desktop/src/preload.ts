@@ -162,7 +162,9 @@ contextBridge.exposeInMainWorld("hostBridge", {
       ipcRenderer.removeListener(IpcChannels.TRAY_WINDOW_HIDDEN_CHANNEL, wrappedListener);
     };
   },
-  houstonV1Cleanup: { getReport: () => Promise.resolve(null) },
+  houstonV1Cleanup: {
+    getReport: () => ipcRenderer.invoke(IpcChannels.GET_V1_CLEANUP_REPORT_CHANNEL),
+  },
   getClientSettings: () => ipcRenderer.invoke(IpcChannels.GET_CLIENT_SETTINGS_CHANNEL),
   setClientSettings: (settings) =>
     ipcRenderer.invoke(IpcChannels.SET_CLIENT_SETTINGS_CHANNEL, settings),

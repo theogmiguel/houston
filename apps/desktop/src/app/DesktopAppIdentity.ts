@@ -103,6 +103,10 @@ export const make = Effect.gen(function* () {
 
     if (environment.platform === "win32") {
       yield* electronApp.setAppUserModelId(environment.appUserModelId);
+      // Only the installed release channel owns the `houston://` handler on Windows.
+      if (environment.isPackaged && Option.isNone(environment.channel)) {
+        yield* electronApp.setAsDefaultProtocolClient("houston");
+      }
     }
 
     // Packaged bundles carry their icon in Info.plist; setting it again overwrites the user's custom icon.

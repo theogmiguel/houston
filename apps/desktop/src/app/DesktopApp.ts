@@ -31,6 +31,7 @@ import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
 import * as DesktopStartupRecovery from "./DesktopStartupRecovery.ts";
 import * as DesktopState from "./DesktopState.ts";
+import * as DesktopV1Cleanup from "./DesktopV1Cleanup.ts";
 import * as DesktopRemoteUpdates from "../updates/DesktopRemoteUpdates.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
@@ -322,6 +323,9 @@ const startup = Effect.gen(function* () {
     Effect.catchCause((cause) => fatalStartupCause("whenReady", cause)),
   );
   yield* logStartupInfo("app ready");
+  // Build the service so the cleanup runs once at startup in packaged builds, as the
+  // installed host does, even when Settings never asks for its report.
+  yield* DesktopV1Cleanup.DesktopV1Cleanup;
   if (environment.platform === "linux") {
     const selectedBackend = yield* safeStorage.selectedStorageBackend;
     yield* logStartupInfo("safe storage ready", {
