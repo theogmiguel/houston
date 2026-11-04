@@ -74,8 +74,8 @@ const make = Effect.gen(function* () {
           }),
       ),
     );
-  const drain = (key: string) =>
-    Effect.gen(function* () {
+  const drain = Effect.fn("RunFinalizationService.drainRefreshes")(
+    function* (key: string) {
       // Taking the next request and releasing the key happen together, so none is stranded.
       const takeNext = Effect.sync(() => {
         const next = queued.get(key);
@@ -88,14 +88,17 @@ const make = Effect.gen(function* () {
         yield* refreshOnce(next);
         next = yield* takeNext;
       }
-    }).pipe(
-      Effect.onInterrupt(() =>
-        Effect.sync(() => {
-          running.delete(key);
-          queued.delete(key);
-        }),
+    },
+    (effect, key) =>
+      effect.pipe(
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            running.delete(key);
+            queued.delete(key);
+          }),
+        ),
       ),
-    );
+  );
   const refreshInBackground = (request: RefreshRequest) =>
     Effect.suspend(() => {
       const key = `${request.threadId}\u0000${request.cwd}`;

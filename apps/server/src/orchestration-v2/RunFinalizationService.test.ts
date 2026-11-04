@@ -8,6 +8,7 @@ import {
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Queue from "effect/Queue";
 
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
@@ -16,52 +17,56 @@ import * as CheckpointCapture from "./CheckpointCaptureService.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as RunFinalization from "./RunFinalizationService.ts";
 
-it.effect("completes finalization when the post-checkpoint workspace refresh fails", () => {
-  const threadId = ThreadId.make("thread_refresh_failure");
-  const runId = RunId.make("run_refresh_failure");
-  const scopeId = CheckpointScopeId.make("scope_refresh_failure");
-  const captured: string[] = [];
-  const layer = RunFinalization.layer.pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        Layer.mock(CheckpointCapture.CheckpointCaptureServiceV2)({
-          execute: () =>
-            Effect.sync(() => {
-              captured.push("checkpoint");
-            }),
-        }),
-        Layer.mock(ProjectionStore.ProjectionStoreV2)({
-          getCheckpointContext: () =>
-            Effect.succeed({
-              runs: [],
-              checkpointScopes: [{ id: scopeId, runId, kind: "root_run" as const, cwd: "/repo" }],
-              checkpoints: [],
-            }),
-        }),
-        Layer.succeed(RunFinalization.RunFinalizationObserver, {
-          refresh: () =>
-            Effect.gen(function* () {
-              captured.push("refresh");
-              return yield* new RunFinalization.RunFinalizationRefreshError({
-                cwd: "/repo",
-                cause: new Error("Git command timed out"),
-              });
-            }),
-          refreshAfterTurn: () => Effect.void,
-        }),
+it.effect("completes finalization when the post-checkpoint workspace refresh fails", () =>
+  Effect.gen(function* () {
+    const refreshed = yield* Deferred.make<void>();
+    const threadId = ThreadId.make("thread_refresh_failure");
+    const runId = RunId.make("run_refresh_failure");
+    const scopeId = CheckpointScopeId.make("scope_refresh_failure");
+    const captured: string[] = [];
+    const layer = RunFinalization.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.mock(CheckpointCapture.CheckpointCaptureServiceV2)({
+            execute: () =>
+              Effect.sync(() => {
+                captured.push("checkpoint");
+              }),
+          }),
+          Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            getCheckpointContext: () =>
+              Effect.succeed({
+                runs: [],
+                checkpointScopes: [{ id: scopeId, runId, kind: "root_run" as const, cwd: "/repo" }],
+                checkpoints: [],
+              }),
+          }),
+          Layer.succeed(RunFinalization.RunFinalizationObserver, {
+            refresh: () =>
+              Effect.gen(function* () {
+                captured.push("refresh");
+                yield* Deferred.succeed(refreshed, undefined);
+                return yield* new RunFinalization.RunFinalizationRefreshError({
+                  cwd: "/repo",
+                  cause: new Error("Git command timed out"),
+                });
+              }),
+            refreshAfterTurn: () => Effect.void,
+          }),
+        ),
       ),
-    ),
-  );
-  return Effect.gen(function* () {
-    const service = yield* RunFinalization.RunFinalizationService;
-    yield* service.finalize({ threadId, runId, scopeId });
-    while (captured.length < 2) yield* Effect.yieldNow;
-    assert.deepEqual(captured, ["checkpoint", "refresh"]);
-  }).pipe(Effect.provide(layer));
-});
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* RunFinalization.RunFinalizationService;
+      yield* service.finalize({ threadId, runId, scopeId });
+      yield* Deferred.await(refreshed);
+      assert.deepEqual(captured, ["checkpoint", "refresh"]);
+    }).pipe(Effect.provide(layer));
+  }),
+);
 
 const makeBackgroundRefreshLayer = (input: {
-  readonly calls: string[];
+  readonly events: Queue.Queue<string>;
   readonly pullRequestRefresh: Effect.Effect<void>;
 }) => {
   const threadId = ThreadId.make("thread-background-refresh");
@@ -86,19 +91,18 @@ const makeBackgroundRefreshLayer = (input: {
         Layer.mock(PullRequestService.PullRequestService)({ refreshAfterTurn: () => Effect.void }),
         Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
           refreshLocalStatus: () =>
-            Effect.sync(() => {
-              input.calls.push("local status");
-              return {
+            Queue.offer(input.events, "local status").pipe(
+              Effect.as({
                 isRepo: true,
                 hasPrimaryRemote: true,
                 isDefaultRef: false,
                 refName: "feature",
                 hasWorkingTreeChanges: false,
                 workingTree: { files: [], insertions: 0, deletions: 0 },
-              };
-            }),
+              }),
+            ),
           refreshPullRequestStatus: () =>
-            Effect.sync(() => input.calls.push("pull request status")).pipe(
+            Queue.offer(input.events, "pull request status").pipe(
               Effect.andThen(input.pullRequestRefresh),
               Effect.as(null),
             ),
@@ -112,7 +116,7 @@ const makeBackgroundRefreshLayer = (input: {
         projections,
         observer,
         Layer.mock(CheckpointCapture.CheckpointCaptureServiceV2)({
-          execute: () => Effect.sync(() => input.calls.push("checkpoint")),
+          execute: () => Queue.offer(input.events, "checkpoint").pipe(Effect.asVoid),
         }),
       ),
     ),
@@ -120,64 +124,63 @@ const makeBackgroundRefreshLayer = (input: {
   return { layer, finalizeInput: (run: string) => ({ threadId, runId: RunId.make(run), scopeId }) };
 };
 
-it.live("finalizes without waiting for a pull request refresh that never returns", () => {
-  const calls: string[] = [];
-  const interrupted = { value: false };
-  const { layer, finalizeInput } = makeBackgroundRefreshLayer({
-    calls,
-    pullRequestRefresh: Effect.never.pipe(
-      Effect.onInterrupt(() => Effect.sync(() => (interrupted.value = true))),
-    ),
-  });
-  return Effect.gen(function* () {
+const takeEvents = (events: Queue.Queue<string>, count: number) =>
+  Effect.replicateEffect(Queue.take(events), count);
+
+it.effect("finalizes without waiting for a pull request refresh that never returns", () =>
+  Effect.gen(function* () {
+    const events = yield* Queue.unbounded<string>();
+    const interrupted = yield* Deferred.make<void>();
+    const { layer, finalizeInput } = makeBackgroundRefreshLayer({
+      events,
+      pullRequestRefresh: Effect.never.pipe(
+        Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined)),
+      ),
+    });
     yield* Effect.gen(function* () {
       const service = yield* RunFinalization.RunFinalizationService;
-      const finished = yield* service
-        .finalize(finalizeInput("run-1"))
-        .pipe(Effect.timeout("2 seconds"), Effect.as(true));
-      assert.isTrue(finished);
-      assert.deepEqual(calls.slice(0, 1), ["checkpoint"]);
-      // The refresh still runs, and still publishes local status, after finalization returns.
-      while (calls.length < 3) yield* Effect.sleep("5 millis");
-      assert.deepEqual(calls, ["checkpoint", "local status", "pull request status"]);
-      assert.isFalse(interrupted.value);
+      yield* service.finalize(finalizeInput("run-1"));
+      yield* Queue.offer(events, "finalized");
+      // The checkpoint comes first; the refresh still runs and publishes local status.
+      const seen = yield* takeEvents(events, 4);
+      assert.strictEqual(seen[0], "checkpoint");
+      assert.sameMembers(seen, ["checkpoint", "local status", "pull request status", "finalized"]);
+      assert.isFalse(yield* Deferred.isDone(interrupted));
     }).pipe(Effect.provide(layer));
     // Shutting the service down interrupts the refresh it left running.
-    assert.isTrue(interrupted.value);
-  });
-});
+    yield* Deferred.await(interrupted);
+  }),
+);
 
-it.live("coalesces refreshes requested while one is still running", () => {
-  const calls: string[] = [];
-  return Effect.gen(function* () {
+it.effect("coalesces refreshes requested while one is still running", () =>
+  Effect.gen(function* () {
+    const events = yield* Queue.unbounded<string>();
     const gate = yield* Deferred.make<void>();
     const { layer, finalizeInput } = makeBackgroundRefreshLayer({
-      calls,
+      events,
       pullRequestRefresh: Deferred.await(gate),
     });
     yield* Effect.gen(function* () {
       const service = yield* RunFinalization.RunFinalizationService;
       yield* service.finalize(finalizeInput("run-1"));
-      while (!calls.includes("pull request status")) yield* Effect.sleep("5 millis");
-      yield* service.finalize(finalizeInput("run-2"));
-      yield* service.finalize(finalizeInput("run-3"));
-      yield* Deferred.succeed(gate, undefined);
-      while (calls.filter((call) => call === "pull request status").length < 2) {
-        yield* Effect.sleep("5 millis");
-      }
-      yield* Effect.sleep("50 millis");
-      assert.deepEqual(calls, [
+      assert.deepEqual(yield* takeEvents(events, 3), [
         "checkpoint",
         "local status",
         "pull request status",
+      ]);
+      yield* service.finalize(finalizeInput("run-2"));
+      yield* service.finalize(finalizeInput("run-3"));
+      yield* Deferred.succeed(gate, undefined);
+      assert.deepEqual(yield* takeEvents(events, 4), [
         "checkpoint",
         "checkpoint",
         "local status",
         "pull request status",
       ]);
     }).pipe(Effect.provide(layer));
-  });
-});
+    assert.deepEqual(yield* Queue.clear(events), []);
+  }),
+);
 
 it.effect.each(
   (
