@@ -1853,7 +1853,7 @@
     {
       "origin": "npm",
       "name": "@anthropic-ai/claude-agent-sdk",
-      "version": "0.3.276",
+      "version": "0.3.318",
       "license": "SEE LICENSE IN README.md",
       "repository": "https://github.com/anthropics/claude-agent-sdk-typescript",
       "textIds": [
@@ -1965,7 +1965,7 @@
     {
       "origin": "npm",
       "name": "@cursor/sdk",
-      "version": "1.0.38",
+      "version": "1.2.0",
       "license": "SEE LICENSE IN LICENSE.md",
       "repository": "https://github.com/cursor/cursor",
       "textIds": [
@@ -2045,7 +2045,7 @@
     {
       "origin": "npm",
       "name": "@effect/atom-react",
-      "version": "4.0.5",
+      "version": "4.1.2",
       "license": "MIT",
       "repository": "https://github.com/Effect-TS/effect",
       "textIds": [
@@ -2055,7 +2055,7 @@
     {
       "origin": "npm",
       "name": "@effect/platform-node",
-      "version": "4.0.5",
+      "version": "4.1.2",
       "license": "MIT",
       "repository": "https://github.com/Effect-TS/effect",
       "textIds": [
@@ -2065,7 +2065,7 @@
     {
       "origin": "npm",
       "name": "@effect/platform-node-shared",
-      "version": "4.0.5",
+      "version": "4.1.2",
       "license": "MIT",
       "repository": "https://github.com/Effect-TS/effect",
       "textIds": [
@@ -3475,7 +3475,7 @@
     {
       "origin": "npm",
       "name": "effect",
-      "version": "4.0.5",
+      "version": "4.1.2",
       "license": "MIT",
       "repository": "https://github.com/Effect-TS/effect",
       "textIds": [
@@ -6091,16 +6091,6 @@
       "repository": "https://github.com/RyanZim/universalify",
       "textIds": [
         "3a2b08f41ac1da5c"
-      ]
-    },
-    {
-      "origin": "npm",
-      "name": "use-sync-external-store",
-      "version": "1.6.0",
-      "license": "MIT",
-      "repository": "https://github.com/facebook/react",
-      "textIds": [
-        "cf9b17822d1fcd4f"
       ]
     },
     {
