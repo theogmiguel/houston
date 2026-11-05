@@ -5,7 +5,10 @@ import { expect, it, vi } from "vite-plus/test";
 
 vi.mock(import("~/state/server"), async () => {
   const { Atom } = await import("effect/reactivity");
-  return { primaryServerKeybindingsAtom: Atom.make([]) } as never;
+  return {
+    primaryServerKeybindingsAtom: Atom.make([]),
+    serverEnvironment: {},
+  } as never;
 });
 
 vi.mock(
