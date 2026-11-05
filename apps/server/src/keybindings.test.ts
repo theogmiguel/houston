@@ -12,7 +12,7 @@ import * as Schema from "effect/Schema";
 import * as ServerConfig from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as SharedKeybindings from "@houston-app/shared/keybindings";
-import { KeybindingsConfigError, MAX_KEYBINDINGS_COUNT } from "@houston-app/contracts";
+import { KeybindingsConfigError } from "@houston-app/contracts";
 
 const KeybindingsConfigJson = Schema.fromJsonString(KeybindingsConfig);
 const encodeKeybindingsConfigJson = Schema.encodeEffect(KeybindingsConfigJson);
@@ -252,30 +252,29 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("keybindings", (i
       }).pipe(Effect.provide(layerKeybindings())),
   );
 
-  it.effect("adds a late default to an existing command once", () =>
+  it.effect("retires the saved Ctrl+Enter background default once", () =>
     Effect.gen(function* () {
       const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
       const keybindings = yield* Keybindings.Keybindings;
       const when = "composerFocus && draftThreadRoute";
-      const existing = { key: "mod+alt+enter", command: "composer.sendBackground", when } as const;
+      const retired = { key: "mod+enter", command: "composer.sendBackground", when } as const;
+      const kept = { key: "mod+alt+enter", command: "composer.sendBackground", when } as const;
       const backgroundRules = Effect.map(readKeybindingsConfig(keybindingsConfigPath), (rules) =>
         rules.filter((entry) => entry.command === "composer.sendBackground"),
       );
-      yield* writeKeybindingsConfig(keybindingsConfigPath, [existing]);
 
+      yield* writeKeybindingsConfig(keybindingsConfigPath, [retired, kept]);
       yield* keybindings.syncDefaultKeybindingsOnStartup;
-      assert.deepStrictEqual(yield* backgroundRules, [
-        { key: "mod+enter", command: "composer.sendBackground", when },
-        existing,
-      ]);
+      assert.deepStrictEqual(yield* backgroundRules, [kept]);
 
-      yield* writeKeybindingsConfig(keybindingsConfigPath, [existing]);
+      // A user who binds the retired chord again after the cleanup keeps it.
+      yield* writeKeybindingsConfig(keybindingsConfigPath, [retired, kept]);
       yield* keybindings.syncDefaultKeybindingsOnStartup;
-      assert.deepStrictEqual(yield* backgroundRules, [existing]);
+      assert.deepStrictEqual(yield* backgroundRules, [retired, kept]);
     }).pipe(Effect.provide(layerKeybindings())),
   );
 
-  it.effect("leaves a customized command without the late default", () =>
+  it.effect("keeps a customized background binding when retiring the old default", () =>
     Effect.gen(function* () {
       const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
       const keybindings = yield* Keybindings.Keybindings;
@@ -295,29 +294,19 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("keybindings", (i
     }).pipe(Effect.provide(layerKeybindings())),
   );
 
-  it.effect("keeps a late default pending while the config is full", () =>
+  it.effect("does not write Ctrl+Enter as a background default into a new config", () =>
     Effect.gen(function* () {
       const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
       const keybindings = yield* Keybindings.Keybindings;
-      const when = "composerFocus && draftThreadRoute";
-      const existing = { key: "mod+alt+enter", command: "composer.sendBackground", when } as const;
-      const fillers = Array.from({ length: MAX_KEYBINDINGS_COUNT - 1 }, (_, index) => ({
-        key: "mod+alt+f1",
-        command: `script.filler-${index}.run` as const,
-      }));
-      const hasModEnter = Effect.map(readKeybindingsConfig(keybindingsConfigPath), (rules) =>
-        rules.some(
-          (entry) => entry.command === "composer.sendBackground" && entry.key === "mod+enter",
-        ),
+
+      yield* keybindings.syncDefaultKeybindingsOnStartup;
+      const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
+      assert.deepStrictEqual(
+        persisted
+          .filter((entry) => entry.command === "composer.sendBackground")
+          .map((entry) => entry.key),
+        ["mod+alt+enter"],
       );
-
-      yield* writeKeybindingsConfig(keybindingsConfigPath, [existing, ...fillers]);
-      yield* keybindings.syncDefaultKeybindingsOnStartup;
-      assert.isFalse(yield* hasModEnter);
-
-      yield* writeKeybindingsConfig(keybindingsConfigPath, [existing]);
-      yield* keybindings.syncDefaultKeybindingsOnStartup;
-      assert.isTrue(yield* hasModEnter);
     }).pipe(Effect.provide(layerKeybindings())),
   );
 

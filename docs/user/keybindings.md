@@ -38,6 +38,7 @@ Keybindings are stored by the server, so they apply to the environment you are e
 | `Ctrl+Shift+[` / `Ctrl+Shift+]` | Previous / next thread                                                  |
 | `Ctrl+1` … `Ctrl+9`             | Jump to a thread                                                        |
 | `Ctrl+Shift+Enter`              | Steer the first queued message; in a grid, maximize or restore the cell |
+| `Ctrl+Alt+Enter`                | Send in the background                                                  |
 | `Esc`                           | Stop the current turn                                                   |
 | `Ctrl+S`                        | Stash the composer prompt                                               |
 | `Ctrl+Shift+M`                  | Model picker                                                            |

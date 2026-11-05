@@ -5,7 +5,7 @@
 3 apps/web/src/components/AnimatedHeight.tsx
 4 apps/web/src/components/AnimatedWidth.tsx
 7 apps/web/src/components/AppRouteModal.tsx
-3 apps/web/src/components/AppSidebarLayout.tsx
+2 apps/web/src/components/AppSidebarLayout.tsx
 35 apps/web/src/components/auth/ConnectAgentSurface.tsx
 18 apps/web/src/components/auth/PairingRouteSurface.tsx
 1 apps/web/src/components/BackgroundThreadAnnouncer.tsx
@@ -411,7 +411,6 @@
 39 apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx
 31 apps/web/src/components/sidebar/UpdateEverythingDialog.tsx
 1 apps/web/src/components/sidebar/updateEverythingRun.tsx
-3 apps/web/src/components/SidebarStageBackdrop.tsx
 9 apps/web/src/components/SlowRpcRequestToastCoordinator.tsx
 4 apps/web/src/components/SourceControlAppAccessNotice.tsx
 3 apps/web/src/components/StartTruncatedPath.tsx

@@ -13,6 +13,10 @@ The same page sets **Contrast**, **Glass opacity**, **Panel animations**, **Envi
 identification**, **Chat width**, **Effort display**, **Render math** and whether branch and
 worktree controls stay visible below the composer in active threads.
 
+**Environment identification** shows a Dev or Nightly pill beside the name in the sidebar
+header, on by default. Release builds show no pill. **Chat width** sets the width of the message
+timeline: Comfortable, Wide or Full. Grid cells keep their own widths.
+
 ## Typography
 
 **Settings ▸ Appearance ▸ Typography** sets the interface font and size, and the code font

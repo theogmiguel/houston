@@ -20,6 +20,16 @@ describe("speech custom words", () => {
 
   it("does not fuzzily replace CJK terms", () => {
     expect(applySpeechCustomWords("你好。", ["你号"])).toBe("你好。");
+    expect(applySpeechCustomWords("你好世界朋友门", ["你好世界朋友们"])).toBe("你好世界朋友门");
+  });
+
+  it.each([
+    ["vamos usar a aplicaçao nova", ["Aplicação"], "vamos usar a Aplicação nova"],
+    ["APLICAÇAO pronta", ["Aplicação"], "APLICAÇÃO pronta"],
+    ["o senhor Muller chegou", ["Müller"], "o senhor Müller chegou"],
+    ["сказал москво", ["Москва"], "сказал Москва"],
+  ])("corrects the accented or non-Latin term in %j", (text, words, expected) => {
+    expect(applySpeechCustomWords(text, words)).toBe(expected);
   });
 
   it("preserves whitespace around fuzzy corrections", () => {

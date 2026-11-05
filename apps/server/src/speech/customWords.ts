@@ -8,7 +8,10 @@ const matchKey = (value: string) =>
     .join("")
     .toLocaleLowerCase();
 
-const isAsciiKey = (value: string) => /^[a-z0-9]+$/i.test(value);
+// Scripts that separate words with spaces. CJK is excluded: one wrong character in a long
+// unspaced run would otherwise rewrite real text.
+const isMatchableKey = (value: string) =>
+  /^[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{Nd}]+$/u.test(value);
 
 const soundex = (value: string) => {
   const upper = value.toUpperCase();
@@ -78,11 +81,11 @@ const customWordKeys = (words: readonly string[]): CustomWordKey[] =>
   words.flatMap((word) => {
     const keys = [matchKey(word)];
     if (word.includes("&")) keys.push(matchKey(word.replaceAll("&", " and ")));
-    return [...new Set(keys)].filter(isAsciiKey).map((key) => ({ word, key }));
+    return [...new Set(keys)].filter(isMatchableKey).map((key) => ({ word, key }));
   });
 
 const bestMatch = (candidate: string, keys: readonly CustomWordKey[]) => {
-  if (!isAsciiKey(candidate) || candidate.length > 50) return undefined;
+  if (!isMatchableKey(candidate) || candidate.length > 50) return undefined;
   let best: { readonly word: string; readonly score: number } | undefined;
   for (const custom of keys) {
     const longest = Math.max(candidate.length, custom.key.length);
