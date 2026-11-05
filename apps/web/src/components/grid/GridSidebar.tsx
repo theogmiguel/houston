@@ -1831,11 +1831,7 @@ export function ThreadCard({
   };
   const openCardMenu = async (position: { x: number; y: number }) => {
     setActionsMenuOpen(true);
-    try {
-      await openMenu(position);
-    } finally {
-      setActionsMenuOpen(false);
-    }
+    await openMenu(position).finally(() => setActionsMenuOpen(false));
   };
   const openCardMenuFromButton = () => {
     const rect = actionsButtonRef.current?.getBoundingClientRect();

@@ -188,12 +188,8 @@ export function useThreadActionMenu(input: {
             },
       cell: cellState(),
     });
-    let clicked: Awaited<ReturnType<typeof settlePromise<ThreadActionMenuId | null>>>;
-    try {
-      clicked = await settlePromise(() => api.contextMenu.show(items, position));
-    } finally {
-      menuOpen.current = false;
-    }
+    const clicked = await settlePromise(() => api.contextMenu.show(items, position));
+    menuOpen.current = false;
     if (clicked._tag === "Failure" || clicked.value === null) return;
     const action: ThreadActionMenuId = clicked.value;
     if (
