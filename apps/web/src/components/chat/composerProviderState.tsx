@@ -26,6 +26,7 @@ import {
   getReasoningTraitStep,
   type PromptUltrathink,
   shouldRenderTraitsControls,
+  type TraitsSelectionInput,
   TraitsMenuContent,
   TraitsPicker,
 } from "./TraitsPicker";
@@ -107,6 +108,40 @@ function resolveComposerOptionSelections(
 } {
   const caps = getProviderModelCapabilities(models, model, provider, planModeEnabled);
   return { caps, selections: withImplicitFastModeDefault(caps, modelOptions) };
+}
+
+export type ComposerTraitsTarget = {
+  provider: ProviderDriverKind;
+  instanceId: ProviderInstanceId;
+  threadRef?: ScopedThreadRef | undefined;
+  draftId?: DraftId | undefined;
+  model: string;
+  models: ReadonlyArray<ServerProviderModel>;
+  modelOptions: ReadonlyArray<ProviderOptionSelection> | undefined;
+  reportedModelSelection?: ModelSelection | null | undefined;
+  promptUltrathink: PromptUltrathink;
+  onPromptEdit: (edit: (prompt: string) => string) => void;
+  planModeEnabled: boolean;
+};
+
+/**
+ * The composer's traits input with the model's implicit defaults applied, so a pick writes what
+ * the composer would send. Null without a draft or thread to persist to.
+ */
+export function resolveComposerTraitsInput(
+  input: ComposerTraitsTarget,
+): TraitsSelectionInput | null {
+  const { threadRef, draftId, ...rest } = input;
+  const { selections } = resolveComposerOptionSelections(
+    input.models,
+    input.model,
+    input.provider,
+    input.modelOptions,
+    input.planModeEnabled,
+  );
+  const persistence = threadRef ? { threadRef } : draftId ? { draftId } : null;
+  if (!persistence) return null;
+  return { ...rest, ...persistence, modelOptions: selections };
 }
 
 export function getComposerProviderState(input: ComposerProviderStateInput): ComposerProviderState {
