@@ -28,6 +28,7 @@ import { type Side, type SplitSide, type ThreadNode, preorderThreads } from "../
 import { getThreadDragSource } from "../../grid/threadDrag";
 import { Button } from "../ui/button";
 import { GridPaneActions, GridPaneRename, GridPaneRenameInput } from "../ui/grid-pane";
+import { PANE_THREAD_TAG_CLASS, PANE_THREAD_TAG_COUNT_CLASS } from "../ui/thread-tag-recipes";
 import { GridDropIndicator } from "../ui/grid-drop-indicator";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
@@ -370,6 +371,20 @@ export function GridThreadCell({
               {title}
             </span>
           )}
+          {shell !== null && (shell.tags?.length ?? 0) > 0 ? (
+            <span data-pane-tags="" className="flex shrink-0 items-center gap-1">
+              {(shell.tags ?? []).slice(0, 2).map((tag) => (
+                <span key={tag} className={PANE_THREAD_TAG_CLASS}>
+                  {tag}
+                </span>
+              ))}
+              {(shell.tags?.length ?? 0) > 2 ? (
+                <span className={PANE_THREAD_TAG_COUNT_CLASS}>
+                  +{(shell.tags?.length ?? 0) - 2}
+                </span>
+              ) : null}
+            </span>
+          ) : null}
           <SidebarThreadStatusGlyph status={status} label={status?.label} />
           <div className="flex w-0 items-center gap-0.5 overflow-hidden opacity-0 [interpolate-size:allow-keywords] transition-[width,opacity] duration-(--motion-disclosure) ease-standard group-hover/pane:w-auto group-hover/pane:opacity-100 group-focus-within/label:w-auto group-focus-within/label:opacity-100 motion-reduce:transition-none">
             {paneActions(true)}
