@@ -224,6 +224,7 @@ jobs:
         run: >-
           node --test scripts/gen-third-party-licenses.test.mjs scripts/check-web-style.test.mjs
           scripts/build-desktop-artifact.test.mjs scripts/refresh-updater-metadata.test.mjs
+          scripts/ci/windows-known-failures.test.mjs
       - name: Report job timing
         if: always()
         continue-on-error: true

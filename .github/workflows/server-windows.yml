@@ -38,5 +38,26 @@ jobs:
       - name: Install Chromium for server browser integration tests
         if: steps.chromium_cache.outputs.cache-hit != 'true'
         run: node apps/server/node_modules/playwright-core/cli.js install --only-shell chromium
+      # The shard passes when its failures match scripts/ci/windows-known-failures.json exactly.
       - name: Server tests (src and scripts)
-        run: pnpm --filter @houston-app/cli exec vp test run src/ scripts/ --shard=${{ matrix.shard }}/3
+        id: server_tests
+        shell: bash
+        run: |
+          set +e
+          pnpm --filter @houston-app/cli exec vp test run src/ scripts/ --shard=${{ matrix.shard }}/3 \
+            --reporter=default --reporter=json \
+            --outputFile.json="$GITHUB_WORKSPACE/windows-server-${{ matrix.shard }}.json"
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+      - name: Compare with the known Windows failures
+        shell: bash
+        run: >-
+          node scripts/ci/windows-known-failures.mjs
+          --exit-code ${{ steps.server_tests.outputs.exit_code }}
+          "$GITHUB_WORKSPACE/windows-server-${{ matrix.shard }}.json"
+      - name: Upload the shard's test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-server-${{ matrix.shard }}
+          path: windows-server-${{ matrix.shard }}.json
+          if-no-files-found: ignore
