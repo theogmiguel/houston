@@ -1,5 +1,7 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -22,7 +24,7 @@ const withTerminals = <A, E>(use: (terminals: AcpClientTerminals) => Effect.Effe
       defaultCwd: process.cwd(),
     });
     return yield* use(terminals).pipe(Effect.ensuring(terminals.disposeAll));
-  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped);
 
 describe("AcpClientTerminals", () => {
   it.live("runs a command, buffers output, and reports the exit status", () =>
@@ -74,7 +76,7 @@ describe("AcpClientTerminals", () => {
         const output = yield* terminals.output({ sessionId, terminalId: created.terminalId });
         expect(output.output).toBe(expected);
       }
-    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped),
   );
 
   it.live("runs Devin shell source with arguments, pipes, and session fallback variables", () =>
@@ -93,7 +95,7 @@ describe("AcpClientTerminals", () => {
       const output = yield* terminals.output({ sessionId: "devin", ...terminal });
       expect(exit.exitCode).toBe(0);
       expect(output.output.trim()).toBe("MAILBOX-PROBE");
-    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped),
   );
 
   it.live("truncates buffered output from the beginning at the byte limit", () =>
@@ -262,7 +264,7 @@ describe("AcpClientTerminals", () => {
         expect(exit).toEqual({ exitCode: null, signal: "SIGKILL" });
       }
       expect(yield* child.isRunning).toBe(false);
-    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped),
   );
 
   it.live("reserves terminal capacity across concurrent creates", () =>

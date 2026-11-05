@@ -1,4 +1,6 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -74,13 +76,15 @@ const removeCheckpointWorkspaceEffect = Effect.fn("removeCheckpointWorkspace")(f
 export const checkpointWorkspace = (fixtureName: string, files?: ReplayWorkspaceFiles) =>
   Effect.acquireRelease(makeCheckpointWorkspaceEffect(fixtureName, files), (cwd) =>
     removeCheckpointWorkspaceEffect(cwd).pipe(Effect.orDie),
-  ).pipe(Effect.provide(NodeServices.layer));
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 export async function makeCheckpointWorkspace(
   fixtureName: string,
   files?: ReplayWorkspaceFiles,
 ): Promise<string> {
   return await Effect.runPromise(
-    makeCheckpointWorkspaceEffect(fixtureName, files).pipe(Effect.provide(NodeServices.layer)),
+    makeCheckpointWorkspaceEffect(fixtureName, files).pipe(
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    ),
   );
 }

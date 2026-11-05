@@ -4,8 +4,10 @@ import {
   type SDKAssistantMessage,
   type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProviderInstanceId, type ProviderReplayEntry } from "@houston-app/contracts";
+import * as Layer from "effect/Layer";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -219,7 +221,7 @@ const cwdRealPath = await Effect.runPromise(
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     return yield* fs.realPath(cwd);
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 const pathFragments = [
   [cwd, `/tmp/claude-replay-${SCENARIO}`],
@@ -354,5 +356,5 @@ await Effect.runPromise(
     yield* fs.makeDirectory(dirname(outputPath), { recursive: true });
     yield* fs.writeFileString(outputPath, encodeTranscript({ entries, metadata }));
     yield* Console.log(`Wrote ${entries.length} ${PROTOCOL} replay entries to ${outputPath}`);
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

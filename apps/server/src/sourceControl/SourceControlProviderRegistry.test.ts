@@ -1,5 +1,6 @@
 import { SourceControlProviderKind } from "@houston-app/contracts";
 import { assert, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -156,7 +157,7 @@ function makeRegistry(input: {
           : ServerSettings.ServerSettingsService.layerTest(),
         ServerConfig.layerTest(process.cwd(), {
           prefix: "houston-source-control-registry-test-",
-        }).pipe(Layer.provide(NodeServices.layer)),
+        }).pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
       ),
     ),
   );

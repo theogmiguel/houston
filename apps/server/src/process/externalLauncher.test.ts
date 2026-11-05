@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - the Windows launch smoke tests use filesystem notifications to observe real PowerShell launches.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -138,7 +139,7 @@ it.effect.skipIf(windowsHost)(
           extendEnv: false,
         })),
       );
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 // Windows drive letters cannot resolve the POSIX editor stub.
@@ -211,7 +212,7 @@ it.effect.skipIf(windowsHost)(
         }),
         { PATH: binDir },
       );
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("launches an installed editor with platform-safe arguments", () =>
@@ -254,7 +255,7 @@ it.effect("launches an installed editor with platform-safe arguments", () =>
     assert.deepEqual(spawned.args, []);
     assert.equal(spawned.options.shell, true);
     assert.equal(spawned.options.detached, true);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect.skipIf(windowsHost)(
@@ -302,13 +303,13 @@ it.effect.skipIf(windowsHost)(
       assert.ok(spawned);
       assert.equal(spawned.command, "powershell.exe");
       assert.equal(spawned.options.detached, true);
-      const encodedCommand = spawned.args[spawned.args.length - 1] ?? "";
+      const encodedCommand = String(spawned.args[spawned.args.length - 1] ?? "");
       const decodedCommand = Buffer.from(encodedCommand, "base64").toString("utf16le");
       assert.equal(
         decodedCommand,
         "$ProgressPreference = 'SilentlyContinue'; $folderVerb = (Get-ItemProperty -LiteralPath 'Registry::HKEY_CLASSES_ROOT\\Directory\\shell' -ErrorAction SilentlyContinue).'(default)'; if ($folderVerb -and $folderVerb -ne 'none') { Invoke-Item -LiteralPath '\\\\wsl.localhost\\Ubuntu-24.04\\home\\houston\\workspace [draft]\\author''s $media' } else { Start-Process 'explorer.exe' -ArgumentList ('/select,\"' + '\\\\wsl.localhost\\Ubuntu-24.04\\home\\houston\\workspace [draft]\\author''s $media\\clip|draft.mp4' + '\"') }",
       );
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 for (const wsl of [false, true]) {
@@ -367,7 +368,7 @@ for (const wsl of [false, true]) {
           spawnedCommands.filter((command) => command.command !== "xdg-mime"),
           [reveal],
         );
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 }
 
@@ -408,7 +409,7 @@ for (const cwd of ["/workspace with spaces/", "/workspace with spaces/file.ts:12
         assert.equal(spawned.command, executable);
         assert.deepEqual(spawned.args, [cwd]);
         assert.equal(spawned.options.shell, false);
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 }
 
@@ -467,7 +468,7 @@ for (const { layout, pathNames, fallbackNames, expected } of [
         expected === "fallback" ? path.join(fallbackDir, "zeditor") : expected,
       );
       assert.deepEqual(spawned.args, ["/workspace"]);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 }
 
@@ -509,7 +510,7 @@ it.effect.skipIf(windowsHost)("prefers zeditor in a later Linux fallback directo
       yield* resolve,
       Option.some({ command: path.join(localBin, "zed"), baseArgs: [] }),
     );
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect.each([
@@ -553,7 +554,7 @@ it.effect.each([
         "3",
         "/workspace with spaces/file.ts",
       ]);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("matches macOS bundles on the name boundary only", () =>
@@ -590,7 +591,7 @@ it.effect("matches macOS bundles on the name boundary only", () =>
     yield* fs.chmod(exact, 0o755);
 
     assert.include(yield* editorsFor(exactHome), "webstorm");
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("keeps the macOS VS Code Insiders bundle out of stable VS Code", () =>
@@ -630,7 +631,7 @@ it.effect("keeps the macOS VS Code Insiders bundle out of stable VS Code", () =>
     assert.notInclude(editors, "vscode");
     assert.include(editors, "vscode-insiders");
     assert.equal(spawned?.command, path.join(bin, "code-insiders"));
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 for (const { platform, installPath, onPath } of [
@@ -666,7 +667,7 @@ for (const { platform, installPath, onPath } of [
           ),
         );
         assert.notInclude(editors, "antigravity");
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 }
 
@@ -714,7 +715,7 @@ it.effect.skipIf(windowsHost)("ignores unusable app bundles and keeps PATH launc
       ),
     );
     assert.equal(spawned?.command, "cursor");
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect(
@@ -872,7 +873,7 @@ const launchWindowsShimEditor = (cwd: string) =>
       ),
     );
     return { exit, spawned };
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 it.effect.each([
   ["CRLF", "C:\\workspace\\file.ts\r\ncalc.exe"],

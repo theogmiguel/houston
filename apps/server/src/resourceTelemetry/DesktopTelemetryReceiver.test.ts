@@ -3,7 +3,9 @@
 import { it } from "@effect/vitest";
 import * as NodeTls from "node:tls";
 import * as NodeCrypto from "node:crypto";
+import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as Cause from "effect/Cause";
 import * as FileSystem from "effect/FileSystem";
@@ -45,6 +47,8 @@ import * as NodeAssert from "node:assert/strict";
 import * as NodeCrypto from "node:crypto";
 import * as NodeTls from "node:tls";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { makeApplyDesktopShellEnvironmentSnapshot } from ${JSON.stringify(new URL("./DesktopTelemetryReceiver.ts", import.meta.url).href)};
 const fingerprints = (certificates) => [...new Set(certificates.map((pem) => new NodeCrypto.X509Certificate(pem).fingerprint256))].sort();
@@ -56,7 +60,7 @@ await Effect.runPromise(applySnapshot({
   platform: process.platform,
   discovered: true,
   environment: { NODE_EXTRA_CA_CERTS: null },
-}).pipe(Effect.provide(NodeServices.layer)));
+}).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))));
 NodeAssert.equal(process.env.NODE_EXTRA_CA_CERTS, undefined);
 NodeAssert.deepEqual(fingerprints(NodeTls.getCACertificates("default")), expected);
 `,
@@ -75,7 +79,10 @@ NodeAssert.deepEqual(fingerprints(NodeTls.getCACertificates("default")), expecte
           { concurrency: "unbounded" },
         );
         expect(result.exitCode, result.stderr).toBe(0);
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer)),
+      ),
   );
 
   it.effect("updates live TLS trust when shell certificates arrive after startup", () =>
@@ -154,7 +161,10 @@ NodeAssert.deepEqual(fingerprints(NodeTls.getCACertificates("default")), expecte
       yield* applyOpaqueTrust(message);
       expect(NodeTls.getCACertificates("default")).toEqual([]);
       expect(environment.NODE_EXTRA_CA_CERTS).toBe(certificatePath);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer)),
+    ),
   );
 
   it.effect.each([
@@ -187,7 +197,7 @@ NodeAssert.deepEqual(fingerprints(NodeTls.getCACertificates("default")), expecte
           UNRELATED: "keep",
           ...(pending ? { HOUSTON_DESKTOP_SHELL_DISCOVERY_PENDING: "1" } : {}),
         });
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))),
   );
 
   it.effect("models a zero-byte control write as a stalled descriptor", () =>

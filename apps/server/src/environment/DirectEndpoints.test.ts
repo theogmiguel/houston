@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it as effectIt } from "@effect/vitest";
 import type * as NodeOS from "node:os";
@@ -270,7 +271,7 @@ const layerServeConfig = (host = "127.0.0.1") =>
     })),
   ).pipe(
     Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "houston-direct-" })),
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
 const resolveWithServe = (probeStatus: number) =>

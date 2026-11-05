@@ -5,6 +5,7 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
 import { NodeHttpServer } from "@effect/platform-node";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -154,12 +155,13 @@ const threadsDouble = (shells: Map<string, OrchestrationV2ThreadShell>) =>
 
 const toolkitLayer = (harness: Harness) =>
   McpHttpServer.layerHoustonMergeQueueToolkit.pipe(
-    Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
     Layer.provide(
       Layer.mergeAll(
         Layer.succeedContext(harness.services),
         threadsDouble(harness.shells),
         NodeServices.layer,
+        NodeCrypto.layer,
       ),
     ),
   );
@@ -350,10 +352,10 @@ describe("agents enqueue into their own project's queue", () => {
         const agent = harness.caller("thread-http", projectId);
         return yield* Effect.scoped(
           Effect.gen(function* () {
-            const serverLayer = McpHttpServer.layerHoustonMergeQueueToolkit.pipe(
-              Layer.provideMerge(
-                McpHttpServer.layerMcpTransport.pipe(Layer.provide(ServerSettings.layerTest())),
-              ),
+            const serverLayer = McpHttpServer.layerMcpTransport(
+              McpHttpServer.layerHoustonMergeQueueToolkit,
+            ).pipe(
+              Layer.provide(ServerSettings.layerTest()),
               Layer.provide(
                 Layer.mergeAll(
                   Layer.succeedContext(harness.services),
@@ -363,6 +365,7 @@ describe("agents enqueue into their own project's queue", () => {
                       Effect.succeed(token === "thread-http-token" ? agent : undefined),
                   }),
                   NodeServices.layer,
+                  NodeCrypto.layer,
                 ),
               ),
             );

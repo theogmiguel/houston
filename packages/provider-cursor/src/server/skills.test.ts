@@ -1,6 +1,8 @@
 import * as NodeOS from "node:os";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "vite-plus/test";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -16,7 +18,12 @@ import {
 
 const runNode = <A, E>(
   effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path | Scope.Scope>,
-) => effect.pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise);
+) =>
+  effect.pipe(
+    Effect.scoped,
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    Effect.runPromise,
+  );
 
 describe("Cursor skills", () => {
   it("discovers project, user, then built-in skills by precedence", async () =>

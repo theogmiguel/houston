@@ -1,7 +1,9 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ServerNpmReleaseError } from "@houston-app/contracts";
 import * as HostProcess from "@houston-app/shared/HostProcess";
+import * as Layer from "effect/Layer";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -32,26 +34,29 @@ const noPublicRegistry = HttpClient.make(() =>
   Effect.die("a configured npm lookup must not fall back to public npm"),
 );
 // A fake npm on PATH decides whether npm counts as installed.
-const makeService = Effect.fnUntraced(function* (
-  run: ProcessRunner.ProcessRunner["Service"]["run"],
-  publicRegistry: HttpClient.HttpClient = noPublicRegistry,
-  npmInstalled = true,
-) {
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const npmBin = yield* fs.makeTempDirectoryScoped({ prefix: "houston-npm-release-" });
-  for (const name of ["npm", "npm.cmd"]) {
-    yield* fs.writeFileString(path.join(npmBin, name), "", { mode: 0o755 });
-  }
-  return yield* NpmRelease.make().pipe(
-    Effect.provideService(ProcessRunner.ProcessRunner, { run }),
-    Effect.provideService(HttpClient.HttpClient, publicRegistry),
-    Effect.provideService(HostProcess.Environment, {
-      PATH: npmInstalled ? npmBin : "",
-      PATHEXT: ".CMD",
-    }),
-  );
-}, Effect.provide(NodeServices.layer));
+const makeService = Effect.fnUntraced(
+  function* (
+    run: ProcessRunner.ProcessRunner["Service"]["run"],
+    publicRegistry: HttpClient.HttpClient = noPublicRegistry,
+    npmInstalled = true,
+  ) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const npmBin = yield* fs.makeTempDirectoryScoped({ prefix: "houston-npm-release-" });
+    for (const name of ["npm", "npm.cmd"]) {
+      yield* fs.writeFileString(path.join(npmBin, name), "", { mode: 0o755 });
+    }
+    return yield* NpmRelease.make().pipe(
+      Effect.provideService(ProcessRunner.ProcessRunner, { run }),
+      Effect.provideService(HttpClient.HttpClient, publicRegistry),
+      Effect.provideService(HostProcess.Environment, {
+        PATH: npmInstalled ? npmBin : "",
+        PATHEXT: ".CMD",
+      }),
+    );
+  },
+  Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+);
 
 it.effect.each([
   {

@@ -1,5 +1,6 @@
 import { ProviderInstanceId, TextGenerationError } from "@houston-app/contracts";
 import { OpenCodeSettings } from "../settings.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
@@ -193,7 +194,7 @@ const layerOpenCodeTextGenerationTest = Layer.succeed(
 ).pipe(
   Layer.provideMerge(TestProviderHost.layer()),
   Layer.provideMerge(NetService.layer),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 const layerOpenCodeTextGenerationExistingServerTest = Layer.succeed(
@@ -202,7 +203,7 @@ const layerOpenCodeTextGenerationExistingServerTest = Layer.succeed(
 ).pipe(
   Layer.provideMerge(TestProviderHost.layer()),
   Layer.provideMerge(NetService.layer),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 const DEFAULT_OPENCODE_SETTINGS = Schema.decodeSync(OpenCodeSettings)({

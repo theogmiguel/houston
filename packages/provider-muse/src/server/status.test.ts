@@ -1,6 +1,8 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { MuseSettings } from "../settings.ts";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
@@ -54,7 +56,7 @@ const fakeCli = (source = 'process.stdout.write("muse 1.0.3-R2198.1\\n");') =>
     return writeFakeCli({ directory, name: "muse", source });
   });
 
-it.layer(NodeServices.layer)("Muse status", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Muse status", (it) => {
   it.effect("does not expose CLI stderr or start an SDK host after a failed version check", () =>
     Effect.scoped(
       Effect.gen(function* () {

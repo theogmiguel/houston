@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -5,6 +6,7 @@ import {
   ProviderInstanceId,
   type ServerProvider,
 } from "@houston-app/contracts";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as HttpClient from "effect/http/HttpClient";
@@ -40,7 +42,7 @@ const snapshot: ServerProvider = {
   slashCommands: [],
 };
 
-it.layer(NodeServices.layer)("Muse maintenance", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Muse maintenance", (it) => {
   it.effect(
     "compares numeric native release revisions and preserves the CLI release identity",
     () =>

@@ -1,5 +1,6 @@
 // A delivery as the renderer reads it: through the real `/ws` handlers over the orchestration
 // runtime and the provider double of messageDelivery.testkit.ts.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -378,7 +379,7 @@ const withWs = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
         Layer.provideMerge(layerConfigSources),
         Layer.provideMerge(
           ServerConfig.layerTest(process.cwd(), { prefix: "houston-delivery-ws-" }).pipe(
-            Layer.provideMerge(NodeServices.layer),
+            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
         ),
       ),

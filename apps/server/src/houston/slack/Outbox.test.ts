@@ -3,8 +3,10 @@
 // plain-text fallback, dropping after five refusals, and what a restart resends.
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -205,7 +207,7 @@ describe("the outbox sends in bounded batches, falls back to text and survives a
         assert.include(error, "doomed-row");
         assert.include(error, "channel_not_found");
       }).pipe(Effect.provide(layer()));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });
 

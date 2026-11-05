@@ -1,12 +1,14 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as HostProcess from "@houston-app/shared/HostProcess";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import type * as Duration from "effect/Duration";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
@@ -85,9 +87,9 @@ const makeHarness = Effect.fn("test.makePreviewBrowser")(function* (
   const path = yield* Path.Path;
   const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-preview-browser-test-" });
   const archive = options.archive ?? browserArchive;
-  const crypto = yield* Crypto.Crypto;
+  const digest = yield* Digest.Digest;
   const sha256 =
-    options.sha256 ?? Hex.encode(yield* crypto.digest("SHA-256", archive).pipe(Effect.orDie));
+    options.sha256 ?? Hex.encode(yield* digest.digest(Digest.sha256, archive).pipe(Effect.orDie));
   const requests: Array<string> = [];
   const browser = yield* PreviewBrowser.makePreviewBrowser({
     baseDir,
@@ -123,7 +125,9 @@ const makeHarness = Effect.fn("test.makePreviewBrowser")(function* (
 
 // Filesystem mtimes are wall-clock values: a test clock puts "two hours ago" before the Unix
 // epoch, which NTFS clamps to 2106, so the stale-staging check would never fire on Windows.
-it.layer(NodeServices.layer, { excludeTestServices: true })("PreviewBrowser", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), {
+  excludeTestServices: true,
+})("PreviewBrowser", (it) => {
   it.effect.each(["0.8.0", "1.2.3"])("retains another version when installing %s", (current) =>
     Effect.gen(function* () {
       const { browser, fs, path, installRoot, requests } = yield* makeHarness({ version: current });

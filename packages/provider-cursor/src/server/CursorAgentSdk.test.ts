@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { ProviderSessionId, ThreadId } from "@houston-app/contracts";
@@ -132,7 +133,7 @@ const layerTest = CursorAgentSdk.layer.pipe(
     }),
   ),
   Layer.provide(CursorSdk.layer),
-  Layer.provide(NodeServices.layer),
+  Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 describe("CursorAgentSdkRunner", () => {

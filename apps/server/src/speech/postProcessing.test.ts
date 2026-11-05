@@ -9,6 +9,7 @@ import {
   type ServerSettings as Settings,
 } from "@houston-app/contracts";
 import { it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -168,7 +169,7 @@ describe("postProcessTranscript", () => {
         SpeechService.layer.pipe(
           Layer.provide(ServerConfig.layerTest("/tmp", { prefix: "speech-post-process-" })),
           Layer.provide(ServerSettings.layerTest({ speechPostProcessingEnabled: true })),
-          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
     ),

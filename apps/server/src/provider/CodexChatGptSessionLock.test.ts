@@ -4,8 +4,10 @@ import * as NodeModule from "node:module";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
 import { assert, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProviderInstanceId } from "@houston-app/contracts";
+import * as Layer from "effect/Layer";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -48,7 +50,7 @@ it.live("excludes another process and releases after the credential update", () 
       assert.strictEqual(blocked, "blocked");
       assert.strictEqual(yield* probe(directory), "acquired");
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.live("releases the cross-process lease when the operation is interrupted", () =>
@@ -71,5 +73,5 @@ it.live("releases the cross-process lease when the operation is interrupted", ()
       yield* Fiber.interrupt(operation);
       assert.strictEqual(yield* probe(directory), "acquired");
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

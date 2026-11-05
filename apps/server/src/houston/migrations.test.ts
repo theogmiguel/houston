@@ -1,4 +1,5 @@
 // The Houston migration track beside upstream's, through persistence/Sqlite.ts.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
@@ -73,10 +74,12 @@ const withDatabaseFile = <A, E, R>(body: (file: string) => Effect.Effect<A, E, R
     const path = yield* Path.Path;
     const dir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-migrations-" });
     return yield* body(path.join(dir, "state.sqlite"));
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 const openThroughSqlite = (file: string) =>
-  Layer.fresh(SqlitePersistence.layerFromPath(file)).pipe(Layer.provide(NodeServices.layer));
+  Layer.fresh(SqlitePersistence.layerFromPath(file)).pipe(
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  );
 
 describe("the Houston track runs beside upstream's", () => {
   it.effect("a fresh database records the Houston migrations and upstream stays at its head", () =>

@@ -1,4 +1,5 @@
 import * as SecretResolver from "@houston-app/secret-provider-core/server/SecretResolver";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -756,7 +757,7 @@ const layerConfigSources = Layer.mergeAll(
       ServerConfigModule.layerTest(process.cwd(), { prefix: "houston-config-subscription-test-" }),
     ),
   ),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 it.effect.each([

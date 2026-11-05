@@ -1,5 +1,7 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -24,7 +26,7 @@ describe("Self invocation", () => {
         path.resolve("dist/bin.mjs"),
         "acp-mcp-bridge",
       ]);
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("passes subcommands straight to the standalone executable", () =>
@@ -41,7 +43,7 @@ describe("Self invocation", () => {
       );
       expect(invocation).toEqual({ command: "/packaged/houston", entrypoint: undefined });
       expect(selfInvocationArgs(invocation, ["acp-mcp-bridge"])).toEqual(["acp-mcp-bridge"]);
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });
 
@@ -56,7 +58,7 @@ describe("Node runtime selection", () => {
           ),
         ).toBe(executable);
       }
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("uses installed Node instead of the standalone Houston executable", () =>
@@ -70,7 +72,7 @@ describe("Node runtime selection", () => {
     }).pipe(
       Effect.provideService(HostProcess.ExecutablePath, "/packaged/houston"),
       Effect.provideService(HostProcess.IsExecutable, true),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     ),
   );
 
@@ -94,7 +96,7 @@ describe("Node runtime selection", () => {
       Effect.scoped,
       Effect.provideService(HostProcess.ExecutablePath, "/packaged/houston"),
       Effect.provideService(HostProcess.IsExecutable, true),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     ),
   );
 
@@ -122,7 +124,7 @@ describe("Node runtime selection", () => {
       Effect.provideService(HostProcess.ExecutablePath, "/packaged/houston"),
       Effect.provideService(HostProcess.IsExecutable, true),
       Effect.provideService(HostProcess.Platform, "win32"),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     ),
   );
 
@@ -143,7 +145,7 @@ describe("Node runtime selection", () => {
       Effect.scoped,
       Effect.provideService(HostProcess.IsExecutable, true),
       Effect.provideService(HostProcess.Platform, "win32"),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     ),
   );
 
@@ -167,7 +169,7 @@ describe("Node runtime selection", () => {
     }).pipe(
       Effect.scoped,
       Effect.provideService(HostProcess.IsExecutable, true),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     ),
   );
 
@@ -184,7 +186,7 @@ describe("Node runtime selection", () => {
       Effect.scoped,
       Effect.provideService(HostProcess.ExecutablePath, "/packaged/houston"),
       Effect.provideService(HostProcess.IsExecutable, true),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     ),
   );
 
@@ -205,7 +207,7 @@ describe("Node runtime selection", () => {
       }).pipe(
         Effect.scoped,
         Effect.provideService(HostProcess.IsExecutable, true),
-        Effect.provide(NodeServices.layer),
+        Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
   );
 });

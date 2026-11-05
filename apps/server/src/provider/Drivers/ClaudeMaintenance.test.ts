@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -110,7 +111,7 @@ const fixture = Effect.fn("ClaudeMaintenance.test.fixture")(function* (
   };
 });
 
-it.layer(NodeServices.layer)("ClaudeMaintenance", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ClaudeMaintenance", (it) => {
   it.effect.each([
     {
       name: "default native channel",

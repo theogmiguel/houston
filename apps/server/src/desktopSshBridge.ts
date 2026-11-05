@@ -26,11 +26,12 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
-import type * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
 import type * as FileSystem from "effect/FileSystem";
 import type * as HttpClient from "effect/http/HttpClient";
 import type * as Path from "effect/Path";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { randomUUID } from "node:crypto";
 import readline from "node:readline";
@@ -41,7 +42,7 @@ const PROMPT_TIMEOUT_MS = 3 * 60 * 1000;
 
 type BridgeServices =
   | ChildProcessSpawner.ChildProcessSpawner
-  | Crypto.Crypto
+  | Digest.Digest
   | FileSystem.FileSystem
   | Path.Path
   | HttpClient.HttpClient
@@ -196,6 +197,7 @@ export async function runDesktopSshBridge(): Promise<void> {
   const runner = runnerOptions();
   const layer = Layer.mergeAll(
     NodeServices.layer,
+    NodeCrypto.layer,
     NodeHttpClient.layerNodeHttp,
     NetService.layer,
     SshEnvironmentManager.layer({ resolveCliRunner: Effect.succeed(runner) }),

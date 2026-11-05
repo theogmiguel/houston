@@ -1,5 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
@@ -54,7 +56,7 @@ describe("Expo credentials", () => {
       );
       const missing = yield* resolve("", {}).pipe(Effect.exit);
       expect(Exit.isFailure(missing) && missing.cause.toString()).toContain("eas login");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect.each([
@@ -69,7 +71,7 @@ describe("Expo credentials", () => {
       );
       expect(error._tag).toBe("ExpoInvalidCredentialError");
       expect(error.message).not.toContain(saved || "abc def");
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });
 

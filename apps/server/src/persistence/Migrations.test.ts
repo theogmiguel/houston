@@ -1,6 +1,8 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
@@ -179,5 +181,5 @@ it.effect("registers every migration file", () =>
       files.toSorted(([a], [b]) => a - b),
       migrationManifest,
     );
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

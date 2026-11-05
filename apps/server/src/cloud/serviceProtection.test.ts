@@ -4,9 +4,11 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as HostProcess from "@houston-app/shared/HostProcess";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Sink from "effect/Sink";
@@ -226,7 +228,7 @@ it.effect("lowers no score before the manager default is in place, and undoes in
   }).pipe(
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(home, { recursive: true, force: true }))),
     Effect.provideService(ProcessRunner.ProcessRunner, runner("")),
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 });
 
@@ -269,6 +271,6 @@ it.effect("counts memory.min as protection and names the first cgroup that grant
       ProcessRunner.ProcessRunner,
       runner(`ControlGroup=/${controlGroup.join("/")}\nMainPID=0\n`),
     ),
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 });

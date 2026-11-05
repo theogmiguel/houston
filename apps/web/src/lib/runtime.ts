@@ -1,4 +1,5 @@
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Layer from "effect/Layer";
@@ -12,22 +13,37 @@ import * as ClientTracer from "../observability/clientTracer";
 
 const layerHttpClient = layerRemoteHttpClient((input, init) => globalThis.fetch(input, init));
 
-const layerCrypto = Layer.succeed(
-  Crypto.Crypto,
-  Crypto.make({
-    randomBytes: (size) => crypto.getRandomValues(new Uint8Array(size)),
-    digest: (algorithm, data) =>
-      Effect.promise(async () => {
-        const bytes = new Uint8Array(data.byteLength);
-        bytes.set(data);
-        return new Uint8Array(await crypto.subtle.digest(algorithm, bytes));
-      }),
+const layerSecureRandom = Layer.succeed(
+  SecureRandom.SecureRandom,
+  SecureRandom.make((size) => crypto.getRandomValues(new Uint8Array(size))),
+);
+
+const digestEffect = Effect.fn("Digest.Digest.digest")(
+  (algorithm: Digest.Algorithm, data: Uint8Array) =>
+    Effect.promise(async () => {
+      const bytes = new Uint8Array(data.byteLength);
+      bytes.set(data);
+      return new Uint8Array(await crypto.subtle.digest(algorithm.name, bytes));
+    }),
+);
+
+const layerDigest = Layer.succeed(
+  Digest.Digest,
+  Digest.Digest.of({
+    digest: digestEffect,
+    digestHex: Effect.fn("Digest.Digest.digestHex")(
+      (algorithm: Digest.Algorithm, data: Uint8Array) =>
+        Effect.flatMap(digestEffect(algorithm, data), (bytes) =>
+          Effect.succeed(Buffer.from(bytes).toString("hex")),
+        ),
+    ),
   }),
 );
 
 type RuntimeLayerSource =
   | typeof layerHttpClient
-  | typeof layerCrypto
+  | typeof layerSecureRandom
+  | typeof layerDigest
   | typeof Socket.layerWebSocketConstructorGlobal
   | typeof ClientTracer.layer;
 
@@ -54,7 +70,8 @@ export function __setPrimaryHttpRunnerForTests(runner?: PrimaryHttpEffectRunner)
 
 const layerRuntime = Layer.mergeAll(
   layerHttpClient,
-  layerCrypto,
+  layerSecureRandom,
+  layerDigest,
   Socket.layerWebSocketConstructorGlobal,
   ClientTracer.layer,
 );

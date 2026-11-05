@@ -1,5 +1,7 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -53,7 +55,7 @@ describe("ssh config", () => {
           ["quoted", "quoted.example.com", "ssh-config"],
         ],
       );
-    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped),
   );
 
   it.effect("skips directory Include matches without losing file aliases or known hosts", () =>
@@ -86,7 +88,7 @@ describe("ssh config", () => {
           ["team", "team.example.com", "ssh-config"],
         ],
       );
-    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped),
   );
 
   it.effect("discovers ssh config hosts across included files", () =>
@@ -174,7 +176,7 @@ describe("ssh config", () => {
           source: "ssh-config",
         },
       ]);
-    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped),
   );
 
   it.effect("retains raw targets when included hostnames are inactive or uncertain", () =>
@@ -245,7 +247,7 @@ describe("ssh config", () => {
       assert.equal(hosts.find((host) => host.alias === "prod")?.hostname, "prod");
       assert.equal(hosts.find((host) => host.alias === "work")?.hostname, "work");
       assert.equal(hosts.find((host) => host.alias === "matched")?.hostname, "matched");
-    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped),
   );
 
   it.effect("parses known_hosts entries without returning hashed hosts", () =>

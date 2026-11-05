@@ -1,4 +1,5 @@
 import type { OpencodeClient } from "@opencode-ai/sdk/v2";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProviderReplayEntry, type ProviderReplayTranscript } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
@@ -433,8 +434,11 @@ function layerOpenCodeProviderAdapterRegistryReplay(transcript: OpenCodeSdkRepla
     Layer.provide(
       Layer.mergeAll(
         layerOpenCodeReplayRuntime(transcript),
-        TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer)),
+        TestProviderHost.layer().pipe(
+          Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
         NodeServices.layer,
+        NodeCrypto.layer,
         IdAllocator.layer,
         Layer.succeed(
           ProviderEventLoggers.ProviderEventLoggers,

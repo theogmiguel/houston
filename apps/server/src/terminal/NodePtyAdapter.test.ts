@@ -1,6 +1,7 @@
 import * as NodeEvents from "node:events";
 import * as NodeNet from "node:net";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as HostProcess from "@houston-app/shared/HostProcess";
@@ -63,6 +64,7 @@ const layerTestFor = (platform: NodeJS.Platform = "win32") =>
     Layer.provide(
       Layer.mergeAll(
         NodeServices.layer,
+        NodeCrypto.layer,
         Layer.succeed(HostProcess.Platform, platform),
         Layer.succeed(HostProcess.Architecture, "x64"),
         Layer.succeed(NodePtyAdapter.NodePtyModuleLoaderRef, () => Promise.resolve(fakeNodePty)),

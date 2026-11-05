@@ -3,8 +3,10 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -87,7 +89,7 @@ const runStatus = (agent: AgentBehaviour) =>
         : [];
       return { snapshot, elapsedMs, pids };
     }),
-  ).pipe(Effect.provide(NodeServices.layer));
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 function processIsAlive(pid: number): boolean {
   try {

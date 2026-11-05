@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as HostProcess from "@houston-app/shared/HostProcess";
@@ -227,7 +228,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
   };
 });
 
-it.layer(NodeServices.layer)("boot service install", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("boot service install", (it) => {
   it.effect(
     "fails before installing files or validating a runtime when lingering needs an administrator",
     () =>
@@ -912,60 +913,63 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
   );
 });
 
-it.layer(NodeServices.layer)("boot service legacy migration", (it) => {
-  it.effect("removes the previous systemd unit and its drop-ins on install", () =>
-    Effect.gen(function* () {
-      const { service, fs, path, home, commands } = yield* makeHarness("linux");
-      const legacyUnit = path.join(home, ".config", "systemd", "user", "t3code.service");
-      const legacyDropIn = path.join(
-        home,
-        ".config",
-        "systemd",
-        "user",
-        "t3code.service.d",
-        "90-t3code-protect.conf",
-      );
-      yield* fs.makeDirectory(path.dirname(legacyDropIn), { recursive: true });
-      yield* fs.writeFileString(legacyUnit, "[Service]\n");
-      yield* fs.writeFileString(legacyDropIn, "[Service]\n");
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
+  "boot service legacy migration",
+  (it) => {
+    it.effect("removes the previous systemd unit and its drop-ins on install", () =>
+      Effect.gen(function* () {
+        const { service, fs, path, home, commands } = yield* makeHarness("linux");
+        const legacyUnit = path.join(home, ".config", "systemd", "user", "t3code.service");
+        const legacyDropIn = path.join(
+          home,
+          ".config",
+          "systemd",
+          "user",
+          "t3code.service.d",
+          "90-t3code-protect.conf",
+        );
+        yield* fs.makeDirectory(path.dirname(legacyDropIn), { recursive: true });
+        yield* fs.writeFileString(legacyUnit, "[Service]\n");
+        yield* fs.writeFileString(legacyDropIn, "[Service]\n");
 
-      yield* service.install();
+        yield* service.install();
 
-      expect(commands).toContain("systemctl --user disable --now t3code.service");
-      expect(commands).toContain("systemctl --user daemon-reload");
-      expect(yield* fs.exists(legacyUnit)).toBe(false);
-      expect(yield* fs.exists(path.dirname(legacyDropIn))).toBe(false);
-    }),
-  );
+        expect(commands).toContain("systemctl --user disable --now t3code.service");
+        expect(commands).toContain("systemctl --user daemon-reload");
+        expect(yield* fs.exists(legacyUnit)).toBe(false);
+        expect(yield* fs.exists(path.dirname(legacyDropIn))).toBe(false);
+      }),
+    );
 
-  it.effect("removes the previous launch agent plist on install", () =>
-    Effect.gen(function* () {
-      const { service, fs, path, home, commands } = yield* makeHarness("darwin");
-      const legacyPlist = path.join(
-        home,
-        "Library",
-        "LaunchAgents",
-        "com.t3tools.t3code.service.plist",
-      );
-      yield* fs.makeDirectory(path.dirname(legacyPlist), { recursive: true });
-      yield* fs.writeFileString(legacyPlist, "<plist/>\n");
+    it.effect("removes the previous launch agent plist on install", () =>
+      Effect.gen(function* () {
+        const { service, fs, path, home, commands } = yield* makeHarness("darwin");
+        const legacyPlist = path.join(
+          home,
+          "Library",
+          "LaunchAgents",
+          "com.t3tools.t3code.service.plist",
+        );
+        yield* fs.makeDirectory(path.dirname(legacyPlist), { recursive: true });
+        yield* fs.writeFileString(legacyPlist, "<plist/>\n");
 
-      yield* service.install();
+        yield* service.install();
 
-      expect(commands).toContain("launchctl bootout --wait gui/501/com.t3tools.t3code.service");
-      expect(yield* fs.exists(legacyPlist)).toBe(false);
-    }),
-  );
+        expect(commands).toContain("launchctl bootout --wait gui/501/com.t3tools.t3code.service");
+        expect(yield* fs.exists(legacyPlist)).toBe(false);
+      }),
+    );
 
-  it.effect("uninstalls a service that only the previous release installed", () =>
-    Effect.gen(function* () {
-      const { service, fs, path, home } = yield* makeHarness("linux");
-      const legacyUnit = path.join(home, ".config", "systemd", "user", "t3code.service");
-      yield* fs.makeDirectory(path.dirname(legacyUnit), { recursive: true });
-      yield* fs.writeFileString(legacyUnit, "[Service]\n");
+    it.effect("uninstalls a service that only the previous release installed", () =>
+      Effect.gen(function* () {
+        const { service, fs, path, home } = yield* makeHarness("linux");
+        const legacyUnit = path.join(home, ".config", "systemd", "user", "t3code.service");
+        yield* fs.makeDirectory(path.dirname(legacyUnit), { recursive: true });
+        yield* fs.writeFileString(legacyUnit, "[Service]\n");
 
-      expect(yield* service.uninstall).toBe(true);
-      expect(yield* fs.exists(legacyUnit)).toBe(false);
-    }),
-  );
-});
+        expect(yield* service.uninstall).toBe(true);
+        expect(yield* fs.exists(legacyUnit)).toBe(false);
+      }),
+    );
+  },
+);

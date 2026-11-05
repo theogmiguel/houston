@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   EnvironmentHttpApi,
@@ -80,7 +81,7 @@ export const servePeer = <E, R>(
       Layer.provideMerge(
         ServerConfig.layerTest(process.cwd(), { prefix: "houston-peer-link-peer-" }),
       ),
-      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       Layer.fresh,
       Layer.build,
     );
@@ -105,8 +106,7 @@ export const servePeer = <E, R>(
         Layer.provide(ServerHttp.layerServerEnvironmentHttpApi),
         Layer.provide(AuthHttp.layerAuthenticatedAuth),
       ),
-      tools.pipe(
-        Layer.provideMerge(McpHttpServer.layerMcpTransport),
+      McpHttpServer.layerMcpTransport(tools).pipe(
         Layer.provide(
           Layer.mock(McpSessionRegistry.McpSessionRegistry)({
             // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
@@ -173,7 +173,7 @@ export const layerLinkingEnvironment = (
       }),
     ),
     Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "houston-peer-link-here-" })),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Layer.fresh,
   );
 

@@ -1,5 +1,7 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -52,7 +54,7 @@ describe("discoverFxSkills", () => {
           "home-claude",
         ],
       );
-    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped),
   );
 
   // For `$review` with two skills of exactly that name, fx's model loads the
@@ -159,7 +161,7 @@ describe("discoverFxSkills", () => {
           ["Review", path.join(home, ".claude/skills/review/SKILL.md")],
         ],
       );
-    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped),
   );
 
   // Nix home-manager and dotfile setups link ~/.fx/skills; fx then loads
@@ -194,6 +196,6 @@ describe("discoverFxSkills", () => {
         skills.map((skill) => skill.name),
         ["compat"],
       );
-    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped),
   );
 });

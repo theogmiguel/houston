@@ -1,5 +1,7 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -114,7 +116,7 @@ describe("Cursor account history", () => {
         });
         assert.strictEqual(result.records[0]?.reportedCostUsd, 0.25);
         assert.isFalse(result.accountKey?.includes("demo") ?? true);
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("reads Cursor account history beyond 100 pages", () =>
@@ -133,7 +135,7 @@ describe("Cursor account history", () => {
       assert.isNull(result.error);
       assert.strictEqual(requests, 101);
       assert.deepStrictEqual(result.records, []);
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("accepts confirmed empty Cursor usage but rejects error envelopes", () =>
@@ -167,7 +169,7 @@ describe("Cursor account history", () => {
         assert.isNotNull(result.error);
         assert.deepStrictEqual(result.records, []);
       }
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("requires a terminal Cursor page after a full page reaches the reported count", () =>
@@ -193,7 +195,7 @@ describe("Cursor account history", () => {
       assert.isNull(result.error);
       assert.strictEqual(result.records.length, 1000);
       assert.strictEqual(requests, 2);
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect(
@@ -244,7 +246,7 @@ describe("Cursor account history", () => {
         });
         assert.isNotNull(inconsistent.error);
         assert.deepStrictEqual(inconsistent.records, []);
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect(
@@ -279,7 +281,7 @@ describe("Cursor account history", () => {
         );
         assert.isTrue(missing.missing);
         assert.isFalse(requested);
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });
 
@@ -301,7 +303,7 @@ describe("readCursorAccountUsage", () => {
         missing: false,
         error: "Allow Keychain access on the Mac running Houston, then refresh.",
       });
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("reads the pages behind the first together and keeps them in page order", () =>
@@ -335,7 +337,7 @@ describe("readCursorAccountUsage", () => {
         result.records.map((record) => record.timestampMs),
         Array.from({ length: 8001 }, (_, index) => 1780000000000 + index),
       );
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("ends like a page-by-page read when a page fails, leaving no request open", () =>
@@ -375,6 +377,6 @@ describe("readCursorAccountUsage", () => {
         assert.deepStrictEqual(result.records, []);
         assert.strictEqual(open, 0);
       }
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

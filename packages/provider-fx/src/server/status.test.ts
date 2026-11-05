@@ -1,5 +1,7 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -71,7 +73,7 @@ const check = (statusJson: string, versionDelay: Duration.Input = 0) =>
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
     );
     return { draft, invoked };
-  }).pipe(Effect.provide(NodeServices.layer));
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 describe("checkFxProviderStatus", () => {
   it.effect.each([

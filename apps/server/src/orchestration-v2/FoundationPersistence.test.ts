@@ -1,4 +1,5 @@
 import * as NodeSqlite from "node:sqlite";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -27,6 +28,7 @@ import {
   TurnItemId,
 } from "@houston-app/contracts";
 import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
+import * as Arr from "effect/Array";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -233,7 +235,7 @@ it.effect("discovers on the reader worker and deletes on the writer", () =>
         ),
       ),
     );
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("paces scheduled compaction while preserving retention state and fixed scan bounds", () =>
@@ -290,7 +292,7 @@ it.effect("paces scheduled compaction while preserving retention state and fixed
       Effect.provide(
         DatabaseStorage.layer.pipe(
           Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "compaction-" })),
-          Layer.provide(NodeServices.layer),
+          Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
       Effect.withTracer(tracer),
@@ -1277,9 +1279,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
         rows.push(eventRow(++ordinal, { commandId: exactPageCommandId }));
       }
       const inserted = yield* Effect.forEach(
-        Array.from({ length: Math.ceil(rows.length / 400) }, (_, chunk) =>
-          rows.slice(chunk * 400, (chunk + 1) * 400),
-        ),
+        Arr.chunksOf(rows, 400),
         (chunk) =>
           sql<{
             readonly sequence: number;
@@ -3402,7 +3402,7 @@ it.effect.each(["events", "receipts"] as const)(
             : yield* sql`SELECT command_id AS id FROM orchestration_command_receipts ORDER BY rowid`;
         assert.deepEqual(retained, [{ id: "pending" }, { id: "after-bound" }]);
       }).pipe(Effect.provide(maintenanceLayer));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("routes projection node lookups to the reader connection", () =>
@@ -3453,7 +3453,7 @@ it.effect("routes projection node lookups to the reader connection", () =>
         JSON.stringify(spans.map((span) => span.attributes.get("db.connection"))),
       );
     }).pipe(Effect.provide(projectionLayer));
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("loads a shell snapshot while the writer connection is occupied", () =>
@@ -3482,7 +3482,7 @@ it.effect("loads a shell snapshot while the writer connection is occupied", () =
       yield* Fiber.join(writer);
       assert.deepEqual(snapshot.threads, []);
     }).pipe(Effect.provide(projectionLayer));
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect.each(["cancel transaction", "fail transaction", "cancel publication"] as const)(

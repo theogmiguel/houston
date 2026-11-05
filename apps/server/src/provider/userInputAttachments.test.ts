@@ -2,6 +2,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -27,7 +28,7 @@ vi.mock("node:child_process", { spy: true });
 const layer = Layer.merge(
   ServerConfig.layerTest(process.cwd(), { prefix: "houston-answer-paths-" }),
   DocumentText.layer,
-).pipe(Layer.provideMerge(NodeServices.layer));
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 const attachment = {
   type: "file" as const,
   id: "thread-1-00000000-0000-4000-8000-0000000000aa-txt",

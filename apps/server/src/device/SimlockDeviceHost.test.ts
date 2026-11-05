@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { SimlockDeviceHostConfig } from "@houston-app/contracts";
 import * as HostProcess from "@houston-app/shared/HostProcess";
@@ -145,7 +146,7 @@ const fakePool = (
 
 const layer = Layer.mergeAll(
   ServerConfig.layerTest(process.cwd(), { prefix: "houston-simlock-host-" }),
-).pipe(Layer.provideMerge(NodeServices.layer));
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 const makeHost = (
   pool: Effect.Success<ReturnType<typeof fakePool>>,

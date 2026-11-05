@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Connection, type DuplexTransport } from "@muse-code/sdk";
 import {
@@ -428,8 +429,11 @@ export function layer(input: {
   ).pipe(
     Layer.provide(
       Layer.mergeAll(
-        TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer)),
+        TestProviderHost.layer().pipe(
+          Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
         NodeServices.layer,
+        NodeCrypto.layer,
         IdAllocator.layer,
       ),
     ),
@@ -441,7 +445,7 @@ export const materializeMuseReplayWorkspace = Effect.fn("materializeMuseReplayWo
   function* (transcript: ProviderReplayTranscript, workspace: string) {
     const canonical = yield* FileSystem.FileSystem.pipe(
       Effect.flatMap((fs) => fs.realPath(workspace)),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
     const plain = materializeReplayTranscriptWorkspace(transcript, canonical);
     const turnStarts = materializeReplayTranscriptWorkspace(

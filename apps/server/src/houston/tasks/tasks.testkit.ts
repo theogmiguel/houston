@@ -1,4 +1,5 @@
 // The Tasks backlog over one database with the real project service, as server.ts provides it.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { CommandId, ProjectId, type ProviderInstanceId } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
@@ -84,7 +85,7 @@ export const layerTasks = (options: TasksTestOptions = {}) =>
     Layer.provideMerge(
       ServerConfig.layerTest(process.cwd(), options.baseDir ?? { prefix: "houston-tasks-test-" }),
     ),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Layer.provideMerge(
       Layer.succeed(HostedLaunch, options.hosted ?? options.baseDir !== undefined),
     ),

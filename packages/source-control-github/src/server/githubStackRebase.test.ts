@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -16,7 +17,7 @@ const layer = Layer.mergeAll(
     credentialFor: () => Effect.succeed({ token: Redacted.make("token"), fingerprint: "fp" }),
   }),
   TestSourceControlHost.layerWithRealGit(),
-).pipe(Layer.provideMerge(NodeServices.layer));
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 const setup = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;

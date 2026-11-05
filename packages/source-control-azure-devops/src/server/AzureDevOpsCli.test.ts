@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it, afterEach, describe, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -24,6 +25,7 @@ const mockRun = vi.fn<SourceControlHost.SourceControlHost["Service"]["process"][
 const layerSupport = Layer.mergeAll(
   TestSourceControlHost.layer({ process: { run: mockRun } }),
   NodeServices.layer,
+  NodeCrypto.layer,
 );
 const layer = Layer.mergeAll(AzureDevOpsCli.layer.pipe(Layer.provide(layerSupport)), layerSupport);
 

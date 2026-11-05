@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - FIFO gates must be released with a synchronous
 // open on the main thread, because the Effect FileSystem queues behind the pinned libuv pool.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -311,7 +312,7 @@ const awaitGateReader = (gatePath: string) =>
     (handle) => Effect.promise(() => handle.close()),
   );
 
-it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AgentSessionScanner", (it) => {
   describe("scan", () => {
     it.effect("reads Claude project cwds from transcripts, newest first", () =>
       Effect.gen(function* () {
@@ -1952,7 +1953,10 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")(
           }
           // Hangs if the scans left libuv pool threads stuck in open().
           yield* fileSystem.readFileString(transcriptPath);
-        }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
     );
 
     it.effect("still reads the git identity of repositories next to a blocked one", () =>
@@ -2006,7 +2010,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")(
             },
           ]);
         }
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     );
 
     it.effect("reads every blocked git config of a scan under one deadline", () =>
@@ -2055,7 +2059,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")(
         );
         yield* TestClock.adjust("2 seconds");
         expect(yield* Fiber.join(scan)).toEqual(repos);
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     );
 
     it.effect("completes every scan when a .git pointer file or commondir never opens", () =>
@@ -2111,7 +2115,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")(
         }).pipe(Effect.provide(layerScannerTest({ claudeHomePath, codexHomePath })));
         // Hangs if the scans left libuv pool threads stuck in open().
         yield* fileSystem.readFileString(path.join(worktree, ".git"));
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     );
 
     it.effect("reads a once-blocked git config again after the retry interval", () =>
@@ -2159,7 +2163,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")(
             { remoteKey: "github.com/pingdotgg/unblocked", repository: "pingdotgg/unblocked" },
           ]);
         }).pipe(Effect.provide(layerScannerTest({ claudeHomePath, codexHomePath })));
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     );
   },
 );
@@ -2780,7 +2784,7 @@ describe("parseAgentSessionTranscript", () => {
   });
 });
 
-it.layer(NodeServices.layer)("listRecentSessions", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("listRecentSessions", (it) => {
   const claudeTranscript = (cwd: string, sessionId: string, prompt: string) =>
     `${JSON.stringify({
       type: "user",

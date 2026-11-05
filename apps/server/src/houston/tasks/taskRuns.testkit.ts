@@ -6,6 +6,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   CommandId,
@@ -184,7 +185,9 @@ export interface RunsOptions {
 const databaseOf = (options: RunsOptions) =>
   options.databaseFile === undefined
     ? SqlitePersistence.layerMemory
-    : SqlitePersistence.layerFromPath(options.databaseFile).pipe(Layer.provide(NodeServices.layer));
+    : SqlitePersistence.layerFromPath(options.databaseFile).pipe(
+        Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      );
 
 const layerOrchestration = (
   harness: RunsHarness,

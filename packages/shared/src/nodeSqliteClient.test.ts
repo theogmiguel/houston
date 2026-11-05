@@ -1,7 +1,9 @@
 import * as NodeSqlite from "node:sqlite";
 import type * as NodeWorkerThreads from "node:worker_threads";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -57,7 +59,7 @@ const withReaderClient = <A, E>(
       yield* sql`INSERT INTO entries VALUES ('first')`;
       return yield* use(sql);
     }).pipe(Effect.provide(SqliteClient.layer({ filename, readerWorker: true })));
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 const countEntries = (sql: SqlClient.SqlClient) =>
   Effect.map(
@@ -191,7 +193,7 @@ it.effect("keeps another connection from committing between a transaction's read
       yield* Effect.sync(() => other.exec("UPDATE counters SET value = value + 1 WHERE id = 1"));
       assert.deepEqual(yield* sql`SELECT value FROM counters WHERE id = 1`.values, [[11]]);
     }).pipe(Effect.provide(SqliteClient.layer({ filename })));
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("waits for another process's lock while the database opens", () =>
@@ -219,7 +221,7 @@ it.effect("waits for another process's lock while the database opens", () =>
       const sql = yield* SqlClient.SqlClient;
       assert.deepEqual(yield* sql`SELECT COUNT(*) FROM entries`.values, [[0]]);
     }).pipe(Effect.provide(SqliteClient.layer({ filename, checkpointWorker: true })));
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("reports a transaction blocked by another writer as a lock timeout", () =>
@@ -237,7 +239,7 @@ it.effect("reports a transaction blocked by another writer as a lock timeout", (
       yield* Effect.sync(() => other.exec("COMMIT"));
       assert.deepEqual(yield* read, [[0]]);
     }).pipe(Effect.provide(SqliteClient.layer({ filename })));
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("lets the writer commit while a read-only transaction is open", () =>
@@ -371,7 +373,7 @@ const withFileClient = <A, E>(
     return yield* Effect.gen(function* () {
       return yield* setup(yield* SqlClient.SqlClient, filename);
     }).pipe(Effect.provide(SqliteClient.layer({ filename, readerWorker: true })));
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 it.effect("uses the writer when the reader cannot open the database", () =>
   withFileClient((sql, filename) =>

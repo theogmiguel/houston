@@ -27,6 +27,7 @@ import type * as McpProviderSession from "@houston-app/provider-core/server/mcpS
 import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
 import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import { checkpointWorkspace } from "@houston-app/provider-testing/replayWorkspace";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -357,7 +358,7 @@ export const makeHarness = Effect.fn("sideThreadsHarness")(function* (
     options.git === false
       ? yield* Effect.flatMap(FileSystem.FileSystem, (fs) =>
           fs.makeTempDirectoryScoped({ prefix: `side-threads-${name}-` }),
-        ).pipe(Effect.provide(NodeServices.layer))
+        ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)))
       : yield* checkpointWorkspace(`side-threads-${name}`);
   const script: Script = {
     hold: new Set(),
@@ -427,7 +428,7 @@ export const harnessLayer = (harness: Harness, options: { readonly databasePath?
         ? {}
         : {
             databaseLayer: SqlitePersistence.layerFromPath(options.databasePath).pipe(
-              Layer.provide(NodeServices.layer),
+              Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
             ),
           }),
     },

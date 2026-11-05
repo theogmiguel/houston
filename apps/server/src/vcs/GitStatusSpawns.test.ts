@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -32,14 +33,14 @@ const makeLayer = (spawns: Array<ReadonlyArray<string>>) =>
           const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
           return ChildProcessSpawner.make((command) => {
             if (command._tag === "StandardCommand" && isGitCommand(command.command)) {
-              spawns.push(command.args);
+              spawns.push(command.args.map(String));
             }
             return spawner.spawn(command);
           });
         }),
-      ).pipe(Layer.provide(NodeServices.layer)),
+      ).pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     ),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
 const git = (cwd: string, args: ReadonlyArray<string>) =>
