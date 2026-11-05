@@ -1,5 +1,5 @@
 import { createMemoryHistory } from "@tanstack/react-router";
-import { ProjectId } from "@houston-app/contracts";
+import { ProjectId, type ThreadPullRequestLink } from "@houston-app/contracts";
 import { DEFAULT_CLIENT_SETTINGS } from "@houston-app/contracts/settings";
 import type * as Context from "effect/Context";
 import { expect, it, vi } from "vite-plus/test";
@@ -44,7 +44,33 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
   trackRpcRequestSent: () => {},
 }));
 
-const THREADS = ["thread-grid-a", "thread-grid-b"].map((name) => threadWithHistory(name, 2));
+const PULL_REQUEST: ThreadPullRequestLink = {
+  host: "github.com",
+  repository: "houston/demo",
+  number: 12,
+  url: "https://github.com/houston/demo/pull/12",
+  repositoryWebUrl: "https://github.com/houston/demo",
+  source: "manual",
+  linkedAt: "2026-03-17T19:12:28.000Z",
+  snapshot: {
+    state: "open",
+    title: "Surface audit",
+    headBranch: "feature/surfaces",
+    baseBranch: "main",
+    isDraft: false,
+    updatedAt: "2026-03-17T19:12:28.000Z",
+    syncedAt: "2026-03-17T19:12:28.000Z",
+    additions: 3,
+    deletions: 1,
+    changedFiles: 2,
+  },
+  stack: null,
+};
+
+const THREADS = ["thread-grid-a", "thread-grid-b"].map((name) => ({
+  ...threadWithHistory(name, 2),
+  pullRequests: [PULL_REQUEST],
+}));
 installFakeEnvironment(THREADS);
 await page.viewport(1400, 900);
 __setClientSettingsForTests({
@@ -123,5 +149,52 @@ it("opens the device surface from the grid's surface launcher", async () => {
 
   await vi.waitFor(() => {
     expect(screen.container.querySelector('[aria-label="Close Device"]')).not.toBeNull();
+  });
+});
+
+it("opens both pull request surfaces for a thread with a linked pull request", async () => {
+  const gridId = seedGrid();
+  const router = getRouter(createMemoryHistory({ initialEntries: [`/grid/${gridId}`] }));
+  await router.load();
+  const container = document.createElement("div");
+  container.style.cssText = "height: 900px; width: 1400px;";
+  await using screen = await render(<AppRoot router={router} />, { container, router: false });
+
+  await vi.waitFor(() => {
+    expect(screen.container.querySelectorAll("[data-grid-cell]")).toHaveLength(2);
+  });
+
+  const togglePanel = () =>
+    screen.container.querySelector<HTMLButtonElement>('[aria-label="Toggle right panel"]')!.click();
+  const launchSurface = async (label: string) => {
+    const surface = await vi.waitFor(() => {
+      const host = screen.container.querySelector("[data-grid-right-panel-host]");
+      expect(host).not.toBeNull();
+      const found = Array.from(
+        host!.querySelectorAll<HTMLElement>("button, [aria-disabled='true']"),
+      ).find((element) => element.textContent?.trim().startsWith(label));
+      expect(found).not.toBeUndefined();
+      return found!;
+    });
+    surface.click();
+  };
+
+  togglePanel();
+  await launchSurface("Linked pull requests");
+  await vi.waitFor(() => {
+    expect(screen.container.querySelector('[aria-label="Close Pull requests"]')).not.toBeNull();
+  });
+
+  screen.container.querySelector<HTMLButtonElement>('[aria-label="Close Pull requests"]')!.click();
+  await vi.waitFor(() => {
+    expect(screen.container.querySelector('[aria-label="Close Pull requests"]')).toBeNull();
+  });
+  togglePanel();
+  await vi.waitFor(() => {
+    expect(screen.container.textContent).toContain("Open a surface");
+  });
+  await launchSurface("Pull request");
+  await vi.waitFor(() => {
+    expect(screen.container.querySelector('[aria-label="Close #12"]')).not.toBeNull();
   });
 });
