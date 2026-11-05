@@ -316,6 +316,21 @@ describe("resolveIdleCompaction", () => {
   });
 });
 
+describe("ClientSettings environment identification", () => {
+  it("defaults to the pill", () => {
+    expect(decodeClientSettings({}).environmentIdentificationMode).toBe("pill");
+  });
+
+  it.each(["artwork", "nightly-artwork", "dev-artwork", "pill", "none"])(
+    "still decodes the stored mode %s",
+    (mode) => {
+      expect(decodeClientSettings({ environmentIdentificationMode: mode })).toMatchObject({
+        environmentIdentificationMode: mode,
+      });
+    },
+  );
+});
+
 describe("ClientSettings notifications", () => {
   it("requires opt-in when existing settings omit notification preferences", () => {
     expect(decodeClientSettings({}).notificationMode).toBe("off");
