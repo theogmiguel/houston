@@ -78,6 +78,7 @@ import {
   WorkingTreeFileActions,
   WorkingTreeGroupBar,
 } from "./ui/diff-review-controls";
+import { DiffNotice } from "./ui/diff-notice";
 import { DiffReviewTray } from "./ui/diff-review-tray";
 import { DiffViewControls } from "./ui/diff-view-controls";
 import { diffFileTreeEntries } from "./diffs/diffFileTree.logic";
@@ -1567,27 +1568,27 @@ export default function DiffPanel({
                 onResolveWithAgent={resolvePausedOperationWithAgent}
               />
             ) : null}
-            {preview?.incomplete && (
-              <p className="shrink-0 border-b border-border/70 bg-muted/40 px-3 py-1.5 text-2xs text-muted-foreground">
+            {preview?.incomplete ? (
+              <DiffNotice>
                 {selectedPatchError
                   ? "Showing tracked changes. Untracked changes could not be loaded. Refresh to retry."
-                  : "Showing tracked changes. Checking untracked files..."}
-              </p>
-            )}
-            {isSelectedPatchTruncated && !lazySource && (
-              <p className="shrink-0 border-b border-border/70 bg-muted/40 px-3 py-1.5 text-2xs text-muted-foreground">
+                  : "Showing tracked changes. Checking untracked files…"}
+              </DiffNotice>
+            ) : null}
+            {isSelectedPatchTruncated && !lazySource ? (
+              <DiffNotice>
                 This preview exceeds the size limit. Changes shown are incomplete.
                 {isGitSelection && selectedGitSource?.files && !preview?.incomplete
                   ? " Totals include all changes."
                   : ""}
-              </p>
-            )}
-            {omittedToolCallFiles > 0 && (
-              <p className="shrink-0 border-b border-border/70 bg-muted/40 px-3 py-1.5 text-2xs text-muted-foreground">
+              </DiffNotice>
+            ) : null}
+            {omittedToolCallFiles > 0 ? (
+              <DiffNotice>
                 This tool call changed {recordedToolCallFileCount} files. The recorded patch omits{" "}
                 {omittedToolCallFiles} of them.
-              </p>
-            )}
+              </DiffNotice>
+            ) : null}
             {selectedPatchError && !renderablePatch && (
               <div className="px-3">
                 <p className="mb-2 text-2xs text-error/80">{selectedPatchError}</p>
