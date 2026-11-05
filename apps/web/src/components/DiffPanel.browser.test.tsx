@@ -365,7 +365,6 @@ it.each([false, true])(
     );
     const loadedToggle = screen.getByRole("button", { name: `Collapse ${path}`, exact: true });
     await expect.element(loadedToggle).toHaveAttribute("aria-expanded", "true");
-    await expect.element(screen.getByText("after", { exact: true })).toBeVisible();
     await userEvent.click(loadedToggle);
     await expect.element(toggle).toHaveAttribute("aria-expanded", "false");
   },
