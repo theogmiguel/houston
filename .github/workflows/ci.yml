@@ -185,8 +185,15 @@ jobs:
       - uses: ./.github/actions/setup
       # The root "typecheck" script uses vp run, which cannot resolve a task and a
       # package script with the same name; pnpm runs each package's own script.
+      # apps/web and apps/desktop declare typecheck as a vp task instead, which pnpm skips.
       - name: Typecheck the workspace
-        run: pnpm -r --no-bail typecheck
+        run: |
+          status=0
+          pnpm -r --no-bail typecheck || status=1
+          for app in apps/desktop apps/web; do
+            (cd "$app" && pnpm exec vp run typecheck) || status=1
+          done
+          exit "$status"
       - name: Report job timing
         if: always()
         continue-on-error: true
