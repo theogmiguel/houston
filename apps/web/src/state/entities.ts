@@ -111,6 +111,23 @@ export function useThreadShells(enabled = true): ReadonlyArray<EnvironmentThread
   );
 }
 
+/** Every thread shell the tag filter leaves visible, for lists that show threads to the user. */
+export function useVisibleThreadShells(enabled = true): ReadonlyArray<EnvironmentThreadShell> {
+  return useAtomValue(
+    enabled ? environmentThreadShells.visibleThreadShellsAtom : EMPTY_THREAD_SHELLS_ATOM,
+  );
+}
+
+/** Keys of threads the tag filter hides from display, by `threadKey`. */
+export function useHiddenThreadKeys(): ReadonlySet<string> {
+  return useAtomValue(environmentThreadShells.hiddenThreadKeysAtom);
+}
+
+/** Whether any connected environment is hiding tagged threads right now. */
+export function useAnyEnvironmentHiding(): boolean {
+  return useAtomValue(environmentThreadShells.anyEnvironmentHidingAtom);
+}
+
 export function useAllEnvironmentShellsBootstrapped(): boolean {
   return useAtomValue(allEnvironmentShellsBootstrappedAtom);
 }

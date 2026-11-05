@@ -31,6 +31,7 @@ import {
   sendSideThread,
   startAside,
   markThreadUnread,
+  setThreadTag,
   mergeThreadBack,
   promoteQueuedRun,
   resumeThreadQueue,
@@ -207,6 +208,12 @@ export function createThreadEnvironmentAtoms<R, E>(
     markUnread: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:mark-unread",
       execute: markThreadUnread,
+      scheduler,
+      concurrency,
+    }),
+    setTag: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:set-tag",
+      execute: setThreadTag,
       scheduler,
       concurrency,
     }),

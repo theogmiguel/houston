@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { scopeProjectRef } from "@houston-app/client-runtime/environment";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
+import { requestThreadTags } from "../components/ThreadTagsDialog";
 import {
   type AtomCommandResult,
   isAtomCommandInterrupted,
@@ -8,7 +9,11 @@ import {
   squashAtomCommandFailure,
 } from "@houston-app/client-runtime/state/runtime";
 import { canSnooze, effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
-import { AuthOrchestrationOperateScope, type ScopedThreadRef } from "@houston-app/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  type ScopedThreadRef,
+  type ThreadTag,
+} from "@houston-app/contracts";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 
 import { pickSnoozePreset, resolveSnoozePresets } from "../components/Sidebar.snooze";
@@ -24,6 +29,7 @@ import {
   readEnvironmentServerConfigLoaded,
   readEnvironmentSupportsAutoSettleOptOut,
   readThreadShell,
+  readThreadShells,
 } from "../state/entities";
 import { readLocalApi } from "../localApi";
 import { threadRuntimeCanArchive } from "@houston-app/client-runtime/state/models";
@@ -100,6 +106,7 @@ export function useThreadActionMenu(input: {
     archiveThread,
     deleteThread,
     markThreadUnread,
+    setThreadTag,
     turnThreadIntoProject,
     regenerateThreadTitle,
     copyThreadPath,
@@ -160,6 +167,10 @@ export function useThreadActionMenu(input: {
           currentGridId: grid?.currentGridId ?? null,
         })
       : [];
+    const threadTags = thread?.tags ?? [];
+    const workspaceTags = [
+      ...new Set([...threadTags, ...readThreadShells().flatMap((shell) => shell.tags ?? [])]),
+    ].toSorted((left, right) => left.localeCompare(right));
     const items = buildThreadActionMenuItems({
       canOperate:
         thread !== null && readEnvironmentScope(environmentId, AuthOrchestrationOperateScope),
@@ -170,6 +181,8 @@ export function useThreadActionMenu(input: {
       projectFilter: null,
       isSettled: thread !== null && supports.settlement && thread.settledOverride === "settled",
       autoSettleEnabled: thread?.autoSettleDisabledAt == null,
+      tags: threadTags,
+      tagSuggestions: workspaceTags,
       isSnoozed: thread !== null && supports.snooze && effectiveSnoozed(thread, { now: nowIso }),
       canSnoozeNow: thread !== null && canSnooze(thread, { now: nowIso }),
       isRegeneratingTitle: thread !== null && thread.titleRegeneration != null,
@@ -269,6 +282,30 @@ export function useThreadActionMenu(input: {
         failureToast(title, squashAtomCommandFailure(result));
       }
     };
+    if (action.startsWith("tag-toggle:")) {
+      const tag = action.slice("tag-toggle:".length);
+      const tagged = !(thread.tags ?? []).includes(tag);
+      await reportFailure(tagged ? "Failed to add tag" : "Failed to remove tag", () =>
+        setThreadTag(threadRef, tag as ThreadTag, tagged),
+      );
+      return;
+    }
+    if (action === "tag-edit") {
+      const current = thread.tags ?? [];
+      const next = await requestThreadTags(current);
+      if (next === null) return;
+      for (const tag of next.filter((candidate) => !current.includes(candidate))) {
+        await reportFailure("Failed to add tag", () =>
+          setThreadTag(threadRef, tag as ThreadTag, true),
+        );
+      }
+      for (const tag of current.filter((candidate) => !next.includes(candidate))) {
+        await reportFailure("Failed to remove tag", () =>
+          setThreadTag(threadRef, tag as ThreadTag, false),
+        );
+      }
+      return;
+    }
     switch (action) {
       case "find":
         if (onFind === undefined) findThread(threadRef);

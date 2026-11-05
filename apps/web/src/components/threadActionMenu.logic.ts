@@ -17,6 +17,9 @@ export type ThreadActionMenuId =
   | "unsnooze"
   | "rename"
   | "regenerate-title"
+  | "tags"
+  | "tag-edit"
+  | `tag-toggle:${string}`
   | "mark-unread"
   | "filter-by-project"
   | "turn-into-project"
@@ -110,6 +113,9 @@ export interface ThreadActionMenuState {
   } | null;
   readonly isSettled: boolean;
   readonly autoSettleEnabled: boolean;
+  /** The tags on the thread, and others in the workspace offered as toggles. */
+  readonly tags: ReadonlyArray<string>;
+  readonly tagSuggestions: ReadonlyArray<string>;
   readonly isSnoozed: boolean;
   readonly canSnoozeNow: boolean;
   readonly isRegeneratingTitle: boolean;
@@ -281,6 +287,27 @@ export function buildThreadActionMenuItems(
             label: state.isRegeneratingTitle ? "Regenerating…" : "Regenerate title",
             icon: "refresh-cw",
             disabled: state.isRegeneratingTitle,
+          },
+        ]
+      : []),
+    ...(hasThread
+      ? [
+          {
+            id: "tags" as const,
+            label: "Tags",
+            icon: "tag",
+            children: [
+              ...state.tagSuggestions.map((tag) => ({
+                id: `tag-toggle:${tag}` as const,
+                label: tag,
+                checked: state.tags.includes(tag),
+              })),
+              {
+                id: "tag-edit" as const,
+                label: "Edit tags…",
+                separatorBefore: state.tagSuggestions.length > 0,
+              },
+            ],
           },
         ]
       : []),

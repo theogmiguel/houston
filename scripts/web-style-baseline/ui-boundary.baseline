@@ -39,7 +39,7 @@
 19 apps/web/src/components/chat/ComposerCommandMenu.tsx
 1 apps/web/src/components/chat/ComposerCommandMenuLayer.tsx
 2 apps/web/src/components/chat/ComposerControl.tsx
-6 apps/web/src/components/chat/ComposerControlsBar.tsx
+4 apps/web/src/components/chat/ComposerControlsBar.tsx
 33 apps/web/src/components/chat/ComposerFooterControls.tsx
 1 apps/web/src/components/chat/ComposerImageThumbnail.tsx
 11 apps/web/src/components/chat/ComposerPendingAnnotationChips.tsx

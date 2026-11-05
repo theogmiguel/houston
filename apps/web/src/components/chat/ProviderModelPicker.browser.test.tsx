@@ -160,3 +160,56 @@ it("opens the model menu at one fixed height however few models the provider lis
   const content = () => document.querySelector<HTMLElement>('[data-model-picker-content="true"]');
   await expect.poll(() => content()?.getBoundingClientRect().height).toBe(346);
 });
+
+it("docks an effort column beside the list and stays open after a model pick", async () => {
+  const twoModels: ServerProvider = {
+    ...provider,
+    models: [
+      provider.models[0]!,
+      {
+        slug: "sonnet",
+        name: "Claude Sonnet 5.5",
+        isCustom: false,
+        capabilities: { optionDescriptors: [effort] },
+      },
+    ],
+  };
+  const changes: Array<{ instanceId: ProviderInstanceId; model: string }> = [];
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <ProviderModelPicker
+        environmentId={null}
+        activeInstanceId={CLAUDE}
+        model="opus"
+        lockedProvider={null}
+        instanceEntries={deriveProviderInstanceEntries([twoModels])}
+        keybindings={compileResolvedKeybindingsConfig([])}
+        modelOptionsByInstance={new Map([[CLAUDE, twoModels.models]])}
+        isComposerOwned
+        effortColumn={
+          <div>
+            <button type="button" data-effort-level={true} aria-checked="true">
+              High
+            </button>
+          </div>
+        }
+        onInstanceModelChange={(instanceId, model) => {
+          changes.push({ instanceId, model });
+        }}
+      />
+    </TooltipProvider>,
+    { router: false },
+  );
+
+  await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+  await expect.poll(() => document.querySelector("[data-model-picker-effort]") !== null).toBe(true);
+
+  await page.getByRole("option", { name: /Claude Sonnet 5\.5/ }).click();
+
+  await expect.poll(() => changes.length).toBe(1);
+  expect(changes[0]?.model).toBe("sonnet");
+  // The docked picker stays open so the effort level can change in the same popup.
+  await expect
+    .poll(() => document.querySelector("[data-model-picker-content]") !== null)
+    .toBe(true);
+});

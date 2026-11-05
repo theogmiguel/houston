@@ -772,7 +772,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
       const messageId = MessageId.make("message:foundation-compact");
       const threadStateEvent = (
         suffix: string,
-        type: "thread.visited" | "thread.metadata-updated",
+        type: "thread.visited" | "thread.metadata-updated" | "thread.tags-updated",
       ): OrchestrationV2DomainEvent => ({
         id: EventId.make(`event:foundation-compact:${suffix}`),
         type,
@@ -867,10 +867,13 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
           ...Array.from({ length: 501 }, (_, index) =>
             threadStateEvent(`history-${index}`, "thread.visited"),
           ),
+          threadStateEvent("tags-1", "thread.tags-updated"),
           threadStateEvent("visit-2", "thread.visited"),
           messageEvent("message-2", "final"),
           nodeEvent("node-2", "completed"),
           itemEvent("item-2", "final"),
+          // The newest event is the stream head, so pruning keeps this tag update.
+          threadStateEvent("tags-2", "thread.tags-updated"),
         ],
       });
       const beforeCompaction = yield* projections.getThreadProjection(threadId);
@@ -926,7 +929,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
       `;
       assert.deepEqual(
         remaining.map((row) => row.event_id),
-        ["event:foundation-compact:create", "event:foundation-compact:item-2"],
+        ["event:foundation-compact:create", "event:foundation-compact:tags-2"],
       );
 
       const remainingV1 = yield* sql<{ readonly stream_id: string }>`

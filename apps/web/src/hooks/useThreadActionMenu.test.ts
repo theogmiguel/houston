@@ -52,8 +52,10 @@ vi.mock("../state/session", () => ({
 vi.mock("../state/entities", () => ({
   readEnvironmentServerConfigLoaded: () => true,
   readEnvironmentSupportsAutoSettleOptOut: () => true,
+  readThreadShells: () => [],
   readThreadShell: () => ({
     id: "thread",
+    tags: [],
     environmentId: "secondary",
     projectId: "project",
     title: "Thread",
@@ -127,6 +129,7 @@ vi.mock("./useThreadActions", () => ({
     Object.fromEntries(
       [
         "markThreadUnread",
+        "setThreadTag",
         "settleThread",
         "unsettleThread",
         "snoozeThread",

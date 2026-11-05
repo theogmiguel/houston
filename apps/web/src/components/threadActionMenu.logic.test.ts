@@ -12,6 +12,8 @@ const baseState: ThreadActionMenuState = {
   canSnoozeNow: true,
   isRegeneratingTitle: false,
   isRunning: false,
+  tags: [],
+  tagSuggestions: [],
   supports: {
     settlement: true,
     autoSettleOptOut: true,
@@ -38,6 +40,7 @@ describe("buildThreadActionMenuItems", () => {
         reversed ? "unsnooze" : "snooze",
         "rename",
         "regenerate-title",
+        "tags",
         "auto-settle",
         "archive",
         "delete",
@@ -58,6 +61,20 @@ describe("buildThreadActionMenuItems", () => {
     });
     expect(items.find((item) => item.id === "archive")?.disabled).toBe(true);
     expect(items.find((item) => item.id === "turn-into-project")?.disabled).toBe(true);
+  });
+
+  it("offers each workspace tag as a toggle and keeps the editor last", () => {
+    const items = buildThreadActionMenuItems({
+      ...baseState,
+      tags: ["private"],
+      tagSuggestions: ["demo", "private"],
+    });
+    const tags = items.find((item) => item.id === "tags");
+    expect(tags?.children?.map((item) => [item.id, item.checked])).toEqual([
+      ["tag-toggle:demo", false],
+      ["tag-toggle:private", true],
+      ["tag-edit", undefined],
+    ]);
   });
 
   it("never offers a pin action", () => {
@@ -93,6 +110,7 @@ describe("buildThreadActionMenuItems", () => {
       "snooze",
       "rename",
       "regenerate-title",
+      "tags",
       "mark-unread",
       "filter-by-project",
       "auto-settle",

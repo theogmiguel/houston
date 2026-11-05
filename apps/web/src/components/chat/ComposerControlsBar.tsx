@@ -6,10 +6,9 @@ import { CircleAlertIcon } from "lucide-react";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerControl } from "./ComposerControl";
 import {
-  ComposerPermissionsPicker,
-  ComposerPermissionsSection,
   ComposerFooterModeControls,
   ComposerModelPicker,
+  ComposerPermissionsPicker,
   type RuntimeModeOption,
 } from "./ComposerFooterControls";
 import {
@@ -23,27 +22,20 @@ import {
 } from "@houston-app/contracts";
 import type { EffortDisplay } from "@houston-app/contracts/settings";
 import { cn } from "~/lib/utils";
-import { shortcutLabelForCommand } from "../../keybindings";
+import { resolveComposerTraitsInput } from "./composerProviderState";
 import {
-  renderProviderTraitsMenuContent,
-  renderProviderTraitsPicker,
-} from "./composerProviderState";
+  ComposerEffortColumn,
+  ComposerPickerFooter,
+  describeComposerEffort,
+} from "../ui/composer-model-effort";
 import type { useComposerProviderModel } from "./useComposerProviderModel";
 import { resolveComposerControlsOwnership } from "./composerControlsOwnership";
-import {
-  SPLIT_CONTROL_CLASS,
-  SPLIT_DIVIDER_CLASS,
-  traitsSplitTriggerClassName,
-} from "./modelTraits";
 
 /**
- * The composer footer controls: model picker, traits, mode controls and the overflow menu for
- * blocks that do not fit. Rendered in the expanded footer or the resting controls host.
+ * The composer footer controls: the model picker (which also holds effort, speed and
+ * permissions), the mode block and the overflow menu for blocks that do not fit. Rendered in the
+ * expanded footer or the resting controls host.
  */
-// Model and effort sit a word space apart, so hover and open states brighten text, not a box.
-const TEXT_CONTROL_STATES =
-  "hover:bg-transparent data-pressed:bg-transparent data-popup-open:bg-transparent data-pressed:text-foreground data-popup-open:text-foreground";
-
 export function ComposerControlsBar(props: {
   environmentId: EnvironmentId;
   routeKind: ChatComposerProps["routeKind"];
@@ -125,7 +117,6 @@ export function ComposerControlsBar(props: {
     paneDensity,
     restingHiddenBlockCount: measuredHiddenBlockCount,
     iconOnlyBlockCount,
-    modelIconOnly,
     showProviderUnavailable,
     providerSetupInstanceId,
     onOpenProviderSetup,
@@ -150,126 +141,65 @@ export function ComposerControlsBar(props: {
     modelPickerIconClassName,
     getModelDisabledReason,
   } = props;
-  const providerTraitsMenuContent = renderProviderTraitsMenuContent({
-    provider: selectedProvider,
-    instanceId: selectedInstanceId,
-    ...(routeKind === "server" ? { threadRef: routeThreadRef } : {}),
-    ...(routeKind === "draft" && draftId ? { draftId } : {}),
-    model: selectedModel,
-    models: selectedProviderModels,
-    modelOptions: composerModelOptions?.[selectedInstanceId],
-    reportedModelSelection,
-    promptUltrathink,
-    onPromptEdit,
-    planModeEnabled,
-  });
   const accessMatchesDefault = compatibleRuntimeMode === defaultRuntimeMode;
-  const permissionsChipHidden = accessMatchesDefault || props.permissionsShownInStrip;
-  const providerTraitsPickerInput = {
-    provider: selectedProvider,
-    instanceId: selectedInstanceId,
-    ...(routeKind === "server" ? { threadRef: routeThreadRef } : {}),
-    ...(routeKind === "draft" && draftId ? { draftId } : {}),
-    model: selectedModel,
-    models: selectedProviderModels,
-    modelOptions: composerModelOptions?.[selectedInstanceId],
-    reportedModelSelection,
-    promptUltrathink,
-    onPromptEdit,
-    planModeEnabled,
-    isComposerOwned: true,
-    keybindings,
-    effortDisplay: props.effortDisplay,
-    triggerClassName: cn(traitsSplitTriggerClassName("end"), "ps-1.5 pe-1", TEXT_CONTROL_STATES),
-    // Permissions always live in the effort menu, so the section never unmounts while open.
-    extraMenuContent: (
-      <ComposerPermissionsSection
-        runtimeMode={compatibleRuntimeMode}
-        runtimeModeOptions={compatibleRuntimeModeOptions}
-        onRuntimeModeChange={handleRuntimeModeChange}
-      />
-    ),
-    ...(permissionsChipHidden
-      ? {
-          extraMenuHint: [
-            `Permissions: ${
-              compatibleRuntimeModeOptions.find((option) => option.mode === compatibleRuntimeMode)
-                ?.label ?? compatibleRuntimeMode
-            }`,
-            shortcutLabelForCommand(keybindings, "composer.mode"),
-          ]
-            .filter(Boolean)
-            .join(" · "),
-        }
-      : {}),
-  } satisfies Parameters<typeof renderProviderTraitsPicker>[0];
-  const providerTraitsPicker = renderProviderTraitsPicker(providerTraitsPickerInput);
   const {
     accessDisplay,
     showModeBlock,
     hiddenBlockCount: restingHiddenBlockCount,
     hiddenBlockIds: hiddenRestingBlockIds,
-    traitsHidden: traitsBlockHidden,
-    effortOwnsModeShortcut,
     overflowShowsPermissions,
+    pickerOwnsModeShortcut,
   } = resolveComposerControlsOwnership({
-    matchesDefault: permissionsChipHidden,
-    hasTraits: providerTraitsPicker !== null,
+    matchesDefault: accessMatchesDefault || props.permissionsShownInStrip,
     planModeUiEnabled,
     collapsed: composerControlsCollapsed,
     measuredHiddenBlockCount,
   });
-  const restingProviderTraitsPicker = renderProviderTraitsPicker({
-    ...providerTraitsPickerInput,
-    size: composerControlsCollapsed ? "xs" : "sm",
-    hidden: composerControlsHidden || traitsBlockHidden,
-    extraMenuOwnsModeShortcut: effortOwnsModeShortcut,
+  const controlSize = composerControlsCollapsed ? "xs" : "sm";
+  const traitsInput = resolveComposerTraitsInput({
+    provider: selectedProvider,
+    instanceId: selectedInstanceId,
+    ...(routeKind === "server" ? { threadRef: routeThreadRef } : {}),
+    ...(routeKind === "draft" && draftId ? { draftId } : {}),
+    model: selectedModel,
+    models: selectedProviderModels,
+    modelOptions: composerModelOptions?.[selectedInstanceId],
+    reportedModelSelection,
+    promptUltrathink,
+    onPromptEdit,
+    planModeEnabled,
   });
+  const effort = describeComposerEffort(traitsInput, props.effortDisplay, controlSize);
   const compactPane = paneDensity === "compact";
-  const restingBlockDefs = compactPane
-    ? []
-    : [
-        ...(providerTraitsPicker
-          ? [
-              {
-                id: "traits",
-                content: restingProviderTraitsPicker,
-              },
-            ]
-          : []),
-        ...(!showModeBlock
-          ? []
-          : [
-              {
-                id: "mode",
-                content: (
-                  <ComposerFooterModeControls
-                    showInteractionModeToggle={planModeUiEnabled}
-                    interactionMode={interactionMode}
-                    runtimeMode={compatibleRuntimeMode}
-                    runtimeModeOptions={compatibleRuntimeModeOptions}
-                    size={composerControlsCollapsed ? "xs" : "sm"}
-                    hidden={composerControlsHidden || restingHiddenBlockCount > 0}
-                    accessDisplay={accessDisplay}
-                    emphasized={!accessMatchesDefault}
-                    onToggleInteractionMode={toggleInteractionMode}
-                    onRuntimeModeChange={handleRuntimeModeChange}
-                  />
-                ),
-              },
-            ]),
-      ];
-  const traitsBlockIndex = restingBlockDefs.findIndex((def) => def.id === "traits");
-  const traitsBlockInOverflow =
-    traitsBlockIndex >= 0 && traitsBlockIndex >= restingBlockDefs.length - restingHiddenBlockCount;
+  const restingBlockDefs =
+    compactPane || !showModeBlock
+      ? []
+      : [
+          {
+            id: "mode",
+            content: (
+              <ComposerFooterModeControls
+                showInteractionModeToggle={planModeUiEnabled}
+                interactionMode={interactionMode}
+                runtimeMode={compatibleRuntimeMode}
+                runtimeModeOptions={compatibleRuntimeModeOptions}
+                size={controlSize}
+                hidden={composerControlsHidden || restingHiddenBlockCount > 0}
+                accessDisplay={accessDisplay}
+                emphasized={!accessMatchesDefault}
+                onToggleInteractionMode={toggleInteractionMode}
+                onRuntimeModeChange={handleRuntimeModeChange}
+              />
+            ),
+          },
+        ];
   // Its own element, so typing (which rebuilds the controls around it) leaves it cached.
   const composerModelPicker = (
     <ComposerModelPicker
       environmentId={environmentId}
       compact={false}
       isComposerOwned
-      iconOnly={modelIconOnly}
-      {...(traitsBlockIndex >= 0 && !traitsBlockInOverflow ? { split: "start" as const } : {})}
+      iconOnly={props.modelIconOnly}
       disabled={providerCatalogPending || isSendBusy}
       multipleModelsEnabled={multipleModelsEnabled}
       multipleModelSelections={multipleModelSelections}
@@ -292,12 +222,37 @@ export function ComposerControlsBar(props: {
       instanceEntries={providerInstanceEntries}
       keybindings={keybindings}
       modelOptionsByInstance={modelOptionsByInstance}
-      size={composerControlsCollapsed ? "xs" : "sm"}
+      size={controlSize}
       triggerClassName={cn(
         "pe-1",
-        TEXT_CONTROL_STATES,
         composerControlsCollapsed ? "min-w-13 shrink text-xs!" : "min-w-13",
       )}
+      triggerSuffix={effort.suffix}
+      triggerDetail={effort.detail}
+      triggerShortcuts={
+        pickerOwnsModeShortcut ? "composer.effort composer.mode" : "composer.effort"
+      }
+      {...(traitsInput
+        ? {
+            effortColumn: <ComposerEffortColumn traits={traitsInput} />,
+            footer: (
+              <ComposerPickerFooter
+                traits={traitsInput}
+                runtimeMode={compatibleRuntimeMode}
+                runtimeModeOptions={compatibleRuntimeModeOptions}
+                onRuntimeModeChange={handleRuntimeModeChange}
+              />
+            ),
+          }
+        : {
+            menuAccessory: (
+              <ComposerPermissionsPicker
+                runtimeMode={compatibleRuntimeMode}
+                runtimeModeOptions={compatibleRuntimeModeOptions}
+                onRuntimeModeChange={handleRuntimeModeChange}
+              />
+            ),
+          })}
       terminalOpen={terminalOpen}
       open={modelPickerOpen}
       instanceIndicatorBackground={
@@ -311,17 +266,6 @@ export function ComposerControlsBar(props: {
       onOpenChange={onModelPickerOpenChange}
       getModelDisabledReason={getModelDisabledReason}
       onOpenProviderSetup={onOpenProviderSetup}
-      {...(compactPane
-        ? {
-            menuAccessory: (
-              <ComposerPermissionsPicker
-                runtimeMode={compatibleRuntimeMode}
-                runtimeModeOptions={compatibleRuntimeModeOptions}
-                onRuntimeModeChange={handleRuntimeModeChange}
-              />
-            ),
-          }
-        : {})}
     />
   );
   const overflowHidden = compactPane || hiddenRestingBlockIds.length === 0;
@@ -342,54 +286,10 @@ export function ComposerControlsBar(props: {
     </ComposerControl>
   ) : (
     <>
-      <span
-        data-composer-split-control={
-          traitsBlockIndex >= 0 && !traitsBlockInOverflow ? "true" : undefined
-        }
-        className={SPLIT_CONTROL_CLASS}
-      >
-        {composerModelPicker}
-        {traitsBlockIndex >= 0 ? (
-          <>
-            {traitsBlockInOverflow ? null : (
-              <span
-                aria-hidden="true"
-                data-resting-controls-separator="true"
-                className={SPLIT_DIVIDER_CLASS}
-              />
-            )}
-            {(() => {
-              const def = restingBlockDefs[traitsBlockIndex]!;
-              const hidden = traitsBlockIndex >= restingBlockDefs.length - restingHiddenBlockCount;
-              return (
-                <div
-                  key={def.id}
-                  data-resting-block={def.id}
-                  data-composer-block-icon-only={
-                    traitsBlockIndex >= restingBlockDefs.length - iconOnlyBlockCount
-                      ? "true"
-                      : "false"
-                  }
-                  aria-hidden={hidden || undefined}
-                  inert={hidden || undefined}
-                  className={cn(
-                    "flex w-max min-w-max shrink-0 items-center gap-1",
-                    hidden && "pointer-events-none invisible absolute",
-                    traitsBlockIndex >= restingBlockDefs.length - iconOnlyBlockCount &&
-                      "[&_[data-composer-control-label]]:pointer-events-none [&_[data-composer-control-label]]:invisible [&_[data-composer-control-label]]:absolute [&_[data-composer-control-label]]:w-max [&_[data-composer-control-label]]:max-w-none [&_[data-composer-control-compact-icon]]:[visibility:inherit] [&_[data-composer-control-compact-icon]]:relative",
-                  )}
-                >
-                  {def.content}
-                </div>
-              );
-            })()}
-          </>
-        ) : null}
-      </span>
+      {composerModelPicker}
 
       <>
         {restingBlockDefs.map((def, index) => {
-          if (def.id === "traits") return null;
           const hidden = index >= restingBlockDefs.length - restingHiddenBlockCount;
           return (
             <div
@@ -424,12 +324,9 @@ export function ComposerControlsBar(props: {
             interactionMode={interactionMode}
             runtimeMode={compatibleRuntimeMode}
             runtimeModeOptions={compatibleRuntimeModeOptions}
-            size={composerControlsCollapsed ? "xs" : "sm"}
+            size={controlSize}
             hidden={composerControlsHidden || overflowHidden}
-            showInteractionModeToggle={planModeUiEnabled && hiddenRestingBlockIds.includes("mode")}
-            traitsMenuContent={
-              hiddenRestingBlockIds.includes("traits") ? providerTraitsMenuContent : undefined
-            }
+            showInteractionModeToggle={planModeUiEnabled && hiddenRestingBlockIds.length > 0}
             // Permissions join the overflow only when their normal home is in it.
             showPermissions={overflowShowsPermissions}
             onToggleInteractionMode={toggleInteractionMode}

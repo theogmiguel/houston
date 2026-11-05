@@ -168,6 +168,7 @@ import {
   useSidebarVisibility,
 } from "../ui/sidebar";
 import { MOTION_FEEDBACK, MOTION_FEEDBACK_OPACITY } from "../ui/motion-recipes";
+import { SIDEBAR_THREAD_TAG_CLASS } from "../ui/thread-tag-recipes";
 import {
   SIDEBAR_GRID_ACTION_CLS,
   SIDEBAR_GRID_CHEVRON_BOX_CLS,
@@ -2141,6 +2142,15 @@ export function ThreadCard({
             ) : null}
           </span>
         </div>
+        {(thread.tags?.length ?? 0) > 0 ? (
+          <div data-thread-tags="" className="flex min-w-0 flex-wrap items-center gap-1 pl-0.5">
+            {(thread.tags ?? []).map((tag) => (
+              <span key={tag} className={SIDEBAR_THREAD_TAG_CLASS}>
+                {tag}
+              </span>
+            ))}
+          </div>
+        ) : null}
         {selected ? (
           <span className="sr-only" aria-live="polite">
             Selected

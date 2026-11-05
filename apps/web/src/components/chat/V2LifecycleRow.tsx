@@ -17,6 +17,7 @@ import {
   resolveHandoffEndpoints,
   type HandoffEndpoints,
   type HandoffTimelineRun,
+  resolveModelSwitchChange,
 } from "@houston-app/client-runtime/handoff";
 import {
   formatSubagentDisplayTitle,
@@ -24,6 +25,8 @@ import {
 } from "@houston-app/client-runtime/state/subagent-display";
 import {
   ProviderDriverKind,
+  type ModelSelection,
+  type OrchestrationV2ModelSwitch,
   type OrchestrationV2Notification,
   type OrchestrationV2TurnItem,
   type OrchestrationV2RemoteTaskChild,
@@ -602,6 +605,30 @@ function EnvironmentHandoffRow({
   const providers =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   return <HandoffRow {...props} environmentId={environmentId} providers={providers} />;
+}
+
+/** A same-harness model or effort change. Shows only what changed. */
+export function ModelSwitchRow(props: {
+  readonly environmentId: EnvironmentId;
+  readonly modelSwitch: OrchestrationV2ModelSwitch;
+}) {
+  const providers =
+    useAtomValue(serverEnvironment.providersValueAtom(props.environmentId)) ??
+    EMPTY_SERVER_PROVIDERS;
+  const change = resolveModelSwitchChange(props.modelSwitch, providers);
+  if (change === null) return null;
+  const describe = (selection: ModelSelection, effort: string | undefined) => {
+    const provider = providers.find((candidate) => candidate.instanceId === selection.instanceId);
+    const model = provider?.models.find((candidate) => candidate.slug === selection.model);
+    const modelName = model ? getTriggerDisplayModelName(model, provider?.driver) : selection.model;
+    return [change.modelChanged ? modelName : null, effort].filter(Boolean).join(" ");
+  };
+  const { from, to } = props.modelSwitch;
+  return (
+    <TimelineSystemDivider
+      label={`${describe(from, change.effort?.from)} → ${describe(to, change.effort?.to)}`}
+    />
+  );
 }
 
 export function HandoffRow(props: {

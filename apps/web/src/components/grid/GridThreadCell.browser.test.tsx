@@ -122,6 +122,7 @@ const shell = {
 vi.mock("../../state/entities", () => ({
   useQuietThreadShell: () => shell,
   readThreadShell: () => shell,
+  readThreadShells: () => [shell],
   readEnvironmentServerConfigLoaded: () => true,
   readEnvironmentSupportsAutoSettleOptOut: () => true,
 }));
@@ -132,6 +133,7 @@ vi.mock("../../hooks/useThreadActions", () => ({
     archiveThread: state.archiveThread,
     threadSnoozePresets: () => [],
     markThreadUnread: () => {},
+    setThreadTag: () => {},
     confirmAndDeleteThread: () => {},
     renameThread: () => {},
     regenerateThreadTitle: () => {},
@@ -507,6 +509,7 @@ describe("GridThreadCell surfaces", () => {
       "---",
       "Rename thread",
       "Regenerate title",
+      "Tags",
       "Mark unread",
       "Auto-close behavior",
       "---",
