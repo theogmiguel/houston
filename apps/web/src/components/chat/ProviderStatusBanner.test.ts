@@ -98,20 +98,23 @@ describe("compatibility banners", () => {
         getProviderStatusBannerKey(broken),
       ),
     ).toBe(true);
-    expect(getProviderStatusMessage(broken)).toBe(message);
+    expect(getProviderStatusMessage(broken, "locale")).toBe(message);
     expect(
-      getProviderStatusMessage({
-        ...broken,
-        compatibilityAdvisory: {
-          ...broken.compatibilityAdvisory!,
-          status: "supported",
-          message: null,
+      getProviderStatusMessage(
+        {
+          ...broken,
+          compatibilityAdvisory: {
+            ...broken.compatibilityAdvisory!,
+            status: "supported",
+            message: null,
+          },
         },
-      }),
+        "locale",
+      ),
     ).toBe(broken.message);
-    expect(getProviderStatusMessage({ ...broken, auth: { status: "unauthenticated" } })).toBe(
-      broken.message,
-    );
+    expect(
+      getProviderStatusMessage({ ...broken, auth: { status: "unauthenticated" } }, "locale"),
+    ).toBe(broken.message);
   });
 });
 
@@ -129,8 +132,10 @@ describe("provider readiness banners", () => {
       },
     };
     expect(shouldShowProviderStatusBanner(rejected, null)).toBe(true);
-    expect(getProviderStatusMessage(rejected)).toContain("Reauthorize the account");
-    expect(getProviderStatusMessage(rejected)).toContain("subscription_sharing_user_not_eligible");
+    expect(getProviderStatusMessage(rejected, "locale")).toContain("Reauthorize the account");
+    expect(getProviderStatusMessage(rejected, "locale")).toContain(
+      "subscription_sharing_user_not_eligible",
+    );
     expect(shouldShowProviderStatusBanner(rejected, getProviderStatusBannerKey(rejected))).toBe(
       false,
     );
@@ -151,7 +156,7 @@ describe("provider readiness banners", () => {
       },
     };
     expect(getProviderStatusBannerKey(limited)).not.toBeNull();
-    expect(getProviderStatusMessage(limited)).toContain("Resets in 2 h.");
+    expect(getProviderStatusMessage(limited, "locale")).toContain("Resets in 2 h.");
     vi.useRealTimers();
   });
 

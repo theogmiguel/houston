@@ -16,6 +16,7 @@ import { codexAuthHandoffUrl } from "@houston-app/shared/codexAuthHandoff";
 import { providerAuthReturnUrl } from "@houston-app/shared/providerAuthReturnUrl";
 import { isLoopbackHost } from "@houston-app/shared/preview";
 import { CheckIcon, ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
+import { useClientSettings } from "../../hooks/useSettings";
 import {
   Children,
   useEffect,
@@ -103,6 +104,7 @@ interface CodexSetupSectionProps {
 }
 
 export function CodexSetupSection(props: CodexSetupSectionProps) {
+  const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const [requested, setRequested] = useState(false);
   // A policy that owns Codex's launch settings also rules out ChatGPT's own runtime.
   const codexLocks = managedInstanceLocks(
@@ -114,7 +116,7 @@ export function CodexSetupSection(props: CodexSetupSectionProps) {
   const existingReady = props.enabled && existingState === "ready";
   const existingAuthenticated = props.provider?.auth.status === "authenticated";
   const existingChecking = existingState === "checking";
-  const existingSummary = getProviderSummary(props.provider);
+  const existingSummary = getProviderSummary(props.provider, timestampFormat);
   const content =
     props.mode === "existing" && props.presentation === "onboarding" ? (
       <CodexWelcomeCard

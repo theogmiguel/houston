@@ -82,6 +82,8 @@ import { PullRequestReactionBar } from "./PullRequestReactions";
 import { PullRequestConversationGhost } from "./PullRequestGhosts";
 import { ReadOnlyNotice } from "../ui/read-only-notice";
 import { sectionCollapseAnchorScrollTop } from "./pullRequestSummaryScroll.logic";
+import { useClientSettings } from "../../hooks/useSettings";
+import { formatChatTimestampTooltip } from "../../timestampFormat";
 
 function reviewerKey(login: string): string {
   return login.toLowerCase();
@@ -95,6 +97,7 @@ function CommentIdentity({
   detail: PullRequestDetailView;
 }) {
   const actor = comment.author;
+  const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const profileUrl = actor
     ? sourceControlClients.get(detail.provider).authorProfileUrl(actor.login, detail.url)
     : null;
@@ -121,7 +124,7 @@ function CommentIdentity({
           </time>
         </TooltipTrigger>
         <TooltipPopup>
-          {new Date(comment.createdAt).toLocaleString()}
+          {formatChatTimestampTooltip(comment.createdAt, timestampFormat)}
           {comment.url ? " · Open comment on host" : ""}
         </TooltipPopup>
       </Tooltip>

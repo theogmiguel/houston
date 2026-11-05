@@ -112,6 +112,7 @@ import {
   selectPairingEndpoint,
   isTailscaleHttpsEndpoint,
   endpointDefaultPreferenceKey,
+  isWslSettingsRowVisible,
 } from "./ConnectionsSettings.logic";
 import {
   AdvertisedEndpointListRow,
@@ -290,6 +291,10 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   );
   const desktopWslState = desktopWsl.data;
   const desktopWslError = desktopWslMutationError ?? desktopWsl.error;
+  const wslRowsVisible = isWslSettingsRowVisible({
+    state: desktopWslState ?? null,
+    error: desktopWsl.error,
+  });
   const desktopServerExposureState = desktopNetworkAccess.data?.serverExposureState ?? null;
   const desktopAdvertisedEndpoints =
     desktopNetworkAccess.data?.advertisedEndpoints ?? EMPTY_ADVERTISED_ENDPOINTS;
@@ -833,6 +838,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     />
   );
   const renderWslBackendRow = () => {
+    if (!wslRowsVisible) return null;
     const enabled = desktopWslState?.enabled ?? false;
     const status = desktopWslError ? (
       <span className="block text-destructive">{desktopWslError}</span>
@@ -860,7 +866,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     );
   };
   const renderWslDetailRows = () => {
-    if (!desktopWslState || !desktopWslState.enabled) return null;
+    if (!wslRowsVisible || !desktopWslState || !desktopWslState.enabled) return null;
     const defaultDistroName =
       desktopWslState.distros.find((distro) => distro.isDefault)?.name ?? null;
     const selectValue = desktopWslState.distro ?? defaultDistroName ?? BACKEND_VALUE_DEFAULT_WSL;

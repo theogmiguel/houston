@@ -1,9 +1,11 @@
 import { Toolbar } from "@base-ui/react/toolbar";
 import { type ProviderInstanceId } from "@houston-app/contracts";
+import type { TimestampFormat } from "@houston-app/contracts/settings";
 import { memo, useState } from "react";
 import { StarIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useClientSettings } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 import {
   isProviderInstancePickerReady,
@@ -14,22 +16,28 @@ import {
 import { formatReadinessReset } from "../settings/providerStatus";
 
 /** A usage window's reset time, appended to the shared readiness label when it has one. */
-function readinessReason(entry: ProviderInstanceEntry): string | null {
+function readinessReason(
+  entry: ProviderInstanceEntry,
+  timestampFormat: TimestampFormat,
+): string | null {
   const reason = providerInstanceReadinessReason(entry);
   const readiness = entry.snapshot.readiness;
   if (reason === null || readiness?.state !== "outOfUsage" || readiness.resetsAt === null) {
     return reason;
   }
-  return `${reason} · ${formatReadinessReset(readiness.resetsAt)}`;
+  return `${reason} · ${formatReadinessReset(readiness.resetsAt, timestampFormat)}`;
 }
 
-function describeUnavailableInstance(entry: ProviderInstanceEntry): string {
+function describeUnavailableInstance(
+  entry: ProviderInstanceEntry,
+  timestampFormat: TimestampFormat,
+): string {
   const label = entry.displayName;
   // An unavailable instance (a driver this build lacks or the policy leaves out) says why instead.
   if ((!entry.enabled && entry.isAvailable) || entry.status === "disabled") {
     return `${label}: Disabled in settings.`;
   }
-  const readiness = readinessReason(entry);
+  const readiness = readinessReason(entry, timestampFormat);
   if (readiness !== null) {
     return `${label}: ${readiness}.`;
   }
@@ -43,11 +51,14 @@ function describeUnavailableInstance(entry: ProviderInstanceEntry): string {
 }
 
 /** The short reason the row shows beneath an unavailable provider's name. */
-function unavailableInstanceReason(entry: ProviderInstanceEntry): string | null {
+function unavailableInstanceReason(
+  entry: ProviderInstanceEntry,
+  timestampFormat: TimestampFormat,
+): string | null {
   if (!entry.enabled || entry.status === "disabled") {
     return "Disabled";
   }
-  const readiness = readinessReason(entry);
+  const readiness = readinessReason(entry, timestampFormat);
   if (readiness !== null) {
     return readiness;
   }
@@ -70,6 +81,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   selectableUnavailableInstanceIds?: ReadonlySet<ProviderInstanceId>;
   getDisabledInstanceTooltip?: (entry: ProviderInstanceEntry) => string;
 }) {
+  const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const handleSelect = (instanceId: ProviderInstanceId | "favorites") => {
     props.onSelectInstance(instanceId);
   };
@@ -134,11 +146,11 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const isHovered = hoveredInstanceId === entry.instanceId;
             const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
             const reason =
-              unavailableInstanceReason(entry) ??
+              unavailableInstanceReason(entry, timestampFormat) ??
               (isContextDisabled ? "Unavailable in this thread" : null);
 
             const tooltip = isUnavailable
-              ? describeUnavailableInstance(entry)
+              ? describeUnavailableInstance(entry, timestampFormat)
               : isContextDisabled
                 ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
                 : entry.displayName;

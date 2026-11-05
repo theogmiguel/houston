@@ -10,7 +10,7 @@ import { HoustonWordmark } from "../HoustonWordmark";
 import {
   resolveEnvironmentIdentificationPillLabel,
   useEnvironmentStageLabel,
-} from "../SidebarStageBackdrop";
+} from "../../environmentIdentification";
 import { Badge } from "../ui/badge";
 import {
   SidebarFooter,

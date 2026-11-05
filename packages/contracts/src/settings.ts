@@ -202,8 +202,8 @@ export const TerminalFontSize = Schema.Int.check(
 export type TerminalFontSize = typeof TerminalFontSize.Type;
 const DEFAULT_TERMINAL_FONT_SIZE: TerminalFontSize = 12;
 
-// "artwork" follows the running channel and shows nothing on Latest. The fixed artwork
-// modes let any channel opt into a specific channel's art.
+// Only "pill" and "none" are offered. The artwork literals stay decodable because settings
+// files written by earlier builds contain them; they display as "pill".
 export const EnvironmentIdentificationMode = Schema.Literals([
   "artwork",
   "nightly-artwork",
@@ -212,7 +212,7 @@ export const EnvironmentIdentificationMode = Schema.Literals([
   "none",
 ]);
 export type EnvironmentIdentificationMode = typeof EnvironmentIdentificationMode.Type;
-export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationMode = "artwork";
+export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationMode = "pill";
 
 export const SnapShotKeyChord = KeybindingShortcut.check(
   Schema.makeFilter(
