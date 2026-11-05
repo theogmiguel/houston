@@ -131,7 +131,7 @@ import * as HoustonTaskRuns from "../tasks/TaskRuns.ts";
 import * as HoustonMergeQueueService from "../mergeQueue/Service.ts";
 import * as HoustonTaskService from "../tasks/TaskService.ts";
 import { createProject } from "../tasks/tasks.testkit.ts";
-import { makeMemory } from "../secrets/HoustonKeychain.ts";
+import { makeMemory } from "../secrets/HoustonSecrets.ts";
 import { HoustonTaskSourceOutboxDrain } from "./Outbox.ts";
 import {
   githubIssue,
@@ -511,7 +511,7 @@ describe("the token reaches no file, log, trace or reply", () => {
             databaseFile,
             baseDir: dir,
             notionOrigin: notion.origin,
-            keychain: makeMemory(),
+            secrets: makeMemory(),
           }),
         ),
       );
@@ -617,7 +617,7 @@ describe("the token reaches no file, log, trace or reply", () => {
             databaseFile,
             baseDir: dir,
             notionOrigin: notion.origin,
-            keychain: makeMemory(),
+            secrets: makeMemory(),
           }),
         ),
       );
@@ -1002,7 +1002,7 @@ describe("sources survive a restart", () => {
       const options: SourcesTestOptions = {
         databaseFile: NodePath.join(dir, "state.sqlite"),
         baseDir: dir,
-        keychain: makeMemory(),
+        secrets: makeMemory(),
         github,
       };
       const read = Effect.gen(function* () {

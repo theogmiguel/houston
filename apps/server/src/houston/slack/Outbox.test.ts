@@ -11,9 +11,10 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { makeMemory } from "../secrets/HoustonKeychain.ts";
+import { makeMemory } from "../secrets/HoustonSecrets.ts";
 import { createProject } from "../tasks/tasks.testkit.ts";
 import { HoustonSlackOutbox } from "./Outbox.ts";
+import { slackSecretName } from "./rules.ts";
 import { HoustonSlackService } from "./Service.ts";
 import { makeSlackFake } from "./slack.fake.ts";
 import {
@@ -100,13 +101,13 @@ describe("the outbox sends in bounded batches, falls back to text and survives a
       const fs = yield* FileSystem.FileSystem;
       const dir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-slack-outbox-" });
       const fake = yield* makeSlackFake;
-      const keychain = makeMemory();
+      const secrets = makeMemory();
       const layer = () =>
         layerSlackTest({
           slackOrigin: fake.origin,
           databaseFile: NodePath.join(dir, "state.sqlite"),
           baseDir: dir,
-          keychain,
+          secrets,
         });
       const postedTexts = () => fake.callsOf("chat.postMessage").map((call) => call.body.text);
 
@@ -213,7 +214,7 @@ describe("the outbox sends in bounded batches, falls back to text and survives a
 
 describe("the outbox sends nothing with one token of the pair", () => {
   it.effect("the outbox sends nothing with one token of the pair", () => {
-    const keychain = makeMemory();
+    const secrets = makeMemory();
     return runSlack(
       (fake) =>
         Effect.gen(function* () {
@@ -223,9 +224,7 @@ describe("the outbox sends nothing with one token of the pair", () => {
           yield* connectSlack(projectId);
           yield* untilConnected;
           const id = yield* insertRequest(projectId);
-          for (const key of [...keychain.entries.keys()]) {
-            if (key.endsWith("\u0000app-token")) keychain.entries.delete(key);
-          }
+          secrets.entries.delete(slackSecretName("app-token"));
           yield* store.enqueue({
             requestId: id,
             dedupeKey: "half",
@@ -239,7 +238,7 @@ describe("the outbox sends nothing with one token of the pair", () => {
             0,
           );
         }),
-      { keychain },
+      { secrets },
     );
   });
 });

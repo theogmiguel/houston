@@ -1,4 +1,4 @@
-// Slack intake over one database with the real project and task services, the memory keychain,
+// Slack intake over one database with the real project and task services, the memory secret store,
 // a recording `HoustonTaskRuns` fake and the loopback Slack fake (slack.fake.ts).
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -19,7 +19,7 @@ import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as ProjectEnrichmentService from "../../project/ProjectEnrichmentService.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import { HostedLaunch } from "../baseDir.ts";
-import { layerMemory, makeMemory, type MemoryKeychain } from "../secrets/HoustonKeychain.ts";
+import { layerMemory, makeMemory, type MemorySecrets } from "../secrets/HoustonSecrets.ts";
 import { HoustonTaskRuns } from "../tasks/TaskRuns.ts";
 import * as HoustonTaskService from "../tasks/TaskService.ts";
 import { refuse } from "../tasks/rules.ts";
@@ -238,7 +238,7 @@ export const layerFakeRuns = (fake: FakeRuns) =>
 export interface SlackTestOptions {
   readonly databaseFile?: string;
   readonly baseDir?: string;
-  readonly keychain?: MemoryKeychain;
+  readonly secrets?: MemorySecrets;
   /** The loopback fake's origin. */
   readonly slackOrigin: string;
   readonly runs?: FakeRuns;
@@ -270,7 +270,7 @@ export const layerSlackTest = (options: SlackTestOptions) =>
     Layer.provideMerge(ProjectStore.layer),
     // Below the project service, so a project deletion reaches it, as in server.ts.
     Layer.provideMerge(HoustonSlackStore.layer),
-    Layer.provideMerge(layerMemory(options.keychain ?? makeMemory())),
+    Layer.provideMerge(layerMemory(options.secrets ?? makeMemory())),
     Layer.provideMerge(HoustonTaskStore.layer),
     Layer.provideMerge(layerInstances(CONFIGURED_INSTANCES)),
     Layer.provideMerge(ProjectEnrichmentService.layer),

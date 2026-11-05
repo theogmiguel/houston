@@ -9,7 +9,6 @@ import {
 
 import { redactSecrets } from "../mergeQueue/redact.ts";
 import { cutAbsolutePaths } from "../redact.ts";
-import { keychainService } from "../secrets/HoustonKeychain.ts";
 import { slackText } from "./text.ts";
 
 export const APP_TOKEN_ACCOUNT = "app-token";
@@ -22,9 +21,9 @@ export const ADJUST_ACCEPT_ACTION = "houston_slack_adjust_accept";
 export const ADJUST_IGNORE_ACTION = "houston_slack_adjust_ignore";
 export const CHECK_MARK = "white_check_mark";
 
-/** One OS keychain service per server base dir, so channels never share the tokens. */
-export const slackKeychainService = (baseDir: string): string =>
-  keychainService({ baseDir, purpose: "slack", projectId: "server", provider: "connection" });
+/** A Slack token in the secret store; the directory is per channel, so the name has no channel part. */
+export const slackSecretName = (account: typeof APP_TOKEN_ACCOUNT | typeof BOT_TOKEN_ACCOUNT) =>
+  `houston-slack-connection-${account}`;
 
 export const refuse = (
   kind: HoustonSlackError["kind"],

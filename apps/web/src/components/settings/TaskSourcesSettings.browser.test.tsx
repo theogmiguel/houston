@@ -180,7 +180,7 @@ it("shows the connected Slack workspace and saves its configuration", async () =
   await expect
     .element(screen.getByLabelText("GitHub repository"))
     .toHaveValue("theogmiguel/houston");
-  expect(screen.container.textContent).toContain("In keychain");
+  expect(screen.container.textContent).toContain("Saved");
 
   await screen.getByRole("button", { name: "Save" }).first().click();
   expect(fixture.calls).toContainEqual({

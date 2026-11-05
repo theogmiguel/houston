@@ -22,9 +22,10 @@ Rules:
   composed.
 - A filter that matches no package, and a `-t` pattern that matches no test, exit 0 without
   running anything. Confirm with `--reporter=verbose` that a proof ran.
-- Server code that reaches a provider, GitHub, Notion, Slack or the keychain is tested against
-  replay fixtures, local fakes and the in-memory keychain layer, never the real service. Only
-  `server.ts` provides the live keychain.
+- Server code that reaches a provider, GitHub, Notion, Slack or the secret store is tested
+  against replay fixtures, local fakes and the in-memory secret store layer, never the real
+  service. The legacy keychain read has its own in-memory layer. Only `server.ts` provides the
+  live layers.
 - Host tests that touch agent CLI configuration or the channel directory build them under a
   temporary home and never read the real one. A test that needs an agent CLI puts a fake on
   the `PATH` it hands the code under test; it never runs the real CLI.

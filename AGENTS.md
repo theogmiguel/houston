@@ -47,9 +47,11 @@ conflicts with the task, explain the conflict and obtain maintainer direction.
 - **External configuration** (managed-marker): changes to an agent CLI's configuration are
   reversible managed-marker blocks. `~/.claude.json` is never rewritten; it changes only through
   `claude mcp`.
-- **Secrets** (keychain): tokens live in the OS keychain, scoped by channel directory, project and
-  provider, never in the database, logs, traces, errors, RPC replies or stream events. A token is
-  bounded in size and refused by name above the bound.
+- **Secrets** (secret store): tokens live in the server's secret store (`ServerSecretStore`),
+  one 0600 file per secret in a 0700 directory under the channel's state, scoped by channel
+  directory, project and provider, never in the database, logs, traces, errors, RPC replies or
+  stream events. A token is bounded in size and refused by name above the bound. The OS keychain
+  is read only once, by the import of earlier builds' tokens, and never written or deleted.
 - **Untrusted input**: text from outside (GitHub, Notion, Slack, imported files) is bounded,
   attributed and kept from acting as instructions before it reaches a prompt; text Houston sends
   out is escaped so it cannot mention, link or close anything it did not mean to.
@@ -95,8 +97,8 @@ Use the [glossary](docs/internals/glossary.md) consistently:
    explicit instruction. Tests use temporary directories and never the real home.
 3. **One server per channel.** Preserve upstream's server ownership lock; a second server for the
    same base directory exits instead of sharing its database.
-4. **Never touch the host keyring.** Server tests use the in-memory keychain layer; only
-   `server.ts` provides the live one. Do not run `gnome-keyring-daemon` (least of all
+4. **Never touch the host keyring.** Server tests use the in-memory secret store and keychain
+   layers; only `server.ts` provides the live ones. Do not run `gnome-keyring-daemon` (least of all
    `--unlock`) on the host: it re-encrypts the user's real login keyring and locks them out.
    Host tests that need a Secret Service run through `scripts/with-test-keyring.sh`.
 5. **Never touch the user's repositories by accident.** Server git commands that act for the
@@ -134,8 +136,8 @@ The [development runbook](docs/operations/development.md) contains exact command
   `--reporter=verbose` that a proof ran.
 - Tests come before code, and a bug fix has a regression test that fails before the fix. Fixtures
   represent states the system can produce; composed fixtures are labelled as composed.
-- Server code that reaches a provider, GitHub, Notion, Slack or the keychain is tested against
-  replay fixtures, local fakes and the in-memory keychain, never the real service.
+- Server code that reaches a provider, GitHub, Notion, Slack or the secret store is tested against
+  replay fixtures, local fakes and the in-memory secret store, never the real service.
 - For desktop-host changes, run the package's typecheck and tests, then `cargo fmt`,
   `cargo clippy --all-targets -- -D warnings` and `cargo test` in each native crate under
   `apps/desktop/native` and `native`. On Linux, run heavy builds under `scripts/oom-shield.sh`,

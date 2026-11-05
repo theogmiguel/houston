@@ -18,6 +18,7 @@ import {
   notionRecord,
   storedSettings,
   syncStateOf,
+  trackerSecretName,
   withRevision,
   commentMarker,
   deliveryMarker,
@@ -709,5 +710,19 @@ describe("mentions and references in copied text are inert on GitHub", () => {
     ["(@bob) [#7]", "(`@bob`) [`#7`]"],
   ])("%s", (text, expected) => {
     expect(neutralise(text)).toBe(expected);
+  });
+});
+
+describe("a tracker token secret name is unique per project and provider and file-safe", () => {
+  it("encodes the project, so no id can climb out of the secrets directory", () => {
+    const one = trackerSecretName("project-1", "notion");
+    expect(trackerSecretName("project-1", "notion")).toBe(one);
+    expect(trackerSecretName("project-2", "notion")).not.toBe(one);
+    expect(trackerSecretName("project-1", "github_issues")).not.toBe(one);
+    expect(one).toMatch(/^houston-tracker-notion-[A-Za-z0-9_-]+-integration-token$/);
+    for (const id of ["../../etc/passwd", "a/b", "name with spaces", "ü", ""]) {
+      expect(trackerSecretName(id, "notion"), id).toMatch(/^[A-Za-z0-9][A-Za-z0-9_-]*$/);
+    }
+    expect(trackerSecretName("a-b", "notion")).not.toBe(trackerSecretName("a", "notion"));
   });
 });

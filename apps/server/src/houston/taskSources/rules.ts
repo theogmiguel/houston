@@ -39,9 +39,12 @@ export const RECORD_LIMITS = {
   urlBytes: 2_048,
   errorChars: 1_024,
 } as const;
-export const TOKEN_ACCOUNT = "integration-token";
-export const TOKEN_UNAVAILABLE = "Notion integration token is not available from the OS keychain";
+export const TOKEN_UNAVAILABLE = "Notion integration token is not available from the secret store";
 export const TOKEN_MISSING = "Notion integration token is missing";
+
+/** A project's tracker token in the secret store; the project is encoded to stay file-safe. */
+export const trackerSecretName = (projectId: string, provider: HoustonTaskSourceProvider): string =>
+  `houston-tracker-${provider}-${Buffer.from(projectId, "utf8").toString("base64url")}-integration-token`;
 
 const isTaskStatus = Schema.is(HoustonTaskStatus);
 export const isRefusal = Schema.is(HoustonTaskSourceError);

@@ -1,4 +1,4 @@
-// The houston.slack.* operations: both tokens in the OS keychain only and checked with
+// The houston.slack.* operations: both tokens in the secret store only and checked with
 // auth.test, the settings and channel map checked by rules.ts, the requests and the stream.
 import type { ProjectId } from "@houston-app/contracts";
 import type {
@@ -20,7 +20,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
-import { HoustonKeychain } from "../secrets/HoustonKeychain.ts";
+import { HoustonSecrets } from "../secrets/HoustonSecrets.ts";
 import { nowIso } from "../tasks/TaskStore.ts";
 import { HoustonSlackConnection } from "./Connection.ts";
 import {
@@ -29,6 +29,7 @@ import {
   checkConfigure,
   checkTokens,
   refuse,
+  slackSecretName,
   slackTs,
 } from "./rules.ts";
 import { HoustonSlackStore } from "./Store.ts";
@@ -55,7 +56,7 @@ export class HoustonSlackService extends Context.Service<
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const store = yield* HoustonSlackStore;
-  const keychain = yield* HoustonKeychain;
+  const secrets = yield* HoustonSecrets;
   const web = yield* SlackWebApi;
   const connection = yield* HoustonSlackConnection;
   const projects = yield* ProjectStore.ProjectStoreV2;
@@ -78,14 +79,14 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const keychainRefusal = (operation: string) => (error: { readonly message: string }) =>
-    refuse("keychain_unavailable", operation, error.message);
+  const secretsRefusal = (operation: string) => (error: { readonly message: string }) =>
+    refuse("secret_store_unavailable", operation, error.message);
 
   const removeTokens = (operation: string) =>
     Effect.all([
-      keychain.remove(store.tokenService, APP_TOKEN_ACCOUNT),
-      keychain.remove(store.tokenService, BOT_TOKEN_ACCOUNT),
-    ]).pipe(Effect.asVoid, Effect.mapError(keychainRefusal(operation)));
+      secrets.remove(slackSecretName(APP_TOKEN_ACCOUNT)),
+      secrets.remove(slackSecretName(BOT_TOKEN_ACCOUNT)),
+    ]).pipe(Effect.asVoid, Effect.mapError(secretsRefusal(operation)));
 
   const get = store.info(true);
 
@@ -123,7 +124,7 @@ const make = Effect.gen(function* () {
     if (checked === null) {
       const stored = yield* store.readTokens;
       if (stored.kind === "unavailable") {
-        return yield* refuse("keychain_unavailable", operation, stored.reason);
+        return yield* refuse("secret_store_unavailable", operation, stored.reason);
       }
       if (stored.kind === "none") {
         return yield* refuse(
@@ -143,20 +144,21 @@ const make = Effect.gen(function* () {
     };
     // Written, then read back; anything short of both stored removes both again.
     const stored = yield* Effect.gen(function* () {
-      for (const [account, value] of Object.entries(tokens)) {
-        yield* keychain.set(store.tokenService, account, value);
-        const back = yield* keychain.get(store.tokenService, account);
+      for (const account of [APP_TOKEN_ACCOUNT, BOT_TOKEN_ACCOUNT] as const) {
+        const value = tokens[account];
+        yield* secrets.set(slackSecretName(account), value);
+        const back = yield* secrets.get(slackSecretName(account));
         if (Option.isNone(back) || Redacted.value(back.value) !== Redacted.value(value)) {
           return yield* refuse(
-            "keychain_unavailable",
+            "secret_store_unavailable",
             operation,
-            `the OS keychain did not return the ${account === APP_TOKEN_ACCOUNT ? "app-level" : "bot"} token it stored`,
+            `the secret store did not return the ${account === APP_TOKEN_ACCOUNT ? "app-level" : "bot"} token it stored`,
           );
         }
       }
     }).pipe(
       Effect.mapError((error) =>
-        "kind" in error ? error : refuse("keychain_unavailable", operation, error.message),
+        "kind" in error ? error : refuse("secret_store_unavailable", operation, error.message),
       ),
       Effect.result,
     );

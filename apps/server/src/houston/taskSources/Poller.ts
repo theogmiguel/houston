@@ -1,5 +1,5 @@
 // Polls every enabled task source every 20 seconds, and one project's at once on Sync now. The
-// Notion token is read from the OS keychain for each poll; a failed poll keeps tasks and cursor.
+// Notion token is read from the secret store for each poll; a failed poll keeps tasks and cursor.
 import type { ProjectId } from "@houston-app/contracts";
 import type {
   HoustonTaskSourceProvider,
@@ -15,17 +15,17 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { HoustonKeychain } from "../secrets/HoustonKeychain.ts";
+import { HoustonSecrets } from "../secrets/HoustonSecrets.ts";
 import { nowIso } from "../tasks/TaskStore.ts";
 import { EMPTY_GITHUB_CURSOR, pollGitHub } from "./GitHubSource.ts";
 import { NotionClient, pollNotion, retrievePage } from "./NotionClient.ts";
 import {
   NOTION_REFRESH_PER_POLL,
   POLL_INTERVAL_SECONDS,
-  TOKEN_ACCOUNT,
   TOKEN_MISSING,
   TOKEN_UNAVAILABLE,
   errorText,
+  trackerSecretName,
   type GithubCursor,
   type NotionCursor,
   type StoredSettings,
@@ -58,7 +58,7 @@ const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const store = yield* HoustonTaskSourceStore;
   const sync = yield* HoustonTaskSourceSync;
-  const keychain = yield* HoustonKeychain;
+  const secrets = yield* HoustonSecrets;
   const github = yield* GitHubRest.GitHubRest;
   const notion = yield* NotionClient;
   // One poll at a time, so a tick and a Sync now never read the same source twice at once.
@@ -187,9 +187,7 @@ const make = Effect.gen(function* () {
     const cursor = (stored ?? { lastEditedTime: null, continuation: null }) as NotionCursor;
     const fail = (error: string) =>
       finish({ projectId, provider: "notion", cursor, refreshAfter, error });
-    const read = yield* Effect.result(
-      keychain.get(store.tokenService(projectId, "notion"), TOKEN_ACCOUNT),
-    );
+    const read = yield* Effect.result(secrets.get(trackerSecretName(projectId, "notion")));
     if (read._tag === "Failure") return yield* fail(TOKEN_UNAVAILABLE);
     if (Option.isNone(read.success)) return yield* fail(TOKEN_MISSING);
     const token = read.success.value;

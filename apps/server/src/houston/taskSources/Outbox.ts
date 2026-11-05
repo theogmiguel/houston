@@ -15,7 +15,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { HoustonKeychain } from "../secrets/HoustonKeychain.ts";
+import { HoustonSecrets } from "../secrets/HoustonSecrets.ts";
 import { HoustonTaskTransitions, nowIso, type TaskTransition } from "../tasks/TaskStore.ts";
 import { GitHubRequestTimeout, describeGitHubError } from "./GitHubSource.ts";
 import { NotionClient, writeNotion } from "./NotionClient.ts";
@@ -25,7 +25,6 @@ import {
   OUTBOX_BATCH,
   POLL_INTERVAL_SECONDS,
   SUPERSEDED,
-  TOKEN_ACCOUNT,
   TOKEN_MISSING,
   TOKEN_UNAVAILABLE,
   WRITE_LIMITS,
@@ -42,6 +41,7 @@ import {
   retryDelayMillis,
   statusComment,
   syncStateOf,
+  trackerSecretName,
   writebackActions,
   type OutboxEntry,
   type StoredSettings,
@@ -390,7 +390,7 @@ export class HoustonTaskSourceOutboxDrain extends Context.Service<
 const makeDrain = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const store = yield* HoustonTaskSourceStore;
-  const keychain = yield* HoustonKeychain;
+  const secrets = yield* HoustonSecrets;
   const github = yield* GitHubRest.GitHubRest;
   const notion = yield* NotionClient;
   const reads = makeReads(sql);
@@ -831,9 +831,7 @@ const makeDrain = Effect.gen(function* () {
       if (written._tag === "Failure") return yield* failed(row, target, written.failure);
       receipt = written.success;
     } else {
-      const read = yield* Effect.result(
-        keychain.get(store.tokenService(row.project_id, "notion"), TOKEN_ACCOUNT),
-      );
+      const read = yield* Effect.result(secrets.get(trackerSecretName(row.project_id, "notion")));
       if (read._tag === "Failure") return yield* failed(row, target, TOKEN_UNAVAILABLE);
       if (Option.isNone(read.success)) return yield* failed(row, target, TOKEN_MISSING);
       const written = yield* Effect.result(
