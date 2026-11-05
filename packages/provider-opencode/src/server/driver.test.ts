@@ -5,7 +5,12 @@ import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { DEFAULT_SERVER_SETTINGS, ProviderInstanceId } from "@houston-app/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  ProviderInstanceId,
+  ProviderSessionId,
+  ThreadId,
+} from "@houston-app/contracts";
 import type { OpenCodeSettings } from "../settings.ts";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
@@ -572,6 +577,48 @@ it.layer(layerUpdate)("OpenCodeDriver updates", (it) => {
         const v2 = yield* instance.snapshot.resolveMaintenance({ fresh: true });
         assert.strictEqual(v2.packageName, "@opencode/cli");
         assert.isNull(v2.update);
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "opens sessions through OpenCode 2 after the binary is upgraded in place from 1.x",
+    () =>
+      Effect.gen(function* () {
+        versionOutput.current = "1.18.18\n";
+        // The status refresh also reads Go usage limits, which reaches the console when the
+        // machine has a stored key; answer it without a network call.
+        const usageUnavailable = HttpClient.make((request) =>
+          Effect.succeed(
+            HttpClientResponse.fromWeb(request, new Response(null, { status: 403 })),
+          ),
+        );
+        const instance = yield* create({}, usageUnavailable);
+        // Let the startup status check claim the refresh permit, then wait behind it so it
+        // cannot probe after the upgrade below.
+        yield* Effect.yieldNow;
+        yield* instance.snapshot.refresh;
+        serverStarts.length = 0;
+        const openSession = instance.orchestrationAdapter
+          .openSession({
+            threadId: ThreadId.make("thread-upgraded"),
+            providerSessionId: ProviderSessionId.make("session-upgraded"),
+            modelSelection: { instanceId: instance.instanceId, model: "opencode/big-pickle" },
+            runtimePolicy: { runtimeMode: "full-access", interactionMode: "default", cwd: null },
+          })
+          .pipe(Effect.scoped, Effect.flip);
+
+        yield* openSession;
+        assert.deepStrictEqual(serverStarts, ["connect"], "1.x opens through the 1.x adapter");
+
+        versionOutput.current = "opencode v2.2.4\n";
+        serverStarts.length = 0;
+        yield* openSession;
+        assert.notInclude(
+          serverStarts,
+          "connect",
+          "after upgrading to 2.x, the next session must not open through the 1.x adapter",
+        );
+        assert.include(serverStarts, "start", "the OpenCode 2 adapter starts its server");
       }).pipe(Effect.scoped),
   );
 });
