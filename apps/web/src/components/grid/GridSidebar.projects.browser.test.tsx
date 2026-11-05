@@ -280,6 +280,23 @@ describe("project sections", () => {
     }
   });
 
+  it("hides the New grid action once the pointer leaves a clicked project, and shows it on keyboard focus", async () => {
+    resetTestState();
+    await using screen = await render(<CollapsibleSections sections={[projectSections()[1]!]} />);
+    const label = screen.getByRole("button", { name: /^notes$/ }).element();
+    const action = screen.getByRole("button", { name: "New grid in notes" }).element();
+    const opacity = () => Number(getComputedStyle(action).opacity);
+
+    await userEvent.click(label);
+    await userEvent.unhover(label);
+    await expect.poll(opacity).toBe(0);
+
+    await userEvent.keyboard("{Tab}");
+    await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(document.activeElement).toBe(label);
+    await expect.poll(opacity).toBe(1);
+  });
+
   it("creates a grid from the project label's action", async () => {
     resetTestState();
     const onCreateGrid = vi.fn();
@@ -311,6 +328,46 @@ describe("project sections", () => {
     expect(page.getByRole("button", { name: /^New grid in No project$/ }).elements()).toHaveLength(
       0,
     );
+  });
+
+  it("opens the project menu instead of the native one from a right-click and Shift+F10", async () => {
+    resetTestState();
+    const onOpenProjectMenu = vi.fn();
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectSection {...sectionProps(projectSections()[1]!, { onOpenProjectMenu })} />
+      </TooltipProvider>,
+    );
+    const label = screen.getByRole("button", { name: /^notes$/ }).element();
+    const rect = label.getBoundingClientRect();
+
+    const event = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: rect.left + 5,
+      clientY: rect.top + 5,
+    });
+    label.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(onOpenProjectMenu).toHaveBeenLastCalledWith({ x: rect.left + 5, y: rect.top + 5 });
+
+    label.focus();
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    expect(onOpenProjectMenu).toHaveBeenCalledTimes(2);
+    expect(onOpenProjectMenu).toHaveBeenLastCalledWith({ x: rect.left, y: rect.bottom + 4 });
+  });
+
+  it("offers no project menu on the scratch section", async () => {
+    resetTestState();
+    const onOpenProjectMenu = vi.fn();
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectSection {...sectionProps(projectSections()[2]!, { onOpenProjectMenu })} />
+      </TooltipProvider>,
+    );
+    const label = screen.getByRole("button", { name: /^No project$/ }).element();
+    label.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    expect(onOpenProjectMenu).not.toHaveBeenCalled();
   });
 
   it("opens the add-project dialog from the header button", async () => {

@@ -1,6 +1,6 @@
 /** A tag chip in the grid sidebar's thread card. */
 export const SIDEBAR_THREAD_TAG_CLASS =
-  "max-w-28 truncate rounded-(--r-badge) bg-(--surface-raised) px-1.5 text-2xs leading-4 text-secondary-label";
+  "max-w-28 truncate rounded-(--r-badge) bg-(--sel) px-1.5 text-2xs leading-4 font-medium text-secondary-foreground";
 
 /** A tag chip in a grid cell's pane label. */
 export const PANE_THREAD_TAG_CLASS =

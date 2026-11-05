@@ -43,23 +43,25 @@ export const SIDEBAR_GRID_EMPTY_CLS = "ml-auto shrink-0 text-xs text-secondary-l
 
 export const SIDEBAR_GRID_COUNT_CLS = "ml-auto shrink-0 text-xs text-secondary-label tabular-nums";
 
-/** A project label reads as a quiet section heading above its grids. */
-export const SIDEBAR_PROJECT_ROW_CLS = "group/project relative mt-3 flex items-center";
+/** A project reads as a list item, like the rail's navigation rows, above its grids. */
+export const SIDEBAR_PROJECT_ROW_CLS = "group/project relative mt-1 flex items-center first:mt-0";
 
 export const SIDEBAR_PROJECT_LABEL_CLS =
-  "flex h-(--h-row) w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-8 pl-2 text-left text-2xs font-semibold uppercase tracking-wide text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-secondary-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "flex h-(--h-row) w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg py-0 pr-8 pl-2 text-left text-sm text-secondary-foreground transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+
+export const SIDEBAR_PROJECT_ICON_CLS = "size-[15px] shrink-0 text-secondary-label";
 
 export const SIDEBAR_PROJECT_LABEL_TEXT_CLS = "min-w-0 flex-1 truncate";
 
-export const SIDEBAR_PROJECT_SUMMARY_CLS =
-  "shrink-0 text-2xs font-normal tracking-normal text-secondary-label normal-case";
+export const SIDEBAR_PROJECT_SUMMARY_CLS = "shrink-0 text-2xs text-secondary-label";
 
-/** The project label's New grid action, revealed while its row is hovered or focused. */
+/** The project label's New grid action, revealed on hover or keyboard focus, not a click's focus. */
 export const SIDEBAR_PROJECT_ACTION_CLS =
-  "inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 transition-opacity duration-(--motion-feedback) ease-standard hover:bg-(--sel) hover:text-foreground group-hover/project:opacity-100 group-focus-within/project:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 transition-opacity duration-(--motion-feedback) ease-standard hover:bg-(--sel) hover:text-foreground group-hover/project:opacity-100 group-has-focus-visible/project:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
+/** Indented to the project name, so it reads as the empty project's content. */
 export const SIDEBAR_PROJECT_EMPTY_ACTION_CLS =
-  "flex h-(--h-row) w-full cursor-pointer items-center gap-2 rounded-lg py-0 pr-2 pl-2 text-left text-xs text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "flex h-(--h-row) w-full cursor-pointer items-center gap-2 rounded-lg py-0 pr-2 pl-7.5 text-left text-xs text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 /** The grid rail's header controls: outside the window drag region so they stay clickable. */
 export const SIDEBAR_HEADER_ACTIONS_CLS =
@@ -87,7 +89,7 @@ export const SIDEBAR_SECTION_ACTION_CLS =
   "-my-1.5 inline-grid size-6 shrink-0 cursor-pointer place-items-center rounded-(--r-ctl) text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 const SIDEBAR_SECTION_HEADER_ROW_CLS =
-  "group/section flex h-(--h-row) shrink-0 items-center gap-1 rounded-lg pr-1 pl-2 text-2xs font-medium text-secondary-label";
+  "group/section flex h-(--h-row) shrink-0 items-center gap-1 rounded-lg pr-1 pl-2 text-xs font-semibold uppercase tracking-wide text-secondary-label";
 
 const SIDEBAR_SECTION_HEADER_ACTIONS_CLS =
   "ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-(--motion-feedback) ease-standard group-hover/section:opacity-100 group-focus-within/section:opacity-100";
