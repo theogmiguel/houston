@@ -1,5 +1,6 @@
 import { OpenCode, type OpenCodeClient } from "@opencode/client/effect";
 import { OpenCodeEvent } from "@opencode/protocol/groups/event";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -58,7 +59,7 @@ export interface OpenCode2Api {
       OpenCode2StreamEvent,
       HttpClientError.HttpClientError | Sse.Retry | Sse.SseError | OpenCode2SilentStreamError
     >,
-    HttpClientError.HttpClientError
+    HttpClientError.HttpClientError | Cause.TimeoutError
   >;
 }
 

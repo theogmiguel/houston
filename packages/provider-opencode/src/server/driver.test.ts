@@ -84,7 +84,9 @@ const noHttp = HttpClient.make(() => Effect.die("A local binary must not be prob
 it.live("discovers models through a home-relative OpenCode wrapper", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const home = yield* fs.makeTempDirectoryScoped({ prefix: "houston-opencode-home with spaces-" });
+    const home = yield* fs.makeTempDirectoryScoped({
+      prefix: "houston-opencode-home with spaces-",
+    });
     const binaryPath = NodePath.join(home, "opencode");
     const scriptPath = NodePath.join(home, "opencode.cjs");
     yield* fs.writeFileString(
@@ -668,9 +670,7 @@ it.layer(layerUpdate)("OpenCodeDriver updates", (it) => {
         // The status refresh also reads Go usage limits, which reaches the console when the
         // machine has a stored key; answer it without a network call.
         const usageUnavailable = HttpClient.make((request) =>
-          Effect.succeed(
-            HttpClientResponse.fromWeb(request, new Response(null, { status: 403 })),
-          ),
+          Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status: 403 }))),
         );
         const instance = yield* create({}, usageUnavailable);
         // Let the startup status check claim the refresh permit, then wait behind it so it
