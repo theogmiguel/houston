@@ -159,6 +159,19 @@ describe("ThreadCard drag source", () => {
 });
 
 describe("ThreadCard", () => {
+  it("hides the provider mark while the card actions are showing, so they never touch", async () => {
+    await using screen = await render(card(thread()));
+
+    const cardElement = screen.container.querySelector("[data-thread-key]") as HTMLElement;
+    const mark = screen.container.querySelector("[data-thread-provider-mark]") as HTMLElement;
+    expect(mark).not.toBeNull();
+    expect(getComputedStyle(mark).opacity).toBe("1");
+
+    await userEvent.hover(cardElement);
+
+    await vi.waitFor(() => expect(getComputedStyle(mark).opacity).toBe("0"));
+  });
+
   it("closes the preview tooltip while the card actions are hovered", async () => {
     await using screen = await render(card(thread()));
 

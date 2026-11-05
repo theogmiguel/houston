@@ -2139,7 +2139,15 @@ export function ThreadCard({
               )}
             </span>
           ) : null}
-          <span className="inline-grid size-3.5 shrink-0 place-items-center">
+          <span
+            data-thread-provider-mark=""
+            className={cn(
+              "inline-grid size-3.5 shrink-0 place-items-center",
+              ROW_STATUS_RECEDE,
+              MOTION_FEEDBACK_OPACITY,
+              actionsVisible && ROW_STATUS_HIDDEN,
+            )}
+          >
             {providerEntry !== undefined ? (
               <SidebarProviderStack thread={thread} providerEntryByInstanceId={providerEntries} />
             ) : null}
