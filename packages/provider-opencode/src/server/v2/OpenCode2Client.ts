@@ -74,6 +74,7 @@ export class OpenCode2Client extends Context.Service<
 
 // Heartbeats arrive every 10-15 seconds; longer silence means stuck, not idle.
 const SILENT_STREAM_TIMEOUT = "45 seconds";
+const SUBSCRIPTION_TIMEOUT = "10 seconds";
 
 const decodeEvent = Schema.decodeUnknownResult(Schema.fromJsonString(OpenCodeEvent));
 const decodeEnvelope = Schema.decodeUnknownOption(
@@ -156,6 +157,7 @@ export const make = Effect.gen(function* () {
         Effect.map((client) => ({
           client,
           events: readEvents.pipe(
+            Effect.timeout(SUBSCRIPTION_TIMEOUT),
             Effect.provideService(
               HttpClient.HttpClient,
               HttpClient.mapRequest(authenticated, HttpClientRequest.prependUrl(baseUrl)),
