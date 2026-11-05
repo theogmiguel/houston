@@ -379,7 +379,6 @@ it.effect("idle compaction filters keep the latest run, live work and the newest
   }).pipe(Effect.provide(layerTest)),
 );
 
-
 it.effect("record reads restrict provider histories to delivery identities", () =>
   Effect.gen(function* () {
     const store = yield* ProjectionStore.ProjectionStoreV2;
