@@ -27,6 +27,7 @@ import {
   type OrchestrationV2ThreadStreamItem,
   type OrchestrationV2TurnItem,
   type TerminalMetadataStreamEvent,
+  type ThreadPullRequestLink,
 } from "@houston-app/contracts";
 import type {
   ConnectionAttemptError,
@@ -185,6 +186,8 @@ function run(threadId: ThreadId, id: RunId, ordinal: number, userMessageId: stri
 export interface FakeThread {
   /** Makes this a side chat of that thread. */
   readonly sideChatOf?: ThreadId;
+  /** Pull requests the thread shell reports as linked. */
+  readonly pullRequests?: ReadonlyArray<ThreadPullRequestLink>;
   /** Makes this a provider subagent started by that thread. */
   readonly subagentOf?: ThreadId;
   readonly id: ThreadId;
@@ -228,6 +231,7 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
     interactionMode: "default",
     branch: "main",
     worktreePath: null,
+    ...(thread.pullRequests ? { pullRequests: thread.pullRequests } : {}),
     activeProviderThreadId: null,
     lineage: {
       rootThreadId: thread.sideChatOf ?? thread.subagentOf ?? thread.id,
