@@ -1,6 +1,7 @@
 // A task's planner or reviewer keeps a Houston MCP credential only to submit: the credential reaches
 // the two submit tools and nothing else, and its read-only run loads no user MCP server.
 import { NodeHttpServer } from "@effect/platform-node";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -106,13 +107,14 @@ const layerMixedTools = (calls: Array<string>) => {
       ),
     }),
   ).pipe(
-    Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
     Layer.provide(
       Layer.mergeAll(
         McpToolAccessTestkit.liveThreadsLayer,
         Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({}),
         Layer.mock(ProjectService.ProjectService)({}),
         NodeServices.layer,
+        NodeCrypto.layer,
       ),
     ),
   );
@@ -198,16 +200,16 @@ describe("the submit-only guard is on the MCP call path", () => {
                   }),
               });
             });
-          const serverLayer = Layer.effectDiscard(
-            Effect.all([
-              addDirect("houston_thread_send", false),
-              addDirect("html_preview", true),
-              addDirect("houston_task_plan_submit", false),
-            ]),
-          ).pipe(
-            Layer.provideMerge(
-              McpHttpServer.layerMcpTransport.pipe(Layer.provide(ServerSettings.layerTest())),
+          const serverLayer = McpHttpServer.layerMcpTransport(
+            Layer.effectDiscard(
+              Effect.all([
+                addDirect("houston_thread_send", false),
+                addDirect("html_preview", true),
+                addDirect("houston_task_plan_submit", false),
+              ]),
             ),
+          ).pipe(
+            Layer.provide(ServerSettings.layerTest()),
             Layer.provide(
               Layer.mock(McpSessionRegistry.McpSessionRegistry)({
                 resolve: (token) =>
@@ -304,7 +306,7 @@ describe("a planner is issued a submit-only credential", () => {
             getDescriptor: Effect.die("unused"),
           }),
         ),
-        Effect.provide(NodeServices.layer),
+        Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
   );
 });

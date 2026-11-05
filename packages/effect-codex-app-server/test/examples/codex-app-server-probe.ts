@@ -1,8 +1,10 @@
+import * as Layer from "effect/Layer";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
 import * as CodexClient from "../../src/client.ts";
@@ -64,4 +66,8 @@ const program = Effect.gen(function* () {
   }).pipe(Effect.provide(layerCodex));
 });
 
-program.pipe(Effect.scoped, Effect.provide(NodeServices.layer), NodeRuntime.runMain);
+program.pipe(
+  Effect.scoped,
+  Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  NodeRuntime.runMain,
+);

@@ -4,6 +4,7 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as OpenCodeServerLedger from "./OpenCodeServerLedger.ts";
 import { assert, describe, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { OpencodeClient, ToolPart } from "@opencode-ai/sdk/v2";
 import {
@@ -2645,7 +2646,9 @@ describe("OpenCodeAdapterV2", () => {
         Layer.mergeAll(
           IdAllocator.layer,
           McpProviderSessions.layer,
-          TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer)),
+          TestProviderHost.layer().pipe(
+            Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+          ),
         ),
       ),
     ),
@@ -2919,7 +2922,7 @@ it.live.each([true, false])("opens an authenticated OpenCode session (external=%
         ),
       ),
       Layer.provide(OpenCodeServerLedger.layerTest),
-      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
     const instanceId = ProviderInstanceId.make("opencode-auth");
     const adapter = yield* makeOpenCodeAdapterV2({
@@ -2950,7 +2953,9 @@ it.live.each([true, false])("opens an authenticated OpenCode session (external=%
     Effect.scoped,
     Effect.provide([
       NodeServices.layer,
-      TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer)),
+      TestProviderHost.layer().pipe(
+        Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
       IdAllocator.layer,
       McpProviderSessions.layer,
     ]),

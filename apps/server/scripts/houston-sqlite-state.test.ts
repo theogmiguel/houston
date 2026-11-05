@@ -1,5 +1,7 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -25,7 +27,7 @@ const createFixtureDatabase = Effect.fn("createSqliteStateFixtureDatabase")(func
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: databasePath })));
 });
 
-it.layer(NodeServices.layer)("houston-sqlite-state", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("houston-sqlite-state", (it) => {
   it.effect("enables checkpoint_fullfsync on its direct connection", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

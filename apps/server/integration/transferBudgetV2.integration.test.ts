@@ -4,6 +4,7 @@ import * as NodeUtil from "node:util";
 import { assert, it } from "@effect/vitest";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ORCHESTRATION_PROTOCOL_HEADER,
@@ -445,7 +446,11 @@ it.live("reports V2 thread HTTP and WebSocket transfer budgets", () =>
             fleetShell,
           } satisfies TransferBudgetRun;
         }).pipe(
-          Effect.provide(Layer.fresh(layerServices).pipe(Layer.provideMerge(NodeServices.layer))),
+          Effect.provide(
+            Layer.fresh(layerServices).pipe(
+              Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+            ),
+          ),
           Effect.withTracer(counter.tracer),
         ),
       );
@@ -460,5 +465,5 @@ it.live("reports V2 thread HTTP and WebSocket transfer budgets", () =>
       if (path && contents) yield* fs.writeFileString(path, contents);
     yield* Effect.log(report);
     assert.deepEqual(transferBudgetViolations(runs), []);
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

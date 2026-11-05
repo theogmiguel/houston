@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   CheckpointId,
@@ -57,9 +58,12 @@ import { turnItemOutputText } from "../../../client-runtime/src/work-log/itemDet
 
 const layerTest = Layer.mergeAll(
   NodeServices.layer,
+  NodeCrypto.layer,
   IdAllocator.layer,
   McpProviderSessions.layer,
-  TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer)),
+  TestProviderHost.layer().pipe(
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  ),
 );
 
 const decodeUserInputQuestions = Schema.decodeUnknownSync(
@@ -180,7 +184,7 @@ interface FakePi {
   readonly closeStdout: Effect.Effect<void>;
   readonly lastSpawn: () => {
     readonly args: ReadonlyArray<string>;
-    readonly env: NodeJS.ProcessEnv;
+    readonly env: NonNullable<ChildProcess.CommandOptions["env"]>;
   };
 }
 
@@ -328,7 +332,7 @@ const makeFakePi: Effect.Effect<FakePi> = Effect.gen(function* () {
       }
     });
 
-  let lastSpawn: { readonly args: ReadonlyArray<string>; readonly env: NodeJS.ProcessEnv } = {
+  let lastSpawn: ReturnType<FakePi["lastSpawn"]> = {
     args: [],
     env: {},
   };
@@ -336,7 +340,7 @@ const makeFakePi: Effect.Effect<FakePi> = Effect.gen(function* () {
     Effect.sync(() => {
       if (ChildProcess.isStandardCommand(command)) {
         lastSpawn = {
-          args: command.args,
+          args: command.args.map(String),
           env: command.options.env ?? {},
         };
       }
@@ -4729,7 +4733,7 @@ describe("PiRpc early process exit", () => {
       assert.isFalse((error.detail ?? "").includes("super-secret"));
       assert.isFalse(error.message.includes("API_KEY"));
       assert.isFalse(error.message.includes("super-secret"));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });
 
@@ -4761,6 +4765,6 @@ process.stdout.write('{"type":"ready"}\\n');
 
         const cues = (yield* fileSystem.readFileString(cuesPath)).split("\n").filter(Boolean);
         assert.deepEqual(cues, ["SIGTERM"]);
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

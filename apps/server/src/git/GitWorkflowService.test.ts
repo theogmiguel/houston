@@ -2,6 +2,7 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type {
   GitRunStackedActionResult,
@@ -123,11 +124,11 @@ const makeWorkflowLayer = (options: WorkflowMockOptions) => {
           ),
       }),
     ),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 };
 
-it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowService", (it) => {
   it.effect("finds a name among the refs of every namespace", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -165,10 +166,10 @@ it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
           Layer.provideMerge(VcsProcess.layer),
           Layer.provideMerge(
             ServerConfig.layerTest(process.cwd(), { prefix: "houston-ref-named-" }).pipe(
-              Layer.provide(NodeServices.layer),
+              Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
             ),
           ),
-          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
     ),
@@ -210,10 +211,10 @@ it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
           Layer.provideMerge(VcsProcess.layer),
           Layer.provideMerge(
             ServerConfig.layerTest(process.cwd(), { prefix: "houston-outside-workspace-" }).pipe(
-              Layer.provide(NodeServices.layer),
+              Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
             ),
           ),
-          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
     ),

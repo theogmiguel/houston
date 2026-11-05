@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -48,19 +49,19 @@ const makeLayer = (spawns: Array<ReadonlyArray<string>>) => {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       return ChildProcessSpawner.make((command) => {
         if (command._tag === "StandardCommand" && isGitCommand(command.command)) {
-          spawns.push(command.args);
+          spawns.push(command.args.map(String));
         }
         return spawner.spawn(command);
       });
     }),
-  ).pipe(Layer.provide(NodeServices.layer));
+  ).pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
   return CheckpointService.layer.pipe(
     Layer.provide(CheckpointStore.layer),
     Layer.provide(VcsDriverRegistry.layer),
     Layer.provideMerge(IdAllocator.layer),
     Layer.provideMerge(VcsProcess.layer),
     Layer.provide(layerCountingSpawner),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 };
 
@@ -301,5 +302,5 @@ it.effect("captures a first-turn baseline and finalizes the turn within their gi
         `finalization started ${finalizeSpawns} git processes`,
       );
     }).pipe(Effect.provide(layerCapture));
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

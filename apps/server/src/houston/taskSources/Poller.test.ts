@@ -4,12 +4,14 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
 import { assert, describe, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Redacted from "effect/Redacted";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
 import { createProject } from "../tasks/tasks.testkit.ts";
@@ -96,7 +98,7 @@ describe("enabled sources poll every 20 seconds and on sync now", () => {
         assert.strictEqual(github.requests.length, requestsBefore);
         assert.isFalse(github.requests.some((request) => request.url.includes("octo-org/idle")));
       }).pipe(Effect.provide(layerSources({ ...options, github })));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });
 

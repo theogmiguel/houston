@@ -24,6 +24,7 @@ import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/http/HttpRouter";
 import * as HttpPlatform from "effect/http/HttpPlatform";
 import * as Etag from "effect/http/Etag";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
@@ -153,7 +154,7 @@ const serveOrchestrationHttp = (allowed: () => boolean) =>
       Layer.provide(Layer.mock(ProjectEnrichmentService)({})),
       Layer.provide(HttpPlatform.layer),
       Layer.provide(Etag.layerWeak),
-      Layer.provide(NodeServices.layer),
+      Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
     const { handler, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true });
     yield* Effect.addFinalizer(() => Effect.promise(dispose));

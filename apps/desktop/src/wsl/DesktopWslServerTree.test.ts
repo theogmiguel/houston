@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -34,6 +35,7 @@ const layerEnvironment = (input: {
     Layer.provide(
       Layer.mergeAll(
         NodeServices.layer,
+        NodeCrypto.layer,
         DesktopConfig.layerTest({
           HOUSTON_HOME: input.baseDir,
           HOUSTON_MODE: "desktop",
@@ -141,7 +143,7 @@ describe("DesktopWslServerTree", () => {
         );
         assert.include(marker, '"version":"1.2.3"');
       }),
-    ).pipe(Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("serializes concurrent extraction callers and publishes one complete tree", () =>
@@ -178,7 +180,7 @@ describe("DesktopWslServerTree", () => {
           "server-entry",
         );
       }),
-    ).pipe(Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("reuses a completed extraction instead of copying again", () =>
@@ -211,7 +213,7 @@ describe("DesktopWslServerTree", () => {
         const entry = yield* fileSystem.readFileString(path.join(root, "apps/server/dist/bin.mjs"));
         assert.equal(entry, "v1");
       }),
-    ).pipe(Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("sweeps stale version directories and leftover partials after extraction", () =>
@@ -238,7 +240,7 @@ describe("DesktopWslServerTree", () => {
         assert.isFalse(yield* fileSystem.exists(path.join(treeRoot, "1.2.3.partial")));
         assert.isTrue(yield* fileSystem.exists(path.join(treeRoot, "1.2.3")));
       }),
-    ).pipe(Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("re-extracts when the app version changes", () =>
@@ -273,7 +275,7 @@ describe("DesktopWslServerTree", () => {
         const treeRoot = path.dirname(root);
         assert.isFalse(yield* fileSystem.exists(path.join(treeRoot, "1.2.3")));
       }),
-    ).pipe(Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("re-extracts after legacy cleanup partially deletes the completed tree", () =>
@@ -315,7 +317,7 @@ describe("DesktopWslServerTree", () => {
                   : realFileSystem.remove(target, options),
             } satisfies FileSystem.FileSystem;
           }),
-        ).pipe(Layer.provide(NodeServices.layer));
+        ).pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
         const result = yield* Effect.gen(function* () {
           const tree = yield* DesktopWslServerTree.DesktopWslServerTree;
@@ -334,7 +336,7 @@ describe("DesktopWslServerTree", () => {
         assert.isTrue(result.ok);
         assert.equal(yield* fileSystem.readFileString(extractedEntryPath), "fresh-server-entry");
       }),
-    ).pipe(Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("reports a retryable failure when the archive cannot be read", () =>
@@ -357,6 +359,6 @@ describe("DesktopWslServerTree", () => {
           .pipe(Effect.orElseSucceed(() => []));
         assert.deepStrictEqual(leftovers, []);
       }),
-    ).pipe(Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

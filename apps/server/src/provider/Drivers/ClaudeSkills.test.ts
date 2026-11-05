@@ -1,5 +1,7 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -19,7 +21,7 @@ const writeSkill = Effect.fn(function* (
   yield* fs.writeFileString(path.join(skillDir, "SKILL.md"), contents);
 });
 
-it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("discoverClaudeSkills", (it) => {
   it.effect("discovers enabled plugin skills with manifest names and ignores skill overrides", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

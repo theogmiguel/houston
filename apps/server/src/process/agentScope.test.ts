@@ -3,6 +3,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, expect, it } from "@effect/vitest";
 import { AgentScope } from "@houston-app/shared/AgentScope";
@@ -229,13 +230,16 @@ const withFakeSystemd = <A, E>(
     Effect.scoped,
     Effect.provide(
       ServerConfig.layerTest(process.cwd(), { prefix: "houston-agent-scope-" }).pipe(
-        Layer.provideMerge(NodeServices.layer),
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
     ),
   );
 
-const unitOf = (launch: { readonly args: ReadonlyArray<string> }) =>
-  launch.args.find((arg) => arg.startsWith("--unit="))?.slice("--unit=".length) ?? "";
+const unitOf = (launch: Pick<ChildProcess.StandardCommand, "args">) =>
+  launch.args
+    .map(String)
+    .find((arg) => arg.startsWith("--unit="))
+    ?.slice("--unit=".length) ?? "";
 
 const sliceOf = (launch: { readonly args: ReadonlyArray<string> }) =>
   launch.args.find((arg) => arg.startsWith("--slice="))?.slice("--slice=".length) ?? "";

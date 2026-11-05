@@ -2,11 +2,13 @@
 import * as NodeFSP from "node:fs/promises";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- The Muse SDK spawns with Node's child_process, so the launch test quotes arguments the same way.
 import * as NodeChildProcess from "node:child_process";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { spawnMspConnection, type MspHandshake, type SpawnedMspConnection } from "@muse-code/sdk";
 import { it } from "@effect/vitest";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import { SpawnExecutableResolution } from "@houston-app/shared/shell";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -310,7 +312,7 @@ describe("Muse launch", () => {
       });
       expect(run.status, run.stderr).toBe(0);
       expect((yield* fs.readFileString(path.join(folder, "args.txt"))).trim()).toBe("serve --x");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });
 
@@ -360,7 +362,7 @@ describe("Muse workspace root", () => {
       if (!(yield* fs.exists(created.toUpperCase()))) return;
       const root = yield* museWorkspaceRoot(created.toUpperCase());
       expect(path.basename(root)).toBe(path.basename(created));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("fixes the case of a Windows root natively", () =>
@@ -372,6 +374,6 @@ describe("Muse workspace root", () => {
       const root = yield* museWorkspaceRoot(created.toLowerCase());
       expect(root.startsWith("\\\\?\\")).toBe(true);
       expect(root.endsWith(`\\${path.basename(created)}`)).toBe(true);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

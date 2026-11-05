@@ -21,7 +21,7 @@ import {
   type HoustonTaskImportStatus,
 } from "@houston-app/contracts/houston/tasks";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -253,7 +253,7 @@ const make = Effect.gen(function* () {
   const store = yield* HoustonTaskStore;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const projectService = yield* ProjectService.ProjectService;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const platform = yield* HostProcess.Platform;
   const hosted = yield* HostedLaunch;
 
@@ -345,7 +345,7 @@ const make = Effect.gen(function* () {
           .replace(/[\\/]+$/u, "")
           .split(/[\\/]/u)
           .at(-1) ?? path;
-      const id = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+      const id = yield* random.uuidV4();
       const added = yield* projectService
         .bootstrap({
           commandId: CommandId.make(`houston-v1-import-project:${id}`),

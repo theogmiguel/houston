@@ -4,6 +4,7 @@ import {
   ProviderInstanceId,
   type ServerProvider,
 } from "@houston-app/contracts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
@@ -293,7 +294,7 @@ it.effect("a remote policy refresh preserves a newer health result on the regist
         subscribeChanges: Effect.flatMap(PubSub.unbounded<void>(), PubSub.subscribe),
       }),
       ServerConfig.layerTest(process.cwd(), { prefix: "compatibility-registry-test" }).pipe(
-        Layer.provideMerge(NodeServices.layer),
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
     );
     yield* Effect.gen(function* () {

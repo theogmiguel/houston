@@ -5,6 +5,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { ThreadId } from "@houston-app/contracts";
@@ -109,7 +110,9 @@ it.effect(
       }).pipe(Effect.provide(layerDatabase));
     }).pipe(
       Effect.provide(
-        ServerConfig.layerTest(directory, directory).pipe(Layer.provideMerge(NodeServices.layer)),
+        ServerConfig.layerTest(directory, directory).pipe(
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
       ),
       Effect.ensuring(
         Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true })),
@@ -150,7 +153,7 @@ it.effect("includes committed WAL data and does not publish a failed snapshot", 
       source.close();
     }
   }).pipe(
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true }))),
   );
 });
@@ -178,7 +181,9 @@ it.effect("starts fresh without V1 and never imports over existing V2 state", ()
     }).pipe(Effect.provide(layerDatabase));
   }).pipe(
     Effect.provide(
-      ServerConfig.layerTest(directory, directory).pipe(Layer.provideMerge(NodeServices.layer)),
+      ServerConfig.layerTest(directory, directory).pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
     ),
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true }))),
   );
@@ -204,7 +209,7 @@ it.effect("removes copies left by a killed start, but not one that is still runn
     );
     assert.equal(NodeFS.readFileSync(destinationPath, "utf8"), "existing V2 database");
   }).pipe(
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true }))),
   );
 });

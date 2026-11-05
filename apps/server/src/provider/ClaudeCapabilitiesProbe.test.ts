@@ -1,8 +1,10 @@
 // @effect-diagnostics nodeBuiltinImport:off - cleanup uses Node's retrying rm, which the FileSystem service does not expose.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ClaudeSettings, type ServerProvider } from "@houston-app/contracts";
 import { vi } from "vite-plus/test";
 import { assert, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -39,5 +41,5 @@ it.effect("reports a deleted worktree's scan as finished, not pending", () =>
       { HOME: "/nonexistent/houston-home" },
     );
     assert.strictEqual(snapshot.slashCommandsPending, false);
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

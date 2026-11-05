@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, expect, it } from "@effect/vitest";
 import * as NetService from "@houston-app/shared/Net";
@@ -39,7 +40,7 @@ const withEnv = (env: Record<string, string>) =>
 const exitCodeOf = (error: unknown) =>
   (error as { readonly [Runtime.errorExitCode]?: number })[Runtime.errorExitCode];
 
-it.layer(NodeServices.layer)("houston base dir", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("houston base dir", (it) => {
   it.effect("every derived path lies under the base dir", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

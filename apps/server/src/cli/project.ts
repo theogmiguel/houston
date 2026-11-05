@@ -8,7 +8,7 @@ import {
   ProjectId,
 } from "@houston-app/contracts";
 import * as Console from "effect/Console";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -191,8 +191,8 @@ function projectCommandErrorFromLiveServerRequest(cause: unknown): ProjectComman
   return new ProjectLiveServerRequestError({ operation: "callLiveServer", cause });
 }
 
-const projectCommandUuid = Crypto.Crypto.pipe(
-  Effect.flatMap((crypto) => crypto.randomUUIDv4()),
+const projectCommandUuid = SecureRandom.SecureRandom.pipe(
+  Effect.flatMap((random) => random.uuidV4()),
   Effect.mapError(
     (cause) =>
       new ProjectCommandIdGenerationError({
@@ -399,7 +399,7 @@ const runProjectMutation = Effect.fn("runProjectMutation")(function* (
   }) => Effect.Effect<
     string,
     Error,
-    | Crypto.Crypto
+    | SecureRandom.SecureRandom
     | FileSystem.FileSystem
     | HttpClient.HttpClient
     | Path.Path

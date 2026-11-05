@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -95,6 +96,7 @@ it.effect.each([
       Layer.provide(
         Layer.mergeAll(
           NodeServices.layer,
+          NodeCrypto.layer,
           Layer.mock(ServerConfig.ServerConfig)({ worktreesDir: "/synthetic-worktrees" } as never),
           ServerSettings.layerTest(),
           ThreadCommandExecutor.layer,
@@ -179,7 +181,7 @@ it.effect.each([
       assert.deepEqual(calls, restoreFiles ? ["provider", "files"] : ["provider"]);
       assert.equal(yield* fs.exists(otherFile), !restoreFiles);
     }
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("lets rollback recreate a worktree storage cleanup removed", () =>
@@ -203,7 +205,7 @@ it.effect("lets rollback recreate a worktree storage cleanup removed", () =>
       },
     );
     assert.isTrue(isolated);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect.each([
@@ -252,5 +254,5 @@ it.effect.each([
         },
       );
       assert.equal(result, isolated);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

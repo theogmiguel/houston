@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
@@ -28,7 +29,7 @@ const storageLayer = <E>(
     Layer.provide(ProjectionMaintenance.layer),
     Layer.provideMerge(Sqlite.layerMemory),
     Layer.provideMerge(config),
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
 const testConfig = ServerConfig.layerTest(process.cwd(), { prefix: "database-storage-" });
@@ -107,5 +108,9 @@ it.effect("remembers completion only after the paced pass finishes", () =>
             .pipe(Effect.ensuring(Deferred.succeed(timestampWritten, undefined))),
       }),
     );
-  }).pipe(Effect.provide(testConfig.pipe(Layer.provideMerge(NodeServices.layer)))),
+  }).pipe(
+    Effect.provide(
+      testConfig.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+    ),
+  ),
 );

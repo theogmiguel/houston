@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -142,7 +143,7 @@ describe("provider installation routing", () => {
       const observed = yield* Stream.runCollect(harness.router.subscribe({ instanceId }));
       assert.deepEqual(Array.from(observed), [state]);
       assert.deepEqual(harness.calls, []);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("protects another instance's binary found through its own PATH", () =>
@@ -172,6 +173,6 @@ describe("provider installation routing", () => {
       yield* harness.router.remove({ instanceId });
       assert.include(harness.protectedPaths(), executable);
       assert.deepEqual(harness.calls, ["remove", "refresh"]);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

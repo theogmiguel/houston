@@ -2819,7 +2819,10 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           });
         }
       }
-    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(IdAllocator.layer, NodeServices.layer))),
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(Layer.mergeAll(IdAllocator.layer, NodeServices.layer, NodeCrypto.layer)),
+    ),
   );
 
   it.effect.each([

@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeOS from "node:os";
 import { fromJsonStringPretty } from "@houston-app/shared/schemaJson";
+import * as Layer from "effect/Layer";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -282,7 +284,7 @@ const houstonSqliteStateCommand = Command.make(
 
 if (import.meta.main) {
   Command.run(houstonSqliteStateCommand, { version: "0.0.0" }).pipe(
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     NodeRuntime.runMain,
   );
 }

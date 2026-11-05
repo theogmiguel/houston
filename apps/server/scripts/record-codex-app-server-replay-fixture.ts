@@ -4,6 +4,7 @@ import { CODEX_THREAD_CONFIG } from "../src/orchestration-v2/Adapters/CodexAdapt
 import { revertCodexThread } from "../src/provider/CodexThreadRevert.ts";
 import { buildCodexInitializeParams } from "../src/provider/CodexProvider.ts";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import { resolveSpawnCommand } from "@houston-app/shared/shell";
@@ -1521,4 +1522,8 @@ const program = Effect.gen(function* () {
   );
 });
 
-program.pipe(Effect.scoped, Effect.provide(NodeServices.layer), NodeRuntime.runMain);
+program.pipe(
+  Effect.scoped,
+  Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  NodeRuntime.runMain,
+);

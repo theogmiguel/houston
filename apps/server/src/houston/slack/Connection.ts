@@ -1,7 +1,7 @@
 // The Socket Mode connection: while enabled with both tokens, one WebSocket from
 // apps.connections.open (wss only), an ack before each envelope is handled, pings, silence and
 // blocked-write detection, backoff, and a catch-up of each mapped channel after every hello.
-import { NodeWS } from "@effect/platform-node/NodeSocket";
+import * as NodeWS from "@effect/platform-node/NodeWS";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";

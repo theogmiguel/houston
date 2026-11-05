@@ -1,5 +1,6 @@
 import { beforeEach, expect, vi } from "vite-plus/test";
 import { it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
@@ -101,7 +102,7 @@ vi.mock("./model.ts", () => ({
 const layer = SpeechService.layer.pipe(
   Layer.provide(ServerConfig.layerTest("/tmp", { prefix: "speech-review-" })),
   Layer.provide(ServerSettings.layerTest({ speechModelId: "test-model" })),
-  Layer.provide(NodeServices.layer),
+  Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 const pcm = () => new Uint8Array(new Float32Array([0.25]).buffer);
 beforeEach(() => {
@@ -122,7 +123,7 @@ const customWordsLayer = SpeechService.layer.pipe(
       speechCustomWords: [{ term: "T3 Code", aliases: [] }],
     }),
   ),
-  Layer.provide(NodeServices.layer),
+  Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 const correctionWordLayer = SpeechService.layer.pipe(
@@ -135,7 +136,7 @@ const correctionWordLayer = SpeechService.layer.pipe(
       speechPostProcessingEnabled: true,
     }),
   ),
-  Layer.provide(NodeServices.layer),
+  Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 it.effect("prepares a batch model before audio arrives and reuses it for transcription", () =>
@@ -364,7 +365,7 @@ it.effect("applies aliases even when the model accepts a vocabulary prompt", () 
             speechCustomWords: [{ term: "T3 Code", aliases: ["t three code"] }],
           }),
         ),
-        Layer.provide(NodeServices.layer),
+        Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
     ),
   ),
@@ -399,7 +400,7 @@ it.effect("preserves filler words when removal is disabled", () => {
         speechRemoveFillerWords: false,
       }),
     ),
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
   return Effect.gen(function* () {
     native.transcribe.mockResolvedValueOnce({ text: "Um, I uhh think this works." });
@@ -515,7 +516,7 @@ it.effect("releases a stream cancelled while settings are loading", () =>
     const testLayer = SpeechService.layer.pipe(
       Layer.provide(ServerConfig.layerTest("/tmp", { prefix: "speech-cancel-settings-" })),
       Layer.provide(delayedSettings),
-      Layer.provide(NodeServices.layer),
+      Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
     yield* Effect.gen(function* () {
       const speech = yield* SpeechService.SpeechService;
@@ -558,7 +559,7 @@ it.effect("recovers the busy slot when a settings read fails", () =>
     const testLayer = SpeechService.layer.pipe(
       Layer.provide(ServerConfig.layerTest("/tmp", { prefix: "speech-failing-settings-" })),
       Layer.provide(failingSettings),
-      Layer.provide(NodeServices.layer),
+      Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
     yield* Effect.gen(function* () {
       const speech = yield* SpeechService.SpeechService;

@@ -1,5 +1,6 @@
 import { SourceControlProviderKind } from "@houston-app/contracts";
 import { assert, it, vi } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as DateTime from "effect/DateTime";
@@ -145,7 +146,7 @@ function makeLayer(input: {
       ),
     ),
     Layer.provideMerge(TestSourceControlHost.layer({ git: { ...git, remotes: resolve } })),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
   return { execute, git: gitMock, resolve, listRemotes, layer };

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { DesktopUpdateState } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
@@ -188,6 +189,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     Layer.provide(
       Layer.mergeAll(
         NodeServices.layer,
+        NodeCrypto.layer,
         DesktopConfig.layerTest({
           HOUSTON_HOME: `/tmp/houston-desktop-updates-test-${process.pid}`,
           HOUSTON_DESKTOP_MOCK_UPDATES: "true",
@@ -291,7 +293,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       }),
     ),
     Layer.provideMerge(layerEnvironment),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
   return {

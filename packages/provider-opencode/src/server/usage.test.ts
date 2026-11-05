@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { DEFAULT_SERVER_SETTINGS, ProviderInstanceId } from "@houston-app/contracts";
@@ -82,7 +83,7 @@ describe("readOpenCodeUsage", () => {
       );
       assert.isAbove(largestRawResult, 0);
       assert.isBelow(largestRawResult, 6 * 1024 * 1024);
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("counts migrated OpenCode messages once and sees subsequent WAL writes", () =>
@@ -133,7 +134,7 @@ describe("readOpenCodeUsage", () => {
         ["opencode:msg-2"],
       );
       assert.isAbove(Number((yield* fileSystem.stat(path.join(dir, "opencode.db-wal"))).size), 0);
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("reads only legacy OpenCode messages written since the window opened", () =>
@@ -177,7 +178,7 @@ describe("readOpenCodeUsage", () => {
         result.files.flatMap((file) => file.records).map((record) => record.dedupeKey),
         ["opencode:msg-new"],
       );
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("never follows symlinks in the legacy OpenCode store", () =>
@@ -230,7 +231,7 @@ describe("readOpenCodeUsage", () => {
         result.files.flatMap((file) => file.records).map((record) => record.dedupeKey),
         ["opencode:msg-real"],
       );
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });
 import * as NodeSqlite from "node:sqlite";
@@ -286,6 +287,6 @@ describe("openCodeUsageReader", () => {
         sources.map((source) => source.dir).sort(),
         [defaultRoot, instanceRoot, xdgRoot].sort(),
       );
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

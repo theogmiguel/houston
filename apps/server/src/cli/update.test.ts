@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import type { ManagedUpdatesPolicy } from "@houston-app/contracts";
@@ -60,67 +61,70 @@ it.effect("authenticates each release page until the requested channel is found"
   }),
 );
 
-it.layer(NodeServices.layer)("houston update under a managed policy", (it) => {
-  const runWithPolicy = (
-    updates: ManagedUpdatesPolicy,
-    input: { readonly channel?: "stable" | "nightly"; readonly requestedVersion?: string } = {},
-  ) =>
-    runUpdate({
-      baseDir: "/unused",
-      logsDir: "/unused",
-      serverRuntimeStatePath: "/unused",
-      channel: input.channel,
-      requestedVersion: input.requestedVersion,
-      allowDowngrade: false,
-      assumeYes: true,
-    }).pipe(
-      Effect.flip,
-      Effect.provide(
-        Layer.mergeAll(
-          ManagedPolicy.layerTest({
-            schemaVersion: 1,
-            organization: "Example Corp",
-            limits: { updates },
-          }),
-          // Refusals happen before the update touches the network, the service, or a process.
-          Layer.mock(BootService.BootService, {}),
-          Layer.mock(ProcessRunner.ProcessRunner, {}),
-          Layer.succeed(
-            HttpClient.HttpClient,
-            HttpClient.make(() => Effect.die("unexpected release lookup")),
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
+  "houston update under a managed policy",
+  (it) => {
+    const runWithPolicy = (
+      updates: ManagedUpdatesPolicy,
+      input: { readonly channel?: "stable" | "nightly"; readonly requestedVersion?: string } = {},
+    ) =>
+      runUpdate({
+        baseDir: "/unused",
+        logsDir: "/unused",
+        serverRuntimeStatePath: "/unused",
+        channel: input.channel,
+        requestedVersion: input.requestedVersion,
+        allowDowngrade: false,
+        assumeYes: true,
+      }).pipe(
+        Effect.flip,
+        Effect.provide(
+          Layer.mergeAll(
+            ManagedPolicy.layerTest({
+              schemaVersion: 1,
+              organization: "Example Corp",
+              limits: { updates },
+            }),
+            // Refusals happen before the update touches the network, the service, or a process.
+            Layer.mock(BootService.BootService, {}),
+            Layer.mock(ProcessRunner.ProcessRunner, {}),
+            Layer.succeed(
+              HttpClient.HttpClient,
+              HttpClient.make(() => Effect.die("unexpected release lookup")),
+            ),
           ),
         ),
-      ),
+      );
+
+    it.effect("refuses to update when updates are off", () =>
+      Effect.gen(function* () {
+        const error = yield* runWithPolicy({ mode: "off" });
+        assert.equal(error.message, "Example Corp manages Houston updates.");
+      }),
     );
 
-  it.effect("refuses to update when updates are off", () =>
-    Effect.gen(function* () {
-      const error = yield* runWithPolicy({ mode: "off" });
-      assert.equal(error.message, "Example Corp manages Houston updates.");
-    }),
-  );
-
-  it.effect("refuses nightly releases when the policy disallows them", () =>
-    Effect.gen(function* () {
-      const byChannel = yield* runWithPolicy(
-        { mode: "auto", allowNightly: false },
-        { channel: "nightly" },
-      );
-      const byVersion = yield* runWithPolicy(
-        { mode: "auto", allowNightly: false },
-        { channel: "stable", requestedVersion: "1.2.0-nightly.20261028.1" },
-      );
-      for (const error of [byChannel, byVersion]) {
-        assert.equal(
-          error.message,
-          "Example Corp manages Houston updates. Only stable releases can be installed.",
+    it.effect("refuses nightly releases when the policy disallows them", () =>
+      Effect.gen(function* () {
+        const byChannel = yield* runWithPolicy(
+          { mode: "auto", allowNightly: false },
+          { channel: "nightly" },
         );
-      }
-    }),
-  );
-});
+        const byVersion = yield* runWithPolicy(
+          { mode: "auto", allowNightly: false },
+          { channel: "stable", requestedVersion: "1.2.0-nightly.20261028.1" },
+        );
+        for (const error of [byChannel, byVersion]) {
+          assert.equal(
+            error.message,
+            "Example Corp manages Houston updates. Only stable releases can be installed.",
+          );
+        }
+      }),
+    );
+  },
+);
 
-it.layer(NodeServices.layer)("houston update launcher", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("houston update launcher", (it) => {
   it.effect("repoints a symlink that lives in a runtime versions tree", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

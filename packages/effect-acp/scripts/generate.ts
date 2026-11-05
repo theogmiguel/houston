@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { make as makeJsonSchemaGenerator } from "@effect/openapi-generator/JsonSchemaGenerator";
 import * as Effect from "effect/Effect";
@@ -517,6 +518,7 @@ const generateCommand = Command.make(
 const layerRuntime = Layer.mergeAll(
   Logger.layer([Logger.consolePretty()]),
   NodeServices.layer,
+  NodeCrypto.layer,
   FetchHttpClient.layer,
 );
 

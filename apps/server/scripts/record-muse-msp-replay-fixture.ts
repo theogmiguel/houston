@@ -2,9 +2,11 @@
 // The SDK's host factory is Promise-based and owns a raw child process, as production's does.
 import * as NodeChildProcess from "node:child_process";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { createUuidV7Mint } from "@muse-code/sdk";
 import type { ProviderReplayEntry, ProviderReplayTranscript } from "@houston-app/contracts";
+import * as Layer from "effect/Layer";
 import * as Console from "effect/Console";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -295,4 +297,6 @@ const record = Effect.gen(function* () {
   yield* Console.log(`Wrote ${transcript.entries.length} Muse MSP replay entries to ${outputPath}`);
 });
 
-await Effect.runPromise(record.pipe(Effect.scoped, Effect.provide(NodeServices.layer)));
+await Effect.runPromise(
+  record.pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);

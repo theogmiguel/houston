@@ -1,5 +1,6 @@
 import { SourceControlProviderKind, VcsProcessSpawnError } from "@houston-app/contracts";
 import { assert, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -83,7 +84,7 @@ const layerDiscovery = (runProcess = run) =>
     Layer.provideMerge(
       ServerConfig.layerTest(process.cwd(), { prefix: "houston-source-control-discovery-" }),
     ),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
 it.effect("reports every hosting integration in registry order with its sign-in", () =>
