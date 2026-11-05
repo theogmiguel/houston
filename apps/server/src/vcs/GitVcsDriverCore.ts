@@ -1893,6 +1893,36 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       Effect.orElseSucceed(() => 0),
     );
 
+  // One process reads the three branch-base keys; like `config --get`, the last value wins.
+  const readBranchBaseConfig = Effect.fn("readBranchBaseConfig")(function* (
+    cwd: string,
+    refName: string,
+  ) {
+    const escaped = refName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const result = yield* executeGit(
+      "GitVcsDriver.readBranchBaseConfig",
+      cwd,
+      [
+        "config",
+        "-z",
+        "--get-regexp",
+        `^branch\\.${escaped}\\.(houston-merge-base-ref|houston-merge-base|gh-merge-base)$`,
+      ],
+      { allowNonZeroExit: true },
+    );
+    const values = new Map<string, string>();
+    if (result.exitCode === 0) {
+      for (const record of result.stdout.split("\0")) {
+        const separator = record.indexOf("\n");
+        if (separator > 0) values.set(record.slice(0, separator), record.slice(separator + 1));
+      }
+    }
+    return (key: string) => values.get(key)?.trim() || null;
+  });
+
+  // Choosing the nearest base already ran merge-base against HEAD; review totals reuse it.
+  const knownMergeBases = new WeakMap<object, string>();
+
   const resolveBaseBranchRef = Effect.fn("resolveBaseBranchRef")(function* (
     cwd: string,
     refName: string,
@@ -1973,7 +2003,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
 
     // 2. The base recorded when the volume or worktree was created.
-    const recordedRef = yield* readConfigValue(cwd, `branch.${refName}.houston-merge-base-ref`);
+    const branchBaseConfig = yield* readBranchBaseConfig(cwd, refName);
+    const recordedRef = branchBaseConfig(`branch.${refName}.houston-merge-base-ref`);
     if (recordedRef?.startsWith("refs/heads/") || recordedRef?.startsWith("refs/remotes/")) {
       const recordedBase = yield* resolveComparisonBaseRef(cwd, recordedRef);
       if (recordedBase !== null) {
@@ -1984,7 +2015,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         );
       }
     }
-    const recordedBranch = yield* readConfigValue(cwd, branchBaseConfigKey(refName));
+    const recordedBranch = branchBaseConfig(branchBaseConfigKey(refName));
     if (recordedBranch) {
       const recordedBase = yield* resolveNamedBase(recordedBranch);
       if (recordedBase !== null) return recordedBase;
@@ -1992,8 +2023,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
     // 3. An open change request's base, handed in by the caller or recorded by the host tool.
     const changeRequestBase =
-      options?.knownChangeRequestBase ??
-      (yield* readConfigValue(cwd, legacyBranchBaseConfigKey(refName)));
+      options?.knownChangeRequestBase ?? branchBaseConfig(legacyBranchBaseConfigKey(refName));
     if (changeRequestBase) {
       const resolvedChangeRequestBase = yield* resolveNamedBase(changeRequestBase);
       if (resolvedChangeRequestBase !== null) return resolvedChangeRequestBase;
@@ -2031,7 +2061,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           candidates.push(parsed.branchName);
         }
 
-        let best: { candidate: string; distance: number; mergedAt: number } | null = null;
+        let best: {
+          candidate: string;
+          distance: number;
+          mergedAt: number;
+          mergeBase: string;
+        } | null = null;
         for (const candidate of candidates) {
           const mergeBase = yield* executeGit(
             "GitVcsDriver.resolveBaseBranchRef.mergeBase",
@@ -2062,14 +2097,16 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               (mergedAt > best.mergedAt ||
                 (mergedAt === best.mergedAt && candidate.localeCompare(best.candidate) < 0)))
           ) {
-            best = { candidate, distance, mergedAt };
+            best = { candidate, distance, mergedAt, mergeBase: mergeBaseSha };
           }
         }
         if (best !== null) {
-          return toResolvedBase(
+          const resolved = toResolvedBase(
             `${primaryRemoteName}/${best.candidate}`,
             `refs/remotes/${primaryRemoteName}/${best.candidate}`,
           );
+          knownMergeBases.set(resolved, best.mergeBase);
+          return resolved;
         }
       }
     }
@@ -3663,6 +3700,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           : null;
     if (base === null) return { baseRef: null, mergeBase: "HEAD" };
     const { baseRef, comparisonRef } = base;
+    const knownMergeBase = knownMergeBases.get(base);
+    if (knownMergeBase !== undefined) return { baseRef, mergeBase: knownMergeBase };
     const args = ["merge-base", "--end-of-options", comparisonRef, "HEAD"];
     const result = yield* executeGit("GitVcsDriver.resolveReviewMergeBase", cwd, args, {
       allowNonZeroExit: true,

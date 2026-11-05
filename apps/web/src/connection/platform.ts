@@ -33,11 +33,13 @@ import {
 } from "@houston-app/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { FetchHttpClient } from "effect/http";
 
@@ -45,6 +47,7 @@ import { APP_VERSION } from "../branding";
 import { readDesktopPrimaryBearerToken } from "../environments/primary/desktopAuth";
 import * as PrimaryEnvironmentHttpLayer from "../environments/primary/httpLayer";
 import {
+  PrimaryEnvironmentNotReadyError,
   readPrimaryEnvironmentTarget,
   type PrimaryEnvironmentTarget,
 } from "../environments/primary/target";
@@ -62,6 +65,7 @@ import * as ConnectionStorage from "./storage";
 import { clientPresentationMetadata } from "./clientMetadata";
 
 let nextObservedRpcRequestId = 0;
+const isPrimaryEnvironmentNotReadyError = Schema.is(PrimaryEnvironmentNotReadyError);
 
 function currentNetworkStatus(): "unknown" | "offline" | "online" {
   if (typeof navigator === "undefined") {
@@ -448,8 +452,27 @@ const loadSecondaryConnectionRegistration = Effect.fn(
   };
 });
 
-// The bridge has no topology event. Cache registrations until bearer credentials near expiry.
+// Fallback for a missed server status event and for secondary backends, which have no event.
+// Registrations stay cached until bearer credentials near expiry.
 const PLATFORM_POLL_INTERVAL = "3 seconds";
+
+/** Ticks on the poll and whenever the desktop host reports its local server ready. */
+export function platformRegistrationTriggers(
+  bridge: Pick<HostBridge, "onServerStatus"> | undefined,
+  pollInterval: Duration.Input = PLATFORM_POLL_INTERVAL,
+): Stream.Stream<void> {
+  const serverReady = Stream.callback<void>((queue) =>
+    Effect.acquireRelease(
+      Effect.sync(() =>
+        bridge?.onServerStatus?.((status) => {
+          if (status.state === "ready") Queue.offerUnsafe(queue, undefined);
+        }),
+      ),
+      (unsubscribe) => Effect.sync(() => unsubscribe?.()),
+    ),
+  );
+  return Stream.merge(Stream.tick(pollInterval), serverReady);
+}
 const SECONDARY_BEARER_REFRESH_SKEW_MS = 5_000;
 
 function secondaryBearerExpiresAtEpochMs(
@@ -609,7 +632,12 @@ const layerPlatformConnectionSource = Layer.effect(
       }
 
       if (primaryTopologyRead._tag === "Failure") {
-        yield* Effect.logWarning("Could not read the primary environment topology.", {
+        // A server still starting is not a fault: its ready event triggers the next build.
+        yield* (
+          isPrimaryEnvironmentNotReadyError(primaryTopologyRead.cause)
+            ? Effect.logDebug
+            : Effect.logWarning
+        )("Could not read the primary environment topology.", {
           cause: primaryTopologyRead.cause,
         });
       } else if (primaryTopologyRead.target !== null) {
@@ -741,7 +769,7 @@ const layerPlatformConnectionSource = Layer.effect(
     }).pipe(Effect.provide(FetchHttpClient.layer));
 
     return PlatformConnectionSource.PlatformConnectionSource.of({
-      registrations: Stream.tick(PLATFORM_POLL_INTERVAL).pipe(
+      registrations: platformRegistrationTriggers(window.hostBridge).pipe(
         Stream.mapEffect(() => buildPlatformRegistrations),
       ),
     });

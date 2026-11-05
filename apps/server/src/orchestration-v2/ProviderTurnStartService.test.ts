@@ -282,6 +282,8 @@ function makeLocalCommandHarness(input: {
   readonly interruptRunBeforeOpenFailure?: boolean;
   readonly writeFailure?: unknown;
   readonly failReadsAfterRunning?: boolean;
+  readonly duringRecoveryRead?: Effect.Effect<void>;
+  readonly duringPolicyResolve?: Effect.Effect<void>;
   readonly previousTurn?: {
     readonly runStatus: "failed" | "completed";
     readonly turnStatus: "running" | "completed" | "interrupted";
@@ -843,7 +845,7 @@ function makeLocalCommandHarness(input: {
   );
   const resolveRuntimePolicy = vi.fn(
     ({ thread }: Parameters<RuntimePolicy.RuntimePolicyV2Shape["resolve"]>[0]) =>
-      Effect.succeed({
+      Effect.as(input.duringPolicyResolve ?? Effect.void, {
         cwd: thread.worktreePath ?? "/tmp/native-account-command",
         runtimeMode: thread.runtimeMode,
       } as never),
@@ -914,7 +916,7 @@ function makeLocalCommandHarness(input: {
           getThreadRecords,
           getTurnStartContext,
           getRuntimeRecoveryProjection: () =>
-            Effect.as(failReadIfRunning, {
+            Effect.as(Effect.andThen(input.duringRecoveryRead ?? Effect.void, failReadIfRunning), {
               ...projection,
               hasConversation: projection.messages.some(
                 (m) =>
@@ -1202,6 +1204,56 @@ effectIt.effect("recovers an abandoned failed turn before continuing its native 
     expect(harness.startRootRun.mock.calls[0]?.[0].providerThread.nativeThreadRef?.nativeId).toBe(
       "existing-native-conversation",
     );
+  }),
+);
+
+effectIt.effect("starts the root run, which captures the baseline, after the session opens", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Continue",
+      previousTurn: { runStatus: "failed", turnStatus: "running" },
+    });
+
+    yield* harness.start;
+
+    // Nothing snapshots the workspace before startRootRun, so an edit made while the session
+    // opens belongs to the baseline, not to the turn.
+    expect(harness.open).toHaveBeenCalledOnce();
+    expect(harness.startRootRun).toHaveBeenCalledOnce();
+    expect(harness.open.mock.invocationCallOrder[0]).toBeLessThan(
+      harness.startRootRun.mock.invocationCallOrder[0]!,
+    );
+  }),
+);
+
+effectIt.live("reads recovery state and resolves the runtime policy together", () =>
+  Effect.gen(function* () {
+    const recoveryRead = yield* Deferred.make<void>();
+    const policyResolve = yield* Deferred.make<void>();
+    const firstCalls = new Map<string, string>();
+    // Each side waits for the other to begin; in sequence the first one times out.
+    const meet = (own: Deferred.Deferred<void>, other: Deferred.Deferred<void>, name: string) =>
+      Deferred.succeed(own, undefined).pipe(
+        Effect.andThen(Deferred.await(other).pipe(Effect.timeoutOption("2 seconds"))),
+        Effect.map((met) => {
+          if (!firstCalls.has(name))
+            firstCalls.set(name, Option.isSome(met) ? "overlapped" : "alone");
+        }),
+      );
+    const harness = makeLocalCommandHarness({
+      text: "Continue",
+      previousTurn: { runStatus: "failed", turnStatus: "running" },
+      duringRecoveryRead: meet(recoveryRead, policyResolve, "recovery read"),
+      duringPolicyResolve: meet(policyResolve, recoveryRead, "policy resolve"),
+    });
+
+    yield* harness.start;
+
+    expect(Object.fromEntries(firstCalls)).toEqual({
+      "recovery read": "overlapped",
+      "policy resolve": "overlapped",
+    });
+    expect(harness.startRootRun).toHaveBeenCalledOnce();
   }),
 );
 

@@ -41,7 +41,7 @@ const primaryShellLiveAtom = Atom.make((get) => {
 const workspaceEvidenceLiveAtom = Atom.make((get) => {
   const environmentIds = new Set([
     ...get(environmentProjects.projectsAtom).map((project) => project.environmentId),
-    ...get(environmentThreadShells.threadShellsAtom).map((thread) => thread.environmentId),
+    ...get(environmentThreadShells.threadRefsAtom).map((ref) => ref.environmentId),
   ]);
 
   for (const environmentId of environmentIds) {
@@ -55,13 +55,13 @@ const workspaceEvidenceLiveAtom = Atom.make((get) => {
 
 // Subscribe only to thread count and the sole thread so populated-workspace shell updates cannot rerender the
 // app root.
-const threadCountAtom = Atom.make(
-  (get) => get(environmentThreadShells.threadShellsAtom).length,
-).pipe(Atom.withLabel("web-onboarding-thread-count"));
+const threadCountAtom = Atom.make((get) => get(environmentThreadShells.threadRefsAtom).length).pipe(
+  Atom.withLabel("web-onboarding-thread-count"),
+);
 
 const soleThreadAtom = Atom.make((get) => {
-  const threads = get(environmentThreadShells.threadShellsAtom);
-  return threads.length === 1 ? threads[0]! : null;
+  const refs = get(environmentThreadShells.threadRefsAtom);
+  return refs.length === 1 ? get(environmentThreadShells.quietThreadShellAtom(refs[0]!)) : null;
 }).pipe(Atom.withLabel("web-onboarding-sole-thread"));
 
 export function FirstRunGate({

@@ -4,6 +4,7 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -972,7 +973,20 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         "-c",
         "splitIndex.sharedIndexExpire=never",
       ];
-      const { gitCommonDir, indexPath, headExists } = yield* resolveCaptureRepository(input.cwd);
+      // Independent reads overlap, a few at a time: each Windows spawn costs about 60 ms, and
+      // VcsProcess holds its global permit per process, so overlapping reads cannot deadlock.
+      const [{ gitCommonDir, indexPath, headExists }, sparseConfig] = yield* Effect.all(
+        [
+          resolveCaptureRepository(input.cwd),
+          execute({
+            operation,
+            cwd: input.cwd,
+            args: ["config", "--bool", "core.sparseCheckout"],
+            allowNonZeroExit: true,
+          }),
+        ],
+        { concurrency: 2 },
+      );
       const indexId = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
       const tempIndexPath = path.join(gitCommonDir, `houston-checkpoint-index-${indexId}`);
       const commitEnv: NodeJS.ProcessEnv = {
@@ -990,13 +1004,9 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         { discard: true },
       );
 
+      // Whether the workspace is ignored does not depend on the scratch index.
+      const unignored = yield* Effect.forkChild(filterIgnoredPaths(input.cwd, ["."]));
       yield* Effect.gen(function* () {
-        const sparseConfig = yield* execute({
-          operation,
-          cwd: input.cwd,
-          args: ["config", "--bool", "core.sparseCheckout"],
-          allowNonZeroExit: true,
-        });
         let sparseCheckout = sparseConfig.stdout.trim() === "true";
         if (sparseCheckout) {
           const help = yield* execute({
@@ -1120,8 +1130,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             });
           }
         }
-
-        const workspaceIgnored = (yield* filterIgnoredPaths(input.cwd, ["."])).length === 0;
+        const workspaceIgnored = (yield* Fiber.join(unignored)).length === 0;
         if (workspaceIgnored) {
           // HEAD omits staged-only paths. Seed just this workspace's additions, keeping
           // unrelated staged changes and the scratch index's sparse flags untouched.
@@ -1302,7 +1311,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           cwd: input.cwd,
           args: [...durableWrite, "update-ref", input.checkpointRef, commitOid],
         });
-      }).pipe(Effect.ensuring(cleanupTempIndex));
+      }).pipe(Effect.ensuring(Effect.andThen(Fiber.interrupt(unignored), cleanupTempIndex)));
     }),
 
     hasCheckpointRef: (input) =>

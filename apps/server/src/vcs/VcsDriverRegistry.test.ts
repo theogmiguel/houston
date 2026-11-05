@@ -106,6 +106,26 @@ describe("VcsDriverRegistry", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("detects a repository once for automatic and explicit Git lookups", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const repoDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-vcs-registry-" });
+      yield* fs.makeDirectory(path.join(repoDir, ".git"));
+      const calls: string[] = [];
+
+      yield* Effect.gen(function* () {
+        const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
+        const explicit = yield* registry.detect({ cwd: repoDir, requestedKind: "git" });
+        const automatic = yield* registry.resolve({ cwd: repoDir });
+
+        assert.equal(explicit?.repository.rootPath, repoDir);
+        assert.strictEqual(automatic, explicit);
+        assert.equal(calls.filter((call) => call === DETECT_COMMAND).length, 1);
+      }).pipe(Effect.provide(makeDiskBackedLayer(repoDir, calls)));
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("detects a repository created after a negative lookup", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

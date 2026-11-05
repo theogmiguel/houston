@@ -1155,6 +1155,32 @@ describe("native provider presentation in the v2 timeline", () => {
     expect(rows.map((row) => row.kind)).toEqual(["message"]);
   });
 
+  it("hides an assistant message the provider cancelled before it had an answer", () => {
+    const answer: OrchestrationV2TurnItem = {
+      ...base,
+      type: "assistant_message",
+      messageId: MessageId.make("answer"),
+      text: "The full answer.",
+      streaming: false,
+    };
+    const abandoned: OrchestrationV2TurnItem = {
+      ...base,
+      id: TurnItemId.make("abandoned"),
+      status: "cancelled",
+      type: "assistant_message",
+      messageId: MessageId.make("abandoned"),
+      text: "",
+      streaming: false,
+    };
+    const entries = deriveTimelineEntriesFromVisibleTurnItems({
+      visibleTurnItems: [visible(abandoned), visible(answer)],
+      optimisticMessages: [],
+    });
+    expect(
+      entries.map((entry) => (entry.kind === "message" ? entry.message.text : entry.kind)),
+    ).toEqual(["The full answer."]);
+  });
+
   it.each([
     { outputIndicatesFailure: true },
     { exitCode: 2 },

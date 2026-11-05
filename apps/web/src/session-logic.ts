@@ -616,6 +616,9 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
     )
       continue;
     if (item.type === "user_message" && foldedAnswerMessageIds.has(item.messageId)) continue;
+    // Houston: a provider cancels a streamed block that a retried request answered again.
+    if (item.type === "assistant_message" && item.status === "cancelled" && item.text === "")
+      continue;
     const createdAt = projectedItemCreatedAt(row);
     const attempt = resolveAttempt(item);
     const attemptMetadata = attempt === undefined ? {} : { attempt };
