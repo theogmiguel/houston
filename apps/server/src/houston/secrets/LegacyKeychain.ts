@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - hashes service names and loads the native keyring.
-// Houston's secrets live in the OS keychain (Windows Credential Manager, the Linux Secret
-// Service), never in the database or a file. Only the server's layer reaches the real keychain.
+// Read-only access to the OS keychain where earlier builds kept Houston's tokens; only
+// `SecretStoreImport` reads it, and nothing writes or deletes. Only the server provides the live layer.
 import * as NodeCrypto from "node:crypto";
 import * as NodeModule from "node:module";
 
@@ -20,52 +20,35 @@ export class KeychainUnavailable extends Schema.TaggedError<KeychainUnavailable>
   }
 }
 
-export class HoustonKeychain extends Context.Service<
-  HoustonKeychain,
+export class LegacyKeychain extends Context.Service<
+  LegacyKeychain,
   {
     readonly get: (
       service: string,
       account: string,
     ) => Effect.Effect<Option.Option<Redacted.Redacted<string>>, KeychainUnavailable>;
-    readonly set: (
-      service: string,
-      account: string,
-      value: Redacted.Redacted<string>,
-    ) => Effect.Effect<void, KeychainUnavailable>;
-    /** An absent entry succeeds. */
-    readonly remove: (service: string, account: string) => Effect.Effect<void, KeychainUnavailable>;
   }
->()("@houston-app/cli/houston/secrets/HoustonKeychain") {}
+>()("@houston-app/cli/houston/secrets/LegacyKeychain") {}
 
-/** The keychain calls a backend makes; the live one is `@napi-rs/keyring`. */
+/** The keychain call a backend makes; the live one is `@napi-rs/keyring`. */
 export interface KeychainBackend {
   readonly get: (service: string, account: string) => Promise<string | null | undefined>;
-  readonly set: (service: string, account: string, value: string) => Promise<void>;
-  readonly remove: (service: string, account: string) => Promise<unknown>;
 }
 
 const reasonOf = (cause: unknown) =>
   cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "unknown error";
 
-export const fromBackend = (backend: KeychainBackend): HoustonKeychain["Service"] => {
-  const call = <A>(operation: string, run: () => Promise<A>) =>
-    Effect.tryPromise({
-      try: run,
-      catch: (cause) => new KeychainUnavailable({ operation, reason: reasonOf(cause) }),
-    });
-  return HoustonKeychain.of({
-    get: Effect.fn("HoustonKeychain.get")(function* (service, account) {
-      const value = yield* call("read the entry", () => backend.get(service, account));
+export const fromBackend = (backend: KeychainBackend): LegacyKeychain["Service"] =>
+  LegacyKeychain.of({
+    get: Effect.fn("LegacyKeychain.get")(function* (service, account) {
+      const value = yield* Effect.tryPromise({
+        try: () => backend.get(service, account),
+        catch: (cause) =>
+          new KeychainUnavailable({ operation: "read the entry", reason: reasonOf(cause) }),
+      });
       return typeof value === "string" ? Option.some(Redacted.make(value)) : Option.none();
     }),
-    set: Effect.fn("HoustonKeychain.set")(function* (service, account, value) {
-      yield* call("store the entry", () => backend.set(service, account, Redacted.value(value)));
-    }),
-    remove: Effect.fn("HoustonKeychain.remove")(function* (service, account) {
-      yield* call("delete the entry", () => backend.remove(service, account));
-    }),
   });
-};
 
 const requireForKeyring = NodeModule.createRequire(import.meta.url);
 
@@ -76,27 +59,15 @@ const napiBackend: KeychainBackend = {
     ) as typeof import("@napi-rs/keyring");
     return new AsyncEntry(service, account).getPassword();
   },
-  set: (service, account, value) => {
-    const { AsyncEntry } = requireForKeyring(
-      "@napi-rs/keyring",
-    ) as typeof import("@napi-rs/keyring");
-    return new AsyncEntry(service, account).setPassword(value);
-  },
-  remove: (service, account) => {
-    const { AsyncEntry } = requireForKeyring(
-      "@napi-rs/keyring",
-    ) as typeof import("@napi-rs/keyring");
-    return new AsyncEntry(service, account).deleteCredential();
-  },
 };
 
 /** The OS keychain. Provided by the server's layer only; tests use `layerMemory`. */
-export const layerLive = Layer.succeed(HoustonKeychain, fromBackend(napiBackend));
+export const layerLive = Layer.succeed(LegacyKeychain, fromBackend(napiBackend));
 
-/** An in-memory keychain whose every call is recorded; `failWith` makes each call throw. */
+/** An in-memory keychain whose every read is recorded; `failWith` makes each read throw. */
 export interface MemoryKeychain {
   readonly entries: Map<string, string>;
-  readonly calls: Array<{ readonly op: "get" | "set" | "remove"; readonly service: string }>;
+  readonly calls: Array<{ readonly op: "get"; readonly service: string }>;
   failWith: string | null;
 }
 
@@ -104,32 +75,19 @@ export const makeMemory = (): MemoryKeychain => ({ entries: new Map(), calls: []
 
 const keyOf = (service: string, account: string) => `${service}\u0000${account}`;
 
-export const memoryBackend = (memory: MemoryKeychain): KeychainBackend => {
-  const guard = (op: "get" | "set" | "remove", service: string) => {
-    memory.calls.push({ op, service });
+export const memoryBackend = (memory: MemoryKeychain): KeychainBackend => ({
+  get: async (service, account) => {
+    memory.calls.push({ op: "get", service });
     if (memory.failWith !== null) throw new Error(memory.failWith);
-  };
-  return {
-    get: async (service, account) => {
-      guard("get", service);
-      return memory.entries.get(keyOf(service, account)) ?? null;
-    },
-    set: async (service, account, value) => {
-      guard("set", service);
-      memory.entries.set(keyOf(service, account), value);
-    },
-    remove: async (service, account) => {
-      guard("remove", service);
-      return memory.entries.delete(keyOf(service, account));
-    },
-  };
-};
+    return memory.entries.get(keyOf(service, account)) ?? null;
+  },
+});
 
 export const layerMemory = (memory: MemoryKeychain = makeMemory()) =>
-  Layer.succeed(HoustonKeychain, fromBackend(memoryBackend(memory)));
+  Layer.succeed(LegacyKeychain, fromBackend(memoryBackend(memory)));
 
-/** The hash covers the base dir, so channels never share an entry; Houston 1 used another prefix. */
-export const keychainService = (input: {
+/** The service name earlier builds stored a token under; the hash covers the base dir. */
+export const legacyKeychainService = (input: {
   readonly baseDir: string;
   readonly purpose: string;
   readonly projectId: string;
