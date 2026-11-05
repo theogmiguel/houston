@@ -1183,8 +1183,15 @@ const commandReadsSkipSettledLeafNodes = Effect.gen(function* () {
     ["running", settledRun, "running", null],
     ["active-run-delivered", activeRun, "completed", "delivered"],
   ] as const;
+  // A follow-up reuses its task's child thread.
+  const childThreadIds: Partial<Record<(typeof subagents)[number][0], ThreadId>> = {
+    delivered: ThreadId.make("thread:settled-subagents:child-a"),
+    running: ThreadId.make("thread:settled-subagents:child-a"),
+    "no-delivery": ThreadId.make("thread:settled-subagents:child-b"),
+  };
   for (const [index, [name, run, status, delivery]] of subagents.entries()) {
     const id = NodeId.make(`node:settled-subagents:${name}`);
+    const childThreadId = childThreadIds[name] ?? null;
     yield* store.apply({
       id: EventId.make(`event:settled-subagents:item:${name}`),
       type: "turn-item.updated",
@@ -1213,7 +1220,7 @@ const commandReadsSkipSettledLeafNodes = Effect.gen(function* () {
         origin: "app_owned",
         driver,
         providerInstanceId,
-        childThreadId: null,
+        childThreadId,
         prompt: "Do the work",
         result: null,
       },
@@ -1237,7 +1244,7 @@ const commandReadsSkipSettledLeafNodes = Effect.gen(function* () {
         driver,
         providerInstanceId,
         providerThreadId: null,
-        childThreadId: null,
+        childThreadId,
         nativeTaskRef: null,
         prompt: "Do the work",
         title: name,
@@ -1287,6 +1294,10 @@ const commandReadsSkipSettledLeafNodes = Effect.gen(function* () {
     ["delivered"],
   );
   assert.strictEqual(yield* store.getSubagentCount(threadId), subagents.length);
+  assert.deepEqual(
+    [...(yield* store.listAppOwnedChildThreadIds(threadId))],
+    [childThreadIds.delivered, childThreadIds["no-delivery"]],
+  );
 });
 
 const backgroundThreadUpdatesKeepTimestamp = Effect.gen(function* () {
