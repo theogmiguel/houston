@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 
 import { applyAppearanceContrast } from "./appearanceContrast";
 import { applyAppearanceFontVariables, TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "./appearanceFonts";
+import { startElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { startBrowserProfileReporting } from "./browser/BrowserProfileReporter";
 import { ensureThreadInGrid } from "./grid/ensureThreadInGrid";
 import { GRID_STORAGE_KEY, useGridStore } from "./grid/gridStore";
@@ -195,6 +196,7 @@ export function startAppServices(): AppRouter {
   startModelPreferencesMigration();
   startAgentOpenedPreviews();
   startPreviewTitleRecording();
+  if (isDesktopHost) startElectronBrowserHost();
   startBrowserProfileReporting();
   installChatRouteCommands(router);
   installCommandPaletteCommands(router);
