@@ -276,8 +276,11 @@ describe("ThreadPullRequestServiceV2 reads", () => {
             Layer.mock(BackgroundPolicy.BackgroundPolicy)({}),
             Layer.succeed(ServerActivation.ServerActivation, Deferred.await(activation)),
             Layer.succeed(
-              SecureRandom.SecureRandom,
-              SecureRandom.make((size) => new Uint8Array(size).fill(1)),
+              Crypto.Crypto,
+              Crypto.make({
+                randomBytes: (size) => new Uint8Array(size).fill(1),
+                digest: (_algorithm, data) => Effect.succeed(data),
+              }),
             ),
             FileSystem.layerNoop({
               exists: (path) =>
