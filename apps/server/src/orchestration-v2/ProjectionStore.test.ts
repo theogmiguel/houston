@@ -281,6 +281,60 @@ it.effect("record reads filter notification sources without dropping matching me
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("reads selected messages by id without walking thread history", () =>
+  Effect.gen(function* () {
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = yield* addRolledBackRecoveryCandidate("selected-messages");
+    const now = yield* DateTime.now;
+    const messageIds = [
+      MessageId.make("message:selected-messages:first"),
+      MessageId.make("message:selected-messages:second"),
+    ];
+    for (const messageId of messageIds) {
+      yield* store.apply({
+        id: EventId.make(`event:selected-messages:${messageId}`),
+        type: "message.updated",
+        threadId,
+        occurredAt: now,
+        payload: {
+          id: messageId,
+          threadId,
+          runId: null,
+          nodeId: null,
+          createdBy: "user",
+          creationSource: "web",
+          role: "user",
+          text: `Body for ${messageId}`,
+          attachments: [],
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+    }
+    const trace = traceSqlStatements();
+    const selected = yield* store
+      .getMessagesById(threadId, [
+        messageIds[0]!,
+        messageIds[1]!,
+        messageIds[0]!,
+        MessageId.make("message:selected-messages:absent"),
+      ])
+      .pipe(Effect.withTracer(trace.tracer));
+    assert.isFalse(trace.statements.some((query) => query.includes("turn_items")));
+    assert.equal(selected.size, 2);
+    assert.equal(selected.get(messageIds[0]!)?.text, `Body for ${messageIds[0]}`);
+    assert.equal(selected.get(messageIds[1]!)?.text, `Body for ${messageIds[1]}`);
+    assert.equal((yield* store.getMessagesById(threadId, [])).size, 0);
+    assert.equal(
+      (yield* store.getMessagesById(ThreadId.make("thread:selected-messages:other"), [
+        messageIds[0]!,
+      ])).size,
+      0,
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("SQL queue readiness skips held runs without bypassing active work", () =>
   Effect.gen(function* () {
     const store = yield* ProjectionStore.ProjectionStoreV2;
