@@ -3158,6 +3158,78 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ),
   );
 
+  it.effect("reports a thread another Codex client is writing to as in use", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const nativeThreadId = "thread-open-elsewhere";
+        const harness = yield* makeCodexReplayHarness(
+          makeCodexReplayTranscript({
+            scenario: "codex-resume-active-writer",
+            entries: [
+              ...codexReplayPreamble({
+                nativeThreadId,
+                nativeTurnId: "unused-turn",
+                prompt: "unused-prompt",
+              }).slice(0, 5),
+              {
+                type: "expect_outbound",
+                label: "thread/resume",
+                frame: {
+                  id: 3,
+                  method: "thread/resume",
+                  params: {
+                    threadId: nativeThreadId,
+                    excludeTurns: true,
+                    cwd: CODEX_TEST_RUNTIME_POLICY.cwd,
+                    model: CODEX_TEST_MODEL_SELECTION.model,
+                    config: CodexAdapterV2.CODEX_THREAD_CONFIG,
+                  },
+                },
+              },
+              {
+                type: "emit_inbound",
+                label: "active writer",
+                frame: {
+                  id: 3,
+                  error: {
+                    code: -32600,
+                    message: `thread ${nativeThreadId} already has an active writer`,
+                  },
+                },
+              },
+            ],
+          }),
+        );
+
+        const error = yield* Effect.flip(
+          harness.runtime.resumeThread({
+            providerThread: harness.providerThread,
+            modelSelection: CODEX_TEST_MODEL_SELECTION,
+            runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+          }),
+        );
+
+        assert.equal(error._tag, "ProviderAdapterThreadInUseError");
+        assert.nestedPropertyVal(error, "providerThreadId", harness.providerThread.id);
+        assert.include(error.message, "open in another Codex client");
+        assert.nestedPropertyVal(
+          error,
+          "cause.errorMessage",
+          `thread ${nativeThreadId} already has an active writer`,
+        );
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+    ),
+  );
+
   it.effect("resolves retryable app-server errors on resumed provider activity", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -7601,6 +7673,121 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ),
   );
 
+  it.effect("unarchives an unloaded Codex thread before rolling it back", () =>
+    Effect.gen(function* () {
+      const nativeThreadId = "archived-rollback-thread";
+      const resumeParams = {
+        threadId: nativeThreadId,
+        excludeTurns: true,
+        cwd: CODEX_TEST_RUNTIME_POLICY.cwd,
+        model: CODEX_TEST_MODEL_SELECTION.model,
+        config: CodexAdapterV2.CODEX_THREAD_CONFIG,
+      };
+      const thread = codexReplayThreadResult({ nativeThreadId, forkedFromId: null });
+      const exchange = (
+        id: number,
+        method: string,
+        params: unknown,
+        reply: { readonly result: unknown } | { readonly error: unknown },
+      ): Array<CodexReplay.CodexAppServerReplayEntry> => [
+        { type: "expect_outbound", label: method, frame: { id, method, params } },
+        { type: "emit_inbound", label: method, frame: { id, ...reply } },
+      ];
+      const transcript = makeCodexReplayTranscript({
+        scenario: "codex-archived-rollback",
+        entries: [
+          ...codexReplayPreamble({
+            nativeThreadId,
+            nativeTurnId: "archived-rollback-turn",
+            prompt: "unused",
+          }).slice(0, 5),
+          ...exchange(
+            3,
+            "thread/read",
+            { threadId: nativeThreadId, includeTurns: false },
+            {
+              result: {
+                thread: {
+                  id: nativeThreadId,
+                  historyMode: "paginated",
+                  status: { type: "notLoaded" },
+                },
+              },
+            },
+          ),
+          ...exchange(4, "thread/resume", resumeParams, {
+            error: { code: -32600, message: `session ${nativeThreadId} is archived` },
+          }),
+          ...exchange(5, "thread/unarchive", { threadId: nativeThreadId }, { result: thread }),
+          ...exchange(6, "thread/resume", resumeParams, { result: thread }),
+          ...exchange(
+            7,
+            "thread/turns/list",
+            {
+              threadId: nativeThreadId,
+              cursor: null,
+              limit: 1,
+              sortDirection: "desc",
+              itemsView: "summary",
+            },
+            {
+              result: {
+                data: [{ id: "native-turn-second", items: [], status: "completed", error: null }],
+                nextCursor: null,
+              },
+            },
+          ),
+          ...exchange(
+            8,
+            "thread/revert",
+            { threadId: nativeThreadId, beforeTurnId: "native-turn-second" },
+            { result: thread },
+          ),
+        ],
+      });
+      const harness = yield* makeCodexReplayHarness(transcript);
+      const now = yield* DateTime.now;
+      const firstTurn = codexReplaySourceTurn({
+        id: "provider-turn-first",
+        ordinal: 1,
+        nativeId: "native-turn-first",
+        providerThreadId: harness.providerThread.id,
+        now,
+      });
+      const secondTurn = codexReplaySourceTurn({
+        id: "provider-turn-second",
+        ordinal: 2,
+        nativeId: "native-turn-second",
+        providerThreadId: harness.providerThread.id,
+        now,
+      });
+
+      const snapshot = yield* harness.runtime.rollbackThread({
+        providerThread: harness.providerThread,
+        target: {
+          type: "provider_turn",
+          checkpointId: CheckpointId.make("checkpoint-archived-rollback"),
+          appRunOrdinal: 1,
+          providerTurn: firstTurn,
+        },
+        providerThreadTurns: [firstTurn, secondTurn],
+      });
+
+      assert.equal(snapshot.providerThread.nativeThreadRef?.nativeId, nativeThreadId);
+      assert.deepEqual(snapshot.providerThread.nativeConversationHeadRef, firstTurn.nativeTurnRef);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
   it.effect(
     "falls back to fork-local thread/revert on paginated history when the source turn lacks a native reference",
     () =>
@@ -7746,6 +7933,84 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
         ),
       ),
+  );
+
+  it.effect("unarchives an archived Codex source thread before forking it", () =>
+    Effect.gen(function* () {
+      const nativeThreadId = "archived-fork-source";
+      const forkThreadId = "archived-fork-target";
+      const forkParams = {
+        threadId: nativeThreadId,
+        lastTurnId: "native-turn-first",
+        config: CodexAdapterV2.CODEX_THREAD_CONFIG,
+      };
+      const exchange = (
+        id: number,
+        method: string,
+        params: unknown,
+        reply: { readonly result: unknown } | { readonly error: unknown },
+      ): Array<CodexReplay.CodexAppServerReplayEntry> => [
+        { type: "expect_outbound", label: method, frame: { id, method, params } },
+        { type: "emit_inbound", label: method, frame: { id, ...reply } },
+      ];
+      const transcript = makeCodexReplayTranscript({
+        scenario: "codex-archived-fork",
+        entries: [
+          ...codexReplayPreamble({
+            nativeThreadId,
+            nativeTurnId: "archived-fork-turn",
+            prompt: "unused",
+          }).slice(0, 5),
+          ...exchange(3, "thread/fork", forkParams, {
+            error: {
+              code: -32600,
+              message: `session ${nativeThreadId} is archived. Run \`codex unarchive ${nativeThreadId}\` to unarchive it first.`,
+            },
+          }),
+          ...exchange(
+            4,
+            "thread/unarchive",
+            { threadId: nativeThreadId },
+            { result: codexReplayThreadResult({ nativeThreadId, forkedFromId: null }) },
+          ),
+          ...exchange(5, "thread/fork", forkParams, {
+            result: codexReplayThreadResult({
+              nativeThreadId: forkThreadId,
+              forkedFromId: nativeThreadId,
+            }),
+          }),
+        ],
+      });
+      const harness = yield* makeCodexReplayHarness(transcript);
+      const now = yield* DateTime.now;
+      const firstTurn = codexReplaySourceTurn({
+        id: "provider-turn-first",
+        ordinal: 1,
+        nativeId: "native-turn-first",
+        providerThreadId: harness.providerThread.id,
+        now,
+      });
+
+      const forkedProviderThread = yield* harness.runtime.forkThread({
+        sourceProviderThread: harness.providerThread,
+        sourceProviderTurns: [firstTurn],
+        providerTurnId: firstTurn.id,
+        targetThreadId: ThreadId.make("thread-archived-fork-target"),
+      });
+
+      assert.equal(forkedProviderThread.nativeThreadRef?.nativeId, forkThreadId);
+      assert.equal(forkedProviderThread.forkedFrom?.providerTurnId, firstTurn.id);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
   );
 
   describe("native goals", () => {
