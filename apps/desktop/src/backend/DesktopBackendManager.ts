@@ -35,7 +35,7 @@ const INITIAL_RESTART_DELAY = Duration.millis(500);
 const MAX_RESTART_DELAY = Duration.seconds(10);
 const MAX_PREFLIGHT_FAILURE_ATTEMPTS = 5;
 // Large state databases can take over a minute to become ready.
-const DEFAULT_BACKEND_READINESS_TIMEOUT = Duration.minutes(3);
+export const DEFAULT_BACKEND_READINESS_TIMEOUT = Duration.minutes(3);
 const DEFAULT_BACKEND_READINESS_INTERVAL = Duration.millis(100);
 const DEFAULT_BACKEND_READINESS_REQUEST_TIMEOUT = Duration.seconds(1);
 // Match the service launcher's grace period so backends can stop provider sessions.
@@ -166,6 +166,18 @@ export type BackendProcessOutputError =
   | BackendProcessOutputReadError
   | BackendProcessOutputHandlingError;
 
+export class BackendRestartRefusedError extends Schema.TaggedError<BackendRestartRefusedError>()(
+  "BackendRestartRefusedError",
+  {
+    id: Schema.String,
+    reason: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Cannot restart the "${this.id}" backend: ${this.reason}`;
+  }
+}
+
 export class BackendProcessExitStatusError extends Schema.TaggedError<BackendProcessExitStatusError>()(
   "BackendProcessExitStatusError",
   {
@@ -197,7 +209,7 @@ interface RunBackendProcessOptions extends DesktopBackendStartConfig {
   readonly outputDrainTimeout?: Duration.Duration;
   readonly onStarted?: (pid: number) => Effect.Effect<void>;
   readonly onExitObserved?: () => Effect.Effect<void>;
-  readonly onReady?: () => Effect.Effect<void>;
+  readonly onReady?: (pid: number) => Effect.Effect<void>;
   readonly onReadinessFailure?: (error: BackendReadinessTimeoutError) => Effect.Effect<void>;
   readonly onOutput?: (
     streamName: BackendProcessOutputStream,
@@ -241,9 +253,16 @@ export interface DesktopBackendInstance {
   readonly label: Effect.Effect<string>;
   readonly start: Effect.Effect<void>;
   readonly stop: (options?: { readonly timeout?: Duration.Duration }) => Effect.Effect<void>;
+  /**
+   * Replaces the server this instance owns. An attached server is refused
+   * because the app does not own it; a start already in flight is refused so
+   * the restart never stops a server mid-start.
+   */
+  readonly restart: Effect.Effect<void, BackendRestartRefusedError>;
   readonly currentConfig: Effect.Effect<Option.Option<DesktopBackendStartConfig>>;
   readonly snapshot: Effect.Effect<DesktopBackendSnapshot>;
   readonly waitForReady: (timeout: Duration.Duration) => Effect.Effect<boolean>;
+  readonly lastStartupFailure: Effect.Effect<Option.Option<BackendStartupFailure>>;
 }
 
 export interface BackendInstanceSpec {
@@ -251,7 +270,9 @@ export interface BackendInstanceSpec {
   readonly label: Effect.Effect<string>;
   readonly configResolve: Effect.Effect<DesktopBackendStartConfig, PlatformError.PlatformError>;
   /** Receives the ready run's resolved URL; reading current config could race a subsequent restart. */
-  readonly onReady?: (httpBaseUrl: URL) => Effect.Effect<void>;
+  readonly onReady?: (httpBaseUrl: URL, pid: number | null) => Effect.Effect<void>;
+  /** Fires when a start attempt begins or a ready server exits while a restart is pending. */
+  readonly onStarting?: () => Effect.Effect<void>;
   readonly onShutdown?: () => Effect.Effect<void>;
   readonly onPreflightFailed?: (failure: PreflightFailure) => Effect.Effect<boolean>;
   /** Resolve the live server owning the state directory, or fail so the pool can report it. */
@@ -280,6 +301,7 @@ interface BackendManagerState {
   readonly preflightFailureAttempt: number;
   readonly restartFiber: Option.Option<Fiber.Fiber<void, never>>;
   readonly nextRunId: number;
+  readonly lastFailure: Option.Option<BackendStartupFailure>;
 }
 
 const initialState: BackendManagerState = {
@@ -292,10 +314,34 @@ const initialState: BackendManagerState = {
   preflightFailureAttempt: 0,
   restartFiber: Option.none(),
   nextRunId: 1,
+  lastFailure: Option.none(),
 };
 
 const activePid = (active: Option.Option<ActiveBackendRun>): Option.Option<number> =>
   Option.flatMap(active, (run) => run.pid);
+
+/**
+ * Why a manual restart must not run. An attached server is not ours to stop; a
+ * start in flight must finish first, so a restart never kills a booting server.
+ */
+export function restartRefusalReason(input: {
+  readonly attached: boolean;
+  readonly desiredRunning: boolean;
+  readonly ready: boolean;
+  readonly activePid: Option.Option<number>;
+}): Option.Option<string> {
+  if (input.attached) {
+    return Option.some(
+      "this server was already running when Houston opened and the app does not own it, so Houston never stops it. Quit that server yourself, then reopen Houston.",
+    );
+  }
+  if (input.desiredRunning && !input.ready && Option.isSome(input.activePid)) {
+    return Option.some(
+      "a server start is already in progress; wait for it to finish and try again.",
+    );
+  }
+  return Option.none();
+}
 
 const withActiveRun =
   (runId: number, f: (run: ActiveBackendRun) => ActiveBackendRun) =>
@@ -565,7 +611,7 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
       httpBaseUrl: options.httpBaseUrl,
       timeout: options.readinessTimeout ?? DEFAULT_BACKEND_READINESS_TIMEOUT,
     }).pipe(
-      Effect.flatMap(() => options.onReady?.() ?? Effect.void),
+      Effect.flatMap(() => options.onReady?.(Number(handle.pid)) ?? Effect.void),
       Effect.as(true),
       Effect.catchTags({
         BackendReadinessTimeoutError: (error) =>
@@ -644,13 +690,22 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
   const httpClient = yield* HttpClient.HttpClient;
   const state = yield* Ref.make(initialState);
   const mutex = yield* Semaphore.make(1);
+  // Serializes manual restarts without holding the state mutex across a child exit,
+  // whose finalizer needs that mutex.
+  const restartMutex = yield* Semaphore.make(1);
   const outputTail = yield* Ref.make("");
   // One streaming decoder per stream keeps UTF-8 characters split across chunks intact.
   const makeOutputDecoders = () => ({ stdout: new TextDecoder(), stderr: new TextDecoder() });
   let outputDecoders = makeOutputDecoders();
   const reportStartupFailure = (reason: string) =>
     Ref.get(outputTail).pipe(
-      Effect.flatMap((output) => spec.onStartupFailure?.({ reason, output }) ?? Effect.void),
+      Effect.flatMap((output) => {
+        const failure: BackendStartupFailure = { reason, output };
+        return Ref.update(state, (current) => ({
+          ...current,
+          lastFailure: Option.some(failure),
+        })).pipe(Effect.andThen(spec.onStartupFailure?.(failure) ?? Effect.void));
+      }),
     );
 
   const { logWarning: logInstanceWarning, logError: logInstanceError } =
@@ -737,6 +792,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           config: Option.some(config.value),
           preflightFailureAttempt: resetFatalPreflightCounter ? 0 : latest.preflightFailureAttempt,
         }));
+        yield* spec.onStarting?.() ?? Effect.void;
 
         const preflightFailure = config.value.preflightFailure;
         if (Option.isSome(preflightFailure)) {
@@ -898,14 +954,21 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
                       ready: true,
                       config: Option.some(attachment.value.config),
                       attached: attachment,
+                      lastFailure: Option.none<BackendStartupFailure>(),
                     }));
-                    yield* spec.onReady?.(attachment.value.httpBaseUrl) ?? Effect.void;
+                    yield* (
+                      spec.onReady?.(attachment.value.httpBaseUrl, attachment.value.pid) ??
+                        Effect.void
+                    );
                     yield* spec.onAttached?.(attachment.value) ?? Effect.void;
                     return;
                   }
                   yield* Ref.update(state, (latest) => ({ ...latest, desiredRunning: false }));
                   return;
                 }
+                // A dead server is not ready: report the restart before the backoff,
+                // so the renderer stops using the old origin while its replacement boots.
+                yield* spec.onStarting?.() ?? Effect.void;
                 yield* scheduleRestart(reason);
               }
             }),
@@ -935,7 +998,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
               ...run,
               exitObserved: true,
             })),
-          onReady: Effect.fn("desktop.backendInstance.onReady")(function* () {
+          onReady: Effect.fn("desktop.backendInstance.onReady")(function* (pid) {
             const isCurrentRun = yield* Ref.modify(state, (latest) => {
               const activeRun = Option.getOrUndefined(latest.active);
               if (activeRun?.id !== runId) {
@@ -948,6 +1011,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
                   ...latest,
                   restartAttempt: 0,
                   ready: true,
+                  lastFailure: Option.none<BackendStartupFailure>(),
                 },
               ] as const;
             });
@@ -955,7 +1019,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
               return;
             }
 
-            yield* spec.onReady?.(config.value.httpBaseUrl) ?? Effect.void;
+            yield* spec.onReady?.(config.value.httpBaseUrl, pid) ?? Effect.void;
             if (
               config.value.runningDistro !== undefined &&
               config.value.wslRuntimeId !== undefined
@@ -1159,6 +1223,29 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
     });
   });
 
+  const restart: Effect.Effect<void, BackendRestartRefusedError> = restartMutex
+    .withPermits(1)(
+      Effect.gen(function* () {
+        const current = yield* Ref.get(state);
+        const refusal = restartRefusalReason({
+          attached: Option.isSome(current.attached),
+          desiredRunning: current.desiredRunning,
+          ready: current.ready,
+          activePid: activePid(current.active),
+        });
+        if (Option.isSome(refusal)) {
+          return yield* new BackendRestartRefusedError({ id: spec.id, reason: refusal.value });
+        }
+        // No timeout: the old child must be gone before a new one takes the state
+        // directory, or the replacement exits on the ownership lock and orphans it.
+        yield* stop();
+        yield* start;
+      }),
+    )
+    .pipe(Effect.withSpan("desktop.backendInstance.restart"));
+
+  const lastStartupFailure = Ref.get(state).pipe(Effect.map((current) => current.lastFailure));
+
   const waitForReady: (timeout: Duration.Duration) => Effect.Effect<boolean> = Effect.fn(
     "DesktopBackendManager.waitForReady",
   )(
@@ -1186,8 +1273,10 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
     label: spec.label,
     start,
     stop,
+    restart,
     currentConfig,
     snapshot,
     waitForReady,
+    lastStartupFailure,
   } satisfies DesktopBackendInstance;
 });

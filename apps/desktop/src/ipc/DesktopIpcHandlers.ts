@@ -38,6 +38,7 @@ import {
   getLocalEnvironmentBootstraps,
   getLocalEnvironmentBearerToken,
   getServerStatus,
+  invalidateLocalEnvironmentBearerToken,
   installRelayTelemetryEnabled,
   getSystemLocale,
   closeWindow,
@@ -50,6 +51,7 @@ import {
   checkSystemPermission,
   pasteAsText,
   probeRemoteEditors,
+  restartServer,
   revealWindow,
   pickFolder,
   pickProjectFavicon,
@@ -123,7 +125,9 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getLocalEnvironmentEnabled);
   yield* ipc.handle(setLocalEnvironmentEnabled);
   yield* ipc.handle(getLocalEnvironmentBearerToken);
+  yield* ipc.handle(invalidateLocalEnvironmentBearerToken);
   yield* ipc.handle(getServerStatus);
+  yield* ipc.handle(restartServer);
 
   yield* ipc.handle(getClientSettings);
   yield* ipc.handle(setClientSettings);

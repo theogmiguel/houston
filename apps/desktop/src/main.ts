@@ -46,6 +46,7 @@ import * as DesktopBackendConfiguration from "./backend/DesktopBackendConfigurat
 import * as DesktopBackendPool from "./backend/DesktopBackendPool.ts";
 import * as DesktopBootstrapSecret from "./backend/DesktopBootstrapSecret.ts";
 import * as DesktopServerAttachment from "./backend/DesktopServerAttachment.ts";
+import * as DesktopServerControl from "./backend/DesktopServerControl.ts";
 import * as DesktopServerStatus from "./backend/DesktopServerStatus.ts";
 import * as DesktopLocalEnvironmentAuth from "./backend/DesktopLocalEnvironmentAuth.ts";
 import * as DesktopNetworkInterfaces from "./backend/DesktopNetworkInterfaces.ts";
@@ -235,6 +236,7 @@ const layerDesktopApplication = Layer.mergeAll(
   DesktopApplicationMenu.layer,
   DesktopLinuxUrlHandler.layer,
   DesktopCliCommand.layer,
+  DesktopServerControl.layer,
   layerDesktopSsh,
 ).pipe(
   Layer.provideMerge(layerDesktopSnapShot),

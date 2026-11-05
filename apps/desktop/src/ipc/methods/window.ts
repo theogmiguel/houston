@@ -10,7 +10,6 @@ import {
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   REMOTE_CAPABLE_EDITOR_IDS,
   SystemSettingsPaneSchema,
-  type DesktopEnvironmentBootstrap,
   type PickedThemeFile,
 } from "@houston-app/contracts";
 import { PROJECT_FAVICON_EXTENSIONS } from "@houston-app/shared/projectFavicon";
@@ -25,7 +24,12 @@ import * as Schema from "effect/Schema";
 
 import * as DesktopBackendConfiguration from "../../backend/DesktopBackendConfiguration.ts";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
+import {
+  localEnvironmentBootstrapEntries,
+  type LocalEnvironmentBootstrapSource,
+} from "./localEnvironmentBootstraps.ts";
 import * as DesktopLocalEnvironmentAuth from "../../backend/DesktopLocalEnvironmentAuth.ts";
+import * as DesktopServerControl from "../../backend/DesktopServerControl.ts";
 import * as DesktopServerStatus from "../../backend/DesktopServerStatus.ts";
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
 import * as DesktopManagedPolicy from "../../app/DesktopManagedPolicy.ts";
@@ -63,12 +67,6 @@ const ContextMenuInput = Schema.Struct({
   items: Schema.Array(ContextMenuItemSchema),
   position: Schema.optionalKey(ContextMenuPosition),
 });
-
-function toWebSocketBaseUrl(httpBaseUrl: URL): string {
-  const url = new URL(httpBaseUrl.href);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return url.href;
-}
 
 export const getAppBranding = DesktopIpc.makeSyncIpcMethod({
   channel: IpcChannels.GET_APP_BRANDING_CHANNEL,
@@ -202,47 +200,24 @@ export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({
     const pool = yield* DesktopBackendPool.DesktopBackendPool;
     const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
     const instances = yield* pool.list;
-    const bootstraps: DesktopEnvironmentBootstrap[] = [];
+    const sources: LocalEnvironmentBootstrapSource[] = [];
     for (const instance of instances) {
-      const isPrimary = instance.id === PRIMARY_LOCAL_ENVIRONMENT_ID;
       const config = yield* instance.currentConfig;
       const snapshot = yield* instance.snapshot;
-      if (Option.isNone(config) || Option.isSome(config.value.preflightFailure)) {
-        const fatalPreflight =
-          Option.isSome(config) &&
-          Option.isSome(config.value.preflightFailure) &&
-          config.value.preflightFailure.value.fatal;
-        const stoppedPreflight =
-          Option.isSome(config) &&
-          Option.isSome(config.value.preflightFailure) &&
-          (!snapshot.desiredRunning || !snapshot.restartScheduled);
-        if (isPrimary || fatalPreflight || stoppedPreflight) continue;
-        bootstraps.push({
-          id: instance.id,
-          label: yield* instance.label,
-          runningDistro: null,
-          httpBaseUrl: null,
-          wsBaseUrl: null,
-        });
-        continue;
-      }
-      const { bootstrap, httpBaseUrl } = config.value;
-      const runningDistro = config.value.runningDistro ?? null;
-      bootstraps.push({
+      const runningDistro = Option.match(config, {
+        onNone: () => null,
+        onSome: (value) => value.runningDistro ?? null,
+      });
+      sources.push({
         id: instance.id,
         label: runningDistro === null ? yield* instance.label : `WSL (${runningDistro})`,
         runningDistro,
-        httpBaseUrl: httpBaseUrl.href,
-        wsBaseUrl: toWebSocketBaseUrl(httpBaseUrl),
-        // Use the current window's derived token; the launch config's token may be stale.
-        ...(bootstrap.desktopBootstrapSecret
-          ? { bootstrapToken: yield* configuration.currentBootstrapToken }
-          : bootstrap.desktopBootstrapToken
-            ? { bootstrapToken: bootstrap.desktopBootstrapToken }
-            : {}),
+        config,
+        snapshot,
+        currentBootstrapToken: yield* configuration.currentBootstrapToken,
       });
     }
-    return bootstraps;
+    return localEnvironmentBootstrapEntries(sources);
   }),
 });
 
@@ -273,6 +248,37 @@ export const getServerStatus = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.window.getServerStatus")(function* () {
     const status = yield* DesktopServerStatus.DesktopServerStatus;
     return Option.getOrNull(yield* status.get);
+  }),
+});
+
+const RestartServerResultSchema = Schema.Union([
+  Schema.Struct({ ok: Schema.Literal(true), status: DesktopLocalServerStatusSchema }),
+  Schema.Struct({ ok: Schema.Literal(false), error: Schema.String }),
+]);
+
+export const restartServer = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.RESTART_SERVER_CHANNEL,
+  payload: Schema.Undefined,
+  result: RestartServerResultSchema,
+  handler: Effect.fn("desktop.ipc.window.restartServer")(function* () {
+    const control = yield* DesktopServerControl.DesktopServerControl;
+    return yield* control.restart.pipe(
+      Effect.map((status) => ({ ok: true as const, status })),
+      Effect.catchTags({
+        DesktopServerRestartError: (error) =>
+          Effect.succeed({ ok: false as const, error: error.message }),
+      }),
+    );
+  }),
+});
+
+export const invalidateLocalEnvironmentBearerToken = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.INVALIDATE_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.invalidateLocalEnvironmentBearerToken")(function* () {
+    const localAuth = yield* DesktopLocalEnvironmentAuth.DesktopLocalEnvironmentAuth;
+    yield* localAuth.invalidate;
   }),
 });
 
