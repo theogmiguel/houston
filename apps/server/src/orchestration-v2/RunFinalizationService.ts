@@ -2,7 +2,6 @@ import { CheckpointScopeId, ProjectId, RunId, ThreadId } from "@houston-app/cont
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as FiberMap from "effect/FiberMap";
 import * as FiberSet from "effect/FiberSet";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -144,7 +143,6 @@ export const layerObserver = Layer.effect(
     const vcsStatus = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
     const projections = yield* ProjectionStore.ProjectionStoreV2;
     const pullRequests = yield* PullRequestService.PullRequestService;
-    const pullRequestLookups = yield* FiberMap.make<string>();
     return {
       refreshAfterTurn: pullRequests.refreshAfterTurn,
       refresh: Effect.fn("RunFinalizationService.refresh")(
@@ -157,8 +155,6 @@ export const layerObserver = Layer.effect(
           const thread = yield* projections.getThreadShell(threadId);
           // Houston: the refresh is for the finished run it carries, even if the next turn started.
           if (!thread || thread.branch !== local.refName) return;
-          // The forge CLI can take minutes, so a newer turn's lookup replaces a running one
-          // instead of queueing behind the cwd's lock.
           yield* vcsStatus.refreshPullRequestStatus(cwd).pipe(
             Effect.catch((error) =>
               Effect.logWarning("failed to refresh pull request status after run completion", {
@@ -167,7 +163,6 @@ export const layerObserver = Layer.effect(
                 detail: error.message,
               }),
             ),
-            FiberMap.run(pullRequestLookups, cwd),
           );
         },
         (effect, { cwd }) =>
