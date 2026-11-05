@@ -17,6 +17,8 @@ describe("resolveHoustonMcpToolPresentation", () => {
         "mcp__houston__",
         "houston.",
         "houston_code/",
+        "houston-direct.",
+        "mcp__houston_direct__",
         "houston:",
         "mcp_houston_",
         "Houston ",
