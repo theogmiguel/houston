@@ -5,12 +5,34 @@ import { TrimmedString } from "./baseSchemas.ts";
 import { SecretReference } from "./secretReference.ts";
 
 /**
+ * The most a stored credential may hold. Real tokens are a few hundred bytes; 2048 matches the
+ * Slack and task-source token bounds and keeps a pasted file out of the secret store.
+ */
+export const SETTINGS_SECRET_MAX_BYTES = 2_048;
+
+const utf8Bytes = (value: string) => new TextEncoder().encode(value).length;
+
+/** A trimmed credential literal, refused above `SETTINGS_SECRET_MAX_BYTES`. */
+export const SecretLiteral = TrimmedString.check(
+  Schema.makeFilter(
+    (value: string) => {
+      const size = utf8Bytes(value);
+      return (
+        size <= SETTINGS_SECRET_MAX_BYTES ||
+        `credential is ${size} bytes, over the limit of ${SETTINGS_SECRET_MAX_BYTES} bytes`
+      );
+    },
+    { expected: `a credential of at most ${SETTINGS_SECRET_MAX_BYTES} bytes` },
+  ),
+);
+
+/**
  * A credential setting: the literal, which is kept in the secret store and redacted for
  * clients, or the secret reference to read it from, which is not itself a secret and is
  * stored and shown as written. Typing a settings field with it is the whole declaration:
  * forms offer a secret provider for it and the server reads the secret for its consumer.
  */
-export const SettingsSecretValue = Schema.Union([TrimmedString, SecretReference]).pipe(
+export const SettingsSecretValue = Schema.Union([SecretLiteral, SecretReference]).pipe(
   Schema.annotateKey({ settingsSecret: true, settingsSecretReference: true }),
 );
 export type SettingsSecretValue = typeof SettingsSecretValue.Type;
