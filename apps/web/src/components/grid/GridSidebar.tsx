@@ -4,7 +4,11 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@houston-app/client-runtime/state/runtime";
-import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
+import {
+  scopedThreadKey,
+  scopeProjectRef,
+  scopeThreadRef,
+} from "@houston-app/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
 import {
@@ -101,7 +105,9 @@ import {
 } from "./sidebarProjectSections";
 import { preorderThreads } from "../../grid/tree";
 import { useOpenGridDraft } from "../../grid/useOpenGridDraft";
-import { useQuietThreadShells, useProjects } from "../../state/entities";
+import { useProject, useQuietThreadShells, useProjects } from "../../state/entities";
+import { useEnvironmentQuery } from "../../state/query";
+import { vcsEnvironment } from "../../state/vcs";
 import { useSidebarProjectGroups } from "../../hooks/useSidebarProjectGroups";
 import { registerSettleAndAdvance } from "../../settleAndAdvance";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
@@ -1674,6 +1680,26 @@ function RunningElapsed({ startedAt }: { startedAt: string }) {
   return <span>{formatWorkingDurationLabel(nowMs - startedMs)}</span>;
 }
 
+/**
+ * The branch a thread works on: the one it recorded, or else the branch its
+ * checkout (its worktree, or the project's own folder) currently has.
+ */
+function useThreadBranchName(thread: EnvironmentThreadShell): string | null {
+  const readsCheckout = thread.branch === null;
+  const project = useProject(
+    readsCheckout && thread.worktreePath === null
+      ? scopeProjectRef(thread.environmentId, thread.projectId)
+      : null,
+  );
+  const cwd = thread.worktreePath ?? project?.workspaceRoot ?? null;
+  const status = useEnvironmentQuery(
+    readsCheckout && cwd !== null
+      ? vcsEnvironment.status({ environmentId: thread.environmentId, input: { cwd } })
+      : null,
+  );
+  return thread.branch ?? status.data?.refName ?? null;
+}
+
 export function ThreadCard({
   gridId,
   thread,
@@ -1735,6 +1761,7 @@ export function ThreadCard({
   const nowMinute = useNowMinute();
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const showBranch = useClientSettings((settings) => settings.sidebarRowShowBranch);
+  const branchName = useThreadBranchName(thread);
   const showPullRequest = useClientSettings((settings) => settings.sidebarRowShowPullRequest);
   const showSubagents = useClientSettings((settings) => settings.sidebarRowShowSubagents);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -2080,7 +2107,7 @@ export function ThreadCard({
             <>
               <GitBranchIcon aria-hidden className="size-3 shrink-0" />
               <span className="min-w-0 flex-1 truncate font-mono text-2xs">
-                {thread.branch ?? "no branch"}
+                {branchName ?? "no branch"}
                 {notInGrid ? " · not in a grid" : ""}
               </span>
             </>
@@ -2127,7 +2154,7 @@ export function ThreadCard({
           </span>
           <span className="flex items-center gap-1.5">
             <GitBranchIcon aria-hidden className="size-3" />
-            {thread.branch ?? "no branch"}
+            {branchName ?? "no branch"}
           </span>
           <span className="flex items-center gap-1.5">
             <CpuIcon aria-hidden className="size-3" />
