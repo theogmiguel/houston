@@ -13,10 +13,7 @@ import { cn } from "~/lib/utils";
 import { Menu, MenuPopup, MenuTrigger } from "./menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 import type { ComposerControlSize } from "../chat/ComposerControl";
-import {
-  ComposerPermissionsSection,
-  type RuntimeModeOption,
-} from "../chat/ComposerFooterControls";
+import { ComposerPermissionsSection, type RuntimeModeOption } from "../chat/ComposerFooterControls";
 import { composerFloatingLayerProps, focusCheckedPermission } from "../chat/composerEventScope";
 import { EffortGlyph, FastBolt, resolveEffortGlyph } from "../chat/EffortGlyph";
 import { DockedPickerContext } from "../chat/ProviderModelPicker";
