@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
+import { userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { render } from "../../../test/render";
@@ -11,6 +12,11 @@ vi.mock("../../state/environments", () => ({
 vi.mock("../ui/sidebar", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../ui/sidebar")>()),
   useSidebar: () => ({ isMobile: false, setOpenMobile: () => {} }),
+}));
+
+const openAddProjectDialog = vi.fn();
+vi.mock("../AddProjectDialog", () => ({
+  openAddProjectDialog: () => openAddProjectDialog(),
 }));
 
 describe("SidebarRailNav", () => {
@@ -66,5 +72,13 @@ describe("SidebarRailNav", () => {
     expect(text).toContain("Grids");
     expect(text).not.toContain("Workspaces");
     expect(screen.getByRole("button", { name: "New grid" }).element()).toBeVisible();
+  });
+
+  it("keeps Add project reachable in the section heading", async () => {
+    openAddProjectDialog.mockReset();
+    await using screen = await render(<SidebarRailNav search={<span>Search</span>} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Add project" }).element());
+    expect(openAddProjectDialog).toHaveBeenCalledTimes(1);
   });
 });

@@ -9,7 +9,7 @@ import {
   PlusIcon,
   SlidersHorizontalIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 import {
@@ -25,6 +25,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "./menu";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 
 /** A grid heading reads as one quiet line: name, then workspace, then empty. */
 export const SIDEBAR_GRID_HEADING_CLS =
@@ -80,10 +81,34 @@ export const SIDEBAR_GRID_ACTION_CLS =
   "inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 transition-opacity duration-(--motion-feedback) ease-standard hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 group-focus-within/grid:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 export const SIDEBAR_GRID_RENAME_CLS =
-  "h-7 min-w-0 flex-1 rounded-(--r-ctl) border border-input bg-background px-2 text-xs font-semibold text-foreground outline-none focus:border-ring focus-visible:ring-2 focus-visible:ring-ring";
+  "h-7 min-w-0 flex-1 rounded-(--r-ctl) border border-input bg-background px-2 text-xs font-semibold text-foreground outline-none focus:border-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 export const SIDEBAR_SECTION_ACTION_CLS =
   "-my-1.5 inline-grid size-6 shrink-0 cursor-pointer place-items-center rounded-(--r-ctl) text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+
+const SIDEBAR_SECTION_HEADER_ROW_CLS =
+  "group/section flex h-(--h-row) shrink-0 items-center gap-1 rounded-lg pr-1 pl-2 text-2xs font-medium text-secondary-label";
+
+const SIDEBAR_SECTION_HEADER_ACTIONS_CLS =
+  "ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-(--motion-feedback) ease-standard group-hover/section:opacity-100 group-focus-within/section:opacity-100";
+
+/** A quiet section label whose icon actions appear while its row is hovered or focused. */
+export function SidebarSectionHeaderRow({
+  title,
+  actions,
+}: {
+  readonly title: string;
+  readonly actions?: ReactNode;
+}) {
+  return (
+    <div className={SIDEBAR_SECTION_HEADER_ROW_CLS}>
+      <span className="min-w-0 flex-1 truncate">{title}</span>
+      {actions === undefined ? null : (
+        <span className={SIDEBAR_SECTION_HEADER_ACTIONS_CLS}>{actions}</span>
+      )}
+    </div>
+  );
+}
 
 export const SIDEBAR_NEW_GRID_POPOVER_CLS = "w-58 [&>div]:p-1.5";
 
@@ -270,17 +295,24 @@ export function SidebarOptionsMenu({
 }) {
   return (
     <Menu>
-      <MenuTrigger
-        render={
-          <button
-            type="button"
-            aria-label="Sidebar options"
-            className={cn(SIDEBAR_SECTION_ACTION_CLS, "data-popup-open:bg-(--sel)")}
-          />
-        }
-      >
-        <SlidersHorizontalIcon aria-hidden className="size-[15px]" />
-      </MenuTrigger>
+      <Tooltip>
+        <MenuTrigger
+          render={
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label="View options"
+                  className={cn(SIDEBAR_SECTION_ACTION_CLS, "data-popup-open:bg-(--sel)")}
+                />
+              }
+            />
+          }
+        >
+          <SlidersHorizontalIcon aria-hidden className="size-[15px]" />
+        </MenuTrigger>
+        <TooltipPopup side="bottom">View options</TooltipPopup>
+      </Tooltip>
       <MenuPopup align="start" side="bottom" className="min-w-56">
         <MenuGroup>
           <MenuGroupLabel>Sort threads</MenuGroupLabel>

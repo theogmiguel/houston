@@ -215,7 +215,7 @@
 9 apps/web/src/components/ManagedPolicy.tsx
 18 apps/web/src/components/media/MediaVideoPlayer.tsx
 9 apps/web/src/components/NoActiveThreadState.tsx
-19 apps/web/src/components/NoProjectsHero.tsx
+18 apps/web/src/components/NoProjectsHero.tsx
 9 apps/web/src/components/onboarding/FirstRunGate.tsx
 150 apps/web/src/components/onboarding/WelcomeWizard.tsx
 7 apps/web/src/components/permissions/PermissionChecklist.tsx
