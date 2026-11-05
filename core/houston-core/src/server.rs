@@ -3051,6 +3051,15 @@ async fn dispatch(
         .await
         .map_err(|_| anyhow::anyhow!("sending generated-title setting failed")),
         proto::ClientMsg::GeneratedTitlesSet { enabled } => daemon.set_generated_titles(enabled),
+        proto::ClientMsg::AgentBrowserGet {} => send_msg(
+            sink,
+            &proto::ServerMsg::AgentBrowser {
+                enabled: daemon.agent_browser_enabled(),
+            },
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("sending agent browser setting failed")),
+        proto::ClientMsg::AgentBrowserSet { enabled } => daemon.set_agent_browser(enabled),
         proto::ClientMsg::ZcodeQuotaCheckGet {} => send_msg(
             sink,
             &proto::ServerMsg::ZcodeQuotaCheck {

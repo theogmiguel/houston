@@ -437,6 +437,7 @@ function SectionDispatch({
             hostInfo={hostInfo}
             sessionPolicy={sessionPolicy}
             onSessionPolicy={onSessionPolicy}
+            client={daemonClient}
           />
           <MergeQueueSettingsSection client={daemonClient} workspace={historyWorkspace} />
           <ReviewRequestsSection client={daemonClient} />

@@ -110,6 +110,12 @@ capturing it or requesting confirmation for an element action. Reading, navigati
 reloading and scrolling existing tabs keep your selected workspace and panel in place.
 Closing a tab also removes its saved state.
 
+Settings ▸ Workspaces ▸ Browser has two separate switches. **Open links in a browser pane**
+decides whether clicking a link in a terminal pane opens a Houston browser tab or your
+system browser. **Let agents use the browser** decides whether agents can open, read and
+drive Houston browser tabs at all. When it is off, agents do not see the browser tools and
+any call is refused, so an agent gives you the URL or uses another tool instead.
+
 Use Shift-click on Reload to bypass the page cache, or open the current page in the
 system browser. Full screen expands the current browser; Escape returns to the panel.
 

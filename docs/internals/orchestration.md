@@ -237,6 +237,13 @@ relay connection after authentication; ordinary renderer connections receive no 
 Only pending calls belonging to a disconnected connection fail. With no registered relay,
 page operations fail immediately. Local server discovery runs directly in the Linux daemon.
 
+The daemon setting `agent_browser` (default on) gates the whole family, discovery included.
+Off withholds the tools and the browser instructions from `tools/list` and refuses a direct
+call by the setting's name before anything reaches the relay; the catalogue keeps the
+schemas so that call routes to the named refusal rather than an unknown-tool error. The
+renderer's open-links preference is separate: it decides only where a clicked terminal link
+opens, and agents' tools never read it.
+
 Page tools accept an optional `tabId`. Explicit ids must be live in the caller's workspace;
 refusals list its available tab ids and URLs. Without an id, the active live tab wins, then
 the most recently registered live surface. Capture, tab selection and the five confirmation-gated
