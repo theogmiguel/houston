@@ -37,6 +37,8 @@ export const waitForHttpReady = Effect.fn("shared.httpReadiness.waitForHttpReady
   readonly path?: string;
   readonly timeoutMs?: number;
   readonly intervalMs?: number;
+  /** Delay before the next probe, given the milliseconds since the first attempt. */
+  readonly delayMs?: (elapsedMs: number) => number;
   readonly probeTimeoutMs?: number;
   readonly makeError: (info: {
     readonly requestUrl: string;
@@ -48,9 +50,15 @@ export const waitForHttpReady = Effect.fn("shared.httpReadiness.waitForHttpReady
   const timeoutMs = input.timeoutMs ?? 30_000;
   const intervalMs = input.intervalMs ?? 100;
   const probeTimeoutMs = input.probeTimeoutMs ?? DEFAULT_HTTP_READY_PROBE_TIMEOUT_MS;
-  const retryPolicy = Schedule.spaced(Duration.millis(intervalMs)).pipe(
-    Schedule.upTo({ times: Math.max(0, Math.ceil(timeoutMs / intervalMs)) }),
-  );
+  const delayMs = input.delayMs;
+  const fastestIntervalMs = delayMs === undefined ? intervalMs : Math.max(1, delayMs(0));
+  const retryPolicy = (
+    delayMs === undefined
+      ? Schedule.spaced(Duration.millis(intervalMs))
+      : Schedule.forever.pipe(
+          Schedule.addDelay(({ elapsed }) => Effect.succeed(Duration.millis(delayMs(elapsed)))),
+        )
+  ).pipe(Schedule.upTo({ times: Math.max(0, Math.ceil(timeoutMs / fastestIntervalMs)) }));
   const requestUrl = new URL(input.path ?? "/", input.baseUrl).toString();
   const client = yield* HttpClient.HttpClient;
   const lastProbeFailure = yield* Ref.make<unknown>(null);

@@ -36,12 +36,30 @@ const MAX_RESTART_DELAY = Duration.seconds(10);
 const MAX_PREFLIGHT_FAILURE_ATTEMPTS = 5;
 // Large state databases can take over a minute to become ready.
 export const DEFAULT_BACKEND_READINESS_TIMEOUT = Duration.minutes(3);
-const DEFAULT_BACKEND_READINESS_INTERVAL = Duration.millis(100);
+// A cold server answers within a few hundred milliseconds, so the first second
+// probes tightly; a slow start (a large state database) falls back to the old pace.
+const BACKEND_READINESS_FAST_INTERVAL = Duration.millis(25);
+const BACKEND_READINESS_FAST_FOR = Duration.seconds(1);
+const BACKEND_READINESS_MEDIUM_INTERVAL = Duration.millis(100);
+const BACKEND_READINESS_MEDIUM_UNTIL = Duration.seconds(5);
+const BACKEND_READINESS_SLOW_INTERVAL = Duration.millis(250);
 const DEFAULT_BACKEND_READINESS_REQUEST_TIMEOUT = Duration.seconds(1);
 // Match the service launcher's grace period so backends can stop provider sessions.
 const DEFAULT_BACKEND_TERMINATE_GRACE = Duration.seconds(5);
 const DEFAULT_BACKEND_OUTPUT_DRAIN_TIMEOUT = Duration.seconds(5);
 const BACKEND_READINESS_PATH = "/.well-known/houston/environment";
+
+/** The delay before the next readiness probe, given the time since the first. */
+export const readinessPollDelay = (elapsed: Duration.Duration): Duration.Duration => {
+  const elapsedMs = Duration.toMillis(elapsed);
+  if (elapsedMs < Duration.toMillis(BACKEND_READINESS_FAST_FOR)) {
+    return BACKEND_READINESS_FAST_INTERVAL;
+  }
+  if (elapsedMs < Duration.toMillis(BACKEND_READINESS_MEDIUM_UNTIL)) {
+    return BACKEND_READINESS_MEDIUM_INTERVAL;
+  }
+  return BACKEND_READINESS_SLOW_INTERVAL;
+};
 // Three restarts without readiness is about 2 s of backoff: past a blip, early enough to help.
 const STARTUP_FAILURE_RESTART_ATTEMPTS = 3;
 const STARTUP_FAILURE_OUTPUT_CHARS = 4_000;
@@ -384,7 +402,7 @@ const waitForHttpReady = (
     baseUrl: options.httpBaseUrl.href,
     path: BACKEND_READINESS_PATH,
     timeoutMs: Duration.toMillis(options.timeout),
-    intervalMs: Duration.toMillis(DEFAULT_BACKEND_READINESS_INTERVAL),
+    delayMs: (elapsedMs) => Duration.toMillis(readinessPollDelay(Duration.millis(elapsedMs))),
     probeTimeoutMs: Duration.toMillis(DEFAULT_BACKEND_READINESS_REQUEST_TIMEOUT),
     makeError: ({ cause }) =>
       new BackendReadinessTimeoutError({
@@ -1258,7 +1276,11 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
       effect.pipe(
         Effect.repeat({
           until: (status) => status.done,
-          schedule: Schedule.spaced(Duration.millis(100)),
+          schedule: Schedule.forever.pipe(
+            Schedule.addDelay(({ elapsed }) =>
+              Effect.succeed(readinessPollDelay(Duration.millis(elapsed))),
+            ),
+          ),
         }),
         Effect.map((status) => status.ready),
         Effect.timeoutOption(timeout),

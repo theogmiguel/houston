@@ -2,6 +2,10 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it as effectIt } from "@effect/vitest";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import { CommandAvailability, WindowsShellEnvironment } from "@houston-app/shared/shell";
+import {
+  HOST_PREPARED_FIXTURE,
+  hostFixtureEnv,
+} from "@houston-app/shared/testing/windowsServerEnvironmentFixture";
 import * as Effect from "effect/Effect";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Observe the existing synchronous shell probe without launching the user's login shell.
 import * as NodeChildProcess from "node:child_process";
@@ -152,31 +156,7 @@ effectIt.effect("replaces a Path-spelled Windows PATH instead of adding a second
   }),
 );
 
-// The host prepares this PATH itself (src-tauri/src/sys/server_env.rs); both sides pin one fixture.
-const HOST_PREPARED_FIXTURE = {
-  inherited: String.raw`C:\Windows;"C:\Program Files\nodejs";c:\windows;;C:\Users\u\.bun\bin;C:\Users\José\bin`,
-  prepared: [
-    String.raw`C:\Windows`,
-    String.raw`C:\Program Files\nodejs`,
-    String.raw`C:\Users\u\.bun\bin`,
-    String.raw`C:\Users\José\bin`,
-    String.raw`C:\Users\u\AppData\Roaming\npm`,
-    String.raw`C:\Users\u\AppData\Local\Programs\nodejs`,
-    String.raw`C:\Users\u\AppData\Local\Volta\bin`,
-    String.raw`C:\Users\u\AppData\Local\pnpm`,
-    String.raw`C:\Users\u\.local\bin`,
-    String.raw`C:\Users\u\scoop\shims`,
-  ].join(";"),
-};
-
-function hostFixtureEnv(): NodeJS.ProcessEnv {
-  return {
-    Path: HOST_PREPARED_FIXTURE.inherited,
-    APPDATA: String.raw`C:\Users\u\AppData\Roaming`,
-    LOCALAPPDATA: String.raw`C:\Users\u\AppData\Local`,
-    USERPROFILE: String.raw`C:\Users\u`,
-  };
-}
+// The host prepares this PATH itself; both sides pin one shared fixture.
 
 effectIt.effect("the -NoProfile probe of an inherited PATH yields the host's prepared PATH", () =>
   Effect.gen(function* () {
