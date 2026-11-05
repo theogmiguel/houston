@@ -411,9 +411,12 @@ above rather than the Tailwind palette.
 - Animate transform and opacity. The status pulse and skeleton step their opacity so the
   compositor draws discrete frames instead of one update per vsync.
 - `Spinner` runs through `visible-animate-spin`, which pauses while hidden.
-- Reduced motion: `motion-reduce` variants and the `prefers-reduced-motion` blocks in
-  `index.css` stop transitions and animations. Loading and status indicators keep their
-  settled, visible state.
+- Reduced motion is the system preference or the Appearance **Animations** switch, which sets
+  `data-motion="off"` on the root. CSS gates motion with the `motion-safe`/`motion-reduce`
+  variants that `index.css` redefines for both; script reads `prefersReducedMotion` or
+  `useReducedMotion`. A registry test rejects any other `prefers-reduced-motion` read; a
+  shadow-root sheet pairs its media query with `:host-context([data-motion="off"])`. Loading
+  and status indicators keep their settled, visible state.
 - A theme switch uses a View Transition reveal from the clicked control
   (`data-theme-reveal`); without a click, without View Transition support, or under reduced
   motion it is instant.

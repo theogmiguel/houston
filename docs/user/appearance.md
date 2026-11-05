@@ -9,9 +9,13 @@ Diffs & pull requests** control the composer and diffs.
 themes. A custom theme can be created from scratch, duplicated from an existing one, edited,
 exported or imported. VS Code theme files can be imported.
 
-The same page sets **Contrast**, **Glass opacity**, **Panel animations**, **Environment
+The same page sets **Contrast**, **Glass opacity**, **Animations**, **Environment
 identification**, **Chat width**, **Effort display**, **Render math** and whether branch and
 worktree controls stay visible below the composer in active threads.
+
+**Animations** is on by default. Turning it off stops menu, dialog, list and grid motion
+across the application, as the system's reduce-motion setting also does. Panels and drawers
+open and close without animation either way.
 
 ## Typography
 

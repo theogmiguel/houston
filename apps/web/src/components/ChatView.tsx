@@ -213,7 +213,6 @@ import {
   useEnvironmentSettings,
 } from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
-import { usePanelAnimationSettings, usePanelPresence } from "../panelAnimations";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { isPreviewFocused } from "../lib/previewFocus";
@@ -1168,22 +1167,9 @@ export default function ChatView(props: ChatViewProps) {
   const canReuseTerminal = activeThreadKnownSessionsRaw !== null;
   const previewPanelOpen = activeRightPanelKind === "preview" && browserAvailable;
   const rightPanelOpen = rightPanelState.isOpen;
-  const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
-    usePanelAnimationSettings();
-  const rightPanelPresenceValue = {
-    activeSurface: activeRightPanelSurface,
-    surfaces: rightPanelState.surfaces,
-  };
-  const rightPanelPresence = usePanelPresence(
-    rightPanelOpen && activeThreadRef !== null,
-    rightPanelPresenceValue,
-    panelAnimationsActive,
-    activeThreadKey,
-    panelAnimationDurationMs,
-  );
-  const rightPanelPresent = rightPanelPresence.present;
-  const renderedRightPanelSurface = rightPanelPresence.value?.activeSurface ?? null;
-  const renderedRightPanelSurfaces = rightPanelPresence.value?.surfaces ?? [];
+  const rightPanelPresent = rightPanelOpen && activeThreadRef !== null;
+  const renderedRightPanelSurface = rightPanelPresent ? activeRightPanelSurface : null;
+  const renderedRightPanelSurfaces = rightPanelPresent ? rightPanelState.surfaces : [];
   const previewMiniPlayerVisible = shouldRenderPreviewMiniPlayer(
     activePreviewMiniPlayer?.source ?? null,
     renderedRightPanelSurface,
@@ -1725,11 +1711,7 @@ export default function ChatView(props: ChatViewProps) {
     transitionGroupRef: draftHeroTransitionGroupRef,
     composerAnchorRef: draftHeroComposerAnchorRef,
     captureComposerRect: captureDraftHeroComposerRect,
-  } = useDraftHeroLayoutTransition(
-    isDraftHeroState,
-    panelAnimationsActive,
-    panelAnimationDurationMs,
-  );
+  } = useDraftHeroLayoutTransition(isDraftHeroState, false, 0);
   const turnDiffSummaries = useThreadCheckpointSummaries(routeThreadDetailRef);
   const [dismissedChangeRuns, setDismissedChangeRuns] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -3166,8 +3148,6 @@ export default function ChatView(props: ChatViewProps) {
     isSendBusy,
     sendQueuesBehindSetup,
     isDraftHeroState,
-    panelAnimationsActive,
-    panelAnimationDurationMs,
     keepFullHistory,
     resumeCompactionTokens,
     showPlanFollowUpPrompt,
@@ -3509,7 +3489,7 @@ export default function ChatView(props: ChatViewProps) {
             data-chat-header
             data-drag-region="deep"
             className={cn(
-              "relative bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
+              "relative bg-background",
               isDesktopHost
                 ? cn(
                     "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center",
@@ -4191,7 +4171,6 @@ export default function ChatView(props: ChatViewProps) {
               sheet={shouldUsePlanSidebarSheet}
               workspaceLayoutElement={rightPanelPortal?.container ?? workspaceLayoutElement}
               widthStorageKey={`houston:preview-panel-width:${activeThreadKey}`}
-              sheetAnimationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
               onCloseSheet={closePreviewPanelStable}
               open={rightPanelOpen}
               keybindings={keybindings}

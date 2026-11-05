@@ -74,9 +74,23 @@ interface MotionSettings {
 }
 
 const settings: MotionSettings = { off: false, slowdown: 1, animations: {} };
+const listeners = new Set<() => void>();
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
+/**
+ * Applies the motion settings. `off` mirrors the Appearance "Animations" switch: the
+ * root's `data-motion="off"` makes the stylesheet treat it like the system's reduced
+ * motion, and script reads it through `prefersReducedMotion`.
+ */
 export function configureMotion(next: Partial<MotionSettings>): void {
-  if (next.off !== undefined) settings.off = next.off;
+  if (next.off !== undefined && next.off !== settings.off) {
+    settings.off = next.off;
+    if (typeof document !== "undefined") {
+      if (next.off) document.documentElement.dataset.motion = "off";
+      else delete document.documentElement.dataset.motion;
+    }
+    for (const listener of listeners) listener();
+  }
   if (next.slowdown !== undefined)
     settings.slowdown = Math.min(1000, Math.max(0.001, next.slowdown));
   if (next.animations) settings.animations = { ...settings.animations, ...next.animations };
@@ -87,17 +101,36 @@ export function motionSettings(): Readonly<MotionSettings> {
   return settings;
 }
 
+/**
+ * True when animations should not play: the Animations setting is off or the system asks
+ * for reduced motion. The one check every script-driven animation uses.
+ */
 export function prefersReducedMotion(): boolean {
   return (
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    settings.off ||
+    (typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia(REDUCED_MOTION_QUERY).matches)
   );
+}
+
+/** Calls `listener` whenever `prefersReducedMotion()` may have changed. */
+export function subscribeReducedMotion(listener: () => void): () => void {
+  listeners.add(listener);
+  const media =
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia(REDUCED_MOTION_QUERY)
+      : null;
+  media?.addEventListener?.("change", listener);
+  return () => {
+    listeners.delete(listener);
+    media?.removeEventListener?.("change", listener);
+  };
 }
 
 /** The animation `name` plays with now: `off` under reduced motion or the global switch. */
 export function resolveMotion(name: MotionName): { config: MotionConfig; slowdown: number } {
-  if (settings.off || prefersReducedMotion()) {
+  if (prefersReducedMotion()) {
     return { config: { kind: "off" }, slowdown: 1 };
   }
   return {

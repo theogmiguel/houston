@@ -355,9 +355,10 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["latex tex katex equations formulas markdown"],
   },
   {
-    id: "panel-animations",
-    title: "Panel animations",
+    id: "animations",
+    title: "Animations",
     to: "/settings/appearance",
+    searchTerms: ["motion reduce transitions menus dialogs panels"],
   },
   {
     id: "environment-identification",

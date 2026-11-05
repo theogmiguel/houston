@@ -10,6 +10,7 @@ import { startBrowserProfileReporting } from "./browser/BrowserProfileReporter";
 import { ensureThreadInGrid } from "./grid/ensureThreadInGrid";
 import { GRID_STORAGE_KEY, useGridStore } from "./grid/gridStore";
 import { startPreviewTitleRecording } from "./browserHistoryStore";
+import { configureMotion } from "./motion/registry";
 import { retainThreadOverlaysForThread } from "./components/chat/threadOverlayRetention";
 import { startBackgroundThreadAnnouncements } from "./components/BackgroundThreadAnnouncer";
 import { startSshPasswordPromptQueue } from "./components/desktop/SshPasswordPromptDialog";
@@ -82,6 +83,9 @@ function startClientAppearance(): void {
     }
     if (previous?.chatWidth !== settings.chatWidth) {
       root.dataset.chatWidth = settings.chatWidth;
+    }
+    if (previous?.animationsEnabled !== settings.animationsEnabled) {
+      configureMotion({ off: !settings.animationsEnabled });
     }
     if (previous?.appearanceContrast !== settings.appearanceContrast) {
       applyAppearanceContrast(root, settings.appearanceContrast);

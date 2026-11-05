@@ -9,10 +9,8 @@ import {
   type EnvironmentIdentificationMode,
   MAX_APPEARANCE_CONTRAST,
   MAX_GLASS_OPACITY,
-  MAX_PANEL_ANIMATION_DURATION_MS,
   MIN_APPEARANCE_CONTRAST,
   MIN_GLASS_OPACITY,
-  MIN_PANEL_ANIMATION_DURATION_MS,
 } from "@houston-app/contracts/settings";
 import {
   resolveSidebarStageBackdropVariant,
@@ -95,9 +93,6 @@ const EFFORT_DISPLAY_LABELS: Record<EffortDisplay, string> = {
   bars: "Bars",
 };
 
-// The board shows animations as a single switch; 150ms keeps the default motion short.
-const PANEL_ANIMATIONS_ON_MS = 150;
-
 export function AppearanceSettingsPanel() {
   const {
     appearanceMode,
@@ -136,13 +131,6 @@ export function AppearanceSettingsPanel() {
   const appearanceContrastSliderStyle = {
     "--settings-slider-progress": `${appearanceContrastRatio * 100}%`,
     "--settings-slider-fill-offset": `${0.5 - appearanceContrastRatio}rem`,
-  } as CSSProperties;
-  const panelAnimationDurationRatio =
-    (settings.panelAnimationDurationMs - MIN_PANEL_ANIMATION_DURATION_MS) /
-    (MAX_PANEL_ANIMATION_DURATION_MS - MIN_PANEL_ANIMATION_DURATION_MS);
-  const panelAnimationDurationSliderStyle = {
-    "--settings-slider-progress": `${panelAnimationDurationRatio * 100}%`,
-    "--settings-slider-fill-offset": `${0.5 - panelAnimationDurationRatio}rem`,
   } as CSSProperties;
 
   return (
@@ -216,27 +204,22 @@ export function AppearanceSettingsPanel() {
         />
 
         <SettingsRow
-          {...searchableSetting("panel-animations")}
-          description="Animate panels and menus as they open and close."
+          {...searchableSetting("animations")}
+          description="Animate menus, dialogs, lists and grid changes. Your system's reduce-motion setting also turns them off."
           control={
             <Switch
-              checked={settings.panelAnimationDurationMs > 0}
-              onCheckedChange={(checked) =>
-                updateSettings({
-                  panelAnimationDurationMs: checked ? PANEL_ANIMATIONS_ON_MS : 0,
-                })
-              }
-              aria-label="Panel animations"
+              checked={settings.animationsEnabled}
+              onCheckedChange={(animationsEnabled) => updateSettings({ animationsEnabled })}
+              aria-label="Animations"
             />
           }
           resetAction={
-            settings.panelAnimationDurationMs !==
-            DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs ? (
+            settings.animationsEnabled !== DEFAULT_UNIFIED_SETTINGS.animationsEnabled ? (
               <SettingResetButton
-                label="panel animations"
+                label="animations"
                 onClick={() =>
                   updateSettings({
-                    panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
+                    animationsEnabled: DEFAULT_UNIFIED_SETTINGS.animationsEnabled,
                   })
                 }
               />
@@ -362,42 +345,6 @@ export function AppearanceSettingsPanel() {
               themeHalves={themeHalves}
               onImportOpenChange={setIsImportThemeOpen}
               view="library"
-            />
-            <SettingsRow
-              {...searchableSetting("panel-animations")}
-              title="Panel animation duration"
-              description="How long panels take to open and close."
-              control={
-                <div className="flex items-center gap-3">
-                  <output
-                    className="min-w-16 text-right font-mono text-xs tabular-nums text-muted-foreground"
-                    htmlFor="panel-animation-duration"
-                  >
-                    {settings.panelAnimationDurationMs} ms
-                  </output>
-                  <input
-                    aria-label="Panel animation duration"
-                    className="settings-slider w-40"
-                    id="panel-animation-duration"
-                    max={MAX_PANEL_ANIMATION_DURATION_MS}
-                    min={MIN_PANEL_ANIMATION_DURATION_MS}
-                    onChange={(event) => {
-                      const panelAnimationDurationMs = Number(event.currentTarget.value);
-                      if (
-                        Number.isInteger(panelAnimationDurationMs) &&
-                        panelAnimationDurationMs >= MIN_PANEL_ANIMATION_DURATION_MS &&
-                        panelAnimationDurationMs <= MAX_PANEL_ANIMATION_DURATION_MS
-                      ) {
-                        updateSettings({ panelAnimationDurationMs });
-                      }
-                    }}
-                    step={25}
-                    style={panelAnimationDurationSliderStyle}
-                    type="range"
-                    value={settings.panelAnimationDurationMs}
-                  />
-                </div>
-              }
             />
           </DialogPanel>
           <DialogFooter>
