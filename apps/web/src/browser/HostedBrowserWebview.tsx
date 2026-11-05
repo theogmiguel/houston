@@ -8,6 +8,12 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { previewBridge } from "~/components/preview/previewBridge";
 import { usePreviewBridge } from "~/components/preview/usePreviewBridge";
+import {
+  HOSTED_BROWSER_VIEWPORT_BADGE,
+  HOSTED_BROWSER_WEBVIEW_FRAME,
+  HOSTED_BROWSER_WEBVIEW_FRAME_ACTIVE,
+  HOSTED_BROWSER_WEBVIEW_SHELL,
+} from "~/components/ui/hosted-browser-webview-recipes";
 import { useClientSettingsHydrated } from "~/hooks/useSettings";
 import { cn, isMacPlatform } from "~/lib/utils";
 
@@ -306,7 +312,7 @@ export function HostedBrowserWebview(props: {
   return (
     <div
       ref={wrapperRef}
-      className="fixed overflow-hidden bg-muted/35"
+      className={cn("fixed overflow-hidden", HOSTED_BROWSER_WEBVIEW_SHELL)}
       style={{ ...wrapperStyle, overscrollBehavior: "contain" }}
       onScroll={syncContentPresentation}
       data-preview-rendering={renderingActive ? "active" : "suspended"}
@@ -351,8 +357,9 @@ export function HostedBrowserWebview(props: {
           }
           aria-hidden={active ? undefined : true}
           className={cn(
-            "absolute flex overflow-hidden bg-white",
-            active && !layout.fillsPanel && "ring-1 ring-border/70 shadow-sm",
+            "absolute flex overflow-hidden",
+            HOSTED_BROWSER_WEBVIEW_FRAME,
+            active && !layout.fillsPanel && HOSTED_BROWSER_WEBVIEW_FRAME_ACTIVE,
           )}
           style={{
             left: layout.viewportX,
@@ -373,7 +380,10 @@ export function HostedBrowserWebview(props: {
             />
             {activeDrag ? (
               <div
-                className="pointer-events-none absolute z-40 -translate-x-1/2 rounded-md border border-border/80 bg-background/95 px-2 py-1 text-2xs font-medium tabular-nums text-foreground shadow-md backdrop-blur-sm"
+                className={cn(
+                  "absolute z-40 -translate-x-1/2 px-2 py-1",
+                  HOSTED_BROWSER_VIEWPORT_BADGE,
+                )}
                 style={{
                   left: layout.viewportX + layout.viewportWidth / 2,
                   top: layout.viewportY + 10,

@@ -1,6 +1,5 @@
 18 apps/web/src/browser/BrowserDeviceToolbar.tsx
 17 apps/web/src/browser/BrowserViewportResizeHandles.tsx
-16 apps/web/src/browser/HostedBrowserWebview.tsx
 40 apps/web/src/browser/ServerBrowserSurface.tsx
 38 apps/web/src/components/AddProjectToMachineDialog.tsx
 3 apps/web/src/components/AnimatedHeight.tsx
