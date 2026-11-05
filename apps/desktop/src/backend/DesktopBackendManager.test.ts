@@ -7,7 +7,7 @@ const readyServer = {
   attached: false,
   desiredRunning: true,
   ready: true,
-  activePid: Option.some(4242),
+  active: true,
 } as const;
 
 describe("restartRefusalReason", () => {
@@ -38,7 +38,7 @@ describe("restartRefusalReason", () => {
         restartRefusalReason({
           ...readyServer,
           ready: false,
-          activePid: Option.none(),
+          active: false,
         }),
       ),
     );

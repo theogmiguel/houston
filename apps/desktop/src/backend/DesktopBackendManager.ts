@@ -328,14 +328,14 @@ export function restartRefusalReason(input: {
   readonly attached: boolean;
   readonly desiredRunning: boolean;
   readonly ready: boolean;
-  readonly activePid: Option.Option<number>;
+  readonly active: boolean;
 }): Option.Option<string> {
   if (input.attached) {
     return Option.some(
       "this server was already running when Houston opened and the app does not own it, so Houston never stops it. Quit that server yourself, then reopen Houston.",
     );
   }
-  if (input.desiredRunning && !input.ready && Option.isSome(input.activePid)) {
+  if (input.desiredRunning && !input.ready && input.active) {
     return Option.some(
       "a server start is already in progress; wait for it to finish and try again.",
     );
@@ -1231,7 +1231,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           attached: Option.isSome(current.attached),
           desiredRunning: current.desiredRunning,
           ready: current.ready,
-          activePid: activePid(current.active),
+          active: Option.isSome(current.active),
         });
         if (Option.isSome(refusal)) {
           return yield* new BackendRestartRefusedError({ id: spec.id, reason: refusal.value });
