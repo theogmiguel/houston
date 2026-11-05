@@ -3,6 +3,7 @@ import { EnvironmentId, ProjectId, ThreadId } from "@houston-app/contracts";
 import { Profiler } from "react";
 import { expect, it, vi } from "vite-plus/test";
 
+import "~/index.css";
 import { act, render } from "../../../test/render";
 import { DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import { SidebarDraftBlock } from "./SidebarDraftBlock";
@@ -43,6 +44,13 @@ it("keeps draft previews current through edits, promotion and removal", async ()
     initial.setPrompt(draftId, "First draft preview");
   });
   await expect.element(row).toHaveAccessibleName("First draft preview, Unsent draft");
+
+  const discard = row.element().querySelector<HTMLElement>('[aria-label="Discard draft"]');
+  if (discard === null) throw new Error("The draft row has no discard button.");
+  const discardStyle = getComputedStyle(discard);
+  expect(discardStyle.transitionProperty).toBe("opacity");
+  expect(discardStyle.transitionDuration).toBe("0.1s");
+  expect(discardStyle.transitionTimingFunction).toBe("cubic-bezier(0.2, 0, 0, 1)");
 
   const rendersBeforeOtherComposer = onRender.mock.calls.length;
   await act(() =>

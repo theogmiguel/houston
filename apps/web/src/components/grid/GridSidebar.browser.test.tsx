@@ -227,6 +227,25 @@ describe("ThreadCard", () => {
     await expect.element(actions).toBeVisible();
   });
 
+  it("eases the row tint and the action reveal on the feedback role", async () => {
+    await using screen = await render(card(thread()));
+
+    const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
+    const rowStyle = getComputedStyle(row);
+    expect(rowStyle.transitionProperty).toContain("color");
+    expect(rowStyle.transitionDuration).toBe("0.1s");
+    expect(rowStyle.transitionTimingFunction).toBe("cubic-bezier(0.2, 0, 0, 1)");
+
+    const reveal = [...row.querySelectorAll("span")].find((span) =>
+      span.className.includes("right-2.5"),
+    );
+    if (reveal === undefined) throw new Error("The thread card has no action reveal span.");
+    const revealStyle = getComputedStyle(reveal);
+    expect(revealStyle.transitionProperty).toBe("opacity");
+    expect(revealStyle.transitionDuration).toBe("0.1s");
+    expect(revealStyle.opacity).toBe("0");
+  });
+
   it("keeps the rename input mounted after the Rename menu item closes the menu, and commits on Enter", async () => {
     const onRename = vi.fn();
     await using screen = await render(card(thread({ title: "Greeting" }), { onRename }));

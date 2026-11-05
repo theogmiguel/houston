@@ -24,6 +24,15 @@ describe("SidebarRailNav", () => {
     expect(text).toContain("Workspaces");
   });
 
+  it("eases its rows on the feedback role", async () => {
+    await using screen = await render(<SidebarRailNav search={<span>Search</span>} />);
+
+    const style = getComputedStyle(screen.getByRole("button", { name: /Pull requests/ }).element());
+    expect(style.transitionProperty).toContain("color");
+    expect(style.transitionDuration).toBe("0.1s");
+    expect(style.transitionTimingFunction).toBe("cubic-bezier(0.2, 0, 0, 1)");
+  });
+
   it("shows the open pull request count, and hides it when empty or unknown", async () => {
     {
       await using screen = await render(

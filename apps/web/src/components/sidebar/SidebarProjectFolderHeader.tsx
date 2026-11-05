@@ -9,6 +9,7 @@ import { useUiStateStore } from "../../uiStateStore";
 import { resolveSidebarFolderDot, resolveThreadLastVisitedAt } from "../Sidebar.logic";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { MOTION_DISCLOSURE_ROTATE, MOTION_FEEDBACK_OPACITY } from "../ui/motion-recipes";
 import { SidebarStatusGlyph } from "./SidebarStatusGlyph";
 
 const FOLDER_GLYPH_STATE = {
@@ -80,7 +81,8 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
         <ChevronDownIcon
           aria-hidden
           className={cn(
-            "size-3 shrink-0 text-secondary-label transition-transform duration-(--motion-disclosure) ease-standard",
+            "size-3 shrink-0 text-secondary-label",
+            MOTION_DISCLOSURE_ROTATE,
             collapsed && "-rotate-90",
           )}
         />
@@ -95,7 +97,12 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
         ) : null}
       </button>
       {/* Sits over the count, which hides on hover, and left of the chevron. */}
-      <span className="absolute inset-y-0 right-6 flex items-center opacity-0 transition-opacity duration-(--motion-feedback) ease-standard focus-within:opacity-100 group-hover/project-folder:opacity-100 pointer-coarse:opacity-100">
+      <span
+        className={cn(
+          "absolute inset-y-0 right-6 flex items-center opacity-0 focus-within:opacity-100 group-hover/project-folder:opacity-100 pointer-coarse:opacity-100",
+          MOTION_FEEDBACK_OPACITY,
+        )}
+      >
         <Tooltip>
           <TooltipTrigger
             render={

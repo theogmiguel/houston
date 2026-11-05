@@ -2,6 +2,7 @@ import { ChevronDownIcon, PaperclipIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
+import { MOTION_RISE_IN, MOTION_RISE_OUT } from "../ui/motion-recipes";
 
 export function WorkspaceFileDropOverlay() {
   return (
@@ -35,10 +36,8 @@ export function ScrollToEndButton(props: {
       aria-hidden={!props.open || undefined}
       inert={!props.open}
       className={cn(
-        "chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-center py-1.5 transition-[opacity,translate]",
-        props.open
-          ? "translate-y-0 opacity-100 duration-(--motion-toast-in) ease-standard"
-          : "-translate-y-1 opacity-0 duration-(--motion-toast-out) ease-exit",
+        "chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-center py-1.5",
+        props.open ? MOTION_RISE_IN : MOTION_RISE_OUT,
       )}
       style={{ bottom: props.bottom }}
     >

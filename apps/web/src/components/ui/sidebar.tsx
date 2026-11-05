@@ -42,6 +42,19 @@ export const FOCUS_ACTION_CLS =
 /** A row's hover actions stay reachable as soon as the row has keyboard focus. */
 export const ROW_ACTIONS_FOCUS_REVEAL = "group-has-[:focus-visible]/th:flex";
 
+/** A thread card's actions stay hidden until the card or its title has focus. */
+export const ROW_ACTIONS_REVEAL =
+  "pointer-events-none opacity-0 group-hover/th:pointer-events-auto group-hover/th:opacity-100 group-has-[:focus-visible]/th:pointer-events-auto group-has-[:focus-visible]/th:opacity-100";
+
+/** The row's actions while its menu is open or the card is pinned. */
+export const ROW_ACTIONS_VISIBLE = "opacity-100";
+
+/** The row's status label steps aside while its actions are showing. */
+export const ROW_STATUS_RECEDE = "group-hover/th:opacity-0";
+
+/** The row's status label while its actions are pinned visible. */
+export const ROW_STATUS_HIDDEN = "opacity-0";
+
 /** Chevrons turn with the same short ease as the rest of the rail. */
 export const SIDEBAR_CHEVRON_CLS =
   "transition-transform duration-(--motion-value) ease-standard motion-reduce:transition-none";

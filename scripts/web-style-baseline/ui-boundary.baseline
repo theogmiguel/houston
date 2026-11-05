@@ -2,7 +2,7 @@
 17 apps/web/src/browser/BrowserViewportResizeHandles.tsx
 40 apps/web/src/browser/ServerBrowserSurface.tsx
 38 apps/web/src/components/AddProjectToMachineDialog.tsx
-4 apps/web/src/components/AnimatedHeight.tsx
+3 apps/web/src/components/AnimatedHeight.tsx
 4 apps/web/src/components/AnimatedWidth.tsx
 7 apps/web/src/components/AppRouteModal.tsx
 3 apps/web/src/components/AppSidebarLayout.tsx
@@ -31,7 +31,7 @@
 8 apps/web/src/components/chat/CommandOutputPanel.tsx
 3 apps/web/src/components/chat/CompactComposerControlsMenu.tsx
 25 apps/web/src/components/chat/ComposerApprovalCard.tsx
-86 apps/web/src/components/chat/ComposerAttachmentStrip.tsx
+85 apps/web/src/components/chat/ComposerAttachmentStrip.tsx
 32 apps/web/src/components/chat/ComposerBanner.tsx
 9 apps/web/src/components/chat/ComposerBannerStack.tsx
 1 apps/web/src/components/chat/ComposerCodeBlockLanguagePicker.tsx
@@ -201,7 +201,7 @@
 6 apps/web/src/components/files/ProjectFilePicker.tsx
 10 apps/web/src/components/files/ProjectFileTree.tsx
 1 apps/web/src/components/files/ReadOnlySourcePreview.tsx
-44 apps/web/src/components/files/VirtualTablePreview.tsx
+43 apps/web/src/components/files/VirtualTablePreview.tsx
 190 apps/web/src/components/GitActionsControl.tsx
 6 apps/web/src/components/grid/GridHost.tsx
 2 apps/web/src/components/grid/GridLayoutMenu.tsx
@@ -233,7 +233,7 @@
 7 apps/web/src/components/preview/PreviewView.tsx
 8 apps/web/src/components/preview/RightPanelResizeHandle.tsx
 50 apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx
-17 apps/web/src/components/preview/ZoomIndicator.tsx
+16 apps/web/src/components/preview/ZoomIndicator.tsx
 2 apps/web/src/components/PreviousWorktreeItemContent.tsx
 1 apps/web/src/components/ProjectEnvironmentBadge.tsx
 2 apps/web/src/components/ProjectPinButton.tsx
@@ -303,7 +303,7 @@
 1 apps/web/src/components/RightPanelSheet.tsx
 44 apps/web/src/components/RightPanelTabs.tsx
 3 apps/web/src/components/search/HighlightedSearchLine.tsx
-39 apps/web/src/components/search/ProjectContentSearchDialog.tsx
+38 apps/web/src/components/search/ProjectContentSearchDialog.tsx
 15 apps/web/src/components/ServerUpdateAction.tsx
 2 apps/web/src/components/settings/AboutVersionTitle.tsx
 6 apps/web/src/components/settings/AcpRegistryIcon.tsx
@@ -353,7 +353,7 @@
 14 apps/web/src/components/settings/ProviderAuthenticationSection.tsx
 4 apps/web/src/components/settings/ProviderAuthTerminal.tsx
 94 apps/web/src/components/settings/ProviderInstanceCard.tsx
-24 apps/web/src/components/settings/ProviderModelsSection.tsx
+23 apps/web/src/components/settings/ProviderModelsSection.tsx
 9 apps/web/src/components/settings/ProviderSettingsForm.tsx
 30 apps/web/src/components/settings/ProviderSettingsPanel.tsx
 20 apps/web/src/components/settings/ProviderSetupSection.tsx
@@ -397,15 +397,15 @@
 2 apps/web/src/components/settings/useSnapShotShortcutRecorder.tsx
 6 apps/web/src/components/sidebar/DesktopUpdateStatusIcon.tsx
 11 apps/web/src/components/sidebar/SidebarChrome.tsx
-24 apps/web/src/components/sidebar/SidebarDraftBlock.tsx
-32 apps/web/src/components/sidebar/SidebarListMarkers.tsx
-13 apps/web/src/components/sidebar/SidebarProjectFolderHeader.tsx
-28 apps/web/src/components/sidebar/SidebarProviderUpdatePill.tsx
-35 apps/web/src/components/sidebar/SidebarRailNav.tsx
+23 apps/web/src/components/sidebar/SidebarDraftBlock.tsx
+31 apps/web/src/components/sidebar/SidebarListMarkers.tsx
+12 apps/web/src/components/sidebar/SidebarProjectFolderHeader.tsx
+24 apps/web/src/components/sidebar/SidebarProviderUpdatePill.tsx
+32 apps/web/src/components/sidebar/SidebarRailNav.tsx
 3 apps/web/src/components/sidebar/SidebarRowTime.tsx
 16 apps/web/src/components/sidebar/SidebarThreadHeader.tsx
-171 apps/web/src/components/sidebar/SidebarThreadRow.tsx
-8 apps/web/src/components/sidebar/SidebarThreadUndoNotice.tsx
+166 apps/web/src/components/sidebar/SidebarThreadRow.tsx
+7 apps/web/src/components/sidebar/SidebarThreadUndoNotice.tsx
 29 apps/web/src/components/sidebar/SidebarUpdateCapsule.tsx
 21 apps/web/src/components/sidebar/SidebarUpdatePill.tsx
 39 apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx

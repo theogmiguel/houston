@@ -9,6 +9,7 @@ import {
   sidebarMarkerId,
   type SidebarListMarker,
 } from "../Sidebar.logic";
+import { MOTION_FEEDBACK } from "../ui/motion-recipes";
 import { SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
 
 function SortableSidebarMarker(props: {
@@ -134,7 +135,8 @@ export function SidebarShelfHeader(props: {
         onClick={props.toggle.onToggle}
         aria-expanded={props.toggle.expanded}
         className={cn(
-          "flex h-7 w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 text-left text-xs font-medium transition-colors duration-(--motion-feedback) ease-standard outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+          "flex h-7 w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 text-left text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+          MOTION_FEEDBACK,
           props.isDropTarget
             ? "bg-(--accent-muted) text-(--accent-ink)"
             : props.dragging

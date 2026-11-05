@@ -232,3 +232,13 @@ it("moves the highlight across sections in menu order", async () => {
   await userEvent.keyboard("{ArrowUp}");
   expect(activeItemId()).toBe(`provider-slash-command:${PROVIDER}:usage`);
 });
+
+it("grows the drawer from the composer edge on the overlay role", async () => {
+  await using _screen = await render(<MenuHarness items={ITEMS} />);
+
+  const drawer = document.querySelector<HTMLElement>('[data-composer-command-drawer="true"]')!;
+  const style = getComputedStyle(drawer);
+  expect(style.transitionProperty).toBe("opacity, scale");
+  expect(style.transitionDuration).toBe("0.15s");
+  expect(style.transitionTimingFunction).toBe("cubic-bezier(0.2, 0, 0, 1)");
+});

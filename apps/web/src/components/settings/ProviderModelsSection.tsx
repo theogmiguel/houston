@@ -12,6 +12,7 @@ import { useStableCallback } from "../../hooks/useStableCallback";
 import { AnimatedHeight } from "../AnimatedHeight";
 import { cn } from "../../lib/utils";
 import { sortModelsForProviderInstance } from "../../modelOrdering";
+import { MOTION_FEEDBACK } from "../ui/motion-recipes";
 import { MAX_CUSTOM_MODEL_LENGTH } from "../../modelSelection";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -489,7 +490,8 @@ function ProviderModelRow({
     <div
       data-model-slug={model.slug}
       className={cn(
-        "grid h-7 grid-cols-[1.5rem_minmax(0,1fr)_auto_minmax(5.5rem,auto)_auto] items-center gap-2 rounded-md px-2 transition-colors duration-(--motion-feedback) ease-standard hover:bg-muted/30",
+        "grid h-7 grid-cols-[1.5rem_minmax(0,1fr)_auto_minmax(5.5rem,auto)_auto] items-center gap-2 rounded-md px-2 hover:bg-muted/30",
+        MOTION_FEEDBACK,
         isHidden && "opacity-50",
       )}
     >
