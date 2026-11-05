@@ -4,9 +4,11 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import { ThreadId } from "@houston-app/contracts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { RotatingFileSinkError } from "@houston-app/shared/logging";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as FileSystem from "effect/FileSystem";
@@ -50,7 +52,7 @@ function parseLogLine(line: string) {
   };
 }
 
-it.layer(NodeServices.layer)("EventNdjsonLogger", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("EventNdjsonLogger", (it) => {
   it.effect("summarizes circular events without exposing their contents in diagnostics", () => {
     const messages: Array<unknown> = [];
     const logCapture = Logger.make<unknown, void>(({ message }) => {
@@ -149,6 +151,39 @@ it.layer(NodeServices.layer)("EventNdjsonLogger", (it) => {
               payload: '{"type":"item.completed","id":"canonical-event"}',
             },
           ],
+        );
+      } finally {
+        NodeFS.rmSync(tempDir, { recursive: true, force: true });
+      }
+    }),
+  );
+
+  it.effect("keeps long thread ids that share a prefix in separate files", () =>
+    Effect.gen(function* () {
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-provider-log-"));
+      const basePath = NodePath.join(tempDir, "events.log");
+      const prefix =
+        "thread:delegated-task:command%3Amcp%3A00000000-0000-4000-8000-000000000000%3Adelegate-task%3A";
+
+      try {
+        const store = yield* makeEventNdjsonLogStore(basePath, { batchWindowMs: 0 });
+        const logger = store.logger("native");
+        yield* logger.write({ id: "first" }, ThreadId.make(`${prefix}review-the-diff`));
+        yield* logger.write({ id: "second" }, ThreadId.make(`${prefix}write-the-tests`));
+        yield* store.close();
+
+        const files = NodeFS.readdirSync(tempDir);
+        assert.equal(files.length, 2);
+        assert.deepEqual(
+          files
+            .map((name) =>
+              NodeFS.readFileSync(NodePath.join(tempDir, name), "utf8")
+                .trim()
+                .split("\n")
+                .map((line) => parseLogLine(line).payload),
+            )
+            .toSorted(),
+          [['{"id":"first"}'], ['{"id":"second"}']],
         );
       } finally {
         NodeFS.rmSync(tempDir, { recursive: true, force: true });

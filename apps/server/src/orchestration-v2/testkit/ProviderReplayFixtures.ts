@@ -1,6 +1,8 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import type { OrchestrationV2DomainEvent, ProviderReplayTranscript } from "@houston-app/contracts";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -32,6 +34,7 @@ const DRIVERS_WITH_REPLAY_FIXTURE_FILES = new Set([
   "cursor",
   "fx",
   "grok",
+  "kiro",
   "muse",
   "opencode",
   "pi",
@@ -46,11 +49,12 @@ for (const fixture of ORCHESTRATOR_REPLAY_FIXTURES) {
   }
 }
 
-export const readReplayFixtureTranscript = Effect.fn("readOrchestratorReplayTranscript")(function* (
-  file: URL,
-) {
-  return yield* readProviderReplayTranscript(file);
-}, Effect.provide(NodeServices.layer));
+export const readReplayFixtureTranscript = Effect.fn("readOrchestratorReplayTranscript")(
+  function* (file: URL) {
+    return yield* readProviderReplayTranscript(file);
+  },
+  Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+);
 
 function normalizeTestError(cause: unknown): Error {
   return cause instanceof Error ? cause : new Error(String(cause));
@@ -162,7 +166,7 @@ const runFixtureProvider = Effect.fn("runOrchestratorReplayFixture")(function* <
           `${input.fixtureName}/${input.driver.driver} must not create ${relativePath} in the replay workspace`,
         );
       }
-    }).pipe(Effect.provide(NodeServices.layer));
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
   }
   assert.isFalse(
     result.domainEvents.some(isStreamingAssistantEvent),
@@ -173,7 +177,14 @@ const runFixtureProvider = Effect.fn("runOrchestratorReplayFixture")(function* <
   const projection = result.projections.get(projectionThreadId);
   assert.isDefined(projection);
   const latestRun = projection.runs.at(-1);
-  assert.deepEqual(latestRun?.modelSelection, input.driver.modelSelection);
+  // A `set_model` step moves later runs to another model of the same instance.
+  const finalModel = fixtureInput.steps.findLast((step) => step.type === "set_model");
+  assert.deepEqual(
+    latestRun?.modelSelection,
+    finalModel?.type === "set_model"
+      ? { ...input.driver.modelSelection, model: finalModel.model }
+      : input.driver.modelSelection,
+  );
   if (projection.runs.some((run) => run.status === "completed")) {
     const threadStartCheckpoint = projection.checkpoints.find(
       (checkpoint) => checkpoint.ordinalWithinScope === 0 && checkpoint.appRunOrdinal === null,

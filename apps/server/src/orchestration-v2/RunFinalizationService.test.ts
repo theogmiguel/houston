@@ -245,6 +245,7 @@ it.effect.each(
   ).map((scenario) => [scenario.label, scenario] as const),
 )("%s", ([, scenario]) => {
   const refreshed: string[] = [];
+  const lookedUp = Deferred.makeUnsafe<void>();
   const threadId = ThreadId.make("thread-pr-refresh");
   const runId = RunId.make("completed-run");
   const layer = RunFinalization.layerObserver.pipe(
@@ -266,11 +267,11 @@ it.effect.each(
             }),
           refreshStatus: () =>
             Effect.die("turn completion must preserve known PRs and lookup backoff"),
-          refreshPullRequestStatus: (cwd) =>
-            Effect.sync(() => {
-              refreshed.push(cwd);
-              return null;
-            }),
+          // Requested synchronously by refresh; the lookup itself runs in the background.
+          refreshPullRequestStatus: (cwd) => {
+            refreshed.push(cwd);
+            return Deferred.succeed(lookedUp, undefined).pipe(Effect.as(null));
+          },
         }),
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getThreadShell: () =>
@@ -286,6 +287,7 @@ it.effect.each(
   return Effect.gen(function* () {
     const observer = yield* RunFinalization.RunFinalizationObserver;
     yield* observer.refresh({ cwd: "/repo", threadId, runId });
+    if (scenario.expected.length > 0) yield* Deferred.await(lookedUp);
     assert.deepEqual(refreshed, [...scenario.expected]);
   }).pipe(Effect.provide(layer));
 });

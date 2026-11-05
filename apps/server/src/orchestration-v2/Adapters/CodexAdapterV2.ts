@@ -85,7 +85,7 @@ import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexSchema from "effect-codex-app-server/schema";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -346,6 +346,21 @@ function toProtocolError(
   });
 }
 
+const CODEX_THREAD_IN_USE_MESSAGE =
+  "This conversation is open in another Codex client, such as the Codex app, the Codex CLI, or an IDE extension. Codex lets one client write to a conversation at a time. Quit that client, then send your message again.";
+
+const isCodexAppServerRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
+
+// Codex holds a per-thread writer lock for as long as a thread stays loaded in
+// any app-server sharing the same CODEX_HOME, and reports a conflict this way.
+function isCodexActiveWriterError(error: unknown): boolean {
+  return (
+    isCodexAppServerRequestError(error) &&
+    error.code === -32600 &&
+    error.errorMessage.includes("already has an active writer")
+  );
+}
+
 function codexTimestamp(seconds: number | null | undefined): DateTime.Utc {
   return seconds === null || seconds === undefined
     ? DateTime.nowUnsafe()
@@ -435,17 +450,21 @@ function codexBackgroundCommandDetail(item: {
   readonly exitCode?: number | null | undefined;
   readonly aggregatedOutput?: string | null | undefined;
 }): string {
+  // Codex rejects a turn/start with a lone surrogate and never answers it, so cut on code points.
+  let commandEnd = BACKGROUND_COMMAND_DETAIL_COMMAND_MAX_LENGTH;
+  const finalCommandUnit = item.command.charCodeAt(commandEnd - 1);
+  if (finalCommandUnit >= 0xd800 && finalCommandUnit <= 0xdbff) commandEnd -= 1;
   const command =
     item.command.length > BACKGROUND_COMMAND_DETAIL_COMMAND_MAX_LENGTH
-      ? `${item.command.slice(0, BACKGROUND_COMMAND_DETAIL_COMMAND_MAX_LENGTH)}...`
+      ? `${item.command.slice(0, commandEnd)}...`
       : item.command;
   const exit =
     item.exitCode === null || item.exitCode === undefined ? "" : ` (exit ${item.exitCode})`;
   const output = (item.aggregatedOutput ?? "").trimEnd();
-  const outputTail =
-    output.length > BACKGROUND_COMMAND_DETAIL_OUTPUT_TAIL_MAX_LENGTH
-      ? `...${output.slice(-BACKGROUND_COMMAND_DETAIL_OUTPUT_TAIL_MAX_LENGTH)}`
-      : output;
+  let outputStart = output.length - BACKGROUND_COMMAND_DETAIL_OUTPUT_TAIL_MAX_LENGTH;
+  const firstOutputUnit = output.charCodeAt(outputStart);
+  if (firstOutputUnit >= 0xdc00 && firstOutputUnit <= 0xdfff) outputStart += 1;
+  const outputTail = outputStart > 0 ? `...${output.slice(outputStart)}` : output;
   const header = `Background command completed${exit}: ${command}`;
   return outputTail.length === 0 ? header : `${header}\n\nOutput tail:\n${outputTail}`;
 }
@@ -516,7 +535,7 @@ export function codexDynamicToolOutput(
 
 const projectCodexDynamicToolItem = Effect.fn("CodexAdapterV2.projectDynamicToolItem")(function* (
   item: CodexDynamicToolItem,
-): Effect.fn.Return<CodexDynamicToolProjection, never, Crypto.Crypto> {
+): Effect.fn.Return<CodexDynamicToolProjection, never, Digest.Digest> {
   const output =
     item.type === "mcpToolCall" ? codexMcpToolOutput(item) : codexDynamicToolOutput(item);
   const toolName =
@@ -1113,7 +1132,8 @@ function codexUsageLimitError(
 
 /**
  * ChatGPT sharing reports its own reason inside Codex's generic turn error, so
- * the code it names replaces Codex's, and clients pick a recovery from it.
+ * the code it names replaces Codex's, and clients pick a recovery from it. Its
+ * allowance limits get the usage-limit recovery; other sharing failures keep their class.
  */
 function withCodexManagedFailure(
   failure: OrchestrationV2ProviderFailure,
@@ -1122,7 +1142,22 @@ function withCodexManagedFailure(
   const managed = classifyCodexManagedError(nativeError);
   return managed === undefined
     ? failure
-    : { ...failure, message: managed.message, code: managed.code };
+    : {
+        ...failure,
+        message: managed.message,
+        code: managed.code,
+        ...(managed.usageLimit ? { class: "usage_limit" } : {}),
+      };
+}
+
+function failureResetAt(
+  failure: OrchestrationV2ProviderFailure,
+  snapshot: CodexRateLimitSnapshot | undefined,
+) {
+  // Sharing caps have no reset timestamp in the ordinary Codex allowance snapshot.
+  return classifyCodexManagedError(failure.code)?.usageLimit
+    ? null
+    : codexUsageLimitResetAt(snapshot);
 }
 
 interface ActiveCodexTurnContext {
@@ -1339,6 +1374,9 @@ export const CODEX_THREAD_CONFIG = {
 
 // Houston waits can block for an hour; keep Codex's MCP timeout above that.
 const CODEX_HOUSTON_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
+// Calls arrive as `houston-direct.<tool>`; houstonMcpToolPresentation.ts must keep resolving that form.
+const CODEX_HOUSTON_DIRECT_MCP_SERVER = "houston-direct";
+const CODEX_DIRECT_ONLY_HOUSTON_TOOL = "houston_thread_wait";
 
 export function codexThreadRuntimeParams(input: {
   readonly threadId: ThreadId | null;
@@ -1361,6 +1399,16 @@ export function codexThreadRuntimeParams(input: {
             Authorization: mcpSession.authorizationHeader,
           },
         };
+  // A submit-only credential cannot call the orchestrator toolkit, so a direct wait server
+  // would advertise a tool every call refuses.
+  const directHoustonServer =
+    houstonServer === undefined || mcpSession?.capabilities?.has("orchestration") === false
+      ? undefined
+      : {
+          ...houstonServer,
+          enabled_tools: [CODEX_DIRECT_ONLY_HOUSTON_TOOL],
+          omit_tools_from: ["code_mode", "deferred"],
+        };
   return {
     ...(input.runtimePolicy?.cwd == null ? {} : { cwd: input.runtimePolicy.cwd }),
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
@@ -1373,11 +1421,34 @@ export function codexThreadRuntimeParams(input: {
       // Houston: the read-only sandbox does not cover MCP tool calls, so a read-only run
       // replaces every configured MCP server with Houston's own, when it holds a credential.
       ...(isReadOnlySandbox(input.runtimePolicy)
-        ? { mcp_servers: houstonServer === undefined ? {} : { houston: houstonServer } }
+        ? {
+            mcp_servers:
+              houstonServer === undefined
+                ? {}
+                : {
+                    houston: {
+                      ...houstonServer,
+                      disabled_tools: [CODEX_DIRECT_ONLY_HOUSTON_TOOL],
+                    },
+                    ...(directHoustonServer === undefined
+                      ? {}
+                      : { [CODEX_HOUSTON_DIRECT_MCP_SERVER]: directHoustonServer }),
+                  },
+          }
         : houstonServer === undefined
           ? {}
-          : // Override only Houston's server so launch-argument MCP servers survive.
-            { "mcp_servers.houston": houstonServer }),
+          : {
+              // Override only Houston's servers so launch-argument MCP servers survive.
+              "mcp_servers.houston": {
+                ...houstonServer,
+                disabled_tools: [CODEX_DIRECT_ONLY_HOUSTON_TOOL],
+              },
+              // Code Mode runs a blocking wait as a nested call, and the model keeps working
+              // around it. A second, direct-only registration makes it a plain tool call.
+              ...(directHoustonServer === undefined
+                ? {}
+                : { [`mcp_servers.${CODEX_HOUSTON_DIRECT_MCP_SERVER}`]: directHoustonServer }),
+            }),
     },
   };
 }
@@ -1581,7 +1652,7 @@ export const layerAppServerClientFactory: Layer.Layer<
 
 export type CodexAdapterV2DriverEnv =
   | CodexAppServerClientFactory
-  | Crypto.Crypto
+  | Digest.Digest
   | FileSystem.FileSystem
   | IdAllocator.IdAllocatorV2
   | McpProviderSessions.McpProviderSessions
@@ -1594,7 +1665,7 @@ export const createCodexAdapterV2 = Effect.fn("CodexAdapterV2.createCodexAdapter
 ) {
   const clientFactory = yield* CodexAppServerClientFactory;
   const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
-  const crypto = yield* Crypto.Crypto;
+  const digest = yield* Digest.Digest;
   const fileSystem = yield* FileSystem.FileSystem;
   const hostEnvironment = yield* HostProcess.Environment;
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -1625,7 +1696,7 @@ export const createCodexAdapterV2 = Effect.fn("CodexAdapterV2.createCodexAdapter
     settings,
     environment: yield* mergeProviderInstanceEnvironment(environment, hostEnvironment),
     clientFactory,
-    crypto,
+    digest,
     fileSystem,
     idAllocator,
     serverConfig,
@@ -1644,7 +1715,7 @@ export interface CodexAdapterV2Options {
   readonly compatibility?: (
     version: string,
   ) => Effect.Effect<ServerProviderCompatibilityAdvisory | undefined>;
-  readonly crypto: Crypto.Crypto;
+  readonly digest: Digest.Digest["Service"];
   readonly fileSystem: FileSystem.FileSystem;
   readonly idAllocator: IdAllocator.IdAllocatorV2["Service"];
   readonly serverConfig: ServerConfig["Service"];
@@ -1663,7 +1734,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
   const readMcpSession = (threadId: ThreadId | null) =>
     // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
     threadId === null ? Effect.succeed(undefined) : mcpSessions.read(threadId);
-  const { clientFactory, crypto, fileSystem, idAllocator, serverConfig } = adapterOptions;
+  const { clientFactory, digest, fileSystem, idAllocator, serverConfig } = adapterOptions;
   const continuationRequests = adapterOptions.continuationRequests;
 
   return ProviderAdapter.ProviderAdapterV2.of({
@@ -3817,7 +3888,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             });
             const { ordinal, startedAt } = yield* resolveItemPosition(context, item.id);
             const projection = yield* projectCodexDynamicToolItem(item).pipe(
-              Effect.provideService(Crypto.Crypto, crypto),
+              Effect.provideService(Digest.Digest, digest),
             );
             const node: OrchestrationV2ExecutionNode = {
               id: nodeId,
@@ -4472,8 +4543,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             const previous = yield* Ref.getAndUpdate(rateLimitSnapshot, (previous) =>
               mergeCodexRateLimits(previous, payload.rateLimits),
             );
-            const resetAt = codexUsageLimitResetAt(yield* Ref.get(rateLimitSnapshot));
+            const snapshot = yield* Ref.get(rateLimitSnapshot);
             for (const item of (yield* Ref.get(limitedTurnItems)).values()) {
+              const resetAt = failureResetAt(item.failure, snapshot);
               if (resetAt === null || item.failure.resetAt != null) continue;
               const updated = {
                 ...item,
@@ -5813,7 +5885,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   failure.class === "usage_limit"
                     ? {
                         ...failure,
-                        resetAt: codexUsageLimitResetAt(yield* Ref.get(rateLimitSnapshot)),
+                        resetAt: failureResetAt(failure, yield* Ref.get(rateLimitSnapshot)),
                       }
                     : failure,
                 ...(input.providerRetry === undefined
@@ -5853,7 +5925,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     ...event.failure,
                     resetAt:
                       event.failure.resetAt ??
-                      codexUsageLimitResetAt(yield* Ref.get(rateLimitSnapshot)),
+                      failureResetAt(event.failure, yield* Ref.get(rateLimitSnapshot)),
                   },
                 }
               : event;
@@ -6725,6 +6797,24 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           );
         });
 
+        // Codex refuses to resume a session archived elsewhere until it is unarchived.
+        const resumeNativeThread = Effect.fn("CodexAdapterV2.resumeNativeThread")(function* (
+          threadId: string,
+          params: Record<string, unknown>,
+        ) {
+          const resume = client.raw.request("thread/resume", { threadId, ...params });
+          return yield* resume.pipe(
+            Effect.catchTags({
+              CodexAppServerRequestError: (cause) =>
+                /\bsession \S+ is archived\b|\bcodex unarchive\b/i.test(cause.errorMessage)
+                  ? client.raw
+                      .request("thread/unarchive", { threadId })
+                      .pipe(Effect.andThen(resume))
+                  : Effect.fail(cause),
+            }),
+          );
+        });
+
         const startNativeTurn = Effect.fn("CodexAdapterV2.startNativeTurn")(
           function* (
             turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
@@ -7077,8 +7167,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             function* (threadInput) {
               const nativeThreadId = yield* getNativeThreadId(threadInput.providerThread);
               const appThreadId = threadInput.threadId ?? threadInput.providerThread.appThreadId;
-              const resume = client.raw.request("thread/resume", {
-                threadId: nativeThreadId,
+              const resume = resumeNativeThread(nativeThreadId, {
                 excludeTurns: true,
                 ...codexThreadRuntimeParams({
                   threadId: appThreadId,
@@ -7092,24 +7181,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 }),
               });
               const response = yield* ensureInitialized.pipe(
-                Effect.andThen(
-                  resume.pipe(
-                    Effect.catchTags({
-                      CodexAppServerRequestError: (cause) => {
-                        if (
-                          !/\bsession \S+ is archived\b|\bcodex unarchive\b/i.test(
-                            cause.errorMessage,
-                          )
-                        ) {
-                          return Effect.fail(cause);
-                        }
-                        return client.raw
-                          .request("thread/unarchive", { threadId: nativeThreadId })
-                          .pipe(Effect.andThen(resume));
-                      },
-                    }),
-                  ),
-                ),
+                Effect.andThen(resume),
                 Effect.flatMap(decodeCodexResumeMetadata),
               );
               return {
@@ -7128,14 +7200,20 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             },
             (effect, threadInput) =>
               effect.pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new ProviderAdapter.ProviderAdapterResumeThreadError({
-                      driver: CODEX_PROVIDER,
-                      providerSessionId: input.providerSessionId,
-                      providerThreadId: threadInput.providerThread.id,
-                      cause,
-                    }),
+                Effect.mapError((cause) =>
+                  isCodexActiveWriterError(cause)
+                    ? new ProviderAdapter.ProviderAdapterThreadInUseError({
+                        driver: CODEX_PROVIDER,
+                        providerThreadId: threadInput.providerThread.id,
+                        detail: CODEX_THREAD_IN_USE_MESSAGE,
+                        cause,
+                      })
+                    : new ProviderAdapter.ProviderAdapterResumeThreadError({
+                        driver: CODEX_PROVIDER,
+                        providerSessionId: input.providerSessionId,
+                        providerThreadId: threadInput.providerThread.id,
+                        cause,
+                      }),
                 ),
               ),
           ),
@@ -7877,8 +7955,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               }
               // thread/revert requires the thread loaded in this app-server; resume after restart or idle release.
               if (!loaded) {
-                yield* client.raw.request("thread/resume", {
-                  threadId,
+                yield* resumeNativeThread(threadId, {
                   excludeTurns: true,
                   ...codexThreadRuntimeParams({
                     threadId: threadInput.providerThread.appThreadId,
@@ -7926,24 +8003,32 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             function* (threadInput) {
               const threadId = yield* getNativeThreadId(threadInput.sourceProviderThread);
               const boundary = yield* resolveCodexForkBoundary(threadInput);
+              const fork = client.request("thread/fork", {
+                threadId,
+                ...(boundary.lastTurnId === undefined ? {} : { lastTurnId: boundary.lastTurnId }),
+                ...codexThreadRuntimeParams({
+                  threadId: threadInput.targetThreadId,
+                  mcpSession: yield* mcpSessions.read(threadInput.targetThreadId),
+                  ...(threadInput.modelSelection === undefined
+                    ? {}
+                    : { modelSelection: threadInput.modelSelection }),
+                  ...(threadInput.runtimePolicy === undefined
+                    ? {}
+                    : { runtimePolicy: threadInput.runtimePolicy }),
+                }),
+              });
               const response = yield* ensureInitialized.pipe(
                 Effect.andThen(
-                  client.request("thread/fork", {
-                    threadId,
-                    ...(boundary.lastTurnId === undefined
-                      ? {}
-                      : { lastTurnId: boundary.lastTurnId }),
-                    ...codexThreadRuntimeParams({
-                      threadId: threadInput.targetThreadId,
-                      mcpSession: yield* mcpSessions.read(threadInput.targetThreadId),
-                      ...(threadInput.modelSelection === undefined
-                        ? {}
-                        : { modelSelection: threadInput.modelSelection }),
-                      ...(threadInput.runtimePolicy === undefined
-                        ? {}
-                        : { runtimePolicy: threadInput.runtimePolicy }),
+                  fork.pipe(
+                    Effect.catchTags({
+                      CodexAppServerRequestError: (cause) =>
+                        /\bsession \S+ is archived\b|\bcodex unarchive\b/i.test(cause.errorMessage)
+                          ? client.raw
+                              .request("thread/unarchive", { threadId })
+                              .pipe(Effect.andThen(fork))
+                          : Effect.fail(cause),
                     }),
-                  }),
+                  ),
                 ),
                 Effect.mapError(
                   (cause) =>

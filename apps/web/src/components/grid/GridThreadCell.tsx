@@ -3,6 +3,7 @@ import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@houston-app/cont
 import { EllipsisIcon, Maximize2Icon, Minimize2Icon, XIcon } from "lucide-react";
 import {
   useEffect,
+  useRef,
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
@@ -20,28 +21,19 @@ import { useQuietThreadShell } from "../../state/entities";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { paneDensityLayout } from "../../grid/density";
 import { subscribeGridCellRename } from "../../grid/gridCellCommands";
+import { gridTerminalThreadRef } from "../../grid/gridTerminal";
 import { MAX_GRID_THREADS, type GridRecord, useGridStore } from "../../grid/gridStore";
 import type { ThreadDropRefusal } from "../../grid/projectMove";
-import type { MoveToGridTarget } from "../../grid/moveToGrid";
 import { type Side, type SplitSide, type ThreadNode, preorderThreads } from "../../grid/tree";
 import { getThreadDragSource } from "../../grid/threadDrag";
 import { Button } from "../ui/button";
 import { GridPaneActions, GridPaneRename, GridPaneRenameInput } from "../ui/grid-pane";
+import { PANE_THREAD_TAG_CLASS, PANE_THREAD_TAG_COUNT_CLASS } from "../ui/thread-tag-recipes";
 import { GridDropIndicator } from "../ui/grid-drop-indicator";
-import {
-  Menu,
-  MenuItem,
-  MenuPopup,
-  MenuSeparator,
-  MenuSub,
-  MenuSubPopup,
-  MenuSubTrigger,
-  MenuTrigger,
-} from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 import { TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR } from "../chat/composerFocusRedirect";
-import { MoveToGridMenuItems } from "./MoveToGridMenuItems";
+import { useThreadActionMenu } from "../../hooks/useThreadActionMenu";
 import { ThreadOpenProvider } from "./threadOpenContext";
 import { usePaneDensity } from "./usePaneDensity";
 
@@ -69,9 +61,7 @@ export function GridThreadCell({
   onDragHandlePointerDown,
   swapTargets = [],
   onSwapWith,
-  gridTargets = [],
-  onMoveToGrid,
-  onMoveToNewGrid,
+  onOpenGrid,
 }: {
   node: ThreadNode;
   grid: GridRecord;
@@ -106,10 +96,8 @@ export function GridThreadCell({
   /** The other cells in this grid, for the label's keyboard move action. */
   swapTargets?: ReadonlyArray<{ threadId: string; title: string }>;
   onSwapWith?: ((threadId: string) => void) | undefined;
-  /** The project's other grids, for the cell menu's Move to grid action. */
-  gridTargets?: ReadonlyArray<MoveToGridTarget>;
-  onMoveToGrid?: ((gridId: string) => void) | undefined;
-  onMoveToNewGrid?: (() => void) | undefined;
+  /** Opens a grid the shared menu moved this cell's thread to. */
+  onOpenGrid?: ((gridId: string) => void) | undefined;
 }) {
   const environmentId = grid.environmentId as EnvironmentId;
   const threadId = node.threadId as ThreadId;
@@ -124,22 +112,7 @@ export function GridThreadCell({
   );
   const setDraftId = useGridStore((store) => store.setDraftId);
   const clearDraftThread = useComposerDraftStore((store) => store.clearDraftThread);
-  const {
-    archiveThread,
-    markThreadUnread,
-    confirmAndDeleteThread,
-    renameThread,
-    regenerateThreadTitle,
-    copyThreadId,
-    copyThreadPath,
-    copyThreadBranch,
-    copyThreadRef,
-    findThread,
-    openThreadProjectSettings,
-    threadSnoozePresets,
-    holdThread,
-    closeThread,
-  } = useThreadActions();
+  const { renameThread } = useThreadActions();
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(shell?.title ?? "");
   const startRename = () => {
@@ -164,13 +137,6 @@ export function GridThreadCell({
     [node.threadId, startRenameStable],
   );
 
-  const regenerateTitle = () => {
-    void regenerateThreadTitle(threadRef);
-  };
-  const deleteThread = () => {
-    void confirmAndDeleteThread(threadRef);
-  };
-
   // The draft is promoted by the composer store, not by this cell; this keeps the grid
   // leaf in step so a sent draft stops rendering as a draft.
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- syncs the persisted grid leaf with the composer store's promotion.
@@ -194,12 +160,41 @@ export function GridThreadCell({
   // handler asks before moving the new thread to its own grid.
   const availableForSplit = threadCount >= MAX_GRID_THREADS ? [] : availableThreads;
   const moveTargets = onSwapWith === undefined ? [] : swapTargets;
-  const canArchive = draftId === undefined;
   const showSplit = availableThreads.length > 0 || onNewThread !== undefined;
-  const showOverflow =
-    showSplit || moveTargets.length > 0 || onMoveToGrid !== undefined || canArchive;
+  const showOverflow = shell !== null || showSplit || moveTargets.length > 0;
+  const canRename = draftId === undefined && shell !== null;
   const archived = useArchivedThreadSnapshots([environmentId]);
   const closeCellStable = useStableCallback(closeArchivedCell);
+  const moreButtonRef = useRef<HTMLButtonElement | null>(null);
+  const { openMenu } = useThreadActionMenu({
+    threadRef,
+    thread: shell,
+    onStartRename: startRename,
+    grid: {
+      currentGridId: grid.id,
+      isFocusedCell: focused,
+      onOpen: onFocus,
+      ...(onOpenGrid === undefined ? {} : { onOpenGrid }),
+    },
+    cell: {
+      split: showSplit
+        ? {
+            availableThreads: availableForSplit,
+            atCap: threadCount >= MAX_GRID_THREADS,
+            onPick: onSplit,
+            ...(onNewThread === undefined ? {} : { onNewThread }),
+          }
+        : null,
+      swapTargets: moveTargets,
+      ...(onSwapWith === undefined ? {} : { onSwapWith }),
+    },
+    onThreadArchived: closeArchivedCell,
+  });
+  const openMoreMenu = () => {
+    const rect = moreButtonRef.current?.getBoundingClientRect();
+    if (rect === undefined || rect === null) return;
+    void openMenu({ x: rect.left, y: rect.bottom + 4 });
+  };
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- drops a cell whose thread was archived elsewhere (the sidebar or another window)
   useEffect(() => {
     if (draftId !== undefined) return;
@@ -215,48 +210,26 @@ export function GridThreadCell({
     onClose();
   };
   const discardDraftStable = useStableCallback(discardDraft);
-  const canRename = draftId === undefined && shell !== null;
-  const snoozePresets = canRename ? threadSnoozePresets(threadRef) : [];
   const paneActions = (includeMaximize: boolean) => (
     <>
       {showOverflow ? (
-        <MoreCellMenu
-          split={
-            showSplit
-              ? {
-                  availableThreads: availableForSplit,
-                  atCap: threadCount >= MAX_GRID_THREADS,
-                  onPick: onSplit,
-                  onNewThread,
-                }
-              : null
-          }
-          targets={moveTargets}
-          onPick={onSwapWith}
-          gridTargets={gridTargets}
-          onMoveToGrid={onMoveToGrid}
-          onMoveToNewGrid={onMoveToNewGrid}
-          onArchive={
-            canArchive
-              ? () => void archiveThread(threadRef, { onArchived: closeArchivedCell })
-              : undefined
-          }
-          onRename={canRename ? startRename : undefined}
-          onMarkUnread={canRename ? () => markThreadUnread(threadRef) : undefined}
-          onCopyPath={canRename ? () => void copyThreadPath(threadRef) : undefined}
-          onCopyBranch={canRename ? () => void copyThreadBranch(threadRef) : undefined}
-          onCopyThreadRef={canRename ? () => void copyThreadRef(threadRef) : undefined}
-          onCopyThreadId={canRename ? () => void copyThreadId(threadRef) : undefined}
-          onFind={canRename ? () => findThread(threadRef) : undefined}
-          onProjectSettings={
-            canRename ? () => void openThreadProjectSettings(threadRef) : undefined
-          }
-          snoozePresets={snoozePresets}
-          onHold={(snoozedUntil) => void holdThread(threadRef, snoozedUntil)}
-          onClose={canRename ? () => void closeThread(threadRef) : undefined}
-          onRegenerateTitle={canRename ? regenerateTitle : undefined}
-          onDelete={canRename ? deleteThread : undefined}
-        />
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                ref={moreButtonRef}
+                variant="ghost-muted"
+                size="icon-sm"
+                aria-label="More cell actions"
+                aria-haspopup="menu"
+                onClick={openMoreMenu}
+              />
+            }
+          >
+            <EllipsisIcon />
+          </TooltipTrigger>
+          <TooltipPopup side="bottom">More cell actions</TooltipPopup>
+        </Tooltip>
       ) : null}
       {includeMaximize && onMaximize !== undefined ? (
         <Tooltip>
@@ -398,6 +371,20 @@ export function GridThreadCell({
               {title}
             </span>
           )}
+          {shell !== null && (shell.tags?.length ?? 0) > 0 ? (
+            <span data-pane-tags="" className="flex shrink-0 items-center gap-1">
+              {(shell.tags ?? []).slice(0, 2).map((tag) => (
+                <span key={tag} className={PANE_THREAD_TAG_CLASS}>
+                  {tag}
+                </span>
+              ))}
+              {(shell.tags?.length ?? 0) > 2 ? (
+                <span className={PANE_THREAD_TAG_COUNT_CLASS}>
+                  +{(shell.tags?.length ?? 0) - 2}
+                </span>
+              ) : null}
+            </span>
+          ) : null}
           <SidebarThreadStatusGlyph status={status} label={status?.label} />
           <div className="flex w-0 items-center gap-0.5 overflow-hidden opacity-0 [interpolate-size:allow-keywords] transition-[width,opacity] duration-(--motion-disclosure) ease-standard group-hover/pane:w-auto group-hover/pane:opacity-100 group-focus-within/label:w-auto group-focus-within/label:opacity-100 motion-reduce:transition-none">
             {paneActions(true)}
@@ -426,6 +413,7 @@ export function GridThreadCell({
               embedded
               shortcutsAtWindow={focused}
               visitActive={focused}
+              gridTerminalRef={maximized ? null : gridTerminalThreadRef(environmentId, grid.id)}
               draftId={draftId}
               environmentId={environmentId}
               threadId={threadId}
@@ -441,6 +429,7 @@ export function GridThreadCell({
               embedded
               shortcutsAtWindow={focused}
               visitActive={focused}
+              gridTerminalRef={maximized ? null : gridTerminalThreadRef(environmentId, grid.id)}
               environmentId={environmentId}
               threadId={threadId}
               paneDensity={density}
@@ -459,360 +448,5 @@ export function GridThreadCell({
         <GridDropIndicator side={dropIndicator} />
       )}
     </section>
-  );
-}
-
-const SPLIT_CHOICES = [
-  { side: "right", label: "Split right" },
-  { side: "bottom", label: "Split down" },
-] as const satisfies ReadonlyArray<{ side: SplitSide; label: string }>;
-
-interface SplitChoices {
-  availableThreads: ReadonlyArray<{ threadId: string; title: string }>;
-  atCap: boolean;
-  onPick: (side: SplitSide, threadId: string) => void;
-  onNewThread?: ((side: SplitSide) => void) | undefined;
-}
-
-/** The cell's one overflow menu: split, move, then archive, each group apart. */
-function MoreCellMenu({
-  split,
-  targets,
-  onPick,
-  gridTargets,
-  onMoveToGrid,
-  onMoveToNewGrid,
-  onArchive,
-  onRename,
-  onMarkUnread,
-  onCopyPath,
-  onCopyBranch,
-  onCopyThreadRef,
-  onCopyThreadId,
-  onFind,
-  onProjectSettings,
-  snoozePresets,
-  onHold,
-  onClose,
-  onRegenerateTitle,
-  onDelete,
-}: {
-  split: SplitChoices | null;
-  targets: ReadonlyArray<{ threadId: string; title: string }>;
-  onPick?: ((threadId: string) => void) | undefined;
-  gridTargets: ReadonlyArray<MoveToGridTarget>;
-  onMoveToGrid?: ((gridId: string) => void) | undefined;
-  onMoveToNewGrid?: (() => void) | undefined;
-  onArchive?: (() => void) | undefined;
-  onRename?: (() => void) | undefined;
-  onMarkUnread?: (() => void) | undefined;
-  onCopyPath?: (() => void) | undefined;
-  onCopyBranch?: (() => void) | undefined;
-  onCopyThreadRef?: (() => void) | undefined;
-  onCopyThreadId?: (() => void) | undefined;
-  onFind?: (() => void) | undefined;
-  onProjectSettings?: (() => void) | undefined;
-  snoozePresets?:
-    | ReadonlyArray<{ id: string; label: string; whenLabel: string; snoozedUntil: string }>
-    | undefined;
-  onHold?: ((snoozedUntil: string) => void) | undefined;
-  onClose?: (() => void) | undefined;
-  onRegenerateTitle?: (() => void) | undefined;
-  onDelete?: (() => void) | undefined;
-}) {
-  const [open, setOpen] = useState(false);
-  const hasThreadActions =
-    onRename !== undefined ||
-    onMarkUnread !== undefined ||
-    onCopyPath !== undefined ||
-    onFind !== undefined ||
-    onProjectSettings !== undefined ||
-    (snoozePresets?.length ?? 0) > 0 ||
-    onClose !== undefined ||
-    onRegenerateTitle !== undefined ||
-    onDelete !== undefined;
-  const groups = [
-    split === null ? null : "split",
-    targets.length === 0 ? null : "move",
-    onMoveToGrid === undefined ? null : "grid",
-    hasThreadActions ? "thread" : null,
-    onArchive === undefined ? null : "archive",
-  ].filter((group) => group !== null);
-  const separatorBefore = (group: string) => groups.indexOf(group) > 0;
-  return (
-    <Menu open={open} onOpenChange={setOpen}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <MenuTrigger
-              render={
-                <Button variant="ghost-muted" size="icon-sm" aria-label="More cell actions" />
-              }
-            />
-          }
-        >
-          <EllipsisIcon />
-        </TooltipTrigger>
-        <TooltipPopup side="bottom">More cell actions</TooltipPopup>
-      </Tooltip>
-      <MenuPopup side="bottom" align="start">
-        {split === null
-          ? null
-          : SPLIT_CHOICES.map(({ side, label }) => (
-              <MenuSub key={side}>
-                <MenuSubTrigger>{label}</MenuSubTrigger>
-                <MenuSubPopup>
-                  <SplitTargetItems
-                    availableThreads={split.availableThreads}
-                    atCap={split.atCap}
-                    onPick={(threadId) => {
-                      setOpen(false);
-                      split.onPick(side, threadId);
-                    }}
-                    onNewThread={
-                      split.onNewThread === undefined
-                        ? undefined
-                        : () => {
-                            setOpen(false);
-                            split.onNewThread?.(side);
-                          }
-                    }
-                  />
-                </MenuSubPopup>
-              </MenuSub>
-            ))}
-        {targets.length === 0 ? null : (
-          <>
-            {separatorBefore("move") ? <MenuSeparator /> : null}
-            <MenuSub>
-              <MenuSubTrigger>Move to…</MenuSubTrigger>
-              <MenuSubPopup>
-                {targets.map((target) => (
-                  <MenuItem
-                    key={target.threadId}
-                    onClick={() => {
-                      setOpen(false);
-                      onPick?.(target.threadId);
-                    }}
-                  >
-                    Swap with {target.title}
-                  </MenuItem>
-                ))}
-              </MenuSubPopup>
-            </MenuSub>
-          </>
-        )}
-        {onMoveToGrid === undefined ? null : (
-          <>
-            {separatorBefore("grid") ? <MenuSeparator /> : null}
-            <MenuSub>
-              <MenuSubTrigger>Move to grid</MenuSubTrigger>
-              <MenuSubPopup>
-                <MoveToGridMenuItems
-                  targets={gridTargets}
-                  onMove={(gridId) => {
-                    setOpen(false);
-                    onMoveToGrid(gridId);
-                  }}
-                  onNewGrid={() => {
-                    setOpen(false);
-                    onMoveToNewGrid?.();
-                  }}
-                />
-              </MenuSubPopup>
-            </MenuSub>
-          </>
-        )}
-        {hasThreadActions ? (
-          <>
-            {separatorBefore("thread") ? <MenuSeparator /> : null}
-            {onRename === undefined ? null : (
-              <MenuItem
-                onClick={() => {
-                  setOpen(false);
-                  onRename();
-                }}
-              >
-                Rename thread
-              </MenuItem>
-            )}
-            {onMarkUnread === undefined ? null : (
-              <MenuItem
-                onClick={() => {
-                  setOpen(false);
-                  onMarkUnread();
-                }}
-              >
-                Mark unread
-              </MenuItem>
-            )}
-            {onCopyPath === undefined &&
-            onCopyBranch === undefined &&
-            onCopyThreadRef === undefined &&
-            onCopyThreadId === undefined ? null : (
-              <MenuSub>
-                <MenuSubTrigger>Copy</MenuSubTrigger>
-                <MenuSubPopup>
-                  {onCopyPath === undefined ? null : (
-                    <MenuItem
-                      onClick={() => {
-                        setOpen(false);
-                        onCopyPath();
-                      }}
-                    >
-                      Copy path
-                    </MenuItem>
-                  )}
-                  {onCopyBranch === undefined ? null : (
-                    <MenuItem
-                      onClick={() => {
-                        setOpen(false);
-                        onCopyBranch();
-                      }}
-                    >
-                      Copy branch
-                    </MenuItem>
-                  )}
-                  {onCopyThreadRef === undefined ? null : (
-                    <MenuItem
-                      onClick={() => {
-                        setOpen(false);
-                        onCopyThreadRef();
-                      }}
-                    >
-                      Copy thread reference
-                    </MenuItem>
-                  )}
-                  {onCopyThreadId === undefined ? null : (
-                    <MenuItem
-                      onClick={() => {
-                        setOpen(false);
-                        onCopyThreadId();
-                      }}
-                    >
-                      Copy thread ID
-                    </MenuItem>
-                  )}
-                </MenuSubPopup>
-              </MenuSub>
-            )}
-            {onFind === undefined ? null : (
-              <MenuItem
-                onClick={() => {
-                  setOpen(false);
-                  onFind();
-                }}
-              >
-                Find in thread
-              </MenuItem>
-            )}
-            {onProjectSettings === undefined ? null : (
-              <MenuItem
-                onClick={() => {
-                  setOpen(false);
-                  onProjectSettings();
-                }}
-              >
-                Project settings
-              </MenuItem>
-            )}
-            {onHold === undefined || (snoozePresets?.length ?? 0) === 0 ? null : (
-              <MenuSub>
-                <MenuSubTrigger>Hold</MenuSubTrigger>
-                <MenuSubPopup>
-                  {snoozePresets?.map((preset) => (
-                    <MenuItem
-                      key={preset.id}
-                      onClick={() => {
-                        setOpen(false);
-                        onHold(preset.snoozedUntil);
-                      }}
-                    >
-                      {preset.label}
-                    </MenuItem>
-                  ))}
-                </MenuSubPopup>
-              </MenuSub>
-            )}
-            {onClose === undefined ? null : (
-              <MenuItem
-                onClick={() => {
-                  setOpen(false);
-                  onClose();
-                }}
-              >
-                Close thread
-              </MenuItem>
-            )}
-            {onRegenerateTitle === undefined ? null : (
-              <MenuItem
-                onClick={() => {
-                  setOpen(false);
-                  onRegenerateTitle();
-                }}
-              >
-                Regenerate title
-              </MenuItem>
-            )}
-            {onDelete === undefined ? null : (
-              <MenuItem
-                onClick={() => {
-                  setOpen(false);
-                  onDelete();
-                }}
-              >
-                Delete thread
-              </MenuItem>
-            )}
-          </>
-        ) : null}
-        {onArchive === undefined ? null : (
-          <>
-            {separatorBefore("archive") ? <MenuSeparator /> : null}
-            <MenuItem
-              onClick={() => {
-                setOpen(false);
-                onArchive();
-              }}
-            >
-              Archive thread
-            </MenuItem>
-          </>
-        )}
-      </MenuPopup>
-    </Menu>
-  );
-}
-
-function SplitTargetItems({
-  availableThreads,
-  atCap,
-  onPick,
-  onNewThread,
-}: {
-  availableThreads: ReadonlyArray<{ threadId: string; title: string }>;
-  atCap: boolean;
-  onPick: (threadId: string) => void;
-  onNewThread?: (() => void) | undefined;
-}) {
-  return (
-    <>
-      {availableThreads.map((thread) => (
-        <MenuItem key={thread.threadId} onClick={() => onPick(thread.threadId)}>
-          {thread.title}
-        </MenuItem>
-      ))}
-      {availableThreads.length === 0 ? (
-        <MenuItem disabled>
-          {atCap ? "This grid holds six threads" : "No other thread in this workspace"}
-        </MenuItem>
-      ) : null}
-      {onNewThread === undefined ? null : (
-        <>
-          <MenuSeparator />
-          <MenuItem onClick={onNewThread}>New thread…</MenuItem>
-        </>
-      )}
-    </>
   );
 }

@@ -52,6 +52,7 @@ import {
 } from "~/hooks/useSettings";
 import { announce } from "~/lib/announce";
 import { cn } from "~/lib/utils";
+import { MODEL_PICKER_DOCKED_CLASS } from "../ui/composer-picker-recipes";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { TooltipProvider } from "../ui/tooltip";
 import { Button, InlineButton } from "../ui/button";
@@ -357,6 +358,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
   /** The owning popup moves focus here when it opens (its `initialFocus`). */
   searchInputRef: RefObject<HTMLInputElement | null>;
+  /** Sits beside an effort column: fills the shared row, and stacks above it on narrow screens. */
+  docked?: boolean;
+  /** Right at the end of the search text moves into the popup's effort column. */
+  onFocusEffort?: () => void;
 }) {
   const {
     searchInputRef,
@@ -825,7 +830,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       <div
         // One fixed size whatever the tab, its model count or the search holds, so switching tabs
         // or typing never moves the rail under the cursor.
-        className="relative flex h-86.5 max-h-(--available-height) w-[26.75rem] max-w-[calc(100vw-2rem)] flex-row overflow-hidden rounded-lg border border-border bg-(--raised)"
+        className={cn(
+          "relative flex h-86.5 max-h-(--available-height) w-[26.75rem] max-w-[calc(100vw-2rem)] flex-row overflow-hidden bg-(--raised)",
+          props.docked ? MODEL_PICKER_DOCKED_CLASS : "rounded-lg border border-border",
+        )}
         data-model-picker-content="true"
       >
         {showSidebar && (
@@ -933,6 +941,29 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     e.preventDefault();
                     e.stopPropagation();
                     onRequestClose?.();
+                    return;
+                  }
+                  if (
+                    props.onFocusEffort &&
+                    e.key === "ArrowRight" &&
+                    !e.altKey &&
+                    !e.ctrlKey &&
+                    !e.metaKey &&
+                    !e.shiftKey &&
+                    e.currentTarget.selectionStart === searchQuery.length
+                  ) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // The column shows the selected model's effort, so a highlighted model is
+                    // picked first; the owning popup then moves focus to that model's levels.
+                    const highlighted = highlightedModelKeyRef.current
+                      ? parseModelPickerModelKey(highlightedModelKeyRef.current)
+                      : null;
+                    const pickedNew =
+                      highlighted !== null &&
+                      highlightedModelKeyRef.current !== activeModelKey &&
+                      handleModelSelect(highlighted.slug, highlighted.instanceId) !== null;
+                    if (!pickedNew) props.onFocusEffort();
                     return;
                   }
                   if (e.key === "Enter" && highlightedModelKeyRef.current) {

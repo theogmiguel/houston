@@ -11,6 +11,7 @@ import { modelShortName } from "@houston-app/provider-core/modelShortName";
 import { cursorClient } from "@houston-app/provider-cursor/client";
 import { fxClient } from "@houston-app/provider-fx/client";
 import { grokClient } from "@houston-app/provider-grok/client";
+import { kiroClient } from "@houston-app/provider-kiro/client";
 import { museClient } from "@houston-app/provider-muse/client";
 import { openCodeClient } from "@houston-app/provider-opencode/client";
 import { piClient } from "@houston-app/provider-pi/client";
@@ -41,6 +42,7 @@ export const providerClients = makeProviderClientRegistry([
     acpRegistryAgentIds: ["antigravity-acp"],
     settingsSchema: AntigravitySettings,
   },
+  kiroClient,
   museClient,
   piClient,
   acpRegistryClient,

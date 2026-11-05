@@ -3,6 +3,7 @@
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -388,7 +389,7 @@ const withServer = <A, E>(
     const baseDir = NodePath.join(channel, "v2");
     NodeFS.mkdirSync(baseDir);
     return yield* body({ channel, baseDir }).pipe(Effect.provide(layerServer({ baseDir })));
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 describe("a task round trip over the socket", () => {
   it.effect("save, get, edit, comment, check and archive each return the new revision", () =>
@@ -771,6 +772,6 @@ describe("tasks survive a restart", () => {
         }
         assert.strictEqual((yield* tasks.save({ patch: { title: "Third" } })).key, "HOU-3");
       }).pipe(Effect.provide(layerTasks({ databaseFile, baseDir: dir })));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

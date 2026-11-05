@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
@@ -9,9 +10,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../config.ts";
-import * as EventStore from "../orchestration-v2/EventStore.ts";
 import * as ProjectionMaintenance from "../orchestration-v2/ProjectionMaintenance.ts";
-import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as DatabaseStorage from "./DatabaseStorage.ts";
 import * as Sqlite from "./Sqlite.ts";
 
@@ -28,10 +27,9 @@ const storageLayer = <E>(
 ) =>
   DatabaseStorage.layer.pipe(
     Layer.provide(ProjectionMaintenance.layer),
-    Layer.provide(Layer.merge(EventStore.layer, ProjectionStore.layer)),
     Layer.provideMerge(Sqlite.layerMemory),
     Layer.provideMerge(config),
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
 const testConfig = ServerConfig.layerTest(process.cwd(), { prefix: "database-storage-" });
@@ -54,14 +52,12 @@ it.effect("a new database returns freed pages online without losing data", () =>
 );
 
 const compactionLayer = (
-  compactEventStore: ProjectionMaintenance.ProjectionMaintenanceV2["Service"]["compactEventStore"],
+  pruneEventStore: ProjectionMaintenance.ProjectionMaintenanceV2["Service"]["pruneEventStore"],
 ) =>
   DatabaseStorage.layer.pipe(
     Layer.provide(
       Layer.succeed(ProjectionMaintenance.ProjectionMaintenanceV2, {
-        compactEventStore,
-        verify: Effect.die("unexpected verification"),
-        rebuild: Effect.die("unexpected rebuild"),
+        pruneEventStore,
       }),
     ),
     Layer.provide(Sqlite.layerMemory),
@@ -112,5 +108,9 @@ it.effect("remembers completion only after the paced pass finishes", () =>
             .pipe(Effect.ensuring(Deferred.succeed(timestampWritten, undefined))),
       }),
     );
-  }).pipe(Effect.provide(testConfig.pipe(Layer.provideMerge(NodeServices.layer)))),
+  }).pipe(
+    Effect.provide(
+      testConfig.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+    ),
+  ),
 );

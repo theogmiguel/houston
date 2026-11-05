@@ -6,6 +6,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   CommandId,
@@ -788,7 +789,7 @@ export const layerMergeQueueTest = (options: MergeQueueTestOptions = {}) => {
     Layer.provideMerge(
       ServerConfig.layerTest(process.cwd(), options.baseDir ?? { prefix: "houston-mq-test-" }),
     ),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Layer.provideMerge(Layer.succeed(HostedLaunch, false)),
   );
 };

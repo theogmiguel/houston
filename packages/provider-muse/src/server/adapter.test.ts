@@ -2,6 +2,7 @@
 import * as NodeFSP from "node:fs/promises";
 import { vi } from "vite-plus/test";
 import { assert, describe, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { MspError } from "@muse-code/sdk";
 import {
@@ -47,9 +48,12 @@ import { makeMuseAdapterV2, type MuseAdapterV2Options } from "./adapter.ts";
 
 const testLayer = Layer.mergeAll(
   NodeServices.layer,
+  NodeCrypto.layer,
   IdAllocator.layer,
   McpProviderSessions.layer,
-  TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer)),
+  TestProviderHost.layer().pipe(
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  ),
 );
 const MUSE_PROVIDER = ProviderDriverKind.make("muse");
 const INSTANCE_ID = ProviderInstanceId.make("muse_work");
@@ -767,12 +771,20 @@ describe("MuseAdapterV2", () => {
       yield* fake.emit("turn/completed", {
         turnId: nativeId,
         terminal: "failed",
-        error: { message: "Provider rejected this turn" },
+        error: { message: "Provider rejected this turn: api_key=abc123" },
       });
       const terminal = yield* harness.takeEvent("turn.terminal");
       assert.strictEqual(terminal.status, "failed");
       assert.strictEqual(terminal.threadDisposition, "reusable");
-      assert.isNotNull(terminal.failure);
+      assert.strictEqual(
+        terminal.failure?.message,
+        "Provider rejected this turn: api_key=[REDACTED]",
+      );
+      assert.strictEqual(
+        harness.allEvents.findLast((event) => event.type === "provider_session.updated")
+          ?.providerSession.lastError,
+        terminal.failure?.message,
+      );
       assert.isTrue(
         harness.allEvents.some(
           (event) =>

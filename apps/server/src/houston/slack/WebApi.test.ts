@@ -1,6 +1,8 @@
 // The Slack Web API client against the loopback fake: its origin, bearer, timeout and 429 rules.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Redacted from "effect/Redacted";
@@ -118,7 +120,7 @@ describe("the slack web api client is bounded to its origin, time and wait", () 
     }).pipe(
       Effect.provide(FetchHttpClient.layer),
       Effect.scoped,
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     ),
   );
 });
@@ -145,7 +147,7 @@ describe("a slack file download refuses a redirect", () => {
     }).pipe(
       Effect.provide(FetchHttpClient.layer),
       Effect.scoped,
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     ),
   );
 });

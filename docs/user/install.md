@@ -44,6 +44,7 @@ Add and configure providers in **Settings ▸ Providers**. Houston can run threa
 | Cursor              | Cursor's agent                                    |
 | Grok                | Grok                                              |
 | fx                  | fx                                                |
+| Kiro                | Kiro CLI; run `kiro-cli login` to sign in         |
 | OpenCode            | OpenCode                                          |
 | Antigravity         | Google Antigravity                                |
 | Muse Code           | Muse Code                                         |

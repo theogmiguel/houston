@@ -18,6 +18,8 @@ import { APP_DISPLAY_NAME, APP_VERSION } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
+import { ThreadTagsDialogHost } from "../components/ThreadTagsDialog";
+import { AddProjectDialogHost } from "../components/AddProjectDialog";
 import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachineDialog";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { DevReplayHost } from "../components/DevReplayHost";
@@ -157,6 +159,8 @@ function RootRouteBranch() {
     return (
       <>
         <CustomSnoozeDialogHost />
+        <ThreadTagsDialogHost />
+        <AddProjectDialogHost />
         <CommandPalette>
           <AppSidebarLayout>
             <Outlet />
@@ -181,6 +185,7 @@ function RootRouteBranch() {
   return (
     <>
       <ChatGptWelcomeCoordinator />
+      <AddProjectDialogHost />
       <FirstRunGate
         enabled={primaryEnvironmentAuthenticated}
         hostedStatic={authGateState.status === "hosted-static"}
@@ -195,6 +200,7 @@ function RootRouteBranch() {
         <ReopenClosedViewShortcut />
         <ConfirmDialogHost />
         <CustomSnoozeDialogHost />
+        <ThreadTagsDialogHost />
         <ProjectCloneToastCoordinator />
         <AddProjectToMachineDialogHost />
         {import.meta.env.DEV && primaryEnvironmentAuthenticated ? <DevReplayHost /> : null}

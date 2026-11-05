@@ -1,6 +1,8 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import { afterEach, assert, describe, it, vi } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -36,7 +38,7 @@ describe("ResourceMonitorBinary", () => {
       );
 
       assert.equal(yield* service.resolve, binaryPath);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("rejects a non-executable POSIX override", () =>
@@ -62,7 +64,7 @@ describe("ResourceMonitorBinary", () => {
 
       assert.instanceOf(error, ResourceMonitorBinary.ResourceMonitorBinaryNotExecutable);
       assert.equal(error.path, binaryPath);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   // regression: #16838 a directory resolved as the resource monitor binary
@@ -85,7 +87,7 @@ describe("ResourceMonitorBinary", () => {
 
       assert.instanceOf(error, ResourceMonitorBinary.ResourceMonitorBinaryNotExecutable);
       assert.equal(error.path, baseDir);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect.each(["release", "debug"])(
@@ -130,7 +132,7 @@ describe("ResourceMonitorBinary", () => {
         );
 
         assert.equal(yield* service.resolve, binaryPath);
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("rejects bundled glibc binaries on musl Linux hosts", () =>
@@ -149,6 +151,6 @@ describe("ResourceMonitorBinary", () => {
       const error = yield* Effect.flip(service.resolve);
 
       assert.instanceOf(error, ResourceMonitorBinary.ResourceMonitorBinaryUnsupported);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

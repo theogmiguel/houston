@@ -19,6 +19,7 @@ import type { MessageDelivery } from "@houston-app/contracts/houston/messageDeli
 import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import { checkpointWorkspace } from "@houston-app/provider-testing/replayWorkspace";
 import * as DateTime from "effect/DateTime";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -243,7 +244,7 @@ export const harnessLayer = (
         ? {}
         : {
             databaseLayer: SqlitePersistence.layerFromPath(options.databasePath).pipe(
-              Layer.provide(NodeServices.layer),
+              Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
             ),
           }),
     },

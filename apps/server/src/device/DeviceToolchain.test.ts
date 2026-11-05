@@ -1,5 +1,7 @@
+import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import { expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -41,7 +43,7 @@ it.effect("failed installation cleans staging and exposes only a safe failure me
     expect(error.cause).toBe(result);
     expect(yield* isDeviceHubInstalled(baseDir)).toBe(false);
     expect(yield* fs.readDirectory(path.join(baseDir, "tools", "expo-device-hub"))).toEqual([]);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("inventory reports only completed versions without installing the required version", () =>
@@ -72,7 +74,7 @@ it.effect("inventory reports only completed versions without installing the requ
     });
     expect(tools?.agent.installedVersions).toEqual([]);
     expect(yield* isDeviceHubInstalled(base)).toBe(false);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("unreadable inventory stays unknown instead of reporting no installs", () =>
@@ -94,6 +96,6 @@ it.effect("unreadable inventory stays unknown instead of reporting no installs",
           ),
       }),
     ),
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   ),
 );

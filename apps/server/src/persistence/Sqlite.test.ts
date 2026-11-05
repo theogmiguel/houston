@@ -3,6 +3,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as HostProcess from "@houston-app/shared/HostProcess";
@@ -31,7 +32,7 @@ it.effect.skipIf(HostProcess.Platform.defaultValue() !== "linux")(
     const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-sqlite-temp-"));
     const persistence = SqlitePersistence.layerFromPath(
       NodePath.join(tempDir, "state.sqlite"),
-    ).pipe(Layer.provide(NodeServices.layer));
+    ).pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
     return Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
@@ -60,7 +61,9 @@ it.effect("drops planner statistics a database already has", () => {
   const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-sqlite-stats-"));
   const dbPath = NodePath.join(tempDir, "state.sqlite");
   const persistence = () =>
-    SqlitePersistence.layerFromPath(dbPath).pipe(Layer.provide(NodeServices.layer));
+    SqlitePersistence.layerFromPath(dbPath).pipe(
+      Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    );
 
   return Effect.gen(function* () {
     yield* Effect.gen(function* () {

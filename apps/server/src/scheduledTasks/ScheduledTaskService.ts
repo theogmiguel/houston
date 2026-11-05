@@ -28,7 +28,7 @@ import {
 } from "@houston-app/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -407,7 +407,7 @@ export const layer = Layer.effect(
   ScheduledTaskService,
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
-    const crypto = yield* Crypto.Crypto;
+    const random = yield* SecureRandom.SecureRandom;
     const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
     const threadManagement = yield* ThreadManagementService.ThreadManagementService;
     const managedFolders = yield* ManagedProjectFolders.ManagedProjectFolders;
@@ -541,7 +541,7 @@ export const layer = Layer.effect(
         ),
       );
 
-    const newWebhookToken = crypto.randomBytes(32).pipe(
+    const newWebhookToken = random.randomBytes(32).pipe(
       Effect.map((bytes) => Buffer.from(bytes).toString("base64url")),
       Effect.mapError((cause) => taskError("Could not generate webhook token.", { cause })),
     );
@@ -1185,8 +1185,8 @@ export const layer = Layer.effect(
       const now = yield* localNow;
       const uuid =
         input.commandId === undefined
-          ? yield* crypto
-              .randomUUIDv4()
+          ? yield* random
+              .uuidV4()
               .pipe(
                 Effect.mapError((cause) =>
                   taskError("Could not generate schedule task id.", { cause }),
@@ -1907,8 +1907,8 @@ export const layer = Layer.effect(
       const observe = (outcome: WebhookDeliveryOutcome) =>
         observeDelivery(request, outcome, receivedAt, now);
       const deliveryId = ScheduledTaskWebhookDeliveryId.make(
-        `delivery:${yield* crypto
-          .randomUUIDv4()
+        `delivery:${yield* random
+          .uuidV4()
           .pipe(
             Effect.mapError((cause) => taskError("Could not generate delivery id.", { cause })),
           )}`,
@@ -2096,7 +2096,7 @@ export const layer = Layer.effect(
             if (deduped === "duplicate") return { _tag: "accepted", deliveryId, outcome } as const;
             return { _tag: "accepted", deliveryId, outcome } as const;
           }
-          const frameId = yield* crypto.randomBytes(6).pipe(
+          const frameId = yield* random.randomBytes(6).pipe(
             Effect.map((bytes) => Buffer.from(bytes).toString("hex")),
             Effect.mapError((cause) => taskError("Could not generate frame id.", { cause })),
           );
@@ -2237,7 +2237,7 @@ export const layer = Layer.effect(
               const prepared = yield* Effect.gen(function* () {
                 const task = yield* decodePendingTask(entry.task_json);
                 const request = yield* decodePendingRequest(entry.request_json);
-                const frameId = Buffer.from(yield* crypto.randomBytes(6)).toString("hex");
+                const frameId = Buffer.from(yield* random.randomBytes(6)).toString("hex");
                 return { task, rendered: renderWebhookPrompt(task.prompt, request, frameId) };
               }).pipe(Effect.exit);
               if (Exit.isFailure(prepared)) {

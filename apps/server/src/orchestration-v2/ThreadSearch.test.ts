@@ -8,6 +8,7 @@ import {
   type OrchestrationV2DomainEvent,
   type ThreadLinkedPullRequest,
 } from "@houston-app/contracts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -1128,7 +1129,7 @@ it.effect("searches on the reader worker while the writer is busy", () =>
       ProjectStore.layer,
     ).pipe(
       Layer.provideMerge(SqlitePersistence.layerFromPath(path.join(directory, "state.sqlite"))),
-      Layer.provide(NodeServices.layer),
+      Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
 
     yield* Effect.gen(function* () {
@@ -1163,5 +1164,5 @@ it.effect("searches on the reader worker while the writer is busy", () =>
         [threadId],
       );
     }).pipe(Effect.provide(layerFile));
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

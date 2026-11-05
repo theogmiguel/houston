@@ -35,9 +35,12 @@ function recordEffect(action: string) {
 }
 
 vi.mock("../components/CustomSnoozeDialog", () => ({ requestCustomSnooze: vi.fn() }));
-vi.mock("react", () => ({
-  useCallback: (callback: unknown) => callback,
-  useMemo: (factory: () => unknown) => factory(),
+vi.mock(import("react"), async (original) => ({
+  ...(await original()),
+  useCallback: ((callback: unknown) => callback) as never,
+  useEffect: (() => {}) as never,
+  useRef: ((value: unknown) => ({ current: value })) as never,
+  useMemo: ((factory: () => unknown) => factory()) as never,
 }));
 vi.mock("@tanstack/react-router", () => ({
   useRouter: () => ({ navigate: async () => recordEffect("project-settings") }),
@@ -49,8 +52,10 @@ vi.mock("../state/session", () => ({
 vi.mock("../state/entities", () => ({
   readEnvironmentServerConfigLoaded: () => true,
   readEnvironmentSupportsAutoSettleOptOut: () => true,
+  readThreadShells: () => [],
   readThreadShell: () => ({
     id: "thread",
+    tags: [],
     environmentId: "secondary",
     projectId: "project",
     title: "Thread",
@@ -124,6 +129,7 @@ vi.mock("./useThreadActions", () => ({
     Object.fromEntries(
       [
         "markThreadUnread",
+        "setThreadTag",
         "settleThread",
         "unsettleThread",
         "snoozeThread",
@@ -165,7 +171,7 @@ beforeEach(() => {
 });
 
 describe("thread menu permissions", () => {
-  it.each(["rename", "regenerate-title", "delete", "pin", "settle", "archive"] as const)(
+  it.each(["rename", "regenerate-title", "delete", "settle", "archive"] as const)(
     "%s rechecks after the native menu closes",
     async (action) => {
       state.granted.add("secondary");
@@ -187,8 +193,9 @@ describe("thread menu permissions", () => {
     createMenu({ onFind }).openMenu(position);
     await state.completed.promise;
     const items = state.show.mock.calls[1]![0];
-    expect(items[0]).toMatchObject({ id: "find", label: "Find in thread" });
-    expect(items[0]?.disabled).not.toBe(true);
+    const find = items.find((item) => item.id === "find");
+    expect(find).toMatchObject({ id: "find", label: "Find in thread" });
+    expect(find?.disabled).not.toBe(true);
     expect(state.effects).toEqual(["find"]);
     expect(onFind).toHaveBeenCalledExactlyOnceWith(target);
   });

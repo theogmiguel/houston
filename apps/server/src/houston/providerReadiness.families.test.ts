@@ -1,5 +1,6 @@
 // Each family's snapshot comes from that driver's own upstream probe with upstream's test
 // doubles; readiness is then derived with no ledger entry.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -294,7 +295,7 @@ const layerAntigravity = ProviderHostLive.layer.pipe(
   Layer.provideMerge(ServerSecretStore.layer),
   Layer.provide(
     ServerConfig.layerTest(process.cwd(), { prefix: "houston-readiness-antigravity-" }).pipe(
-      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     ),
   ),
 );
@@ -409,7 +410,7 @@ describe("a missing CLI is notInstalled for every family", () => {
     }).pipe(
       Effect.provide(
         Layer.merge(
-          NodeServices.layer,
+          Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
           layerClaudeSpawner(() => "missing"),
         ),
       ),
@@ -431,7 +432,7 @@ describe("a missing CLI is notInstalled for every family", () => {
         state: "notInstalled",
         reason: "missing",
       });
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("OpenCode", () =>
@@ -446,7 +447,7 @@ describe("a missing CLI is notInstalled for every family", () => {
         reason: "missing",
         message: "OpenCode CLI (`opencode`) is not installed or not on PATH.",
       });
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.layer(layerAntigravity)("Antigravity", (it) => {
@@ -517,7 +518,7 @@ describe("a signed-out probe is signedOut for every family", () => {
         source: "probe",
         message: "Codex CLI is not authenticated. Run `codex login` and try again.",
       });
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("OpenCode with an external server answering 401", () =>
@@ -531,7 +532,7 @@ describe("a signed-out probe is signedOut for every family", () => {
         source: "probe",
         message: "OpenCode server rejected authentication. Check the server URL and password.",
       });
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.layer(layerAntigravity)("Antigravity", (it) => {
@@ -590,7 +591,7 @@ describe("local OpenCode refuses a probe-time signedOut", () => {
       const snapshot = yield* openCodeSnapshot({}, double);
       assert.notEqual(snapshot.auth.status, "unauthenticated");
       assert.notEqual(readinessOf("opencode", snapshot)?.state, "signedOut");
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });
 
@@ -618,7 +619,7 @@ describe("turning a provider off and on for every family", () => {
           state: "ready",
         },
       );
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("OpenCode", () =>
@@ -629,7 +630,7 @@ describe("turning a provider off and on for every family", () => {
       assert.deepEqual(readinessOf("opencode", yield* openCodeSnapshot({ enabled: true })), {
         state: "ready",
       });
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.layer(layerAntigravity)("Antigravity", (it) => {
@@ -684,7 +685,7 @@ describe("a healthy probe is ready for every family", () => {
       const snapshot = yield* codexSnapshot({}, codexSignedIn);
       assert.equal(snapshot.status, "ready");
       assert.deepEqual(readinessOf("codex", snapshot), { state: "ready" });
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("OpenCode", () =>
@@ -692,7 +693,7 @@ describe("a healthy probe is ready for every family", () => {
       const snapshot = yield* openCodeSnapshot({});
       assert.equal(snapshot.status, "ready");
       assert.deepEqual(readinessOf("opencode", snapshot), { state: "ready" });
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.layer(layerAntigravity)("Antigravity", (it) => {

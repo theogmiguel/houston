@@ -506,8 +506,8 @@ export function rememberPreviewUrl(ref: ScopedThreadRef, url: string): void {
 }
 
 export function isPreviewSupportedInRuntime(): boolean {
-  // The desktop host renders preview tabs through the server stream, never a native webview.
-  return false;
+  if (typeof window === "undefined") return false;
+  return Boolean(window.hostBridge?.preview);
 }
 
 /** Releases desktop-host pages as well as local session state. */

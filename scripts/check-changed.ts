@@ -101,14 +101,18 @@ const TYPECHECK_CONFIG =
   /(^|\/)(?:package\.json|tsconfig[^/]*\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$/;
 const TYPECHECK_ROOTS = ["apps/", "packages/", "scripts/", "oxlint-plugin-houston/"];
 
-function packageFor(file: string): string | null {
+// These apps declare typecheck as a vp task in vite.config.ts, not as a package script, so
+// `pnpm -r typecheck` skips them and they run through `vp run typecheck` instead.
+const VP_TYPECHECK_APPS = ["apps/desktop", "apps/web"];
+
+function packageFor(file: string): { name: string; dir: string } | null {
   let dir = NodePath.dirname(file);
   while (dir !== "." && dir !== "") {
     const manifestPath = NodePath.join(repoRoot, dir, "package.json");
     if (NodeFS.existsSync(manifestPath)) {
       try {
         const manifest = JSON.parse(NodeFS.readFileSync(manifestPath, "utf8"));
-        return typeof manifest.name === "string" ? manifest.name : null;
+        return typeof manifest.name === "string" ? { name: manifest.name, dir } : null;
       } catch {
         return null;
       }
@@ -118,19 +122,22 @@ function packageFor(file: string): string | null {
   return null;
 }
 
-function typecheckPlan(files: string[]): { full: boolean; packages: string[] } {
-  if (files.some((file) => TYPECHECK_CONFIG.test(file) || file === "vite.config.ts")) {
-    return { full: true, packages: [] };
-  }
+type TypecheckPlan = { full: boolean; packages: string[]; vpApps: string[] };
+
+function typecheckPlan(files: string[]): TypecheckPlan {
+  const full: TypecheckPlan = { full: true, packages: [], vpApps: [...VP_TYPECHECK_APPS] };
+  if (files.some((file) => TYPECHECK_CONFIG.test(file) || file === "vite.config.ts")) return full;
   const packages = new Set<string>();
+  const vpApps = new Set<string>();
   for (const file of files) {
     if (!TYPECHECK_SOURCE.test(file)) continue;
     if (!TYPECHECK_ROOTS.some((prefix) => file.startsWith(prefix))) continue;
-    const name = packageFor(file);
-    if (name === null) return { full: true, packages: [] };
-    packages.add(name);
+    const owner = packageFor(file);
+    if (owner === null) return full;
+    if (VP_TYPECHECK_APPS.includes(owner.dir)) vpApps.add(owner.dir);
+    else packages.add(owner.name);
   }
-  return { full: false, packages: [...packages].sort() };
+  return { full: false, packages: [...packages].sort(), vpApps: [...vpApps].sort() };
 }
 
 const pnpmCommand = isWindows ? "pnpm.cmd" : "pnpm";
@@ -152,7 +159,8 @@ function main(): void {
     formattable.length === 0 &&
     lintable.length === 0 &&
     !typecheck.full &&
-    typecheck.packages.length === 0
+    typecheck.packages.length === 0 &&
+    typecheck.vpApps.length === 0
   ) {
     process.stdout.write("check:changed: nothing relevant changed\n");
     return;
@@ -178,6 +186,13 @@ function main(): void {
   } else if (typecheck.packages.length > 0) {
     const filters = typecheck.packages.flatMap((name) => ["--filter", name]);
     run("typecheck", pnpmCommand, ["-r", "--no-bail", ...filters, "typecheck"], isWindows);
+  }
+  for (const app of typecheck.vpApps) {
+    process.stdout.write(`check:changed: typecheck ${app}\n`);
+    NodeChildProcess.execFileSync(process.execPath, [vpBin, "run", "typecheck"], {
+      cwd: NodePath.join(repoRoot, app),
+      stdio: "inherit",
+    });
   }
 }
 

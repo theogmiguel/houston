@@ -1,8 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef, scopedThreadKey } from "@houston-app/client-runtime/environment";
-import type { EnvironmentId, ThreadId } from "@houston-app/contracts";
+import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@houston-app/contracts";
 import type { RefObject } from "react";
 
+import { toggleGridTerminal } from "../../grid/gridTerminal";
 import { findThread } from "../../grid/tree";
 import type { GridRecord } from "../../grid/gridStore";
 import { shortcutLabelForCommand } from "../../keybindings";
@@ -15,6 +16,7 @@ import { GridLayoutMenu } from "./GridLayoutMenu";
 /** The grid route's titlebar controls follow the focused pane's thread. */
 export function GridTopBarControls({
   grid,
+  gridTerminalRef = null,
   emptyDraftThreadId = null,
   threadPanelAnchorRef,
   detailsOpen,
@@ -22,6 +24,8 @@ export function GridTopBarControls({
   onArrange,
 }: {
   grid: GridRecord;
+  /** The grid's own terminal; absent while a cell is maximized or on the thread route. */
+  gridTerminalRef?: ScopedThreadRef | null;
   /** The centred composer of an empty grid has no tree leaf yet. */
   emptyDraftThreadId?: string | null;
   /** Anchors the focused cell's popover details card under the top bar control. */
@@ -44,10 +48,11 @@ export function GridTopBarControls({
     (emptyDraftThreadId === null
       ? null
       : scopeThreadRef(grid.environmentId as EnvironmentId, emptyDraftThreadId as ThreadId));
+  const terminalRef = gridTerminalRef ?? focusedRef;
   const terminalOpen = useTerminalUiStateStore((state) =>
-    focusedRef === null
+    terminalRef === null
       ? false
-      : selectThreadTerminalUiState(state.terminalUiStateByThreadKey, focusedRef).terminalOpen,
+      : selectThreadTerminalUiState(state.terminalUiStateByThreadKey, terminalRef).terminalOpen,
   );
   const rightPanelOpen = useRightPanelStore(
     (state) =>
@@ -68,7 +73,7 @@ export function GridTopBarControls({
 
   return (
     <PanelLayoutControls
-      terminalAvailable={focusedRef !== null}
+      terminalAvailable={terminalRef !== null}
       terminalOpen={terminalOpen}
       terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
       threadPanelOpen={gridOwnsDetails ? detailsOpen === true : threadPanelOpen}
@@ -80,6 +85,10 @@ export function GridTopBarControls({
       rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
       gridLayoutControl={<GridLayoutMenu grid={grid} {...(onArrange ? { onArrange } : {})} />}
       onToggleTerminal={() => {
+        if (gridTerminalRef !== null) {
+          toggleGridTerminal(gridTerminalRef);
+          return;
+        }
         if (focusedRef !== null) {
           useTerminalUiStateStore.getState().setTerminalOpen(focusedRef, !terminalOpen);
         }

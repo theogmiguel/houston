@@ -109,6 +109,7 @@ function curatedCauseMessages(cause: unknown): {
         case "ClaudeMcpRegistrationTimeoutError":
         case "CursorModelUnavailableError":
         case "ProviderSetupError":
+        case "ProviderAdapterThreadInUseError":
           return { known: stringField(cause, "message"), category: categoryMessage() };
         case "AcpProcessExitedError": {
           const exit = `provider process exited${processExitStatus(cause)}`;

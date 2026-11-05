@@ -1,5 +1,5 @@
 import type { ThreadId } from "@houston-app/contracts";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
@@ -31,6 +31,7 @@ import {
   sendSideThread,
   startAside,
   markThreadUnread,
+  setThreadTag,
   mergeThreadBack,
   promoteQueuedRun,
   resumeThreadQueue,
@@ -70,7 +71,7 @@ export type LoadEarlierThreadHistoryInput = {
 };
 
 export function createThreadEnvironmentAtoms<R, E>(
-  runtime: Atom.AtomRuntime<EnvironmentRegistry | Crypto.Crypto | R, E>,
+  runtime: Atom.AtomRuntime<EnvironmentRegistry | SecureRandom.SecureRandom | R, E>,
   snapshotAtom: (environmentId: EnvironmentId) => Atom.Atom<OrchestrationV2ShellSnapshot | null>,
 ) {
   const scheduler = createAtomCommandScheduler();
@@ -207,6 +208,12 @@ export function createThreadEnvironmentAtoms<R, E>(
     markUnread: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:mark-unread",
       execute: markThreadUnread,
+      scheduler,
+      concurrency,
+    }),
+    setTag: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:set-tag",
+      execute: setThreadTag,
       scheduler,
       concurrency,
     }),

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -17,6 +18,7 @@ it.effect(
           Effect.provide(
             Layer.mergeAll(
               NodeServices.layer,
+              NodeCrypto.layer,
               Layer.mock(BootService.BootService)({
                 withStopped: (operation) =>
                   Effect.sync(() => calls.push("pause")).pipe(

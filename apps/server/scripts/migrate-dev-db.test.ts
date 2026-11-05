@@ -1,5 +1,7 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -104,7 +106,7 @@ const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(functio
   return databasePath;
 });
 
-it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("migrate-dev-db", (it) => {
   it.effect("keeps stopped and settled thread families and clears pending work", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, expect, it } from "@effect/vitest";
 import * as HostProcess from "@houston-app/shared/HostProcess";
@@ -8,10 +9,12 @@ import * as Cause from "effect/Cause";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/process";
 
 import { VcsProcessExitError, VcsProcessSpawnError } from "@houston-app/contracts";
@@ -26,7 +29,9 @@ const run = (input: VcsProcess.VcsProcessInput) =>
     return yield* process.run(input);
   });
 
-const layerLive = VcsProcess.layer.pipe(Layer.provide(NodeServices.layer));
+const layerLive = VcsProcess.layer.pipe(
+  Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+);
 
 const provideLive = <A, E, R>(effect: Effect.Effect<A, E, R | VcsProcess.VcsProcess>) =>
   effect.pipe(Effect.provide(layerLive));
@@ -90,7 +95,11 @@ describe("VcsProcess.run", () => {
       yield* fs.remove(lock);
       yield* git(restore);
       expect(yield* fs.readFileString(file)).toBe("before\n");
-    }).pipe(provideLive, Effect.provide(NodeServices.layer), Effect.scoped),
+    }).pipe(
+      provideLive,
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      Effect.scoped,
+    ),
   );
 
   it.effect("pins Git's message locale when the host locale is not English", () =>
@@ -151,7 +160,11 @@ describe("VcsProcess.run", () => {
         failureKind: "command-failed",
         detail: VcsProcess.GIT_INDEX_LOCKED_DETAIL,
       });
-    }).pipe(provideLive, Effect.provide(NodeServices.layer), Effect.scoped),
+    }).pipe(
+      provideLive,
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      Effect.scoped,
+    ),
   );
 
   it.effect.each([
@@ -377,6 +390,60 @@ describe("VcsProcess.run", () => {
     }),
   );
 
+  it.effect("leaves git a slot while slow forge CLI processes are running", () =>
+    Effect.gen(function* () {
+      const gate = yield* Deferred.make<void>();
+      const service = yield* VcsProcess.make.pipe(
+        Effect.provideService(
+          ProcessRunner.ProcessRunner,
+          ProcessRunner.ProcessRunner.of({
+            run: (input) =>
+              Effect.gen(function* () {
+                if (input.command !== "git") yield* Deferred.await(gate);
+                return {
+                  stdout: "",
+                  stderr: "",
+                  code: ChildProcessSpawner.ExitCode(0),
+                  timedOut: false,
+                  stdoutTruncated: false,
+                  stderrTruncated: false,
+                  stdoutInvalidUtf8: false,
+                  stderrInvalidUtf8: false,
+                };
+              }),
+          }),
+        ),
+      );
+
+      const forgeRuns = yield* Effect.forEach(Array.from({ length: 12 }), () =>
+        service
+          .run({
+            operation: "synthetic.forge.listChangeRequests",
+            command: "tea",
+            args: ["pulls", "list"],
+            cwd: "/workspace",
+          })
+          .pipe(Effect.forkChild({ startImmediately: true })),
+      );
+      const checkpoint = yield* service
+        .run({
+          ...baseInput,
+          operation: VcsProcess.CHECKPOINT_CAPTURE_OPERATION,
+          args: ["rev-parse", "HEAD"],
+        })
+        .pipe(Effect.timeoutOption("1 second"), Effect.forkChild({ startImmediately: true }));
+      yield* TestClock.adjust("1 second");
+
+      const gitResult = yield* Fiber.join(checkpoint);
+      yield* Deferred.succeed(gate, undefined);
+      yield* Fiber.joinAll(forgeRuns);
+      expect(
+        Option.isSome(gitResult),
+        "git waited behind forge CLI runs that held every VCS process slot",
+      ).toBe(true);
+    }),
+  );
+
   it.effect("keeps git from opening a folder laid out as a bare repository", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -400,7 +467,11 @@ describe("VcsProcess.run", () => {
 
       expect(result.exitCode).not.toBe(0);
       expect(yield* fileSystem.exists(path.join(cwd, "fsmonitor-runs"))).toBe(false);
-    }).pipe(Effect.scoped, provideLive, Effect.provide(NodeServices.layer)),
+    }).pipe(
+      Effect.scoped,
+      provideLive,
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    ),
   );
 
   it.effect("classifies authentication failures without retaining stderr", () =>

@@ -56,6 +56,9 @@ export const mergeClaudeProcessEnvironment = Effect.fn("mergeClaudeProcessEnviro
 ) {
   const baseEnv = { ...hostEnvironment };
   for (const name of CLAUDE_HOST_SESSION_VARIABLES) delete baseEnv[name];
+  // The desktop runs the server as Node through Electron. Commands Claude runs inherit its env, so
+  // an Electron app they start (Houston itself, VS Code) would run as Node and exit.
+  delete baseEnv.ELECTRON_RUN_AS_NODE;
   return yield* mergeProviderInstanceEnvironment(environment, baseEnv);
 });
 

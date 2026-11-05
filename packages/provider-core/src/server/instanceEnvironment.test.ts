@@ -1,6 +1,8 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { SecretProviderId } from "@houston-app/contracts";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 import * as HostProcess from "@houston-app/shared/HostProcess";
@@ -38,7 +40,7 @@ describe("mergeProviderInstanceEnvironment", () => {
       });
     }).pipe(
       Effect.provideService(HostProcess.HomeDirectory, "/home/ada"),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     ),
   );
 

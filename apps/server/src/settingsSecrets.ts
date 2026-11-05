@@ -12,6 +12,7 @@ import {
 import { acpRegistryClient } from "@houston-app/provider-acp-registry/client";
 import { cursorClient } from "@houston-app/provider-cursor/client";
 import { grokClient } from "@houston-app/provider-grok/client";
+import { kiroClient } from "@houston-app/provider-kiro/client";
 import { museClient } from "@houston-app/provider-muse/client";
 import { openCodeClient } from "@houston-app/provider-opencode/client";
 import { piClient } from "@houston-app/provider-pi/client";
@@ -28,7 +29,15 @@ const providerSecretFields = new Map([
   ["codex", secretSettingsFields(CodexSettings)],
   ["claudeAgent", secretSettingsFields(ClaudeSettings)],
   ["antigravity", secretSettingsFields(AntigravitySettings)],
-  ...[cursorClient, grokClient, museClient, openCodeClient, piClient, acpRegistryClient].map(
+  ...[
+    cursorClient,
+    grokClient,
+    kiroClient,
+    museClient,
+    openCodeClient,
+    piClient,
+    acpRegistryClient,
+  ].map(
     (definition) =>
       [definition.driverKind, secretSettingsFields(definition.settingsSchema)] as const,
   ),

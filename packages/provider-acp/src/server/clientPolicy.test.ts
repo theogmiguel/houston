@@ -1,6 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -171,7 +173,7 @@ describe("acpPermissionDisposition", () => {
         "deny",
         "physical symlink traversal must be resolved before parent segments",
       );
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("allows existing and new files beneath canonical writable roots", () =>
@@ -215,7 +217,7 @@ describe("acpPermissionDisposition", () => {
         "allow",
         "non-existent descendants of a real in-root ancestor remain writable",
       );
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });
 

@@ -14,6 +14,17 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
   useAtomValue: (() => []) as never,
 }));
 
+vi.mock(import("../../state/session"), async (original) => ({
+  ...(await original()),
+  readEnvironmentScope: () => true,
+}));
+
+vi.mock(import("../../state/entities"), async (original) => ({
+  ...(await original()),
+  readEnvironmentServerConfigLoaded: () => true,
+  readEnvironmentSupportsAutoSettleOptOut: () => true,
+}));
+
 function thread(overrides: Partial<EnvironmentThreadShell> = {}): EnvironmentThreadShell {
   return {
     id: "thread-a",
@@ -159,6 +170,19 @@ describe("ThreadCard drag source", () => {
 });
 
 describe("ThreadCard", () => {
+  it("hides the provider mark while the card actions are showing, so they never touch", async () => {
+    await using screen = await render(card(thread()));
+
+    const cardElement = screen.container.querySelector("[data-thread-key]") as HTMLElement;
+    const mark = screen.container.querySelector("[data-thread-provider-mark]") as HTMLElement;
+    expect(mark).not.toBeNull();
+    expect(getComputedStyle(mark).opacity).toBe("1");
+
+    await userEvent.hover(cardElement);
+
+    await vi.waitFor(() => expect(getComputedStyle(mark).opacity).toBe("0"));
+  });
+
   it("closes the preview tooltip while the card actions are hovered", async () => {
     await using screen = await render(card(thread()));
 
@@ -275,7 +299,7 @@ describe("ThreadCard", () => {
     await expect.element(trigger).toBeVisible();
     await userEvent.click(trigger);
     await expect.element(page.getByRole("menuitem", { name: /Open in grid/ })).toBeVisible();
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
 
     const input = screen.getByRole("textbox");
     await expect.element(input).toBeVisible();
@@ -311,10 +335,12 @@ describe("ThreadCard", () => {
     await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
     const trigger = screen.getByRole("button", { name: /Thread actions for/ });
     await expect.element(trigger).toBeVisible();
-    await userEvent.hover(trigger);
     await userEvent.click(trigger);
 
-    const toggle = page.getByRole("menuitem", { name: "Auto-close on merge" });
+    const behavior = page.getByRole("menuitem", { name: "Auto-close behavior" });
+    await expect.element(behavior).toBeVisible();
+    await userEvent.hover(behavior);
+    const toggle = page.getByRole("menuitemradio", { name: "Disabled" });
     await expect.element(toggle).toBeVisible();
     await userEvent.click(toggle);
 

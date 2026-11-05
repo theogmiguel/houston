@@ -10,7 +10,7 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 
 import { APP_DISPLAY_NAME } from "../branding";
-import { openCommandPalette } from "../commandPaletteBus";
+import { openAddProjectDialog } from "./AddProjectDialog";
 import { isDesktopHost } from "../env";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
@@ -125,20 +125,17 @@ export function NoProjectsHero() {
               when you close the window.
             </EmptyDescription>
             <div className="mt-1 flex flex-wrap justify-center gap-2">
-              <Button onClick={() => openCommandPalette({ open: "add-project" })}>
+              <Button onClick={() => openAddProjectDialog()}>
                 <FolderPlusIcon className="size-4" />
                 Add folder
               </Button>
-              <Button
-                variant="outline"
-                onClick={() => openCommandPalette({ open: "add-project", clone: true })}
-              >
+              <Button variant="outline" onClick={() => openAddProjectDialog()}>
                 <GitForkIcon className="size-4" />
                 Clone a repository
               </Button>
             </div>
             {visibleProviders.length > 0 ? (
-              <div className="mt-5 w-full overflow-hidden rounded-[var(--r-group)] border border-border bg-card text-left">
+              <div className="mt-5 w-full overflow-hidden rounded-(--r-group) border border-border bg-card text-left">
                 {visibleProviders.map(({ driver, provider }, index) => {
                   const state = getOnboardingProviderState(provider);
                   const actionLabel =

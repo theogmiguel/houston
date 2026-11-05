@@ -1,7 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off - realpathSync.native resolves Windows 8.3 short names, which the Effect realPath does not.
 import * as NodeFS from "node:fs";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -21,287 +23,317 @@ const git = (cwd: string, args: ReadonlyArray<string>) =>
     });
   }).pipe(Effect.provide(ProcessRunner.layer));
 
-it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
-  it.effect("normalizes equivalent GitHub remotes into a stable repository identity", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const cwd = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "houston-repository-identity-test-",
-      });
-
-      yield* git(cwd, ["init"]);
-      yield* git(cwd, ["remote", "add", "origin", "git@github.com:Example/houston.git"]);
-
-      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
-      const identity = yield* resolver.resolve(cwd);
-      // Native realpath matches git's long paths when Windows temp dirs use 8.3 names.
-      const resolvedIdentityRoot =
-        identity?.rootPath === undefined ? "" : NodeFS.realpathSync.native(identity.rootPath);
-      const resolvedCwd = NodeFS.realpathSync.native(cwd);
-
-      expect(identity).not.toBeNull();
-      expect(identity?.canonicalKey).toBe("github.com/example/houston");
-      expect(normalizeResolvedPath(resolvedIdentityRoot)).toBe(normalizeResolvedPath(resolvedCwd));
-      expect(identity?.displayName).toBe("Example/houston");
-      expect(identity?.provider).toBe("github");
-      expect(identity?.owner).toBe("Example");
-      expect(identity?.name).toBe("houston");
-      expect(yield* resolver.resolve(path.join(cwd, ".git"))).toBeNull();
-    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
-  );
-
-  it.effect("resolves the fetch remote of a partial clone", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const cwd = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "houston-repository-identity-partial-clone-test-",
-      });
-
-      yield* git(cwd, ["init"]);
-      yield* git(cwd, ["remote", "add", "origin", "git@github.com:Example/houston.git"]);
-      yield* git(cwd, ["remote", "set-url", "--push", "origin", "git@github.com:Example/push.git"]);
-      yield* git(cwd, ["config", "remote.origin.promisor", "true"]);
-      yield* git(cwd, ["config", "remote.origin.partialclonefilter", "blob:none"]);
-
-      const remotes = yield* git(cwd, ["remote", "-v"]);
-      expect(remotes.stdout).toContain("(fetch) [blob:none]");
-
-      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
-      const identity = yield* resolver.resolve(cwd);
-      expect(identity?.canonicalKey).toBe("github.com/example/houston");
-      expect(identity?.locator.remoteUrl).toBe("git@github.com:Example/houston.git");
-      expect(identity?.locator.remoteName).toBe("origin");
-    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
-  );
-
-  it.effect("returns the git top-level root path when resolving from a nested workspace", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const repoRoot = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "houston-repository-identity-nested-root-test-",
-      });
-      const nestedWorkspace = path.join(repoRoot, "packages", "web");
-
-      yield* fileSystem.makeDirectory(nestedWorkspace, { recursive: true });
-      yield* git(repoRoot, ["init"]);
-      yield* git(repoRoot, ["remote", "add", "origin", "git@github.com:Example/houston.git"]);
-
-      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
-      const identity = yield* resolver.resolve(nestedWorkspace);
-      const resolvedIdentityRoot =
-        identity?.rootPath === undefined ? "" : NodeFS.realpathSync.native(identity.rootPath);
-      const resolvedRepoRoot = NodeFS.realpathSync.native(repoRoot);
-
-      expect(identity).not.toBeNull();
-      expect(identity?.canonicalKey).toBe("github.com/example/houston");
-      expect(normalizeResolvedPath(resolvedIdentityRoot)).toBe(
-        normalizeResolvedPath(resolvedRepoRoot),
-      );
-    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
-  );
-
-  it.effect.each(["bare clone", "dot-bare"] as const)(
-    "resolves a %s to its Git directory and the same identity as a checkout",
-    (layout) =>
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
+  "RepositoryIdentityResolverLive",
+  (it) => {
+    it.effect("normalizes equivalent GitHub remotes into a stable repository identity", () =>
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const checkout = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "houston-repository-identity-checkout-",
-        });
-        const root = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "houston-repository-identity-bare-",
-        });
-        const bareGitDir = layout === "dot-bare" ? path.join(root, ".bare") : root;
-
-        yield* git(checkout, ["init"]);
-        yield* git(checkout, ["remote", "add", "origin", "git@github.com:Example/houston.git"]);
-        yield* git(root, ["init", "--bare", bareGitDir]);
-        if (layout === "dot-bare") {
-          yield* fileSystem.writeFileString(path.join(root, ".git"), "gitdir: ./.bare\n");
-        }
-        yield* git(root, [
-          "--git-dir",
-          bareGitDir,
-          "remote",
-          "add",
-          "origin",
-          "https://github.com/Example/houston.git",
-        ]);
-
-        const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
-        const checkoutIdentity = yield* resolver.resolve(checkout);
-        expect(checkoutIdentity?.canonicalKey).toBe("github.com/example/houston");
-        const resolvedBareGitDir = NodeFS.realpathSync.native(bareGitDir);
-        const projectRoots = layout === "dot-bare" ? [root, bareGitDir] : [root];
-
-        for (const projectRoot of projectRoots) {
-          const identity = yield* resolver.resolve(projectRoot);
-          const resolvedIdentityRoot =
-            identity?.rootPath === undefined ? "" : NodeFS.realpathSync.native(identity.rootPath);
-
-          expect(identity).not.toBeNull();
-          expect(identity?.canonicalKey).toBe(checkoutIdentity?.canonicalKey);
-          expect(normalizeResolvedPath(resolvedIdentityRoot)).toBe(
-            normalizeResolvedPath(resolvedBareGitDir),
-          );
-        }
-
-        yield* git(root, ["--git-dir", bareGitDir, "remote", "remove", "origin"]);
-        for (const projectRoot of projectRoots) {
-          expect(yield* resolver.resolve(projectRoot, { refresh: true })).toBeNull();
-        }
-      }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
-  );
-
-  it.effect(
-    "returns null for non-git, missing and no-remote folders, probing only what can exist",
-    () =>
-      Effect.gen(function* () {
-        const fileSystem = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const nonGitDir = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "houston-repository-identity-non-git-",
-        });
-        const gitDir = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "houston-repository-identity-no-remote-",
-        });
-
-        yield* git(gitDir, ["init"]);
-
-        const runner = yield* ProcessRunner.ProcessRunner;
-        const runs: Array<ReadonlyArray<string>> = [];
-        const resolver = yield* RepositoryIdentityResolver.make().pipe(
-          Effect.provideService(ProcessRunner.ProcessRunner, {
-            run: (input) =>
-              Effect.suspend(() => {
-                runs.push(input.args);
-                return runner.run(input);
-              }),
-          }),
-        );
-        const bareProbes = () =>
-          runs.filter((args) => args.some((arg) => arg.startsWith("--git-dir=")));
-
-        expect(yield* resolver.resolve(path.join(nonGitDir, "deleted"))).toBeNull();
-        expect(runs).toEqual([]);
-
-        expect(yield* resolver.resolve(nonGitDir)).toBeNull();
-        expect(bareProbes()).toEqual([]);
-
-        expect(yield* resolver.resolve(gitDir)).toBeNull();
-      }).pipe(Effect.provide(ProcessRunner.layer)),
-  );
-
-  it.effect("ignores local-path remotes such as GitButler's gb-local", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const localOnlyDir = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "houston-repository-identity-local-remote-",
-      });
-      const mixedDir = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "houston-repository-identity-mixed-remote-",
-      });
-
-      yield* git(localOnlyDir, ["init"]);
-      yield* git(localOnlyDir, ["remote", "add", "gb-local", "."]);
-      yield* git(localOnlyDir, ["remote", "add", "backup", "/srv/git/repo.git"]);
-      yield* git(localOnlyDir, ["remote", "add", "archive", "file:///srv/git/repo.git"]);
-      yield* git(mixedDir, ["init"]);
-      yield* git(mixedDir, ["remote", "add", "gb-local", "."]);
-      yield* git(mixedDir, ["remote", "add", "mirror", "git@github.com:Example/houston.git"]);
-
-      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
-      expect(yield* resolver.resolve(localOnlyDir)).toBeNull();
-
-      const mixedIdentity = yield* resolver.resolve(mixedDir);
-      expect(mixedIdentity?.locator.remoteName).toBe("mirror");
-      expect(mixedIdentity?.canonicalKey).toBe("github.com/example/houston");
-    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
-  );
-
-  it.effect.each(["add", "replace"] as const)(
-    "refreshes the primary upstream after %s before cache expiry",
-    (change) =>
-      Effect.gen(function* () {
-        const fileSystem = yield* FileSystem.FileSystem;
         const cwd = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "houston-repository-identity-upstream-test-",
+          prefix: "houston-repository-identity-test-",
         });
 
         yield* git(cwd, ["init"]);
-        yield* git(cwd, ["remote", "add", "origin", "git@github.com:julius/houston.git"]);
-        if (change === "replace") {
-          yield* git(cwd, ["remote", "add", "upstream", "git@github.com:Example/previous.git"]);
-        }
+        yield* git(cwd, ["remote", "add", "origin", "git@github.com:Example/houston.git"]);
 
         const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
-        const initialIdentity = yield* resolver.resolve(cwd);
-        expect(initialIdentity?.canonicalKey).toBe(
-          change === "add" ? "github.com/julius/houston" : "github.com/example/previous",
-        );
-
-        yield* git(cwd, [
-          "remote",
-          change === "add" ? "add" : "set-url",
-          "upstream",
-          "git@github.com:Example/houston.git",
-        ]);
-        expect(yield* resolver.resolve(cwd)).toEqual(initialIdentity);
-        const identity = yield* resolver.resolve(cwd, { refresh: true });
+        const identity = yield* resolver.resolve(cwd);
+        // Native realpath matches git's long paths when Windows temp dirs use 8.3 names.
+        const resolvedIdentityRoot =
+          identity?.rootPath === undefined ? "" : NodeFS.realpathSync.native(identity.rootPath);
+        const resolvedCwd = NodeFS.realpathSync.native(cwd);
 
         expect(identity).not.toBeNull();
-        expect(identity?.locator.remoteName).toBe("upstream");
+        expect(identity?.canonicalKey).toBe("github.com/example/houston");
+        expect(normalizeResolvedPath(resolvedIdentityRoot)).toBe(
+          normalizeResolvedPath(resolvedCwd),
+        );
+        expect(identity?.displayName).toBe("Example/houston");
+        expect(identity?.provider).toBe("github");
+        expect(identity?.owner).toBe("Example");
+        expect(identity?.name).toBe("houston");
+        expect(yield* resolver.resolve(path.join(cwd, ".git"))).toBeNull();
+      }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+    );
+
+    it.effect("identifies the host of an SSH remote that leaves its user to ssh config", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const cwd = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "houston-repository-identity-userless-remote-test-",
+        });
+
+        yield* git(cwd, ["init"]);
+        yield* git(cwd, ["remote", "add", "origin", "github.com:Example/houston.git"]);
+
+        const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+        const identity = yield* resolver.resolve(cwd);
+
+        expect(identity?.canonicalKey).toBe("github.com/example/houston");
+        expect(identity?.provider).toBe("github");
+        expect(identity?.displayName).toBe("Example/houston");
+      }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+    );
+
+    it.effect("resolves the fetch remote of a partial clone", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const cwd = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "houston-repository-identity-partial-clone-test-",
+        });
+
+        yield* git(cwd, ["init"]);
+        yield* git(cwd, ["remote", "add", "origin", "git@github.com:Example/houston.git"]);
+        yield* git(cwd, [
+          "remote",
+          "set-url",
+          "--push",
+          "origin",
+          "git@github.com:Example/push.git",
+        ]);
+        yield* git(cwd, ["config", "remote.origin.promisor", "true"]);
+        yield* git(cwd, ["config", "remote.origin.partialclonefilter", "blob:none"]);
+
+        const remotes = yield* git(cwd, ["remote", "-v"]);
+        expect(remotes.stdout).toContain("(fetch) [blob:none]");
+
+        const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+        const identity = yield* resolver.resolve(cwd);
+        expect(identity?.canonicalKey).toBe("github.com/example/houston");
+        expect(identity?.locator.remoteUrl).toBe("git@github.com:Example/houston.git");
+        expect(identity?.locator.remoteName).toBe("origin");
+      }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+    );
+
+    it.effect("returns the git top-level root path when resolving from a nested workspace", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const repoRoot = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "houston-repository-identity-nested-root-test-",
+        });
+        const nestedWorkspace = path.join(repoRoot, "packages", "web");
+
+        yield* fileSystem.makeDirectory(nestedWorkspace, { recursive: true });
+        yield* git(repoRoot, ["init"]);
+        yield* git(repoRoot, ["remote", "add", "origin", "git@github.com:Example/houston.git"]);
+
+        const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+        const identity = yield* resolver.resolve(nestedWorkspace);
+        const resolvedIdentityRoot =
+          identity?.rootPath === undefined ? "" : NodeFS.realpathSync.native(identity.rootPath);
+        const resolvedRepoRoot = NodeFS.realpathSync.native(repoRoot);
+
+        expect(identity).not.toBeNull();
+        expect(identity?.canonicalKey).toBe("github.com/example/houston");
+        expect(normalizeResolvedPath(resolvedIdentityRoot)).toBe(
+          normalizeResolvedPath(resolvedRepoRoot),
+        );
+      }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+    );
+
+    it.effect.each(["bare clone", "dot-bare"] as const)(
+      "resolves a %s to its Git directory and the same identity as a checkout",
+      (layout) =>
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const checkout = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "houston-repository-identity-checkout-",
+          });
+          const root = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "houston-repository-identity-bare-",
+          });
+          const bareGitDir = layout === "dot-bare" ? path.join(root, ".bare") : root;
+
+          yield* git(checkout, ["init"]);
+          yield* git(checkout, ["remote", "add", "origin", "git@github.com:Example/houston.git"]);
+          yield* git(root, ["init", "--bare", bareGitDir]);
+          if (layout === "dot-bare") {
+            yield* fileSystem.writeFileString(path.join(root, ".git"), "gitdir: ./.bare\n");
+          }
+          yield* git(root, [
+            "--git-dir",
+            bareGitDir,
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/Example/houston.git",
+          ]);
+
+          const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+          const checkoutIdentity = yield* resolver.resolve(checkout);
+          expect(checkoutIdentity?.canonicalKey).toBe("github.com/example/houston");
+          const resolvedBareGitDir = NodeFS.realpathSync.native(bareGitDir);
+          const projectRoots = layout === "dot-bare" ? [root, bareGitDir] : [root];
+
+          for (const projectRoot of projectRoots) {
+            const identity = yield* resolver.resolve(projectRoot);
+            const resolvedIdentityRoot =
+              identity?.rootPath === undefined ? "" : NodeFS.realpathSync.native(identity.rootPath);
+
+            expect(identity).not.toBeNull();
+            expect(identity?.canonicalKey).toBe(checkoutIdentity?.canonicalKey);
+            expect(normalizeResolvedPath(resolvedIdentityRoot)).toBe(
+              normalizeResolvedPath(resolvedBareGitDir),
+            );
+          }
+
+          yield* git(root, ["--git-dir", bareGitDir, "remote", "remove", "origin"]);
+          for (const projectRoot of projectRoots) {
+            expect(yield* resolver.resolve(projectRoot, { refresh: true })).toBeNull();
+          }
+        }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+    );
+
+    it.effect(
+      "returns null for non-git, missing and no-remote folders, probing only what can exist",
+      () =>
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const nonGitDir = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "houston-repository-identity-non-git-",
+          });
+          const gitDir = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "houston-repository-identity-no-remote-",
+          });
+
+          yield* git(gitDir, ["init"]);
+
+          const runner = yield* ProcessRunner.ProcessRunner;
+          const runs: Array<ReadonlyArray<string>> = [];
+          const resolver = yield* RepositoryIdentityResolver.make().pipe(
+            Effect.provideService(ProcessRunner.ProcessRunner, {
+              run: (input) =>
+                Effect.suspend(() => {
+                  runs.push(input.args);
+                  return runner.run(input);
+                }),
+            }),
+          );
+          const bareProbes = () =>
+            runs.filter((args) => args.some((arg) => arg.startsWith("--git-dir=")));
+
+          expect(yield* resolver.resolve(path.join(nonGitDir, "deleted"))).toBeNull();
+          expect(runs).toEqual([]);
+
+          expect(yield* resolver.resolve(nonGitDir)).toBeNull();
+          expect(bareProbes()).toEqual([]);
+
+          expect(yield* resolver.resolve(gitDir)).toBeNull();
+        }).pipe(Effect.provide(ProcessRunner.layer)),
+    );
+
+    it.effect("ignores local-path remotes such as GitButler's gb-local", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const localOnlyDir = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "houston-repository-identity-local-remote-",
+        });
+        const mixedDir = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "houston-repository-identity-mixed-remote-",
+        });
+
+        yield* git(localOnlyDir, ["init"]);
+        yield* git(localOnlyDir, ["remote", "add", "gb-local", "."]);
+        yield* git(localOnlyDir, ["remote", "add", "backup", "/srv/git/repo.git"]);
+        yield* git(localOnlyDir, ["remote", "add", "archive", "file:///srv/git/repo.git"]);
+        yield* git(mixedDir, ["init"]);
+        yield* git(mixedDir, ["remote", "add", "gb-local", "."]);
+        yield* git(mixedDir, ["remote", "add", "mirror", "git@github.com:Example/houston.git"]);
+
+        const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+        expect(yield* resolver.resolve(localOnlyDir)).toBeNull();
+
+        const mixedIdentity = yield* resolver.resolve(mixedDir);
+        expect(mixedIdentity?.locator.remoteName).toBe("mirror");
+        expect(mixedIdentity?.canonicalKey).toBe("github.com/example/houston");
+      }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+    );
+
+    it.effect.each(["add", "replace"] as const)(
+      "refreshes the primary upstream after %s before cache expiry",
+      (change) =>
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const cwd = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "houston-repository-identity-upstream-test-",
+          });
+
+          yield* git(cwd, ["init"]);
+          yield* git(cwd, ["remote", "add", "origin", "git@github.com:julius/houston.git"]);
+          if (change === "replace") {
+            yield* git(cwd, ["remote", "add", "upstream", "git@github.com:Example/previous.git"]);
+          }
+
+          const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+          const initialIdentity = yield* resolver.resolve(cwd);
+          expect(initialIdentity?.canonicalKey).toBe(
+            change === "add" ? "github.com/julius/houston" : "github.com/example/previous",
+          );
+
+          yield* git(cwd, [
+            "remote",
+            change === "add" ? "add" : "set-url",
+            "upstream",
+            "git@github.com:Example/houston.git",
+          ]);
+          expect(yield* resolver.resolve(cwd)).toEqual(initialIdentity);
+          const identity = yield* resolver.resolve(cwd, { refresh: true });
+
+          expect(identity).not.toBeNull();
+          expect(identity?.locator.remoteName).toBe("upstream");
+          expect(identity?.canonicalKey).toBe("github.com/example/houston");
+          expect(identity?.displayName).toBe("Example/houston");
+          expect(yield* resolver.resolve(cwd)).toEqual(identity);
+        }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+    );
+
+    it.effect("reports a fork's own remote as origin next to the upstream identity", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const cwd = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "houston-repository-identity-fork-test-",
+        });
+
+        yield* git(cwd, ["init"]);
+        yield* git(cwd, ["remote", "add", "origin", "git@github.com:julius/houston-fork.git"]);
+        yield* git(cwd, ["remote", "add", "upstream", "git@github.com:Example/houston.git"]);
+
+        const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+        const identity = yield* resolver.resolve(cwd);
+
         expect(identity?.canonicalKey).toBe("github.com/example/houston");
         expect(identity?.displayName).toBe("Example/houston");
-        expect(yield* resolver.resolve(cwd)).toEqual(identity);
+        expect(identity?.origin).toEqual({
+          canonicalKey: "github.com/julius/houston-fork",
+          remoteUrl: "git@github.com:julius/houston-fork.git",
+          displayName: "julius/houston-fork",
+        });
       }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
-  );
+    );
 
-  it.effect("reports a fork's own remote as origin next to the upstream identity", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const cwd = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "houston-repository-identity-fork-test-",
-      });
+    it.effect("uses the last remote path segment as the repository name for nested groups", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const cwd = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "houston-repository-identity-nested-group-test-",
+        });
 
-      yield* git(cwd, ["init"]);
-      yield* git(cwd, ["remote", "add", "origin", "git@github.com:julius/houston-fork.git"]);
-      yield* git(cwd, ["remote", "add", "upstream", "git@github.com:Example/houston.git"]);
+        yield* git(cwd, ["init"]);
+        yield* git(cwd, ["remote", "add", "origin", "git@gitlab.com:Example/platform/houston.git"]);
 
-      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
-      const identity = yield* resolver.resolve(cwd);
+        const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+        const identity = yield* resolver.resolve(cwd);
 
-      expect(identity?.canonicalKey).toBe("github.com/example/houston");
-      expect(identity?.displayName).toBe("Example/houston");
-      expect(identity?.origin).toEqual({
-        canonicalKey: "github.com/julius/houston-fork",
-        remoteUrl: "git@github.com:julius/houston-fork.git",
-        displayName: "julius/houston-fork",
-      });
-    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
-  );
-
-  it.effect("uses the last remote path segment as the repository name for nested groups", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const cwd = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "houston-repository-identity-nested-group-test-",
-      });
-
-      yield* git(cwd, ["init"]);
-      yield* git(cwd, ["remote", "add", "origin", "git@gitlab.com:Example/platform/houston.git"]);
-
-      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
-      const identity = yield* resolver.resolve(cwd);
-
-      expect(identity).not.toBeNull();
-      expect(identity?.canonicalKey).toBe("gitlab.com/example/platform/houston");
-      expect(identity?.displayName).toBe("Example/platform/houston");
-      expect(identity?.owner).toBe("Example");
-      expect(identity?.name).toBe("houston");
-    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
-  );
-});
+        expect(identity).not.toBeNull();
+        expect(identity?.canonicalKey).toBe("gitlab.com/example/platform/houston");
+        expect(identity?.displayName).toBe("Example/platform/houston");
+        expect(identity?.owner).toBe("Example");
+        expect(identity?.name).toBe("houston");
+      }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+    );
+  },
+);

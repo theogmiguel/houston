@@ -18,12 +18,8 @@ import {
   getNewProjectRepository,
   githubIncompleteOwnerRepositoryMessage,
   normalizePastedCloneUrl,
-  addProjectRemoteSourceLabel,
-  addProjectRemoteSourcePathHint,
   addProjectRemoteSourceProvider,
-  sortAddProjectProviderSources,
   type AddProjectRemoteSource,
-  type AddProjectRemoteSourceReadiness,
 } from "@houston-app/client-runtime/operations/projects";
 import { sourceControlClients } from "@houston-app/client-runtime/source-control-clients";
 import { connectionStatusText } from "@houston-app/client-runtime/connection";
@@ -144,7 +140,16 @@ import {
   usePrimaryEnvironmentId,
 } from "../state/environments";
 import { useAllTasksSnapshot } from "../state/tasks";
-import { useProjects, useServerConfigs, useThreadShells, waitForProject } from "../state/entities";
+import {
+  useAnyEnvironmentHiding,
+  useEnvironmentThreadRefs,
+  useHiddenThreadKeys,
+  useProjects,
+  useServerConfigs,
+  useVisibleThreadShells,
+  waitForProject,
+} from "../state/entities";
+import { visibleLinkedThreads } from "@houston-app/client-runtime/state/threads";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import {
   appendBrowsePathSegment,
@@ -218,7 +223,6 @@ import {
   resolveAddProjectEntry,
   type AddProjectCloneFlow,
   type AddProjectEnvironmentOption,
-  buildPaletteRemoteSourceReadiness,
   errorMessage,
   getEnvironmentBrowsePlatform,
   remoteProjectInputPlaceholder,
@@ -245,6 +249,7 @@ import {
   remoteProjectSourceIcon,
   sourceControlHostIcon,
 } from "./CommandPaletteAddProject";
+import { openAddProjectDialog } from "./AddProjectDialog";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
 import { useCommandPaletteThemeItems } from "./CommandPaletteThemeItems";
 import {
@@ -262,10 +267,8 @@ import { primaryServerKeybindingsAtom } from "../state/server";
 import { resolveShortcutCommand, threadJumpIndexFromCommand } from "../keybindings";
 import { CommandDialog, CommandDialogPopup, CommandFooterAction } from "./ui/command";
 import { Kbd } from "./ui/kbd";
-import { Button } from "./ui/button";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { suggestAppAccessForRemote } from "./sourceControlAppAccessToast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ComposerHandleContext, useComposerHandleContext } from "../composerHandleContext";
 import type { ChatComposerHandle } from "./chat/ChatComposer";
 import { pickableProjectGroups } from "@houston-app/client-runtime/state/project-grouping";
@@ -281,7 +284,6 @@ import { useOpenGridDraft } from "../grid/useOpenGridDraft";
 import { threadRecentUse } from "@houston-app/shared/paletteSearch";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
-const ADD_PROJECT_ENTRY_GROUP = "add-project";
 const NEW_THREAD_IN_GROUP = "projects";
 
 /** The submenu an open intent starts in; its groups resolve while rendering. */
@@ -290,7 +292,7 @@ function openIntentView(intent: CommandPaletteOpenIntent | null): CommandPalette
     case "add-project":
       return {
         addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
-        groups: [{ value: ADD_PROJECT_ENTRY_GROUP, label: "", items: [] }],
+        groups: [],
       };
     case "new-thread-in":
       return {
@@ -427,6 +429,11 @@ function OpenCommandPaletteDialog(props: {
       },
   );
   const linkedThreadSearch = initialSearch.linkedThreadSearch;
+  // Rows were captured when the palette opened; drop any hidden since then.
+  const hiddenKeys = useHiddenThreadKeys();
+  const linkedEnvironmentId = linkedThreadSearch?.linkedThreads?.environmentId ?? null;
+  const hidingAnywhere = useAnyEnvironmentHiding();
+  const linkedThreadRefs = useEnvironmentThreadRefs(linkedEnvironmentId);
   const [searchState, dispatchSearch] = useReducer(reduceCommandPaletteSearchState, null, () => {
     const view = props.initialContext ? null : openIntentView(props.openIntent);
     return view
@@ -598,7 +605,7 @@ function OpenCommandPaletteDialog(props: {
     if (activeThreadReferenceCopyTarget === null) return;
     await copyThreadReference(activeThreadReferenceCopyTarget);
   };
-  const threads = useThreadShells();
+  const threads = useVisibleThreadShells();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const providersByEnvironment = useEnvironmentProviders();
   const { changeThemeItem, changeAppearanceItem, themeEditorItem } = useCommandPaletteThemeItems();
@@ -1083,147 +1090,6 @@ function OpenCommandPaletteDialog(props: {
     });
   };
 
-  const openSourceControlSettings = () => {
-    setOpen(false);
-    void navigate({ to: "/settings/source-control" });
-  };
-
-  const buildAddProjectSourceGroups = (
-    environmentId: EnvironmentId,
-    readinessBySource: AddProjectRemoteSourceReadiness,
-  ): CommandPaletteView["groups"] => {
-    const localFolderItem: CommandPaletteActionItem | CommandPaletteSubmenuItem = {
-      kind: "action",
-      value: `action:add-project:${environmentId}:local`,
-      searchTerms: ["open", "local", "folder", "directory", "browse"],
-      title: "Open folder…",
-      description: "Browse a folder on disk",
-      icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
-      keepOpen: true,
-      run: async () => {
-        await startAddProjectBrowse(environmentId);
-      },
-    };
-
-    const newProjectItem: CommandPaletteActionItem | CommandPaletteSubmenuItem | null =
-      newProjectsRootFor(environmentId) === null
-        ? null
-        : {
-            kind: "action",
-            value: `action:add-project:${environmentId}:new`,
-            searchTerms: ["new project", "create", "empty", "repository", "git init"],
-            title: "New project…",
-            description: "Start a new Git repository from a name",
-            icon: <FolderGit2Icon className={ITEM_ICON_CLASS} />,
-            keepOpen: true,
-            run: async () => {
-              startNewProject(environmentId, environmentId);
-            },
-          };
-
-    const remoteSourceItem = (
-      source: AddProjectRemoteSource,
-    ): CommandPaletteActionItem | CommandPaletteSubmenuItem => {
-      const label = addProjectRemoteSourceLabel(source);
-      const title = source === "url" ? "Clone repository…" : `${label} repository`;
-      const description =
-        source === "url"
-          ? "Clone from a Git URL"
-          : `Clone ${label} ${addProjectRemoteSourcePathHint(source)}`;
-      const readiness = readinessBySource(source);
-      const disabledHint = readiness.hint;
-
-      const titleTrailingContent = readiness.ready ? undefined : (
-        <span className="ml-auto">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="warning-outline"
-                  size="micro"
-                  onClick={() => {
-                    openSourceControlSettings();
-                  }}
-                >
-                  Setup Required
-                </Button>
-              }
-            />
-            <TooltipPopup align="end" side="left">
-              {disabledHint ?? "Open Settings -> Source control to configure this provider."}
-            </TooltipPopup>
-          </Tooltip>
-        </span>
-      );
-
-      if (!readiness.ready) {
-        return {
-          kind: "action",
-          value: `action:add-project:${environmentId}:${source}:not-ready`,
-          searchTerms: ["clone", "remote", "repository", "repo", "git", label, "setup required"],
-          title,
-          description,
-          disabled: true,
-          icon: remoteProjectSourceIcon(source, ITEM_ICON_CLASS),
-          ...(titleTrailingContent ? { titleTrailingContent } : {}),
-          run: async () => {},
-        };
-      }
-
-      return {
-        kind: "action",
-        value: `action:add-project:${environmentId}:${source}`,
-        searchTerms: ["clone", "remote", "repository", "repo", "git", label],
-        title,
-        description,
-        icon: remoteProjectSourceIcon(source, ITEM_ICON_CLASS),
-        ...(titleTrailingContent ? { titleTrailingContent } : {}),
-        keepOpen: true,
-        run: async () => {
-          startAddProjectClone(environmentId, source);
-        },
-      };
-    };
-
-    return [
-      {
-        value: `sources:${environmentId}`,
-        label: "Sources",
-        items: [
-          localFolderItem,
-          remoteSourceItem("url"),
-          ...(newProjectItem === null ? [] : [newProjectItem]),
-          ...sortAddProjectProviderSources(readinessBySource).map(remoteSourceItem),
-        ],
-      },
-    ];
-  };
-
-  const startAddProjectSourceSelection = (environmentId: EnvironmentId): void => {
-    const environment = environments.find((candidate) => candidate.environmentId === environmentId);
-    if (!canCreateProjectInEnvironment(environment?.connection.phase)) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Environment unavailable",
-          description: `${environment?.label ?? "The selected environment"} is not connected.`,
-        }),
-      );
-      return;
-    }
-    setAddProjectEnvironmentId(environmentId);
-    setAddProjectCloneFlow(null);
-    pushPaletteView({
-      addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
-      groups: buildAddProjectSourceGroups(
-        environmentId,
-        buildPaletteRemoteSourceReadiness(
-          browseEnvironmentId === environmentId ? sourceControlDiscovery.data : null,
-        ),
-      ),
-    });
-  };
-
   const buildEnvironmentItem = (
     option: AddProjectEnvironmentOption,
     value: string,
@@ -1245,24 +1111,9 @@ function OpenCommandPaletteDialog(props: {
       run(option.environmentId);
     },
   });
-  const addProjectEnvironmentItems = addProjectEnvironmentOptions.map((option) =>
-    buildEnvironmentItem(
-      option,
-      `action:add-project:environment:${option.environmentId}`,
-      startAddProjectSourceSelection,
-    ),
-  );
   const newProjectEnvironmentOptions = addProjectEnvironmentOptions.filter(
     (option) => option.isConnected && newProjectsRootFor(option.environmentId) !== null,
   );
-
-  const addProjectEnvironmentGroups = [
-    {
-      value: "environments",
-      label: "Environments",
-      items: addProjectEnvironmentItems,
-    },
-  ];
 
   const openConnectionSettings = () => {
     setOpen(false);
@@ -1273,77 +1124,81 @@ function OpenCommandPaletteDialog(props: {
     defaultAddProjectEnvironmentId,
   );
 
-  const openAddProjectFlow = () => {
-    switch (addProjectEntry.kind) {
-      case "connect-environment":
-        openConnectionSettings();
+  const startAddProjectFlow = (environmentId: EnvironmentId): void => {
+    const request = props.openIntent?.kind === "add-project" ? props.openIntent.request : undefined;
+    if (request === undefined) return;
+    setAddProjectEnvironmentId(environmentId);
+    switch (request.action) {
+      case "open-folder":
+        void startAddProjectBrowse(environmentId);
         return;
-      case "choose-environment":
-        pushPaletteView({
-          addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
-          groups: addProjectEnvironmentGroups,
-        });
+      case "clone":
+        startAddProjectClone(environmentId, request.source ?? "url");
         return;
-      case "choose-source":
-        startAddProjectSourceSelection(addProjectEntry.environmentId);
+      case "new-project": {
+        const target =
+          newProjectEnvironmentOptions.find((option) => option.environmentId === environmentId) ??
+          newProjectEnvironmentOptions[0];
+        if (target === undefined) {
+          const environment = environments.find(
+            (candidate) => candidate.environmentId === environmentId,
+          );
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Cannot create a new project",
+              description: `${environment?.label ?? "The selected environment"} cannot create a new project.`,
+            }),
+          );
+          return;
+        }
+        startNewProject(target.environmentId, environmentId);
         return;
+      }
     }
   };
 
-  // A clone intent starts at the Git URL entry; without a ready environment it
-  // falls back to the same environment/source picker as Add project.
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- runs once per clone intent to place the palette in its clone entry
+  const buildAddProjectEnvironmentGroups = (): ReadonlyArray<CommandPaletteGroup> => [
+    {
+      value: "environments",
+      label: "Environments",
+      items: addProjectEnvironmentOptions.map((option) =>
+        buildEnvironmentItem(
+          option,
+          `action:add-project:environment:${option.environmentId}`,
+          startAddProjectFlow,
+        ),
+      ),
+    },
+  ];
+
+  // An Add project dialog action starts its flow directly; with more than one
+  // environment the palette still asks which one first.
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- runs once per add-project intent to place the palette in its flow
   useEffect(() => {
     if (cloneIntentHandled.current) return;
-    if (props.openIntent?.kind !== "add-project" || props.openIntent.clone !== true) return;
+    if (props.openIntent?.kind !== "add-project") return;
     cloneIntentHandled.current = true;
-    if (addProjectEntry.kind === "choose-source") {
-      // oxlint-disable-next-line react/set-state-in-effect -- A clone intent starts the palette at its Git URL clone entry.
-      startAddProjectClone(addProjectEntry.environmentId, "url");
+    const request = props.openIntent.request;
+    if (request === undefined) return;
+    if (request.environmentId !== undefined) {
+      // oxlint-disable-next-line react/set-state-in-effect -- Starts the requested flow for a chosen source.
+      startAddProjectFlow(request.environmentId);
       return;
     }
-    // oxlint-disable-next-line react/set-state-in-effect -- A clone intent without a ready environment opens the add-project picker.
-    openAddProjectFlow();
-  });
-
-  // The view an "Add project" intent opens to follows the environments as they
-  // connect, so it resolves here instead of being fixed when the palette opened.
-  const addProjectEntryGroups = (): ReadonlyArray<CommandPaletteGroup> => {
-    switch (addProjectEntry.kind) {
-      case "connect-environment":
-        return [
-          {
-            value: ADD_PROJECT_ENTRY_GROUP,
-            label: "",
-            items: [
-              {
-                kind: "action",
-                value: "action:add-project:connect-environment",
-                searchTerms: ["connect", "environment", "connection", "settings"],
-                title: "Connect an environment",
-                description: "No connected environment can add a project",
-                icon: <SettingsIcon className={ITEM_ICON_CLASS} />,
-                keepOpen: true,
-                run: async () => {
-                  openConnectionSettings();
-                },
-              },
-            ],
-          },
-        ];
-      case "choose-environment":
-        return addProjectEnvironmentGroups;
-      case "choose-source":
-        return buildAddProjectSourceGroups(
-          addProjectEntry.environmentId,
-          buildPaletteRemoteSourceReadiness(
-            browseEnvironmentId === addProjectEntry.environmentId
-              ? sourceControlDiscovery.data
-              : null,
-          ),
-        );
+    if (addProjectEntry.kind === "connect-environment") {
+      openConnectionSettings();
+      return;
     }
-  };
+    if (addProjectEntry.kind === "choose-environment") {
+      pushPaletteView({
+        addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
+        groups: buildAddProjectEnvironmentGroups(),
+      });
+      return;
+    }
+    startAddProjectFlow(addProjectEntry.environmentId);
+  });
 
   const openNewProjectFlow = () => {
     const firstOption = newProjectEnvironmentOptions[0];
@@ -1745,9 +1600,9 @@ function OpenCommandPaletteDialog(props: {
     ],
     title: "Add project",
     icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
-    keepOpen: true,
     run: async () => {
-      openAddProjectFlow();
+      setOpen(false);
+      openAddProjectDialog();
     },
   };
   actionItems.push(addProjectAction);
@@ -2020,32 +1875,21 @@ function OpenCommandPaletteDialog(props: {
       });
     },
   }));
-  const sourceSelectionViewValue =
-    addProjectEnvironmentId === null ? null : `sources:${addProjectEnvironmentId}`;
   const activeGroups =
-    addProjectEnvironmentId !== null &&
-    currentView !== null &&
-    currentView.groups[0]?.value === sourceSelectionViewValue
-      ? buildAddProjectSourceGroups(
-          addProjectEnvironmentId,
-          buildPaletteRemoteSourceReadiness(sourceControlDiscovery.data),
-        )
-      : currentView?.groups[0]?.value === ADD_PROJECT_ENTRY_GROUP
-        ? addProjectEntryGroups()
-        : currentView?.groups[0]?.value === NEW_THREAD_IN_GROUP
-          ? [
-              {
-                value: NEW_THREAD_IN_GROUP,
-                label: "Projects",
-                // Every project archived and no "No project" home leaves only adding one.
-                items: projectThreadItems.length > 0 ? projectThreadItems : [addProjectAction],
-              },
-            ]
-          : currentView?.groups[0]?.value === "themes"
-            ? changeThemeItem.groups
-            : currentView?.groups[0]?.value === "appearance"
-              ? changeAppearanceItem.groups
-              : (currentView?.groups ?? rootGroups);
+    currentView?.groups[0]?.value === NEW_THREAD_IN_GROUP
+      ? [
+          {
+            value: NEW_THREAD_IN_GROUP,
+            label: "Projects",
+            // Every project archived and no "No project" home leaves only adding one.
+            items: projectThreadItems.length > 0 ? projectThreadItems : [addProjectAction],
+          },
+        ]
+      : currentView?.groups[0]?.value === "themes"
+        ? changeThemeItem.groups
+        : currentView?.groups[0]?.value === "appearance"
+          ? changeAppearanceItem.groups
+          : (currentView?.groups ?? rootGroups);
 
   const isLinkedThreadSearch =
     linkedThreadSearch?.linkedThreads !== undefined && deferredQuery === linkedThreadSearch.query;
@@ -2067,6 +1911,13 @@ function OpenCommandPaletteDialog(props: {
       isLinkedThreadSearch && linkedThreadSearch?.linkedThreads
         ? buildLinkedThreadActionItems({
             ...linkedThreadSearch.linkedThreads,
+            threads: visibleLinkedThreads(
+              linkedThreadSearch.linkedThreads.threads,
+              linkedThreadSearch.linkedThreads.environmentId,
+              linkedThreadRefs,
+              hiddenKeys,
+              hidingAnywhere,
+            ),
             query: linkedThreadSearch.query,
             icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
             runThread: async (thread) => {
@@ -2520,18 +2371,6 @@ function OpenCommandPaletteDialog(props: {
   const newProjectPathPreview =
     newProjectsRoot === null ? null : getNewProjectPathPreview(newProjectsRoot, newProjectName);
   const newProjectPublishToggleValue = "new-project:publish";
-  const showExistingProjectSources = (environmentId: EnvironmentId) => {
-    const sourcesEnvironmentId = newProjectFlow?.sourcesEnvironmentId ?? null;
-    if (sourcesEnvironmentId === environmentId) {
-      popView();
-      return;
-    }
-    if (sourcesEnvironmentId !== null) {
-      dispatchSearch({ type: "back" });
-    }
-    popView();
-    startAddProjectSourceSelection(environmentId);
-  };
   const switchNewProjectEnvironment = (environmentId: EnvironmentId) => {
     setNewProjectFlow((flow) => (flow === null ? flow : { ...flow, environmentId }));
     setAddProjectEnvironmentId(environmentId);
@@ -2590,9 +2429,9 @@ function OpenCommandPaletteDialog(props: {
               titleTrailingContent: (
                 <ChevronRightIcon className="-me-0.5 ms-auto size-4 shrink-0 text-muted-foreground/70" />
               ),
-              keepOpen: true,
               run: async () => {
-                showExistingProjectSources(newProjectFlow.environmentId);
+                setOpen(false);
+                openAddProjectDialog();
               },
             },
           ],

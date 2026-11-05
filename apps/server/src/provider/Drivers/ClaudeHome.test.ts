@@ -1,7 +1,9 @@
 import * as NodeOS from "node:os";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 
@@ -9,10 +11,11 @@ import {
   makeClaudeCapabilitiesCacheKey,
   makeClaudeContinuationGroupKey,
   makeClaudeEnvironment,
+  mergeClaudeProcessEnvironment,
   resolveClaudeHomePath,
 } from "./ClaudeHome.ts";
 
-it.layer(NodeServices.layer)("ClaudeHome", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ClaudeHome", (it) => {
   describe("Claude home resolution", () => {
     it.effect("resolves configured Claude HOME and stamps continuation/cache keys with it", () =>
       Effect.gen(function* () {
@@ -44,6 +47,22 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
         expect(yield* resolveClaudeHomePath({ homePath: "~/.claude-work" }, environment)).toBe(
           explicit,
         );
+      }),
+    );
+
+    it.effect("drops the launching Claude session and Electron's run-as-Node flag", () =>
+      Effect.gen(function* () {
+        const environment = yield* mergeClaudeProcessEnvironment(undefined, {
+          CLAUDE_CODE_SESSION_ID: "host-session",
+          CLAUDE_CODE_MESSAGING_SOCKET: "/tmp/host-claude.sock",
+          ELECTRON_RUN_AS_NODE: "1",
+          KEEP: "1",
+        });
+
+        expect(environment.CLAUDE_CODE_SESSION_ID).toBeUndefined();
+        expect(environment.CLAUDE_CODE_MESSAGING_SOCKET).toBeUndefined();
+        expect(environment.ELECTRON_RUN_AS_NODE).toBeUndefined();
+        expect(environment.KEEP).toBe("1");
       }),
     );
 

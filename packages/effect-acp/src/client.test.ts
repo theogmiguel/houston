@@ -14,6 +14,7 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, assert } from "@effect/vitest";
 
@@ -103,7 +104,7 @@ function concatBytes(chunks: ReadonlyArray<Uint8Array>): Uint8Array {
   return batch;
 }
 
-it.layer(NodeServices.layer)("effect-acp client", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("effect-acp client", (it) => {
   const makeHandle = (env?: Record<string, string>) =>
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;

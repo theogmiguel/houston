@@ -19,6 +19,17 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
   useAtomValue: (() => []) as never,
 }));
 
+vi.mock(import("../../state/session"), async (original) => ({
+  ...(await original()),
+  readEnvironmentScope: () => true,
+}));
+
+vi.mock(import("../../state/entities"), async (original) => ({
+  ...(await original()),
+  readEnvironmentServerConfigLoaded: () => true,
+  readEnvironmentSupportsAutoSettleOptOut: () => true,
+}));
+
 function thread(overrides: Record<string, unknown> = {}): EnvironmentThreadShell {
   return {
     id: "thread-a",
@@ -491,7 +502,7 @@ describe("New grid menu", () => {
   });
 });
 
-describe("Sidebar options", () => {
+describe("View options", () => {
   const defaults = {
     threadSort: "grid",
     gridSort: "created_at",
@@ -508,7 +519,7 @@ describe("Sidebar options", () => {
       { router: false },
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Sidebar options" }));
+    await userEvent.click(screen.getByRole("button", { name: "View options" }));
     await expect.element(page.getByText("Sort threads")).toBeVisible();
     await expect.element(page.getByText("Sort grids")).toBeVisible();
     await expect.element(page.getByText("Rows show")).toBeVisible();

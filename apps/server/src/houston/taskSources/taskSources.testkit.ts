@@ -3,6 +3,7 @@
 // GitHub client answered by an in-process fake of api.github.com, and a loopback Notion fake.
 import * as NodeHttp from "node:http";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as SourceControlRateLimit from "@houston-app/source-control-core/server/SourceControlRateLimit";
 import * as GitHubAppSignIn from "@houston-app/source-control-github/server/GitHubAppSignIn";
@@ -249,7 +250,7 @@ export const layerSources = (options: SourcesTestOptions = {}) =>
     Layer.provideMerge(
       ServerConfig.layerTest(process.cwd(), options.baseDir ?? { prefix: "houston-sources-test-" }),
     ),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Layer.provideMerge(
       Layer.succeed(HostedLaunch, options.hosted ?? options.baseDir !== undefined),
     ),

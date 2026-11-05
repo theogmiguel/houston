@@ -1,5 +1,6 @@
 import * as NodeAssert from "node:assert/strict";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2";
 import { it } from "@effect/vitest";
@@ -13,7 +14,7 @@ import * as OpenCodeServerLedger from "./OpenCodeServerLedger.ts";
 
 const layerTest = OpenCodeRuntime.layer.pipe(
   Layer.provide(OpenCodeServerLedger.layerTest),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 it.layer(layerTest)("OpenCodeRuntime inventory", (it) => {

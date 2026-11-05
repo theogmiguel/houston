@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import {
@@ -5,6 +6,7 @@ import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   type ChatAttachment,
 } from "@houston-app/contracts";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -218,7 +220,7 @@ const makeAttachmentFixture = Effect.fn("AntigravityAcpSupportTest.makeAttachmen
   },
 );
 
-it.layer(NodeServices.layer)("buildAntigravityPrompt", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("buildAntigravityPrompt", (it) => {
   it.effect("sends image bytes as native image content alongside the user prompt", () =>
     Effect.gen(function* () {
       const fixture = yield* makeAttachmentFixture();

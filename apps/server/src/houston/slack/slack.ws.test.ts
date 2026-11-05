@@ -4,6 +4,7 @@
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -361,7 +362,7 @@ const withServer = <A, E>(
     return yield* body(fake).pipe(
       Effect.provide(layerServer({ ...options, slackOrigin: fake.origin })),
     );
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 const SESSION = {
   sessionId: AuthSessionId.make("houston-slack-test"),
@@ -572,7 +573,7 @@ describe("slack tokens reach no file, log, trace or reply", () => {
     }).pipe(
       Effect.provide(Logger.layer([logger])),
       Effect.scoped,
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
   });
 });
@@ -836,7 +837,7 @@ describe("slack state survives a restart", () => {
         )) as ReadonlyArray<HoustonSlackRequest>;
         assert.lengthOf(requests, 1);
       }).pipe(Effect.provide(layerServer(options)));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });
 

@@ -44,6 +44,7 @@ const stringifiesWhileFollowing = (
     } as unknown as ThreadManagement.ThreadManagementService["Service"];
     const eventStore = {
       latestAgentSequence: () => Effect.succeed(created!.sequence),
+      prunedThroughSequence: Effect.succeed(0),
       getAgentReplayStats: () =>
         Effect.succeed({ eventCount: 0, rawPayloadBytes: 0, hasCreateEvent: false }),
       readAgentEvents: () => Stream.empty,

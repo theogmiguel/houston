@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   CommandId,
@@ -42,7 +43,7 @@ import * as EventSink from "../EventSink.ts";
 import * as EventStore from "../EventStore.ts";
 import * as LegacyV1ThreadImporter from "./LegacyV1ThreadImporter.ts";
 import * as Orchestrator from "../Orchestrator.ts";
-import * as ProjectionMaintenance from "../ProjectionMaintenance.ts";
+import * as ProjectionReplay from "../testkit/ProjectionReplay.ts";
 import * as ProjectionStore from "../ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "../ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "../testkit/ProviderReplayHarness.ts";
@@ -585,7 +586,7 @@ const layerBoot = (input: {
   readonly capturedTurns: Ref.Ref<ReadonlyArray<CapturedTurn>>;
 }) => {
   const layerDatabase = SqlitePersistence.layerFromPath(input.dbPath).pipe(
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
   const layerEventStoreProvided = EventStore.layer.pipe(Layer.provideMerge(layerDatabase));
   const layerProjectionStoreProvided = ProjectionStore.layer.pipe(
@@ -600,9 +601,7 @@ const layerBoot = (input: {
   const layerImporterProvided = LegacyV1ThreadImporter.layer.pipe(
     Layer.provide(Layer.mergeAll(layerStoresProvided, layerEventSinkProvided)),
   );
-  const layerMaintenanceProvided = ProjectionMaintenance.layer.pipe(
-    Layer.provide(layerStoresProvided),
-  );
+  const layerMaintenanceProvided = ProjectionReplay.layer.pipe(Layer.provide(layerStoresProvided));
   const layerOrchestratorProvided = ProviderReplayHarness.layerWithRegistry(
     {
       name: input.name,
@@ -676,7 +675,7 @@ describe("orchestration v2 legacy v1 cutover", () => {
             Effect.gen(function* () {
               const sql = yield* SqlClient.SqlClient;
               const importer = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
-              const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+              const maintenance = yield* ProjectionReplay.ProjectionReplay;
               const projections = yield* ProjectionStore.ProjectionStoreV2;
               const orchestrator = yield* Orchestrator.OrchestratorV2;
 
@@ -1019,7 +1018,7 @@ describe("orchestration v2 legacy v1 cutover", () => {
           assert.isTrue(
             boot2Logs.some((log) => String(log.message).includes("migration history diverges")),
           );
-        }).pipe(Effect.provide(NodeServices.layer)),
+        }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
       ),
   );
 });

@@ -2,6 +2,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeReadline from "node:readline";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as HostProcess from "@houston-app/shared/HostProcess";
@@ -126,7 +127,7 @@ describe.each(observedPlatforms)("OpenCodeServerLedger observing as %s", (platfo
   const provideHost = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
       Effect.provideService(HostProcess.Platform, platform),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
 
   it.live("stops an OpenCode server group left by a server that died", () =>
@@ -286,6 +287,6 @@ describe.skipIf(observedPlatforms.length === 0)("OpenCode server startup", () =>
       yield* Scope.close(serverScope, Exit.void);
 
       expect(groupExists(pgid)).toBe(false);
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

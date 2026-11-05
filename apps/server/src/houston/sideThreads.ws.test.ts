@@ -1,5 +1,6 @@
 // Side threads as the renderer reads them: the real `/ws` shell stream and projection handlers
 // over the orchestration runtime of sideThreads.testkit.ts, on one database across a restart.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -352,7 +353,7 @@ const withWs = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
         Layer.provideMerge(layerConfigSources),
         Layer.provideMerge(
           ServerConfig.layerTest(process.cwd(), { prefix: "houston-side-ws-" }).pipe(
-            Layer.provideMerge(NodeServices.layer),
+            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
         ),
       ),

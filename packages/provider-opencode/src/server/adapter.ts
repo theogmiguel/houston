@@ -80,7 +80,7 @@ import {
   makeSubagentChildThread,
   subagentThreadTitle,
 } from "@houston-app/provider-core/server/subagentProjection";
-import { openCodeToolTurnItem } from "./toolItems.ts";
+import { openCodeCommandFailed, openCodeToolTurnItem } from "./toolItems.ts";
 
 export const OPENCODE_PROVIDER = ProviderDriverKind.make("opencode");
 export const OPENCODE_DEFAULT_INSTANCE_ID = defaultInstanceIdForDriver(OPENCODE_PROVIDER);
@@ -752,7 +752,9 @@ function toolStatus(part: ToolPart): {
     case "running":
       return { node: "running", item: "running" };
     case "completed":
-      return { node: "completed", item: "completed" };
+      return openCodeCommandFailed(part.tool, part.state.metadata)
+        ? { node: "failed", item: "failed" }
+        : { node: "completed", item: "completed" };
     case "error":
       return { node: "failed", item: "failed" };
   }
@@ -3011,7 +3013,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             .map((part) => part.text)
             .join("\n")
             .trim();
-          const match = text?.match(/^\/([^\s/]+)(?:\s+([\s\S]*))?$/);
+          const match = text?.match(/^\/(\S+)(?:\s+([\s\S]*))?$/);
           const command = match
             ? (yield* OpenCodeRuntime.loadOpenCodeCommands(client).pipe(
                 Effect.timeout("10 seconds"),

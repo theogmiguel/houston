@@ -2,6 +2,7 @@ import { expect, it } from "@effect/vitest";
 import { describe, vi } from "vite-plus/test";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -106,7 +107,7 @@ describe("browser API CORS", () => {
     );
     const layerApp = Layer.merge(layerRoute, ServerHttp.layerBrowserApiCors).pipe(
       Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "http-cors-test-" })),
-      Layer.provide(NodeServices.layer),
+      Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
     const { handler, dispose } = HttpRouter.toWebHandler(layerApp, { disableLogger: true });
 
@@ -198,11 +199,15 @@ describe("untraced requests", () => {
         expect((yield* client.execute(HttpClientRequest.get(path))).status).toBe(404);
       }
       expect(serverSpans).toEqual(["GET", "GET", "GET"]);
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });
 
-const layerFileResponse = Layer.mergeAll(NodeHttpPlatform.layer, NodeServices.layer);
+const layerFileResponse = Layer.mergeAll(
+  NodeHttpPlatform.layer,
+  NodeServices.layer,
+  NodeCrypto.layer,
+);
 
 const makeStaticRequest = Effect.fn("HttpTest.makeStaticRequest")(function* (staticDir: string) {
   const config = yield* ServerConfig.ServerConfig;
@@ -226,7 +231,7 @@ const makeStaticRequest = Effect.fn("HttpTest.makeStaticRequest")(function* (sta
 
 it.layer(
   ServerConfig.layerTest(process.cwd(), { prefix: "houston-static-http-test-" }).pipe(
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   ),
 )("static HTTP responses", (it) => {
   it.effect("revalidates non-HTML files and returns changed contents", () =>

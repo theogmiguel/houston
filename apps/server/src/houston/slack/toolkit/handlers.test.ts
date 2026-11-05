@@ -1,6 +1,7 @@
 // The houston_slack_* tools, called as the thread of a Slack-filed run and as other threads,
 // over the Slack test layers. Only the caller thread lookup is a double.
 import { NodeHttpServer } from "@effect/platform-node";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@houston-app/contracts";
@@ -93,8 +94,10 @@ const shells = Layer.mock(ThreadManagement.ThreadManagementService)({
 
 const toolkitLayer = (services: Context.Context<HoustonSlackConversation>) =>
   McpHttpServer.layerHoustonSlackToolkit.pipe(
-    Layer.provideMerge(McpServer.McpServer.layer),
-    Layer.provide(Layer.mergeAll(Layer.succeedContext(services), shells, NodeServices.layer)),
+    Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
+    Layer.provide(
+      Layer.mergeAll(Layer.succeedContext(services), shells, NodeServices.layer, NodeCrypto.layer),
+    ),
   );
 
 const call = (threadId: string, name: string, args: Record<string, unknown>) =>
@@ -398,10 +401,10 @@ describe("slack tools need an mcp credential and pass task errors through", () =
           const services = yield* Effect.context<HoustonSlackConversation>();
           yield* Effect.scoped(
             Effect.gen(function* () {
-              const serverLayer = McpHttpServer.layerHoustonSlackToolkit.pipe(
-                Layer.provideMerge(
-                  McpHttpServer.layerMcpTransport.pipe(Layer.provide(ServerSettings.layerTest())),
-                ),
+              const serverLayer = McpHttpServer.layerMcpTransport(
+                McpHttpServer.layerHoustonSlackToolkit,
+              ).pipe(
+                Layer.provide(ServerSettings.layerTest()),
                 Layer.provide(
                   Layer.mergeAll(
                     Layer.succeedContext(services),
@@ -411,6 +414,7 @@ describe("slack tools need an mcp credential and pass task errors through", () =
                       resolve: () => Effect.succeed(undefined),
                     }),
                     NodeServices.layer,
+                    NodeCrypto.layer,
                   ),
                 ),
               );

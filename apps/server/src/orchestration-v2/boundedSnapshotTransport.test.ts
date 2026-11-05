@@ -31,6 +31,7 @@ import {
 } from "@houston-app/contracts";
 import { boundedSnapshotProjection } from "@houston-app/shared/orchestrationV2BoundedSnapshot";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -411,7 +412,7 @@ const withHttp = <A>(use: (get: (path: string) => Promise<Response>) => Promise<
       Layer.provide(Layer.succeedContext(context)),
       Layer.provide(NodeHttpPlatform.layer),
       Layer.provide(Etag.layerWeak),
-      Layer.provide(NodeServices.layer),
+      Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
     return yield* Effect.acquireUseRelease(
       Effect.sync(() => HttpRouter.toWebHandler(appLayer, { disableLogger: true })),

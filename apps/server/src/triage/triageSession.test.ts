@@ -1,5 +1,7 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -29,5 +31,5 @@ it.effect("reports the version the running server recorded, not the CLI's", () =
       yield* describeServerProcess(statePath),
       `running (pid ${String(process.pid)}, http://127.0.0.1:3773, version ${packageJson.version})`,
     );
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

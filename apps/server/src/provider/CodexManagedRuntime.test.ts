@@ -6,6 +6,7 @@ import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as CodexManagedTokenBroker from "./CodexManagedTokenBroker.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { CodexSettings, EnvironmentId, ProviderInstanceId } from "@houston-app/contracts";
@@ -287,7 +288,7 @@ it.live.each(
       Effect.provide(
         ServerConfig.layerTest(process.cwd(), {
           prefix: "houston-managed-runtime-",
-        }).pipe(Layer.provideMerge(NodeServices.layer)),
+        }).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
       ),
     ),
 );

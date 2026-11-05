@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
-import type { GridRecord } from "../../grid/gridStore";
+import { useGridStore, type GridRecord } from "../../grid/gridStore";
 import { threadLeaf, type Side, type SplitSide, type ThreadNode } from "../../grid/tree";
 import { render } from "../../../test/render";
 import { GridThreadCell } from "./GridThreadCell";
@@ -104,24 +104,36 @@ vi.mock("../sidebar/SidebarThreadRow", () => ({
   SidebarProviderStack: () => null,
 }));
 
+const shell = {
+  id: "thread-a",
+  title: "Alpha thread",
+  environmentId: "env-1",
+  projectId: "project-1",
+  archivedAt: null,
+  settledOverride: null,
+  snoozedUntil: null,
+  autoSettleDisabledAt: null,
+  titleRegeneration: null,
+  modelSelection: { instanceId: "claudeAgent", model: "claude-sonnet" },
+  providerInstanceHistory: [],
+  runtime: null,
+};
+
 vi.mock("../../state/entities", () => ({
-  useQuietThreadShell: () => ({
-    id: "thread-a",
-    title: "Alpha thread",
-    environmentId: "env-1",
-    projectId: "project-1",
-    archivedAt: null,
-    modelSelection: { instanceId: "claudeAgent", model: "claude-sonnet" },
-    providerInstanceHistory: [],
-    runtime: null,
-  }),
+  useQuietThreadShell: () => shell,
+  readThreadShell: () => shell,
+  readThreadShells: () => [shell],
+  readEnvironmentServerConfigLoaded: () => true,
+  readEnvironmentSupportsAutoSettleOptOut: () => true,
 }));
 
 vi.mock("../../hooks/useThreadActions", () => ({
+  canTurnThreadIntoProject: () => false,
   useThreadActions: () => ({
     archiveThread: state.archiveThread,
     threadSnoozePresets: () => [],
     markThreadUnread: () => {},
+    setThreadTag: () => {},
     confirmAndDeleteThread: () => {},
     renameThread: () => {},
     regenerateThreadTitle: () => {},
@@ -133,11 +145,31 @@ vi.mock("../../hooks/useThreadActions", () => ({
     openThreadProjectSettings: () => {},
     holdThread: () => {},
     closeThread: () => {},
+    deleteThread: () => {},
+    unsettleThread: () => {},
+    unsnoozeThread: () => {},
+    setThreadAutoSettle: () => {},
+    turnThreadIntoProject: () => {},
   }),
+}));
+
+vi.mock(import("../../state/session"), async (original) => ({
+  ...(await original()),
+  readEnvironmentScope: () => true,
+}));
+
+vi.mock("../../hooks/useSettings", () => ({
+  useClientSettings: (select: (settings: unknown) => unknown) =>
+    select({
+      confirmThreadDelete: false,
+      confirmThreadArchive: false,
+      timestampFormat: "12-hour",
+    }),
 }));
 
 vi.mock("../../composerDraftStore", () => ({
   DraftId: { make: (value: string) => value },
+  clearComposerDraftsEnvironment: () => {},
   useComposerDraftStore: (
     selector: (store: {
       getDraftSession: () => unknown;
@@ -148,12 +180,6 @@ vi.mock("../../composerDraftStore", () => ({
       getDraftSession: () => state.draftSession,
       getPromotedDraftRedirect: () => null,
     }),
-}));
-
-vi.mock("../../grid/gridStore", () => ({
-  MAX_GRID_THREADS: 6,
-  useGridStore: (selector: (store: { setDraftId: () => void }) => unknown) =>
-    selector({ setDraftId: () => {} }),
 }));
 
 vi.mock("../Sidebar.logic", () => ({
@@ -190,9 +216,7 @@ async function renderCell(
     onDragHandlePointerDown?: (event: React.PointerEvent<HTMLElement>) => void;
     swapTargets?: ReadonlyArray<{ threadId: string; title: string }>;
     onSwapWith?: (threadId: string) => void;
-    gridTargets?: ReadonlyArray<{ gridId: string; name: string }>;
-    onMoveToGrid?: (gridId: string) => void;
-    onMoveToNewGrid?: () => void;
+    onOpenGrid?: (gridId: string) => void;
     onSplit?: (side: SplitSide, threadId: string) => void;
     onNewThread?: (side: SplitSide) => void;
     container?: HTMLElement;
@@ -217,11 +241,7 @@ async function renderCell(
         : { onDragHandlePointerDown: options.onDragHandlePointerDown })}
       swapTargets={options?.swapTargets ?? []}
       {...(options?.onSwapWith === undefined ? {} : { onSwapWith: options.onSwapWith })}
-      gridTargets={options?.gridTargets ?? []}
-      {...(options?.onMoveToGrid === undefined ? {} : { onMoveToGrid: options.onMoveToGrid })}
-      {...(options?.onMoveToNewGrid === undefined
-        ? {}
-        : { onMoveToNewGrid: options.onMoveToNewGrid })}
+      {...(options?.onOpenGrid === undefined ? {} : { onOpenGrid: options.onOpenGrid })}
       onSplit={options?.onSplit ?? (() => {})}
       onNewThread={options?.onNewThread}
       onOpenThread={() => {}}
@@ -346,7 +366,7 @@ describe("GridThreadCell surfaces", () => {
     await userEvent.click(page.getByRole("menuitem", { name: "Archive thread" }));
     expect(state.archiveThread).toHaveBeenCalledWith(
       expect.objectContaining({ threadId: "thread-a" }),
-      expect.objectContaining({ onArchived: onClose }),
+      expect.objectContaining({ onArchived: expect.any(Function) }),
     );
     expect(onClose).toHaveBeenCalled();
   });
@@ -377,7 +397,7 @@ describe("GridThreadCell surfaces", () => {
     await expect
       .element(page.getByRole("menuitem", { name: "This grid holds six threads" }))
       .toBeVisible();
-    const items = [...document.querySelectorAll('[data-slot="menu-item"]')].map(
+    const items = [...document.querySelectorAll('[role="menuitem"]')].map(
       (item) => item.textContent ?? "",
     );
     expect(items).not.toContain("Seventh thread");
@@ -409,27 +429,48 @@ describe("GridThreadCell surfaces", () => {
 
   it("moves the cell's thread to another grid of its project", async () => {
     state.draftSession = null;
-    const onMoveToGrid = vi.fn();
+    useGridStore.setState({ grids: [], threadOrigins: {}, closedCells: {} });
+    const store = useGridStore.getState();
+    store.createGrid({
+      environmentId: "env-1",
+      projectId: "project-1",
+      workspaceKey: "env-1:project-1",
+      id: "g-1",
+      name: "Review",
+      now: "2026-01-01T00:00:00Z",
+    });
+    store.createGrid({
+      environmentId: "env-1",
+      projectId: "project-1",
+      workspaceKey: "env-1:project-1",
+      id: "grid-b",
+      name: "Archive",
+      now: "2026-01-02T00:00:00Z",
+    });
+    store.addThread("g-1", "thread-a");
+    const onOpenGrid = vi.fn();
     await using screen = await renderCell(
       { kind: "thread", threadId: "thread-a", id: "p1" },
       twoThreadTree(),
-      {
-        gridTargets: [{ gridId: "grid-b", name: "Review" }],
-        onMoveToGrid,
-        onMoveToNewGrid: vi.fn(),
-      },
+      { onOpenGrid },
     );
 
     await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
     await userEvent.click(screen.getByRole("button", { name: "More cell actions" }));
     await userEvent.hover(page.getByRole("menuitem", { name: "Move to grid" }));
-    await expect.element(page.getByRole("menuitem", { name: "Review" })).toBeVisible();
+    await expect.element(page.getByRole("menuitem", { name: "Archive" })).toBeVisible();
     await expect.element(page.getByRole("menuitem", { name: "New grid" })).toBeVisible();
-    await userEvent.click(page.getByRole("menuitem", { name: "Review" }));
-    expect(onMoveToGrid).toHaveBeenCalledExactlyOnceWith("grid-b");
+    await userEvent.click(page.getByRole("menuitem", { name: "Archive" }));
+    expect(onOpenGrid).toHaveBeenCalledExactlyOnceWith("grid-b");
+    const grids = useGridStore.getState().grids;
+    expect(grids.find((grid) => grid.id === "g-1")?.tree).toBeNull();
+    expect(grids.find((grid) => grid.id === "grid-b")?.tree).toMatchObject({
+      kind: "thread",
+      threadId: "thread-a",
+    });
   });
 
-  it("orders the label actions more, maximize, close and groups split, move and archive", async () => {
+  it("labels the actions more, maximize, close and shows the shared thread menu", async () => {
     state.draftSession = null;
     await using screen = await renderCell(
       { kind: "thread", threadId: "thread-a", id: "p1" },
@@ -439,6 +480,7 @@ describe("GridThreadCell surfaces", () => {
         onMaximize: vi.fn(),
         swapTargets: [{ threadId: "thread-b", title: "Beta thread" }],
         onSwapWith: vi.fn(),
+        onOpenGrid: vi.fn(),
       },
     );
 
@@ -461,18 +503,23 @@ describe("GridThreadCell surfaces", () => {
       "Split down",
       "---",
       "Move to…",
+      "Move to grid",
+      "Close thread",
+      "Hold",
       "---",
       "Rename thread",
-      "Mark unread",
-      "Copy",
-      "Find in thread",
-      "Project settings",
-      "Close thread",
       "Regenerate title",
-      "Delete thread",
+      "Tags",
+      "Mark unread",
+      "Auto-close behavior",
+      "---",
+      "Copy",
+      "Project settings",
       "---",
       "Archive thread",
+      "Delete",
     ]);
+    expect(menu.textContent).not.toMatch(/Pin thread|Unpin thread/);
   });
 
   it("grows the label actions to their own width over the whole reveal", async () => {

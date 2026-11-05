@@ -22,6 +22,7 @@ import {
 import * as NetService from "@houston-app/shared/Net";
 import { DEFAULT_SIGNAL_EXPORT } from "@houston-app/shared/observability";
 import * as OtelEnvironment from "@houston-app/shared/otelEnvironment";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import packageJson from "../../package.json" with { type: "json" };
@@ -85,7 +86,7 @@ const liveProcess = Effect.acquireRelease(
     }),
 );
 
-it.layer(NodeServices.layer)("cli config resolution", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("cli config resolution", (it) => {
   const defaultObservabilityConfig = {
     traceMinLevel: "Info",
     traceTimingEnabled: true,

@@ -527,6 +527,7 @@
     "@houston-app/provider-cursor": "workspace:*",
     "@houston-app/provider-fx": "workspace:*",
     "@houston-app/provider-grok": "workspace:*",
+    "@houston-app/provider-kiro": "workspace:*",
     "@houston-app/provider-muse": "workspace:*",
     "@houston-app/provider-opencode": "workspace:*",
     "@houston-app/provider-pi": "workspace:*",

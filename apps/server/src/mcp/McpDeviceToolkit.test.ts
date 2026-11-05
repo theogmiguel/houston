@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DeviceHostUnavailableError,
@@ -147,14 +148,14 @@ const layerDeviceServiceMock = Layer.mock(DeviceService.DeviceService)({
 });
 
 const layerTest = McpHttpServer.layerDeviceToolkit.pipe(
-  Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
   Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
   Layer.provideMerge(layerDeviceServiceMock),
   Layer.provide(layerProjectsMock),
   Layer.provide(
     ServerConfig.layerTest(process.cwd(), { prefix: "houston-mcp-device-toolkit-test-" }),
   ),
-  Layer.provide(NodeServices.layer),
+  Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 it.effect("registers the device tools and returns the screenshot as image content", () =>
@@ -274,14 +275,14 @@ it.effect("rejects unavailable agent access before booting or opening a device",
     Effect.scoped,
     Effect.provide(
       McpHttpServer.layerDeviceToolkit.pipe(
-        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
         Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
         Layer.provide(layerUnavailable),
         Layer.provide(layerProjectsMock),
         Layer.provide(
           ServerConfig.layerTest(process.cwd(), { prefix: "houston-mcp-device-toolkit-test-" }),
         ),
-        Layer.provide(NodeServices.layer),
+        Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
     ),
   );
@@ -347,11 +348,7 @@ describe("device targeting across hosts", () => {
       readonly call: (
         name: string,
         args: Record<string, unknown>,
-      ) => Effect.Effect<
-        McpSchema.CallToolResult,
-        McpSchema.InternalError | McpSchema.InvalidParams,
-        McpServer.McpServer
-      >;
+      ) => Effect.Effect<McpSchema.CallToolResult, McpSchema.McpErrorBase, McpServer.McpServer>;
     }) => Effect.Effect<A, E, McpServer.McpServer>,
     overrides: Partial<DeviceService.DeviceService["Service"]> = {},
   ) => {
@@ -418,14 +415,14 @@ describe("device targeting across hosts", () => {
       Effect.scoped,
       Effect.provide(
         McpHttpServer.layerDeviceToolkit.pipe(
-          Layer.provideMerge(McpServer.McpServer.layer),
+          Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
           Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
           Layer.provide(layerDevices),
           Layer.provide(layerProjectsMock),
           Layer.provide(
             ServerConfig.layerTest(process.cwd(), { prefix: "houston-mcp-device-toolkit-test-" }),
           ),
-          Layer.provide(NodeServices.layer),
+          Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
     );

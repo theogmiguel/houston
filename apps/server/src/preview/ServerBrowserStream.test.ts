@@ -1,5 +1,6 @@
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -26,7 +27,9 @@ import * as PreviewBrowserHost from "./PreviewBrowserHost.ts";
 import * as ServerBrowser from "./ServerBrowser.ts";
 import { routeLayer } from "./ServerBrowserStream.ts";
 
-const platformLayer = NodeHttpPlatform.layer.pipe(Layer.provideMerge(NodeServices.layer));
+const platformLayer = NodeHttpPlatform.layer.pipe(
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+);
 
 const makeAuth = (
   scopes: ReadonlyArray<AuthEnvironmentScope>,
@@ -35,7 +38,7 @@ const makeAuth = (
   const requests: string[] = [];
   const layer = Layer.mock(EnvironmentAuth.EnvironmentAuth, {
     authenticateWebSocketUpgrade: (request) => {
-      requests.push(request.originalUrl);
+      requests.push(request.url);
       return error
         ? Effect.fail(error)
         : Effect.succeed({
@@ -316,7 +319,7 @@ it.effect("serves a tab's download only to an authorized session", () =>
     expect(yield* Effect.promise(() => response.text())).toBe("report contents");
     const missing = yield* serve([AuthOrchestrationReadScope], `${base}&id=other`);
     expect(missing.status).toBe(404);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("passes uploaded files to the page's open picker and needs operate scope", () =>

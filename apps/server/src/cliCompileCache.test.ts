@@ -1,7 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Resolves the real CLI entrypoint for subprocess tests.
 import * as NodeURL from "node:url";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Stream from "effect/Stream";
@@ -65,5 +67,5 @@ it.live("enables CLI caching while respecting overrides and unavailable storage"
     const unavailable = yield* run({ XDG_CACHE_HOME: `${root}/blocked` });
     expect(unavailable.exitCode).toBe(0);
     expect(unavailable.stderr).toContain("CACHE=disabled");
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

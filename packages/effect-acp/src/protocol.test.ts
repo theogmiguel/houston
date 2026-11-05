@@ -1,3 +1,4 @@
+import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as AcpError from "./errors.ts";
 import * as Effect from "effect/Effect";
@@ -17,6 +18,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { it, assert, expect } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
 import * as AcpSchema from "./schema.ts";
@@ -78,7 +80,7 @@ const makeHandle = (env?: Record<string, string>) =>
     return yield* spawner.spawn(command);
   });
 
-it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("effect-acp protocol", (it) => {
   it.effect(
     "emits exact JSON-RPC notifications and decodes inbound session/update and elicitation completion",
     () =>
@@ -884,6 +886,7 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
         .request("x/test", { hello: "world" })
         .pipe(Effect.flip, Effect.orDie, Effect.forkScoped);
       yield* Queue.take(output);
+      yield* Queue.offer(input, encoder.encode('{"jsonrpc":"2.0","id":1,"result":'));
       yield* Queue.end(input);
 
       const error = yield* Deferred.await(termination);
@@ -897,6 +900,27 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
         yield* transport.notify("session/cancel", { sessionId: "session-1" }).pipe(Effect.flip),
         error,
       );
+    }),
+  );
+
+  it.effect("answers a pending request from a final response without a trailing newline", () =>
+    Effect.gen(function* () {
+      const { stdio, input, output } = yield* makeInMemoryStdio();
+      const transport = yield* AcpProtocol.makeAcpPatchedProtocol({
+        stdio,
+        serverRequestMethods: new Set(),
+      });
+      const pending = yield* transport
+        .request("x/test", { hello: "world" })
+        .pipe(Effect.forkScoped);
+      yield* Queue.take(output);
+      yield* Queue.offer(
+        input,
+        encoder.encode(encodeUnknownJsonString({ jsonrpc: "2.0", id: 1, result: { ok: true } })),
+      );
+      yield* Queue.end(input);
+
+      assert.deepEqual(yield* Fiber.join(pending), { ok: true });
     }),
   );
 

@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProviderDriverKind } from "@houston-app/contracts";
 import * as ModelCatalog from "@houston-app/provider-core/server/ModelCatalog";
@@ -259,7 +260,7 @@ const layerService = (input: {
   readonly settings?: Parameters<typeof ServerSettings.layerTest>[0];
 }) =>
   ServerConfig.layerTest(process.cwd(), { prefix: input.prefix }).pipe(
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Layer.provideMerge(ServerSettings.layerTest(input.settings ?? {})),
     Layer.provideMerge(layerHttpClient(input.response)),
   );

@@ -18,6 +18,7 @@ import {
   EnvironmentId,
   type ScopedThreadRef,
   ThreadId,
+  type ThreadTag,
   sessionGrantsScope,
 } from "@houston-app/contracts";
 import { resolveWorktreeCleanup } from "@houston-app/shared/projectSettings";
@@ -323,6 +324,9 @@ export function useThreadActions() {
     reportFailure: false,
   });
   const markThreadUnread = useMarkThreadUnread();
+  const setThreadTagMutation = useOrchestrationCommand(threadEnvironment.setTag, {
+    label: "thread tag",
+  });
   const createProjectFromThread = useAtomCommand(projectEnvironment.createFromThread, {
     reportFailure: false,
   });
@@ -681,6 +685,13 @@ export function useThreadActions() {
     return unsettleThreadMutation({
       environmentId: target.environmentId,
       input: { threadId: target.threadId, reason: "user" },
+    });
+  };
+
+  const setThreadTag = async (target: ScopedThreadRef, tag: ThreadTag, tagged: boolean) => {
+    return setThreadTagMutation({
+      environmentId: target.environmentId,
+      input: { threadId: target.threadId, tag, tagged },
     });
   };
 
@@ -1116,6 +1127,7 @@ export function useThreadActions() {
     reorderPinnedThread,
     reorderActiveThread,
     markThreadUnread,
+    setThreadTag,
     setThreadAutoSettle,
     turnThreadIntoProject: (target: ScopedThreadRef) =>
       createProjectFromThread({

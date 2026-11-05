@@ -2,6 +2,7 @@
 // stay in the caller's project. Task services are real (taskRuns.testkit.ts); only the caller
 // thread lookup is a double, so each test names the caller's project, title and kind.
 import { NodeHttpServer } from "@effect/platform-node";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -151,19 +152,13 @@ const readOnlyClient: McpInvocationContext.McpInvocationScope = {
   issuedAt: 1,
 };
 
-const toolkitLayer = (
-  services: Context.Context<TaskServices>,
-  shells: Map<string, OrchestrationV2ThreadShell>,
-) =>
+const toolkitLayer = (services: Context.Context<TaskServices>) =>
   McpHttpServer.layerHoustonTaskToolkit.pipe(
-    Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
     Layer.provide(
       Layer.mergeAll(
         Layer.succeedContext(services),
-        Layer.mock(ThreadManagement.ThreadManagementService)({
-          getThreadShell: (threadId) => Effect.succeed(shells.get(threadId) ?? null),
-        }),
-        NodeServices.layer,
+        Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
       ),
     ),
   );
@@ -233,7 +228,16 @@ const withToolkit = <A, E>(
           call,
           detail: (task) => context.tasks.get({ id: task.key }),
           setAccess,
-        }).pipe(Effect.provide(toolkitLayer(services, shells)));
+        }).pipe(
+          Effect.provide(toolkitLayer(services)),
+          Effect.provideService(ThreadManagement.ThreadManagementService, {
+            ...Context.get(
+              services as unknown as Context.Context<ThreadManagement.ThreadManagementService>,
+              ThreadManagement.ThreadManagementService,
+            ),
+            getThreadShell: (threadId) => Effect.succeed(shells.get(threadId) ?? null),
+          }),
+        );
       }),
     );
   });
@@ -302,10 +306,10 @@ describe("task tools read every project", () => {
       withToolkit("mcp-door", (context) =>
         Effect.scoped(
           Effect.gen(function* () {
-            const serverLayer = McpHttpServer.layerHoustonTaskToolkit.pipe(
-              Layer.provideMerge(
-                McpHttpServer.layerMcpTransport.pipe(Layer.provide(ServerSettings.layerTest())),
-              ),
+            const serverLayer = McpHttpServer.layerMcpTransport(
+              McpHttpServer.layerHoustonTaskToolkit,
+            ).pipe(
+              Layer.provide(ServerSettings.layerTest()),
               Layer.provide(
                 Layer.mergeAll(
                   Layer.succeedContext(context.services),
@@ -317,6 +321,7 @@ describe("task tools read every project", () => {
                     resolve: () => Effect.succeed(undefined),
                   }),
                   NodeServices.layer,
+                  NodeCrypto.layer,
                 ),
               ),
             );
@@ -369,10 +374,10 @@ describe("a submit-only credential reaches only the two submit tools of the regi
             const plannerShell = liveThreadShell(ThreadId.make("task-plan-unrecorded"), {
               activeRunId: RunId.make("run-planner"),
             });
-            const serverLayer = McpHttpServer.layerHoustonTaskToolkit.pipe(
-              Layer.provideMerge(
-                McpHttpServer.layerMcpTransport.pipe(Layer.provide(ServerSettings.layerTest())),
-              ),
+            const serverLayer = McpHttpServer.layerMcpTransport(
+              McpHttpServer.layerHoustonTaskToolkit,
+            ).pipe(
+              Layer.provide(ServerSettings.layerTest()),
               Layer.provide(
                 Layer.mergeAll(
                   Layer.succeedContext(context.services),
@@ -389,6 +394,7 @@ describe("a submit-only credential reaches only the two submit tools of the regi
                       ),
                   }),
                   NodeServices.layer,
+                  NodeCrypto.layer,
                 ),
               ),
             );

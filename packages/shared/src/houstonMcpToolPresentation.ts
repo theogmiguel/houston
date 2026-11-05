@@ -86,7 +86,13 @@ function tool(
   return { displayName, labels, icon, summaryAction };
 }
 
-const HOUSTON_MCP_SERVER_ALIASES = new Set(["houston", "houston_code"]);
+// Codex registers "houston-direct" for Houston tools kept out of Code Mode.
+const HOUSTON_MCP_SERVER_ALIASES = new Set([
+  "houston",
+  "houston_code",
+  "houston-direct",
+  "houston_direct",
+]);
 
 const HOUSTON_MCP_TOOLS: Readonly<Record<string, HoustonMcpToolDefinition>> = {
   link_pull_request: tool(
@@ -413,8 +419,24 @@ function normalizeHoustonMcpToolLabel(value: string): string {
   return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
 }
 
-// ACP tool prefixes vary; match loosely but require a known display-name entry.
+// Timelines resolve every work row's tool name on each update; names repeat across updates.
+// ACP titles can carry whole commands, so long labels are parsed but not kept.
+const toolNameCache = new Map<string, string | null>();
+const TOOL_NAME_CACHE_LIMIT = 10_000;
+const TOOL_NAME_CACHE_MAX_KEY_LENGTH = 256;
+
 function resolveHoustonMcpToolName(value: string): string | null {
+  if (value.length > TOOL_NAME_CACHE_MAX_KEY_LENGTH) return parseHoustonMcpToolName(value);
+  const cached = toolNameCache.get(value);
+  if (cached !== undefined) return cached;
+  const name = parseHoustonMcpToolName(value);
+  if (toolNameCache.size >= TOOL_NAME_CACHE_LIMIT) toolNameCache.clear();
+  toolNameCache.set(value, name);
+  return name;
+}
+
+// ACP tool prefixes vary; match loosely but require a known display-name entry.
+function parseHoustonMcpToolName(value: string): string | null {
   const label = normalizeHoustonMcpToolLabel(value);
   if (Object.hasOwn(HOUSTON_MCP_TOOLS, label)) return label;
   const mcpMatch = /^mcp__(?<server>.+?)__(?<tool>.+)$/i.exec(label);
@@ -427,16 +449,18 @@ function resolveHoustonMcpToolName(value: string): string | null {
       : null;
   }
 
-  const namespaceMatch = /^(?<server>houston|houston_code)(?:[.:/]|\s*·\s*|\s+)(?<tool>.+)$/i.exec(
-    label,
-  );
+  const namespaceMatch =
+    /^(?<server>houston[-_]direct|houston|houston_code)(?:[.:/]|\s*·\s*|\s+)(?<tool>.+)$/i.exec(
+      label,
+    );
   if (namespaceMatch?.groups) {
     return namespaceMatch.groups.tool ?? null;
   }
 
-  const prefixed = /^(?:mcp[-_]{1,2})?(?:houston_code|houston)(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(
-    label,
-  );
+  const prefixed =
+    /^(?:mcp[-_]{1,2})?(?:houston[-_]direct|houston_code|houston)(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(
+      label,
+    );
   const candidate = prefixed?.groups?.tool ?? label;
   if (Object.hasOwn(HOUSTON_MCP_TOOLS, candidate)) return candidate;
   // OpenCode 2 thread prefixes can contain underscores; choose the longest known tool-name suffix.

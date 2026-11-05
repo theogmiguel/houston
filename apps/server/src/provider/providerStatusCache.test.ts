@@ -1,3 +1,5 @@
+import * as Layer from "effect/Layer";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   defaultInstanceIdForDriver,
@@ -31,7 +33,7 @@ const makeProvider = (
   ...overrides,
 });
 
-it.layer(NodeServices.layer)("providerStatusCache", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("providerStatusCache", (it) => {
   it("hydrates cached provider status while preserving current settings-derived models", () => {
     const cachedCodex = makeProvider(CODEX_DRIVER, {
       checkedAt: "2026-04-10T12:00:00.000Z",

@@ -1,4 +1,5 @@
 import { KeybindingCommand, KeybindingRule, KeybindingsConfig } from "@houston-app/contracts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { assertFailure } from "@effect/vitest/utils";
@@ -50,7 +51,7 @@ const readKeybindingsConfig = (configPath: string) =>
     return yield* decodeKeybindingsConfigJson(rawConfig);
   });
 
-it.layer(NodeServices.layer)("keybindings", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("keybindings", (it) => {
   it.effect("parses shortcuts including plus key", () =>
     Effect.sync(() => {
       assert.deepEqual(SharedKeybindings.parseKeybindingShortcut("mod+j"), {

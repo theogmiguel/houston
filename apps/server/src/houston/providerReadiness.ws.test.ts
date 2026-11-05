@@ -1,4 +1,5 @@
 // Readiness through the real ProviderRegistry, ProviderEventIngestor and `/ws` handlers.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -223,7 +224,9 @@ const layerTestHttpClient = Layer.succeed(
 );
 
 const layerServerConfig = (prefix: string) =>
-  ServerConfig.layerTest(process.cwd(), { prefix }).pipe(Layer.provideMerge(NodeServices.layer));
+  ServerConfig.layerTest(process.cwd(), { prefix }).pipe(
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  );
 
 const layerRegistry = (instances: ReadonlyArray<FakeInstance>) =>
   ProviderRegistry.layer.pipe(
@@ -470,7 +473,10 @@ const layerUnusedRpcServices = Layer.mergeAll(
     streamChanges: Stream.make([]),
   }),
   Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({ resolveTargets: () => Effect.succeed([]) }),
-  Layer.mock(DirectEndpoints.DirectEndpoints)({ resolve: () => Effect.succeed([]) }),
+  Layer.mock(DirectEndpoints.DirectEndpoints)({
+    resolve: () => Effect.succeed([]),
+    resolveAvailable: () => Effect.succeed([]),
+  }),
   Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
     scratchRoot: Effect.succeedNone,
     namedProjectsRoot: process.cwd(),

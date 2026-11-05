@@ -1,5 +1,7 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -45,7 +47,7 @@ describe("tailClaudeTaskOutput", () => {
         yield* fileSystem.writeFile(file, encoded);
         assert.equal(yield* Queue.take(chunks), "é 1\n");
       }),
-    ).pipe(Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.live("skips ahead when the command writes faster than it is read", () =>
@@ -71,7 +73,7 @@ describe("tailClaudeTaskOutput", () => {
         assert.isTrue(flooded.startsWith("\n"));
         assert.isTrue(flooded.endsWith("y\nend\n"));
       }),
-    ).pipe(Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.live("reads what was written last when the tool result stops it", () =>
@@ -99,7 +101,7 @@ describe("tailClaudeTaskOutput", () => {
         yield* Deferred.succeed(stop, undefined);
         yield* Fiber.join(fiber);
         assert.deepEqual(chunks, ["one\n", "two\n"]);
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     ),
   );
 });
@@ -136,6 +138,6 @@ describe("claudeTaskOutputRoot", () => {
           root({ CLAUDE_CODE_TMPDIR: "../claude" }, "darwin", "/work/project"),
           `/work/claude/${user}`,
         );
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

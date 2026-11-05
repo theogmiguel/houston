@@ -6,6 +6,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeStream from "node:stream";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { ProviderSessionId, ThreadId } from "@houston-app/contracts";
@@ -109,7 +110,7 @@ it.effect("forks a session stored under the instance's own CLAUDE_CONFIG_DIR", (
       assert.equal(process.env.CLAUDE_CONFIG_DIR, hostConfigDir);
       assert.equal(inProcessFork.mock.calls.length, 0);
     }).pipe(Effect.provide(forkRunnerLayer)),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 const realQueryRunner = layerQueryRunner.pipe(
   Layer.provide(PortScanner.layerTest),
@@ -119,7 +120,7 @@ const realQueryRunner = layerQueryRunner.pipe(
       canonical: undefined,
     }),
   ),
-  Layer.provide(NodeServices.layer),
+  Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 const resumedMcpQueryInput = {
@@ -202,6 +203,38 @@ it.effect("reopens a stalled MCP registration before delivering the resumed prom
       const delivered = yield* Effect.promise(() => prompts[1]![Symbol.asyncIterator]().next());
       assert.deepEqual(delivered.value, message);
       assert.isFalse(delivered.done);
+    }).pipe(Effect.provide(realQueryRunner)),
+  ),
+);
+
+it.effect.each([
+  { case: "a readable rule list", errors: undefined, readable: true },
+  { case: "a settings file Claude skipped", errors: [{ file: "settings.json" }], readable: false },
+  { case: "a reply without a rule list", response: {}, readable: false },
+])("reads Claude's permission rules only when no settings file was skipped: $case", (testCase) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const rules = [{ behavior: "deny" as const, rule: "mcp__probe__redeploy" }];
+      const querySpy = vi.spyOn(ClaudeSdk, "query").mockImplementation(
+        () =>
+          ({
+            close: vi.fn(),
+            request: async () => ({
+              response:
+                "response" in testCase
+                  ? testCase.response
+                  : { state: { rules, errors: testCase.errors } },
+            }),
+          }) as unknown as ClaudeSdk.Query,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(() => querySpy.mockRestore()));
+      const runner = yield* ClaudeAgentSdkQueryRunner;
+      const { mcpServers: _mcpServers, ...options } = resumedMcpQueryInput.options;
+      const session = yield* runner.open({ ...resumedMcpQueryInput, options });
+      yield* Effect.addFinalizer(() => session.close.pipe(Effect.orDie));
+      const exit = yield* Effect.exit(session.listPermissionRules);
+      if (testCase.readable) assert.deepEqual(exit, Exit.succeed(rules));
+      else assert.isTrue(Exit.isFailure(exit));
     }).pipe(Effect.provide(realQueryRunner)),
   ),
 );
@@ -510,7 +543,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("Claude CLI pro
       Layer.provide(
         Layer.succeed(ProviderEventLoggers, { native: undefined, canonical: undefined }),
       ),
-      Layer.provide(NodeServices.layer),
+      Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
     return Effect.gen(function* () {
       const cli = fakeClaudeCli(

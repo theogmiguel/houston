@@ -3,6 +3,7 @@ import * as DocumentText from "../provider/DocumentText.ts";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { ChatAttachmentId, type ChatAttachment } from "@houston-app/contracts";
@@ -24,11 +25,15 @@ import {
   releaseClaimedAttachments,
 } from "./AttachmentClaims.ts";
 
-const layerTest = Layer.mergeAll(NodeServices.layer).pipe(
+const layerTest = Layer.mergeAll(NodeServices.layer, NodeCrypto.layer).pipe(
   Layer.provideMerge(
     ServerConfig.layerTest(process.cwd(), { prefix: "houston-attachment-claims-" }),
   ),
-  Layer.provideMerge(DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer))),
+  Layer.provideMerge(
+    DocumentText.layer.pipe(
+      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    ),
+  ),
 );
 
 const stagePendingUpload = Effect.fn("test.stagePendingUpload")(function* (input: {

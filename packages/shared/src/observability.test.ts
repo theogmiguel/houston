@@ -1,4 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -118,7 +119,7 @@ const layerTest = (tracePath: string) =>
     Layer.succeed(References.MinimumLogLevel, "Info"),
   );
 
-const nodeServicesIt = it.layer(NodeServices.layer);
+const nodeServicesIt = it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer));
 
 describe("truncateTraceAttributes", () => {
   it("clamps oversized strings at any depth without mutating the input", () => {
@@ -190,7 +191,7 @@ describe("observability", () => {
             sampled ? [{ _tag: "Success" }] : [],
           );
         }
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it("normalizes circular arrays, maps, and sets without recursing forever", () => {

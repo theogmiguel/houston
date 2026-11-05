@@ -12,6 +12,7 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 
 import * as LocalDeviceHost from "./LocalDeviceHost.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { HttpClient, HttpClientResponse } from "effect/http";
@@ -147,7 +148,7 @@ describe("AgentDevice startup", () => {
         baseUrl: "http://127.0.0.1:12347",
         token: "token-2",
       });
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("reports an incompatible lock immediately and retains it for manual repair", () =>
@@ -183,7 +184,7 @@ describe("AgentDevice startup", () => {
       expect(error.message).not.toContain("private command output");
       expect(yield* fs.readFileString(lock)).toBe(legacyOwner);
       expect(yield* host.current).not.toBeNull();
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("reports unknown nonzero exits without exposing arbitrary command output", () =>
@@ -200,7 +201,7 @@ describe("AgentDevice startup", () => {
       expect(error.message).toContain("exit code 2");
       expect(error.message).toContain(stateDir);
       expect(error.message).not.toContain("private credentials");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("preserves process execution failures instead of waiting for a daemon file", () =>
@@ -217,7 +218,7 @@ describe("AgentDevice startup", () => {
         step: "starting agent tools",
         cause,
       });
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("uses a registered daemon when reading startup command output fails", () =>
@@ -252,7 +253,7 @@ describe("AgentDevice startup", () => {
       );
       expect((yield* host.current)?.releaseAgentSession).toBeTypeOf("function");
       expect(attempts).toBe(1);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("keeps releasing agent sessions while a dead hub fails to restart and after", () =>
@@ -274,7 +275,7 @@ describe("AgentDevice startup", () => {
       hub.spawnFails = false;
       yield* host.ensureReady(() => Effect.void);
       expect((yield* host.current)?.releaseAgentSession).toBeTypeOf("function");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });
 
@@ -511,7 +512,7 @@ it.effect.each([
             );
           },
         }),
-        Effect.provide(NodeServices.layer),
+        Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       );
     expect(result.EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS).toBe(expected);
   }),
@@ -564,7 +565,7 @@ it.effect("keeps local Android and iOS available without ffmpeg", () =>
       platform: "ios",
       available: true,
     });
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect(
@@ -601,5 +602,5 @@ it.effect(
       expect(error.message).toContain("Install Node.js");
       yield* host.stop;
       expect(yield* fs.exists(`${baseDir}/tools`)).toBe(false);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

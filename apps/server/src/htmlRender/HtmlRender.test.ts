@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - plain local servers stand in for LAN services.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, expect, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@houston-app/contracts";
@@ -47,7 +48,7 @@ const layerHtmlRender = (
     ),
     Layer.provideMerge(McpProviderSessions.layer),
     Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "houston-html-render-" })),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 const layerTest = layerHtmlRender();
 
@@ -322,7 +323,10 @@ describe("HtmlRender", () => {
             "Headless Chrome could not render the page: the browser could not be started.",
           );
           expect(error).toMatchObject({ cause: { code: "ENOTDIR" } });
-        }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
       );
     },
   );
@@ -374,7 +378,10 @@ fs.createReadStream(null, { fd: 3 }).on("end", quit).on("data", (chunk) => {
 
           const exitedBy = yield* fileSystem.readFileString(exitRecord).pipe(Effect.option);
           expect(Option.getOrElse(exitedBy, () => "killed by a signal")).toBe("asked to close");
-        }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
       );
     },
   );

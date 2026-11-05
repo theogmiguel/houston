@@ -136,7 +136,14 @@ export const ModelListRow = memo(function ModelListRow(props: {
     >
       <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_14px] items-center gap-x-2 gap-y-0.5 text-left">
         <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-1.5">
-          <span className="min-w-0 truncate text-(--t1) text-headline leading-snug">
+          <span
+            className="min-w-0 truncate text-(--t1) text-headline leading-snug"
+            // Names the row in full on hover only when it is cut off.
+            onPointerEnter={(event) => {
+              const name = event.currentTarget;
+              name.title = name.scrollWidth > name.clientWidth ? getDisplayModelName(model) : "";
+            }}
+          >
             {getDisplayModelName(model)}
           </span>
           {props.showNewBadge ? (

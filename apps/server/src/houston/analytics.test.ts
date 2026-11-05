@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -9,7 +10,7 @@ import * as ServerConfig from "../config.ts";
 import { AnalyticsService } from "../telemetry/AnalyticsService.ts";
 import * as HoustonAnalytics from "./analytics.ts";
 
-it.layer(NodeServices.layer)("houston analytics", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("houston analytics", (it) => {
   it.effect("the analytics service sends and writes nothing", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

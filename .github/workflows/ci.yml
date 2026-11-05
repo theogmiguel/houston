@@ -9,8 +9,6 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [v2, main]
-  schedule:
-    - cron: "17 5 * * *"
   workflow_dispatch:
 
 # A superseded PR run is wasted minutes, so cancel it. A push run may be the
@@ -187,8 +185,15 @@ jobs:
       - uses: ./.github/actions/setup
       # The root "typecheck" script uses vp run, which cannot resolve a task and a
       # package script with the same name; pnpm runs each package's own script.
+      # apps/web and apps/desktop declare typecheck as a vp task instead, which pnpm skips.
       - name: Typecheck the workspace
-        run: pnpm -r --no-bail typecheck
+        run: |
+          status=0
+          pnpm -r --no-bail typecheck || status=1
+          for app in apps/desktop apps/web; do
+            (cd "$app" && pnpm exec vp run typecheck) || status=1
+          done
+          exit "$status"
       - name: Report job timing
         if: always()
         continue-on-error: true
@@ -224,6 +229,7 @@ jobs:
         run: >-
           node --test scripts/gen-third-party-licenses.test.mjs scripts/check-web-style.test.mjs
           scripts/build-desktop-artifact.test.mjs scripts/refresh-updater-metadata.test.mjs
+          scripts/ci/windows-known-failures.test.mjs
       - name: Report job timing
         if: always()
         continue-on-error: true
@@ -377,8 +383,8 @@ jobs:
             echo "| ${{ github.job }} | $elapsed |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # Native jobs run only when their own paths change on a PR. Pushes, the nightly
-  # run and manual dispatches always exercise them. The host is TypeScript now;
+  # Native jobs run only when their own paths change on a PR. Pushes and manual
+  # dispatches always exercise them. The host is TypeScript now;
   # Rust covers the v1 cleanup helper and the Linux capture helpers.
   native-linux:
     needs: changes
@@ -413,12 +419,12 @@ jobs:
           cargo test --locked --manifest-path native/kde-snap-shot/Cargo.toml
           cargo test --locked --manifest-path native/hyprland-snap-shot/Cargo.toml
 
-  # Windows server parity runs nightly and on pushes, never on PRs, so it cannot
-  # hold a review. Its failures are real failures, not advisory. A PR can opt in
-  # with the `ci:windows` label (.github/workflows/ci-windows-label.yml).
+  # Windows server parity gates every PR that touches the server, like test-server.
   server-windows:
     needs: changes
-    if: github.event_name != 'pull_request'
+    if: >-
+      needs.changes.outputs.server == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
     uses: ./.github/workflows/server-windows.yml
 
   # The single check to require. A job skipped by the path filter is a pass; a

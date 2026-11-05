@@ -1,4 +1,5 @@
 // Viewed marks and comment anchors against real temporary git repositories.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import type {
@@ -67,7 +68,7 @@ const layerReview = (input: {
     Layer.provideMerge(git),
     Layer.provideMerge(SqlitePersistence.layerMemory),
     Layer.provideMerge(ServerConfig.layerTest(input.workspaceRoot, input.baseDir)),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 };
 
@@ -164,7 +165,7 @@ const withRepo = <A, E>(
         }),
       ),
     );
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 const tick = (review: Review, cwd: string, ...paths: ReadonlyArray<string>) =>
   review.setFilesViewed({ cwd, files: paths.map((path) => ({ path, viewed: true })) });
