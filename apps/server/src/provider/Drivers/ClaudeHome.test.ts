@@ -9,6 +9,7 @@ import {
   makeClaudeCapabilitiesCacheKey,
   makeClaudeContinuationGroupKey,
   makeClaudeEnvironment,
+  mergeClaudeProcessEnvironment,
   resolveClaudeHomePath,
 } from "./ClaudeHome.ts";
 
@@ -44,6 +45,22 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
         expect(yield* resolveClaudeHomePath({ homePath: "~/.claude-work" }, environment)).toBe(
           explicit,
         );
+      }),
+    );
+
+    it.effect("drops the launching Claude session and Electron's run-as-Node flag", () =>
+      Effect.gen(function* () {
+        const environment = yield* mergeClaudeProcessEnvironment(undefined, {
+          CLAUDE_CODE_SESSION_ID: "host-session",
+          CLAUDE_CODE_MESSAGING_SOCKET: "/tmp/host-claude.sock",
+          ELECTRON_RUN_AS_NODE: "1",
+          KEEP: "1",
+        });
+
+        expect(environment.CLAUDE_CODE_SESSION_ID).toBeUndefined();
+        expect(environment.CLAUDE_CODE_MESSAGING_SOCKET).toBeUndefined();
+        expect(environment.ELECTRON_RUN_AS_NODE).toBeUndefined();
+        expect(environment.KEEP).toBe("1");
       }),
     );
 
