@@ -158,10 +158,15 @@ import { Separator } from "../ui/separator";
 import {
   FOCUS_ACTION_CLS,
   FOCUS_ROW_CLS,
+  ROW_ACTIONS_REVEAL,
+  ROW_ACTIONS_VISIBLE,
+  ROW_STATUS_HIDDEN,
+  ROW_STATUS_RECEDE,
   SidebarContent,
   SidebarHeader,
   useSidebarVisibility,
 } from "../ui/sidebar";
+import { MOTION_FEEDBACK, MOTION_FEEDBACK_OPACITY } from "../ui/motion-recipes";
 import {
   SIDEBAR_GRID_ACTION_CLS,
   SIDEBAR_GRID_CHEVRON_BOX_CLS,
@@ -1875,7 +1880,7 @@ export function ThreadCard({
               onOpen();
             }}
             className={cn(
-              `group/th relative flex w-full flex-col gap-0.75 rounded-lg py-1.75 pr-2.5 text-left outline-none transition-colors duration-(--motion-feedback) ease-standard ${FOCUS_ROW_CLS}`,
+              `group/th relative flex w-full flex-col gap-0.75 rounded-lg py-1.75 pr-2.5 text-left outline-none ${MOTION_FEEDBACK} ${FOCUS_ROW_CLS}`,
               notInGrid ? "pl-2" : "pl-7.5",
               "cursor-pointer",
               dragging && "opacity-50",
@@ -1939,8 +1944,10 @@ export function ThreadCard({
               </span>
               <span
                 className={cn(
-                  "shrink-0 transition-opacity duration-(--motion-feedback) ease-standard group-hover/th:opacity-0",
-                  actionsVisible && "opacity-0",
+                  "shrink-0",
+                  ROW_STATUS_RECEDE,
+                  MOTION_FEEDBACK_OPACITY,
+                  actionsVisible && ROW_STATUS_HIDDEN,
                 )}
               >
                 {timeLabel !== null ? (
@@ -1957,10 +1964,9 @@ export function ThreadCard({
           )}
           <span
             className={cn(
-              "absolute inset-y-0 right-2.5 flex items-center gap-0.5 transition-opacity duration-(--motion-feedback) ease-standard",
-              actionsVisible
-                ? "opacity-100"
-                : "pointer-events-none opacity-0 group-hover/th:pointer-events-auto group-hover/th:opacity-100 group-has-[:focus-visible]/th:pointer-events-auto group-has-[:focus-visible]/th:opacity-100",
+              "absolute inset-y-0 right-2.5 flex items-center gap-0.5",
+              MOTION_FEEDBACK_OPACITY,
+              actionsVisible ? ROW_ACTIONS_VISIBLE : ROW_ACTIONS_REVEAL,
             )}
             onMouseEnter={() => setActionsHovered(true)}
             onMouseLeave={() => setActionsHovered(false)}

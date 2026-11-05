@@ -112,6 +112,13 @@ describe("GridShelves", () => {
       getComputedStyle(screen.container.querySelector(`[data-testid="${testId}"]`)!).color;
     expect(color("grid-settled-shelf-toggle")).toBe(color("grid-snoozed-shelf-toggle"));
 
+    const shelfRow = getComputedStyle(
+      screen.container.querySelector('[data-testid="grid-settled-shelf-toggle"]')!,
+    );
+    expect(shelfRow.transitionProperty).toContain("color");
+    expect(shelfRow.transitionDuration).toBe("0.1s");
+    expect(shelfRow.transitionTimingFunction).toBe("cubic-bezier(0.2, 0, 0, 1)");
+
     await screen.rerender(shelves(true));
     // The row eases its colour, so wait for the transition to land.
     await vi.waitFor(() =>
