@@ -83,8 +83,11 @@ const REVIEW_BRANCH_SUBJECT_LIMIT = 300;
 const REVIEW_BRANCH_COMMIT_MAX_OUTPUT_BYTES = 128 * 1024;
 // Client patch parsers require a/ and b/ prefixes; override user diff prefix settings.
 export const PATCH_RENDER_PREFIX_ARGS = ["--src-prefix=a/", "--dst-prefix=b/"] as const;
-// Client patch parsers misread blank context lines under diff.suppressBlankEmpty and submodule logs under diff.submodule.
+// Client patch parsers drop blank context lines that diff.suppressBlankEmpty prints without a space,
+// and misread diff.submodule logs.
 const REVIEW_DIFF_ARGS = [
+  "-c",
+  "diff.suppressBlankEmpty=false",
   "diff",
   "--find-renames",
   "--no-color",
