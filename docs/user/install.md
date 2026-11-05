@@ -86,6 +86,17 @@ reads to its own provider; Houston has no telemetry service.
 See [The right panel](right-panel.md) for browser and file features, and
 [Updating Houston](updating.md) for installing over Houston 1.
 
+## When Houston does not start
+
+Run `npx houston-app triage` in a terminal. It needs Node.js 20.11 or newer and works on
+Linux; on Windows, open the command palette in Houston and choose **What went wrong?**
+instead. The command downloads the `houston-app` launcher from npm, which downloads the
+server for the same version from the GitHub release, verifies its checksum and keeps it in
+`~/.houston/v2/runtime/versions/`. It then starts Claude Code or Codex with a triage
+playbook and this machine's Houston paths, versions and server status. The agent asks what
+went wrong, reads Houston's logs and database without changing them, and proposes fixes
+that run only after you approve them.
+
 ## Installing from source
 
 See the [development runbook](../operations/development.md) for prerequisites, channels,

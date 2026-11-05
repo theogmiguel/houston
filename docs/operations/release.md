@@ -31,6 +31,10 @@ and approval. Merging a PR or pushing a tag does not publish a release.
    links to the public release. Stable installations can discover the update;
    installation still requires an explicit user action. An RC stays a prerelease
    and is not offered through the stable update feed.
+7. After the release is public, the same run publishes the `houston-app` npm launcher at
+   the release version: `latest` for a stable release, `preview` for a prerelease. The
+   launcher downloads that release's server archive, so it is published only after the
+   archives are public. A tag cut before the launcher existed skips this step with a warning.
 
 To review the proposed version and notes before building, run **Cut release**
 with `preview_only` checked. It uploads a `release-notes-<tag>` Actions artifact
@@ -343,6 +347,12 @@ the repo does not carry them.
   Environments and add a required reviewer. `publish-draft.yml` names it, and
   until it exists the promote workflow runs unprotected — the reviewer is the
   only thing standing between a smoke-tested draft and the public.
+- **npm trusted publisher for `houston-app`**: on npmjs.com, under the package's
+  Settings ▸ Trusted Publisher, add GitHub Actions with repository
+  `theogmiguel/houston`, workflow `publish-draft.yml` and environment
+  `stable-release`. The workflow holds no npm token; without this entry its
+  publish step fails after the GitHub release is already public, and the launcher
+  can be published by hand from the tag with `scripts/build-npm-launcher.mjs`.
 - **Discussions**: on, with an **Ideas** category. Feature requests are routed
   there by `.github/ISSUE_TEMPLATE/config.yml`, which points at it by URL.
 - **Private vulnerability reporting**: on. `SECURITY.md` sends reporters to the

@@ -41,17 +41,17 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("root CLI command
 
   it.effect("keeps a user-installed Node reachable when the command runs under sudo", () =>
     Effect.gen(function* () {
-      const npx = "/home/theo/.npm/_npx/abc/node_modules/@houston-app/cli/dist/bin.mjs";
+      const npx = "/home/theo/.npm/_npx/abc/node_modules/houston-app/dist/bin.mjs";
       expect(yield* rootCommand({ node: "/usr/bin/node", entry: npx })).toBe(
-        "sudo npx @houston-app/cli browser setup",
+        "sudo npx houston-app browser setup",
       );
       expect(
         yield* rootCommand({ node: "/home/theo/.nvm/versions/node/v24/bin/node", entry: npx }),
-      ).toBe('sudo env "PATH=$PATH" npx @houston-app/cli browser setup');
+      ).toBe('sudo env "PATH=$PATH" npx houston-app browser setup');
       expect(
         yield* rootCommand({
           node: "/home/theo/.local/node/bin/node",
-          entry: "/home/theo/.local/lib/node_modules/@houston-app/cli/dist/bin.mjs",
+          entry: "/home/theo/.local/lib/node_modules/houston-app/dist/bin.mjs",
           path: yield* pathWithHouston,
         }),
       ).toBe('sudo env "PATH=$PATH" houston browser setup');
@@ -64,7 +64,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("root CLI command
       expect(
         yield* rootCommand({
           node: "/home/theo/.local/node/bin/node",
-          entry: "/home/theo/.local/lib/node_modules/@houston-app/cli/dist/bin.mjs",
+          entry: "/home/theo/.local/lib/node_modules/houston-app/dist/bin.mjs",
           path: yield* pathWithHouston,
           args,
         }),
@@ -182,9 +182,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
         yield* fs.writeFileString(executable, "");
         for (const [relative, kind] of [
-          ["npm/_npx/hash/node_modules/@houston-app/cli/dist/bin.mjs", "npx"],
-          ["npm/_npx/hash/node_modules/@houston-app/cli/bin/houston.mjs", "npx"],
-          ["pnpm/dlx/hash/node_modules/@houston-app/cli/dist/bin.mjs", "pnpm-dlx"],
+          ["npm/_npx/hash/node_modules/houston-app/dist/bin.mjs", "npx"],
+          ["npm/_npx/hash/node_modules/houston-app/bin/houston.mjs", "npx"],
+          ["pnpm/dlx/hash/node_modules/houston-app/dist/bin.mjs", "pnpm-dlx"],
           [".bun/install/cache/houston/dist/bin.mjs", "bunx"],
         ] as const) {
           const entry = path.join(root, relative);
@@ -192,7 +192,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
           yield* fs.writeFileString(entry, "");
           yield* fs.writeFileString(
             path.join(path.dirname(entry), "../package.json"),
-            `{"name":"@houston-app/cli","version":"${packageJson.version}","bin":{"houston":"./bin/houston.mjs"}}`,
+            `{"name":"houston-app","version":"${packageJson.version}","bin":{"houston":"./bin/houston.mjs"}}`,
           );
           const launchedBy = entry.endsWith("houston.mjs");
           const installation = yield* resolveServerInstallation.pipe(
@@ -215,7 +215,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const path = yield* Path.Path;
         const root = yield* fs.makeTempDirectoryScoped();
         const prefix = path.join(root, "bunx-tools");
-        const packageRoot = path.join(prefix, "lib/node_modules/@houston-app/cli");
+        const packageRoot = path.join(prefix, "lib/node_modules/houston-app");
         const entry = path.join(packageRoot, "dist/bin.mjs");
         const globalBin = path.join(prefix, "bin/houston");
         yield* fs.makeDirectory(path.dirname(entry), { recursive: true });
@@ -223,7 +223,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         yield* fs.writeFileString(entry, "");
         yield* fs.writeFileString(
           path.join(packageRoot, "package.json"),
-          '{"name":"@houston-app/cli","version":"0.0.45","bin":{"houston":"./dist/bin.mjs"}}',
+          '{"name":"houston-app","version":"0.0.45","bin":{"houston":"./dist/bin.mjs"}}',
         );
         const resolve = resolveServerInstallation.pipe(
           Effect.provideService(HostProcess.Arguments, ["node", entry]),
@@ -248,7 +248,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const path = yield* Path.Path;
         const root = yield* fs.makeTempDirectoryScoped();
         const prefix = path.join(root, "bunx-tools");
-        const packageRoot = path.join(prefix, "lib/node_modules/@houston-app/cli");
+        const packageRoot = path.join(prefix, "lib/node_modules/houston-app");
         const launcher = path.join(packageRoot, "bin/houston.mjs");
         const executable = path.join(root, ".houston/runtime/versions/1.0.0/houston");
         yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
@@ -270,7 +270,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         ] as const) {
           yield* fs.writeFileString(
             path.join(packageRoot, "package.json"),
-            `{"name":"@houston-app/cli","version":"${version}","bin":{"houston":"./bin/houston.mjs"}}`,
+            `{"name":"houston-app","version":"${version}","bin":{"houston":"./bin/houston.mjs"}}`,
           );
           expect(yield* resolve).toEqual(expected);
         }
@@ -283,7 +283,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const path = yield* Path.Path;
         const root = yield* fs.makeTempDirectoryScoped();
         for (const relative of [
-          "project/node_modules/@houston-app/cli/dist/bin.mjs",
+          "project/node_modules/houston-app/dist/bin.mjs",
           "project/apps/server/dist/bin.mjs",
           ".houston/runtime/0.0.45/houston",
           "missing/dist/bin.mjs",

@@ -75,15 +75,15 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerEnvironmen
       const fs = yield* FileSystem.FileSystem;
       const baseDir = yield* fs.makeTempDirectoryScoped();
       const prefix = `${baseDir}/node`;
-      const entry = `${prefix}/lib/node_modules/@houston-app/cli/dist/bin.mjs`;
-      yield* fs.makeDirectory(`${prefix}/lib/node_modules/@houston-app/cli/dist`, {
+      const entry = `${prefix}/lib/node_modules/houston-app/dist/bin.mjs`;
+      yield* fs.makeDirectory(`${prefix}/lib/node_modules/houston-app/dist`, {
         recursive: true,
       });
       yield* fs.makeDirectory(`${prefix}/bin`, { recursive: true });
       yield* fs.writeFileString(entry, "");
       yield* fs.writeFileString(
-        `${prefix}/lib/node_modules/@houston-app/cli/package.json`,
-        '{"name":"@houston-app/cli","version":"0.0.45","bin":{"houston":"./dist/bin.mjs"}}',
+        `${prefix}/lib/node_modules/houston-app/package.json`,
+        '{"name":"houston-app","version":"0.0.45","bin":{"houston":"./dist/bin.mjs"}}',
       );
       yield* fs.symlink(entry, `${prefix}/bin/houston`);
       const config = yield* makeServerConfig(baseDir);

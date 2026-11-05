@@ -16,8 +16,8 @@ import { writeTextToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useScratchProject } from "./useScratchProject";
 
-export const TRIAGE_CLI_COMMAND = "houston triage";
-const CLI_RELEASES_PAGE_URL = "https://github.com/theogmiguel/houston/releases";
+/** npx downloads the launcher, which downloads the matching server executable; needs Node.js. */
+export const TRIAGE_CLI_COMMAND = "npx houston-app triage";
 
 const copyTriageCliCommand = () =>
   writeTextToClipboard(TRIAGE_CLI_COMMAND, "command").catch(() =>
@@ -49,7 +49,7 @@ export function useStartTriage() {
       stackedThreadToast({
         type: "error",
         title: "Could not start triage",
-        description: `${description} Run ${TRIAGE_CLI_COMMAND} in a terminal on that machine instead (install it from ${CLI_RELEASES_PAGE_URL} if needed).`,
+        description: `${description} Run ${TRIAGE_CLI_COMMAND} in a terminal on that machine instead (it needs Node.js).`,
         timeout: 0,
         actionProps: { children: "Copy command", onClick: () => void copyTriageCliCommand() },
         // "Copy command" is the copy that helps here, not the error text.
