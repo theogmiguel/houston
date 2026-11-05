@@ -83,6 +83,12 @@
       ]
     },
     {
+      "driver": "kiro",
+      "houstonCodeRange": ">=0.0.46",
+      "recommendedRange": ">=2.27.0",
+      "ranges": [{ "range": ">=2.27.0", "status": "supported" }]
+    },
+    {
       "driver": "pi",
       "houstonCodeRange": ">=0.0.46",
       "recommendedRange": ">=1.0.0",

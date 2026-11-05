@@ -5270,9 +5270,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const selectionMustApplyNow =
       selectionChanged &&
       (providerInstanceChanged || selectionTransition?.type !== "apply_on_next_turn");
+    const attachmentsNeedRestart =
+      input.attachments.length > 0 &&
+      session.providerSession.capabilities.turns.activeSteeringAcceptsAttachments === false;
     // Houston (AD-040): a steer that also changes the selection is still a steer, refused by name
     // where the provider cannot steer rather than restarted.
-    if (!input.forceRestart && selectionMustApplyNow) {
+    if (!input.forceRestart && !attachmentsNeedRestart && selectionMustApplyNow) {
       yield* mapDispatchError(input.command)(
         commandPolicy.decideSteeringExecution({
           commandId: input.command.commandId,
@@ -5289,7 +5292,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         threadId: input.command.threadId,
         providerInstanceId: targetRun.providerInstanceId,
         capabilities: session.providerSession.capabilities,
-        forceRestart: input.forceRestart || selectionMustApplyNow,
+        forceRestart: input.forceRestart || selectionMustApplyNow || attachmentsNeedRestart,
       }),
     );
 
