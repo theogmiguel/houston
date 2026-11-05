@@ -209,5 +209,7 @@ it("docks an effort column beside the list and stays open after a model pick", a
   await expect.poll(() => changes.length).toBe(1);
   expect(changes[0]?.model).toBe("sonnet");
   // The docked picker stays open so the effort level can change in the same popup.
-  await expect.poll(() => document.querySelector("[data-model-picker-content]") !== null).toBe(true);
+  await expect
+    .poll(() => document.querySelector("[data-model-picker-content]") !== null)
+    .toBe(true);
 });

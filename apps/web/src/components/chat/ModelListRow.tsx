@@ -141,8 +141,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
             // Names the row in full on hover only when it is cut off.
             onPointerEnter={(event) => {
               const name = event.currentTarget;
-              name.title =
-                name.scrollWidth > name.clientWidth ? getDisplayModelName(model) : "";
+              name.title = name.scrollWidth > name.clientWidth ? getDisplayModelName(model) : "";
             }}
           >
             {getDisplayModelName(model)}
