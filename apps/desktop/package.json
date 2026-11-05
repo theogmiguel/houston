@@ -1,0 +1,42 @@
+{
+  "name": "@houston-app/desktop",
+  "version": "0.1.6",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/boot.cjs",
+  "scripts": {
+    "ensure:electron": "node scripts/ensure-electron-runtime.mjs",
+    "start": "node scripts/start-electron.mjs",
+    "test": "vp test run --passWithNoTests"
+  },
+  "dependencies": {
+    "@crowecawcaw/xa11y": "0.13.0",
+    "@effect/platform-node": "catalog:",
+    "@houston-app/client-runtime": "workspace:*",
+    "@houston-app/contracts": "workspace:*",
+    "@houston-app/shared": "workspace:*",
+    "@houston-app/ssh": "workspace:*",
+    "@houston-app/tailscale": "workspace:*",
+    "@napi-rs/keyring": "^1.3.0",
+    "dbus-next": "0.10.2",
+    "effect": "catalog:",
+    "electron": "44.10.0",
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.9",
+    "electron-webauthn": "catalog:",
+    "ffi-rs": "1.3.2",
+    "playwright-core": "1.60.0",
+    "react-grab": "^0.1.32",
+    "tldts": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "acorn": "8.16.0",
+    "cross-env": "^10.1.0",
+    "electron-builder": "26.16.1",
+    "tailwindcss": "^4.0.0",
+    "vite-plus": "catalog:"
+  },
+  "productName": "Houston (Beta)"
+}

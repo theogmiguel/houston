@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { expect, it } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
+import "~/index.css";
 import { act, render } from "../../../test/render";
 import { type PromptStashEntry } from "../../promptStashStore";
 import { Dialog, DialogPopup } from "../ui/dialog";
@@ -41,7 +42,6 @@ const drawer = () => document.querySelector<HTMLElement>('[data-composer-stash-d
 const rows = () => Array.from(document.querySelectorAll<HTMLElement>("[data-stash-entry]"));
 const deleteCounts = () =>
   rows().map((row) => row.querySelectorAll('[aria-label="Delete stashed prompt"]').length);
-
 
 function Composer({ dialog = false }: { dialog?: boolean }) {
   const composerFormRef = useRef<HTMLFormElement>(null);
@@ -188,9 +188,7 @@ it("names the drawer, its shortcut keys and every entry's attachments", async ()
 });
 
 it("offers Delete only on the highlighted entry", async () => {
-  await using _screen = await render(
-    <Menu entries={[entry("first"), entry("second")]} />,
-  );
+  await using _screen = await render(<Menu entries={[entry("first"), entry("second")]} />);
 
   expect(deleteCounts()).toEqual([1, 0]);
 
@@ -198,4 +196,13 @@ it("offers Delete only on the highlighted entry", async () => {
 
   expect(deleteCounts()).toEqual([0, 1]);
   expect(rows()[1]!.querySelector('[aria-label="Delete stashed prompt"]')).not.toBeNull();
+});
+
+it("grows the stash drawer from the composer edge on the overlay role", async () => {
+  await using _screen = await render(<Menu entries={[entry("first")]} />);
+
+  const style = getComputedStyle(drawer());
+  expect(style.transitionProperty).toBe("opacity, scale");
+  expect(style.transitionDuration).toBe("0.15s");
+  expect(style.transitionTimingFunction).toBe("cubic-bezier(0.2, 0, 0, 1)");
 });

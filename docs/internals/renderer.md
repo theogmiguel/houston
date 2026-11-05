@@ -6,34 +6,29 @@
 
 ## Stack
 
-React 19, Tailwind 4 (`@tailwindcss/vite`), Vite 6, Vitest 4 with jsdom, CodeMirror 6 for
+React 19, Tailwind 4 (`@tailwindcss/vite`), Vite, Vitest 4 with jsdom, CodeMirror 6 for
 the editor, `lucide-react` for icons, three `@fontsource` families. Package manager is
-**`bun`, never npm**.
+**`pnpm`**.
 
-There is **no dev script and no HMR**. The renderer is built once by `vite build` into
-`ui/out/renderer` and embedded in the Tauri binary; `scripts/dev.sh` re-runs the build
-itself. Losing HMR is a recorded deliberate cost of the one-binary shape.
+`pnpm dev:desktop` runs the Vite dev server with HMR and launches Electron against it.
+A packaged build is a static bundle in `apps/web/dist`, copied into
+`apps/server/dist/client` and served by the host over the `houston://app` protocol.
+`scripts/dev.sh` builds that bundle and launches the Electron host; it is the channel-level
+equivalent of the installed app.
 
-`ui/package.json` scripts: `build`, `typecheck` (`tsc --noEmit`), `test` (`vitest run`),
-`check:css`, `check:bundle`.
+`apps/web/package.json` scripts: `build`, `typecheck`, `test`, `dev`.
 
 ## Source tree
 
 ```
-ui/src/renderer/src/
-  App.tsx              the application root: workspaces, grids, dispatch of every ServerMsg
-  houston/              transport and daemon-facing types
-    client.ts          HoustonClient — the control link, frame codecs, every request method
-    host.ts            getHostConfig() — port + token from the Tauri command
-    transport/         ws.ts, tauri.ts, types.ts — two terminal transports, one interface
-    generated/         wire types and constants, committed
-    browser*.ts        native browser-pane geometry, focus, picker, confirm
-  ghostty/             the terminal engine: vendored WASM → Canvas 2D (14 files)
-    vendor/            ghostty-vt.wasm, ghostty-write-pty.wasm
-  pane/                TerminalPane.tsx, ghosttyTerminal.ts, writeQueue.ts, input helpers
-  layout/              tree.ts (grids, split tree, persistence) + pane-type and context modules
-  components/          the UI; LayoutView.tsx, Shell.tsx, nav/, settings/, git/, agents/, files/
-  editor/  git/  voice/  Shell/  test/
+apps/web/src/
+  AppRoot.tsx          the application root; routes own workspaces, grids and panes
+  routes/              TanStack Router route files
+  components/          the UI; grid/, chat/, sidebar/, settings/, files/, browser/
+  motion/              the motion probes and the pane/maximize springs
+  environments/        server discovery, auth and the per-environment HTTP/WS layers
+  terminal/ghostty/    the terminal engine: vendored WASM → Canvas 2D
+  lib/                 host bridge helpers, clipboard, file transfer and desktop window
   theme.ts theme.css   chrome themes, terminal palettes, every design token
   watchdog.ts          Tier 2 of the paint-freeze watchdog
 ```
@@ -43,10 +38,10 @@ terminal package in `package.json`.
 
 ## Transport
 
-`HoustonClient.connect()` (`houston/client.ts`) asks the Tauri command `host_config` for
-`{ port, token }`, opens `ws://127.0.0.1:<port>/ws` with `binaryType = 'arraybuffer'`, and
-sends a `hello` frame carrying the token and the protocol version first. The token comes
-only from `host_config`.
+The renderer asks `window.hostBridge.getLocalEnvironmentBootstraps()` for the channel's
+server origin and bootstrap credential, opens `ws://127.0.0.1:<port>/ws` with
+`binaryType = 'arraybuffer'`, and sends a `hello` frame carrying the token and the protocol
+version first. The token comes only from the host bridge.
 
 Two message shapes on the socket: **text frames are JSON control messages** (`ServerMsg`),
 dispatched to the app; **binary frames are PTY bytes**. Frame kind 1 is output
@@ -263,8 +258,7 @@ grids, with new grid and pane ids and without grid tags, beside the target's own
 
 `components/LayoutView.tsx` renders it. Panes are absolutely positioned inside one
 container — a CSS-grid layout engine was tried and rejected: a React `insertBefore` on
-WebKitGTK drops a pane's composited canvas layer, which a grid's own reconciliation triggers
-far more often than absolute rects do. Geometry is computed as percentages, then converted to
+a grid's own reconciliation triggers layer churn far more often than absolute rects do. Geometry is computed as percentages, then converted to
 `calc(<pct>% + <gutter>px)` insets — `GUTTER_PX` 8 at a grid edge, 4 (half) on a shared
 interior seam. One function, `paneSlotGeometry`, produces those four declarations, because
 the splitter drag's DOM fast path writes them too: writing bare percentages there dropped
@@ -443,18 +437,18 @@ own ink (Changes, Files, Editor, Skills): they inherit the custom ink cuts from 
 `[data-custom='on']` scope, but at the coat's 5% floor the ground _is_ the photograph, and no
 ink cut clears an arbitrary image. The coat is the dial that buys it back.
 
-## Tauri commands
+## Desktop bridge
 
-The renderer reaches the host through ~120 registered commands, grouped: `host`,
-`fs` and `fs_allowlist`, `clipboard`, `dialog`, `shell`, `system`, `skills`, `window`,
-`tray`, `spike_webview`, `browser`, `watchdog`, plus bench-only commands
-behind the `bench` feature.
+The renderer reaches the host through `HostBridge`, exposed by the Electron preload
+(`apps/desktop/src/preload.ts`) and typed in `packages/contracts`. Its members group window
+chrome, notifications and tray, quick composer, settings and the connection catalog, SSH,
+WSL, snapshots, updates, the v1 cleanup report and the browser-preview bridge.
 
-The invoke handler wraps that list with a security gate: **any command invoked from a
-content-only browser webview label is refused** — browser panes hold no app authority.
+Preview webviews run a separate preload with no app authority; the host answers their
+requests through the preview IPC channels only.
 
-Browser consent binds the current document and the actual DOM node. WebKit toolkit
-worlds are ephemeral, so globals cannot hold that identity. Private node-owned event
+Browser consent binds the current document and the actual DOM node. A preview's isolated
+preload context is ephemeral, so globals cannot hold that identity. Private node-owned event
 listeners prove identity across evaluations without putting reusable proof keys in
 page markup. A new snapshot removes the previous snapshot's listeners; navigation
 and surface destruction also invalidate native refs and pending consent.
@@ -466,18 +460,13 @@ future is cancelled. Queued native operations check cancellation and expiry befo
 execution; geometry generations discard superseded positions. A timeout after native
 execution begins reports an unknown outcome rather than promising no side effect.
 
-## The paint-freeze watchdog
+## The renderer recovery loop
 
-Two tiers. Tier 1 is Rust (`src-tauri/src/watchdog/`): a pure transition function
-(`machine.rs`), a three-clock classifier (`clocks.rs`, the only file there allowed to read
-`SystemTime`), and a liveness probe (`probe.rs`) that is an `eval` round trip whose
-_absence_ is the signal. Tier 2 is `ui/src/renderer/src/watchdog.ts`.
-
-Native recovery is opt-in through `HOUSTON_WATCHDOG_RECOVER=1`. A valid, current probe
-nonce and timestamps establish JavaScript liveness; empty native evaluation callbacks do
-not. Completed navigation reopens verification after a failed renderer, without resetting
-the reload budget. Automatic escalation rechecks visibility, inspector and wake grace
-at each attempt. Cooldown delays a pending reload, not the decision to stop trying after
+The main process listens for a webview's `render-process-gone`. A crash, OOM, kill or
+abnormal exit reloads the window, at most three times in sixty seconds
+(`RENDERER_RECOVERY_MAX_ATTEMPTS` and `RENDERER_RECOVERY_WINDOW_MS` in
+`apps/desktop/src/window/DesktopWindow.ts`). A clean exit or an exhausted budget leaves the
+window stopped rather than reloading forever. Cooldown delays a pending reload, not the decision to stop trying after
 the ladder is exhausted.
 
 The native tray can quit independently of JavaScript. Confirmed shutdown contacts local
@@ -518,19 +507,14 @@ forced termination reports its lack of support and the ladder retries reload onl
 | `DPR_DEBOUNCE_MS`             | 250                                                                                 |
 | `POST_WAKE_MIN_MS` / `MAX_MS` | 8000 / 30000                                                                        |
 
-**Tier 2 only reports** — `invoke('wd_paint_report', …)`. It never reloads itself; Rust
-decides recovery. The success path re-arms through `PAINT_PROBE_GAP_MS` rather than from
-inside its own rAF callback, which had it running at the display's refresh rate on an idle
-window; Tier 1's own probe drops from `probe_ms` to `probe_hidden_ms` (2 s → 10 s) while the
-window is not visible, where escalation is suppressed anyway. Two constraints are enforced externally by `scripts/check-watchdog.sh`:
-tauri's `tracing` cargo feature must never be enabled (it makes `eval_script_with_callback`
-take a blocking path, letting the supervisor block on the very event loop it watches), and
-no file under `src/watchdog/` except `clocks.rs` may read `SystemTime`.
+The renderer itself never reloads; only the main process decides recovery. Development
+retries a failed load from the dev server with increasing delays while the page is being
+served.
 
 ## What the renderer knows
 
 Only what it is handed. It **reads no environment variables at all** — no `import.meta.env`,
-no `process.env` anywhere under `ui/src`. Port and token come from `host_config`, the wire
+no `process.env` anywhere under `apps/web/src`. Origin and token come from the host bridge, the wire
 constants come from the generated constants files, and the only
 state it keeps for itself is the `localStorage` set above.
 
@@ -562,21 +546,16 @@ plays notification sounds. Linux has no standard permission query on this D-Bus 
 Houston reports successful delivery or a refusal after a notification attempt.
 
 The window badge count is updated from top-level, visible panes waiting for input and is
-cleared when a pane is opened. Tauri exposes a badge count on Linux and macOS and an overlay
-icon on Windows. macOS desktop notification delivery is explicitly unsupported.
+cleared when a pane is opened. Electron exposes a badge count on Linux and macOS and an
+overlay icon on Windows. macOS desktop notification delivery is explicitly unsupported.
 
 ## Microphone capture
 
 The composer's dictation mic records through `navigator.mediaDevices.getUserMedia({ audio: true })`
-in the WebKitGTK webview. wry leaves `enable-media-stream` off and does not answer the
-`permission-request` signal, so `src-tauri/src/microphone.rs` enables the setting and grants
-audio-only user-media requests whose document origin is the app's own; video and display
-capture are denied. wry registers the custom protocol as a secure origin, so the page gets
-`navigator.mediaDevices` on `tauri://localhost`. macOS needs `NSMicrophoneUsageDescription`
-and the `com.apple.security.device.audio-input` entitlement; WKWebView grants media capture
-through wry's UI delegate. Windows leaves microphone permission to WebView2's own prompt,
-because wry 0.55 handles only clipboard permission requests; a denied OS microphone reaches
-the renderer as the same recording start error as a browser denial.
+in the Electron renderer. The host serves the app from a secure custom protocol, so the page
+has `navigator.mediaDevices`; microphone permission follows Chromium's and the OS's rules for
+the app. A denied microphone reaches the renderer as the same recording start error as a
+browser denial.
 
 Audio is transcribed by the server, not the webview, and the native engine runs in a separate
 process: `apps/server/src/speech/native.ts` starts the packaged executable with the hidden
@@ -586,12 +565,9 @@ cannot load a module from the file system, so the worker loads transcribe-cpp th
 
 ## Testing
 
-`vitest run` from `ui/`, always through **`bun run test`** — bare `bun test` runs Bun's own
-runner and fails the jsdom tests. `vitest.config.ts` exists purely to stop vitest inheriting
-`vite.config.ts` and silently narrowing the collection root; it adds no plugins, no
-environment and no setup files. Environment is per file, via a
-`// @vitest-environment jsdom` docblock, with Testing Library for component tests; shared
-fixtures live in `src/renderer/src/test/`.
+`pnpm --filter @houston-app/web test` runs the unit and browser projects from
+`apps/web/vite.config.ts`; see [testing.md](testing.md) for the discriminators. Browser tests
+run in Chromium through Playwright. Shared fixtures live in `apps/web/test/`.
 
 `check:css` runs **after** `build` and loads the _emitted_ stylesheet in a real browser,
 because `@theme`/`@layer` resolution only exists post-build. It re-derives the theme list

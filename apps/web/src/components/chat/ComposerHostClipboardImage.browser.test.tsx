@@ -65,7 +65,7 @@ async function bootDraftComposer() {
 const PIXEL_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
-// WebKitGTK reports a pasted clipboard image as an event with no types and no files.
+// A pasted clipboard image can arrive as an event with no types and no files.
 function emptyPaste(): ClipboardEvent {
   return new ClipboardEvent("paste", {
     bubbles: true,

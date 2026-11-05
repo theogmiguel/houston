@@ -148,7 +148,7 @@ import sys
 
 source, sandbox = map(Path, sys.argv[1:])
 repo = sandbox / "checkout"
-for directory in ("scripts", "src-tauri/target/debug", "mock-bin"):
+for directory in ("scripts", "mock-bin"):
     (repo / directory).mkdir(parents=True, exist_ok=True)
 shutil.copyfile(source, repo / "scripts/dev.sh")
 state = sandbox / ".houston-dev"
@@ -162,9 +162,6 @@ import os
 from pathlib import Path
 import sys
 name = Path(sys.argv[0]).name
-if name == "rustc":
-    print("host: x86_64-unknown-linux-gnu")
-    sys.exit(0)
 state = Path(os.environ["HOME"]) / ".houston-dev"
 for record in ("daemon.json", "supervisor.json"):
     assert (state / record).exists(), f"--fresh deleted v1's {record} before {name} ran"
@@ -173,7 +170,7 @@ with Path(os.environ["DEV_TEST_LOG"]).open("a") as f:
 if name == "npx" and os.environ.get("DEV_TEST_FAIL_BUILD"):
     sys.exit(23)
 '''
-for name in ("mock-bin/npx", "mock-bin/cargo", "mock-bin/rustc", "src-tauri/target/debug/houston-tauri"):
+for name in ("mock-bin/npx", "mock-bin/node"):
     path = repo / name
     path.write_text(mock)
     path.chmod(0o755)
@@ -196,15 +193,13 @@ for fails in (False, True):
     for path, text in records.items():
         assert path.read_text() == text, f"--fresh changed v1's {path.name}"
     if fails:
-        assert calls == ["npx -y pnpm@12.14.0 --filter @houston-app/web build"], calls
+        assert calls == ["npx -y pnpm@12.14.0 run build:desktop"], calls
     else:
-        assert calls == [
-            "npx -y pnpm@12.14.0 --filter @houston-app/web build",
-            "npx -y pnpm@12.14.0 --filter @houston-app/cli build:bundle",
-            "cargo build",
-            "houston-tauri --channel dev",
-        ], calls
-print("ok: --fresh builds and launches the app and leaves v1's daemon.json and supervisor.json")
+        assert calls[0] == "npx -y pnpm@12.14.0 run build:desktop", calls
+        assert calls[1].startswith("node "), calls
+        assert calls[1].endswith("apps/desktop/scripts/start-electron.mjs"), calls
+        assert len(calls) == 2, calls
+print("ok: --fresh builds and launches the desktop app and leaves v1's daemon.json and supervisor.json")
 PY
 then
   fail=1

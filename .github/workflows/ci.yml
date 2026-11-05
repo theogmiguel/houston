@@ -128,10 +128,6 @@ jobs:
         run: bash scripts/check-kill-guard.sh
       - name: check-case-collisions.sh (paths unique on case-insensitive filesystems)
         run: bash scripts/check-case-collisions.sh
-      - name: check-spawn-window.sh (CREATE_NO_WINDOW lint config still armed)
-        run: bash scripts/check-spawn-window.sh
-      - name: check-env-ratchet.sh (direct process-environment access only goes down)
-        run: bash scripts/check-env-ratchet.sh
       - name: check-comment-hygiene.sh (no dates/phases/diary/app names in code comments)
         run: bash scripts/check-comment-hygiene.sh
       - name: check-web-style.sh (apps/web design-system guards, baseline ratchet)
@@ -141,7 +137,7 @@ jobs:
       - name: Upstream MIT notice is present
         run: |
           notice='Copyright (c) 2026 T3 Tools Inc.'
-          for file in NOTICE third-party-licenses.config.json src-tauri/resources/third-party-licenses.json; do
+          for file in NOTICE third-party-licenses.config.json apps/desktop/resources/third-party-licenses.json; do
             if ! grep -qF "$notice" "$file"; then
               echo "static: $file lacks the upstream licence line \"$notice\"; ported code cannot ship without it." >&2
               echo "  Restore it in NOTICE and third-party-licenses.config.json, then run: node scripts/gen-third-party-licenses.mjs" >&2
@@ -224,8 +220,10 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Workspace package tests (web, server and scripts excluded)
         run: pnpm -r --no-bail --no-sort --filter "!@houston-app/web" --filter "!@houston-app/cli" --filter "!@houston-app/scripts" test
-      - name: Script tests (the licence generator and the style guard)
-        run: node --test scripts/gen-third-party-licenses.test.mjs scripts/check-web-style.test.mjs
+      - name: Script tests (licence generator, style guard, desktop packaging)
+        run: >-
+          node --test scripts/gen-third-party-licenses.test.mjs scripts/check-web-style.test.mjs
+          scripts/build-desktop-artifact.test.mjs scripts/refresh-updater-metadata.test.mjs
       - name: Report job timing
         if: always()
         continue-on-error: true
@@ -380,15 +378,16 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # Native jobs run only when their own paths change on a PR. Pushes, the nightly
-  # run and manual dispatches always exercise all three platforms.
+  # run and manual dispatches always exercise them. The host is TypeScript now;
+  # Rust covers the v1 cleanup helper and the Linux capture helpers.
   native-linux:
     needs: changes
     if: >-
       github.event_name != 'pull_request' ||
       (github.event.pull_request.draft != true && needs.changes.outputs.native == 'true')
     runs-on: ${{ vars.CI_RUNNER_LINUX || 'ubuntu-24.04' }}
-    # The existing job budget; a cold Rust build is the measured long pole.
-    timeout-minutes: 60
+    # A cold build of the three small crates; measured well under the budget.
+    timeout-minutes: 45
     env:
       CARGO_BUILD_JOBS: 3
     steps:
@@ -398,99 +397,21 @@ jobs:
       - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev \
-            libdbus-1-dev gnome-keyring dbus-x11
+          sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            apps/desktop/native/houston-v1-cleanup
+            native/kde-snap-shot
+            native/hyprland-snap-shot
           key: linux-native-checks
-      - uses: ./.github/actions/setup
-      # tauri.conf.json's frontendDist is the web app's dist directory, which
-      # generate_context! requires at compile time.
-      - name: Build renderer assets for native compilation
-        run: pnpm --filter @houston-app/web build
-      - name: Check native formatting and Clippy
+      - name: Test the Houston 1 cleanup helper
+        run: cargo test --locked --manifest-path apps/desktop/native/houston-v1-cleanup/Cargo.toml
+      - name: Test the Linux capture helpers
         run: |
-          cargo fmt --all --check --manifest-path src-tauri/Cargo.toml
-          cargo clippy --locked --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
-      - name: Test native application
-        run: |
-          bash scripts/with-test-keyring.sh cargo test --locked --manifest-path src-tauri/Cargo.toml -- --test-threads=3
-
-  # macOS on Apple silicon only: the host's own arch is what this proves compiles.
-  native-macos:
-    needs: changes
-    if: >-
-      github.event_name != 'pull_request' ||
-      (github.event.pull_request.draft != true && needs.changes.outputs.native == 'true')
-    runs-on: macos-latest
-    # The existing macOS job budget, about 15 minutes measured.
-    timeout-minutes: 45
-    env:
-      CARGO_BUILD_JOBS: 3
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          filter: blob:none
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-          key: macos-checks
-      - uses: ./.github/actions/setup
-      - name: Build renderer assets for native compilation
-        run: pnpm --filter @houston-app/web build
-      - name: Check native application
-        working-directory: src-tauri
-        run: |
-          cargo fmt --all --check
-          cargo clippy --locked --all-targets -- -D warnings
-          cargo test --locked -- --test-threads=3
-
-  native-windows:
-    needs: changes
-    if: >-
-      github.event_name != 'pull_request' ||
-      (github.event.pull_request.draft != true && needs.changes.outputs.native == 'true')
-    runs-on: windows-2022
-    # The existing Windows job budget, about 19 minutes measured.
-    timeout-minutes: 45
-    env:
-      CARGO_BUILD_JOBS: 3
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          filter: blob:none
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-          key: windows-checks
-      - uses: ./.github/actions/setup
-      - name: Build renderer assets for native compilation
-        run: |
-          pnpm --filter @houston-app/web build
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Check native application
-        working-directory: src-tauri
-        run: |
-          cargo fmt --all --check
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo clippy --locked --all-targets -- -D warnings
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo test --locked -- --test-threads=3
-          exit $LASTEXITCODE
+          cargo test --locked --manifest-path native/kde-snap-shot/Cargo.toml
+          cargo test --locked --manifest-path native/hyprland-snap-shot/Cargo.toml
 
   # Windows server parity runs nightly and on pushes, never on PRs, so it cannot
   # hold a review. Its failures are real failures, not advisory. A PR can opt in
@@ -513,8 +434,6 @@ jobs:
       - test-web
       - test-web-browser
       - native-linux
-      - native-macos
-      - native-windows
       - server-windows
     runs-on: ${{ vars.CI_RUNNER_LINUX_SMALL || 'ubuntu-24.04' }}
     # One jq read over the job results.

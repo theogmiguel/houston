@@ -363,9 +363,9 @@ export function GridThreadCell({
         // A composer drawer or notice keeps the stacked card: the compact row would squeeze
         // the question panel, the notices and the textarea into zero-width flex columns.
         density === "compact" &&
-          "[&_[data-thread-find-text]]:line-clamp-5 [&_[data-chat-composer-resting-row]]:hidden [&_[data-chat-composer-surface]:not(:has([data-chat-composer-top-drawer],[data-composer-banner-shelf]))]:flex [&_[data-chat-composer-surface]:not(:has([data-chat-composer-top-drawer],[data-composer-banner-shelf]))]:items-center [&_[data-chat-composer-body]]:min-w-0 [&_[data-chat-composer-body]]:flex-1 [&_[data-chat-composer-body]]:pt-2 [&_[data-chat-composer-body]]:pb-2 [&_[data-chat-composer-footer]]:w-auto [&_[data-chat-composer-footer]]:shrink-0 [&_[data-chat-composer-footer]]:pb-2",
+          "[&_[data-chat-composer-resting-row]]:hidden [&_[data-chat-composer-surface]:not(:has([data-chat-composer-top-drawer],[data-composer-banner-shelf]))]:flex [&_[data-chat-composer-surface]:not(:has([data-chat-composer-top-drawer],[data-composer-banner-shelf]))]:items-center [&_[data-chat-composer-body]]:min-w-0 [&_[data-chat-composer-body]]:flex-1 [&_[data-chat-composer-body]]:pt-2 [&_[data-chat-composer-body]]:pb-2 [&_[data-chat-composer-footer]]:w-auto [&_[data-chat-composer-footer]]:shrink-0 [&_[data-chat-composer-footer]]:pb-2",
         density === "glance" &&
-          "[&_[data-chat-composer-resting-row]]:hidden [&_[data-thread-find-text]]:line-clamp-3 [&_[data-changed-files-state=tree]]:hidden [&_[data-changed-files-bar]]:hidden",
+          "[&_[data-chat-composer-resting-row]]:hidden [&_[data-changed-files-state=tree]]:hidden [&_[data-changed-files-bar]]:hidden",
       )}
     >
       {showLabel ? (
@@ -399,7 +399,7 @@ export function GridThreadCell({
             </span>
           )}
           <SidebarThreadStatusGlyph status={status} label={status?.label} />
-          <div className="flex max-w-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[max-width,opacity] duration-150 ease-out group-hover/pane:max-w-40 group-hover/pane:opacity-100 group-focus-within/label:max-w-40 group-focus-within/label:opacity-100 motion-reduce:transition-none">
+          <div className="flex w-0 items-center gap-0.5 overflow-hidden opacity-0 [interpolate-size:allow-keywords] transition-[width,opacity] duration-(--motion-disclosure) ease-standard group-hover/pane:w-auto group-hover/pane:opacity-100 group-focus-within/label:w-auto group-focus-within/label:opacity-100 motion-reduce:transition-none">
             {paneActions(true)}
           </div>
         </div>

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       kind:
-        description: 'Version bump to cut'
+        description: "Version bump to cut"
         type: choice
         required: true
         default: patch
@@ -16,21 +16,21 @@ on:
           - major
           - rc
       ref:
-        description: 'Branch, tag or SHA to cut from'
+        description: "Branch, tag or SHA to cut from"
         type: string
-        default: 'main'
+        default: "main"
         required: true
       resume_tag:
-        description: 'Existing tag whose builds failed; skips version computation, commit and push'
+        description: "Existing tag whose builds failed; skips version computation, commit and push"
         type: string
         required: false
-        default: ''
+        default: ""
       preview_only:
-        description: 'Preview the version and notes without committing, tagging or building'
+        description: "Preview the version and notes without committing, tagging or building"
         type: boolean
         default: false
       include_windows:
-        description: 'Build and publish the Windows 10/11 x86_64 installer alongside Linux'
+        description: "Build and publish the Windows 10/11 x86_64 installer alongside Linux"
         type: boolean
         default: true
         required: true
@@ -47,8 +47,8 @@ concurrency:
   group: release-cut
   cancel-in-progress: false
 
-# Version-PINNED, not a caret range, so the bundle cannot change under us. A job
-# output (below) is the only way to hand it to a called workflow, since a
+# Version-PINNED, not a caret range: the signing CLI must not change under us.
+# A job output (below) is the only way to hand it to a called workflow, since a
 # reusable workflow's `with:` cannot resolve `env`.
 env:
   TAURI_CLI_VERSION: 2.11.4
@@ -281,7 +281,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         if: inputs.resume_tag == '' && inputs.preview_only != true
 
-      - name: Write the version into the three manifests and src-tauri/Cargo.lock
+      - name: Write the version into the three manifests
         if: inputs.resume_tag == '' && inputs.preview_only != true
         run: ./scripts/set-version.sh "${{ steps.version.outputs.version }}"
 
@@ -295,8 +295,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # Named, not `git add -A`: a release commit carries the version bump
           # and nothing a runner happened to leave behind.
-          git add src-tauri/tauri.conf.json src-tauri/Cargo.toml \
-            src-tauri/Cargo.lock apps/server/package.json
+          git add apps/desktop/package.json apps/server/package.json \
+            apps/web/package.json
           git commit -m "release: v$VERSION"
           git tag -m "release: v$VERSION" "v$VERSION"
 
@@ -352,23 +352,11 @@ jobs:
       ref: ${{ needs.prepare.outputs.tag }}
       version: ${{ needs.prepare.outputs.version }}
 
-  windows-compile:
+  windows-bundle:
     needs: prepare
     if: inputs.include_windows && inputs.preview_only != true
     uses: ./.github/workflows/release-windows.yml
     with:
-      stage: compile
-      ref: ${{ needs.prepare.outputs.tag }}
-      version: ${{ needs.prepare.outputs.version }}
-      tauri_cli_version: ${{ needs.prepare.outputs.tauri_cli_version }}
-      require_signing: false
-
-  windows-bundle:
-    needs: [prepare, linux-bundle, windows-compile]
-    if: inputs.include_windows && inputs.preview_only != true
-    uses: ./.github/workflows/release-windows.yml
-    with:
-      stage: bundle
       ref: ${{ needs.prepare.outputs.tag }}
       version: ${{ needs.prepare.outputs.version }}
       tauri_cli_version: ${{ needs.prepare.outputs.tauri_cli_version }}

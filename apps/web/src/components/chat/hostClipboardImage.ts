@@ -1,8 +1,8 @@
 import type { HostClipboardImage } from "@houston-app/contracts";
 
 /**
- * True when the paste holds an image the webview could not hand over as a file: WebKitGTK reports
- * an empty paste, and a browser's "Copy image" arrives as `text/html` wrapping an `<img>`.
+ * True when the paste holds an image the webview could not hand over as a file: an empty
+ * paste, or a browser's "Copy image" arriving as `text/html` wrapping an `<img>`.
  * Plain text, or rich text with visible content, stays with the editor.
  */
 export function isClipboardImagePaste(clipboardData: DataTransfer): boolean {

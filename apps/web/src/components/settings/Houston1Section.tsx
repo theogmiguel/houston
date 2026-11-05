@@ -104,7 +104,7 @@ export function Houston1ImportSection() {
 /** The host's one-time removal of v1's agent hooks, shown only when it has something to say. */
 export function Houston1CleanupRow() {
   const [report, setReport] = useState<DesktopV1CleanupReport | null>(null);
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- reads the host's one-time cleanup report, which lives in the Tauri process and is not an atom
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- reads the host's one-time cleanup report, which lives in the Electron main process and is not an atom
   useEffect(() => {
     const bridge = window.hostBridge?.houstonV1Cleanup;
     if (bridge === undefined) return;

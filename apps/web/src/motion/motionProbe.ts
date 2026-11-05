@@ -52,7 +52,6 @@ let episode: {
 } | null = null;
 
 function engineName(): string {
-  if (window.__TAURI_INTERNALS__ !== undefined) return "tauri-webkitgtk";
   return navigator.userAgent.includes("Chrome/") ? "chromium" : "other";
 }
 
@@ -112,11 +111,7 @@ function report(current: NonNullable<typeof episode>): void {
   };
   (window.__houstonMotionEpisodes ??= []).push(record);
   console.info("[motion-probe]", JSON.stringify(record));
-  void window.__TAURI_INTERNALS__?.invoke("system_log_debug", {
-    source: "motion-probe",
-    message: "motion frames",
-    payload: record,
-  });
+  void window.hostBridge?.logDebug("motion-probe", "motion frames", record);
 }
 
 function tick(now: number): void {

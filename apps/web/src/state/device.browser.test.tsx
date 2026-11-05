@@ -181,5 +181,6 @@ it("reports a failed first device load and retries it", async () => {
 
   await screen.getByRole("button", { name: "Retry" }).click();
   await expect.element(screen.getByRole("button", { name: "Refresh devices" })).toBeVisible();
-  expect(screen.container.querySelector('[role="alert"]')).toBeNull();
+  // The failed load fades out through Swap before its layer leaves the DOM.
+  await vi.waitFor(() => expect(screen.container.querySelector('[role="alert"]')).toBeNull());
 });

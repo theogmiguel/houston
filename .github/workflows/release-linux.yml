@@ -13,7 +13,7 @@ on:
         required: false
         default: ""
       tauri_cli_version:
-        description: "Pinned Tauri CLI version, threaded through from the caller so the pin has one source of truth"
+        description: "Pinned Tauri CLI version, used only for Minisign signing so installed Tauri copies can update"
         type: string
         required: true
       require_signing:
@@ -45,8 +45,10 @@ jobs:
         include:
           - runner: ubuntu-22.04
             arch: x86_64
+            build_arch: x64
           - runner: ubuntu-22.04-arm
             arch: aarch64
+            build_arch: arm64
     runs-on: ${{ matrix.runner }}
     env:
       HOUSTON_CHANNEL: dev
@@ -72,12 +74,11 @@ jobs:
           [ -n "$base" ] || { echo "::error::version input '$VERSION' has no base before its + build metadata"; exit 1; }
           ./scripts/set-version.sh --check "$base"
 
-      # jammy names the FUSE 2 runtime libfuse2; the t64 rename is 24.04's.
-      # The AppImage runtime mounts itself through it before the app starts.
-      - name: Install WebKitGTK/GTK + ALSA + AppIndicator + AppImage build dependencies
+      # Electron's AppImage runtime mounts through FUSE 2, and xz packs the deb.
+      - name: Install packaging dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libasound2-dev librsvg2-dev patchelf libfuse2 libayatana-appindicator3-dev
+          sudo apt-get install -y libfuse2 xz-utils binutils
 
       # A runner boots systemd as PID 1 but the `runner` user has no logind
       # session, so there is no user bus and `systemd-run --user` fails.
@@ -93,23 +94,12 @@ jobs:
         run: ./scripts/oom-shield.sh true
 
       - uses: dtolnay/rust-toolchain@stable
-      # The key carries the architecture: cached objects are ELF, not portable.
+      # The packaging script builds the Houston 1 cleanup helper with Cargo.
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            src-tauri
+          workspaces: apps/desktop/native/houston-v1-cleanup
           key: release-linux-${{ matrix.arch }}
           cache-on-failure: true
-      - name: Cache the pinned Tauri CLI
-        id: tauri-cli-cache
-        uses: actions/cache@v5
-        with:
-          path: ~/.cargo/bin/cargo-tauri
-          key: cargo-tauri-${{ inputs.tauri_cli_version }}-ubuntu-22.04-${{ matrix.arch }}
-      - name: Install the pinned Tauri CLI
-        if: steps.tauri-cli-cache.outputs.cache-hit != 'true'
-        run: cargo install tauri-cli --version ${{ inputs.tauri_cli_version }} --locked
-
       # Secrets cannot be used in an `if:`, so they are read into env here and
       # tested; the decision travels on as a step output. A real release
       # requires them by input, a dry run reports the gap instead.
@@ -131,13 +121,7 @@ jobs:
             fi
           elif [ -z "$SIGNING_KEY" ]; then
             echo "signed=false" >> "$GITHUB_OUTPUT"
-            # An updater-enabled bundle cannot be built without a key, and
-            # build-app.sh has no --no-sign passthrough: turn the config back to
-            # no updater artifacts so a keyless dry run can still prove the build.
-            jq '.bundle.createUpdaterArtifacts = false' src-tauri/tauri.conf.json \
-              > src-tauri/tauri.conf.json.unsigned
-            mv src-tauri/tauri.conf.json.unsigned src-tauri/tauri.conf.json
-            echo "TAURI_SIGNING_PRIVATE_KEY is not set and this run does not require signing: the bundles ship unsigned, without updater artifacts, and no updater can verify them." >> "$GITHUB_STEP_SUMMARY"
+            echo "TAURI_SIGNING_PRIVATE_KEY is not set and this run does not require signing: the bundles ship without Minisign signatures and installed Tauri copies cannot verify them." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           echo "signed=true" >> "$GITHUB_OUTPUT"
@@ -154,8 +138,19 @@ jobs:
             } >> "$GITHUB_ENV"
           fi
 
-      # The embedded v2 server is built with the Node version its SEA build pins
-      # in package.json engines.node, not the runner's default.
+      - name: Cache the pinned Tauri CLI
+        if: steps.signing.outputs.signed == 'true'
+        id: tauri-cli-cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cargo/bin/cargo-tauri
+          key: cargo-tauri-${{ inputs.tauri_cli_version }}-ubuntu-22.04-${{ matrix.arch }}
+      - name: Install the pinned Tauri CLI for Minisign signing
+        if: steps.signing.outputs.signed == 'true' && steps.tauri-cli-cache.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --version ${{ inputs.tauri_cli_version }} --locked
+
+      # The desktop package is built with the Node version its workspace pins in
+      # package.json engines.node, not the runner's default.
       - uses: pnpm/action-setup@v4
         with:
           version: 12.14.0
@@ -163,56 +158,45 @@ jobs:
         with:
           node-version-file: package.json
           cache: pnpm
-      - name: Install the server workspace
+      - name: Install the workspace
         run: pnpm install --frozen-lockfile
-      - name: Build and stage the bundled v2 server
-        run: |
-          set -euo pipefail
-          pnpm --filter @houston-app/cli build:exe
-          node scripts/stage-v2-server.mjs
 
-      # NO_STRIP: linuxdeploy strips every library it copies, a known failure
-      # on newer runners; the app binary is stripped by the release profile.
-      - name: Build the bundles (appimage,deb)
+      - name: Build the AppImage and deb
         env:
-          NO_STRIP: "true"
+          CARGO_BUILD_JOBS: "3"
+          VERSION: ${{ inputs.version }}
+          BUILD_ARCH: ${{ matrix.build_arch }}
         run: |
           set -euo pipefail
-          # A restored target cache must not contribute an older bundle or .sig.
-          rm -rf src-tauri/target/release/bundle/appimage \
-                 src-tauri/target/release/bundle/deb
-          ./scripts/build-app.sh --bundles appimage,deb --verbose
+          # A restored cache must not contribute an older artifact or .sig.
+          rm -rf release
+          base="${VERSION%%+*}"
+          ./scripts/oom-shield.sh node scripts/build-desktop-artifact.ts \
+            --platform linux --target AppImage --arch "$BUILD_ARCH" \
+            --version "$base" --output-dir release --verbose
 
-      # With createUpdaterArtifacts on, the CLI signs every updater-enabled
-      # bundle it built -- the AppImage and the deb here -- so this step is the
-      # fallback for one it left unsigned. A .sig it already wrote is kept.
-      - name: Sign any updater artifact the bundler left unsigned
+      # Minisign signatures are the update bridge: an installed Tauri copy
+      # verifies the Electron bundle against the public key it already trusts.
+      - name: Sign the updater artifacts
         if: steps.signing.outputs.signed == 'true'
         run: |
           set -euo pipefail
           shopt -s nullglob
-          for artifact in src-tauri/target/release/bundle/appimage/*.AppImage \
-                          src-tauri/target/release/bundle/deb/*.deb; do
-            if [ -f "$artifact.sig" ]; then
-              echo "already signed by the bundler: $artifact"
-              continue
-            fi
+          artifacts=(release/*.AppImage release/*.deb)
+          [ "${#artifacts[@]}" -gt 0 ] || { echo "::error::no AppImage or deb in release to sign"; exit 1; }
+          for artifact in "${artifacts[@]}"; do
             cargo tauri signer sign "$artifact"
           done
 
-      # The bundles are checked to CONTAIN the sidecars rather than assumed
-      # to: a missing externalBin fails the src-tauri build anyway, but this is
-      # the one packaging fact this workflow can prove, and it costs a second.
+      # The bundles are checked to CONTAIN the application rather than assumed
+      # to. This is the one packaging fact this workflow can prove.
       - name: Collect artifacts
         run: |
           set -euo pipefail
           shopt -s nullglob
           mkdir -p dist
-          # *.sig and a v1-compatible build's .AppImage.tar.gz ride along: the
-          # updater's signature is as much a release artifact as the bundle.
-          find src-tauri/target/release/bundle -maxdepth 2 -type f \
-            \( -name '*.AppImage' -o -name '*.deb' -o -name '*.sig' -o -name '*.AppImage.tar.gz' \) \
-            -exec cp {} dist/ \;
+          cp release/*.AppImage release/*.deb dist/
+          cp release/latest-linux*.yml dist/
           appimages=(dist/*.AppImage)
           debs=(dist/*.deb)
           if [ "${#appimages[@]}" -ne 1 ]; then
@@ -231,24 +215,27 @@ jobs:
           package_root=$(mktemp -d)
           trap 'rm -rf "$package_root"' EXIT
           dpkg-deb -x "$deb" "$package_root/deb"
+          [ -x "$package_root/deb/opt/Houston/houston" ] || {
+            echo "::error::$deb does not contain /opt/Houston/houston"
+            exit 1
+          }
           appimage_path=$(realpath "$appimage")
           mkdir "$package_root/appimage"
           (cd "$package_root/appimage" && "$appimage_path" --appimage-extract >/dev/null)
-          for name in houston; do
-            [ -f "$package_root/deb/usr/bin/$name" ] || { echo "::error::$deb does not contain usr/bin/$name"; exit 1; }
-            [ -f "$package_root/appimage/squashfs-root/usr/bin/$name" ] || { echo "::error::$appimage does not contain usr/bin/$name"; exit 1; }
-          done
+          [ -x "$package_root/appimage/squashfs-root/houston" ] || {
+            echo "::error::$appimage does not contain the houston executable"
+            exit 1
+          }
           ls -lh dist
 
-      # An unsigned run is a documented state; a signed run that lost a .sig is
-      # a broken updater contract, so only the signed one hard-fails here.
+      # A signed run that lost a .sig is a broken updater contract, so only the
+      # signed one has this requirement.
       - name: Assert the updater signatures
         if: steps.signing.outputs.signed == 'true'
         run: |
           set -euo pipefail
           shopt -s nullglob
           artifacts=(dist/*.AppImage dist/*.deb)
-          [ "${#artifacts[@]}" -gt 0 ] || { echo "::error::no AppImage or deb in dist to carry a signature"; exit 1; }
           missing=0
           for artifact in "${artifacts[@]}"; do
             if [ ! -f "$artifact.sig" ]; then
@@ -260,8 +247,13 @@ jobs:
           echo "updater signatures:"
           printf '  %s.sig\n' "${artifacts[@]}"
 
-      # The deb is the shape a user installs, so that is what is read: every
-      # binary in it must be this architecture and ask glibc for nothing above
+      # electron-updater reads the same release; its hashes must describe the
+      # bytes that are uploaded.
+      - name: Check the electron-updater metadata
+        run: node scripts/refresh-updater-metadata.mjs dist --check
+
+      # The deb is the shape a user installs, so that is what is read: the
+      # binary must be this architecture and ask glibc for nothing above
       # jammy's 2.35, or "built on 22.04" is not the promise it says.
       - name: Gate the deb against the 22.04 glibc floor and this architecture
         run: |
@@ -269,17 +261,21 @@ jobs:
           deb=$(find dist -name '*.deb' -print -quit)
           ./scripts/check-linux-abi.sh "$deb" "${{ matrix.arch }}"
 
-      - name: Boot the packaged binaries on a baseline x86_64 CPU
+      - name: Boot the packaged binary on a baseline x86_64 CPU
         if: matrix.arch == 'x86_64'
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y qemu-user
+          sudo apt-get install -y qemu-user \
+            libgtk-3-0 libgl1 libegl1 libgbm1 libfribidi0 libnss3 libxss1 \
+            libasound2 libatk-bridge2.0-0 libdrm2 libxkbcommon0 libxcomposite1 \
+            libxdamage1 libxfixes3 libxrandr2 libpango-1.0-0 libcairo2 \
+            libatspi2.0-0 libsecret-1-0
           package_root=$(mktemp -d)
           trap 'rm -rf "$package_root"' EXIT
           deb=$(find dist -name '*.deb' -print -quit)
           dpkg-deb -x "$deb" "$package_root"
-          qemu-x86_64 -cpu qemu64 "$package_root/usr/bin/houston" --version
+          qemu-x86_64 -cpu qemu64 "$package_root/opt/Houston/houston" --version --no-sandbox
 
       - uses: actions/upload-artifact@v7
         with:
@@ -308,16 +304,16 @@ jobs:
       matrix:
         include:
           - image: ubuntu:22.04
-            packages: libgtk-3-0 libgl1 libegl1 libgbm1 libfribidi0
+            packages: libgtk-3-0 libgl1 libegl1 libgbm1 libfribidi0 libnss3 libxss1 libasound2 libatk-bridge2.0-0 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libpango-1.0-0 libcairo2 libatspi2.0-0 libsecret-1-0
             installer: apt
           - image: ubuntu:24.04
-            packages: libgtk-3-0 libgl1 libegl1 libgbm1 libfribidi0
+            packages: libgtk-3-0t64 libgl1 libegl1 libgbm1 libfribidi0 libnss3 libxss1 libasound2t64 libatk-bridge2.0-0t64 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libpango-1.0-0 libcairo2 libatspi2.0-0t64 libsecret-1-0
             installer: apt
           - image: debian:12
-            packages: libgtk-3-0 libgl1 libegl1 libgbm1 libfribidi0
+            packages: libgtk-3-0 libgl1 libegl1 libgbm1 libfribidi0 libnss3 libxss1 libasound2 libatk-bridge2.0-0 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libpango-1.0-0 libcairo2 libatspi2.0-0 libsecret-1-0
             installer: apt
           - image: fedora:latest
-            packages: gtk3 mesa-libGL mesa-libEGL mesa-libgbm fribidi
+            packages: gtk3 mesa-libGL mesa-libEGL mesa-libgbm fribidi nss libXScrnSaver alsa-lib at-spi2-atk at-spi2-core libdrm libxkbcommon libXcomposite libXdamage libXfixes libXrandr pango cairo libsecret
             installer: dnf
     runs-on: ubuntu-24.04
     container: ${{ matrix.image }}
@@ -354,16 +350,13 @@ jobs:
           [ -n "$appimage" ] || { echo "::error::no .AppImage in houston-$VERSION-linux-x86_64"; exit 1; }
           chmod +x "$appimage"
           "$appimage" --appimage-extract >/dev/null
-          out=$(./squashfs-root/AppRun --version)
+          out=$(./squashfs-root/AppRun --version --no-sandbox)
           printf '%s\n' "$out"
           base="${VERSION%%+*}"
-          case "$out" in
-            "houston $base "*) ;;
-            *)
-              echo "::error::${{ matrix.image }} printed '$out', expected it to start with 'houston $base '"
-              exit 1
-              ;;
-          esac
+          if [ "$out" != "$base" ]; then
+            echo "::error::${{ matrix.image }} printed '$out', expected '$base'"
+            exit 1
+          fi
 
       - name: Record job timing
         if: always()

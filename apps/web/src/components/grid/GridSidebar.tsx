@@ -4,7 +4,11 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@houston-app/client-runtime/state/runtime";
-import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
+import {
+  scopedThreadKey,
+  scopeProjectRef,
+  scopeThreadRef,
+} from "@houston-app/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
 import {
@@ -101,7 +105,9 @@ import {
 } from "./sidebarProjectSections";
 import { preorderThreads } from "../../grid/tree";
 import { useOpenGridDraft } from "../../grid/useOpenGridDraft";
-import { useQuietThreadShells, useProjects } from "../../state/entities";
+import { useProject, useQuietThreadShells, useProjects } from "../../state/entities";
+import { useEnvironmentQuery } from "../../state/query";
+import { vcsEnvironment } from "../../state/vcs";
 import { useSidebarProjectGroups } from "../../hooks/useSidebarProjectGroups";
 import { registerSettleAndAdvance } from "../../settleAndAdvance";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
@@ -152,10 +158,15 @@ import { Separator } from "../ui/separator";
 import {
   FOCUS_ACTION_CLS,
   FOCUS_ROW_CLS,
+  ROW_ACTIONS_REVEAL,
+  ROW_ACTIONS_VISIBLE,
+  ROW_STATUS_HIDDEN,
+  ROW_STATUS_RECEDE,
   SidebarContent,
   SidebarHeader,
   useSidebarVisibility,
 } from "../ui/sidebar";
+import { MOTION_FEEDBACK, MOTION_FEEDBACK_OPACITY } from "../ui/motion-recipes";
 import {
   SIDEBAR_GRID_ACTION_CLS,
   SIDEBAR_GRID_CHEVRON_BOX_CLS,
@@ -1674,6 +1685,26 @@ function RunningElapsed({ startedAt }: { startedAt: string }) {
   return <span>{formatWorkingDurationLabel(nowMs - startedMs)}</span>;
 }
 
+/**
+ * The branch a thread works on: the one it recorded, or else the branch its
+ * checkout (its worktree, or the project's own folder) currently has.
+ */
+function useThreadBranchName(thread: EnvironmentThreadShell): string | null {
+  const readsCheckout = thread.branch === null;
+  const project = useProject(
+    readsCheckout && thread.worktreePath === null
+      ? scopeProjectRef(thread.environmentId, thread.projectId)
+      : null,
+  );
+  const cwd = thread.worktreePath ?? project?.workspaceRoot ?? null;
+  const status = useEnvironmentQuery(
+    readsCheckout && cwd !== null
+      ? vcsEnvironment.status({ environmentId: thread.environmentId, input: { cwd } })
+      : null,
+  );
+  return thread.branch ?? status.data?.refName ?? null;
+}
+
 export function ThreadCard({
   gridId,
   thread,
@@ -1735,6 +1766,7 @@ export function ThreadCard({
   const nowMinute = useNowMinute();
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const showBranch = useClientSettings((settings) => settings.sidebarRowShowBranch);
+  const branchName = useThreadBranchName(thread);
   const showPullRequest = useClientSettings((settings) => settings.sidebarRowShowPullRequest);
   const showSubagents = useClientSettings((settings) => settings.sidebarRowShowSubagents);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -1848,7 +1880,7 @@ export function ThreadCard({
               onOpen();
             }}
             className={cn(
-              `group/th relative flex w-full flex-col gap-0.75 rounded-lg py-1.75 pr-2.5 text-left outline-none transition-colors duration-(--motion-feedback) ease-standard ${FOCUS_ROW_CLS}`,
+              `group/th relative flex w-full flex-col gap-0.75 rounded-lg py-1.75 pr-2.5 text-left outline-none ${MOTION_FEEDBACK} ${FOCUS_ROW_CLS}`,
               notInGrid ? "pl-2" : "pl-7.5",
               "cursor-pointer",
               dragging && "opacity-50",
@@ -1912,8 +1944,10 @@ export function ThreadCard({
               </span>
               <span
                 className={cn(
-                  "shrink-0 transition-opacity duration-(--motion-feedback) ease-standard group-hover/th:opacity-0",
-                  actionsVisible && "opacity-0",
+                  "shrink-0",
+                  ROW_STATUS_RECEDE,
+                  MOTION_FEEDBACK_OPACITY,
+                  actionsVisible && ROW_STATUS_HIDDEN,
                 )}
               >
                 {timeLabel !== null ? (
@@ -1930,10 +1964,9 @@ export function ThreadCard({
           )}
           <span
             className={cn(
-              "absolute inset-y-0 right-2.5 flex items-center gap-0.5 transition-opacity duration-(--motion-feedback) ease-standard",
-              actionsVisible
-                ? "opacity-100"
-                : "pointer-events-none opacity-0 group-hover/th:pointer-events-auto group-hover/th:opacity-100 group-has-[:focus-visible]/th:pointer-events-auto group-has-[:focus-visible]/th:opacity-100",
+              "absolute inset-y-0 right-2.5 flex items-center gap-0.5",
+              MOTION_FEEDBACK_OPACITY,
+              actionsVisible ? ROW_ACTIONS_VISIBLE : ROW_ACTIONS_REVEAL,
             )}
             onMouseEnter={() => setActionsHovered(true)}
             onMouseLeave={() => setActionsHovered(false)}
@@ -2080,7 +2113,7 @@ export function ThreadCard({
             <>
               <GitBranchIcon aria-hidden className="size-3 shrink-0" />
               <span className="min-w-0 flex-1 truncate font-mono text-2xs">
-                {thread.branch ?? "no branch"}
+                {branchName ?? "no branch"}
                 {notInGrid ? " · not in a grid" : ""}
               </span>
             </>
@@ -2127,7 +2160,7 @@ export function ThreadCard({
           </span>
           <span className="flex items-center gap-1.5">
             <GitBranchIcon aria-hidden className="size-3" />
-            {thread.branch ?? "no branch"}
+            {branchName ?? "no branch"}
           </span>
           <span className="flex items-center gap-1.5">
             <CpuIcon aria-hidden className="size-3" />

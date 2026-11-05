@@ -57,8 +57,8 @@ Run the gates for whatever you touched.
 
 **Per item, in the package or crate you touched** — cheap, run constantly:
 
-- `src-tauri`: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, the item's own
-  and touched tests.
+- `apps/desktop/native` and `native`: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`,
+  the item's own and touched tests.
 - `apps/` and `packages/`: the package's `typecheck` and its touched tests, for example
   `pnpm --filter @houston-app/cli exec vp test run <files>` for the server.
 
@@ -66,7 +66,7 @@ Run the gates for whatever you touched.
 run Cargo inside `scripts/oom-shield.sh`. On Windows, set `$env:CARGO_BUILD_JOBS = '3'`
 in PowerShell. Never run concurrent Cargo workloads.
 
-**The workspace** (the web build comes first: `src-tauri` embeds its output):
+**The workspace** (the web build comes first: the desktop host serves its output):
 
 ```
 pnpm -r typecheck
@@ -75,7 +75,7 @@ pnpm --filter @houston-app/contracts --filter @houston-app/shared test
 pnpm --filter @houston-app/cli exec vp test run src/houston
 ```
 
-**`src-tauri/`**:
+**The native crates** (`apps/desktop/native` and `native`):
 
 ```
 cargo fmt --all --check

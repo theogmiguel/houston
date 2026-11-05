@@ -7,16 +7,12 @@ carries the reasons.
 
 ## Signals and processes
 
-### Only `sys/pid.rs` may call `kill(2)`
+### Stop a server only by the PID its channel names
 
-**Enforced by** `scripts/check-kill-guard.sh` (CI): `libc::kill(`, `nix::sys::signal`,
-raw `syscall(`, `OpenProcess`/`TerminateProcess`/`taskkill` are forbidden under `src-tauri/`
-outside `src-tauri/src/sys/pid.rs`.
-
-**Why.** A test once called `terminate_and_wait(u32::MAX, …)`. Cast to `pid_t`,
-`u32::MAX` is `-1`, and `kill(-1, SIGTERM)` is a broadcast to every process the user owns.
-It destroyed the desktop session. `checked_pid` refuses `0` (the process group) and
-anything above `i32::MAX`.
+`apps/desktop/src/backend/DesktopServerAttachment.ts` reads
+`<channel dir>/v2/userdata/server-runtime.json` and probes that PID. `isProcessAlive` refuses
+anything that is not a positive integer, so a malformed record cannot become a broadcast: on
+POSIX `kill(-1, …)` signals every process the user owns.
 
 ### Never kill by pattern
 
@@ -26,52 +22,20 @@ argv. Stop a server only by the PID its channel's `server-runtime.json` names, a
 confirming the channel. Scripts that must stop something they started stop it by the PID
 they captured.
 
-### Every host spawn goes through `crate::sys::spawn`
-
-**Enforced by** `scripts/check-spawn-window.sh` and a clippy `disallowed-methods` entry in
-`src-tauri/clippy.toml` banning `std::process::Command::new` and
-`tokio::process::Command::new`.
-
-**Why.** On Windows a console-subsystem child flashes a window unless spawned with
-`CREATE_NO_WINDOW`; `sys/spawn.rs` sets it at construction so a stored builder cannot lose it.
-
 ### Opening a file or URL never goes through a shell string
 
-`src-tauri/src/shell.rs`'s `open_target` execs `xdg-open` on Unix and calls `ShellExecuteW`
-on Windows — never `cmd /C start` or a shell interpreter over renderer-supplied text. An
-interpreter over a URL or path the renderer handed it would be an injection surface;
-`xdg-open`/`ShellExecuteW` take the target as a value, the same primitive a double-click uses.
+`apps/desktop/src/electron/ElectronShell.ts` passes the target to Electron's `shell.openExternal`
+and `shell.openPath`. Electron takes the URL or path as a value, never as shell text, so a
+renderer-supplied string cannot become an interpreter command.
 
-### In-distro commands use `wsl.exe --exec`, never `--`
+### In-distro commands use `wsl.exe --exec`
 
-Every command the app runs inside a WSL distro is `wsl.exe -d <distro> --exec <argv...>`,
-built in `src-tauri/src/wsl/command.rs`. **Enforced by** that module's
-`every_distro_command_uses_exec` test.
+Every command the app runs inside a WSL distro is `wsl.exe -d <distro> --exec <argv...>`, built
+in `apps/desktop/src/wsl/DesktopWslEnvironment.ts`.
 
 **Why.** After `--`, `wsl.exe` hands the argv to the distro's login shell, which parses it
 a second time: on WSL 2.6.1 that expanded `$HOME` inside single quotes. `--exec` passes each
 argument through unchanged.
-
-### Filesystem commands are allowlist-gated
-
-Every disk-touching Tauri command (`fs_read_file`, `fs_write_file`, `fs_delete`, …) passes
-through `fs_allowlist::assert_within_allowed_roots` before touching a path. **Enforced by**
-the gate itself, called at every command's own entry point in `src-tauri/src/fs.rs` — there
-is no shared middleware layer to bypass by adding a command that forgets the call.
-
-### A dropped path is readable only after the host saw the drop
-
-`fs_read_dropped_path` serves a path the renderer names, so on Linux the host does not trust
-the name: it records a drag's paths for 60 s only once that drag is dropped (WebKitGTK also asks
-for drag data while the pointer merely hovers), and otherwise accepts a path only while another
-application's copy holds it on the system clipboard (a page can write a URI list on copy, so a
-clipboard this process owns grants nothing). Every other path is refused with the path in the
-error. Windows keeps the direct read because WebView2 gives the host no
-drop signal to observe.
-
-**Why.** WebKitGTK delivers a file-manager drop as a URI list with no path-bearing `File`, so
-the renderer must ask the host to read the path. Without the allowlist, a compromised renderer
-could name any file on disk and have the host return its bytes.
 
 ## Channels and state
 
@@ -102,6 +66,13 @@ channel's v1 daemon still runs.
 
 **Why.** The installed v1 release may still be in use on the same machine, and its state is
 the user's history; nothing in v2 can restore it once overwritten.
+
+### The renderer's debug log is development-only
+
+The motion and frame probes reach the host through `HostBridge.logDebug`. The host appends one
+NDJSON record per call to `<channel dir>/v2/userdata/logs/app-debug.ndjson`, and only while it
+runs as a development build or a named channel. A stable release writes no such file, so
+probe traffic cannot become a production log.
 
 ## Other tools' files
 
@@ -153,7 +124,7 @@ noticed comments and docs had accumulated diary content.
 The `apps/web` style guards pin a per-file count in `scripts/web-style-baseline/`; CI fails
 on a raised count or a stale entry, and `--update` only lowers pins.
 `check-web-style.sh --self-test` points each guard at its `bad` fixture and requires it to
-fail. `check-env-ratchet.sh` holds direct environment reads under `src-tauri/src/sys`.
+fail.
 
 **Why.** Editing a pin is a smaller diff than fixing the violation, and it is the fix an
 agent finds first; a check that never fires on a broken fixture is silence wearing the shape

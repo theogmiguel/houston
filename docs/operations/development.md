@@ -12,26 +12,24 @@ Production launch is `scripts/start.sh` ([release](release.md)); the WSL2 testbe
 Installed once on a bare Debian/Ubuntu machine (another distribution's package names will
 differ):
 
-1. Rust toolchain via rustup, `https://rustup.rs` (CI uses the `stable` toolchain).
-2. Node.js at the version in the root `package.json`, and pnpm 12.14.0 (or
+1. Node.js at the version in the root `package.json`, and pnpm 12.14.0 (or
    `npx -y pnpm@12.14.0`).
-3. The pinned Tauri CLI: `cargo install tauri-cli --version 2.11.4 --locked`.
-4. Linux system packages:
+2. Rust via rustup, `https://rustup.rs`, for the host's native helper crates.
+3. Linux system packages:
 
    ```sh
    sudo apt-get install -y \
-     build-essential pkg-config libdbus-1-dev libwebkit2gtk-4.1-dev \
-     librsvg2-dev patchelf libfuse2 libayatana-appindicator3-dev \
+     build-essential pkg-config libfuse2 xz-utils binutils \
      gnome-keyring dbus-x11 minisign
    ```
 
-   `patchelf` and `libfuse2` are only needed to bundle an AppImage. Ubuntu 22.04 is the
-   release baseline, and it names the FUSE 2 runtime `libfuse2`. `gnome-keyring` and
-   `dbus-x11` provide the private Secret Service that `scripts/with-test-keyring.sh` starts
-   for host tests. `minisign` is required by `python3 scripts/test-update-manifest.py` and
-   the release manifest generator.
+   `libfuse2`, `xz-utils` and `binutils` are only needed to bundle the AppImage and deb.
+   Ubuntu 22.04 is the release baseline, and it names the FUSE 2 runtime `libfuse2`.
+   `gnome-keyring` and `dbus-x11` provide the private Secret Service that
+   `scripts/with-test-keyring.sh` starts for server tests. `minisign` is required by
+   `python3 scripts/test-update-manifest.py` and the release manifest generator.
 
-5. Workspace dependencies, once per clone and whenever `pnpm-lock.yaml` changes:
+4. Workspace dependencies, once per clone and whenever `pnpm-lock.yaml` changes:
    `pnpm install --frozen-lockfile`.
 
 Then:
@@ -40,19 +38,18 @@ Then:
 ./scripts/dev.sh                 # dev channel, build + run
 ```
 
-The development script builds the renderer (`pnpm --filter @houston-app/web build`), the
-server bundle (`pnpm --filter @houston-app/cli build:bundle`) and the debug host (`cargo build` in
-`src-tauri`), then `exec`s `src-tauri/target/debug/houston-tauri --channel <target>`. The
-host attaches to the channel's running server or spawns one detached. Close the existing
-window for that channel before relaunching: a second launch focuses the running instance
-instead of loading the rebuilt renderer.
+The development script runs `pnpm run build:desktop`, which builds the renderer, the server
+bundle and the Electron main process, then launches
+`node apps/desktop/scripts/start-electron.mjs` with the resolved channel. The host attaches
+to the channel's running server or spawns one detached. Close the existing window for that
+channel before relaunching: a second launch focuses the running instance instead of loading
+the rebuilt renderer.
 
 ### Windows prerequisites
 
 Use Windows 10 or 11 on x86_64 with the Rust MSVC toolchain, Visual Studio C++ build tools
-and a Windows SDK. Install Git for Windows, Node.js, pnpm and the same pinned Tauri CLI. The
-app uses WebView2; install its runtime if it is missing. From PowerShell at the repository
-root:
+and a Windows SDK for the native helper crates. Install Git for Windows, Node.js and pnpm.
+From PowerShell at the repository root:
 
 ```powershell
 pnpm install --frozen-lockfile
@@ -98,8 +95,9 @@ refuse `--fresh` from a pane on its own target channel.
 ./scripts/dev.sh --print-target  # print resolved channel/state dir, no side effects
 ```
 
-**No hot reload.** The renderer is a built artifact embedded by the host. Re-run the
-development script after a renderer edit.
+`scripts/dev.sh` builds a static renderer. For hot reload while working on the renderer,
+run `pnpm dev:desktop`, which serves the Vite dev server and launches Electron against it
+with state in the worktree.
 
 ### `scripts/oom-shield.sh`
 
@@ -119,13 +117,6 @@ lowered priority, so `systemd-oomd` has a smaller victim than your whole termina
 
 **Never run two Cargo workloads concurrently**, shielded or not.
 
-### Cargo dev profile
-
-`src-tauri/Cargo.toml` sets `[profile.dev] debug = "line-tables-only"` and
-`[profile.dev.package."*"] debug = false`: dependencies get no debug info, Houston's code
-keeps line tables for exact backtraces. Full DWARF for a debugging session:
-`CARGO_PROFILE_DEV_DEBUG=2 cargo build`.
-
 ### Disk usage
 
 Every checkout and worktree has its own `target/`, which only grows. Agent worktrees under
@@ -143,12 +134,10 @@ Every checkout and worktree has its own `target/`, which only grows. Agent workt
 
 ### Env knobs (developer-facing)
 
-| Var                              | Effect                                                            |
-| -------------------------------- | ----------------------------------------------------------------- |
-| `HOUSTON_DEVTOOLS=1`             | Opens the webview devtools on launch.                             |
-| `HOUSTON_NODE=<path>`            | The Node.js the host runs the server with in a development build. |
-| `HOUSTON_V2_SERVER_ENTRY=<path>` | The server entry the host starts instead of the bundled one.      |
-| `RUST_LOG`                       | `tracing` filter for the host log (default `houston_tauri=info`). |
+| Var               | Effect                                                         |
+| ----------------- | -------------------------------------------------------------- |
+| `HOUSTON_CHANNEL` | Names the channel; unset or `release` uses `~/.houston`.       |
+| `HOUSTON_HOME`    | Overrides the base directory, keeping state beside a checkout. |
 
 ## Checks
 
@@ -156,8 +145,8 @@ Every checkout and worktree has its own `target/`, which only grows. Agent workt
 
 **Per item** (in the package or crate touched), run constantly:
 
-- `src-tauri`: `cargo fmt`, `cargo clippy --all-targets -- -D warnings` and the touched
-  tests (`cargo test <module>::`).
+- `apps/desktop/native` and `native`: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`
+  and the touched tests (`cargo test <module>::`).
 - `apps/` and `packages/`: the package's `typecheck` and the touched tests; for the server,
   `pnpm --filter @houston-app/cli exec vp test run <files>`.
 
@@ -166,8 +155,8 @@ with three jobs on Windows.
 
 ### Full gate commands
 
-**The workspace** (the web build first: `src-tauri` embeds it at compile time, and
-`tauri::generate_context!()` panics without `apps/web/dist`):
+**The workspace** (the web build first: the server bundle copies `apps/web/dist` and the
+desktop host serves it):
 
 ```
 pnpm -r typecheck
@@ -176,7 +165,7 @@ pnpm --filter @houston-app/contracts --filter @houston-app/shared test
 pnpm --filter @houston-app/cli exec vp test run src/houston
 ```
 
-**`src-tauri/`**:
+**The native crates** (`apps/desktop/native` and `native`):
 
 ```
 cargo fmt --all --check
@@ -184,7 +173,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test -- --test-threads=3
 ```
 
-On Linux, run `cargo test` through `scripts/with-test-keyring.sh` when keychain tests need
+On Linux, run server tests through `scripts/with-test-keyring.sh` when keychain tests need
 a Secret Service. Never run `gnome-keyring-daemon --unlock` directly on a desktop host, even
 inside `dbus-run-session`: it opens the host's real login keyring and re-encrypts it with
 the password read from stdin. The wrapper points `XDG_DATA_HOME` and `XDG_RUNTIME_DIR` at a
@@ -197,37 +186,31 @@ Hermetic, sub-second text-search invariants, run in `ci.yml`'s `static` job.
 | Script                          | Enforces                                                                                                                                   |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `check-dev-channel.sh`          | `dev.sh`'s channel resolution: inherited env never wins, `--channel` validation, `--print-target` has no side effects                      |
-| `check-kill-guard.sh`           | `kill(2)` and the Win32 process calls only in `src-tauri/src/sys/pid.rs`                                                                   |
 | `check-case-collisions.sh`      | tracked paths stay unique on case-insensitive filesystems                                                                                  |
-| `check-spawn-window.sh`         | `src-tauri/clippy.toml` still disallows bare `Command::new`, and `src-tauri/src/sys/spawn.rs` applies `CREATE_NO_WINDOW`                   |
-| `check-env-ratchet.sh`          | direct process-environment reads under `src-tauri/src/sys` only go down (`scripts/env-ratchet.baseline`, `--update` after removing one)    |
 | `check-doc-hygiene.sh`          | Markdown only in the allowed tree, with no dates, phase numbers, other product names or dead pointers; `static` runs it without `handoff/` |
 | `check-comment-hygiene.sh`      | a comment block is at most three lines and names no date, plan number, other app or person                                                 |
 | `check-web-style.sh`            | the `apps/web` design-system guards; `--self-test` proves each fires on its bad fixture                                                    |
-| `check-third-party-licenses.sh` | the committed inventory matches `src-tauri`'s Cargo graph and the pnpm workspace; it runs in the `static` job                              |
+| `check-third-party-licenses.sh` | the committed inventory matches the native crates' Cargo graphs and the pnpm workspace; it runs in the `static` job                        |
 
 The `apps/web` style rules keep a per-file count in `scripts/web-style-baseline/<rule>.baseline`.
 CI fails on a new file, a raised count or a stale entry; after removing a violation, lower
 the pin with `--update` (never raise it).
 
-`check-binary-fresh.sh` runs at install time, from `install-desktop.sh`: it refuses a
-release binary older than `src-tauri`'s sources.
-
 ### What CI runs
 
 [CI](../internals/ci.md) describes the workflow, its path filter and its runner variables.
 
-| Job                                              | What it does                                                                                                                                                                                                   |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `changes`                                        | classifies the changed paths; an unclassified path runs every job                                                                                                                                              |
-| `static`                                         | the safety scripts, workflow syntax, the offline release-note and updater-signature regression tests, doc and comment hygiene, the web style guards, the upstream licence notice and the third-party inventory |
-| `typecheck`                                      | the cached workspace typecheck                                                                                                                                                                                 |
-| `test-packages`                                  | the workspace package suites and the script tests                                                                                                                                                              |
-| `test-server`                                    | the server suites in six shards                                                                                                                                                                                |
-| `test-web`, `test-web-browser`                   | the renderer build and its unit and browser vitest projects                                                                                                                                                    |
-| `native-linux`, `native-macos`, `native-windows` | the web build, then host formatting, Clippy and tests; only native paths run them on PRs                                                                                                                       |
-| `server-windows`                                 | the server suites nightly and on pushes, never on PRs                                                                                                                                                          |
-| `ci-gate`                                        | the aggregate check every branch requires                                                                                                                                                                      |
+| Job                            | What it does                                                                                                                                                                                                   |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `changes`                      | classifies the changed paths; an unclassified path runs every job                                                                                                                                              |
+| `static`                       | the safety scripts, workflow syntax, the offline release-note and updater-signature regression tests, doc and comment hygiene, the web style guards, the upstream licence notice and the third-party inventory |
+| `typecheck`                    | the cached workspace typecheck                                                                                                                                                                                 |
+| `test-packages`                | the workspace package suites and the script tests                                                                                                                                                              |
+| `test-server`                  | the server suites in six shards                                                                                                                                                                                |
+| `test-web`, `test-web-browser` | the renderer build and its unit and browser vitest projects                                                                                                                                                    |
+| `native-linux`                 | `cargo test` for the Houston 1 cleanup helper and the Linux capture helpers; only native paths run it on PRs                                                                                                   |
+| `server-windows`               | the server suites nightly and on pushes, never on PRs                                                                                                                                                          |
+| `ci-gate`                      | the aggregate check every branch requires                                                                                                                                                                      |
 
 ## Maintaining model data
 
@@ -242,16 +225,13 @@ missing or incorrect metadata upstream to LiteLLM.
 ### Linux
 
 ```
-./scripts/build-app.sh                  # appimage,deb
-./scripts/build-app.sh --bundles deb    # other bundle targets
+pnpm dist:desktop:linux                                    # AppImage
+node scripts/build-desktop-artifact.ts --platform linux --target deb
 ```
 
-Build the renderer and stage the server first (`pnpm --filter @houston-app/web build`,
-`pnpm --filter @houston-app/cli build:exe`, `node scripts/stage-v2-server.mjs`). `build-app.sh`
-re-execs itself under `scripts/oom-shield.sh` (`-j 3`) unless already shielded, then runs
-`CARGO_BUILD_JOBS=3 cargo tauri build --bundles <targets>`. Output lands at
-`src-tauri/target/release/bundle/{appimage,deb}/*.{AppImage,deb}`. Use `build-app.sh`
-rather than invoking `cargo tauri build` directly.
+Output lands in `release/` as `Houston-<version>-x86_64.AppImage` and
+`Houston-<version>-amd64.deb`. The packaging script stages the server, builds the native
+helpers and hands the result to electron-builder.
 
 Local install, separate from packaging:
 
@@ -259,24 +239,18 @@ Local install, separate from packaging:
 ./scripts/install-desktop.sh
 ```
 
-It refuses a missing or stale app binary and, after writing `launch.sh`, `start.sh` and the
-`.desktop` file, any of them that names the repository's own path, so the installed app
-never executes a path inside the repository. Installs
-`~/.local/lib/houston/{houston, start.sh, launch.sh}`,
-`~/.local/share/applications/houston.desktop` and icon PNGs under
-`~/.local/share/icons/hicolor/**/apps/houston.png`.
+It copies `release/Houston-*.AppImage` into `~/.local/lib/houston/houston.AppImage` (or takes
+`TR_APP`), then writes `launch.sh`, `start.sh` and the `.desktop` file. After writing them it
+refuses any of them that names the repository's own path, so the installed app never
+executes a path inside the repository.
 
 ### Windows
 
 ```
-./scripts/build-app.ps1
-cd src-tauri
-cargo tauri bundle --bundles nsis --ci --no-sign
+pnpm dist:desktop:win
 ```
 
-`build-app.ps1` builds the application with `cargo tauri build --no-bundle --ci -- --locked`;
-the separate `bundle` command packages that build without compiling it again. Release
-workflows provide the updater signing keys. Output lands at
-`src-tauri/target/release/bundle/nsis/*.exe`.
+Output lands in `release/` as `Houston-<version>-x64-setup.exe`. The release workflows supply
+the updater signing keys.
 
 **The Windows installer is not Authenticode-signed**, so SmartScreen warns on first run.

@@ -1025,7 +1025,7 @@ export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
 /**
- * An image the host read from the system clipboard. Some webviews (WebKitGTK) expose a pasted
+ * An image the host read from the system clipboard. Some webviews expose a pasted
  * image or file in no `clipboardData` field, so the host reads it natively instead.
  */
 export interface HostClipboardImage {
@@ -1035,7 +1035,7 @@ export interface HostClipboardImage {
 }
 
 /**
- * A file or folder named by a file-manager drop or clipboard entry. WebKitGTK can deliver such a
+ * A file or folder named by a file-manager drop or clipboard entry. A webview can deliver such a
  * drag as `text/uri-list` only, with no `File` that carries a path, so the host reads the path.
  */
 export interface HostDroppedPath {
@@ -1095,12 +1095,17 @@ export interface HostBridge {
   getRelayTelemetryEnabled: () => boolean;
   getPathForFile: (file: File) => string;
   getClientPlatform: () => string;
+  /**
+   * Appends one diagnostic record to the host's debug log. Sources and messages are
+   * bounded, and the log is written only in development and named channels.
+   */
+  logDebug: (source: string, message: string, payload?: unknown) => Promise<void>;
   setNotificationBadge: (badge: { count: number; image: string | null }) => Promise<void>;
   onNotificationBadgeClear: (listener: () => void) => () => void;
   /** Whether the host can show an OS notification itself; Linux needs a notification service. */
   notificationsSupported: () => Promise<{ supported: boolean; reason: string | null }>;
   /**
-   * Shows an OS notification through the host, which WebKitGTK does not wire up.
+   * Shows an OS notification through the host, for webviews that do not wire it up.
    * `id` is the thread's stable key; a click arrives through `onThreadNotificationFocus`.
    */
   notifyThread: (payload: {
@@ -1225,6 +1230,17 @@ export interface HostBridge {
   getWindowFullscreenState: () => boolean;
   onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
   getWindowZoomFactor: () => number;
+  /** Houston draws the window chrome under a frameless window. */
+  closeWindow: () => Promise<void>;
+  minimizeWindow: () => Promise<void>;
+  toggleMaximizeWindow: () => Promise<void>;
+  getWindowMaximizedState: () => boolean;
+  onWindowMaximizedStateChange: (listener: (maximized: boolean) => void) => () => void;
+  /**
+   * The desktop's window button layout (`close,minimize:` style), or null when the
+   * platform fixes the buttons itself.
+   */
+  getWindowButtonLayout: () => Promise<string | null>;
   getUpdateState: () => Promise<DesktopUpdateState>;
   /** `minimumVersion` is a track switch's checked release; nothing older is offered after. */
   setUpdateChannel: (

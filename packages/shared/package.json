@@ -335,6 +335,10 @@
       "types": "./src/testing/symlinks.ts",
       "import": "./src/testing/symlinks.ts"
     },
+    "./testing/windowsServerEnvironmentFixture": {
+      "types": "./src/testing/windowsServerEnvironmentFixture.ts",
+      "import": "./src/testing/windowsServerEnvironmentFixture.ts"
+    },
     "./httpReadiness": {
       "types": "./src/httpReadiness.ts",
       "import": "./src/httpReadiness.ts"

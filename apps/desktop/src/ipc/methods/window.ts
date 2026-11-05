@@ -1,0 +1,551 @@
+import {
+  ContextMenuItemSchema,
+  DesktopAppBrandingSchema,
+  DesktopEnvironmentBootstrapSchema,
+  DesktopThemeSchema,
+  EDITORS,
+  EditorId,
+  PickedThemeFileSchema,
+  PickFolderOptionsSchema,
+  PRIMARY_LOCAL_ENVIRONMENT_ID,
+  REMOTE_CAPABLE_EDITOR_IDS,
+  SystemSettingsPaneSchema,
+  type PickedThemeFile,
+} from "@houston-app/contracts";
+import { PROJECT_FAVICON_EXTENSIONS } from "@houston-app/shared/projectFavicon";
+import { resolveEditorCommand } from "@houston-app/shared/editor";
+import * as HostProcess from "@houston-app/shared/HostProcess";
+import { isRelayTracingEnabled } from "@houston-app/shared/otelEnvironment";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+
+import * as DesktopBackendConfiguration from "../../backend/DesktopBackendConfiguration.ts";
+import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
+import {
+  localEnvironmentBootstrapEntries,
+  type LocalEnvironmentBootstrapSource,
+} from "./localEnvironmentBootstraps.ts";
+import * as DesktopLocalEnvironmentAuth from "../../backend/DesktopLocalEnvironmentAuth.ts";
+import * as DesktopServerControl from "../../backend/DesktopServerControl.ts";
+import * as DesktopServerStatus from "../../backend/DesktopServerStatus.ts";
+import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
+import * as DesktopManagedPolicy from "../../app/DesktopManagedPolicy.ts";
+import * as DesktopAppSettings from "../../settings/DesktopAppSettings.ts";
+import * as DesktopWslBackend from "../../wsl/DesktopWslBackend.ts";
+import * as DesktopWslEnvironment from "../../wsl/DesktopWslEnvironment.ts";
+import * as ElectronApp from "../../electron/ElectronApp.ts";
+import * as ElectronDialog from "../../electron/ElectronDialog.ts";
+import * as ElectronMenu from "../../electron/ElectronMenu.ts";
+import * as ElectronShell from "../../electron/ElectronShell.ts";
+import * as ElectronTheme from "../../electron/ElectronTheme.ts";
+import * as ElectronWindow from "../../electron/ElectronWindow.ts";
+import * as Electron from "electron";
+import * as MacPermissions from "../../permissions/MacPermissions.ts";
+import { safariPermissionCheck } from "../../preview/BrowserImport/SafariPermission.ts";
+import * as IpcChannels from "../channels.ts";
+import type { DesktopIpcInvokeEvent } from "../DesktopIpc.ts";
+import * as DesktopIpc from "../DesktopIpc.ts";
+import {
+  readWindowButtonLayout,
+  runWindowButtonLayoutCommand,
+} from "../../window/windowButtonLayout.ts";
+import {
+  extractDistroFromUncPath,
+  resolveWslPickFolderDefaultPath,
+  wslUncPathToLinuxPath,
+} from "../../wsl/wslPathParsing.ts";
+
+const ContextMenuPosition = Schema.Struct({
+  x: Schema.Number,
+  y: Schema.Number,
+});
+
+const ContextMenuInput = Schema.Struct({
+  items: Schema.Array(ContextMenuItemSchema),
+  position: Schema.optionalKey(ContextMenuPosition),
+});
+
+export const getAppBranding = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_APP_BRANDING_CHANNEL,
+  result: Schema.NullOr(DesktopAppBrandingSchema),
+  handler: Effect.fn("desktop.ipc.window.getAppBranding")(function* () {
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    return environment.branding;
+  }),
+});
+
+/**
+ * Relay traces leave the machine, so a policy with `telemetry: false`, or one that cannot be read,
+ * stops them. Read once here: a sync IPC handler cannot wait on the filesystem.
+ */
+export const installRelayTelemetryEnabled = Effect.fn("desktop.ipc.window.installRelayTelemetry")(
+  function* () {
+    const ipc = yield* DesktopIpc.DesktopIpc;
+    const enabled =
+      isRelayTracingEnabled(yield* HostProcess.Environment) &&
+      (yield* (yield* DesktopManagedPolicy.DesktopManagedPolicy).read.pipe(
+        Effect.map((found) => found?.document.limits?.telemetry !== false),
+        Effect.orElseSucceed(() => false),
+      ));
+    yield* ipc.handleSync(
+      DesktopIpc.makeSyncIpcMethod({
+        channel: IpcChannels.GET_RELAY_TELEMETRY_ENABLED_CHANNEL,
+        result: Schema.Boolean,
+        handler: () => Effect.succeed(enabled),
+      }),
+    );
+  },
+);
+
+export const getSystemLocale = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_SYSTEM_LOCALE_CHANNEL,
+  result: Schema.String,
+  handler: Effect.fn("desktop.ipc.window.getSystemLocale")(function* () {
+    const electronApp = yield* ElectronApp.ElectronApp;
+    return yield* electronApp.systemLocale;
+  }),
+});
+
+export const getWindowFullscreenState = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_WINDOW_FULLSCREEN_STATE_CHANNEL,
+  result: Schema.Boolean,
+  handler: Effect.fn("desktop.ipc.window.getWindowFullscreenState")(function* () {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const window = yield* electronWindow.currentMainOrFirst;
+    return Option.isSome(window) && window.value.isFullScreen();
+  }),
+});
+
+/** The window that sent the request, so a command cannot act on another one. */
+function senderWindow(event: DesktopIpcInvokeEvent | undefined): Electron.BrowserWindow | null {
+  if (event === undefined) {
+    return null;
+  }
+  const contents = Electron.webContents.fromId(event.sender.id);
+  if (contents === undefined) {
+    return null;
+  }
+  const window = Electron.BrowserWindow.fromWebContents(contents);
+  return window !== null && !window.isDestroyed() ? window : null;
+}
+
+export const closeWindow = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.CLOSE_WINDOW_CHANNEL,
+  payload: Schema.Undefined,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.closeWindow")((_input, event) =>
+    Effect.sync(() => {
+      senderWindow(event)?.close();
+    }),
+  ),
+});
+
+export const minimizeWindow = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.MINIMIZE_WINDOW_CHANNEL,
+  payload: Schema.Undefined,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.minimizeWindow")((_input, event) =>
+    Effect.sync(() => {
+      senderWindow(event)?.minimize();
+    }),
+  ),
+});
+
+export const toggleMaximizeWindow = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.TOGGLE_MAXIMIZE_WINDOW_CHANNEL,
+  payload: Schema.Undefined,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.toggleMaximizeWindow")((_input, event) =>
+    Effect.sync(() => {
+      const window = senderWindow(event);
+      if (window === null) {
+        return;
+      }
+      if (window.isMaximized()) {
+        window.unmaximize();
+      } else {
+        window.maximize();
+      }
+    }),
+  ),
+});
+
+export const getWindowMaximizedState = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_WINDOW_MAXIMIZED_STATE_CHANNEL,
+  result: Schema.Boolean,
+  handler: Effect.fn("desktop.ipc.window.getWindowMaximizedState")(function* () {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const window = yield* electronWindow.currentMainOrFirst;
+    return Option.isSome(window) && window.value.isMaximized();
+  }),
+});
+
+export const getWindowButtonLayout = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.GET_WINDOW_BUTTON_LAYOUT_CHANNEL,
+  payload: Schema.Undefined,
+  result: Schema.NullOr(Schema.String),
+  handler: Effect.fn("desktop.ipc.window.getWindowButtonLayout")(function* () {
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    return yield* readWindowButtonLayout(environment.platform, runWindowButtonLayoutCommand);
+  }),
+});
+
+export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL,
+  result: Schema.Array(DesktopEnvironmentBootstrapSchema),
+  handler: Effect.fn("desktop.ipc.window.getLocalEnvironmentBootstraps")(function* () {
+    const pool = yield* DesktopBackendPool.DesktopBackendPool;
+    const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+    const instances = yield* pool.list;
+    const sources: LocalEnvironmentBootstrapSource[] = [];
+    for (const instance of instances) {
+      const config = yield* instance.currentConfig;
+      const snapshot = yield* instance.snapshot;
+      const runningDistro = Option.match(config, {
+        onNone: () => null,
+        onSome: (value) => value.runningDistro ?? null,
+      });
+      sources.push({
+        id: instance.id,
+        label: runningDistro === null ? yield* instance.label : `WSL (${runningDistro})`,
+        runningDistro,
+        config,
+        snapshot,
+        currentBootstrapToken: yield* configuration.currentBootstrapToken,
+      });
+    }
+    return localEnvironmentBootstrapEntries(sources);
+  }),
+});
+
+function extractWslDistroFromEnvironmentId(envId: string): string | null {
+  if (!envId.startsWith(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX)) {
+    return null;
+  }
+  const suffix = envId.slice(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX.length);
+  return suffix === "default" || suffix.length === 0 ? null : suffix;
+}
+
+const DesktopLocalServerStatusSchema = Schema.Struct({
+  state: Schema.Literals(["starting", "ready", "error"]),
+  origin: Schema.optional(Schema.String),
+  port: Schema.optional(Schema.Number),
+  pid: Schema.optional(Schema.Number),
+  attached: Schema.optional(Schema.Boolean),
+  baseDir: Schema.optional(Schema.String),
+  logPath: Schema.optional(Schema.String),
+  error: Schema.optional(Schema.NullOr(Schema.String)),
+  warning: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+export const getServerStatus = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.GET_SERVER_STATUS_CHANNEL,
+  payload: Schema.Undefined,
+  result: Schema.NullOr(DesktopLocalServerStatusSchema),
+  handler: Effect.fn("desktop.ipc.window.getServerStatus")(function* () {
+    const status = yield* DesktopServerStatus.DesktopServerStatus;
+    return Option.getOrNull(yield* status.get);
+  }),
+});
+
+const RestartServerResultSchema = Schema.Union([
+  Schema.Struct({ ok: Schema.Literal(true), status: DesktopLocalServerStatusSchema }),
+  Schema.Struct({ ok: Schema.Literal(false), error: Schema.String }),
+]);
+
+export const restartServer = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.RESTART_SERVER_CHANNEL,
+  payload: Schema.Undefined,
+  result: RestartServerResultSchema,
+  handler: Effect.fn("desktop.ipc.window.restartServer")(function* () {
+    const control = yield* DesktopServerControl.DesktopServerControl;
+    return yield* control.restart.pipe(
+      Effect.map((status) => ({ ok: true as const, status })),
+      Effect.catchTags({
+        DesktopServerRestartError: (error) =>
+          Effect.succeed({ ok: false as const, error: error.message }),
+      }),
+    );
+  }),
+});
+
+export const invalidateLocalEnvironmentBearerToken = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.INVALIDATE_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.invalidateLocalEnvironmentBearerToken")(function* () {
+    const localAuth = yield* DesktopLocalEnvironmentAuth.DesktopLocalEnvironmentAuth;
+    yield* localAuth.invalidate;
+  }),
+});
+
+export const getLocalEnvironmentBearerToken = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.String,
+  handler: Effect.fn("desktop.ipc.window.getLocalEnvironmentBearerToken")(function* () {
+    const localAuth = yield* DesktopLocalEnvironmentAuth.DesktopLocalEnvironmentAuth;
+    return yield* localAuth.getBearerToken;
+  }),
+});
+
+export const pickFolder = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PICK_FOLDER_CHANNEL,
+  payload: Schema.UndefinedOr(PickFolderOptionsSchema),
+  result: Schema.NullOr(Schema.String),
+  handler: Effect.fn("desktop.ipc.window.pickFolder")(function* (options) {
+    const dialog = yield* ElectronDialog.ElectronDialog;
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
+    const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
+    const settings = yield* appSettings.get;
+    // A picked path only means something to a backend on this machine.
+    if (!settings.localEnvironmentEnabled) {
+      return null;
+    }
+    const targetId = options?.targetEnvironmentId;
+    const wslDistroFromTarget =
+      targetId !== undefined && targetId.startsWith(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX)
+        ? extractWslDistroFromEnvironmentId(targetId)
+        : null;
+    const useWsl =
+      targetId !== undefined &&
+      targetId !== PRIMARY_LOCAL_ENVIRONMENT_ID &&
+      targetId.startsWith(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX);
+    // Match the orchestrator's persisted distro fallback for wsl:default.
+    const wslDistro = useWsl ? (wslDistroFromTarget ?? settings.wslDistro) : null;
+    const defaultPath = useWsl
+      ? Option.fromNullishOr(
+          resolveWslPickFolderDefaultPath(
+            options,
+            { distro: wslDistro },
+            yield* wslEnvironment.listDistros,
+            Option.getOrNull(yield* wslEnvironment.getUserHome(wslDistro)),
+          ),
+        )
+      : environment.resolvePickFolderDefaultPath(options);
+    const selectedPath = yield* dialog.pickFolder({
+      owner: yield* electronWindow.focusedMainOrFirst,
+      defaultPath,
+    });
+    if (Option.isNone(selectedPath)) {
+      return null;
+    }
+    if (!useWsl) {
+      return selectedPath.value;
+    }
+
+    const linuxUncPath = wslUncPathToLinuxPath(selectedPath.value);
+    if (linuxUncPath !== null) {
+      return linuxUncPath;
+    }
+
+    const converted = yield* wslEnvironment.windowsToWslPath(
+      extractDistroFromUncPath(selectedPath.value) ?? wslDistro,
+      selectedPath.value,
+    );
+    return Option.getOrElse(converted, () => selectedPath.value);
+  }),
+});
+
+export const pickProjectFavicon = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PICK_PROJECT_FAVICON_CHANNEL,
+  payload: Schema.UndefinedOr(Schema.String),
+  result: Schema.NullOr(Schema.String),
+  handler: Effect.fn("desktop.ipc.window.pickProjectFavicon")(function* (initialPath) {
+    const dialog = yield* ElectronDialog.ElectronDialog;
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
+    if (!(yield* appSettings.get).localEnvironmentEnabled) {
+      return null;
+    }
+    const paths = yield* dialog.pickFiles({
+      owner: yield* electronWindow.focusedMainOrFirst,
+      defaultPath: Option.fromNullishOr(initialPath),
+      multiple: false,
+      filters: [
+        {
+          name: "Images",
+          extensions: PROJECT_FAVICON_EXTENSIONS.map((extension) => extension.slice(1)),
+        },
+      ],
+    });
+    return paths[0] ?? null;
+  }),
+});
+
+export const setTheme = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.SET_THEME_CHANNEL,
+  payload: DesktopThemeSchema,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.setTheme")(function* (theme) {
+    const electronTheme = yield* ElectronTheme.ElectronTheme;
+    yield* electronTheme.setSource(theme);
+  }),
+});
+
+export const showContextMenu = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.CONTEXT_MENU_CHANNEL,
+  payload: ContextMenuInput,
+  result: Schema.NullOr(Schema.String),
+  handler: Effect.fn("desktop.ipc.window.showContextMenu")(function* (input) {
+    const electronMenu = yield* ElectronMenu.ElectronMenu;
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const window = yield* electronWindow.focusedMainOrFirst;
+    if (Option.isNone(window)) {
+      return null;
+    }
+
+    const selectedItemId = yield* electronMenu.showContextMenu({
+      window: window.value,
+      items: input.items,
+      position: Option.fromNullishOr(input.position),
+    });
+    return Option.getOrNull(selectedItemId);
+  }),
+});
+
+export const openExternal = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.OPEN_EXTERNAL_CHANNEL,
+  payload: Schema.String,
+  result: Schema.Boolean,
+  handler: Effect.fn("desktop.ipc.window.openExternal")(function* (url) {
+    const shell = yield* ElectronShell.ElectronShell;
+    return yield* shell.openExternal(url);
+  }),
+});
+
+export const openSystemSettings = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.OPEN_SYSTEM_SETTINGS_CHANNEL,
+  payload: SystemSettingsPaneSchema,
+  result: Schema.Boolean,
+  handler: Effect.fn("desktop.ipc.window.openSystemSettings")(function* (pane) {
+    const shell = yield* ElectronShell.ElectronShell;
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    if (environment.platform !== "darwin") return false;
+    const owner = Electron.BrowserWindow.getFocusedWindow();
+    const opened = yield* shell.openSystemSettings(pane);
+    if (opened && environment.isPackaged) {
+      const permissions = yield* MacPermissions.MacPermissions;
+      const isGranted = yield* safariPermissionCheck;
+      yield* permissions.showHelper(pane, owner, isGranted);
+    }
+    return opened;
+  }),
+});
+
+export const probeRemoteEditors = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PROBE_REMOTE_EDITORS_CHANNEL,
+  payload: Schema.Undefined,
+  result: Schema.Array(EditorId),
+  handler: Effect.fn("desktop.ipc.window.probeRemoteEditors")(function* () {
+    const available: Array<EditorId> = [];
+    const env = yield* HostProcess.Environment;
+    for (const editorId of REMOTE_CAPABLE_EDITOR_IDS) {
+      const editor = EDITORS.find((editor) => editor.id === editorId);
+      if (editor && Option.isSome(yield* resolveEditorCommand(editor, env))) {
+        available.push(editorId);
+      }
+    }
+    return available;
+  }),
+});
+
+export const pasteAsText = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PASTE_AS_TEXT_CHANNEL,
+  payload: Schema.Undefined,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.pasteAsText")(function* (_input, event) {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const window = yield* electronWindow.main;
+    if (
+      event === undefined ||
+      Option.isNone(window) ||
+      window.value.isDestroyed() ||
+      window.value.webContents.id !== event.sender.id
+    ) {
+      return;
+    }
+    const focused = Electron.webContents.getFocusedWebContents();
+    if (
+      focused &&
+      !focused.isDestroyed() &&
+      Electron.BrowserWindow.fromWebContents(focused) === window.value
+    ) {
+      focused.paste();
+    }
+  }),
+});
+
+export const revealWindow = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.REVEAL_WINDOW_CHANNEL,
+  payload: Schema.Undefined,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.revealWindow")(function* (_input, event) {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const window = yield* electronWindow.main;
+    if (
+      event === undefined ||
+      Option.isNone(window) ||
+      window.value.webContents.id !== event.sender.id
+    ) {
+      return;
+    }
+    yield* electronWindow.reveal(window.value);
+  }),
+});
+
+const PICKED_THEME_FILE_MAX_BYTES = 256 * 1024;
+
+export const pickThemeFiles = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PICK_THEME_FILES_CHANNEL,
+  payload: Schema.Undefined,
+  result: Schema.NullOr(Schema.Array(PickedThemeFileSchema)),
+  handler: Effect.fn("desktop.ipc.window.pickThemeFiles")(function* () {
+    const dialog = yield* ElectronDialog.ElectronDialog;
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const extensionsDir = path.join(yield* HostProcess.HomeDirectory, ".vscode", "extensions");
+    const defaultPath = yield* fileSystem
+      .exists(extensionsDir)
+      .pipe(Effect.orElseSucceed(() => false));
+    const paths = yield* dialog.pickFiles({
+      owner: yield* electronWindow.focusedMainOrFirst,
+      defaultPath: defaultPath ? Option.some(extensionsDir) : Option.none(),
+      filters: [{ name: "JSON", extensions: ["json"] }],
+      multiple: true,
+    });
+    if (paths.length === 0) {
+      return null;
+    }
+    return yield* Effect.forEach(paths, (filePath) => {
+      const name = path.basename(filePath);
+      return Effect.gen(function* () {
+        const info = yield* fileSystem.stat(filePath);
+        const size = Number(info.size);
+        if (size > PICKED_THEME_FILE_MAX_BYTES) {
+          return { name, size, text: "" } satisfies PickedThemeFile;
+        }
+        const text = yield* fileSystem.readFileString(filePath);
+        return { name, size, text } satisfies PickedThemeFile;
+      }).pipe(Effect.orElseSucceed((): PickedThemeFile => ({ name, size: 0, text: "" })));
+    });
+  }),
+});
+
+export const checkSystemPermission = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.CHECK_SYSTEM_PERMISSION_CHANNEL,
+  payload: SystemSettingsPaneSchema,
+  result: Schema.Boolean,
+  handler: Effect.fn("desktop.ipc.window.checkSystemPermission")(function* () {
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    if (environment.platform !== "darwin") return false;
+    const check = yield* safariPermissionCheck;
+    return yield* Effect.promise(check);
+  }),
+});

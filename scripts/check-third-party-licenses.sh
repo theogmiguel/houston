@@ -8,7 +8,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-COMMITTED="src-tauri/resources/third-party-licenses.json"
+COMMITTED="apps/desktop/resources/third-party-licenses.json"
 GENERATOR="scripts/gen-third-party-licenses.mjs"
 
 fail() {

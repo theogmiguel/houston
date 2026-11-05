@@ -70,7 +70,7 @@ describe("readTextFromClipboard", () => {
     expect(readClipboardText).not.toHaveBeenCalled();
   });
 
-  it("falls back to the host when WebKitGTK refuses the browser read", async () => {
+  it("falls back to the host when the browser refuses the read", async () => {
     const readText = vi.fn().mockRejectedValue(new Error("not allowed"));
     const readClipboardText = vi.fn().mockResolvedValue("host");
     vi.stubGlobal("window", { hostBridge: { readClipboardText } });

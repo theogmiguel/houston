@@ -7,6 +7,7 @@ import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { AnimatedHeight } from "../AnimatedHeight";
 import { useThreadDropZone, type ThreadDragSource } from "../../grid/threadDrag";
 import { cn } from "../../lib/utils";
+import { MOTION_FEEDBACK_DEFAULT_EASE } from "../ui/motion-recipes";
 import { SidebarShelfHeader } from "../sidebar/SidebarListMarkers";
 import {
   SETTLED_SHELF_EXPANDED_KEY,
@@ -103,7 +104,10 @@ export function GridShelves({
                 <button
                   type="button"
                   onClick={() => setSettledVisibleCount((count) => count + SETTLED_TAIL_PAGE_COUNT)}
-                  className="flex h-7 items-center gap-2 rounded-(--r-ctl) pr-2 pl-7.5 text-left text-xs text-secondary-label transition-colors duration-(--motion-feedback) hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                  className={cn(
+                    "flex h-7 items-center gap-2 rounded-(--r-ctl) pr-2 pl-7.5 text-left text-xs text-secondary-label hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+                    MOTION_FEEDBACK_DEFAULT_EASE,
+                  )}
                 >
                   <ChevronDownIcon aria-hidden className="size-3 shrink-0" />
                   Show {Math.min(hiddenClosedCount, SETTLED_TAIL_PAGE_COUNT)} more

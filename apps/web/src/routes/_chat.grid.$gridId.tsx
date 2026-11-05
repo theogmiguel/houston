@@ -19,7 +19,7 @@ import { Button } from "../components/ui/button";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { isDesktopHost } from "../env";
-import { isTauriHost } from "../lib/desktopWindow";
+import { isNativeDesktopHost } from "../lib/desktopWindow";
 import { MAX_GRID_THREADS, useGrid, useGridStore, workspaceKeyOf } from "../grid/gridStore";
 import { moveThreadToGridOrExplain, moveToGridTargets } from "../grid/moveToGrid";
 import { showThreadMovedToast } from "../grid/moveFeedback";
@@ -381,7 +381,7 @@ function GridRoute() {
         >
           <WorkspacePageHeader
             desktop={isDesktopHost}
-            reserveNativeControls={!panelBesideGrid && (isDesktopHost || isTauriHost())}
+            reserveNativeControls={!panelBesideGrid && isNativeDesktopHost()}
             className={cn(panelBesideGrid && "pr-0")}
           >
             <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">

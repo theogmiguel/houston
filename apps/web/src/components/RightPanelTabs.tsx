@@ -60,8 +60,7 @@ import {
   useState,
 } from "react";
 
-import { isDesktopHost } from "~/env";
-import { isTauriHost } from "~/lib/desktopWindow";
+import { isNativeDesktopHost } from "~/lib/desktopWindow";
 import type { DesktopPreviewOverlay } from "~/previewStateStore";
 import type { RightPanelSurface } from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
@@ -1035,7 +1034,7 @@ function RightPanelTab(
 
 export function RightPanelTabs(props: RightPanelTabsProps) {
   const focusedSurface = props.surfaces.find((surface) => surface.id === props.activeSurfaceId);
-  const ownsDesktopTitleBar = (isDesktopHost || isTauriHost()) && props.mode === "inline";
+  const ownsDesktopTitleBar = isNativeDesktopHost() && props.mode === "inline";
   const browserProfiles = useBrowserDefaults().profiles;
   const { resolvedTheme } = useTheme();
   const reducedMotion = useReducedMotion();
@@ -1534,11 +1533,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           props.mode === "inline" && !props.layoutControls ? "pr-3" : "pr-1",
           ownsDesktopTitleBar && "drag-region",
           ownsDesktopTitleBar &&
-            "wco:pr-(--workspace-native-controls-inset) tauri:pr-(--workspace-native-controls-inset)",
+            "wco:pr-(--workspace-native-controls-inset) custom-chrome:pr-(--workspace-native-controls-inset)",
           props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
         )}
         data-right-panel-tabbar
-        data-tauri-drag-region={ownsDesktopTitleBar ? "deep" : undefined}
+        data-drag-region={ownsDesktopTitleBar ? "deep" : undefined}
       >
         {tabStripContent}
         {props.layoutControls}

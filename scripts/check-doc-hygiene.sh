@@ -15,7 +15,7 @@ allowed='^(AGENTS|CLAUDE|README|CONTRIBUTING|SECURITY|CODE_OF_CONDUCT)\.md$|^doc
 allowed+='|^\.github/triage/PLAYBOOK\.md$|^apps/server/README\.md$|^apps/server/src/orchestration-v2/testkit/fixtures/[^/]+/README\.md$'
 allowed+='|^apps/web/src/terminal/ghostty/README\.md$|^apps/web/test/fixtures/usage-limits-hub/README\.md$|^packages/client-runtime/README\.md$'
 
-stray="$(git ls-files -co --exclude-standard '*.md' | grep -vE '/node_modules/|^\.research/|^src-tauri/patches/' | grep -vE "$allowed" || true)"
+stray="$(git ls-files -co --exclude-standard '*.md' | grep -vE '/node_modules/|^\.research/' | grep -vE "$allowed" || true)"
 if [ -n "$stray" ]; then
   fail=1
   say "check-doc-hygiene: Markdown outside the allowed tree (the root files, docs/{user,internals,operations}/, .github/, package and fixture READMEs):"
@@ -25,7 +25,7 @@ fi
 
 # .github/triage/PLAYBOOK.md is a prompt kept byte-identical to its source, so it
 # carries that source's wording rather than Houston's documentation rules.
-mapfile -t docs < <(git ls-files -co --exclude-standard '*.md' | grep -vE '/node_modules/|^\.research/|^src-tauri/patches/|^\.github/triage/PLAYBOOK\.md$')
+mapfile -t docs < <(git ls-files -co --exclude-standard '*.md' | grep -vE '/node_modules/|^\.research/|^\.github/triage/PLAYBOOK\.md$')
 hit() {
   local out
   out="$(printf '%s\n' "${docs[@]}" | grep -vE "$3" | xargs -r grep -nEi "$2" 2>/dev/null || true)"

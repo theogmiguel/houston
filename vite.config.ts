@@ -169,7 +169,7 @@ export default defineConfig({
       "*.tsbuildinfo",
       "**/routeTree.gen.ts",
       // Written by scripts/gen-third-party-licenses.mjs; CI compares it byte for byte.
-      "src-tauri/resources/third-party-licenses.json",
+      "apps/desktop/resources/third-party-licenses.json",
       "**/*.graphql.ts",
       "packages/source-control-github/schema/**",
       "apps/server/schema/**",

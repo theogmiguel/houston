@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--houston-font-sans);
+  --font-mono: var(--houston-font-mono);
+  --color-background: var(--houston-background);
+  --color-foreground: var(--houston-foreground);
+  --color-popover: var(--houston-popover);
+  --color-popover-foreground: var(--houston-popover-foreground);
+  --color-primary: var(--houston-primary);
+  --color-primary-foreground: var(--houston-primary-foreground);
+  --color-muted: var(--houston-muted);
+  --color-muted-foreground: var(--houston-muted-foreground);
+  --color-accent: var(--houston-accent);
+  --color-accent-foreground: var(--houston-accent-foreground);
+  --color-border: var(--houston-border);
+  --color-input: var(--houston-input);
+  --color-ring: var(--houston-ring);
+  --radius-sm: calc(var(--houston-radius) - 4px);
+  --radius-md: calc(var(--houston-radius) - 2px);
+  --radius-lg: var(--houston-radius);
+  --radius-xl: calc(var(--houston-radius) + 4px);
+  --radius-2xl: calc(var(--houston-radius) + 8px);
+}
+
+:host {
+  --houston-font-sans:
+    "DM Sans Variable", "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+    sans-serif;
+  --houston-font-mono:
+    "SF Mono", "SFMono-Regular", "JetBrains Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  --houston-radius: 0.625rem;
+  --houston-background: white;
+  --houston-foreground: oklch(0.269 0 0);
+  --houston-popover: white;
+  --houston-popover-foreground: oklch(0.269 0 0);
+  --houston-primary: oklch(0.488 0.217 264);
+  --houston-primary-foreground: white;
+  --houston-muted: rgb(0 0 0 / 4%);
+  --houston-muted-foreground: oklch(0.556 0 0);
+  --houston-accent: rgb(0 0 0 / 4%);
+  --houston-accent-foreground: oklch(0.269 0 0);
+  --houston-border: rgb(0 0 0 / 8%);
+  --houston-input: rgb(0 0 0 / 10%);
+  --houston-ring: oklch(0.488 0.217 264);
+  color: var(--houston-foreground);
+  font-family: var(--houston-font-sans);
+}
+
+* {
+  box-sizing: border-box;
+  border-color: var(--houston-border);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--houston-ring) 72%, transparent);
+  outline-offset: -2px;
+}

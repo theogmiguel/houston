@@ -43,7 +43,7 @@ import {
   CommandList,
 } from "../ui/command";
 import { Kbd, KbdGroup } from "../ui/kbd";
-import { overlayMotion } from "../ui/overlayMotion";
+import { overlayMotionFromEdge } from "../ui/overlayMotion";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { PierreEntryIcon } from "./PierreEntryIcon";
@@ -155,8 +155,8 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
       <div
         ref={listRef}
         className={cn(
-          overlayMotion,
-          "origin-bottom flex min-h-0 w-full flex-col overflow-hidden rounded-lg border border-(--border) bg-(--raised) p-0.5 text-headline shadow-(--shadow-1)",
+          overlayMotionFromEdge,
+          "flex min-h-0 w-full flex-col overflow-hidden rounded-lg border border-(--border) bg-(--raised) p-0.5 text-headline shadow-(--shadow-1)",
         )}
         data-composer-command-drawer="true"
       >

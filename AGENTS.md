@@ -1,7 +1,7 @@
 # Houston contributor instructions
 
-Houston is a local-first desktop application for coding agents on Linux and Windows. A
-Tauri host starts, or attaches to, a detached TypeScript server for its channel; the
+Houston is a local-first desktop application for coding agents on Linux and Windows. An
+Electron host starts, or attaches to, a detached TypeScript server for its channel; the
 renderer presents each agent conversation as a **thread**. Closing the application detaches
 the client; the server and its agent runs continue.
 
@@ -57,7 +57,7 @@ conflicts with the task, explain the conflict and obtain maintainer direction.
   directories. Ported code is pushed only with the MIT notice in `NOTICE` and
   `third-party-licenses.config.json`.
 
-<!-- Host and renderer invariants (Theo): the Tauri host, the desktop bridge, the renderer
+<!-- Host and renderer invariants (Theo): the Electron host, the desktop bridge, the renderer
      base and style guards, the terminal drawer. Until then the rule below stands. -->
 
 - **Renderer:** the web app under `apps/web`. Its primitives adopt Houston's tokens and
@@ -136,10 +136,11 @@ The [development runbook](docs/operations/development.md) contains exact command
   represent states the system can produce; composed fixtures are labelled as composed.
 - Server code that reaches a provider, GitHub, Notion, Slack or the keychain is tested against
   replay fixtures, local fakes and the in-memory keychain, never the real service.
-- For host changes, run `cargo fmt`, `cargo clippy --all-targets -- -D warnings` and
-  `cargo test` in `src-tauri` (it embeds the `@houston-app/web` build, so build that first). On
-  Linux, run heavy builds under `scripts/oom-shield.sh`, with `nice -n 19` and `-j 3`. On
-  Windows, limit Cargo to three jobs. Never run concurrent Cargo workloads.
+- For desktop-host changes, run the package's typecheck and tests, then `cargo fmt`,
+  `cargo clippy --all-targets -- -D warnings` and `cargo test` in each native crate under
+  `apps/desktop/native` and `native`. On Linux, run heavy builds under `scripts/oom-shield.sh`,
+  with `nice -n 19` and `-j 3`. On Windows, limit Cargo to three jobs. Never run concurrent
+  Cargo workloads.
 - Diagnose failures using the discriminator appropriate to the failure mode in
   [testing](docs/internals/testing.md); a standalone rerun is not sufficient for every case.
 - Push and PR CI runs the static guards, the workspace typecheck and suites, the renderer unit
@@ -160,8 +161,8 @@ The [development runbook](docs/operations/development.md) contains exact command
   require explicit authorization.
 - Only a release changes versions. Feature PRs must not edit the three version manifests.
   The manually dispatched **Cut release** workflow uses `scripts/set-version.sh` to update
-  the three manifests and `src-tauri/Cargo.lock`, commit, tag, build and create a draft
-  release. Stable cuts require the tip of `main`, an unused tag and a version newer than the
+  the three manifests (`apps/desktop`, `apps/server`, `apps/web`), commit, tag, build and
+  create a draft release. Stable cuts require the tip of `main`, an unused tag and a version newer than the
   last stable release. See the [release runbook](docs/operations/release.md).
 - A manually pushed `v*` tag starts no workflow; releases are produced only by **Cut
   release**. `build-installers.yml` builds selected OSes (both by default) and files nothing.
@@ -195,8 +196,8 @@ The server owns threads and agent runs independently of connected clients. See t
 - `apps/web`: the renderer.
 - `packages/contracts`: the server ↔ renderer schema; Houston's under `src/houston/`.
 - `packages/*`: the provider, source-control and shared packages.
-- `src-tauri`: the desktop host, server supervision, desktop bridge and tray; host utilities
-  under `src/sys/`.
+- `apps/desktop`: the Electron host, server supervision, desktop bridge and tray.
+- `apps/desktop/native` and `native`: the host's native helper crates.
 - `scripts/`: development, build, installation and safety checks.
 - Keep provider complexity at provider boundaries, server models testable and renderer
   logic focused on presentation. Change only what the task requires.
@@ -210,7 +211,7 @@ The server owns threads and agent runs independently of connected clients. See t
 
 ### Motion
 
-The renderer ships in a WebKitGTK webview, so motion must stay on the compositor.
+The renderer ships in an Electron webview, so motion must stay on the compositor.
 
 - Name a role, never a raw value: `duration-(--motion-overlay-in)`, `ease-standard` or
   `ease-exit`. The roles live in `apps/web/src/index.css` (`--motion-*`), mirrored for
@@ -227,7 +228,6 @@ The renderer ships in a WebKitGTK webview, so motion must stay on the compositor
   stay instant. Hover reveals fade opacity; they never toggle `display`.
 - Grid cells move by FLIP (`motion/paneMotion.ts`) and maximize through a stand-in card
   (`motion/maximizeMotion.ts`), both on the `registry.ts` spring. Measure grid changes with
-  the frame probe (`source: "frame-probe"` in `~/.houston-dev/app-debug.ndjson`).
+  the frame probe (`source: "frame-probe"` in
+  `~/.houston-dev/v2/userdata/logs/app-debug.ndjson`).
 - Reduced motion turns every role to 0ms in CSS and `resolveMotion` returns `off` in script.
-- Run motion tests on both engines: `HOUSTON_TEST_BROWSER=webkit` switches the browser
-  project to WebKit.

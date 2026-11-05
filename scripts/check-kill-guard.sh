@@ -2,7 +2,7 @@
 
 # The kill(2) broadcast guard: an unchecked u32 pid cast to pid_t turned
 # u32::MAX into -1 and signalled every process the user owned. Raw kill calls
-# are forbidden outside src-tauri/src/sys/pid.rs; comment lines are exempt.
+# are forbidden outside apps/desktop/native/houston-v1-cleanup/src/sys/pid.rs; comment lines are exempt.
 
 set -euo pipefail
 
@@ -11,13 +11,13 @@ cd "$repo_root"
 
 fail=0
 
-offenders="$(grep -rn 'libc::kill(' src-tauri/ \
+offenders="$(grep -rn 'libc::kill(' apps/desktop/native/ native/ \
   --include='*.rs' \
-  | grep -v '^src-tauri/src/sys/pid\.rs:' \
+  | grep -v '^apps/desktop/native/houston-v1-cleanup/src/sys/pid\.rs:' \
   | grep -vE ':[[:space:]]*(//|\*)' \
   || true)"
 if [ -n "$offenders" ]; then
-  echo "FAIL: raw libc::kill( found outside src-tauri/src/sys/pid.rs:" >&2
+  echo "FAIL: raw libc::kill( found outside apps/desktop/native/houston-v1-cleanup/src/sys/pid.rs:" >&2
   echo "$offenders" >&2
   echo "      kill(2) never receives an unchecked pid. Route this call through" >&2
   echo "      crate::sys::pid (checked_pid / checked_process_group /" >&2
@@ -29,26 +29,26 @@ if [ -n "$offenders" ]; then
   echo "      kill(0,..) = your whole process group)." >&2
   fail=1
 else
-  echo "ok: no raw libc::kill( outside src-tauri/src/sys/pid.rs"
+  echo "ok: no raw libc::kill( outside apps/desktop/native/houston-v1-cleanup/src/sys/pid.rs"
 fi
 
-offenders="$(grep -rln 'nix::sys::signal\|syscall(' src-tauri/ --include='*.rs' || true)"
+offenders="$(grep -rln 'nix::sys::signal\|syscall(' apps/desktop/native/ native/ --include='*.rs' || true)"
 if [ -n "$offenders" ]; then
   echo "FAIL: an alternate route to the kill(2)/signal(7) syscall was found:" >&2
   echo "$offenders" >&2
-  echo "      Route through src-tauri/src/sys/pid.rs instead." >&2
+  echo "      Route through apps/desktop/native/houston-v1-cleanup/src/sys/pid.rs instead." >&2
   fail=1
 else
   echo "ok: no nix::sys::signal or direct syscall( route around the guard"
 fi
 
-offenders="$(grep -rn 'OpenProcess(\|TerminateProcess(\|TerminateJobObject(\|taskkill' src-tauri/ \
+offenders="$(grep -rn 'OpenProcess(\|TerminateProcess(\|TerminateJobObject(\|taskkill' apps/desktop/native/ native/ \
   --include='*.rs' \
-  | grep -v '^src-tauri/src/sys/pid\.rs:' \
+  | grep -v '^apps/desktop/native/houston-v1-cleanup/src/sys/pid\.rs:' \
   | grep -vE ':[[:space:]]*(//|\*)' \
   || true)"
 if [ -n "$offenders" ]; then
-  echo "FAIL: raw Win32 process call found outside src-tauri/src/sys/pid.rs:" >&2
+  echo "FAIL: raw Win32 process call found outside apps/desktop/native/houston-v1-cleanup/src/sys/pid.rs:" >&2
   echo "$offenders" >&2
   echo "      OpenProcess/TerminateProcess/TerminateJobObject/taskkill are this platform's kill(2)." >&2
   echo "      Route through crate::sys::pid instead -- see pid.rs's module doc" >&2
@@ -56,7 +56,7 @@ if [ -n "$offenders" ]; then
   echo "      must hit the checked_pid gate before any OS call does." >&2
   fail=1
 else
-  echo "ok: no raw Win32 process calls outside src-tauri/src/sys/pid.rs"
+  echo "ok: no raw Win32 process calls outside apps/desktop/native/houston-v1-cleanup/src/sys/pid.rs"
 fi
 
 exit "$fail"

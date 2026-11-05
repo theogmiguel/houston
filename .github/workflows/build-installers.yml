@@ -7,12 +7,12 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Branch, tag or SHA to build; empty builds the ref this workflow was dispatched from'
+        description: "Branch, tag or SHA to build; empty builds the ref this workflow was dispatched from"
         type: string
-        default: ''
+        default: ""
         required: false
       platform:
-        description: 'Installer platforms to validate; windows also builds the Linux bundles'
+        description: "Installer platforms to validate; windows also builds the Linux bundles"
         type: choice
         options: [all, linux, windows, macos]
         default: all
@@ -21,9 +21,9 @@ on:
 permissions:
   contents: read
 
-# Version-PINNED, not a caret range — an unpinned CLI would change the bundle
-# under us. The one source of truth; a job output (below) is the only way to
-# hand it to a called workflow, since a reusable workflow's `with:` can't resolve `env`.
+# Version-PINNED, not a caret range: the signing CLI must not change under us.
+# A job output is the only way to hand it to a called workflow, since a reusable
+# workflow's `with:` cannot resolve `env`.
 env:
   TAURI_CLI_VERSION: 2.11.4
 
@@ -47,9 +47,8 @@ jobs:
         run: |
           set -euo pipefail
           version=$(./scripts/check-manifest-versions.sh)
-          # The three manifests are what the bundle filenames and server archive
-          # names read; src-tauri/Cargo.lock carries the host crate's own version
-          # and must move with them.
+          # The three manifests are what the bundle filenames and runtime
+          # versions read, and they must agree before anything is built.
           ./scripts/set-version.sh --check "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -91,23 +90,11 @@ jobs:
       require_signing: false
     secrets: inherit
 
-  windows-compile:
+  windows-bundle:
     needs: version-guard
     if: inputs.platform == 'all' || inputs.platform == 'windows'
     uses: ./.github/workflows/release-windows.yml
     with:
-      stage: compile
-      ref: ${{ needs.version-guard.outputs.source_sha }}
-      version: ${{ needs.version-guard.outputs.version }}
-      tauri_cli_version: ${{ needs.version-guard.outputs.tauri_cli_version }}
-      require_signing: false
-
-  windows-bundle:
-    needs: [version-guard, linux-bundle, windows-compile]
-    if: inputs.platform == 'all' || inputs.platform == 'windows'
-    uses: ./.github/workflows/release-windows.yml
-    with:
-      stage: bundle
       ref: ${{ needs.version-guard.outputs.source_sha }}
       version: ${{ needs.version-guard.outputs.version }}
       tauri_cli_version: ${{ needs.version-guard.outputs.tauri_cli_version }}

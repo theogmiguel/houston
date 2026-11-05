@@ -86,6 +86,7 @@ vi.mock("../ChatView", async () => {
         ) : null}
         <div data-chat-composer-body="true">
           <div data-testid="editor" contentEditable suppressContentEditableWarning />
+          <p data-thread-find-text="true">A long answer that must stay readable in every pane.</p>
         </div>
         <div data-chat-composer-footer="true">
           <button type="button">Submit</button>
@@ -474,6 +475,34 @@ describe("GridThreadCell surfaces", () => {
     ]);
   });
 
+  it("grows the label actions to their own width over the whole reveal", async () => {
+    state.draftSession = null;
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      { onMaximize: vi.fn() },
+    );
+
+    const actions = screen.container
+      .querySelector('[aria-label="More cell actions"]')
+      ?.closest("div") as HTMLElement;
+    await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
+    await vi.waitFor(() => expect(actions.getAnimations().length).toBeGreaterThan(0));
+    const transitions = actions.getAnimations() as CSSTransition[];
+    for (const transition of transitions) transition.pause();
+    const reveal = transitions[0]!;
+    const duration = Number(reveal.effect?.getTiming().duration);
+    for (const transition of transitions) transition.currentTime = duration / 2;
+    const midWidth = actions.getBoundingClientRect().width;
+    for (const transition of transitions) transition.finish();
+    const finalWidth = actions.getBoundingClientRect().width;
+
+    expect(finalWidth).toBeGreaterThan(0);
+    // Halfway through, the strip is still opening rather than already at full width.
+    expect(midWidth).toBeGreaterThan(0);
+    expect(midWidth).toBeLessThan(finalWidth * 0.95);
+  });
+
   it("splits down from the same menu", async () => {
     state.draftSession = null;
     const onSplit = vi.fn();
@@ -749,6 +778,31 @@ describe("GridThreadCell pending question", () => {
       expect(option.getBoundingClientRect().width).toBeGreaterThan(150);
       expect(option.getBoundingClientRect().height).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("GridThreadCell timeline", () => {
+  it.each([
+    { width: 360, height: 600, density: "glance" },
+    { width: 520, height: 600, density: "compact" },
+  ])("keeps the whole answer readable in a $density pane", async ({ width, height, density }) => {
+    state.draftSession = null;
+    const container = document.createElement("div");
+    container.style.width = `${width}px`;
+    container.style.height = `${height}px`;
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      undefined,
+      { container },
+    );
+
+    const cell = screen.container.querySelector<HTMLElement>("[data-grid-cell]");
+    if (cell === null) throw new Error("grid cell missing");
+    await vi.waitFor(() => expect(cell.dataset.density).toBe(density));
+
+    const text = screen.container.querySelector<HTMLElement>("[data-thread-find-text]");
+    if (text === null) throw new Error("answer text missing");
+    expect(getComputedStyle(text).webkitLineClamp).toBe("none");
   });
 });
 

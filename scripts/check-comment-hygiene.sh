@@ -13,10 +13,9 @@ if [ "$#" -gt 0 ]; then
   files=("$@")
 else
   mapfile -t files < <(git ls-files -co --exclude-standard \
-    'src-tauri/*.rs' \
     'scripts/*.sh' 'scripts/*.ps1' \
     '.github/*.yml' \
-    | grep -vE '/generated/|/node_modules/|/ghostty/vendor/|^src-tauri/patches/')
+    | grep -vE '/generated/|/node_modules/|/ghostty/vendor/')
 fi
 
 [ "${#files[@]}" -gt 0 ] || exit 0

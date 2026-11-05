@@ -1,0 +1,267 @@
+import * as MacPermissions from "./permissions/MacPermissions.ts";
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code !== "EPIPE") throw err;
+  });
+}
+
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+// @effect-diagnostics-next-line nodeBuiltinImport:off - Version output must flush before Electron exits, without acquiring the runtime.
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+
+import * as Electron from "electron";
+
+import * as NetService from "@houston-app/shared/Net";
+import * as HostProcess from "@houston-app/shared/HostProcess";
+import type { RemoteHoustonRunnerOptions } from "@houston-app/ssh/tunnel";
+import serverPackageJson from "../../server/package.json" with { type: "json" };
+
+import * as DesktopIpc from "./ipc/DesktopIpc.ts";
+import * as ElectronApp from "./electron/ElectronApp.ts";
+import * as ElectronDialog from "./electron/ElectronDialog.ts";
+import * as ElectronMenu from "./electron/ElectronMenu.ts";
+import * as ElectronPowerMonitor from "./electron/ElectronPowerMonitor.ts";
+import * as ElectronProtocol from "./electron/ElectronProtocol.ts";
+import * as ElectronSafeStorage from "./electron/ElectronSafeStorage.ts";
+import * as ElectronShell from "./electron/ElectronShell.ts";
+import * as ElectronTheme from "./electron/ElectronTheme.ts";
+import * as ElectronUpdater from "./electron/ElectronUpdater.ts";
+import * as ElectronWindow from "./electron/ElectronWindow.ts";
+import * as DesktopApp from "./app/DesktopApp.ts";
+import * as DesktopAppActivation from "./app/DesktopAppActivation.ts";
+import * as DesktopWebLinks from "./app/DesktopWebLinks.ts";
+import * as DesktopAppIdentity from "./app/DesktopAppIdentity.ts";
+import * as DesktopAppLinks from "./app/DesktopAppLinks.ts";
+import * as DesktopConnectionCatalogStore from "./app/DesktopConnectionCatalogStore.ts";
+import * as DesktopV1Cleanup from "./app/DesktopV1Cleanup.ts";
+import * as DesktopCliCommand from "./app/DesktopCliCommand.ts";
+import * as DesktopApplicationMenu from "./window/DesktopApplicationMenu.ts";
+import * as DesktopAssets from "./app/DesktopAssets.ts";
+import * as DesktopBackendConfiguration from "./backend/DesktopBackendConfiguration.ts";
+import * as DesktopBackendPool from "./backend/DesktopBackendPool.ts";
+import * as DesktopBootstrapSecret from "./backend/DesktopBootstrapSecret.ts";
+import * as DesktopServerAttachment from "./backend/DesktopServerAttachment.ts";
+import * as DesktopServerControl from "./backend/DesktopServerControl.ts";
+import * as DesktopServerStatus from "./backend/DesktopServerStatus.ts";
+import * as DesktopLocalEnvironmentAuth from "./backend/DesktopLocalEnvironmentAuth.ts";
+import * as DesktopNetworkInterfaces from "./backend/DesktopNetworkInterfaces.ts";
+import * as DesktopEnvironment from "./app/DesktopEnvironment.ts";
+import * as DesktopManagedPolicy from "./app/DesktopManagedPolicy.ts";
+import * as DesktopLifecycle from "./app/DesktopLifecycle.ts";
+import * as DesktopLinuxUrlHandler from "./app/DesktopLinuxUrlHandler.ts";
+import * as DesktopShutdown from "./app/DesktopShutdown.ts";
+import * as DesktopObservability from "./app/DesktopObservability.ts";
+import * as DesktopServerExposure from "./backend/DesktopServerExposure.ts";
+import * as DesktopClientSettings from "./settings/DesktopClientSettings.ts";
+import * as DesktopSnapShot from "./snapShot/DesktopSnapShot.ts";
+import * as DesktopAppSettings from "./settings/DesktopAppSettings.ts";
+import * as DesktopPreReadyPlatform from "./app/DesktopPreReadyPlatform.ts";
+import * as DesktopShellEnvironment from "./shell/DesktopShellEnvironment.ts";
+import * as DesktopSshCliRunner from "./ssh/DesktopSshCliRunner.ts";
+import * as DesktopSshEnvironment from "./ssh/DesktopSshEnvironment.ts";
+import * as DesktopSshPasswordPrompts from "./ssh/DesktopSshPasswordPrompts.ts";
+import * as DesktopState from "./app/DesktopState.ts";
+import * as DesktopLegacyLocalStorage from "./app/DesktopLegacyLocalStorage.ts";
+import * as DesktopTelemetryPublisher from "./telemetry/DesktopTelemetryPublisher.ts";
+import * as DesktopRendererHistory from "./telemetry/DesktopRendererHistory.ts";
+import * as DesktopUpdatePolicy from "./updates/DesktopUpdatePolicy.ts";
+import * as DesktopUpdates from "./updates/DesktopUpdates.ts";
+import * as BrowserImport from "./preview/BrowserImport/BrowserImport.ts";
+import * as LinuxBrowserSecret from "./preview/BrowserImport/LinuxBrowserSecret.ts";
+import * as BrowserSession from "./preview/BrowserSession.ts";
+import * as DesktopBrowserHost from "./preview/DesktopBrowserHost.ts";
+import * as PreviewManager from "./preview/Manager.ts";
+import * as PreviewPasskeys from "./preview/Passkeys.ts";
+import * as DesktopWindow from "./window/DesktopWindow.ts";
+import * as DesktopNotifications from "./notifications/DesktopNotifications.ts";
+import * as QuickComposer from "./quickComposer/QuickComposer.ts";
+import * as DesktopTray from "./tray/DesktopTray.ts";
+import * as TrayHost from "./tray/TrayHost.ts";
+import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
+import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
+import * as DesktopWslServerTree from "./wsl/DesktopWslServerTree.ts";
+
+if (process.argv.includes("--version")) {
+  try {
+    NodeFS.writeSync(process.stdout.fd, `${Electron.app.getVersion()}\n`);
+  } catch (error) {
+    if (!(error instanceof Error) || !("code" in error) || error.code !== "EPIPE") throw error;
+  }
+  Electron.app.exit(0);
+}
+
+const layerDesktopEnvironment = Layer.unwrap(
+  Effect.gen(function* () {
+    const metadata = yield* Effect.service(ElectronApp.ElectronApp).pipe(
+      Effect.flatMap((app) => app.metadata),
+    );
+    const platform = yield* HostProcess.Platform;
+    const processArch = yield* HostProcess.Architecture;
+    return DesktopEnvironment.layer({
+      dirname: __dirname,
+      homeDirectory: NodeOS.homedir(),
+      platform,
+      processArch,
+      ...metadata,
+    });
+  }),
+);
+
+const desktopSshCliRunner = (
+  environment: DesktopEnvironment.DesktopEnvironment["Service"],
+): RemoteHoustonRunnerOptions =>
+  DesktopSshCliRunner.resolveDesktopSshCliRunner({
+    isDevelopment: environment.isDevelopment,
+    devRemoteHoustonServerEntryPath: environment.devRemoteHoustonServerEntryPath,
+    serverVersion: serverPackageJson.version,
+    serverNodeEngineRange: serverPackageJson.engines.node,
+  });
+
+const layerDesktopSshEnvironment = Layer.unwrap(
+  Effect.gen(function* () {
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    return DesktopSshEnvironment.layer({
+      resolveCliRunner: Effect.succeed(desktopSshCliRunner(environment)),
+    });
+  }),
+);
+
+const layerElectron = Layer.mergeAll(
+  ElectronApp.layer,
+  ElectronDialog.layer,
+  ElectronMenu.layer,
+  ElectronPowerMonitor.layer,
+  ElectronProtocol.layer,
+  ElectronSafeStorage.layer,
+  ElectronShell.layer,
+  ElectronTheme.layer,
+  ElectronUpdater.layer,
+  ElectronWindow.layer,
+  DesktopIpc.layer(Electron.ipcMain),
+);
+
+const layerDesktopFoundation = Layer.mergeAll(
+  MacPermissions.layer,
+  DesktopManagedPolicy.layer,
+  DesktopState.layer,
+  DesktopShutdown.layer,
+  DesktopLegacyLocalStorage.layer,
+  DesktopAppSettings.layer,
+  DesktopClientSettings.layer,
+  DesktopConnectionCatalogStore.layer,
+  DesktopAssets.layer,
+  DesktopObservability.layer,
+  DesktopRendererHistory.layer,
+).pipe(Layer.provideMerge(layerDesktopEnvironment));
+
+const layerDesktopSsh = layerDesktopSshEnvironment.pipe(
+  Layer.provideMerge(DesktopSshPasswordPrompts.layer()),
+);
+
+const layerDesktopServerExposure = DesktopServerExposure.layer.pipe(
+  Layer.provideMerge(DesktopNetworkInterfaces.layer),
+  Layer.provideMerge(layerDesktopFoundation),
+);
+
+const layerDesktopPreview = PreviewManager.layer.pipe(
+  Layer.provideMerge(DesktopBrowserHost.layer),
+  // IPC needs both services on the same BrowserSession.
+  Layer.provideMerge(BrowserImport.layer.pipe(Layer.provide(LinuxBrowserSecret.layer))),
+  Layer.provideMerge(BrowserSession.layer),
+  Layer.provideMerge(PreviewPasskeys.layer),
+  Layer.provideMerge(layerDesktopFoundation),
+);
+
+const layerDesktopTrayHost = TrayHost.layer.pipe(Layer.provideMerge(layerDesktopFoundation));
+
+const layerDesktopWindow = DesktopWindow.layer.pipe(
+  Layer.provideMerge(layerDesktopServerExposure),
+  Layer.provideMerge(layerDesktopPreview),
+  Layer.provideMerge(layerDesktopTrayHost),
+);
+
+const layerDesktopQuickComposer = QuickComposer.layer.pipe(
+  Layer.provideMerge(layerDesktopTrayHost),
+);
+
+const layerDesktopTray = DesktopTray.layer.pipe(
+  Layer.provideMerge(layerDesktopQuickComposer),
+  Layer.provideMerge(layerDesktopWindow),
+);
+
+const layerDesktopNotifications = DesktopNotifications.layer.pipe(
+  Layer.provideMerge(layerDesktopWindow),
+);
+
+const layerDesktopSnapShot = DesktopSnapShot.layer.pipe(
+  Layer.provideMerge(layerDesktopWindow),
+  Layer.provideMerge(layerDesktopFoundation),
+);
+const layerDesktopAppActivation = DesktopAppActivation.layer.pipe(
+  Layer.provide(layerDesktopWindow),
+);
+
+const layerDesktopBackend = DesktopBackendPool.layer.pipe(
+  Layer.provideMerge(DesktopAppIdentity.layer),
+  Layer.provideMerge(DesktopBackendConfiguration.layer),
+  Layer.provideMerge(DesktopServerAttachment.layer),
+  Layer.provideMerge(DesktopServerStatus.layer),
+  Layer.provideMerge(DesktopBootstrapSecret.layer),
+  Layer.provideMerge(DesktopWslEnvironment.layer),
+  Layer.provideMerge(DesktopWslServerTree.layer),
+  Layer.provideMerge(DesktopTelemetryPublisher.layer),
+  Layer.provideMerge(DesktopShellEnvironment.layer),
+  Layer.provideMerge(layerDesktopWindow),
+);
+
+const layerDesktopWslBackend = DesktopWslBackend.layer.pipe(
+  Layer.provideMerge(layerDesktopBackend),
+);
+
+const layerDesktopLocalEnvironmentAuth = DesktopLocalEnvironmentAuth.layer.pipe(
+  Layer.provideMerge(layerDesktopBackend),
+);
+
+const layerDesktopApplication = Layer.mergeAll(
+  DesktopLifecycle.layer,
+  layerDesktopAppActivation,
+  DesktopAppLinks.layer,
+  DesktopWebLinks.layer,
+  DesktopV1Cleanup.layer,
+  DesktopApplicationMenu.layer,
+  DesktopLinuxUrlHandler.layer,
+  DesktopCliCommand.layer,
+  DesktopServerControl.layer,
+  layerDesktopSsh,
+).pipe(
+  Layer.provideMerge(layerDesktopSnapShot),
+  Layer.provideMerge(
+    DesktopUpdates.layer.pipe(
+      Layer.provide(DesktopUpdatePolicy.layer),
+      // The same layer as the foundation's, so the policy is still read once.
+      Layer.provide(DesktopManagedPolicy.layer),
+    ),
+  ),
+  Layer.provideMerge(layerDesktopWslBackend),
+  Layer.provideMerge(layerDesktopLocalEnvironmentAuth),
+  Layer.provideMerge(layerDesktopTray),
+  Layer.provideMerge(layerDesktopNotifications),
+);
+
+// Pre-ready setup must not yield before Electron registers the privileged scheme.
+const layerDesktopRuntime = Layer.merge(
+  layerDesktopApplication,
+  DesktopPreReadyPlatform.layer,
+).pipe(
+  Layer.provideMerge(NodeHttpClient.layerUndici),
+  Layer.provideMerge(NetService.layer),
+  Layer.provideMerge(layerElectron),
+  Layer.provideMerge(NodeServices.layer),
+);
+
+DesktopApp.program.pipe(Effect.provide(layerDesktopRuntime), NodeRuntime.runMain);

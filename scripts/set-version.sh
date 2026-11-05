@@ -5,22 +5,24 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-# One command writes all four, because four hand edits is three chances to disagree
+# One command writes all three, because three hand edits is two chances to disagree
 # and `version-guard` only tells you afterwards, once a tag has already been pushed.
-# `--check` performs the same four reads and writes nothing.
+# `--check` performs the same three reads and writes nothing.
 usage() {
   cat >&2 <<'EOF'
 usage: scripts/set-version.sh <X.Y.Z[-rc.N]>
        scripts/set-version.sh --check <X.Y.Z[-rc.N]>
 
-Writes the version into the three manifests and the lockfile:
-  src-tauri/tauri.conf.json   .version
-  src-tauri/Cargo.toml        [package] version
+Writes the version into the three manifests:
+  apps/desktop/package.json   .version
   apps/server/package.json    .version
-  src-tauri/Cargo.lock        the workspace crate's entry
+  apps/web/package.json       .version
 
-With --check it writes nothing: each of the four must already read the version,
+With --check it writes nothing: each of the three must already read the version,
 or the script names the file that disagrees and exits 1.
+
+The native crates under apps/desktop/native and native keep their own independent
+versions and lockfiles; they do not ship under the release version.
 
 It writes nothing else: no tag, no commit, no release notes.
 EOF
@@ -44,46 +46,15 @@ if ! printf '%s' "$version" | grep -qE '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1
   exit 1
 fi
 
-# The reads below mirror the writes above. An empty read is a failure too: a
-# manifest that lost its version line is worse than one carrying the wrong one.
 manifest_json_version() {
   jq -r --arg key "$2" '.[$key] // empty' "$1"
-}
-
-manifest_toml_version() {
-  awk -v table="$2" '
-    $0 == "[" table "]" { inside = 1; next }
-    inside && /^\[/ { exit }
-    inside && /^version[[:space:]]*=/ {
-      sub(/^version[[:space:]]*=[[:space:]]*"/, "")
-      sub(/".*$/, "")
-      print
-      exit
-    }
-  ' "$1"
-}
-
-# Every `houston-*` package entry in a lockfile is a workspace crate (the write
-# path is `cargo update --workspace`), and each one must carry the version.
-lock_versions() {
-  awk '
-    /^\[\[package\]\]/ { name = ""; next }
-    /^name = "/ {
-      name = $0; sub(/^name = "/, "", name); sub(/"$/, "", name)
-      next
-    }
-    /^version = "/ && name ~ /^houston-/ {
-      version = $0; sub(/^version = "/, "", version); sub(/"$/, "", version)
-      print name " " version
-    }
-  ' "$1"
 }
 
 verify_version() {
   expected="$1"
   bad=0
 
-  for file in src-tauri/tauri.conf.json apps/server/package.json; do
+  for file in apps/desktop/package.json apps/server/package.json apps/web/package.json; do
     got="$(manifest_json_version "$file" version)"
     if [ "$got" != "$expected" ]; then
       echo "set-version: $file .version reads \"${got:-<missing>}\", expected \"$expected\"" >&2
@@ -91,33 +62,12 @@ verify_version() {
     fi
   done
 
-  got="$(manifest_toml_version src-tauri/Cargo.toml package)"
-  if [ "$got" != "$expected" ]; then
-    echo "set-version: src-tauri/Cargo.toml [package] version reads \"${got:-<missing>}\", expected \"$expected\"" >&2
-    bad=1
-  fi
-
-  for lock in src-tauri/Cargo.lock; do
-    entries="$(lock_versions "$lock")"
-    if [ -z "$entries" ]; then
-      echo "set-version: $lock carries no houston-* package at all; expected the workspace crates at \"$expected\"" >&2
-      bad=1
-      continue
-    fi
-    while read -r name got; do
-      if [ "$got" != "$expected" ]; then
-        echo "set-version: $lock entry $name reads \"$got\", expected \"$expected\"" >&2
-        bad=1
-      fi
-    done <<< "$entries"
-  done
-
   return "$bad"
 }
 
 if [ "$check" = "1" ]; then
   verify_version "$version" || exit 1
-  echo "set-version --check: the three manifests and the lockfile all read $version"
+  echo "set-version --check: the three manifests all read $version"
   exit 0
 fi
 
@@ -128,53 +78,29 @@ from pathlib import Path
 version = sys.argv[1]
 changed = []
 
-def write_json(path, key):
+def write_json(path):
     p = Path(path)
     raw = p.read_text(encoding="utf-8")
     doc = json.loads(raw)
-    if doc.get(key) == version:
+    if doc.get("version") == version:
         return
-    # Rewrite the one line rather than re-serialising: these files carry comments
-    # nowhere but their formatting is hand-kept, and json.dump would reflow them.
-    pattern = re.compile(rf'("{key}"\s*:\s*)"[^"]*"')
+    # Rewrite the one line rather than re-serialising: these files' formatting is
+    # hand-kept, and json.dump would reflow them.
+    pattern = re.compile(r'("version"\s*:\s*)"[^"]*"')
     new, n = pattern.subn(rf'\g<1>"{version}"', raw, count=1)
     if n != 1:
-        sys.exit(f'set-version: {path} has no single "{key}" line to rewrite')
+        sys.exit(f'set-version: {path} has no single "version" line to rewrite')
     p.write_text(new, encoding="utf-8")
     changed.append(path)
 
-def write_toml_version(path, table):
-    p = Path(path)
-    raw = p.read_text(encoding="utf-8")
-    # Scoped to the named table: an unscoped first match would hit a `version = `
-    # under [workspace.dependencies], which is what version-guard warns about.
-    start = raw.find(f"[{table}]")
-    if start == -1:
-        sys.exit(f"set-version: {path} has no [{table}] table")
-    end = raw.find("\n[", start + 1)
-    end = len(raw) if end == -1 else end
-    section = raw[start:end]
-    new_section, n = re.subn(r'(?m)^version\s*=\s*"[^"]*"', f'version = "{version}"', section, count=1)
-    if n != 1:
-        sys.exit(f"set-version: [{table}] in {path} has no single version line")
-    if new_section != section:
-        p.write_text(raw[:start] + new_section + raw[end:], encoding="utf-8")
-        changed.append(path)
-
-write_json("src-tauri/tauri.conf.json", "version")
-write_json("apps/server/package.json", "version")
-write_toml_version("src-tauri/Cargo.toml", "package")
+for path in ("apps/desktop/package.json", "apps/server/package.json", "apps/web/package.json"):
+    write_json(path)
 
 print("\n".join(changed) if changed else "(manifests already at this version)")
 PY
 
-# The lockfile carries the workspace crate's own version. `cargo update -w` rewrites
-# exactly those entries and touches no dependency, so a version bump never becomes a
-# dependency bump by accident.
-cargo update --workspace --manifest-path src-tauri/Cargo.toml --quiet
-
-# The write proves itself: a silent miss in any of the four would otherwise
+# The write proves itself: a silent miss in any of the three would otherwise
 # surface as a release whose runtime version disagrees with its filename.
 verify_version "$version" || exit 1
 
-echo "set-version: every manifest and the lockfile now read $version"
+echo "set-version: every manifest now reads $version"

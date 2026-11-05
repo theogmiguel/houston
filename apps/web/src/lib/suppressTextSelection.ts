@@ -1,6 +1,6 @@
 /**
  * Stops a pointer gesture from painting a text selection until the returned
- * release runs. WebKitGTK, like Safari, honours only the prefixed
+ * release runs. Safari and other WebKit engines honour only the prefixed
  * `-webkit-user-select`, so both spellings are set.
  */
 export function suppressTextSelection(element: HTMLElement): () => void {

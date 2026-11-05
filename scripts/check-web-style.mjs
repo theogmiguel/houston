@@ -357,7 +357,7 @@ function classTokens(expr) {
 
 function stripVariants(token) {
   return token.replace(
-    /^(?:(?:sm|md|lg|xl|2xl|dark|light|hover|focus|focus-visible|active|disabled|group-hover|group-focus|peer-hover|peer-focus|wco|tauri|motion-safe|motion-reduce|print|portrait|landscape|any-hover):)+/g,
+    /^(?:(?:sm|md|lg|xl|2xl|dark|light|hover|focus|focus-visible|active|disabled|group-hover|group-focus|peer-hover|peer-focus|wco|motion-safe|motion-reduce|print|portrait|landscape|any-hover):)+/g,
     "",
   );
 }

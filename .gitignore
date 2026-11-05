@@ -27,18 +27,6 @@ ui/harness-shots/
 # local CSS-conversion measuring harness, path-coupled to ui/ — never committed
 ui/p5-harness/
 
-# staged Tauri sidecars (<name>-<target triple>) — build output, never source
-src-tauri/binaries/
-
-# The Linux daemon staged for the Windows installer's WSL support
-# (scripts/build-app.ps1 fills it) — build output, never source
-src-tauri/wsl/
-
-# The v2 server executable and its runtime node_modules staged as Tauri resources
-# (scripts/stage-v2-server.mjs fills it) — build output, never source
-src-tauri/v2-server/*
-!src-tauri/v2-server/.gitkeep
-
 # Local browser-inspection leftovers (Playwright CLI sessions and their screenshots)
 .playwright-cli/
 output/
@@ -85,3 +73,10 @@ audits/
 # vitest reporter output written beside the package under test
 .vitest/
 handoff/design/boards/.render.html
+
+# Electron host build output.
+dist-electron/
+.electron-runtime/
+
+# Electron host packaging output (AppImage, deb, NSIS, update manifests).
+release/

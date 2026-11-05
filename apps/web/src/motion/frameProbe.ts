@@ -19,14 +19,12 @@ interface FrameStats {
 declare global {
   interface Window {
     __houstonFrameStats?: FrameStats[];
-    __TAURI_INTERNALS__?: { invoke: (command: string, args: unknown) => Promise<unknown> };
   }
 }
 
 let active = false;
 
 function engineName(): string {
-  if (window.__TAURI_INTERNALS__ !== undefined) return "tauri-webkitgtk";
   const ua = navigator.userAgent;
   if (ua.includes("Chrome/")) return "chromium";
   if (ua.includes("Firefox/")) return "firefox";
@@ -74,11 +72,7 @@ export function probeCellMoveFrames(cells: number, motionMs: number, kind = "mov
     };
     (window.__houstonFrameStats ??= []).push(stats);
     console.info("[frame-probe]", JSON.stringify(stats));
-    void window.__TAURI_INTERNALS__?.invoke("system_log_debug", {
-      source: "frame-probe",
-      message: "grid cell move frames",
-      payload: stats,
-    });
+    void window.hostBridge?.logDebug("frame-probe", "grid cell move frames", stats);
   };
   requestAnimationFrame(tick);
 }

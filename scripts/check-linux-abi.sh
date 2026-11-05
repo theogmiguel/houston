@@ -49,59 +49,68 @@ echo "check-linux-abi: $deb (arch $arch, glibc cap $MAX_GLIBC)"
 
 status=0
 
-for name in houston; do
-  bin="$workdir/usr/bin/$name"
-  if [ ! -f "$bin" ]; then
-    echo "FAIL: $deb does not carry /usr/bin/$name (nothing extracted at $bin)" >&2
-    status=1
-    continue
+# The desktop bundle keeps the executable under /opt/Houston and the deb's
+# post-install step links /usr/bin/houston to it. Prefer the real file so an
+# absolute link cannot resolve outside the extracted tree.
+bin=""
+for candidate in "$workdir/opt/Houston/houston" "$workdir/opt/Houston/Houston" "$workdir/usr/bin/houston"; do
+  if [ -L "$candidate" ]; then
+    target="$(readlink "$candidate")"
+    case "$target" in
+      /*) candidate="$workdir$target" ;;
+      *) candidate="$(dirname "$candidate")/$target" ;;
+    esac
   fi
-
-  machine="$(readelf -h "$bin" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
-  if [ -z "$machine" ]; then
-    echo "FAIL: readelf -h printed no Machine: line for /usr/bin/$name in $deb -- refusing to pass an ELF header this gate cannot read" >&2
-    status=1
-    continue
+  if [ -f "$candidate" ]; then
+    bin="$candidate"
+    break
   fi
-  if [ "$machine" != "$elf_machine" ]; then
-    echo "FAIL: /usr/bin/$name in $deb is ELF machine '$machine', but this is the $arch artifact and expected '$elf_machine'. The wrong runner built it, or the deb was mislabeled" >&2
-    status=1
-    continue
-  fi
-
-  sections="$(readelf -S "$bin")" || {
-    echo "FAIL: readelf -S failed on /usr/bin/$name in $deb" >&2
-    status=1
-    continue
-  }
-  if ! grep -q '\.gnu\.version_r' <<<"$sections"; then
-    echo "ok: /usr/bin/$name ($machine) has no .gnu.version_r -- it requires no versioned GLIBC symbol"
-    continue
-  fi
-
-  required="$(readelf --version-info "$bin" \
-    | sed -n '/Version needs section/,/Version definition section/p' \
-    | sed -n 's/.*Name: \(GLIBC_[0-9.]*\).*/\1/p' \
-    | sed 's/^GLIBC_//' \
-    | sort -Vu | tail -n1)"
-  if [ -z "$required" ]; then
-    echo "FAIL: /usr/bin/$name in $deb needs .gnu.version_r but readelf --version-info listed no GLIBC name -- the output shape changed, and this gate refuses to pass a requirement it cannot read" >&2
-    status=1
-    continue
-  fi
-
-  highest="$(printf '%s\n%s\n' "$MAX_GLIBC" "$required" | sort -V | tail -n1)"
-  if [ "$highest" != "$MAX_GLIBC" ]; then
-    echo "FAIL: /usr/bin/$name requires GLIBC_$required, above the GLIBC_$MAX_GLIBC cap this artifact promises -- built on a newer Ubuntu than 22.04, or a dependency adopted a newer symbol. Symbol versions found:" >&2
-    readelf --version-info "$bin" \
-      | sed -n '/Version needs section/,/Version definition section/p' \
-      | sed -n 's/.*Name: \(GLIBC_[0-9.]*\).*/      \1/p' \
-      | sort -Vu | tail -n5 >&2
-    status=1
-    continue
-  fi
-
-  echo "ok: /usr/bin/$name ($machine) requires GLIBC up to $required (cap $MAX_GLIBC)"
 done
+label="${bin#"$workdir"/}"
 
+if [ -z "$bin" ]; then
+  echo "FAIL: $deb does not carry the Houston executable (looked for /opt/Houston/houston and /usr/bin/houston)" >&2
+  exit 1
+fi
+
+machine="$(readelf -h "$bin" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+if [ -z "$machine" ]; then
+  echo "FAIL: readelf -h printed no Machine: line for /$label in $deb -- refusing to pass an ELF header this gate cannot read" >&2
+  exit 1
+fi
+if [ "$machine" != "$elf_machine" ]; then
+  echo "FAIL: /$label in $deb is ELF machine '$machine', but this is the $arch artifact and expected '$elf_machine'. The wrong runner built it, or the deb was mislabeled" >&2
+  exit 1
+fi
+
+sections="$(readelf -S "$bin")" || {
+  echo "FAIL: readelf -S failed on /$label in $deb" >&2
+  exit 1
+}
+if ! grep -q '\.gnu\.version_r' <<<"$sections"; then
+  echo "ok: /$label ($machine) has no .gnu.version_r -- it requires no versioned GLIBC symbol"
+  exit 0
+fi
+
+required="$(readelf --version-info "$bin" \
+  | sed -n '/Version needs section/,/Version definition section/p' \
+  | sed -n 's/.*Name: \(GLIBC_[0-9.]*\).*/\1/p' \
+  | sed 's/^GLIBC_//' \
+  | sort -Vu | tail -n1)"
+if [ -z "$required" ]; then
+  echo "FAIL: /$label in $deb needs .gnu.version_r but readelf --version-info listed no GLIBC name -- the output shape changed, and this gate refuses to pass a requirement it cannot read" >&2
+  exit 1
+fi
+
+highest="$(printf '%s\n%s\n' "$MAX_GLIBC" "$required" | sort -V | tail -n1)"
+if [ "$highest" != "$MAX_GLIBC" ]; then
+  echo "FAIL: /$label requires GLIBC_$required, above the GLIBC_$MAX_GLIBC cap this artifact promises -- built on a newer Ubuntu than 22.04, or a dependency adopted a newer symbol. Symbol versions found:" >&2
+  readelf --version-info "$bin" \
+    | sed -n '/Version needs section/,/Version definition section/p' \
+    | sed -n 's/.*Name: \(GLIBC_[0-9.]*\).*/      \1/p' \
+    | sort -Vu | tail -n5 >&2
+  exit 1
+fi
+
+echo "ok: /$label ($machine) requires GLIBC up to $required (cap $MAX_GLIBC)"
 exit "$status"

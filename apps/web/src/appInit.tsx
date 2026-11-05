@@ -41,7 +41,7 @@ import {
 } from "./hooks/useSettings";
 import { syncBrowserChromeTheme } from "./hooks/useTheme";
 import { startThreadVisitedMigration } from "./hooks/useThreadVisitedMigration";
-import { isQuickComposerWindow, isTauriHost } from "./lib/desktopWindow";
+import { hasCustomWindowChrome, isQuickComposerWindow } from "./lib/desktopWindow";
 import { installDesktopPasteAsText } from "./lib/desktopPasteAsText";
 import { installFileTransferNavigationGuard } from "./lib/fileTransfer";
 import {
@@ -180,8 +180,8 @@ export function startAppServices(): AppRouter {
     syncDocumentElectronPlatformClasses(navigator.platform);
     syncDocumentWindowControlsOverlayClass();
   }
-  if (isTauriHost()) {
-    document.documentElement.classList.add("tauri");
+  if (hasCustomWindowChrome()) {
+    document.documentElement.classList.add("custom-chrome");
   }
 
   installDesktopPasteAsText(window.hostBridge, window);

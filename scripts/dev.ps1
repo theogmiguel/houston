@@ -126,24 +126,11 @@ if ($Fresh) {
     }
 }
 
-$App = Join-Path $Root 'src-tauri\target\debug\houston-tauri.exe'
+$Launcher = Join-Path $Root 'apps\desktop\scripts\start-electron.mjs'
 
-Write-Host '[dev] building the v2 web renderer...'
-Invoke-BuildStep -WorkingDirectory $Root -FilePath 'npx' -ArgumentList @('-y', 'pnpm@12.14.0', '--filter', '@houston-app/web', 'build')
+Write-Host '[dev] building the v2 web renderer, server and desktop host...'
+Invoke-BuildStep -WorkingDirectory $Root -FilePath 'npx' -ArgumentList @('-y', 'pnpm@12.14.0', 'run', 'build:desktop')
 
-Write-Host '[dev] building the v2 server...'
-Invoke-BuildStep -WorkingDirectory $Root -FilePath 'npx' -ArgumentList @('-y', 'pnpm@12.14.0', '--filter', '@houston-app/cli', 'build:bundle')
-
-Write-Host '[dev] building the app (debug)...'
-Invoke-BuildStep -WorkingDirectory (Join-Path $Root 'src-tauri') -FilePath 'cargo' -ArgumentList @('build')
-
-if (-not (Test-Path -LiteralPath $App)) {
-    Write-DevErr @("[dev] app binary missing at $App after a successful build - did the bin name change in src-tauri/Cargo.toml?")
-    exit 1
-}
-
-$AppArgs = @('--channel', $env:HOUSTON_CHANNEL)
-
-Write-Host "[dev] starting the app on channel '$env:HOUSTON_CHANNEL'... (Ctrl+C ends it AND its sessions)"
-& $App @AppArgs
+Write-Host "[dev] starting the desktop app on channel '$env:HOUSTON_CHANNEL'... (Ctrl+C ends it AND its sessions)"
+& node $Launcher
 exit $LASTEXITCODE

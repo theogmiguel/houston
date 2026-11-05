@@ -1153,7 +1153,7 @@ export class GhosttyTerminalSurface {
       }
     }
     if (isTerminalCopyShortcut(event) && this.hasSelection()) {
-      // WebKit can omit copy without DOM selection. Ctrl+Shift+C and Ctrl+Insert need synthesized copy events.
+      // A webview can omit copy without DOM selection. Ctrl+Shift+C and Ctrl+Insert need synthesized copy events.
       const selection = this.getSelection();
       this.primeCopy(selection);
       if (event.shiftKey || event.key.toLowerCase() === "insert") {

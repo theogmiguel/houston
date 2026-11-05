@@ -3497,14 +3497,15 @@ export default function ChatView(props: ChatViewProps) {
           <header
             ref={threadPanelPopoverAnchorRef}
             data-chat-header
-            data-tauri-drag-region="deep"
+            data-drag-region="deep"
             className={cn(
               "relative bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
               isDesktopHost
                 ? cn(
                     "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center",
                     rightPanelOpen ? "pl-3 sm:pl-5 pr-0" : "px-3 sm:px-5",
-                    !inlineRightPanelOwnsTitleBar && "tauri:pr-(--workspace-native-controls-inset)",
+                    !inlineRightPanelOwnsTitleBar &&
+                      "custom-chrome:pr-(--workspace-native-controls-inset)",
                     reserveTitleBarControlInset &&
                       !inlineRightPanelOwnsTitleBar &&
                       "wco:pr-(--workspace-native-controls-inset)",
@@ -3512,7 +3513,8 @@ export default function ChatView(props: ChatViewProps) {
                 : cn(
                     "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start)",
                     rightPanelOpen ? "pr-0" : "pr-(--workspace-gutter-end)",
-                    !inlineRightPanelOwnsTitleBar && "tauri:pr-(--workspace-native-controls-inset)",
+                    !inlineRightPanelOwnsTitleBar &&
+                      "custom-chrome:pr-(--workspace-native-controls-inset)",
                   ),
               COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
             )}
@@ -3597,7 +3599,6 @@ export default function ChatView(props: ChatViewProps) {
                 entriesInput={timelineEntriesInput}
                 draftEntries={isServerThread ? null : draftTimelineEntries}
                 activeThreadKey={activeThreadKey}
-                timelineDensity={paneDensity}
                 syncing={threadSyncPhase !== null}
                 detailLoading={threadDetailLoading}
                 citationRequest={citationRequest}

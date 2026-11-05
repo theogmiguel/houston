@@ -1,0 +1,55 @@
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="864" viewBox="0 0 640 432">
+  <defs>
+    <linearGradient id="veil" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#B7B7B7" stop-opacity="0"/>
+      <stop offset=".55" stop-color="#A5A5A5" stop-opacity=".24"/>
+      <stop offset="1" stop-color="#D1D1D1" stop-opacity=".4"/>
+    </linearGradient>
+    <linearGradient id="silk" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#C8C8C8"/>
+      <stop offset=".5" stop-color="#DBDBDB"/>
+      <stop offset="1" stop-color="#B5B5B5"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="432" fill="#E9E9EB"/>
+  <path d="M-60 293C95 220 214 304 362 256S559 191 707 257" stroke="url(#veil)" stroke-width="146" fill="none" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M-60 306C113 252 223 298 367 272S553 242 707 280" stroke="url(#silk)" stroke-width="86" fill="none" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M-60 266C113 212 223 258 367 232S553 202 707 240" stroke="#F5F5F5" stroke-width="0.8" fill="none" opacity="0.42" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Official mark from apps/web/src/components/HoustonWordmark.tsx. -->
+  <svg x="32" y="19" width="26" height="26" viewBox="0 0 64 64">
+    <defs>
+      <radialGradient id="houston-sphere" cx="34%" cy="26%" r="80%">
+        <stop offset="0" stop-color="#8a6ef0"/>
+        <stop offset=".32" stop-color="#3b2fa6"/>
+        <stop offset=".68" stop-color="#1a1c55"/>
+        <stop offset="1" stop-color="#0b0e2c"/>
+      </radialGradient>
+      <linearGradient id="houston-ring" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#b06cff"/>
+        <stop offset=".42" stop-color="#5a6cf6"/>
+        <stop offset=".78" stop-color="#34d2f6"/>
+        <stop offset="1" stop-color="#9ff6ff"/>
+      </linearGradient>
+      <linearGradient id="houston-ring-back" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#6a3cd0"/>
+        <stop offset=".6" stop-color="#3550d8"/>
+        <stop offset="1" stop-color="#2aa6e0"/>
+      </linearGradient>
+    </defs>
+    <g transform="rotate(-16 32 35)"><path d="M3 35 A29 8.5 0 0 1 61 35" fill="none" stroke="url(#houston-ring-back)" stroke-width="4.2" stroke-linecap="round"/></g>
+    <circle cx="32" cy="30" r="19.5" fill="url(#houston-sphere)"/>
+    <path d="M40 12.6 A19.5 19.5 0 0 1 51 26" fill="none" stroke="#5fe4ff" stroke-width="1.6" stroke-linecap="round" opacity=".85"/>
+    <ellipse cx="32.5" cy="31.5" rx="12.6" ry="11.2" fill="#070a22"/>
+    <path d="M23.4 33.4 Q27 26.6 30.6 33.4 Q27 30.2 23.4 33.4Z" fill="#8ff6ff"/>
+    <path d="M34.4 33.4 Q38 26.6 41.6 33.4 Q38 30.2 34.4 33.4Z" fill="#8ff6ff"/>
+    <rect x="10" y="23.5" width="6.6" height="14" rx="3.3" fill="#262a66" stroke="#10133a" stroke-width="1"/>
+    <ellipse cx="13.2" cy="30.5" rx="1.7" ry="3.7" fill="none" stroke="#3fe0ff" stroke-width="1.5"/>
+    <rect x="47.4" y="23.5" width="6.6" height="14" rx="3.3" fill="#262a66" stroke="#10133a" stroke-width="1"/>
+    <ellipse cx="50.8" cy="30.5" rx="1.7" ry="3.7" fill="none" stroke="#3fe0ff" stroke-width="1.5"/>
+    <g transform="rotate(-16 32 35)"><path d="M3 35 A29 8.5 0 0 0 61 35" fill="none" stroke="url(#houston-ring)" stroke-width="4.6" stroke-linecap="round"/></g>
+  </svg>
+  <text x="320" y="104" fill="#303034" font-family="Helvetica" font-size="23" font-weight="700" text-anchor="middle">Drag Houston into Applications.</text>
+  <path d="M270 204Q320 179 370 204M358 190L370 204L351 209" stroke="#505057" stroke-width="2.2" fill="none" opacity="1" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="320" y="367" fill="#626269" font-family="Helvetica" font-size="12" font-weight="400" text-anchor="middle">Once copied, open it from Applications.</text>
+</svg>
