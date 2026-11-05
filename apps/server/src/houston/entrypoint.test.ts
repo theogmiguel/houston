@@ -459,7 +459,7 @@ describe("houston server entrypoint", () => {
   );
 
   it(
-    "no OTLP request reaches the sink",
+    "every command exports OTLP to the collector the user configures",
     async () => {
       await Promise.all(
         [[], ["start"], ["serve"]].map(async (command) => {
@@ -500,7 +500,9 @@ describe("houston server entrypoint", () => {
           await shutdown(server);
           await sleep(500);
 
-          expect(sink.requests, `command ${command.join(" ") || "(default)"}`).toEqual([]);
+          const label = `command ${command.join(" ") || "(default)"}`;
+          expect(sink.requests.length, label).toBeGreaterThan(0);
+          for (const request of sink.requests) expect(request, label).toMatch(/^POST \/.+\/v1\//);
         }),
       );
     },
