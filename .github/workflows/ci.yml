@@ -1,14 +1,14 @@
 name: CI
 
-# The single gate for pull requests and pushes to v2 and main. Heavy jobs run on
+# The single gate for pull requests and pushes to v2. Heavy jobs run on
 # the runner variables documented in docs/internals/ci.md, so switching to a
 # faster provider is a repository-variable change rather than a workflow edit.
 on:
   pull_request:
-    branches: [v2, main]
+    branches: [v2]
     types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches: [v2, main]
+    branches: [v2]
   workflow_dispatch:
 
 # A superseded PR run is wasted minutes, so cancel it. A push run may be the

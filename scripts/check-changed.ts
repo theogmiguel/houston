@@ -140,6 +140,10 @@ function typecheckPlan(files: string[]): TypecheckPlan {
   return { full: false, packages: [...packages].sort(), vpApps: [...vpApps].sort() };
 }
 
+// A changed dependency graph must ship a regenerated licence inventory; CI's static job diffs it.
+const DEPENDENCY_MANIFEST =
+  /(^|\/)(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|Cargo\.toml|Cargo\.lock)$/;
+
 const pnpmCommand = isWindows ? "pnpm.cmd" : "pnpm";
 
 function run(label: string, command: string, args: string[], shell = false): void {
@@ -154,13 +158,15 @@ function main(): void {
   const formattable = files.filter((file) => FORMATTABLE.test(file)).sort();
   const lintable = files.filter((file) => LINTABLE.test(file)).sort();
   const typecheck = typecheckPlan(files);
+  const dependencies = files.some((file) => DEPENDENCY_MANIFEST.test(file));
 
   if (
     formattable.length === 0 &&
     lintable.length === 0 &&
     !typecheck.full &&
     typecheck.packages.length === 0 &&
-    typecheck.vpApps.length === 0
+    typecheck.vpApps.length === 0 &&
+    !dependencies
   ) {
     process.stdout.write("check:changed: nothing relevant changed\n");
     return;
@@ -193,6 +199,9 @@ function main(): void {
       cwd: NodePath.join(repoRoot, app),
       stdio: "inherit",
     });
+  }
+  if (dependencies) {
+    run("licence inventory", "bash", ["scripts/check-third-party-licenses.sh"]);
   }
 }
 
