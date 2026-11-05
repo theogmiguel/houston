@@ -25,6 +25,10 @@ jobs:
     # environment in repository settings, not here.
     environment: stable-release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # npm trusted publishing: the registry trusts this workflow and environment, no token.
+      id-token: write
     concurrency:
       group: release-state-${{ inputs.tag }}
       cancel-in-progress: false
@@ -82,3 +86,31 @@ jobs:
             echo "[Open the release](https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG). The app and release page now use the reviewed notes."
             echo "Elapsed: $(( $(date +%s) - JOB_START )) seconds."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # The launcher downloads this release's archives, so it publishes only once they are public.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag }}
+          path: tagged
+
+      - uses: actions/setup-node@v4
+        with:
+          # npm 11.5.1 or newer publishes with trusted publishing.
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish the houston-app npm launcher
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          if [ ! -f tagged/scripts/build-npm-launcher.mjs ]; then
+            echo "::warning::$TAG predates the npm launcher; houston-app was not published"
+            exit 0
+          fi
+          node tagged/scripts/build-npm-launcher.mjs --version "$version" --output-dir npm-packages
+          dist_tag=latest
+          case "$version" in *-*) dist_tag=preview ;; esac
+          npm publish --access public --tag "$dist_tag" npm-packages/houston-app.tgz
+          echo "Published houston-app@$version to npm under the $dist_tag tag." >> "$GITHUB_STEP_SUMMARY"

@@ -170,7 +170,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("service commands
         );
         const node = "/home/me/.nvm/versions/node/v26.8.2/bin/node";
         const script =
-          "/home/me/.nvm/versions/node/v26.8.2/lib/node_modules/@houston-app/cli/dist/bin.mjs";
+          "/home/me/.nvm/versions/node/v26.8.2/lib/node_modules/houston-app/dist/bin.mjs";
 
         const output = yield* Command.runWith(serviceCommand, { version: packageJson.version })([
           command,

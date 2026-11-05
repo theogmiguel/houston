@@ -86,14 +86,7 @@ it.effect.each([
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({
       command: expect.stringMatching(/[/\\]npm(?:\.cmd)?$/i),
-      args: [
-        "view",
-        "--global",
-        "--json",
-        `@houston-app/cli@${fixture.spec}`,
-        "version",
-        "houston",
-      ],
+      args: ["view", "--global", "--json", `houston-app@${fixture.spec}`, "version", "houston"],
       maxOutputBytes: 256 * 1024,
     });
     yield* TestClock.adjust("1 minute");
@@ -165,9 +158,9 @@ it.effect("falls back to public npm only when npm is not installed", () =>
     yield* TestClock.adjust("15 seconds");
     expect(Result.isFailure(yield* Fiber.join(stalled))).toBe(true);
     expect(urls).toEqual([
-      "https://registry.npmjs.org/%40houston-app%2Fcli/nightly",
-      "https://registry.npmjs.org/%40houston-app%2Fcli/9.9.9",
-      "https://registry.npmjs.org/%40houston-app%2Fcli/latest",
+      "https://registry.npmjs.org/houston-app/nightly",
+      "https://registry.npmjs.org/houston-app/9.9.9",
+      "https://registry.npmjs.org/houston-app/latest",
     ]);
   }),
 );

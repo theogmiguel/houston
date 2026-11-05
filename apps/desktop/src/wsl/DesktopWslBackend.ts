@@ -129,7 +129,7 @@ export const layer = Layer.effect(
                 Ref.set(
                   preflightErrorRef,
                   Option.some(
-                    "Another Houston server is using this distro's Houston home, or an older background service is set up for it. Stop that server or pair with it, or try `houston update` in the distro. If the older launcher cannot update, run `houston service uninstall` and optionally reinstall with `houston service install` from a current CLI in the distro. Use `npx @houston-app/cli@latest` if `houston` is missing or outdated, and pass `--base-dir` with the service's Houston home to each command.",
+                    "Another Houston server is using this distro's Houston home, or an older background service is set up for it. Stop that server or pair with it, or try `houston update` in the distro. If the older launcher cannot update, run `houston service uninstall` and optionally reinstall with `houston service install` from a current CLI in the distro. Use `npx houston-app@latest` if `houston` is missing or outdated, and pass `--base-dir` with the service's Houston home to each command.",
                   ),
                 ),
               ),
