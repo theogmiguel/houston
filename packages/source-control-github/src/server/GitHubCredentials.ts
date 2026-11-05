@@ -16,7 +16,7 @@ import * as HostProcess from "@houston-app/shared/HostProcess";
 
 import * as SourceControlHost from "@houston-app/source-control-core/server/SourceControlHost";
 import { readSourceControlHostSettings } from "@houston-app/source-control-core/shared/definition";
-import type { ServerSettings } from "@houston-app/contracts";
+import { settingsSecretLiteral, type ServerSettings } from "@houston-app/contracts";
 
 import * as GitHubClient from "../shared/definition.ts";
 
@@ -194,8 +194,10 @@ export const make = Effect.gen(function* () {
     );
 
   const savedToken = (host: string) =>
-    sourceControlHost.settings.get.pipe(
-      Effect.map((settings) => readSettings(settings).tokens[host]?.trim() || null),
+    sourceControlHost.settings.getWithSecrets(GitHubClient.definition.kind).pipe(
+      Effect.map(
+        (settings) => settingsSecretLiteral(readSettings(settings).tokens[host]).trim() || null,
+      ),
       Effect.orElseSucceed(() => null),
     );
 
