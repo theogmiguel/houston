@@ -3,13 +3,13 @@ import {
   Camera,
   ChevronLeft,
   ChevronRight,
-  Crosshair,
   ExternalLink,
   Maximize2,
   Minimize2,
-  MonitorSmartphone,
   PictureInPicture2,
   RotateCw,
+  SquareMousePointer,
+  TabletSmartphone,
 } from "lucide-react";
 import {
   type FormEvent,
@@ -260,7 +260,7 @@ export function PreviewChromeRow({
                 />
               }
             >
-              <MonitorSmartphone className="size-[15px]" />
+              <TabletSmartphone className="size-[15px]" />
             </TooltipTrigger>
             <TooltipPopup>{deviceSizeActive ? "Fit the panel" : "Device size"}</TooltipPopup>
           </Tooltip>
@@ -305,7 +305,7 @@ export function PreviewChromeRow({
                 />
               }
             >
-              <Crosshair className={cn("size-[15px]", pickActive && "text-[var(--t1)]")} />
+              <SquareMousePointer className={cn("size-[15px]", pickActive && "text-[var(--t1)]")} />
             </TooltipTrigger>
             <TooltipPopup>
               {pickDisabled && pickDisabledReason

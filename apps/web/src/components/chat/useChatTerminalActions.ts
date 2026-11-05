@@ -77,6 +77,8 @@ interface ChatTerminalActionsInput {
   readonly gitCwd: string | null;
   readonly setTerminalUiLaunchContext: Dispatch<SetStateAction<TerminalLaunchContext | null>>;
   readonly setThreadError: ReturnType<typeof makeThreadErrorSetter>;
+  /** A grid cell's toggle opens the grid's dock, not this thread's drawer. */
+  readonly onToggleGridTerminal?: (() => void) | undefined;
 }
 
 /**
@@ -101,7 +103,9 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     gitCwd,
     setTerminalUiLaunchContext,
     setThreadError,
+    onToggleGridTerminal,
   } = input;
+  const gridTerminalOwnsShortcuts = onToggleGridTerminal !== undefined;
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
 
   const hasTerminalWriteAccess = () =>
@@ -407,6 +411,10 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
   // A focused right-panel terminal takes the split/new/close chords; otherwise they act on the drawer.
   const shortcuts = {
     "terminal.toggle": () => {
+      if (onToggleGridTerminal !== undefined) {
+        onToggleGridTerminal();
+        return;
+      }
       if (
         !terminalUiState.terminalOpen &&
         !readEnvironmentScope(environmentId, AuthTerminalReadScope) &&
@@ -416,18 +424,21 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
       toggleTerminalVisibility();
     },
     "terminal.split": ({ terminalFocusOwner }) => {
+      if (gridTerminalOwnsShortcuts) return false;
       if (!hasTerminalWriteAccess()) return false;
       if (terminalFocusOwner === "right-panel") return void splitPanelTerminal();
       openTerminalIfClosed();
       splitTerminal();
     },
     "terminal.splitVertical": ({ terminalFocusOwner }) => {
+      if (gridTerminalOwnsShortcuts) return false;
       if (!hasTerminalWriteAccess()) return false;
       if (terminalFocusOwner === "right-panel") return void splitPanelTerminal("vertical");
       openTerminalIfClosed();
       splitTerminal("vertical");
     },
     "terminal.close": ({ terminalFocusOwner }) => {
+      if (gridTerminalOwnsShortcuts) return false;
       if (!hasTerminalWriteAccess()) return false;
       if (terminalFocusOwner === "right-panel" && activeRightPanelSurface?.kind === "terminal") {
         requestClosePanelTerminal(activeRightPanelSurface.activeTerminalId);
@@ -436,6 +447,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
       if (terminalUiState.terminalOpen) requestCloseTerminal(terminalUiState.activeTerminalId);
     },
     "terminal.new": ({ terminalFocusOwner }) => {
+      if (gridTerminalOwnsShortcuts) return false;
       if (!hasTerminalWriteAccess()) return false;
       if (terminalFocusOwner === "right-panel") return void addTerminalSurface();
       openTerminalIfClosed();

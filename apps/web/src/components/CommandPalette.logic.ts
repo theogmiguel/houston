@@ -10,6 +10,7 @@ import {
   type ThreadSearchSubject,
 } from "@houston-app/shared/paletteSearch";
 import { threadSearchSubject } from "@houston-app/client-runtime/state/thread-search";
+import type { AddProjectFlowRequest } from "../addProjectFlow";
 import type { CommandPaletteLinkedThreads } from "../commandPaletteBus";
 import {
   addProjectRemoteSourceLabel,
@@ -72,7 +73,7 @@ export function browseInputEndPaddingClass(input: {
 export type SearchOverlayMode = "command" | "files" | "content";
 
 export type CommandPaletteOpenIntent =
-  | { readonly kind: "add-project"; readonly clone?: boolean }
+  | { readonly kind: "add-project"; readonly request?: AddProjectFlowRequest }
   | { readonly kind: "new-thread-in" | "change-theme" }
   | {
       readonly kind: "search";
@@ -99,7 +100,7 @@ export type CommandPaletteUiAction =
       readonly query: string;
       readonly linkedThreads?: CommandPaletteLinkedThreads;
     }
-  | { readonly _tag: "OpenAddProject"; readonly clone?: boolean }
+  | { readonly _tag: "OpenAddProject"; readonly request?: AddProjectFlowRequest }
   | { readonly _tag: "OpenNewThreadIn" }
   | { readonly _tag: "OpenChangeTheme" }
   | {
@@ -156,7 +157,7 @@ export function reduceCommandPaletteUiState(
     case "OpenAddProject":
       return openWithIntent({
         kind: "add-project",
-        ...(action.clone === true ? { clone: true } : {}),
+        ...(action.request === undefined ? {} : { request: action.request }),
       });
     case "OpenNewThreadIn":
       return openWithIntent({ kind: "new-thread-in" });

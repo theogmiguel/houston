@@ -104,38 +104,18 @@ vi.mock("./settings/useAvailableSettingsSearchItems", () => ({
 }));
 
 // The real palette and Base UI input must agree that confirming composition is typing.
-describe("add-project sources", () => {
-  it("offers folders, then cloning, then a new project, then provider repositories", async () => {
-    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
-    await act(() => openCommandPalette({ open: "add-project" }));
-
-    const titles = page
-      .getByRole("option")
-      .elements()
-      .map((element) => element.textContent?.trim() ?? "");
-
-    expect(titles[0]?.startsWith("Open folder…")).toBe(true);
-    expect(titles[1]?.startsWith("Clone repository…")).toBe(true);
-    expect(titles[2]?.startsWith("New project…")).toBe(true);
-
-    const provider = page.getByText("GitHub repository", { exact: true }).element();
-    for (const title of ["Open folder…", "Clone repository…", "New project…"]) {
-      const row = page.getByText(title, { exact: true }).element();
-      expect(row.compareDocumentPosition(provider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    }
-  });
-});
-
 describe.each(["repository", "folder", "destination"] as const)("add-project %s", (step) => {
   it.each([
     { isComposing: true, keyCode: 13 },
     { isComposing: false, keyCode: 229 },
   ])("keeps Enter in the input during composition: %j", async (composition) => {
     await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
-    await act(() => openCommandPalette({ open: "add-project" }));
-    await page
-      .getByText(step === "folder" ? "Open folder…" : "Clone repository…", { exact: true })
-      .click();
+    await act(() =>
+      openCommandPalette({
+        open: "add-project",
+        addProject: { action: step === "folder" ? "open-folder" : "clone" },
+      }),
+    );
     const input = () => page.getByRole("combobox");
     if (step === "destination") {
       await input().fill("https://example.com/team/project.git");

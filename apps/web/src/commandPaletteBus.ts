@@ -1,5 +1,6 @@
 import type { EnvironmentId, PullRequestLinkedThreadsResult } from "@houston-app/contracts";
 
+import type { AddProjectFlowRequest } from "./addProjectFlow";
 import { dispatchCommandPalette, isCommandPaletteMounted } from "./commandPaletteStore";
 
 export interface CommandPaletteLinkedThreads {
@@ -9,8 +10,8 @@ export interface CommandPaletteLinkedThreads {
 
 export interface CommandPaletteOpenDetail {
   readonly open?: "add-project" | "new-thread-in";
-  /** With add-project, start at the Git URL clone entry. */
-  readonly clone?: boolean;
+  /** With add-project, the flow to start and the environment or source it starts from. */
+  readonly addProject?: AddProjectFlowRequest;
   readonly query?: string;
   readonly linkedThreads?: CommandPaletteLinkedThreads;
 }
@@ -24,7 +25,7 @@ export function openCommandPalette(detail: CommandPaletteOpenDetail = {}): void 
   } else if (detail.open === "add-project") {
     dispatchCommandPalette({
       _tag: "OpenAddProject",
-      ...(detail.clone === true ? { clone: true } : {}),
+      ...(detail.addProject === undefined ? {} : { request: detail.addProject }),
     });
   } else if (detail.query !== undefined) {
     dispatchCommandPalette({

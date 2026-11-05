@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { ChartNoAxesColumnIcon, ListChecksIcon, PlusIcon, SearchIcon } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
+import { openAddProjectDialog } from "../AddProjectDialog";
 import { openCommandPalette } from "../../commandPaletteBus";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { cn } from "../../lib/utils";
@@ -88,7 +89,7 @@ export function SidebarRailSectionHeading({
         <button
           type="button"
           aria-label="Add project"
-          onClick={() => openCommandPalette({ open: "add-project" })}
+          onClick={() => openAddProjectDialog()}
           className={cn(
             "-my-1.5 inline-grid size-6 shrink-0 cursor-pointer place-items-center rounded-(--control-radius) text-secondary-label outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
             MOTION_FEEDBACK,

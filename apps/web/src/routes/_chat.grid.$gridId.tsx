@@ -9,6 +9,7 @@ import { GridEmptyDraft } from "../components/grid/GridEmptyDraft";
 import { GridHost } from "../components/grid/GridHost";
 import { GridThreadBranch } from "../components/grid/GridThreadBranch";
 import { GridThreadCell } from "../components/grid/GridThreadCell";
+import { GridTerminalDock } from "../components/grid/GridTerminalDock";
 import { clearInlineDetailsHandoff } from "../components/chat/inlineDetailsFollow";
 import {
   EMPTY_PROVIDER_ENTRIES,
@@ -20,8 +21,8 @@ import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { isDesktopHost } from "../env";
 import { isNativeDesktopHost } from "../lib/desktopWindow";
+import { gridTerminalThreadRef } from "../grid/gridTerminal";
 import { MAX_GRID_THREADS, useGrid, useGridStore, workspaceKeyOf } from "../grid/gridStore";
-import { moveThreadToGridOrExplain, moveToGridTargets } from "../grid/moveToGrid";
 import { showThreadMovedToast } from "../grid/moveFeedback";
 import {
   crossProjectMoveToast,
@@ -74,7 +75,6 @@ function GridRoute() {
   const threadActions = useThreadActions();
   const reorderGridThreads = useGridStore((store) => store.reorderGridThreads);
   const moveThreadToCell = useGridStore((store) => store.moveThreadToCell);
-  const createGrid = useGridStore((store) => store.createGrid);
   const openDraft = useOpenGridDraft();
   const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -265,35 +265,17 @@ function GridRoute() {
     );
   }
 
+  // A grid's terminal belongs to the grid while it shows its cells; a maximized
+  // cell keeps the thread's own drawer.
+  const gridTerminalRef =
+    effectiveMaximized === null
+      ? gridTerminalThreadRef(grid.environmentId as EnvironmentId, grid.id)
+      : null;
   const projectTitles = new Map(
     projects.map((project) => [workspaceKeyOf(project.environmentId, project.id), project.title]),
   );
   const projectTitleOf = (owner: { environmentId: string; projectId: string }) =>
     projectTitles.get(workspaceKeyOf(owner.environmentId, owner.projectId)) ?? owner.projectId;
-  const moveGridTargets = moveToGridTargets(allGrids, {
-    environmentId: grid.environmentId,
-    projectId: grid.projectId,
-    currentGridId: grid.id,
-  });
-  const moveCellThreadToGrid = (threadId: string, targetGridId: string) => {
-    const refusal = moveThreadToGridOrExplain({
-      threadId,
-      threadEnvironmentId: grid.environmentId,
-      threadProjectId: grid.projectId,
-      targetGridId,
-    });
-    if (refusal === null) void navigate({ to: "/grid/$gridId", params: { gridId: targetGridId } });
-    else toastManager.add(stackedThreadToast({ type: "error", ...refusal }));
-  };
-  const moveCellThreadToNewGrid = (threadId: string) => {
-    const createdId = createGrid({
-      environmentId: grid.environmentId,
-      projectId: grid.projectId,
-      workspaceKey: grid.workspaceKey,
-    });
-    moveCellThreadToGrid(threadId, createdId);
-  };
-
   const visibleThreadIds = new Set(
     (grid.tree === null ? [] : preorderThreads(grid.tree)).map((leaf) => leaf.threadId),
   );
@@ -382,7 +364,7 @@ function GridRoute() {
           <WorkspacePageHeader
             desktop={isDesktopHost}
             reserveNativeControls={!panelBesideGrid && isNativeDesktopHost()}
-            className={cn(panelBesideGrid && "pr-0")}
+            besidePanel={panelBesideGrid}
           >
             <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
               <span className="shrink-0">Houston</span>
@@ -431,6 +413,7 @@ function GridRoute() {
             <span className="flex-1" />
             <GridTopBarControls
               grid={grid}
+              gridTerminalRef={gridTerminalRef}
               emptyDraftThreadId={emptyDraftThreadId}
               threadPanelAnchorRef={threadDetailsAnchorRef}
               onArrange={() => setMaximizedThreadId(null)}
@@ -567,9 +550,9 @@ function GridRoute() {
                 onSwapWith={(targetThreadId) =>
                   reorderGridThreads(grid.id, node.threadId, targetThreadId)
                 }
-                gridTargets={moveGridTargets}
-                onMoveToGrid={(targetGridId) => moveCellThreadToGrid(node.threadId, targetGridId)}
-                onMoveToNewGrid={() => moveCellThreadToNewGrid(node.threadId)}
+                onOpenGrid={(targetGridId) => {
+                  void navigate({ to: "/grid/$gridId", params: { gridId: targetGridId } });
+                }}
                 onNewThread={(side) => createThread(side, node.threadId)}
                 onOpenThread={(ref) => openThread(ref.environmentId, ref.threadId, node.threadId)}
               />
@@ -583,6 +566,9 @@ function GridRoute() {
               />
             )}
           />
+          {gridTerminalRef === null ? null : (
+            <GridTerminalDock key={grid.id} grid={grid} keybindings={keybindings} />
+          )}
         </div>
         <div ref={setRightPanelHost} className="contents" data-grid-right-panel-host="" />
       </div>

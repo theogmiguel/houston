@@ -11,7 +11,11 @@ import type { GridRecord } from "../../grid/gridStore";
 import { clearThreadSelection } from "../../grid/sidebar";
 import { TooltipProvider } from "../ui/tooltip";
 import { COLLAPSED_PROJECTS_STORAGE_KEY, useCollapsedKeys } from "./sidebarCollapse";
-import { SidebarAddProjectButton, SidebarProjectSection } from "./GridSidebar";
+import {
+  SidebarAddProjectButton,
+  SidebarProjectSection,
+  SidebarProjectsHeader,
+} from "./GridSidebar";
 import type { SidebarProjectSection as SidebarProjectSectionModel } from "./sidebarProjectSections";
 
 type SidebarProjectSectionProps = ComponentProps<typeof SidebarProjectSection>;
@@ -22,9 +26,25 @@ vi.mock("../../commandPaletteBus", () => ({
   isCommandPaletteOpen: () => false,
 }));
 
+const openAddProjectDialog = vi.fn();
+vi.mock("../AddProjectDialog", () => ({
+  openAddProjectDialog: () => openAddProjectDialog(),
+}));
+
 vi.mock(import("@effect/atom-react"), async (original) => ({
   ...(await original()),
   useAtomValue: (() => []) as never,
+}));
+
+vi.mock(import("../../state/session"), async (original) => ({
+  ...(await original()),
+  readEnvironmentScope: () => true,
+}));
+
+vi.mock(import("../../state/entities"), async (original) => ({
+  ...(await original()),
+  readEnvironmentServerConfigLoaded: () => true,
+  readEnvironmentSupportsAutoSettleOptOut: () => true,
 }));
 
 function thread(
@@ -293,7 +313,7 @@ describe("project sections", () => {
     );
   });
 
-  it("opens the add-project flow from the header button", async () => {
+  it("opens the add-project dialog from the header button", async () => {
     resetTestState();
     await using screen = await render(
       <TooltipProvider delay={0}>
@@ -302,7 +322,41 @@ describe("project sections", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Add project" }).element());
-    expect(openCommandPalette).toHaveBeenCalledExactlyOnceWith({ open: "add-project" });
+    expect(openAddProjectDialog).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws the Projects header with view options and add project, and reveals them on focus", async () => {
+    resetTestState();
+    const options = {
+      threadSort: "grid",
+      gridSort: "created_at",
+      showBranch: true,
+      showPullRequest: true,
+      showSubagents: true,
+    } as const;
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectsHeader options={options} onChange={() => {}} onReset={() => {}} />
+      </TooltipProvider>,
+    );
+
+    expect(screen.container.textContent).toContain("Projects");
+    const add = screen.getByRole("button", { name: "Add project" }).element();
+    const viewOptions = screen.getByRole("button", { name: "View options" }).element();
+    const actions = add.parentElement as HTMLElement;
+    expect(getComputedStyle(actions).opacity).toBe("0");
+    expect(actions.className).toContain("group-focus-within/section:opacity-100");
+
+    viewOptions.focus();
+    expect(viewOptions.matches(":focus-visible") || viewOptions === document.activeElement).toBe(
+      true,
+    );
+
+    await userEvent.click(add);
+    expect(openAddProjectDialog).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(viewOptions);
+    await expect.element(page.getByText("Sort threads")).toBeVisible();
   });
 });
 

@@ -478,7 +478,7 @@ interface TerminalViewportProps {
   runtimeEnv?: Record<string, string>;
   providerInstanceId?: ProviderInstanceId;
   onSessionExited: () => void;
-  onAddTerminalContext?: (selection: TerminalContextSelection) => void;
+  onAddTerminalContext?: ((selection: TerminalContextSelection) => void) | undefined;
   /** Focuses the viewport when it mounts; otherwise focus arrives through `focusTerminal`. */
   autoFocus?: boolean;
   visible: boolean;
@@ -1209,7 +1209,7 @@ interface ThreadTerminalDrawerProps {
   onActiveTerminalChange: (terminalId: string) => void;
   onCloseTerminal: (terminalId: string, threadRef?: ScopedThreadRef) => void;
   onHeightChange: (height: number) => void;
-  onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  onAddTerminalContext?: ((selection: TerminalContextSelection) => void) | undefined;
   keybindings: ResolvedKeybindingsConfig;
   terminalLabelsById?: ReadonlyMap<string, string>;
   terminalLaunchLocationsById?: ReadonlyMap<string, TerminalLaunchLocation>;
@@ -1290,7 +1290,7 @@ function TerminalSplitPanes({
   advancedTypography: boolean;
   threadRef: ScopedThreadRef;
   threadId: ThreadId;
-  onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  onAddTerminalContext?: ((selection: TerminalContextSelection) => void) | undefined;
   visible: boolean;
   keybindings: ResolvedKeybindingsConfig;
 }) {
