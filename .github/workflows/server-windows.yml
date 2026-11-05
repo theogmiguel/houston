@@ -1,5 +1,4 @@
-# Windows server parity, shared by the main CI workflow (nightly and pushes) and the
-# `ci:windows` label workflow (opt-in on a pull request).
+# Windows server parity, called by the main CI workflow on pull requests and pushes.
 name: Server (Windows)
 
 on:

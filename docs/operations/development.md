@@ -209,7 +209,7 @@ the pin with `--update` (never raise it).
 | `test-server`                  | the server suites in six shards                                                                                                                                                                                |
 | `test-web`, `test-web-browser` | the renderer build and its unit and browser vitest projects                                                                                                                                                    |
 | `native-linux`                 | `cargo test` for the Houston 1 cleanup helper and the Linux capture helpers; only native paths run it on PRs                                                                                                   |
-| `server-windows`               | the server suites nightly and on pushes, never on PRs                                                                                                                                                          |
+| `server-windows`               | the server suites in three Windows shards, gated on a shrinking list of known failures                                                                                                                         |
 | `ci-gate`                      | the aggregate check every branch requires                                                                                                                                                                      |
 
 ## Maintaining model data

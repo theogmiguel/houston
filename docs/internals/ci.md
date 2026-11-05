@@ -1,24 +1,24 @@
 # Continuous integration
 
 `.github/workflows/ci.yml` is the only gate for pull requests to `v2` and `main`, pushes to
-those branches, the nightly run and manual dispatches. It replaces the former split between
+those branches and manual dispatches. It replaces the former split between
 the desktop-only `ci.yml` and `v2-checks.yml`, which ran the server suites in nine area jobs
 per platform and never ran the renderer's own tests.
 
 ## Jobs
 
-| Job                | Runs on                                | Proves                                                                                                                                                  |
-| ------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `changes`          | every run                              | classifies the changed paths; every other job waits on its outputs                                                                                      |
-| `static`           | every run                              | workflow syntax, the safety scripts, changed-file format, the lint ratchet, doc and comment hygiene, web style guards, the licence notice and inventory |
-| `typecheck`        | changed code                           | `pnpm -r --no-bail typecheck` for every workspace package                                                                                               |
-| `test-packages`    | workspace package changes              | package suites and the node:test script suites                                                                                                          |
-| `test-server`      | server changes                         | `apps/server` `src/` and `scripts/` tests in six vitest shards                                                                                          |
-| `test-web`         | web changes                            | the production renderer build and the `unit` vitest project                                                                                             |
-| `test-web-browser` | web changes                            | the `browser` vitest project in four shards                                                                                                             |
-| `native-linux`     | native changes, and every non-PR run   | `cargo test` for the Houston 1 cleanup helper and the Linux capture helpers                                                                             |
-| `server-windows`   | nightly, and pushes to `v2` and `main` | the server suites in three Windows shards                                                                                                               |
-| `ci-gate`          | every run                              | the aggregate check to require on branches                                                                                                              |
+| Job                | Runs on                              | Proves                                                                                                                                                  |
+| ------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `changes`          | every run                            | classifies the changed paths; every other job waits on its outputs                                                                                      |
+| `static`           | every run                            | workflow syntax, the safety scripts, changed-file format, the lint ratchet, doc and comment hygiene, web style guards, the licence notice and inventory |
+| `typecheck`        | changed code                         | `pnpm -r --no-bail typecheck` for every workspace package                                                                                               |
+| `test-packages`    | workspace package changes            | package suites and the node:test script suites                                                                                                          |
+| `test-server`      | server changes                       | `apps/server` `src/` and `scripts/` tests in six vitest shards                                                                                          |
+| `test-web`         | web changes                          | the production renderer build and the `unit` vitest project                                                                                             |
+| `test-web-browser` | web changes                          | the `browser` vitest project in four shards                                                                                                             |
+| `native-linux`     | native changes, and every non-PR run | `cargo test` for the Houston 1 cleanup helper and the Linux capture helpers                                                                             |
+| `server-windows`   | server changes                       | the server suites in three Windows shards                                                                                                               |
+| `ci-gate`          | every run                            | the aggregate check to require on branches                                                                                                              |
 
 `ci-gate` fails when any job failed or was cancelled, or when `changes` did not succeed. A job
 skipped by the path filter counts as a pass.
@@ -29,7 +29,7 @@ skipped by the path filter counts as a pass.
 pull request the workflow feeds it `git diff --name-only HEAD^1 HEAD` from a blobless,
 depth-2 checkout, so the diff is the PR's own changes against the base tip.
 
-The filter fails closed. An empty diff, a push, schedule or dispatch event, a change under
+The filter fails closed. An empty diff, a push or dispatch event, a change under
 `.github/workflows/`, `.github/actions/` or `scripts/ci/`, and any path the rules do not
 recognise all set every job output to true. A new directory can therefore never silently skip
 CI; adding a rule is what makes a path inexpensive.
@@ -54,15 +54,14 @@ Setting both to a faster provider is a repository-variable change. For example, 
 Blacksmith image is `blacksmith-4vcpu-ubuntu-2404`. Windows jobs keep GitHub-hosted runners
 because they prove the server compiles on that platform.
 
-## Drafts, nightly work and Windows
+## Drafts and Windows
 
 Heavy jobs skip draft pull requests; `ready_for_review` starts them, and `static` and `changes`
-still run so a draft gets fast feedback. `server-windows` never runs in the `CI` workflow on a pull
-request, so a Windows-only failure cannot hold a review; its nightly failures are real failures
-and require a fix before the next release. To check Windows on a pull request, add the
-`ci:windows` label: `.github/workflows/ci-windows-label.yml` then runs the same
-`.github/workflows/server-windows.yml` shards as a separate check that `ci-gate` does not wait
-on, and re-runs them on each push while the label stays.
+still run so a draft gets fast feedback. `server-windows` gates every pull request that changes
+the server, like `test-server`. Its shards pass when their failures match
+`scripts/ci/windows-known-failures.json` exactly: a new failure fails the shard, and so does a
+listed test that now passes, so the list only shrinks. Each shard uploads its vitest JSON report;
+`node scripts/ci/windows-known-failures.mjs --update <reports...>` rewrites the list from all three.
 
 ## Caches
 
