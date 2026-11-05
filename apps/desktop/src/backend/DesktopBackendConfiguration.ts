@@ -20,6 +20,7 @@ import * as DesktopCliShim from "../app/DesktopCliShim.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopServerExposure from "./DesktopServerExposure.ts";
 import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
+import * as WindowsServerPath from "../shell/WindowsServerPath.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 import * as DesktopWslServerTree from "../wsl/DesktopWslServerTree.ts";
@@ -465,12 +466,15 @@ const isLocalHostIpv4 = (ip: string): boolean => {
   return false;
 };
 
-const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolvePrimary")(
+/** @public */
+export const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolvePrimary")(
   function* (
     input: SharedBootstrapInput & {
       readonly resourceMonitorPath: Option.Option<string>;
       readonly cliPath: Option.Option<string>;
       readonly shellEnvironmentPrepared: boolean;
+      readonly inheritedEnv: Readonly<Record<string, string | undefined>>;
+      readonly windowsPathProbe: WindowsServerPath.WindowsPathProbe;
     },
   ): Effect.fn.Return<
     DesktopBackendManager.DesktopBackendStartConfig,
@@ -480,6 +484,12 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
     const backendExposure = yield* serverExposure.backendConfig;
+    const windowsServerPath = WindowsServerPath.preparedWindowsServerPath({
+      platform: environment.platform,
+      env: input.inheritedEnv,
+      cwd: environment.backendCwd,
+      probe: input.windowsPathProbe,
+    });
 
     const bootstrap = {
       mode: "desktop" as const,
@@ -489,7 +499,12 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       host: backendExposure.bindHost,
       desktopBootstrapToken: input.bootstrapToken,
       desktopBootstrapSecret: input.bootstrapSecret,
-      shellEnvironmentPrepared: input.shellEnvironmentPrepared,
+      // The Windows claim follows the rule below; elsewhere the host's own
+      // discovery is what the server already receives.
+      shellEnvironmentPrepared:
+        environment.platform === "win32"
+          ? Option.isSome(windowsServerPath)
+          : input.shellEnvironmentPrepared,
       tailscaleServeEnabled: backendExposure.tailscaleServeEnabled,
       tailscaleServePort: backendExposure.tailscaleServePort,
       desktopBrowserFd: 6,
@@ -515,6 +530,14 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
         // Clear inherited launcher identity first; the child gets only what it needs.
         ...launcherEnvPatch(process.env),
         ...backendChildEnvPatch(),
+        // The prepared PATH replaces every spelling the child would otherwise inherit.
+        ...Option.match(windowsServerPath, {
+          onNone: () => ({}),
+          onSome: (prepared) => ({
+            ...Object.fromEntries(prepared.stalePathKeys.map((key) => [key, undefined])),
+            PATH: prepared.path,
+          }),
+        }),
         // The server runs through Electron's binary, so this child needs node mode.
         ELECTRON_RUN_AS_NODE: "1",
         HOUSTON_DESKTOP_SHELL_DISCOVERY_PENDING: "1",
@@ -759,12 +782,15 @@ export const make = Effect.gen(function* () {
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
     );
+    // Hydrate the host environment, then judge the exact PATH this spawn will pass on.
     const shellEnvironmentPrepared = yield* shellEnvironment.installIntoProcess;
     return yield* resolvePrimaryStartConfig({
       ...shared,
       resourceMonitorPath,
       cliPath,
       shellEnvironmentPrepared,
+      inheritedEnv: process.env,
+      windowsPathProbe: WindowsServerPath.windowsFileSystemProbe,
     }).pipe(
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
       Effect.provideService(DesktopServerExposure.DesktopServerExposure, serverExposure),
