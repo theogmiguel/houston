@@ -11,8 +11,10 @@ import * as GitVcsDriver from "./GitVcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 
 // Local status runs after every turn and on every poll; each Windows git process costs about
-// 60 ms. Warm means the repository paths, default branch and remote caches are filled.
-const WARM_FEATURE_BRANCH_STATUS_GIT_BUDGET = 13;
+// 60 ms. Warm means the repository paths, default branch and remote caches are filled. One
+// process verifies the branch still exists after the status read, so a rename cannot keep a
+// guessed Changes base.
+const WARM_FEATURE_BRANCH_STATUS_GIT_BUDGET = 14;
 
 const isGitCommand = (command: string) => {
   const name = command.split(/[\\/]/).at(-1)?.toLowerCase();
