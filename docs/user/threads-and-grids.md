@@ -115,10 +115,11 @@ runs.
 
 `Ctrl+S` stashes the current prompt. The stash menu restores or deletes a stashed prompt.
 
-**Plan mode** asks the agent to propose a plan before acting; the proposed plan card can
-implement it in a new thread. **Side chat** opens a read-only aside beside the thread: it
-can read the conversation and the project, but cannot edit files, run commands or interrupt
-the run. **Second opinion** on an assistant reply asks another provider or model; its card
+**Plan mode** is optional and off by default (**Settings ▸ Labs**). It asks the agent to
+propose a plan before acting; the proposed plan card can implement it in a new thread.
+**Side chat** opens a read-only aside beside the thread: it can read the conversation and
+the project, but cannot edit files, run commands or interrupt the run. **Second opinion** on
+an assistant reply asks another provider or model; its card
 stays out of the thread until you choose **Send to thread**.
 
 ## Terminals and the right panel

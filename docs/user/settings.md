@@ -18,8 +18,8 @@ Search Settings by feature or setting name. `Esc` clears an active search.
 - **Sidebar** — group matching repositories across environments, and order projects.
 - **Notifications** — thread notifications with a style (notifications, sound, both or
   off), and in-app notifications.
-- **Confirmations** — ask before unpinning, archiving or deleting a thread, and whether the
-  quit shortcut quits directly or waits for a second press.
+- **Confirmations** — ask before unpinning, archiving or deleting a thread, and, in the
+  desktop app, whether the quit shortcut quits directly or waits for a second press.
 - **Background** — **Keep in tray**, shown when the desktop has a working tray.
 - **Display** — timestamp format.
 
@@ -45,7 +45,8 @@ cleanup. See [Dictation](dictation.md).
 ## Diffs & pull requests
 
 Diff layout, whitespace, default file expansion and colors. **Open pull requests and
-changes panels proactively** opens the matching panel when an agent finishes.
+changes panels proactively** opens the matching panel when an agent finishes, except in grid
+cells and narrow windows.
 
 ## Keybindings
 
@@ -128,7 +129,8 @@ and can be revoked.
 ## Secrets
 
 Secret providers, currently 1Password, used as the source of a provider credential. A
-stored credential is never shown again.
+stored credential is never shown again. Source control and task source tokens are set on
+their own pages.
 
 ## Maintenance
 
@@ -138,8 +140,8 @@ storage, browser artifacts and rotated logs, diagnostics, and **Coming from Hous
 
 ## Labs
 
-Linked environments (beta), Simlock device hosts (alpha), and legacy toggles that are kept
-for existing installations: legacy plan mode and the legacy context window indicator.
+Linked environments (beta), Simlock device hosts (alpha), and optional composer features that
+are off by default: plan mode and the context window indicator.
 
 ## About
 

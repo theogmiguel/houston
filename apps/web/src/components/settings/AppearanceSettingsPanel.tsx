@@ -148,22 +148,20 @@ export function AppearanceSettingsPanel() {
   return (
     <SettingsPageContainer>
       <SettingsSection id="appearance" title="Colors & themes" variant="plain" hideTitle>
-        <div id={searchableSetting("theme").id}>
-          <ThemeLibrary
-            appearanceMode={appearanceMode}
-            customThemes={customThemes}
-            initialAppearance={resolvedTheme}
-            refreshTheme={refreshTheme}
-            isImportOpen={isImportThemeOpen}
-            setAppearanceMode={setAppearanceMode}
-            setTheme={setTheme}
-            setThemeHalf={setThemeHalf}
-            theme={theme}
-            themeHalves={themeHalves}
-            onImportOpenChange={setIsImportThemeOpen}
-            view="tiles"
-          />
-        </div>
+        <ThemeLibrary
+          appearanceMode={appearanceMode}
+          customThemes={customThemes}
+          initialAppearance={resolvedTheme}
+          refreshTheme={refreshTheme}
+          isImportOpen={isImportThemeOpen}
+          setAppearanceMode={setAppearanceMode}
+          setTheme={setTheme}
+          setThemeHalf={setThemeHalf}
+          theme={theme}
+          themeHalves={themeHalves}
+          onImportOpenChange={setIsImportThemeOpen}
+          view="tiles"
+        />
       </SettingsSection>
 
       <SettingsSection id="appearance-interface" title="Theme">
@@ -279,7 +277,7 @@ export function AppearanceSettingsPanel() {
         />
         <SettingsRow
           {...searchableSetting("setting-glass-opacity")}
-          description="Higher values make menus, dialogs, and the composer more solid."
+          description="Higher values make composer banners and translucent controls more solid."
           resetAction={
             settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity ? (
               <SettingResetButton

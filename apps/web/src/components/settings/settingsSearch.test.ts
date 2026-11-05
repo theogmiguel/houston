@@ -248,9 +248,40 @@ describe("settings search targets", () => {
     const streaming = getSettingsSearchTargetScope("response-streaming")!;
     expect(streaming.scope).toBe("project-defaults");
     expect(isSettingsSearchScopeAvailable(streaming.scope, "project")).toBe(true);
-    for (const id of ["legacy-plan-mode", "legacy-context-window-indicator"]) {
+    for (const id of ["plan-mode", "context-window-indicator"]) {
       expect(getSettingsSearchTargetScope(id)!.scope).toBeNull();
     }
+  });
+});
+
+describe("settings search items match their rows", () => {
+  it("keeps the agent device switch available in project scopes", () => {
+    const device = getSettingsSearchTargetScope("agent-device-access")!;
+    expect(isSettingsSearchScopeAvailable(device.scope, "project")).toBe(true);
+  });
+
+  it("lists no item for the removed local simulators row or the project icon controls", () => {
+    expect(searchSettings("local simulators").map((item) => item.title)).not.toContain(
+      "Local simulators",
+    );
+    expect(searchSettings("emoji").map((item) => item.id)).not.toContain("project-overview");
+  });
+
+  it("names the voice cleanup rows by their visible titles", () => {
+    const titles = ["speech-correction-word", "speech-post-processing-prompt"].map(
+      (id) => SETTINGS_SEARCH_ITEMS.find((item) => item.id === id)?.title,
+    );
+    expect(titles).toEqual(["Correction cue", "Cleanup instructions"]);
+  });
+
+  it("finds the capture sound row by its style choices", () => {
+    expect(searchSettings("whoosh")[0]?.id).toBe("snap-shot-sound");
+  });
+
+  it("limits the quit shortcut to the desktop host", () => {
+    expect(SETTINGS_SEARCH_ITEMS.find((item) => item.id === "quit-shortcut")?.desktopOnly).toBe(
+      true,
+    );
   });
 });
 

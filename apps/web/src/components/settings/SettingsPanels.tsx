@@ -1,4 +1,5 @@
 import { NotificationSettings } from "./NotificationSettings";
+import { QuitShortcutSetting } from "./QuitShortcutSetting";
 import { KeepInTraySetting } from "./TraySettings";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -64,6 +65,7 @@ import {
 import { providerInstanceEntriesFor } from "../../providerInstances";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import { isMacPlatform } from "../../lib/utils";
+import { RESET_THREAD_DETAILS_ITEMS } from "../chat/threadDetailsItems";
 import { useEnvironmentProviders } from "../../state/environments";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { Button, InlineButton } from "../ui/button";
@@ -85,6 +87,7 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   getChangedBrowserSettingLabels,
+  getChangedDisplaySettingLabels,
   getChangedTypographySettingLabels,
   hasChangedBackgroundActivitySettings,
   isProjectGroupingEnabled,
@@ -410,6 +413,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? ["Composer context"]
       : []),
     ...getChangedTypographySettingLabels(settings),
+    ...getChangedDisplaySettingLabels(settings),
     ...(settings.diffFilesCollapsed !== DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed
       ? ["Default diff file state"]
       : []),
@@ -579,6 +583,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       fontSizePrompt: DEFAULT_UNIFIED_SETTINGS.fontSizePrompt,
       fontSizeCode: DEFAULT_UNIFIED_SETTINGS.fontSizeCode,
       fontSizeTerminal: DEFAULT_UNIFIED_SETTINGS.fontSizeTerminal,
+      fontSmoothing: DEFAULT_UNIFIED_SETTINGS.fontSmoothing,
+      ...RESET_THREAD_DETAILS_ITEMS,
       browserDefaultViewport: DEFAULT_UNIFIED_SETTINGS.browserDefaultViewport,
       browserDefaultZoomFactor: DEFAULT_UNIFIED_SETTINGS.browserDefaultZoomFactor,
       browserDefaultAppearance: DEFAULT_UNIFIED_SETTINGS.browserDefaultAppearance,
@@ -660,27 +666,27 @@ function AutoSettleDaysStepper({
   );
 }
 
-export function LegacyFeaturesSection() {
+export function ComposerFeaturesSection() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
 
   return (
-    <SettingsSection id="legacy-features" title="Legacy">
+    <SettingsSection id="labs-composer" title="Composer">
       <SettingsRow
-        {...searchableSetting("legacy-plan-mode")}
-        description="Restore Build/Plan, /plan, /default, and Shift+Tab. Off uses build mode."
+        {...searchableSetting("plan-mode")}
+        description="Adds Build/Plan, /plan, /default, and Shift+Tab. Off uses build mode."
         control={
           <Switch
             checked={settings.planModeEnabled}
             onCheckedChange={(checked) => {
               updateSettings({ planModeEnabled: Boolean(checked) });
             }}
-            aria-label="Plan mode (legacy)"
+            aria-label="Plan mode"
           />
         }
       />
       <SettingsRow
-        {...searchableSetting("legacy-context-window-indicator")}
+        {...searchableSetting("context-window-indicator")}
         description="Shows context window usage as a circular indicator in the composer."
         control={
           <Switch
@@ -688,19 +694,13 @@ export function LegacyFeaturesSection() {
             onCheckedChange={(checked) =>
               updateSettings({ contextWindowMeterEnabled: Boolean(checked) })
             }
-            aria-label="Context window indicator (legacy)"
+            aria-label="Context window indicator"
           />
         }
       />
     </SettingsSection>
   );
 }
-
-const QUIT_SHORTCUT_LABELS = {
-  direct: "Direct",
-  hold: "Hold",
-  "double-click": "Press twice",
-} as const;
 
 export function GeneralSettingsPanel() {
   const settings = useScopedSettings();
@@ -807,7 +807,7 @@ export function GeneralSettingsPanel() {
       <SettingsSection id="confirmations" title="Confirmations">
         <SettingsRow
           {...searchableSetting("unpin-confirmation")}
-          description="Ask before unpinning a thread from the pinned section."
+          description="Ask before the pin shortcut unpins a thread."
           resetAction={
             settings.confirmThreadUnpin !== DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin ? (
               <SettingResetButton
@@ -832,7 +832,7 @@ export function GeneralSettingsPanel() {
         />
         <SettingsRow
           {...searchableSetting("archive-confirmation")}
-          description="Require a second click on the inline archive action before a thread is archived."
+          description="Ask before archiving a thread from its menu."
           resetAction={
             settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive ? (
               <SettingResetButton
@@ -880,41 +880,7 @@ export function GeneralSettingsPanel() {
             />
           }
         />
-        <SettingsRow
-          {...searchableSetting("quit-shortcut")}
-          description="Direct quits immediately. Hold or press twice makes the quit shortcut wait for a second press."
-          resetAction={
-            settings.confirmQuit !== DEFAULT_UNIFIED_SETTINGS.confirmQuit ? (
-              <SettingResetButton
-                label="quit shortcut"
-                onClick={() =>
-                  updateSettings({ confirmQuit: DEFAULT_UNIFIED_SETTINGS.confirmQuit })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.confirmQuit}
-              onValueChange={(value) => {
-                if (value === "direct" || value === "hold" || value === "double-click") {
-                  updateSettings({ confirmQuit: value });
-                }
-              }}
-            >
-              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Quit shortcut">
-                <SelectValue>{QUIT_SHORTCUT_LABELS[settings.confirmQuit]}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                {Object.entries(QUIT_SHORTCUT_LABELS).map(([value, label]) => (
-                  <SelectItem key={value} hideIndicator value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          }
-        />
+        <QuitShortcutSetting />
       </SettingsSection>
 
       <SettingsSection id="background" title="Background">
@@ -983,7 +949,7 @@ export function ChatSettingsPanel() {
       <SettingsSection id="composer" title="Composer">
         <SettingsRow
           {...searchableSetting("composer-rich-text")}
-          description="Show formatted Markdown as you type."
+          description="Show formatted Markdown as you type in the thread composer."
           resetAction={
             settings.composerRichTextEnabled !==
             DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled ? (
@@ -1091,7 +1057,7 @@ export function ChatSettingsPanel() {
               </PolicyTooltip>
             </span>
           }
-          description="What a message sent while the agent works does."
+          description="Queue sends a message when the turn ends. Steer redirects the running turn, or queues if the provider cannot."
           resetAction={
             settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior ? (
               <SettingResetButton
@@ -1281,7 +1247,7 @@ export function DiffsSettingsPanel() {
         <PullRequestLinksOpenInAppSetting />
         <SettingsRow
           {...searchableSetting("proactive-panels")}
-          description="Open linked pull requests first. Otherwise, open Changes for edits to at least 3 files or 50 lines."
+          description="Open linked pull requests first. Otherwise, open Changes for edits to at least 3 files or 50 lines. Not in grid cells or narrow windows."
           resetAction={
             settings.proactivePanelsEnabled !== DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled ? (
               <SettingResetButton
@@ -1467,6 +1433,7 @@ export function ThreadsSettingsPanel() {
         serverScoped
         settingKeys={["responseStreamingMode"]}
         {...searchableSetting("response-streaming")}
+        description="On streams a reply paragraph by paragraph. Off shows the whole reply, and any reasoning text, at the end."
         resetAction={
           settings.responseStreamingMode !== DEFAULT_UNIFIED_SETTINGS.responseStreamingMode ? (
             <SettingResetButton
@@ -1540,7 +1507,7 @@ export function ThreadsSettingsPanel() {
             serverScoped
             settingKeys={["sidebarAutoSettleOnMerge"]}
             {...searchableSetting("auto-settle-merged-threads")}
-            description="Close a thread when its pull request merges. Closed pull requests still close automatically."
+            description="Close a thread when its pull request merges. While this or inactivity auto-close is on, a closed pull request closes its thread too."
             resetAction={
               settings.sidebarAutoSettleOnMerge !==
               DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge ? (
@@ -1824,7 +1791,7 @@ export function MaintenanceSettingsPanel() {
         extraRows={
           <SettingsRow
             {...searchableSetting("diagnostics")}
-            description="Versions, paths, resource use and recent logs, for a bug report."
+            description="Live processes, resource history, failures, slow spans and logs."
             control={
               <Button
                 render={

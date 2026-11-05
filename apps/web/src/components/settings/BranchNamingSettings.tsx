@@ -38,6 +38,9 @@ export function WorktreeBranchNamingRow() {
   const edited = useRef(false);
   const updateSettings = useUpdateScopedSettings();
   const prefixMixed = useScopedSettingsMixed(["branchNamePrefix"]);
+  const modeMixed = useScopedSettingsMixed(["branchNamingMode"]);
+  // Only the static mode reads the prefix; the other modes name branches from the model's output.
+  if (modeMixed || settings.branchNamingMode !== "static") return null;
 
   return (
     <SettingsRow

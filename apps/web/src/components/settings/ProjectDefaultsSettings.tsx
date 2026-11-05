@@ -219,7 +219,7 @@ export function ProjectDefaultsSettings({
       description={
         isProjectScope
           ? "Where new threads in this project start."
-          : "Where new threads start. Projects and their houston.json can override it."
+          : "Where new threads start. Projects can override it; if unset, a project's houston.json applies."
       }
       resetAction={
         !isProjectScope && settings.defaultThreadEnvMode !== null ? (
@@ -505,7 +505,7 @@ export function ProjectDefaultsSettings({
             settingKeys={["removeAgentCreditsOnMerge"]}
             mixed={mixedAgentCredits}
             {...searchableSetting("remove-agent-credits-on-merge")}
-            description="Remove recognized agent credit lines from merge and squash messages on hosts that support it, keeping human co-authors. Includes auto-merge. Excludes merge queues, stack merges, and existing commits."
+            description="On GitHub, remove recognized agent credit lines from merge and squash messages, keeping human co-authors. Rebase merges, merge queues, stack merges and existing commits are unchanged. Includes auto-merge."
             resetAction={
               settings.removeAgentCreditsOnMerge ? (
                 <SettingResetButton
@@ -552,7 +552,7 @@ export function WorktreeSubmodulesRow() {
       description={
         isProjectScope
           ? "How new worktrees in this project populate git submodules."
-          : "How new worktrees populate git submodules. Projects and their houston.json can override it."
+          : "How new worktrees populate git submodules. Projects can override it; if unset, a project's houston.json applies."
       }
       resetAction={
         !isProjectScope && settings.worktreeSubmodules !== null ? (

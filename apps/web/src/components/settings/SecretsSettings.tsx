@@ -16,6 +16,7 @@ import {
   AlertDialogTitle,
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
+import { Text } from "../ui/text";
 import { SecretProviderDialog } from "./SecretProviderDialog";
 import { classifySecretProvider } from "./SecretProviderDialog.logic";
 import {
@@ -38,6 +39,9 @@ export function SecretsSettingsPanel() {
   const connected = environment?.connection.phase === "connected";
   return (
     <SettingsPageContainer>
+      <Text as="p" tone="muted" className="mx-1">
+        Source control and task source tokens are set in Source control and Task sources.
+      </Text>
       {connected &&
       environment.serverConfig !== null &&
       environment.serverConfig.secretProviderSettings !== true ? (
