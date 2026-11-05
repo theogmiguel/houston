@@ -1374,6 +1374,9 @@ export const CODEX_THREAD_CONFIG = {
 
 // Houston waits can block for an hour; keep Codex's MCP timeout above that.
 const CODEX_HOUSTON_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
+// Calls arrive as `houston-direct.<tool>`; houstonMcpToolPresentation.ts must keep resolving that form.
+const CODEX_HOUSTON_DIRECT_MCP_SERVER = "houston-direct";
+const CODEX_DIRECT_ONLY_HOUSTON_TOOL = "houston_thread_wait";
 
 export function codexThreadRuntimeParams(input: {
   readonly threadId: ThreadId | null;
@@ -1408,11 +1411,38 @@ export function codexThreadRuntimeParams(input: {
       // Houston: the read-only sandbox does not cover MCP tool calls, so a read-only run
       // replaces every configured MCP server with Houston's own, when it holds a credential.
       ...(isReadOnlySandbox(input.runtimePolicy)
-        ? { mcp_servers: houstonServer === undefined ? {} : { houston: houstonServer } }
+        ? {
+            mcp_servers:
+              houstonServer === undefined
+                ? {}
+                : {
+                    houston: {
+                      ...houstonServer,
+                      disabled_tools: [CODEX_DIRECT_ONLY_HOUSTON_TOOL],
+                    },
+                    [CODEX_HOUSTON_DIRECT_MCP_SERVER]: {
+                      ...houstonServer,
+                      enabled_tools: [CODEX_DIRECT_ONLY_HOUSTON_TOOL],
+                      omit_tools_from: ["code_mode", "deferred"],
+                    },
+                  },
+          }
         : houstonServer === undefined
           ? {}
-          : // Override only Houston's server so launch-argument MCP servers survive.
-            { "mcp_servers.houston": houstonServer }),
+          : {
+              // Override only Houston's servers so launch-argument MCP servers survive.
+              "mcp_servers.houston": {
+                ...houstonServer,
+                disabled_tools: [CODEX_DIRECT_ONLY_HOUSTON_TOOL],
+              },
+              // Code Mode runs a blocking wait as a nested call, and the model keeps working
+              // around it. A second, direct-only registration makes it a plain tool call.
+              [`mcp_servers.${CODEX_HOUSTON_DIRECT_MCP_SERVER}`]: {
+                ...houstonServer,
+                enabled_tools: [CODEX_DIRECT_ONLY_HOUSTON_TOOL],
+                omit_tools_from: ["code_mode", "deferred"],
+              },
+            }),
     },
   };
 }

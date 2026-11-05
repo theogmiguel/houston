@@ -53,7 +53,13 @@ A channel is an isolated state universe: `release` uses `~/.houston`, `dev` uses
 `<channel dir>/v2/`. A v1 install's state directly under the channel directory is read-only
 to v2.
 
-### Start-up cleanup of v1 configuration
+Orchestration state is decided as events, and projections are the source of truth once they apply
+them. The [v2 orchestrator](../../apps/server/src/orchestration-v2/Orchestrator.ts) serializes commands and
+decides events without performing provider or filesystem work.
+[EventSink](../../apps/server/src/orchestration-v2/EventSink.ts) commits events, persisted projections,
+the accepted command receipt, and outbox effects in one database transaction. Subscribers receive
+events after that commit. This keeps command retries idempotent and prevents a persisted projection
+from getting ahead of the event log.
 
 Once per start, on its own thread, the host stops the channel's v1 daemon units and removes
 its v1 hook and MCP entries from the Claude, Codex, OpenCode, Antigravity and ZCode configs
@@ -66,7 +72,23 @@ so they leave only while no other channel's v1 daemon runs; Claude's leaves only
 `claude mcp remove`. WSL distros are not reached. The outcome reaches the renderer through the
 desktop bridge for Settings ▸ Maintenance.
 
-### Detach and shutdown
+The event log only keeps what live readers need: about a day of history for reconnect replay and
+command-id retries.
+[ProjectionMaintenance](../../apps/server/src/orchestration-v2/ProjectionMaintenance.ts) deletes
+older events the projections cover, so projections cannot be rebuilt from the log. It keeps each
+stream's newest event (high-water marks, stream versions, snapshot sequences), `thread.created`
+(the legacy importer's marker), every `running` run update (Codex usage history reads the first
+of each attempt), and prompt anchors that retained subagent rows reference. A client whose cursor
+is below both its thread's newest event and the recorded pruned-through sequence missed pruned
+events, so it resumes from a snapshot; an idle thread's cursor resumes without one. Resumes
+recheck that sequence after reading the replay, since a pass can prune during the read. V2 command
+receipts stay for idempotency: a retry older than the retained history is still deduplicated,
+but its replay comes back without the pruned events. Receipts of imported legacy commands are
+removed once their threads are imported.
+
+Retained events must remain decodable on replay. Changing a schema affects old environments at
+startup as well as live RPC traffic. Compatibility work must account for stored history, not just
+what the newest client sends.
 
 Closing the window, or quitting from the tray, ends the host process. The server and its agent
 runs continue; the next launch attaches to the server the runtime file names. Stopping a

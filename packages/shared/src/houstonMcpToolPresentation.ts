@@ -86,7 +86,13 @@ function tool(
   return { displayName, labels, icon, summaryAction };
 }
 
-const HOUSTON_MCP_SERVER_ALIASES = new Set(["houston", "houston_code"]);
+// Codex registers "houston-direct" for Houston tools kept out of Code Mode.
+const HOUSTON_MCP_SERVER_ALIASES = new Set([
+  "houston",
+  "houston_code",
+  "houston-direct",
+  "houston_direct",
+]);
 
 const HOUSTON_MCP_TOOLS: Readonly<Record<string, HoustonMcpToolDefinition>> = {
   link_pull_request: tool(
@@ -443,16 +449,18 @@ function parseHoustonMcpToolName(value: string): string | null {
       : null;
   }
 
-  const namespaceMatch = /^(?<server>houston|houston_code)(?:[.:/]|\s*·\s*|\s+)(?<tool>.+)$/i.exec(
-    label,
-  );
+  const namespaceMatch =
+    /^(?<server>houston[-_]direct|houston|houston_code)(?:[.:/]|\s*·\s*|\s+)(?<tool>.+)$/i.exec(
+      label,
+    );
   if (namespaceMatch?.groups) {
     return namespaceMatch.groups.tool ?? null;
   }
 
-  const prefixed = /^(?:mcp[-_]{1,2})?(?:houston_code|houston)(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(
-    label,
-  );
+  const prefixed =
+    /^(?:mcp[-_]{1,2})?(?:houston[-_]direct|houston_code|houston)(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(
+      label,
+    );
   const candidate = prefixed?.groups?.tool ?? label;
   if (Object.hasOwn(HOUSTON_MCP_TOOLS, candidate)) return candidate;
   // OpenCode 2 thread prefixes can contain underscores; choose the longest known tool-name suffix.

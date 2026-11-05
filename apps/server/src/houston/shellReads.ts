@@ -156,6 +156,7 @@ export function makeSubscriberShellReads<E>(
     threadId: ThreadId,
     sequence: number,
     batch: ThreadShellBatch | undefined,
+    prefetchedShells: ReadonlyMap<string, Shell> | null = null,
   ): Effect.Effect<Shell, E> =>
     Effect.gen(function* () {
       const prior = last.get(threadId);
@@ -168,7 +169,9 @@ export function makeSubscriberShellReads<E>(
       const shell =
         reuse && batch.occurredAt !== undefined
           ? { ...prior.shell, updatedAt: DateTime.max(prior.shell.updatedAt, batch.occurredAt) }
-          : yield* readShared(shared, getThreadShell, threadId, sequence);
+          : prefetchedShells !== null
+            ? (prefetchedShells.get(threadId) ?? null)
+            : yield* readShared(shared, getThreadShell, threadId, sequence);
       // A missing shell is read again next time instead of being kept for a thread that is gone.
       if (shell === null) {
         last.delete(threadId);
