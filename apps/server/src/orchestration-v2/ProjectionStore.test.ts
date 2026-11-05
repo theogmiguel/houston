@@ -47,6 +47,7 @@ import {
   THREAD_HISTORY_PAGE_POLICY,
   THREAD_HISTORY_TURN_SNAPSHOT_ROW_LIMIT,
 } from "./threadHistoryPaging.ts";
+import { limitRecoveryCommand } from "./UsageLimitRecoveryWorker.ts";
 
 const layerTest = Layer.mergeAll(
   ProjectionStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemory)),
@@ -276,6 +277,60 @@ it.effect("record reads filter notification sources without dropping matching me
         monitorNotificationsOnly: false,
       })).messages,
       4,
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("reads selected messages by id without walking thread history", () =>
+  Effect.gen(function* () {
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = yield* addRolledBackRecoveryCandidate("selected-messages");
+    const now = yield* DateTime.now;
+    const messageIds = [
+      MessageId.make("message:selected-messages:first"),
+      MessageId.make("message:selected-messages:second"),
+    ];
+    for (const messageId of messageIds) {
+      yield* store.apply({
+        id: EventId.make(`event:selected-messages:${messageId}`),
+        type: "message.updated",
+        threadId,
+        occurredAt: now,
+        payload: {
+          id: messageId,
+          threadId,
+          runId: null,
+          nodeId: null,
+          createdBy: "user",
+          creationSource: "web",
+          role: "user",
+          text: `Body for ${messageId}`,
+          attachments: [],
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+    }
+    const trace = traceSqlStatements();
+    const selected = yield* store
+      .getMessagesById(threadId, [
+        messageIds[0]!,
+        messageIds[1]!,
+        messageIds[0]!,
+        MessageId.make("message:selected-messages:absent"),
+      ])
+      .pipe(Effect.withTracer(trace.tracer));
+    assert.isFalse(trace.statements.some((query) => query.includes("turn_items")));
+    assert.equal(selected.size, 2);
+    assert.equal(selected.get(messageIds[0]!)?.text, `Body for ${messageIds[0]}`);
+    assert.equal(selected.get(messageIds[1]!)?.text, `Body for ${messageIds[1]}`);
+    assert.equal((yield* store.getMessagesById(threadId, [])).size, 0);
+    assert.equal(
+      (yield* store.getMessagesById(ThreadId.make("thread:selected-messages:other"), [
+        messageIds[0]!,
+      ])).size,
+      0,
     );
   }).pipe(Effect.provide(layerTest)),
 );
@@ -1552,6 +1607,226 @@ it.effect("SQL list older settled threads below a cursor", () =>
       threadIds: [],
       counts: [{ projectId: ProjectId.make("project:b"), count: 1 }],
     });
+  }).pipe(Effect.provide(layerTest)),
+);
+
+// regression: #25806 pending request cards outlive the history window that drops their turn
+it.effect("SQL snapshot windows keep cards for requests still pending", () =>
+  Effect.gen(function* () {
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    const now = yield* DateTime.now;
+    const threadId = ThreadId.make("thread:pending-request-window");
+    yield* store.apply({
+      id: EventId.make("event:pending-request-window:thread"),
+      type: "thread.created",
+      threadId,
+      occurredAt: now,
+      payload: {
+        createdBy: "user",
+        creationSource: "web",
+        id: threadId,
+        projectId: ProjectId.make("project:pending-request-window"),
+        title: "Pending request window",
+        providerInstanceId,
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        activeProviderThreadId: null,
+        lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+        forkedFrom: null,
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+        settledOverride: null,
+        settledAt: null,
+        lastVisitedAt: null,
+        deletedAt: null,
+      },
+    });
+    let ordinal = 0;
+    const itemBase = (runId: RunId, nodeId: NodeId, id: string) => ({
+      id: TurnItemId.make(`item:pending-request-window:${id}`),
+      threadId,
+      runId,
+      nodeId,
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal: ++ordinal,
+      status: "completed" as const,
+      title: null,
+      startedAt: now,
+      completedAt: now,
+      updatedAt: now,
+    });
+    const request = (id: string, nodeId: NodeId, kind: "user_input" | "command") => ({
+      id: RuntimeRequestId.make(`request:pending-request-window:${id}`),
+      nodeId,
+      providerTurnId: null,
+      nativeRequestRef: null,
+      kind,
+      responseCapability: {
+        type: "live" as const,
+        providerSessionId: ProviderSessionId.make("session:pending-request-window"),
+      },
+      createdAt: now,
+    });
+    const turnCount = THREAD_HISTORY_PAGE_POLICY.maxUserTurns + 4;
+    for (let turn = 1; turn <= turnCount; turn += 1) {
+      const runId = RunId.make(`run:pending-request-window:${turn}`);
+      const nodeId = NodeId.make(`node:pending-request-window:${turn}`);
+      yield* store.apply({
+        id: EventId.make(`event:pending-request-window:run:${turn}`),
+        type: "run.created",
+        threadId,
+        runId,
+        nodeId,
+        driver,
+        occurredAt: now,
+        payload: {
+          id: runId,
+          threadId,
+          ordinal: turn,
+          providerInstanceId,
+          modelSelection,
+          providerThreadId: null,
+          userMessageId: MessageId.make(`message:pending-request-window:${turn}`),
+          rootNodeId: nodeId,
+          activeAttemptId: null,
+          status: "completed",
+          requestedAt: now,
+          startedAt: now,
+          completedAt: now,
+          checkpointId: null,
+          contextHandoffId: null,
+        },
+      });
+      const items: Array<OrchestrationV2TurnItem> = [
+        {
+          ...itemBase(runId, nodeId, `message:${turn}`),
+          type: "user_message",
+          createdBy: "user",
+          creationSource: "web",
+          messageId: MessageId.make(`message:pending-request-window:${turn}`),
+          inputIntent: "turn_start",
+          text: `Turn ${turn}`,
+          attachments: [],
+        },
+      ];
+      if (turn === 1) {
+        const question = {
+          id: "scope",
+          header: "Scope",
+          question: "Which scope?",
+          options: [{ label: "All", description: "Everything" }],
+        };
+        items.push(
+          {
+            ...itemBase(runId, nodeId, "question:pending"),
+            status: "running",
+            type: "user_input_request",
+            requestId: request("question:pending", nodeId, "user_input").id,
+            questions: [question],
+          },
+          {
+            ...itemBase(runId, nodeId, "approval:pending"),
+            status: "running",
+            type: "approval_request",
+            requestId: request("approval:pending", nodeId, "command").id,
+            requestKind: "command",
+            prompt: "rm -rf build",
+          },
+          {
+            ...itemBase(runId, nodeId, "question:resolved"),
+            type: "user_input_request",
+            requestId: request("question:resolved", nodeId, "user_input").id,
+            questions: [question],
+          },
+        );
+        for (const [id, kind, status] of [
+          ["question:pending", "user_input", "pending"],
+          ["approval:pending", "command", "pending"],
+          ["question:resolved", "user_input", "resolved"],
+        ] as const) {
+          yield* store.apply({
+            id: EventId.make(`event:pending-request-window:request:${id}`),
+            type: "runtime-request.updated",
+            threadId,
+            nodeId,
+            driver,
+            occurredAt: now,
+            payload: {
+              ...request(id, nodeId, kind),
+              status,
+              resolvedAt: status === "pending" ? null : now,
+            },
+          });
+        }
+      }
+      for (const item of items) {
+        yield* store.apply({
+          id: EventId.make(`event:pending-request-window:${item.id}`),
+          type: "turn-item.updated",
+          threadId,
+          runId,
+          nodeId,
+          driver,
+          occurredAt: now,
+          payload: item,
+        });
+      }
+    }
+
+    const pendingCardIds = [
+      TurnItemId.make("item:pending-request-window:question:pending"),
+      TurnItemId.make("item:pending-request-window:approval:pending"),
+    ];
+    const { statements, tracer } = traceSqlStatements();
+    const snapshot = yield* store
+      .getThreadSnapshotWindow(threadId, {
+        rowLimit: THREAD_HISTORY_PAGE_POLICY.maxItems + 2,
+        userTurnLimit: THREAD_HISTORY_PAGE_POLICY.maxUserTurns,
+      })
+      .pipe(Effect.withTracer(tracer));
+    const sql = yield* SqlClient.SqlClient;
+    const query = statements.find(
+      (statement) =>
+        statement.includes("FROM orchestration_v2_projection_runtime_requests AS request") &&
+        statement.includes("SELECT item.payload_json"),
+    );
+    assert.isDefined(query);
+    const plan = (yield* sql.unsafe<{ readonly detail: string }>(
+      `EXPLAIN QUERY PLAN ${query}`,
+    )).map((row) => row.detail);
+    assert.include(
+      plan[0],
+      "SEARCH request USING INDEX orchestration_v2_projection_runtime_requests_thread_status_idx",
+    );
+    assert.include(
+      plan[1],
+      "SEARCH item USING INDEX orchestration_v2_projection_turn_items_node_ordinal_idx",
+    );
+    const bounded = buildBoundedThreadProjection({
+      projection: snapshot.projection,
+      snapshotSequence: snapshot.snapshotSequence,
+    });
+    assert.isTrue(bounded.hasMoreHistory);
+    assert.notInclude(
+      bounded.projection.turnItems.map((item) => item.id),
+      TurnItemId.make("item:pending-request-window:question:resolved"),
+    );
+    for (const projection of [snapshot.projection, bounded.projection]) {
+      const visibleIds = projection.visibleTurnItems.map((row) => row.sourceItemId);
+      assert.notInclude(visibleIds, TurnItemId.make("item:pending-request-window:message:1"));
+      assert.includeMembers(
+        projection.turnItems.map((item) => item.id),
+        pendingCardIds,
+      );
+      for (const id of pendingCardIds) assert.notInclude(visibleIds, id);
+    }
   }).pipe(Effect.provide(layerTest)),
 );
 
@@ -5113,6 +5388,183 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
       }
       yield* applyRun("failed", NodeId.make("new-attempt-root"));
       yield* assertSummary(null, null);
+    }),
+  );
+
+  it.effect("does not freshly arm limit recovery for a subagent of a settled parent", () =>
+    Effect.gen(function* () {
+      const store = yield* ProjectionStore.ProjectionStoreV2;
+      const now = yield* DateTime.now;
+      const resetAt = DateTime.formatIso(DateTime.add(now, { hours: 1 }));
+      const threadPayload = (
+        threadId: ThreadId,
+        parentThreadId: ThreadId | null,
+        settledOverride: "settled" | null,
+      ) =>
+        ({
+          createdBy: "user",
+          creationSource: "web",
+          id: threadId,
+          projectId: ProjectId.make("project:settled-parent-limit"),
+          title: "Settled parent limit recovery",
+          providerInstanceId,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          activeProviderThreadId: null,
+          lineage: {
+            parentThreadId,
+            relationshipToParent: parentThreadId === null ? null : "subagent",
+            rootThreadId: parentThreadId ?? threadId,
+          },
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: null,
+          settledOverride,
+          settledAt: settledOverride === null ? null : now,
+          lastVisitedAt: null,
+          deletedAt: null,
+        }) as const;
+      const createThread = (
+        threadId: ThreadId,
+        parentThreadId: ThreadId | null,
+        settledOverride: "settled" | null,
+      ) =>
+        store.apply({
+          id: EventId.make(`event:${threadId}:created`),
+          type: "thread.created",
+          threadId,
+          occurredAt: now,
+          payload: threadPayload(threadId, parentThreadId, settledOverride),
+        });
+      const addLimitedChild = Effect.fnUntraced(function* (name: string, parentSettled: boolean) {
+        const parentId = ThreadId.make(`thread:settled-parent-limit:${name}:parent`);
+        const childId = ThreadId.make(`thread:settled-parent-limit:${name}:child`);
+        const runId = RunId.make(`run:settled-parent-limit:${name}`);
+        const rootNodeId = NodeId.make(`node:settled-parent-limit:${name}`);
+        yield* createThread(parentId, null, parentSettled ? "settled" : null);
+        yield* createThread(childId, parentId, null);
+        const run = {
+          id: runId,
+          threadId: childId,
+          ordinal: 1,
+          providerInstanceId,
+          modelSelection,
+          providerThreadId: null,
+          userMessageId: MessageId.make(`message:settled-parent-limit:${name}`),
+          rootNodeId,
+          activeAttemptId: null,
+          status: "failed" as const,
+          requestedAt: now,
+          startedAt: now,
+          completedAt: now,
+          checkpointId: null,
+          contextHandoffId: null,
+        };
+        yield* store.apply({
+          id: EventId.make(`event:settled-parent-limit:${name}:run`),
+          type: "run.created",
+          threadId: childId,
+          runId,
+          nodeId: rootNodeId,
+          driver,
+          providerInstanceId,
+          occurredAt: now,
+          payload: run,
+        });
+        yield* store.apply({
+          id: EventId.make(`event:settled-parent-limit:${name}:error`),
+          type: "turn-item.updated",
+          threadId: childId,
+          occurredAt: now,
+          payload: {
+            id: TurnItemId.make(`item:settled-parent-limit:${name}:error`),
+            threadId: childId,
+            runId,
+            nodeId: rootNodeId,
+            providerThreadId: null,
+            providerTurnId: null,
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal: 1,
+            status: "failed",
+            title: "Usage limit reached",
+            startedAt: now,
+            completedAt: now,
+            updatedAt: now,
+            type: "error",
+            failure: {
+              class: "usage_limit",
+              message: "Plan limit reached.",
+              resetAt,
+              code: "usageLimitExceeded",
+              retryable: null,
+            },
+          },
+        });
+        return childId;
+      });
+      const settledParentChild = yield* addLimitedChild("settled", true);
+      const activeParentChild = yield* addLimitedChild("active", false);
+      for (const options of [
+        { now, autoResume: true, snooze: false },
+        { now, autoResume: false, snooze: true },
+      ]) {
+        const armed = (yield* store.getLimitRecoveryCandidates(options))
+          .filter((row) => row.id === settledParentChild || row.id === activeParentChild)
+          .filter(
+            (row) =>
+              limitRecoveryCommand(
+                row,
+                options.autoResume,
+                DateTime.toEpochMillis(now),
+                options.snooze,
+              )?.type === "thread.metadata.update",
+          )
+          .map((row) => row.id);
+        assert.deepEqual(
+          armed,
+          [activeParentChild],
+          `only the child of the unsettled parent is armed (${JSON.stringify(options)})`,
+        );
+      }
+      // A recovery armed before the parent settled still resumes at its reset.
+      yield* store.apply({
+        id: EventId.make("event:settled-parent-limit:settled:armed"),
+        type: "thread.metadata-updated",
+        threadId: settledParentChild,
+        occurredAt: now,
+        payload: {
+          ...threadPayload(
+            settledParentChild,
+            ThreadId.make("thread:settled-parent-limit:settled:parent"),
+            null,
+          ),
+          limitRecovery: {
+            runId: RunId.make("run:settled-parent-limit:settled"),
+            resetAt,
+            autoResume: true,
+          },
+        },
+      });
+      const afterReset = DateTime.add(now, { hours: 2 });
+      const resumed = (yield* store.getLimitRecoveryCandidates({
+        now: afterReset,
+        autoResume: true,
+        snooze: false,
+      })).find((row) => row.id === settledParentChild);
+      assert.isDefined(resumed);
+      assert.isTrue(
+        limitRecoveryCommand(
+          resumed,
+          true,
+          DateTime.toEpochMillis(afterReset),
+          false,
+        )?.commandId.startsWith("limit-resume:"),
+      );
     }),
   );
 

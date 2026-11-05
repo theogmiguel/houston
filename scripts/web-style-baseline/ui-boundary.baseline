@@ -84,7 +84,7 @@
 3 apps/web/src/components/chat/ProviderModelPicker.tsx
 3 apps/web/src/components/chat/ProviderStatusBanner.tsx
 9 apps/web/src/components/chat/ProviderSubagentBar.tsx
-32 apps/web/src/components/chat/QueuedRunsControl.tsx
+29 apps/web/src/components/chat/QueuedRunsControl.tsx
 15 apps/web/src/components/chat/SecretRequestCard.tsx
 1 apps/web/src/components/chat/ShellCommandBlock.tsx
 6 apps/web/src/components/chat/SideChatPane.tsx
