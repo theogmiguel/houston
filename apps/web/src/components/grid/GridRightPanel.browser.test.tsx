@@ -9,6 +9,7 @@ import "~/index.css";
 
 import { AppRoot } from "~/AppRoot";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
+import { useRightPanelStore } from "~/rightPanelStore";
 import { getRouter } from "~/router";
 import {
   ENVIRONMENT_ID,
@@ -52,6 +53,7 @@ __setClientSettingsForTests({
 });
 
 function seedGrid(): string {
+  useRightPanelStore.setState({ byThreadKey: {}, threadPanelVisibilityByThreadKey: {} });
   const projectId = ProjectId.make("project-render");
   const grid = createGridRecord([], {
     environmentId: ENVIRONMENT_ID,
@@ -92,3 +94,34 @@ it(
     });
   },
 );
+
+it("opens the device surface from the grid's surface launcher", async () => {
+  const gridId = seedGrid();
+  const router = getRouter(createMemoryHistory({ initialEntries: [`/grid/${gridId}`] }));
+  await router.load();
+  const container = document.createElement("div");
+  container.style.cssText = "height: 900px; width: 1400px;";
+  await using screen = await render(<AppRoot router={router} />, { container, router: false });
+
+  await vi.waitFor(() => {
+    expect(screen.container.querySelectorAll("[data-grid-cell]")).toHaveLength(2);
+  });
+
+  screen.container.querySelector<HTMLButtonElement>('[aria-label="Toggle right panel"]')!.click();
+  await vi.waitFor(() => {
+    expect(screen.container.textContent).toContain("Open a surface");
+  });
+
+  const device = await vi.waitFor(() => {
+    const found = Array.from(
+      screen.container.querySelectorAll<HTMLElement>("button, [aria-disabled='true']"),
+    ).find((element) => element.textContent?.trim().startsWith("Device"));
+    expect(found).not.toBeUndefined();
+    return found!;
+  });
+  device.click();
+
+  await vi.waitFor(() => {
+    expect(screen.container.querySelector('[aria-label="Close Device"]')).not.toBeNull();
+  });
+});
