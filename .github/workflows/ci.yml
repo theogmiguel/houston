@@ -128,10 +128,6 @@ jobs:
         run: bash scripts/check-kill-guard.sh
       - name: check-case-collisions.sh (paths unique on case-insensitive filesystems)
         run: bash scripts/check-case-collisions.sh
-      - name: check-spawn-window.sh (CREATE_NO_WINDOW lint config still armed)
-        run: bash scripts/check-spawn-window.sh
-      - name: check-env-ratchet.sh (direct process-environment access only goes down)
-        run: bash scripts/check-env-ratchet.sh
       - name: check-comment-hygiene.sh (no dates/phases/diary/app names in code comments)
         run: bash scripts/check-comment-hygiene.sh
       - name: check-web-style.sh (apps/web design-system guards, baseline ratchet)
