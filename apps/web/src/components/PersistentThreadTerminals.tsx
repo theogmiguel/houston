@@ -2,6 +2,7 @@ import {
   AuthTerminalOperateScope,
   type EnvironmentId,
   type ResolvedKeybindingsConfig,
+  type ScopedProjectRef,
   type ScopedThreadRef,
   type ThreadId,
 } from "@houston-app/contracts";
@@ -84,7 +85,9 @@ interface PersistentThreadTerminalDrawerProps {
   newShortcutLabel: string | undefined;
   closeShortcutLabel: string | undefined;
   keybindings: ResolvedKeybindingsConfig;
-  onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  onAddTerminalContext?: ((selection: TerminalContextSelection) => void) | undefined;
+  /** Set by a grid's dock, whose terminal belongs to the grid rather than a thread. */
+  projectRef?: ScopedProjectRef | null;
 }
 
 export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDrawer({
@@ -99,17 +102,18 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   closeShortcutLabel,
   keybindings,
   onAddTerminalContext,
+  projectRef: projectRefOverride = null,
 }: PersistentThreadTerminalDrawerProps) {
   const canOperateTerminal = useEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope);
-  const terminalActions = useThreadTerminalActions(threadRef);
   const serverThread = useQuietThreadShell(threadRef);
   const draftThread = useComposerDraftStore((store) => store.getDraftThreadByRef(threadRef));
-  const projectRef = serverThread
+  const threadProjectRef = serverThread
     ? scopeProjectRef(serverThread.environmentId, serverThread.projectId)
     : draftThread
       ? scopeProjectRef(draftThread.environmentId, draftThread.projectId)
       : null;
-  const project = useProject(projectRef);
+  const project = useProject(projectRefOverride ?? threadProjectRef);
+  const terminalActions = useThreadTerminalActions(threadRef, { project });
   const terminalUiState = useTerminalUiStateStore((state) =>
     selectThreadTerminalUiState(state.terminalUiStateByThreadKey, threadRef),
   );
@@ -228,7 +232,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   });
 
   const handleAddTerminalContext = (selection: TerminalContextSelection) => {
-    if (!visible) {
+    if (!visible || onAddTerminalContext === undefined) {
       return;
     }
     onAddTerminalContext(selection);
@@ -274,7 +278,9 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
           onActiveTerminalChange={activateTerminal}
           onCloseTerminal={closeTerminal}
           onHeightChange={setTerminalHeight}
-          onAddTerminalContext={handleAddTerminalContext}
+          onAddTerminalContext={
+            onAddTerminalContext === undefined ? undefined : handleAddTerminalContext
+          }
           terminalLabelsById={terminalLabelsById}
           terminalLaunchLocationsById={terminalLaunchLocationsById}
         />

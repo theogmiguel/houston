@@ -9,6 +9,7 @@ import { GridEmptyDraft } from "../components/grid/GridEmptyDraft";
 import { GridHost } from "../components/grid/GridHost";
 import { GridThreadBranch } from "../components/grid/GridThreadBranch";
 import { GridThreadCell } from "../components/grid/GridThreadCell";
+import { GridTerminalDock } from "../components/grid/GridTerminalDock";
 import { clearInlineDetailsHandoff } from "../components/chat/inlineDetailsFollow";
 import {
   EMPTY_PROVIDER_ENTRIES,
@@ -20,6 +21,7 @@ import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { isDesktopHost } from "../env";
 import { isNativeDesktopHost } from "../lib/desktopWindow";
+import { gridTerminalThreadRef } from "../grid/gridTerminal";
 import { MAX_GRID_THREADS, useGrid, useGridStore, workspaceKeyOf } from "../grid/gridStore";
 import { moveThreadToGridOrExplain, moveToGridTargets } from "../grid/moveToGrid";
 import { showThreadMovedToast } from "../grid/moveFeedback";
@@ -265,6 +267,12 @@ function GridRoute() {
     );
   }
 
+  // A grid's terminal belongs to the grid while it shows its cells; a maximized
+  // cell keeps the thread's own drawer.
+  const gridTerminalRef =
+    effectiveMaximized === null
+      ? gridTerminalThreadRef(grid.environmentId as EnvironmentId, grid.id)
+      : null;
   const projectTitles = new Map(
     projects.map((project) => [workspaceKeyOf(project.environmentId, project.id), project.title]),
   );
@@ -431,6 +439,7 @@ function GridRoute() {
             <span className="flex-1" />
             <GridTopBarControls
               grid={grid}
+              gridTerminalRef={gridTerminalRef}
               emptyDraftThreadId={emptyDraftThreadId}
               threadPanelAnchorRef={threadDetailsAnchorRef}
               onArrange={() => setMaximizedThreadId(null)}
@@ -583,6 +592,9 @@ function GridRoute() {
               />
             )}
           />
+          {gridTerminalRef === null ? null : (
+            <GridTerminalDock key={grid.id} grid={grid} keybindings={keybindings} />
+          )}
         </div>
         <div ref={setRightPanelHost} className="contents" data-grid-right-panel-host="" />
       </div>
