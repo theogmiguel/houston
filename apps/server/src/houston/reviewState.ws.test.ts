@@ -1,4 +1,5 @@
 // The four houston.review.* methods through the real `/ws` handlers and the real scope table.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -283,11 +284,11 @@ const layerReview = (input: {
       input.databaseFile === undefined
         ? Layer.fresh(SqlitePersistence.layerMemory)
         : Layer.fresh(SqlitePersistence.layerFromPath(input.databaseFile)).pipe(
-            Layer.provide(NodeServices.layer),
+            Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
     ),
     Layer.provideMerge(ServerConfig.layerTest(input.workspaceRoot, input.baseDir)),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
 const failureOf = (value: unknown) => {
@@ -403,7 +404,7 @@ const withServer = <A, E>(
     return yield* body({ repo, outside }).pipe(
       Effect.provide(layerServer({ workspaceRoot: repo, baseDir })),
     );
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 const anchorPayload = (cwd: string) => ({
   cwd,
@@ -566,6 +567,6 @@ describe("marks survive a restart", () => {
         ).files.map((file) => [file.path, file.state]),
         [["a.ts", "viewed"]],
       );
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

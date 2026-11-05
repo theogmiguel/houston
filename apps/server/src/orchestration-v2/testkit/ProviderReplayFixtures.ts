@@ -1,6 +1,8 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import type { OrchestrationV2DomainEvent, ProviderReplayTranscript } from "@houston-app/contracts";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -47,11 +49,12 @@ for (const fixture of ORCHESTRATOR_REPLAY_FIXTURES) {
   }
 }
 
-export const readReplayFixtureTranscript = Effect.fn("readOrchestratorReplayTranscript")(function* (
-  file: URL,
-) {
-  return yield* readProviderReplayTranscript(file);
-}, Effect.provide(NodeServices.layer));
+export const readReplayFixtureTranscript = Effect.fn("readOrchestratorReplayTranscript")(
+  function* (file: URL) {
+    return yield* readProviderReplayTranscript(file);
+  },
+  Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+);
 
 function normalizeTestError(cause: unknown): Error {
   return cause instanceof Error ? cause : new Error(String(cause));
@@ -163,7 +166,7 @@ const runFixtureProvider = Effect.fn("runOrchestratorReplayFixture")(function* <
           `${input.fixtureName}/${input.driver.driver} must not create ${relativePath} in the replay workspace`,
         );
       }
-    }).pipe(Effect.provide(NodeServices.layer));
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
   }
   assert.isFalse(
     result.domainEvents.some(isStreamingAssistantEvent),

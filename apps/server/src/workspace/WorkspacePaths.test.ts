@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, describe, expect } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -11,7 +12,7 @@ import * as WorkspacePaths from "./WorkspacePaths.ts";
 
 const layerTest = Layer.empty.pipe(
   Layer.provideMerge(WorkspacePaths.layer),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 const makeTempDir = Effect.fn("makeTempDir")(function* () {

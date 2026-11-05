@@ -1,7 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off - fixtures need a junction and bigint file identity, which Effect's FileSystem does not expose.
 import * as NodeFSP from "node:fs/promises";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -85,7 +87,7 @@ const fileIdentity = (filePath: string) =>
     return { dev: stat.dev, ino: stat.ino };
   });
 
-it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("CodexHomeLayout", (it) => {
   describe("resolveCodexHomeLayout", () => {
     it.effect("uses the shared home for continuation and the shadow home for runtime", () =>
       Effect.gen(function* () {

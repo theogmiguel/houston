@@ -1,4 +1,5 @@
 import { pipe } from "effect/Function";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { ProviderReplayEntry, ProviderReplayTranscript } from "@houston-app/contracts";
 import * as Console from "effect/Console";
@@ -226,7 +227,7 @@ const record = Effect.gen(function* () {
     Effect.map(Effect.service(ChildProcessSpawner.ChildProcessSpawner), (live) =>
       makePiRecordingSpawner(live, entries),
     ),
-  ).pipe(Layer.provide(NodeServices.layer));
+  ).pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
   const materializeInput = materializeFixtureInput({
     scenario: fixture.name,
@@ -308,4 +309,6 @@ const record = Effect.gen(function* () {
   yield* Console.log(`Wrote ${transcript.entries.length} Pi RPC replay entries to ${outputPath}`);
 });
 
-await Effect.runPromise(record.pipe(Effect.scoped, Effect.provide(NodeServices.layer)));
+await Effect.runPromise(
+  record.pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);

@@ -1,6 +1,7 @@
 import { SourceControlProviderKind } from "@houston-app/contracts";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import { assert, describe, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -244,6 +245,7 @@ function harness(input: {
     policy,
     Layer.succeed(HttpClient.HttpClient, graphQlHttp(graphql, graphqlCalls)),
     NodeServices.layer,
+    NodeCrypto.layer,
   );
   return { layer, git, graphqlCalls };
 }

@@ -215,7 +215,7 @@ import {
 } from "@houston-app/contracts/houston/sideThreads";
 import * as CheckpointDiffQuery from "../checkpointing/CheckpointDiffQuery.ts";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import type { MessageDelivery } from "@houston-app/contracts/houston/messageDelivery";
 
 const isMessageQuestionAnswer = Schema.is(
@@ -1110,7 +1110,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const projectionStore = yield* ProjectionStoreV2;
   const effectOutbox = yield* EffectOutbox.EffectOutboxV2;
   const checkpointStore = yield* CheckpointStore.CheckpointStore;
-  const crypto = yield* Crypto.Crypto;
+  const digest = yield* Digest.Digest;
   const nextTurnItemOrdinal = (
     projection: Pick<OrchestrationV2ThreadProjection, "thread"> &
       Partial<Pick<OrchestrationV2ThreadProjection, "turnItems">>,
@@ -4899,7 +4899,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const turnDiff = CheckpointDiffQuery.makeTurnDiff({
         getCheckpointContext: (threadId) => projectionStore.getCheckpointContext(threadId),
         checkpointStore,
-        crypto,
+        digest,
       });
       const diff = yield* turnDiff({
         threadId: command.sourceThreadId,
@@ -14781,7 +14781,7 @@ export const layer: Layer.Layer<
   never,
   | CheckpointServiceV2
   | CheckpointStore.CheckpointStore
-  | Crypto.Crypto
+  | Digest.Digest
   | FileSystem.FileSystem
   | Path.Path
   | CommandPolicyV2

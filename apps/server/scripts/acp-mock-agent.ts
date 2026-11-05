@@ -2,10 +2,12 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Deferred from "effect/Deferred";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 
@@ -1973,7 +1975,7 @@ const program = Effect.gen(function* () {
     ),
   ),
   Effect.scoped,
-  Effect.provide(NodeServices.layer),
+  Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 NodeRuntime.runMain(program);

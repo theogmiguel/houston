@@ -4,9 +4,11 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import { ThreadId } from "@houston-app/contracts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { RotatingFileSinkError } from "@houston-app/shared/logging";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as FileSystem from "effect/FileSystem";
@@ -50,7 +52,7 @@ function parseLogLine(line: string) {
   };
 }
 
-it.layer(NodeServices.layer)("EventNdjsonLogger", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("EventNdjsonLogger", (it) => {
   it.effect("summarizes circular events without exposing their contents in diagnostics", () => {
     const messages: Array<unknown> = [];
     const logCapture = Logger.make<unknown, void>(({ message }) => {

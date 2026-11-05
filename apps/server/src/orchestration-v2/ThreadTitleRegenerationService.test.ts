@@ -1,4 +1,5 @@
 import { assert, describe, it, vi } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   CommandId,
@@ -101,6 +102,7 @@ function makeHarness(
         Layer.mock(TextGeneration.TextGeneration)({ generateThreadTitle }),
         layerServerSettings,
         NodeServices.layer,
+        NodeCrypto.layer,
       ),
     ),
   );
@@ -434,7 +436,7 @@ describe("ThreadTitleRegenerationService", () => {
           assert.isNotOk(projection.thread.titleRegeneration);
         }
       }).pipe(Effect.provide(harness.layer));
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("titles a fork's first message with the source history up to the fork point", () =>

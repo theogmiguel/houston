@@ -1,5 +1,7 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
@@ -135,7 +137,7 @@ describe("PiProvider", () => {
       assert.equal(snapshot.status, "error");
       assert.equal(snapshot.version, "0.80.3");
       assert.include(snapshot.message ?? "", `Pi ${MINIMUM_PI_VERSION} or newer`);
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("keeps compatible Pi selectable when optional discovery fails", () =>
@@ -150,7 +152,7 @@ describe("PiProvider", () => {
         ["default"],
       );
       assert.include(snapshot.message ?? "", "could not refresh its models and commands");
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect.each([
@@ -192,7 +194,7 @@ describe("PiProvider", () => {
       assert.equal(snapshot.version, row.version);
       assert.include(snapshot.message ?? "", row.message);
       assert.equal(spawned.length > 1, row.probesAfterVersion);
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("reports a known unauthenticated inventory when Pi returns no usable models", () =>
@@ -207,7 +209,7 @@ describe("PiProvider", () => {
         snapshot.models.map((model) => model.slug),
         ["default"],
       );
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect.each([
@@ -273,7 +275,7 @@ describe("PiProvider", () => {
       assert.equal(snapshot.auth.status, "authenticated");
       if (row.message === undefined) assert.isUndefined(snapshot.message);
       else assert.include(snapshot.message ?? "", row.message);
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   // regression: #18498 a malformed model inventory must not restore stale Pi models
@@ -292,6 +294,6 @@ describe("PiProvider", () => {
       );
       assert.equal(snapshot.status, "ready");
       assert.equal(snapshot.auth.status, "unknown");
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

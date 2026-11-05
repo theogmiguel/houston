@@ -1,4 +1,5 @@
 import { assert, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProviderInstanceId } from "@houston-app/contracts";
 import * as Deferred from "effect/Deferred";
@@ -13,7 +14,9 @@ import * as OpenCode2Server from "@houston-app/provider-opencode/server/v2/OpenC
 import * as OpenCode2TextGeneration from "@houston-app/provider-opencode/server/v2/textGeneration";
 import { OPENCODE2_TITLE_GENERATION } from "./OpenCode2TextGeneration.fixture.ts";
 
-const layer = TestProviderHost.layer().pipe(Layer.provideMerge(NodeServices.layer));
+const layer = TestProviderHost.layer().pipe(
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+);
 
 it.layer(layer)("OpenCode2TextGeneration", (it) => {
   it.effect("generates a title in a temporary session on the free tier and removes it", () =>

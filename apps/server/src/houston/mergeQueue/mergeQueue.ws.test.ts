@@ -2,6 +2,7 @@
 // The houston.mergeQueue.* methods through the real `/ws` handlers and scope table.
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -350,7 +351,7 @@ const withServer = <A, E>(
   body.pipe(
     Effect.provide(layerServer(options)),
     Effect.scoped,
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
 /** A project whose pull requests are open on the fake and pushed to the bare remote. */
@@ -673,6 +674,6 @@ describe("the queue survives a restart", () => {
           [["merge", 2]],
         );
       }).pipe(Effect.provide(layerServer(options)));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it as effectIt } from "@effect/vitest";
 import * as HostProcess from "@houston-app/shared/HostProcess";
@@ -6,6 +7,7 @@ import {
   HOST_PREPARED_FIXTURE,
   hostFixtureEnv,
 } from "@houston-app/shared/testing/windowsServerEnvironmentFixture";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Observe the existing synchronous shell probe without launching the user's login shell.
 import * as NodeChildProcess from "node:child_process";
@@ -58,7 +60,7 @@ effectIt.effect("hydrates PATH when the desktop handoff is absent", () =>
         yield* fixPath().pipe(
           Effect.provideService(HostProcess.Platform, "linux"),
           Effect.provideService(HostProcess.Environment, env),
-          Effect.provide(NodeServices.layer),
+          Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         );
 
         assert.equal(probe.mock.calls.length, 1);
@@ -91,7 +93,7 @@ effectIt.effect("keeps mise's PATH record with the login shell PATH", () =>
         yield* fixPath().pipe(
           Effect.provideService(HostProcess.Platform, "linux"),
           Effect.provideService(HostProcess.Environment, env),
-          Effect.provide(NodeServices.layer),
+          Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         );
 
         assert.equal(env.__MISE_DIFF, "mise-diff");
@@ -129,7 +131,7 @@ effectIt.effect("hydrates a missing JAVA_HOME from the login shell and keeps an 
           yield* fixPath().pipe(
             Effect.provideService(HostProcess.Platform, "darwin"),
             Effect.provideService(HostProcess.Environment, env),
-            Effect.provide(NodeServices.layer),
+            Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           );
         }
 
@@ -149,7 +151,7 @@ effectIt.effect("replaces a Path-spelled Windows PATH instead of adding a second
       Effect.provideService(HostProcess.Environment, env),
       Effect.provideService(WindowsShellEnvironment, () => Effect.succeed({ PATH: "C:\\Tools" })),
       Effect.provideService(CommandAvailability, () => Effect.succeed(true)),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
 
     assert.deepEqual(env, { PATH: "C:\\Tools;C:\\Windows" });
@@ -170,7 +172,7 @@ effectIt.effect("the -NoProfile probe of an inherited PATH yields the host's pre
         Effect.succeed({ PATH: HOST_PREPARED_FIXTURE.inherited }),
       ),
       Effect.provideService(CommandAvailability, () => Effect.succeed(true)),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
 
     assert.equal(env.PATH, HOST_PREPARED_FIXTURE.prepared);
@@ -192,7 +194,7 @@ effectIt.effect("a prepared Windows environment skips the PowerShell probe", () 
         }),
       ),
       Effect.provideService(CommandAvailability, () => Effect.succeed(true)),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
 
     assert.equal(probes, 0);

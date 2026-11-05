@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   CommandId,
@@ -585,7 +586,7 @@ const layerBoot = (input: {
   readonly capturedTurns: Ref.Ref<ReadonlyArray<CapturedTurn>>;
 }) => {
   const layerDatabase = SqlitePersistence.layerFromPath(input.dbPath).pipe(
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
   const layerEventStoreProvided = EventStore.layer.pipe(Layer.provideMerge(layerDatabase));
   const layerProjectionStoreProvided = ProjectionStore.layer.pipe(
@@ -1017,7 +1018,7 @@ describe("orchestration v2 legacy v1 cutover", () => {
           assert.isTrue(
             boot2Logs.some((log) => String(log.message).includes("migration history diverges")),
           );
-        }).pipe(Effect.provide(NodeServices.layer)),
+        }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
       ),
   );
 });

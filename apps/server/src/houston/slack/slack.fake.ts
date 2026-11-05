@@ -3,7 +3,7 @@
 // Every call is recorded with its token; nothing reaches slack.com.
 import * as NodeHttp from "node:http";
 
-import { NodeWS } from "@effect/platform-node/NodeSocket";
+import * as NodeWS from "@effect/platform-node/NodeWS";
 import * as Effect from "effect/Effect";
 
 export const FAKE_TEAM = "T1";

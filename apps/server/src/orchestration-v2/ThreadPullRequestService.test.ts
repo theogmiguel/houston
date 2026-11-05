@@ -9,7 +9,7 @@ import {
   type OrchestrationV2ServerCommand,
 } from "@houston-app/contracts";
 import { describe, expect, it } from "@effect/vitest";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -152,11 +152,8 @@ describe("ThreadPullRequestServiceV2 reads", () => {
           }),
           Layer.succeed(ServerActivation.ServerActivation, Deferred.await(activation)),
           Layer.succeed(
-            Crypto.Crypto,
-            Crypto.make({
-              randomBytes: (size) => new Uint8Array(size).fill(1),
-              digest: (_algorithm, data) => Effect.succeed(data),
-            }),
+            SecureRandom.SecureRandom,
+            SecureRandom.make((size) => new Uint8Array(size).fill(1)),
           ),
           FileSystem.layerNoop({}),
           Path.layer,
@@ -276,11 +273,8 @@ describe("ThreadPullRequestServiceV2 reads", () => {
             Layer.mock(BackgroundPolicy.BackgroundPolicy)({}),
             Layer.succeed(ServerActivation.ServerActivation, Deferred.await(activation)),
             Layer.succeed(
-              Crypto.Crypto,
-              Crypto.make({
-                randomBytes: (size) => new Uint8Array(size).fill(1),
-                digest: (_algorithm, data) => Effect.succeed(data),
-              }),
+              SecureRandom.SecureRandom,
+              SecureRandom.make((size) => new Uint8Array(size).fill(1)),
             ),
             FileSystem.layerNoop({
               exists: (path) =>
@@ -393,11 +387,8 @@ describe("ThreadPullRequestServiceV2 reads", () => {
           }),
           Layer.succeed(ServerActivation.ServerActivation, Deferred.await(activation)),
           Layer.succeed(
-            Crypto.Crypto,
-            Crypto.make({
-              randomBytes: (size) => new Uint8Array(size).fill(1),
-              digest: (_algorithm, data) => Effect.succeed(data),
-            }),
+            SecureRandom.SecureRandom,
+            SecureRandom.make((size) => new Uint8Array(size).fill(1)),
           ),
           FileSystem.layerNoop({}),
           Path.layer,
@@ -543,11 +534,8 @@ describe("ThreadPullRequestServiceV2 reads", () => {
             Layer.mock(BackgroundPolicy.BackgroundPolicy)({}),
             Layer.succeed(ServerActivation.ServerActivation, Deferred.await(activation)),
             Layer.succeed(
-              Crypto.Crypto,
-              Crypto.make({
-                randomBytes: (size) => new Uint8Array(size).fill(1),
-                digest: (_algorithm, data) => Effect.succeed(data),
-              }),
+              SecureRandom.SecureRandom,
+              SecureRandom.make((size) => new Uint8Array(size).fill(1)),
             ),
             FileSystem.layerNoop({}),
             Path.layer,

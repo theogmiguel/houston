@@ -1,7 +1,9 @@
 import * as NodeOS from "node:os";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 
@@ -13,7 +15,7 @@ import {
   resolveClaudeHomePath,
 } from "./ClaudeHome.ts";
 
-it.layer(NodeServices.layer)("ClaudeHome", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ClaudeHome", (it) => {
   describe("Claude home resolution", () => {
     it.effect("resolves configured Claude HOME and stamps continuation/cache keys with it", () =>
       Effect.gen(function* () {

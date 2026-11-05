@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, expect, it } from "@effect/vitest";
 import * as HostProcess from "@houston-app/shared/HostProcess";
@@ -28,7 +29,9 @@ const run = (input: VcsProcess.VcsProcessInput) =>
     return yield* process.run(input);
   });
 
-const layerLive = VcsProcess.layer.pipe(Layer.provide(NodeServices.layer));
+const layerLive = VcsProcess.layer.pipe(
+  Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+);
 
 const provideLive = <A, E, R>(effect: Effect.Effect<A, E, R | VcsProcess.VcsProcess>) =>
   effect.pipe(Effect.provide(layerLive));
@@ -92,7 +95,11 @@ describe("VcsProcess.run", () => {
       yield* fs.remove(lock);
       yield* git(restore);
       expect(yield* fs.readFileString(file)).toBe("before\n");
-    }).pipe(provideLive, Effect.provide(NodeServices.layer), Effect.scoped),
+    }).pipe(
+      provideLive,
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      Effect.scoped,
+    ),
   );
 
   it.effect("pins Git's message locale when the host locale is not English", () =>
@@ -153,7 +160,11 @@ describe("VcsProcess.run", () => {
         failureKind: "command-failed",
         detail: VcsProcess.GIT_INDEX_LOCKED_DETAIL,
       });
-    }).pipe(provideLive, Effect.provide(NodeServices.layer), Effect.scoped),
+    }).pipe(
+      provideLive,
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      Effect.scoped,
+    ),
   );
 
   it.effect.each([
@@ -456,7 +467,11 @@ describe("VcsProcess.run", () => {
 
       expect(result.exitCode).not.toBe(0);
       expect(yield* fileSystem.exists(path.join(cwd, "fsmonitor-runs"))).toBe(false);
-    }).pipe(Effect.scoped, provideLive, Effect.provide(NodeServices.layer)),
+    }).pipe(
+      Effect.scoped,
+      provideLive,
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    ),
   );
 
   it.effect("classifies authentication failures without retaining stderr", () =>

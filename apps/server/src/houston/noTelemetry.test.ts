@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { DesktopBackendBootstrap } from "@houston-app/contracts";
@@ -112,7 +113,7 @@ const ROWS: ReadonlyArray<{ readonly name: string; readonly sources: Array<[Sour
   },
 ];
 
-it.layer(NodeServices.layer)("houston no telemetry", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("houston no telemetry", (it) => {
   it.effect("every OTLP source resolves to no export", () =>
     Effect.gen(function* () {
       expect(ROWS).toHaveLength(13);

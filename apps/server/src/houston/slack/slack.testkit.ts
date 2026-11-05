@@ -1,5 +1,6 @@
 // Slack intake over one database with the real project and task services, the memory keychain,
 // a recording `HoustonTaskRuns` fake and the loopback Slack fake (slack.fake.ts).
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { ProjectId } from "@houston-app/contracts";
 import type { HoustonSlackInfo } from "@houston-app/contracts/houston/slack";
@@ -284,7 +285,7 @@ export const layerSlackTest = (options: SlackTestOptions) =>
     Layer.provideMerge(
       ServerConfig.layerTest(process.cwd(), options.baseDir ?? { prefix: "houston-slack-test-" }),
     ),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Layer.provideMerge(Layer.succeed(HostedLaunch, options.baseDir !== undefined)),
   );
 
@@ -302,7 +303,7 @@ export const runSlack = <A, E>(
     return yield* body(fake).pipe(
       Effect.provide(layerSlackTest({ ...options, slackOrigin: fake.origin })),
     );
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 /** One real event-loop turn, so loopback sockets and HTTP make progress. */
 export const realTurn = Effect.promise(

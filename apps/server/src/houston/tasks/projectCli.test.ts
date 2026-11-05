@@ -2,6 +2,7 @@
 // The offline project CLI removes a project the way the server does: its tasks are unassigned.
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as NetService from "@houston-app/shared/Net";
@@ -18,7 +19,7 @@ import { layerTasks } from "./tasks.testkit.ts";
 
 const runCli = (args: ReadonlyArray<string>) =>
   Command.runWith(cli, { version: "0.0.0" })(args).pipe(
-    Effect.provide(Layer.mergeAll(NodeServices.layer, NetService.layer)),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer)),
   );
 
 describe("the project CLI unassigns a removed project's tasks", () => {
@@ -50,6 +51,6 @@ describe("the project CLI unassigns a removed project's tasks", () => {
       assert.isNull(detail.task.projectId);
       assert.strictEqual(detail.history[0]?.action, "houston:project-removed");
       assert.include(detail.history[0]?.changes ?? "", created.projectId);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

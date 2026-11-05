@@ -5,9 +5,11 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
 
+import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as HostProcess from "@houston-app/shared/HostProcess";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -52,7 +54,10 @@ const withChannel = <A, E, R>(body: (dirs: Dirs) => Effect.Effect<A, E, R>) =>
     const baseDir = NodePath.join(channel, "v2");
     NodeFS.mkdirSync(baseDir);
     return yield* body({ channel, baseDir, source: NodePath.join(channel, "houston.db") });
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer)),
+  );
 
 const issueSnapshot = (n: number) =>
   JSON.stringify(v1Snapshot({ title: `Issue ${n}`, description: `Body ${n}`, status: "todo" }));

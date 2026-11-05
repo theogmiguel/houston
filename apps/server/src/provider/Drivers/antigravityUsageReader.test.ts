@@ -1,6 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off - Effect's File.Info has no ctime or sub-millisecond mtime, which the cache tests compare.
 import * as NodeFSP from "node:fs/promises";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
@@ -131,7 +132,7 @@ describe("readAntigravityUsage", () => {
           12,
         );
         assert.deepStrictEqual(records(yield* readAntigravityUsage(dir, 1780000000001)), []);
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("uses the matching Antigravity generation model for each model-less step", () =>
@@ -159,7 +160,7 @@ describe("readAntigravityUsage", () => {
         records(result).map((record) => record.model),
         ["gemini-3-pro", "claude-opus-4-6"],
       );
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("prices ACP effort variants at the base model rate", () =>
@@ -189,7 +190,7 @@ describe("readAntigravityUsage", () => {
           ["gemini-4-argon", undefined],
         ],
       );
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("merges Antigravity aliases that bridge previously separate step records", () =>
@@ -234,7 +235,7 @@ describe("readAntigravityUsage", () => {
         outputTokens: 40,
         reasoningTokens: 0,
       });
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect(
@@ -276,7 +277,7 @@ describe("readAntigravityUsage", () => {
           [150, 150],
         );
         assert.isTrue(result.files[0]?.records.every((record) => record.sessionId === "session-0"));
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("upgrades Antigravity fallback timestamps before applying the date window", () =>
@@ -323,7 +324,7 @@ describe("readAntigravityUsage", () => {
         read.map((record) => record.timestampMs),
         [1780000200000, 1780000200000],
       );
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   const antigravityGeneration = (responseId: string) =>
@@ -366,7 +367,7 @@ describe("readAntigravityUsage", () => {
         records(next).map((record) => record.dedupeKey),
         ["antigravity:11:r-1", "antigravity:11:r-2"],
       );
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("reads Antigravity step-only stores and reports malformed databases", () =>
@@ -389,7 +390,7 @@ describe("readAntigravityUsage", () => {
       assert.strictEqual(result.errors.length, 1);
       assert.strictEqual(records(result)[0]?.model, "gemini-2.5-pro");
       assert.strictEqual(records(result)[0]?.totals.outputTokens, 5);
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("ignores large values in unused Antigravity protobuf fields", () =>
@@ -410,7 +411,7 @@ describe("readAntigravityUsage", () => {
       const result = yield* readAntigravityUsage(dir, 0);
       assert.deepStrictEqual(result.errors, []);
       assert.strictEqual(records(result)[0]?.totals.uncachedInputTokens, 10);
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   const stepUsage = (responseId: string) =>
@@ -446,6 +447,6 @@ describe("readAntigravityUsage", () => {
           "antigravity:11:g-1",
         ],
       );
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

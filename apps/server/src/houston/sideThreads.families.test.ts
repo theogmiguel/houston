@@ -1,6 +1,7 @@
 // Each family's read-only run, replayed through its own adapter with no policy override on the
 // side thread: the policy must come from the side record, or the recorded frames differ.
 // Composed fixtures under houston_side_read_only name the recording they change.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -81,7 +82,9 @@ const fixture = (path: string) =>
   new URL(`../orchestration-v2/testkit/fixtures/${path}`, import.meta.url);
 
 const readFixture = (file: URL) =>
-  readProviderReplayTranscript(file).pipe(Effect.provide(NodeServices.layer));
+  readProviderReplayTranscript(file).pipe(
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  );
 
 const withRuntimeInstructions = (
   transcript: ProviderReplayTranscript,
@@ -693,7 +696,10 @@ describe("the reviewed diff", () => {
             const path = yield* Path.Path;
             const readme = path.join(cwd, "README.md");
             yield* fs.writeFileString(readme, `${yield* fs.readFileString(readme)}${line}\n`);
-          }).pipe(Effect.provide(NodeServices.layer), Effect.orDie);
+          }).pipe(
+            Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+            Effect.orDie,
+          );
         harness.script.edits.set("message:source:1", append("first turn line"));
         harness.script.edits.set("message:source:2", append("second turn line"));
         yield* runWith(harness, (context) =>

@@ -1,9 +1,11 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import type { NotificationHandler } from "@muse-code/sdk";
 import { ProviderInstanceId, type ServerProviderModel } from "@houston-app/contracts";
 import { MuseSettings } from "../settings.ts";
 import { createModelSelection } from "@houston-app/shared/model";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
@@ -109,7 +111,7 @@ const finish =
     emit("turn/completed", { terminal: "completed" });
   };
 
-it.layer(NodeServices.layer)("Muse text generation", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Muse text generation", (it) => {
   it.effect("validates the final item once and closes an isolated restrictive host", () =>
     Effect.gen(function* () {
       const test = fixture(finish('{"title":"Fix login form"}'));

@@ -7,7 +7,7 @@ import {
   type ThreadId,
 } from "@houston-app/contracts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -91,10 +91,10 @@ export function makeTurnDiff<E>(deps: {
     E
   >;
   readonly checkpointStore: CheckpointStore.CheckpointStore["Service"];
-  readonly crypto: Crypto.Crypto;
+  readonly digest: Digest.Digest["Service"];
 }): CheckpointDiffQuery["Service"]["getTurnDiff"] {
   const threads = { getCheckpointContext: deps.getCheckpointContext };
-  const { checkpointStore, crypto } = deps;
+  const { checkpointStore, digest } = deps;
 
   const getTurnDiff: CheckpointDiffQuery["Service"]["getTurnDiff"] = Effect.fn("getTurnDiff")(
     function* (input) {
@@ -196,7 +196,7 @@ export function makeTurnDiff<E>(deps: {
             : yield* checkpointRefForScopeOrdinal({
                 scopeId: firstScope.id,
                 ordinalWithinScope: 0,
-              }).pipe(Effect.provideService(Crypto.Crypto, crypto))
+              }).pipe(Effect.provideService(Digest.Digest, digest))
           : (
               parentCheckpoint ??
               readyCheckpoints.find(
@@ -280,12 +280,12 @@ export function makeTurnDiff<E>(deps: {
 export const make = Effect.gen(function* () {
   const threads = yield* ThreadManagement.ThreadManagementService;
   const checkpointStore = yield* CheckpointStore.CheckpointStore;
-  const crypto = yield* Crypto.Crypto;
+  const digest = yield* Digest.Digest;
 
   const getTurnDiff = makeTurnDiff({
     getCheckpointContext: threads.getCheckpointContext,
     checkpointStore,
-    crypto,
+    digest,
   });
 
   const getFullThreadDiff: CheckpointDiffQuery["Service"]["getFullThreadDiff"] = Effect.fn(

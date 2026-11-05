@@ -1,5 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
 import type { DesktopLocalServerStatus } from "@houston-app/contracts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -80,6 +81,7 @@ function layerFor(input: { readonly harness: Harness; readonly status: DesktopLo
     Layer.provide(
       Layer.mergeAll(
         NodeServices.layer,
+        NodeCrypto.layer,
         DesktopConfig.layerTest({ HOUSTON_HOME: "/houston-home" }),
       ),
     ),

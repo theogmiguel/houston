@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -20,7 +21,7 @@ const TEMPLATE_DIRECTORIES = [
 
 const layerPrTemplateDetectionTest = Layer.merge(
   TestSourceControlHost.layerWithRealGit(),
-  NodeServices.layer,
+  Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
 );
 
 const runGit = (cwd: string, args: ReadonlyArray<string>) =>

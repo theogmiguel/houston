@@ -4,6 +4,7 @@
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -409,7 +410,7 @@ const withServer = <A, E>(
   body.pipe(
     Effect.provide(layerServer(options)),
     Effect.scoped,
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
 describe("a malformed credential request never echoes the token", () => {
@@ -534,7 +535,7 @@ describe("the token reaches no file, log, trace or reply", () => {
     }).pipe(
       Effect.provide(Logger.layer([logger])),
       Effect.scoped,
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
   });
 
@@ -638,7 +639,7 @@ describe("the token reaches no file, log, trace or reply", () => {
     }).pipe(
       Effect.provide(Logger.layer([logger])),
       Effect.scoped,
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
   });
 });
@@ -1049,6 +1050,6 @@ describe("sources survive a restart", () => {
         })) as ReadonlyArray<HoustonTaskSourceLink>;
         assert.lengthOf(links, 1);
       }).pipe(Effect.provide(layerServer(options)));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

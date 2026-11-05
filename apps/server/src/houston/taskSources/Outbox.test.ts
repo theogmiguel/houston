@@ -4,6 +4,7 @@
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import type { ProjectId } from "@houston-app/contracts";
@@ -13,7 +14,7 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
-import type * as Layer from "effect/Layer";
+import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
@@ -1107,7 +1108,7 @@ describe("the marker namespace is fixed once written", () => {
         Effect.provide(layerSources({ ...options, github: makeGithubFake() })),
       );
       assert.strictEqual(reopened, first);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("after a tracker import the namespace is Houston 1's", () =>
@@ -1137,7 +1138,7 @@ describe("the marker namespace is fixed once written", () => {
         yield* (yield* HoustonTaskSourceV1Import).run;
         assert.strictEqual(yield* namespace, v1Namespace);
       }).pipe(Effect.provide(layerSources({ baseDir, github: makeGithubFake() })));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });
 
@@ -1171,6 +1172,6 @@ describe("the marker key is random, written once and kept", () => {
         Effect.provide(layerSources({ github: makeGithubFake() })),
       );
       assert.notStrictEqual(other, first);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

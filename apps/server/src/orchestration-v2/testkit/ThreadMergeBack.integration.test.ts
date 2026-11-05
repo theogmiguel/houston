@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -518,6 +519,6 @@ describe("orchestration V2 merge-back provider replay", () => {
         assert.notInclude(visibleConversationText(firstFork), "second merge sibling stored");
         assert.include(visibleConversationText(secondFork), "second merge sibling stored");
         assert.notInclude(visibleConversationText(secondFork), "first merge sibling stored");
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });
