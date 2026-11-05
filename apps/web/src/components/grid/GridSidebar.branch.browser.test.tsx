@@ -11,10 +11,17 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
   useAtomValue: (() => []) as never,
 }));
 
+vi.mock(import("../../state/session"), async (original) => ({
+  ...(await original()),
+  readEnvironmentScope: () => true,
+}));
+
 vi.mock(import("../../state/entities"), async (original) => ({
   ...(await original()),
   useProject: ((ref: unknown) =>
     ref === null ? null : { id: "project-1", workspaceRoot: "/repo" }) as never,
+  readEnvironmentServerConfigLoaded: () => true,
+  readEnvironmentSupportsAutoSettleOptOut: () => true,
 }));
 
 const statusCwds: string[] = [];

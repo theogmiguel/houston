@@ -18,7 +18,6 @@ import {
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   AlarmClockOffIcon,
-  CheckIcon,
   ChevronRightIcon,
   ClockIcon,
   CpuIcon,
@@ -58,7 +57,7 @@ import {
   useGridStore,
   workspaceKeyOf,
 } from "../../grid/gridStore";
-import { moveThreadToGridOrExplain, moveToGridTargets } from "../../grid/moveToGrid";
+import { moveThreadToGridOrExplain } from "../../grid/moveToGrid";
 import { crossProjectMoveToast, noProjectMoveToast, sameProject } from "../../grid/projectMove";
 import { showThreadMovedToast } from "../../grid/moveFeedback";
 import { resolveGridThreadTarget } from "../../grid/gridNavigation";
@@ -93,7 +92,6 @@ import {
 } from "../../grid/sidebar";
 import { PullRequestChecksGlyph, PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { GridShelves } from "./GridShelves";
-import { MoveToGridMenuItems } from "./MoveToGridMenuItems";
 import {
   COLLAPSED_GRIDS_STORAGE_KEY,
   COLLAPSED_PROJECTS_STORAGE_KEY,
@@ -115,6 +113,8 @@ import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { threadEnvironment } from "../../state/threads";
 import { useThreadActions } from "../../hooks/useThreadActions";
+import { useThreadActionMenu } from "../../hooks/useThreadActionMenu";
+import { useNewThreadHandler, type NewThreadHandler } from "../../hooks/useHandleNewThread";
 import {
   resolveShortcutCommand,
   shortcutLabelForCommand,
@@ -316,6 +316,7 @@ export function GridSidebar() {
   const openGridDraft = useOpenGridDraft();
 
   const actions = useThreadActions();
+  const handleNewThread = useNewThreadHandler();
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -945,6 +946,7 @@ export function GridSidebar() {
                 }}
                 onRenameThread={renameThread}
                 onSetAutoClose={setAutoClose}
+                handleNewThread={handleNewThread}
                 onShowGrid={(gridId) => useGridStore.getState().setGridHidden(gridId, false)}
                 onOpenUngroupedThread={(thread) =>
                   openRailTarget({
@@ -1218,6 +1220,7 @@ export function SidebarProjectSection({
   onCreateThread,
   onRenameThread,
   onSetAutoClose,
+  handleNewThread,
   onShowGrid,
   onOpenUngroupedThread,
 }: {
@@ -1251,6 +1254,7 @@ export function SidebarProjectSection({
   onCreateThread: (gridId: string) => void;
   onRenameThread: (thread: EnvironmentThreadShell, title: string) => void;
   onSetAutoClose: (thread: EnvironmentThreadShell, enabled: boolean) => void;
+  handleNewThread?: NewThreadHandler | undefined;
   onShowGrid: (gridId: string) => void;
   onOpenUngroupedThread: (thread: EnvironmentThreadShell) => void;
 }) {
@@ -1334,6 +1338,7 @@ export function SidebarProjectSection({
                 onCreateThread={() => onCreateThread(grid.id)}
                 onRenameThread={onRenameThread}
                 onSetAutoClose={onSetAutoClose}
+                handleNewThread={handleNewThread}
                 onShowGrid={onShowGrid}
                 onCreateGrid={onCreateGrid}
               />
@@ -1374,6 +1379,7 @@ export function SidebarProjectSection({
                 onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
                 onDropOnThread={() => {}}
                 onOpenGrid={() => onOpenUngroupedThread(thread)}
+                handleNewThread={handleNewThread}
               />
             ))}
           </div>
@@ -1408,6 +1414,7 @@ export function GridGroup({
   onCreateThread,
   onRenameThread,
   onSetAutoClose,
+  handleNewThread,
   onShowGrid,
   onCreateGrid,
 }: {
@@ -1415,6 +1422,7 @@ export function GridGroup({
   workspaceTitle: string;
   onRenameThread: (thread: EnvironmentThreadShell, title: string) => void;
   onSetAutoClose: (thread: EnvironmentThreadShell, enabled: boolean) => void;
+  handleNewThread?: NewThreadHandler | undefined;
   threads: ReadonlyArray<EnvironmentThreadShell>;
   query: string;
   open: boolean;
@@ -1669,6 +1677,7 @@ export function GridGroup({
                 onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
                 onDropOnThread={(source) => onDropOnThread(source, grid.id, thread.id)}
                 onOpenGrid={(targetGridId) => onOpenThread(targetGridId, thread.id)}
+                handleNewThread={handleNewThread}
               />
             ))}
           </div>
@@ -1754,6 +1763,7 @@ export function ThreadCard({
   onReopen,
   onDropOnThread,
   onOpenGrid,
+  handleNewThread,
 }: {
   gridId: string | null;
   thread: EnvironmentThreadShell;
@@ -1781,6 +1791,8 @@ export function ThreadCard({
   onDropOnThread: (source: DraggedThread) => void;
   /** Opens the grid a menu move landed in; absent hides the Move to grid submenu. */
   onOpenGrid?: ((gridId: string) => void) | undefined;
+  /** Supplies New thread on branch; absent hides that item. */
+  handleNewThread?: NewThreadHandler | undefined;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(thread.title);
@@ -1793,8 +1805,6 @@ export function ThreadCard({
   const branchName = useThreadBranchName(thread);
   const showPullRequest = useClientSettings((settings) => settings.sidebarRowShowPullRequest);
   const showSubagents = useClientSettings((settings) => settings.sidebarRowShowSubagents);
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const closeShortcut = shortcutLabelForCommand(keybindings, "thread.settle");
   const state = resolveGridThreadState(thread, nowIso);
   const attention = state === "needs" || state === "ready" || state === "back";
   const startedAt = resolveThreadWorkingStartedAt(thread);
@@ -1810,39 +1820,48 @@ export function ThreadCard({
   );
   const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
   const modelLabel = thread.modelSelection?.model ?? null;
-  const autoCloseEnabled = thread.autoSettleDisabledAt == null;
   const actionsVisible = actionsHovered || holdMenuOpen || actionsMenuOpen;
   const [previewOpen, setPreviewOpen] = useState(false);
-  const grids = useGridStore((store) => store.grids);
-  const createGrid = useGridStore((store) => store.createGrid);
-  const moveTargets =
-    onOpenGrid === undefined || thread.projectId.length === 0
-      ? null
-      : moveToGridTargets(grids, {
-          environmentId: thread.environmentId,
-          projectId: thread.projectId,
-          currentGridId: gridId,
-        });
-
-  const moveThreadToTarget = (targetGridId: string) => {
-    const refusal = moveThreadToGridOrExplain({
-      threadId: thread.id,
-      threadEnvironmentId: thread.environmentId,
-      threadProjectId: thread.projectId,
-      targetGridId,
-    });
-    if (refusal === null) onOpenGrid?.(targetGridId);
-    else toastManager.add(stackedThreadToast({ type: "error", ...refusal }));
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+  const startRename = () => {
+    setName(thread.title);
+    setRenaming(true);
   };
-
-  const moveThreadToNewGrid = () => {
-    const targetGridId = createGrid({
-      environmentId: thread.environmentId,
-      projectId: thread.projectId,
-      workspaceKey: workspaceKeyOf(thread.environmentId, thread.projectId),
-    });
-    moveThreadToTarget(targetGridId);
+  const openCardMenu = async (position: { x: number; y: number }) => {
+    setActionsMenuOpen(true);
+    try {
+      await openMenu(position);
+    } finally {
+      setActionsMenuOpen(false);
+    }
   };
+  const openCardMenuFromButton = () => {
+    const rect = actionsButtonRef.current?.getBoundingClientRect();
+    if (rect === undefined || rect === null) return;
+    void openCardMenu({ x: rect.left, y: rect.bottom + 4 });
+  };
+  const openCardMenuFromRow = () => {
+    const rect = rowRef.current?.getBoundingClientRect();
+    if (rect === undefined || rect === null) return;
+    void openCardMenu({ x: rect.left, y: rect.bottom + 4 });
+  };
+  const { openMenu } = useThreadActionMenu({
+    threadRef,
+    thread,
+    onStartRename: startRename,
+    handleNewThread,
+    grid: {
+      currentGridId: gridId,
+      isFocusedCell: focused,
+      onOpen,
+      ...(onOpenGrid === undefined ? {} : { onOpenGrid }),
+    },
+    onCloseThread: onClose,
+    onHoldThread: (snoozedUntil) => onHold({ snoozedUntil }),
+    onSetAutoSettle: onSetAutoClose,
+  });
 
   const applyPreset = (preset: Pick<SnoozePreset, "snoozedUntil"> | undefined) => {
     if (preset !== undefined) onHold(preset);
@@ -1872,7 +1891,6 @@ export function ThreadCard({
       projectId: thread.projectId,
     });
   };
-  const rowRef = useRef<HTMLDivElement | null>(null);
   useThreadDropZone(
     rowRef,
     (_point, source) =>
@@ -1889,7 +1907,18 @@ export function ThreadCard({
           <div
             ref={rowRef}
             onPointerDown={startRowDrag}
+            tabIndex={-1}
             data-thread-key={threadKey}
+            onContextMenu={(event) => {
+              if (renaming) return;
+              event.preventDefault();
+              void openCardMenu({ x: event.clientX, y: event.clientY });
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+              event.preventDefault();
+              openCardMenuFromRow();
+            }}
             onClick={(event) => {
               if (
                 event.target instanceof Element &&
@@ -2054,80 +2083,19 @@ export function ThreadCard({
                   <XIcon aria-hidden className="size-3.5" />
                   Close
                 </button>
-                <Menu onOpenChange={setActionsMenuOpen}>
-                  <MenuTrigger
-                    render={
-                      <button
-                        type="button"
-                        aria-label={`Thread actions for ${thread.title}`}
-                        className={cn(
-                          "inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
-                          FOCUS_ACTION_CLS,
-                        )}
-                      >
-                        <MoreHorizontalIcon aria-hidden className="size-3.5" />
-                      </button>
-                    }
-                  />
-                  <MenuPopup side="bottom" align="end">
-                    <MenuItem onClick={onOpen}>
-                      Open in grid
-                      <MenuShortcut>Enter</MenuShortcut>
-                    </MenuItem>
-                    <MenuItem
-                      onClick={() => {
-                        setName(thread.title);
-                        setRenaming(true);
-                      }}
-                    >
-                      Rename
-                      <MenuShortcut>F2</MenuShortcut>
-                    </MenuItem>
-                    {moveTargets === null ? null : (
-                      <MenuSub>
-                        <MenuSubTrigger>
-                          Move to grid
-                          <ChevronRightIcon aria-hidden className="ml-auto size-3.5" />
-                        </MenuSubTrigger>
-                        <MenuSubPopup>
-                          <MoveToGridMenuItems
-                            targets={moveTargets}
-                            onMove={moveThreadToTarget}
-                            onNewGrid={moveThreadToNewGrid}
-                          />
-                        </MenuSubPopup>
-                      </MenuSub>
-                    )}
-                    <MenuSeparator />
-                    <MenuSub>
-                      <MenuSubTrigger>
-                        Hold
-                        <ChevronRightIcon
-                          aria-hidden
-                          className="ml-auto size-3.5 text-secondary-label"
-                        />
-                      </MenuSubTrigger>
-                      <MenuSubPopup>
-                        <HoldMenuItems
-                          presets={presets}
-                          onPick={applyPreset}
-                          onPickTime={onPickHoldTime}
-                        />
-                      </MenuSubPopup>
-                    </MenuSub>
-                    <MenuItem onClick={close}>
-                      Close
-                      {closeShortcut ? <MenuShortcut>{closeShortcut}</MenuShortcut> : null}
-                    </MenuItem>
-                    <MenuSeparator />
-                    <MenuItem onClick={() => onSetAutoClose(!autoCloseEnabled)}>
-                      Auto-close on merge
-                      {autoCloseEnabled ? (
-                        <CheckIcon aria-hidden className="ml-auto size-3.5 text-(--accent-ink)" />
-                      ) : null}
-                    </MenuItem>
-                  </MenuPopup>
-                </Menu>
+                <button
+                  ref={actionsButtonRef}
+                  type="button"
+                  aria-label={`Thread actions for ${thread.title}`}
+                  aria-haspopup="menu"
+                  onClick={openCardMenuFromButton}
+                  className={cn(
+                    "inline-grid size-5.5 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
+                    FOCUS_ACTION_CLS,
+                  )}
+                >
+                  <MoreHorizontalIcon aria-hidden className="size-3.5" />
+                </button>
               </>
             )}
           </span>
