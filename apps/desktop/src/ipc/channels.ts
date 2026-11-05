@@ -58,7 +58,10 @@ export const GET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL = "desktop:get-local-environm
 export const SET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL = "desktop:set-local-environment-enabled";
 export const GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL =
   "desktop:get-local-environment-bearer-token";
+export const INVALIDATE_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL =
+  "desktop:invalidate-local-environment-bearer-token";
 export const GET_SERVER_STATUS_CHANNEL = "desktop:get-server-status";
+export const RESTART_SERVER_CHANNEL = "desktop:restart-server";
 export const SERVER_STATUS_CHANGED_CHANNEL = "desktop:server-status-changed";
 export const GET_CLIENT_SETTINGS_CHANNEL = "desktop:get-client-settings";
 export const SET_CLIENT_SETTINGS_CHANNEL = "desktop:set-client-settings";

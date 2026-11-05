@@ -37,6 +37,11 @@ export const PRIMARY_INSTANCE_ID = DesktopBackendManager.PRIMARY_INSTANCE_ID;
 export type DesktopBackendInstance = DesktopBackendManager.DesktopBackendInstance;
 export type BackendInstanceSpec = DesktopBackendManager.BackendInstanceSpec;
 
+/** The primary instance's output log, named by the server status banner on failure. */
+export const primaryServerLogFilePath = (
+  environment: DesktopEnvironment.DesktopEnvironment["Service"],
+): string => environment.path.join(environment.logDir, "server-child.log");
+
 export class DesktopBackendPoolInstanceAlreadyRegisteredError extends Schema.TaggedError<DesktopBackendPoolInstanceAlreadyRegisteredError>()(
   "DesktopBackendPoolInstanceAlreadyRegisteredError",
   {
@@ -130,6 +135,8 @@ export const layer = Layer.effect(
     const serverStatus = yield* DesktopServerStatus.DesktopServerStatus;
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const { primaryBackendStartup } = yield* DesktopState.DesktopState;
+    // The primary instance's output log, which the status banner names on failure.
+    const primaryServerLogPath = primaryServerLogFilePath(environment);
     // Parent instance scopes to the pool so shutdown runs stop finalizers before the OS kills backends.
     const layerScope = yield* Scope.Scope;
     const factoryContext = yield* Effect.context<BackendInstanceFactoryRequirements>();
@@ -179,14 +186,21 @@ export const layer = Layer.effect(
       // Resolve lazily: startup loads persisted settings after pool initialization.
       label: configuration.resolvePrimaryLabel,
       configResolve: configuration.resolvePrimary,
+      onStarting: () =>
+        serverStatus.starting({
+          baseDir: environment.baseDir,
+          logPath: primaryServerLogPath,
+        }),
       // Absorb window errors so readiness can reset restartAttempt.
-      onReady: Effect.fn("desktop.backendPool.onReady")(function* (httpBaseUrl) {
+      onReady: Effect.fn("desktop.backendPool.onReady")(function* (httpBaseUrl, pid) {
         yield* serverStatus.publish({
           state: "ready",
           origin: httpBaseUrl.origin,
           port: Number(httpBaseUrl.port),
+          ...(pid === null ? {} : { pid }),
           attached: false,
           baseDir: environment.baseDir,
+          logPath: primaryServerLogPath,
         });
         // Only once the main window exists, so the recovery window never closes into nothing.
         yield* desktopWindow.handleBackendReady(httpBaseUrl).pipe(
@@ -199,7 +213,17 @@ export const layer = Layer.effect(
         );
       }),
       onStartupFailure: (failure) =>
-        SubscriptionRef.set(primaryBackendStartup, { _tag: "Failing", ...failure }),
+        serverStatus
+          .fail({
+            baseDir: environment.baseDir,
+            logPath: primaryServerLogPath,
+            error: failure.reason,
+          })
+          .pipe(
+            Effect.andThen(
+              SubscriptionRef.set(primaryBackendStartup, { _tag: "Failing", ...failure }),
+            ),
+          ),
       onShutdown: () => desktopWindow.handleBackendNotReady,
       onPreflightFailed: handlePrimaryPreflightFailure,
       onStateDirOwned: Effect.fn("desktop.backendPool.onStateDirOwned")(function* () {
@@ -232,6 +256,7 @@ export const layer = Layer.effect(
           pid: attachment.pid,
           attached: true,
           baseDir: environment.baseDir,
+          logPath: primaryServerLogPath,
           warning: Option.getOrNull(attachment.warning),
         }),
     });

@@ -124,9 +124,23 @@ contextBridge.exposeInMainWorld("hostBridge", {
     ipcRenderer.sendSync(IpcChannels.GET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL) !== false,
   setLocalEnvironmentEnabled: (enabled) =>
     ipcRenderer.invoke(IpcChannels.SET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL, enabled),
-  invalidateLocalEnvironmentBearerToken: () => Promise.resolve(),
+  invalidateLocalEnvironmentBearerToken: () =>
+    ipcRenderer.invoke(IpcChannels.INVALIDATE_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL),
   getServerStatus: () => ipcRenderer.invoke(IpcChannels.GET_SERVER_STATUS_CHANNEL),
-  restartServer: () => Promise.resolve({ state: "ready" }),
+  restartServer: async () => {
+    const result: unknown = await ipcRenderer.invoke(IpcChannels.RESTART_SERVER_CHANNEL);
+    if (typeof result === "object" && result !== null && "ok" in result) {
+      if (result.ok === true && "status" in result) {
+        return result.status as Awaited<ReturnType<HostBridge["restartServer"]>>;
+      }
+      if (result.ok === false && "error" in result && typeof result.error === "string") {
+        throw new Error(result.error);
+      }
+    }
+    throw new Error(
+      `The desktop host returned an unexpected restart result: ${JSON.stringify(result)}`,
+    );
+  },
   onServerStatus: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, status: unknown) => {
       if (typeof status === "object" && status !== null) {

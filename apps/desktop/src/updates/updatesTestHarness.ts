@@ -147,6 +147,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       Effect.sync(() => {
         backendDesiredRunning = false;
       }).pipe(Effect.andThen(options.stopBackend ?? Effect.void)),
+    restart: Effect.die("unexpected restart"),
     currentConfig: Effect.succeedNone,
     snapshot: Effect.sync(() => ({
       desiredRunning: backendDesiredRunning,
@@ -157,6 +158,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       attached: false,
     })),
     waitForReady: () => Effect.succeed(true),
+    lastStartupFailure: Effect.succeedNone,
   };
   const layerBackend = DesktopBackendPool.layerTest(
     options.backendInstances ??

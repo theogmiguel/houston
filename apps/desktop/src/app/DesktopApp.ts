@@ -19,6 +19,7 @@ import * as DesktopApplicationMenu from "../window/DesktopApplicationMenu.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as PreviewPasskeys from "../preview/Passkeys.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
+import * as DesktopServerStatus from "../backend/DesktopServerStatus.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopLegacyLocalStorage from "./DesktopLegacyLocalStorage.ts";
 import * as DesktopLifecycle from "./DesktopLifecycle.ts";
@@ -249,6 +250,12 @@ const bootstrap = Effect.gen(function* () {
     ) {
       yield* desktopWindow.showConnectingSplash;
     }
+    // The renderer reads the status from its first call: a cold launch must not
+    // answer "no server" while the server is still starting.
+    yield* (yield* DesktopServerStatus.DesktopServerStatus).starting({
+      baseDir: environment.baseDir,
+      logPath: DesktopBackendPool.primaryServerLogFilePath(environment),
+    });
     yield* primaryBackend.start;
     yield* logBootstrapInfo("bootstrap backend start requested");
     yield* appActivation.start.pipe(

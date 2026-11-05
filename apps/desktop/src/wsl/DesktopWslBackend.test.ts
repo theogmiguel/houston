@@ -28,9 +28,11 @@ function makeStubInstance(input: {
     label: Effect.succeed(input.label),
     start: input.start ?? Effect.void,
     stop: () => Effect.void,
+    restart: Effect.die("unexpected restart"),
     currentConfig: Effect.succeed(Option.none<DesktopBackendStartConfig>()),
     snapshot: Effect.succeed(input.snapshot),
     waitForReady: (_timeout: Duration.Duration) => Effect.succeed(false),
+    lastStartupFailure: Effect.succeedNone,
   };
 }
 

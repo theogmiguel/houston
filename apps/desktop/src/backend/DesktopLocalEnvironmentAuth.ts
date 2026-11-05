@@ -60,6 +60,8 @@ export class DesktopLocalEnvironmentAuth extends Context.Service<
   DesktopLocalEnvironmentAuth,
   {
     readonly getBearerToken: Effect.Effect<string, DesktopLocalEnvironmentAuthError>;
+    /** Drops the cached bearer so the next request exchanges against the current server. */
+    readonly invalidate: Effect.Effect<void>;
   }
 >()("@houston-app/desktop/backend/DesktopLocalEnvironmentAuth") {}
 
@@ -121,7 +123,12 @@ export const make = Effect.gen(function* () {
     )
     .pipe(Effect.withSpan("desktop.localEnvironmentAuth.getBearerToken"));
 
-  return DesktopLocalEnvironmentAuth.of({ getBearerToken });
+  return DesktopLocalEnvironmentAuth.of({
+    getBearerToken,
+    invalidate: mutex
+      .withPermits(1)(Ref.set(tokenRef, Option.none()))
+      .pipe(Effect.withSpan("desktop.localEnvironmentAuth.invalidate")),
+  });
 });
 
 export const layer = Layer.effect(DesktopLocalEnvironmentAuth, make);
