@@ -15,7 +15,7 @@ export const DEFAULT_SANS_FONT_STACK =
 
 // Some engines map `ui-monospace` to a proportional font, so prefer concrete names.
 export const DEFAULT_CODE_FONT_STACK =
-  '"JetBrains Mono", "SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace';
+  '"JetBrains Mono Variable", "JetBrains Mono", "SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace';
 
 export const TYPOGRAPHY_ADVANCED_STORAGE_KEY = "houston:typography-advanced";
 
@@ -267,6 +267,7 @@ function resolveGenericFamilyLabel(generic: string): string | null {
 // reporting whichever system face the browser falls back to before they load.
 const PRODUCT_FONT_LABELS: Readonly<Record<string, string>> = {
   "Inter Variable": "Inter",
+  "JetBrains Mono Variable": "JetBrains Mono",
   "JetBrains Mono": "JetBrains Mono",
 };
 

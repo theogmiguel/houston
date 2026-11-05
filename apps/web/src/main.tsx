@@ -3,7 +3,7 @@ import "./lib/legacyStorageMigration";
 import React from "react";
 import ReactDOM from "react-dom/client";
 
-import "@fontsource-variable/inter/opsz.css";
+import "./fonts";
 import "./index.css";
 
 import { startAppServices } from "./appInit";
