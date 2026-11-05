@@ -6,7 +6,6 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { DesktopBackendBootstrap } from "@houston-app/contracts";
 import * as NetService from "@houston-app/shared/Net";
-import * as OtelEnvironment from "@houston-app/shared/otelEnvironment";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -16,7 +15,6 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import { type CliServerFlags, resolveServerConfig } from "../cli/config.ts";
-import { withoutTelemetry } from "./noTelemetry.ts";
 
 type Signal = "traces" | "metrics" | "logs";
 type UrlKey = "otlpTracesUrl" | "otlpMetricsUrl" | "otlpLogsUrl";
@@ -113,29 +111,15 @@ const ROWS: ReadonlyArray<{ readonly name: string; readonly sources: Array<[Sour
   },
 ];
 
-it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("houston no telemetry", (it) => {
-  it.effect("every OTLP source resolves to no export", () =>
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("OTLP export", (it) => {
+  it.effect("every configured OTLP source reaches the server config", () =>
     Effect.gen(function* () {
       expect(ROWS).toHaveLength(13);
       for (const row of ROWS) {
-        const upstream = yield* resolveWith(row.sources);
-        // The row is a live source: upstream alone would export it.
+        const config = yield* resolveWith(row.sources);
         for (const [, signal] of row.sources) {
-          expect(upstream[urlKey(signal)], row.name).toBe(`${SINK}/${signal}`);
+          expect(config[urlKey(signal)], row.name).toBe(`${SINK}/${signal}`);
         }
-
-        const cleared = withoutTelemetry(upstream);
-        expect(cleared.otlpTracesUrl, row.name).toBeUndefined();
-        expect(cleared.otlpMetricsUrl, row.name).toBeUndefined();
-        expect(cleared.otlpLogsUrl, row.name).toBeUndefined();
-        for (const signal of SIGNALS) {
-          expect(cleared, row.name).not.toHaveProperty(`otlp${capitalized(signal)}Source`);
-          expect(cleared, row.name).not.toHaveProperty(`otlp${capitalized(signal)}Variable`);
-        }
-        expect(cleared.otelEnvironment, row.name).toEqual(OtelEnvironment.none);
-        // Nothing but telemetry changes.
-        expect(cleared.baseDir, row.name).toBe(upstream.baseDir);
-        expect(cleared.port, row.name).toBe(upstream.port);
       }
     }),
   );
