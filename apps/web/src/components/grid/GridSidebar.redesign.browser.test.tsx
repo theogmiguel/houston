@@ -491,7 +491,7 @@ describe("New grid menu", () => {
   });
 });
 
-describe("Sidebar options", () => {
+describe("View options", () => {
   const defaults = {
     threadSort: "grid",
     gridSort: "created_at",
@@ -508,7 +508,7 @@ describe("Sidebar options", () => {
       { router: false },
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Sidebar options" }));
+    await userEvent.click(screen.getByRole("button", { name: "View options" }));
     await expect.element(page.getByText("Sort threads")).toBeVisible();
     await expect.element(page.getByText("Sort grids")).toBeVisible();
     await expect.element(page.getByText("Rows show")).toBeVisible();

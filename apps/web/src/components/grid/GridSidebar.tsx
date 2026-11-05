@@ -23,11 +23,11 @@ import {
   ClockIcon,
   CpuIcon,
   EyeOffIcon,
-  FolderPlusIcon,
   GitBranchIcon,
   Grid2X2PlusIcon,
   MessageSquarePlusIcon,
   MoreHorizontalIcon,
+  PlusIcon,
   SearchIcon,
   Undo2Icon,
   UsersIcon,
@@ -42,7 +42,8 @@ import {
   type ReactNode,
 } from "react";
 
-import { isCommandPaletteOpen, openCommandPalette } from "../../commandPaletteBus";
+import { isCommandPaletteOpen } from "../../commandPaletteBus";
+import { openAddProjectDialog } from "../AddProjectDialog";
 import { requestCustomSnooze } from "../CustomSnoozeDialog";
 import { isDesktopHost } from "../../env";
 import { getThreadSortTimestamp, sortThreads } from "@houston-app/client-runtime/state/thread-sort";
@@ -179,7 +180,6 @@ import {
   SIDEBAR_GRID_COUNT_CLS,
   SIDEBAR_GRID_NAME_CLS,
   SIDEBAR_GRID_RENAME_CLS,
-  SIDEBAR_HEADER_ACTIONS_CLS,
   SIDEBAR_PROJECT_ACTION_CLS,
   SIDEBAR_PROJECT_EMPTY_ACTION_CLS,
   SIDEBAR_PROJECT_LABEL_CLS,
@@ -189,6 +189,7 @@ import {
   SIDEBAR_SECTION_ACTION_CLS,
   SIDEBAR_THREAD_NOT_IN_GRID_CLS,
   SidebarOptionsMenu,
+  SidebarSectionHeaderRow,
   type SidebarGridOptions,
 } from "../ui/sidebar-grids";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -814,25 +815,7 @@ export function GridSidebar() {
 
   return (
     <>
-      <SidebarChromeHeader
-        isDesktopHost={isDesktopHost}
-        actions={
-          <div className={SIDEBAR_HEADER_ACTIONS_CLS}>
-            {hiddenGridGroups.length > 0 ? (
-              <HiddenGridsMenu
-                groups={hiddenGridGroups}
-                onShowGrid={(gridId) => useGridStore.getState().setGridHidden(gridId, false)}
-              />
-            ) : null}
-            <SidebarOptionsMenu
-              options={sidebarOptions}
-              onChange={(patch) => void updateClientSettings(sidebarOptionsPatch(patch))}
-              onReset={() => void updateClientSettings(SIDEBAR_OPTIONS_DEFAULTS)}
-            />
-            <SidebarAddProjectButton />
-          </div>
-        }
-      />
+      <SidebarChromeHeader isDesktopHost={isDesktopHost} />
       <SidebarHeader>
         <SidebarRailNav
           pullRequestCount={pullRequestCount}
@@ -916,6 +899,12 @@ export function GridSidebar() {
       </SidebarHeader>
       <SidebarContent>
         <div className="flex min-h-full flex-col px-2 pb-2">
+          <SidebarProjectsHeader
+            options={sidebarOptions}
+            onChange={(patch) => void updateClientSettings(sidebarOptionsPatch(patch))}
+            onReset={() => void updateClientSettings(SIDEBAR_OPTIONS_DEFAULTS)}
+            hiddenGridGroups={hiddenGridGroups}
+          />
           <div className="flex flex-col gap-px">
             {sections.length === 0 && query.length === 0 ? (
               <p className="px-2 py-3 text-xs text-secondary-label">
@@ -1147,7 +1136,42 @@ async function deleteGridWithConfirm(
   if (confirmed) deleteGrid(grid.id);
 }
 
-/** The rail header's Add project: opens the command palette's add-project flow. */
+/** The Projects header's controls: hidden grids, the view options, then Add project. */
+export function SidebarProjectsHeader({
+  options,
+  onChange,
+  onReset,
+  hiddenGridGroups = [],
+}: {
+  options: SidebarGridOptions;
+  onChange: (patch: Partial<SidebarGridOptions>) => void;
+  onReset: () => void;
+  hiddenGridGroups?: ReadonlyArray<{
+    workspaceKey: string;
+    title: string;
+    grids: ReadonlyArray<GridRecord>;
+  }>;
+}) {
+  return (
+    <SidebarSectionHeaderRow
+      title="Projects"
+      actions={
+        <>
+          {hiddenGridGroups.length > 0 ? (
+            <HiddenGridsMenu
+              groups={hiddenGridGroups}
+              onShowGrid={(gridId) => useGridStore.getState().setGridHidden(gridId, false)}
+            />
+          ) : null}
+          <SidebarOptionsMenu options={options} onChange={onChange} onReset={onReset} />
+          <SidebarAddProjectButton />
+        </>
+      }
+    />
+  );
+}
+
+/** The Projects header's Add project: opens the chooser for a folder, a clone or a new repository. */
 export function SidebarAddProjectButton() {
   return (
     <Tooltip>
@@ -1156,12 +1180,12 @@ export function SidebarAddProjectButton() {
           <button
             type="button"
             aria-label="Add project"
-            onClick={() => openCommandPalette({ open: "add-project" })}
+            onClick={() => openAddProjectDialog()}
             className={SIDEBAR_SECTION_ACTION_CLS}
           />
         }
       >
-        <FolderPlusIcon aria-hidden className="size-[15px]" />
+        <PlusIcon aria-hidden className="size-[15px]" />
       </TooltipTrigger>
       <TooltipPopup side="bottom">Add project</TooltipPopup>
     </Tooltip>

@@ -965,12 +965,12 @@ describe("newThreadNoProjectIndex", () => {
   });
 });
 
-describe("clone intent", () => {
-  it("opens add-project at the clone entry", () => {
+describe("add-project intent", () => {
+  it("keeps the flow action it was opened with", () => {
     const state = reduceCommandPaletteUiState(
       { open: false, mode: "command", openIntent: null, session: 0 },
-      { _tag: "OpenAddProject", clone: true },
+      { _tag: "OpenAddProject", request: { action: "clone" } },
     );
-    expect(state.openIntent).toEqual({ kind: "add-project", clone: true });
+    expect(state.openIntent).toEqual({ kind: "add-project", request: { action: "clone" } });
   });
 });

@@ -26,6 +26,8 @@ describe("SidebarChromeHeader", () => {
 
     await expect.element(screen.getByText("Houston")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "Hide sidebar" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add project" }).elements()).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "View options" }).elements()).toHaveLength(0);
     expect(screen.container.querySelector("[data-stage-art]")).toBeNull();
   });
 
