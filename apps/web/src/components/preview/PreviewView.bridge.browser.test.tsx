@@ -1,5 +1,5 @@
 import { EnvironmentId, ThreadId } from "@houston-app/contracts";
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
@@ -170,13 +170,12 @@ function view() {
 }
 
 describe("preview toolbar with the desktop preview bridge", () => {
-  beforeEach(() => setup());
-
   it("installs the native bridge when the host exposes it", () => {
     expect(previewBridge).not.toBeNull();
   });
 
   it("drives navigation, the address bar and screenshots through the host bridge", async () => {
+    setup();
     await using _screen = await render(view());
 
     await userEvent.click(page.getByRole("button", { name: "Back" }));
@@ -201,6 +200,7 @@ describe("preview toolbar with the desktop preview bridge", () => {
   });
 
   it("picks an element and toggles the floating preview", async () => {
+    setup();
     await using _screen = await render(view());
 
     await userEvent.click(page.getByRole("button", { name: "Annotate preview" }));
@@ -214,6 +214,7 @@ describe("preview toolbar with the desktop preview bridge", () => {
   });
 
   it("applies device size and full screen from the toolbar", async () => {
+    setup();
     await using _screen = await render(view());
 
     await userEvent.click(page.getByRole("button", { name: "Device size" }));
@@ -230,6 +231,7 @@ describe("preview toolbar with the desktop preview bridge", () => {
   });
 
   it("drives the More menu through the host bridge", async () => {
+    setup();
     await using _screen = await render(view());
 
     await userEvent.click(page.getByRole("button", { name: "Preview menu" }));
@@ -260,6 +262,7 @@ describe("preview toolbar with the desktop preview bridge", () => {
   });
 
   it("clears the profile cookies and cache from the More menu", async () => {
+    setup();
     await using _screen = await render(view());
 
     await userEvent.click(page.getByRole("button", { name: "Preview menu" }));

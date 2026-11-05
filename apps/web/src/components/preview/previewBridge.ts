@@ -1,8 +1,4 @@
-import {
-  PreviewCaptureFailure,
-  type PreviewCaptureFailureEncoded,
-  type HostPreviewBridge,
-} from "@houston-app/contracts";
+import { PreviewCaptureFailure, type PreviewCaptureFailureEncoded } from "@houston-app/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
