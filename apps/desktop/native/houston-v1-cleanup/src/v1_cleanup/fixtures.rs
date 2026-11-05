@@ -658,12 +658,33 @@ impl FakeDaemon {
         };
         let image = dir.join(name);
         std::fs::copy(&source, &image).expect("copy the stand-in daemon binary");
-        let child = crate::sys::spawn::command(&image)
-            .args(args)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .expect("start the stand-in daemon");
+        // A test forking on another thread while the copy was open inherits its write handle
+        // until that child execs, and exec of the image fails with ETXTBSY meanwhile.
+        // 50 x 20 ms outlasts a sibling's fork-to-exec window by orders of magnitude.
+        const BUSY_ATTEMPTS: u32 = 50;
+        const BUSY_BACKOFF: std::time::Duration = std::time::Duration::from_millis(20);
+        let mut attempt = 1;
+        let child = loop {
+            match crate::sys::spawn::command(&image)
+                .args(args)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                Ok(child) => break child,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::ExecutableFileBusy
+                        && attempt < BUSY_ATTEMPTS =>
+                {
+                    attempt += 1;
+                    std::thread::sleep(BUSY_BACKOFF);
+                }
+                Err(error) => panic!(
+                    "start the stand-in daemon {} after {attempt} of {BUSY_ATTEMPTS} attempts: {error}",
+                    image.display()
+                ),
+            }
+        };
         Self(child)
     }
 
