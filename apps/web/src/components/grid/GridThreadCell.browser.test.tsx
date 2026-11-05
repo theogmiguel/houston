@@ -474,6 +474,34 @@ describe("GridThreadCell surfaces", () => {
     ]);
   });
 
+  it("grows the label actions to their own width over the whole reveal", async () => {
+    state.draftSession = null;
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      { onMaximize: vi.fn() },
+    );
+
+    const actions = screen.container
+      .querySelector('[aria-label="More cell actions"]')
+      ?.closest("div") as HTMLElement;
+    await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
+    await vi.waitFor(() => expect(actions.getAnimations().length).toBeGreaterThan(0));
+    const transitions = actions.getAnimations() as CSSTransition[];
+    for (const transition of transitions) transition.pause();
+    const reveal = transitions[0]!;
+    const duration = Number(reveal.effect?.getTiming().duration);
+    for (const transition of transitions) transition.currentTime = duration / 2;
+    const midWidth = actions.getBoundingClientRect().width;
+    for (const transition of transitions) transition.finish();
+    const finalWidth = actions.getBoundingClientRect().width;
+
+    expect(finalWidth).toBeGreaterThan(0);
+    // Halfway through, the strip is still opening rather than already at full width.
+    expect(midWidth).toBeGreaterThan(0);
+    expect(midWidth).toBeLessThan(finalWidth * 0.95);
+  });
+
   it("splits down from the same menu", async () => {
     state.draftSession = null;
     const onSplit = vi.fn();

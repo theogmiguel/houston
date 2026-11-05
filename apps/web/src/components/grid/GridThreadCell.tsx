@@ -399,7 +399,7 @@ export function GridThreadCell({
             </span>
           )}
           <SidebarThreadStatusGlyph status={status} label={status?.label} />
-          <div className="flex max-w-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[max-width,opacity] duration-150 ease-out group-hover/pane:max-w-40 group-hover/pane:opacity-100 group-focus-within/label:max-w-40 group-focus-within/label:opacity-100 motion-reduce:transition-none">
+          <div className="flex w-0 items-center gap-0.5 overflow-hidden opacity-0 [interpolate-size:allow-keywords] transition-[width,opacity] duration-(--motion-disclosure) ease-standard group-hover/pane:w-auto group-hover/pane:opacity-100 group-focus-within/label:w-auto group-focus-within/label:opacity-100 motion-reduce:transition-none">
             {paneActions(true)}
           </div>
         </div>
