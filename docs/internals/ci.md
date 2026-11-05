@@ -1,7 +1,7 @@
 # Continuous integration
 
-`.github/workflows/ci.yml` is the only gate for pull requests to `v2` and `main`, pushes to
-those branches and manual dispatches. It replaces the former split between
+`.github/workflows/ci.yml` is the only gate for pull requests to `v2`, pushes to
+it and manual dispatches. It replaces the former split between
 the desktop-only `ci.yml` and `v2-checks.yml`, which ran the server suites in nine area jobs
 per platform and never ran the renderer's own tests.
 
@@ -89,7 +89,19 @@ Percentiles use the nearest-rank definition, so a small sample reports a real ob
 `vp config` installs the dispatcher in `.vite-hooks/_` and recreates the shim for every
 project-owned hook. `.vite-hooks/pre-push` runs `scripts/check-changed.ts`, which formats and
 lints the branch's changed files and typechecks the affected packages when a TypeScript or
-manifest file changed. It prints `nothing relevant changed` and exits 0 when the range is empty.
+manifest file changed. When a `package.json`, pnpm lockfile or workspace file, `Cargo.toml` or
+`Cargo.lock` changed, it also runs `scripts/check-third-party-licenses.sh`, the same inventory diff
+the `static` job runs. It prints `nothing relevant changed` and exits 0 when the range is empty.
+
+## Branch rules and dependency updates
+
+`v2` takes changes through pull requests. Its ruleset requires `ci-gate` on a branch that is up to
+date with `v2`, needs no approving review, and blocks force pushes and deletion; repository admins
+can bypass it in an emergency. There is no merge queue, nightly run or CODEOWNERS file.
+
+`.github/dependabot.yml` opens one weekly pull request per ecosystem (npm, GitHub Actions, Cargo)
+for minor and patch updates, and one per major update. A dependency pull request fails `static`
+until the licence inventory is regenerated with `node scripts/gen-third-party-licenses.mjs`.
 
 ## Lint ratchet
 

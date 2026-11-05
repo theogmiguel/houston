@@ -1,0 +1,44 @@
+# One weekly pull request per ecosystem for minor and patch updates; each major update gets its own
+# pull request because it needs reading. A dependency change also needs the licence inventory
+# regenerated: `node scripts/gen-third-party-licenses.mjs`, then commit the result.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: v2
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directories: [/, /.github/actions/setup]
+    target-branch: v2
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "ci(deps)"
+    groups:
+      actions:
+        update-types: [minor, patch, major]
+
+  - package-ecosystem: cargo
+    directories:
+      - /apps/desktop/native/houston-v1-cleanup
+      - /native/kde-snap-shot
+      - /native/hyprland-snap-shot
+    target-branch: v2
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      cargo-minor-and-patch:
+        update-types: [minor, patch]
