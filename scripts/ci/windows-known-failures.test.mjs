@@ -4,6 +4,7 @@ import * as NodeTest from "node:test";
 import {
   compareToBaseline,
   LOAD_FAILURE,
+  parseBaseline,
   readReport,
   serverRelativeFile,
 } from "./windows-known-failures.mjs";
@@ -54,11 +55,10 @@ NodeTest.test(
       ranFiles: new Set(["src/a.test.ts", "src/b.test.ts"]),
       failures: new Set(["src/a.test.ts > known", "src/a.test.ts > new"]),
     };
-    const baseline = [
-      "src/a.test.ts > known",
-      "src/b.test.ts > fixed",
-      "src/z.test.ts > other shard",
-    ];
+    const baseline = {
+      failing: ["src/a.test.ts > known", "src/b.test.ts > fixed", "src/z.test.ts > other shard"],
+      flaky: [],
+    };
     NodeAssert.deepEqual(compareToBaseline(result, baseline), {
       unexpected: ["src/a.test.ts > new"],
       fixed: ["src/b.test.ts > fixed"],
@@ -71,9 +71,28 @@ NodeTest.test("accepts a shard whose failures are all listed", () => {
     ranFiles: new Set(["src/a.test.ts"]),
     failures: new Set(["src/a.test.ts > known"]),
   };
-  NodeAssert.deepEqual(compareToBaseline(result, ["src/a.test.ts > known"]), {
-    unexpected: [],
-    fixed: [],
+  NodeAssert.deepEqual(
+    compareToBaseline(result, { failing: ["src/a.test.ts > known"], flaky: [] }),
+    { unexpected: [], fixed: [] },
+  );
+});
+
+NodeTest.test("accepts a flaky entry whether it fails or passes", () => {
+  const baseline = { failing: [], flaky: ["src/a.test.ts > flaky"] };
+  const ranFiles = new Set(["src/a.test.ts"]);
+  for (const failures of [new Set(["src/a.test.ts > flaky"]), new Set()]) {
+    NodeAssert.deepEqual(compareToBaseline({ ranFiles, failures }, baseline), {
+      unexpected: [],
+      fixed: [],
+    });
+  }
+});
+
+NodeTest.test("rejects a baseline without both lists, naming the expected shape", () => {
+  NodeAssert.throws(() => parseBaseline(["src/a.test.ts > known"]), /"failing": string\[\]/);
+  NodeAssert.deepEqual(parseBaseline({ failing: ["x > y"], flaky: [] }), {
+    failing: ["x > y"],
+    flaky: [],
   });
 });
 

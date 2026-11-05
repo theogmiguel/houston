@@ -61,7 +61,8 @@ still run so a draft gets fast feedback. `server-windows` gates every pull reque
 the server, like `test-server`. Its shards pass when their failures match
 `scripts/ci/windows-known-failures.json` exactly: a new failure fails the shard, and so does a
 listed test that now passes, so the list only shrinks. Each shard uploads its vitest JSON report;
-`node scripts/ci/windows-known-failures.mjs --update <reports...>` rewrites the list from all three.
+`node scripts/ci/windows-known-failures.mjs --update <reports...>` rewrites the `failing` list from
+all three; a test seen both failing and passing on one tree goes in `flaky`, which accepts either.
 
 ## Caches
 

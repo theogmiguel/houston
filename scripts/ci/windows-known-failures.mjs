@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Windows server ratchet: a shard fails on any failed test missing from
-// scripts/ci/windows-known-failures.json and on any listed test that now passes.
+// Windows server ratchet over scripts/ci/windows-known-failures.json: a shard fails on an unlisted
+// failure or a `failing` entry that passed; `flaky` entries may do either.
 //   --exit-code <n> <report.json>   check one shard's vitest JSON report
-//   --update <report.json>...       rewrite the list from every shard's report
+//   --update <report.json>...       rewrite `failing` from every shard's report
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
@@ -51,11 +51,22 @@ export function readReport(report) {
   return { ranFiles, failures };
 }
 
-/** New failures and listed tests that ran without failing. */
-export function compareToBaseline({ ranFiles, failures }, baseline) {
-  const known = new Set(baseline);
+/** The `failing` and `flaky` key lists of a baseline file's contents. */
+export function parseBaseline(value) {
+  const isKeys = (list) => Array.isArray(list) && list.every((key) => typeof key === "string");
+  if (!value || !isKeys(value.failing) || !isKeys(value.flaky)) {
+    throw new Error(
+      `windows-known-failures: expected ${BASELINE_PATH} to hold {"failing": string[], "flaky": string[]}; got ${JSON.stringify(value).slice(0, 120)}`,
+    );
+  }
+  return { failing: value.failing, flaky: value.flaky };
+}
+
+/** New failures and `failing` entries that ran without failing. */
+export function compareToBaseline({ ranFiles, failures }, { failing, flaky }) {
+  const known = new Set([...failing, ...flaky]);
   const unexpected = [...failures].filter((key) => !known.has(key)).sort();
-  const fixed = baseline
+  const fixed = failing
     .filter((key) => ranFiles.has(key.slice(0, key.indexOf(" > "))) && !failures.has(key))
     .sort();
   return { unexpected, fixed };
@@ -65,16 +76,28 @@ function readJson(path) {
   return JSON.parse(NodeFS.readFileSync(path, "utf8"));
 }
 
+function writeBaseline(baseline) {
+  const sorted = { failing: [...baseline.failing].sort(), flaky: [...baseline.flaky].sort() };
+  NodeFS.writeFileSync(BASELINE_PATH, `${JSON.stringify(sorted, null, 2)}\n`);
+}
+
 function main(argv) {
   if (argv[0] === "--update") {
     const paths = argv.slice(1);
     if (paths.length === 0) {
       throw new Error("windows-known-failures: --update needs every shard's report path; got none");
     }
-    const all = new Set();
-    for (const path of paths) for (const key of readReport(readJson(path)).failures) all.add(key);
-    NodeFS.writeFileSync(BASELINE_PATH, `${JSON.stringify([...all].sort(), null, 2)}\n`);
-    console.log(`windows-known-failures: wrote ${all.size} entries from ${paths.length} report(s)`);
+    const { flaky } = parseBaseline(readJson(BASELINE_PATH));
+    const flakySet = new Set(flaky);
+    const failing = new Set();
+    for (const path of paths) {
+      for (const key of readReport(readJson(path)).failures)
+        if (!flakySet.has(key)) failing.add(key);
+    }
+    writeBaseline({ failing: [...failing], flaky });
+    console.log(
+      `windows-known-failures: wrote ${failing.size} failing entries from ${paths.length} report(s); kept ${flaky.length} flaky`,
+    );
     return 0;
   }
   if (argv[0] !== "--exit-code" || argv.length !== 3 || !/^\d+$/.test(argv[1])) {
@@ -91,7 +114,7 @@ function main(argv) {
     return 1;
   }
   const result = readReport(readJson(reportPath));
-  const baseline = readJson(BASELINE_PATH);
+  const baseline = parseBaseline(readJson(BASELINE_PATH));
   const { unexpected, fixed } = compareToBaseline(result, baseline);
   // Vitest also fails a run on unhandled errors, which no test carries.
   if (exitCode !== 0 && result.failures.size === 0) {
@@ -103,7 +126,7 @@ function main(argv) {
   for (const key of unexpected) console.error(`new Windows failure: ${key}`);
   for (const key of fixed) {
     console.error(
-      `now passes on Windows, remove it from scripts/ci/windows-known-failures.json: ${key}`,
+      `now passes on Windows, remove it from "failing" in scripts/ci/windows-known-failures.json (or move it to "flaky" if it still fails sometimes): ${key}`,
     );
   }
   if (unexpected.length > 0 || fixed.length > 0) {
