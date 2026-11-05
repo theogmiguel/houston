@@ -88,10 +88,13 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       # The launcher downloads this release's archives, so it publishes only once they are public.
+      # Builds from the tag so the manifest carries that release's migration head. An exact tag
+      # ref, so a branch of the same name cannot stand in, and no stored token.
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.tag }}
+          ref: refs/tags/${{ inputs.tag }}
           path: tagged
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
