@@ -110,9 +110,7 @@ describe("ThreadCard branch", () => {
     statusCwds.length = 0;
     await using screen = await render(card(thread({ branch: "houston/recorded" })));
 
-    await expect
-      .element(screen.getByText("houston/recorded", { exact: true }))
-      .toBeInTheDocument();
+    await expect.element(screen.getByText("houston/recorded", { exact: true })).toBeInTheDocument();
     expect(statusCwds).toEqual([]);
   });
 });
