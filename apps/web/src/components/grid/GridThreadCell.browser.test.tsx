@@ -86,6 +86,7 @@ vi.mock("../ChatView", async () => {
         ) : null}
         <div data-chat-composer-body="true">
           <div data-testid="editor" contentEditable suppressContentEditableWarning />
+          <p data-thread-find-text="true">A long answer that must stay readable in every pane.</p>
         </div>
         <div data-chat-composer-footer="true">
           <button type="button">Submit</button>
@@ -777,6 +778,31 @@ describe("GridThreadCell pending question", () => {
       expect(option.getBoundingClientRect().width).toBeGreaterThan(150);
       expect(option.getBoundingClientRect().height).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("GridThreadCell timeline", () => {
+  it.each([
+    { width: 360, height: 600, density: "glance" },
+    { width: 520, height: 600, density: "compact" },
+  ])("keeps the whole answer readable in a $density pane", async ({ width, height, density }) => {
+    state.draftSession = null;
+    const container = document.createElement("div");
+    container.style.width = `${width}px`;
+    container.style.height = `${height}px`;
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      undefined,
+      { container },
+    );
+
+    const cell = screen.container.querySelector<HTMLElement>("[data-grid-cell]");
+    if (cell === null) throw new Error("grid cell missing");
+    await vi.waitFor(() => expect(cell.dataset.density).toBe(density));
+
+    const text = screen.container.querySelector<HTMLElement>("[data-thread-find-text]");
+    if (text === null) throw new Error("answer text missing");
+    expect(getComputedStyle(text).webkitLineClamp).toBe("none");
   });
 });
 

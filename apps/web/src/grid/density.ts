@@ -61,9 +61,6 @@ export interface PaneDensityLayout {
   /** The timeline max width in CSS pixels; null uses the pane width. */
   readonly timelineMaxWidth: number | null;
   readonly composerMaxWidth: number | null;
-  /** Comfortable and solo panes keep the whole conversation. */
-  readonly timeline: "full" | "latest-turn" | "latest-message";
-  readonly messageLines: number | null;
 }
 
 export function paneDensityLayout(density: PaneDensity, width: number): PaneDensityLayout {
@@ -75,8 +72,6 @@ export function paneDensityLayout(density: PaneDensity, width: number): PaneDens
         showStatusLabel: false,
         timelineMaxWidth: 720,
         composerMaxWidth: 760,
-        timeline: "full",
-        messageLines: null,
       };
     case "comfortable":
       return {
@@ -85,8 +80,6 @@ export function paneDensityLayout(density: PaneDensity, width: number): PaneDens
         showStatusLabel: true,
         timelineMaxWidth: 640,
         composerMaxWidth: null,
-        timeline: "full",
-        messageLines: null,
       };
     case "compact":
       return {
@@ -95,8 +88,6 @@ export function paneDensityLayout(density: PaneDensity, width: number): PaneDens
         showStatusLabel: true,
         timelineMaxWidth: null,
         composerMaxWidth: null,
-        timeline: "latest-turn",
-        messageLines: 5,
       };
     case "glance":
       return {
@@ -105,8 +96,6 @@ export function paneDensityLayout(density: PaneDensity, width: number): PaneDens
         showStatusLabel: false,
         timelineMaxWidth: null,
         composerMaxWidth: null,
-        timeline: "latest-message",
-        messageLines: 3,
       };
   }
 }

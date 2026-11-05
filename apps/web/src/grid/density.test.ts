@@ -63,11 +63,4 @@ describe("paneDensityLayout", () => {
     expect(paneDensityLayout("comfortable", 639).showBranch).toBe(false);
     expect(paneDensityLayout("compact", 900).showBranch).toBe(false);
   });
-
-  it("limits compact and glance timelines", () => {
-    expect(paneDensityLayout("compact", 500).timeline).toBe("latest-turn");
-    expect(paneDensityLayout("compact", 500).messageLines).toBe(5);
-    expect(paneDensityLayout("glance", 300).timeline).toBe("latest-message");
-    expect(paneDensityLayout("glance", 300).messageLines).toBe(3);
-  });
 });
