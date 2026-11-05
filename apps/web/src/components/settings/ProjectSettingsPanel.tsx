@@ -1,15 +1,10 @@
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { AuthOrchestrationOperateScope } from "@houston-app/contracts";
-import { useEnvironmentsWithScope, readEnvironmentScope } from "../../state/session";
+import { useEnvironmentsWithScope } from "../../state/session";
 import {
-  isAtomCommandInterrupted,
   mapAtomCommandResult,
-  settlePromise,
-  squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@houston-app/client-runtime/state/runtime";
-import { scopeProjectRef, scopeThreadRef } from "@houston-app/client-runtime/environment";
-import { planProjectRemoval } from "@houston-app/client-runtime/state/projects";
 import { AsyncResult } from "effect/reactivity";
 import type { EnvironmentId } from "@houston-app/contracts";
 import { Navigate, useLocation, useNavigate } from "@tanstack/react-router";
@@ -17,22 +12,23 @@ import * as Cause from "effect/Cause";
 import { InfoIcon, Trash2Icon } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 
-import { useComposerDraftStore } from "../../composerDraftStore";
+import {
+  checkProjectAccess,
+  reportProjectCommandFailure,
+  useRemoveProjectMembers,
+} from "../../hooks/useRemoveProjectMembers";
 import { useProjectGroupUpdate, type ProjectGroupUpdate } from "../../hooks/useProjectGroupUpdate";
-import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
-import { readLocalApi } from "../../localApi";
 import {
   type SidebarProjectGroupMember,
   type SidebarProjectSnapshot,
 } from "../../sidebarProjectGrouping";
 import { useEnvironments } from "../../state/environments";
-import { useThreadShells, waitForProjectRemoval } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
-import { stackedThreadToast, toastManager } from "../ui/toast";
+import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   SettingResetButton,
@@ -45,7 +41,6 @@ import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { projectGroupTitleNeedsUpdate, SCRATCH_PROJECT_TITLE } from "./ProjectSettingsPanel.logic";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
-import { readUnloadedThreadCount } from "../../state/olderSettledShelf";
 import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 
 export type ProjectSettingsCategory = "general" | "source-control" | "project";
@@ -180,13 +175,10 @@ function ProjectDetail({
   const canEditGroup = group.memberProjects.every((member) =>
     editableIds.has(member.environmentId),
   );
-  const threads = useThreadShells();
   const updateProject = useOrchestrationCommand(projectEnvironment.update, {
     reportFailure: false,
   });
-  const deleteProject = useOrchestrationCommand(projectEnvironment.delete, {
-    reportFailure: false,
-  });
+  const removeProjectMembers = useRemoveProjectMembers();
   const projectNameEditedRef = useRef(false);
   const { updateProjectGroup, canOrganizeProjectGroup } = useProjectGroupUpdate();
   const [isOrganizing, setIsOrganizing] = useState(false);
@@ -197,37 +189,6 @@ function ProjectDetail({
     setIsOrganizing(true);
     await updateProjectGroup(allMembers, input, failureTitle);
     setIsOrganizing(false);
-  };
-
-  const reportFailure = (title: string, result: AtomCommandResult<void, unknown>) => {
-    if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
-    const error = squashAtomCommandFailure(result);
-    toastManager.add(
-      stackedThreadToast({
-        type: "error",
-        title,
-        description: error instanceof Error ? error.message : "An error occurred.",
-      }),
-    );
-  };
-
-  const checkProjectAccess = (
-    members: ReadonlyArray<SidebarProjectGroupMember>,
-    failureTitle: string,
-  ) => {
-    const denied = members.find(
-      (member) => !readEnvironmentScope(member.environmentId, AuthOrchestrationOperateScope),
-    );
-    if (!denied) return null;
-    const result = AsyncResult.failure<void, Error>(
-      Cause.fail(
-        new Error(
-          `This connection cannot change projects in ${denied.environmentLabel ?? "this environment"}.`,
-        ),
-      ),
-    );
-    reportFailure(failureTitle, result);
-    return result;
   };
 
   const updateAllMembers = async (
@@ -245,7 +206,7 @@ function ProjectDetail({
         `Connect ${unavailable.environmentLabel ?? "the selected environment"} and try again.`,
       );
       const result: AtomCommandResult<void, unknown> = AsyncResult.failure(Cause.fail(error));
-      reportFailure(failureTitle, result);
+      reportProjectCommandFailure(failureTitle, result);
       return result;
     }
     for (const member of group.memberProjects) {
@@ -259,7 +220,7 @@ function ProjectDetail({
         () => undefined,
       );
       if (result._tag === "Failure") {
-        reportFailure(
+        reportProjectCommandFailure(
           group.memberProjects.length > 1
             ? `${failureTitle} on ${member.environmentLabel ?? "the current environment"}`
             : failureTitle,
@@ -295,58 +256,12 @@ function ProjectDetail({
     group.memberProjects.some((member) => member.title !== SCRATCH_PROJECT_TITLE);
 
   const removeMembers = async (members: ReadonlyArray<SidebarProjectGroupMember>) => {
-    if (checkProjectAccess(members, "Failed to remove project")) return;
-    const api = readLocalApi();
-    if (!api) return;
-
-    const { projectThreads, isWholeGroup, confirmationMessage } = planProjectRemoval({
+    const { removed, isWholeGroup } = await removeProjectMembers({
+      group,
       members,
-      groupMemberCount: group.memberProjects.length,
       hasOtherMembers,
-      displayName: group.displayName,
-      threads,
-      unloadedThreadCount: readUnloadedThreadCount(members, threads),
     });
-    const confirmed = await settlePromise(() =>
-      api.dialogs.confirm(confirmationMessage, { variant: "destructive" }),
-    );
-    if (confirmed._tag === "Failure" || !confirmed.value) return;
-    if (checkProjectAccess(members, "Failed to remove project")) return;
-
-    const draftStore = useComposerDraftStore.getState();
-    for (const member of members) {
-      if (checkProjectAccess([member], "Failed to remove project")) return;
-      const memberThreads = projectThreads.filter(
-        (thread) => thread.environmentId === member.environmentId && thread.projectId === member.id,
-      );
-      const result = mapAtomCommandResult(
-        await deleteProject({
-          environmentId: member.environmentId,
-          input: {
-            projectId: member.id,
-            force: true,
-          },
-        }),
-        () => undefined,
-      );
-      if (result._tag === "Failure") {
-        reportFailure(`Failed to remove "${member.title}"`, result);
-        return;
-      }
-      const projectRef = scopeProjectRef(member.environmentId, member.id);
-      await waitForProjectRemoval(projectRef);
-      releaseProjectDraftUploads(
-        projectRef,
-        memberThreads.map((thread) => scopeThreadRef(thread.environmentId, thread.id)),
-      );
-      const projectDraftThread = draftStore.getDraftThreadByProjectRef(projectRef);
-      if (projectDraftThread) {
-        draftStore.clearDraftThread(projectDraftThread.draftId);
-      }
-      draftStore.clearProjectDraftThreadId(projectRef);
-    }
-
-    if (isWholeGroup && !hasOtherMembers) {
+    if (removed && isWholeGroup && !hasOtherMembers) {
       void navigate({
         to: "/settings/projects",
         search: ({ machine }) => ({ project: undefined, machine, checkout: undefined }),

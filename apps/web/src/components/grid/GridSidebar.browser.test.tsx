@@ -390,6 +390,37 @@ describe("ThreadCard status marks", () => {
     expect(getComputedStyle(screen.getByText("Running").element()).color).toBe(accentColor());
   });
 
+  it("keeps the time on the title line and puts the state and tags on a third line", async () => {
+    await using screen = await render(
+      card(
+        thread({
+          tags: ["bug", "linux"],
+          runtime: { status: "running" } as never,
+          latestRun: {
+            id: "run-1",
+            status: "running",
+            startedAt: "2025-12-31T23:59:30.000Z",
+            completedAt: null,
+          } as never,
+        } as never),
+        { timeLabel: "9:00" },
+      ),
+    );
+
+    const status = screen.container.querySelector("[data-thread-status]");
+    expect(status).not.toBeNull();
+    expect(status!.textContent).toContain("Running");
+    const tags = [...status!.querySelectorAll("[data-thread-tag]")].map((tag) => tag.textContent);
+    expect(tags).toEqual(["bug", "linux"]);
+    expect(screen.getByText("9:00").element()).toBeVisible();
+  });
+
+  it("says Idle on the third line of a thread with nothing running", async () => {
+    await using screen = await render(card(thread()));
+    const status = screen.container.querySelector("[data-thread-status]");
+    expect(status?.textContent).toBe("Idle");
+  });
+
   it("draws the other state marks as stroked outlines, not filled discs", async () => {
     await using screen = await render(
       card(thread({ hasPendingUserInput: true }), { timeLabel: null }),

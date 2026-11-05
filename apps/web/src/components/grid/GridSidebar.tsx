@@ -22,6 +22,8 @@ import {
   ClockIcon,
   CpuIcon,
   EyeOffIcon,
+  FolderIcon,
+  FolderOpenIcon,
   GitBranchIcon,
   Grid2X2PlusIcon,
   MessageSquarePlusIcon,
@@ -92,6 +94,7 @@ import {
 } from "../../grid/sidebar";
 import { PullRequestChecksGlyph, PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { GridShelves } from "./GridShelves";
+import { useProjectSectionMenu } from "./projectSectionMenu";
 import {
   COLLAPSED_GRIDS_STORAGE_KEY,
   COLLAPSED_PROJECTS_STORAGE_KEY,
@@ -184,6 +187,7 @@ import {
   SIDEBAR_PROJECT_ACTION_CLS,
   SIDEBAR_PROJECT_EMPTY_ACTION_CLS,
   SIDEBAR_PROJECT_LABEL_CLS,
+  SIDEBAR_PROJECT_ICON_CLS,
   SIDEBAR_PROJECT_LABEL_TEXT_CLS,
   SIDEBAR_PROJECT_ROW_CLS,
   SIDEBAR_PROJECT_SUMMARY_CLS,
@@ -318,6 +322,7 @@ export function GridSidebar() {
 
   const actions = useThreadActions();
   const handleNewThread = useNewThreadHandler();
+  const openProjectMenu = useProjectSectionMenu();
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -941,6 +946,15 @@ export function GridSidebar() {
                 onCreateGrid={() =>
                   createGridInWorkspace(workspaceKeyOf(section.environmentId, section.projectId))
                 }
+                onOpenProjectMenu={(position) => {
+                  const group = projectGroups.find(
+                    (candidate) => candidate.projectKey === section.projectKey,
+                  );
+                  if (group === undefined) return;
+                  void openProjectMenu(group, position, () =>
+                    createGridInWorkspace(workspaceKeyOf(section.environmentId, section.projectId)),
+                  );
+                }}
                 onCreateThread={(gridId) => {
                   const grid = gridById(grids, gridId);
                   if (grid !== null) createThreadInGrid(grid);
@@ -1224,6 +1238,7 @@ export function SidebarProjectSection({
   handleNewThread,
   onShowGrid,
   onOpenUngroupedThread,
+  onOpenProjectMenu,
 }: {
   section: SidebarProjectSectionModel;
   query: string;
@@ -1258,8 +1273,11 @@ export function SidebarProjectSection({
   handleNewThread?: NewThreadHandler | undefined;
   onShowGrid: (gridId: string) => void;
   onOpenUngroupedThread: (thread: EnvironmentThreadShell) => void;
+  /** Opens the project's actions at a viewport point; the scratch section has none. */
+  onOpenProjectMenu?: ((position: { x: number; y: number }) => void) | undefined;
 }) {
   const gridCount = section.grids.length;
+  const projectMenu = section.isScratch ? undefined : onOpenProjectMenu;
   const summary = gridCount === 0 ? "No grids" : gridCount === 1 ? "1 grid" : `${gridCount} grids`;
 
   return (
@@ -1275,9 +1293,27 @@ export function SidebarProjectSection({
                 type="button"
                 aria-expanded={!collapsed}
                 onClick={onToggleCollapsed}
+                onContextMenu={(event) => {
+                  if (projectMenu === undefined) return;
+                  event.preventDefault();
+                  projectMenu({ x: event.clientX, y: event.clientY });
+                }}
+                onKeyDown={(event) => {
+                  if (projectMenu === undefined) return;
+                  if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) {
+                    return;
+                  }
+                  event.preventDefault();
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  projectMenu({ x: rect.left, y: rect.bottom + 4 });
+                }}
                 className={SIDEBAR_PROJECT_LABEL_CLS}
               >
-                {collapsed ? <ChevronRightIcon aria-hidden className="size-3 shrink-0" /> : null}
+                {collapsed ? (
+                  <FolderIcon aria-hidden className={SIDEBAR_PROJECT_ICON_CLS} />
+                ) : (
+                  <FolderOpenIcon aria-hidden className={SIDEBAR_PROJECT_ICON_CLS} />
+                )}
                 <span className={SIDEBAR_PROJECT_LABEL_TEXT_CLS}>{section.title}</span>
                 {collapsed ? <span className={SIDEBAR_PROJECT_SUMMARY_CLS}>{summary}</span> : null}
               </button>
@@ -1701,7 +1737,7 @@ function ThreadStateMark({
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 text-xs font-medium whitespace-nowrap tabular-nums",
+        "inline-flex shrink-0 items-center gap-1 text-caption leading-3.75 font-medium whitespace-nowrap tabular-nums",
         threadStateTextClass(state),
       )}
     >
@@ -1930,7 +1966,7 @@ export function ThreadCard({
               onOpen();
             }}
             className={cn(
-              `group/th relative flex w-full flex-col gap-0.75 rounded-lg py-1.75 pr-2.5 text-left outline-none ${MOTION_FEEDBACK} ${FOCUS_ROW_CLS}`,
+              `group/th relative flex w-full flex-col gap-1 rounded-lg py-2 pr-2.5 text-left outline-none ${MOTION_FEEDBACK} ${FOCUS_ROW_CLS}`,
               notInGrid ? "pl-2" : "pl-7.5",
               "cursor-pointer",
               dragging && "opacity-50",
@@ -2000,21 +2036,15 @@ export function ThreadCard({
                   actionsVisible && ROW_STATUS_HIDDEN,
                 )}
               >
-                {timeLabel !== null ? (
-                  <span className="text-xs text-secondary-label tabular-nums">{timeLabel}</span>
-                ) : state === "idle" ? (
-                  <span className="text-xs text-secondary-label tabular-nums">
-                    {threadTimeLabel(thread, nowMinute)}
-                  </span>
-                ) : (
-                  <ThreadStateMark state={state} startedAt={startedAt} />
-                )}
+                <span className="text-xs text-secondary-label tabular-nums">
+                  {timeLabel ?? threadTimeLabel(thread, nowMinute)}
+                </span>
               </span>
             </button>
           )}
           <span
             className={cn(
-              "absolute inset-y-0 right-2.5 flex items-center gap-0.5",
+              "absolute top-2 right-2.5 flex h-[22px] items-center gap-0.5",
               MOTION_FEEDBACK_OPACITY,
               actionsVisible ? ROW_ACTIONS_VISIBLE : ROW_ACTIONS_REVEAL,
             )}
@@ -2142,15 +2172,22 @@ export function ThreadCard({
             ) : null}
           </span>
         </div>
-        {(thread.tags?.length ?? 0) > 0 ? (
-          <div data-thread-tags="" className="flex min-w-0 flex-wrap items-center gap-1 pl-0.5">
-            {(thread.tags ?? []).map((tag) => (
-              <span key={tag} className={SIDEBAR_THREAD_TAG_CLASS}>
-                {tag}
-              </span>
-            ))}
-          </div>
-        ) : null}
+        {/* Every row is three lines tall: the third says what the agent is doing, then its tags. */}
+        <div
+          data-thread-status=""
+          className="flex min-w-0 items-center gap-1.5 text-caption leading-3.75 text-secondary-label"
+        >
+          {state === "idle" ? (
+            <span>Idle</span>
+          ) : (
+            <ThreadStateMark state={state} startedAt={startedAt} />
+          )}
+          {(thread.tags ?? []).map((tag) => (
+            <span key={tag} data-thread-tag="" className={SIDEBAR_THREAD_TAG_CLASS}>
+              {tag}
+            </span>
+          ))}
+        </div>
         {selected ? (
           <span className="sr-only" aria-live="polite">
             Selected
