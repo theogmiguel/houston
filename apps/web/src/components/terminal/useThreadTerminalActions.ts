@@ -3,6 +3,7 @@ import {
   AuthTerminalReadScope,
   type ScopedThreadRef,
 } from "@houston-app/contracts";
+import type { EnvironmentProject } from "@houston-app/client-runtime/state/shell";
 import { scopeProjectRef } from "@houston-app/client-runtime/environment";
 import { isAtomCommandInterrupted } from "@houston-app/client-runtime/state/runtime";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@houston-app/shared/projectScripts";
@@ -25,7 +26,10 @@ export interface TerminalLaunchLocation {
 }
 
 /** Allocate terminal ids and launch locations centrally so all surfaces share one view of sessions. */
-export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
+export function useThreadTerminalActions(
+  threadRef: ScopedThreadRef | null,
+  options?: { readonly project?: EnvironmentProject | null },
+) {
   const openTerminalCommand = useAtomCommand(terminalEnvironment.open, "terminal open");
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalCommand = useAtomCommand(terminalEnvironment.close, "terminal close");
@@ -33,12 +37,13 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
   const draftThread = useComposerDraftStore((store) =>
     threadRef ? store.getDraftThreadByRef(threadRef) : null,
   );
-  const projectRef = serverThread
+  const threadProjectRef = serverThread
     ? scopeProjectRef(serverThread.environmentId, serverThread.projectId)
     : draftThread
       ? scopeProjectRef(draftThread.environmentId, draftThread.projectId)
       : null;
-  const project = useProject(projectRef);
+  const threadProject = useProject(threadProjectRef);
+  const project = options?.project ?? threadProject;
   const threadWorktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
   const knownSessions = useKnownTerminalSessions({
     environmentId: threadRef?.environmentId ?? null,

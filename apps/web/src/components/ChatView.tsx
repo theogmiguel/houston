@@ -369,6 +369,7 @@ import { observeResize } from "~/lib/observeResize";
 import { ThreadVisitWatermark } from "./chat/ThreadVisitWatermark";
 import { ChatTerminalDrawers } from "./chat/ChatTerminalDrawers";
 import { GridLayoutMenu } from "./grid/GridLayoutMenu";
+import { toggleGridTerminal } from "../grid/gridTerminal";
 import { useGridStore } from "../grid/gridStore";
 import { preorderThreads } from "../grid/tree";
 import { ChatRightPanel } from "./chat/ChatRightPanel";
@@ -431,6 +432,8 @@ type ChatViewProps =
       /** The grid owns one details flag; the focused cell shows its card. */
       detailsOpen?: boolean;
       onDetailsOpenChange?: (open: boolean) => void;
+      /** The grid's terminal dock takes this cell's terminal toggle and chords. */
+      gridTerminalRef?: ScopedThreadRef | null;
       routeKind: "server";
       draftId?: never;
     }
@@ -458,6 +461,8 @@ type ChatViewProps =
       /** The grid owns one details flag; the focused cell shows its card. */
       detailsOpen?: boolean;
       onDetailsOpenChange?: (open: boolean) => void;
+      /** The grid's terminal dock takes this cell's terminal toggle and chords. */
+      gridTerminalRef?: ScopedThreadRef | null;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -489,6 +494,7 @@ export default function ChatView(props: ChatViewProps) {
   const detailsCardAnchor = props.detailsCardAnchor;
   const detailsOpen = props.detailsOpen;
   const onDetailsOpenChange = props.onDetailsOpenChange;
+  const gridTerminalRef = props.gridTerminalRef ?? null;
   const allowInlineDetails =
     paneDensity === undefined || paneDensity === "solo" || paneDensity === "comfortable";
   // A comfortable grid pane is too narrow for the chat lane and the card side by side, but
@@ -2042,6 +2048,9 @@ export default function ChatView(props: ChatViewProps) {
     gitCwd,
     setTerminalUiLaunchContext,
     setThreadError,
+    ...(gridTerminalRef === null
+      ? {}
+      : { onToggleGridTerminal: () => toggleGridTerminal(gridTerminalRef) }),
   });
   const {
     saveProjectScript: saveProjectScriptStable,

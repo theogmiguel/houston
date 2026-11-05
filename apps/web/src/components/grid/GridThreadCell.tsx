@@ -20,6 +20,7 @@ import { useQuietThreadShell } from "../../state/entities";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { paneDensityLayout } from "../../grid/density";
 import { subscribeGridCellRename } from "../../grid/gridCellCommands";
+import { gridTerminalThreadRef } from "../../grid/gridTerminal";
 import { MAX_GRID_THREADS, type GridRecord, useGridStore } from "../../grid/gridStore";
 import type { ThreadDropRefusal } from "../../grid/projectMove";
 import type { MoveToGridTarget } from "../../grid/moveToGrid";
@@ -426,6 +427,7 @@ export function GridThreadCell({
               embedded
               shortcutsAtWindow={focused}
               visitActive={focused}
+              gridTerminalRef={maximized ? null : gridTerminalThreadRef(environmentId, grid.id)}
               draftId={draftId}
               environmentId={environmentId}
               threadId={threadId}
@@ -441,6 +443,7 @@ export function GridThreadCell({
               embedded
               shortcutsAtWindow={focused}
               visitActive={focused}
+              gridTerminalRef={maximized ? null : gridTerminalThreadRef(environmentId, grid.id)}
               environmentId={environmentId}
               threadId={threadId}
               paneDensity={density}
