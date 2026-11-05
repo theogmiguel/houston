@@ -88,10 +88,6 @@ export function getThemePreviewAppearance(): ThemeAppearance | null {
   return themePreviewAppearance;
 }
 
-export function getThemePreviewSidebarArtwork(): boolean | null {
-  return themePreviewAppearance === null ? null : false;
-}
-
 export function subscribeToThemePreview(listener: () => void): () => void {
   themePreviewListeners.add(listener);
   return () => themePreviewListeners.delete(listener);
@@ -1221,14 +1217,6 @@ export function getThemeDefinition(theme: ThemePreference): ThemeDefinition | nu
     getCustomThemes().find((definition) => definition.id === themeId) ??
     getEnvironmentThemes().find((definition) => definition.id === themeId) ??
     null
-  );
-}
-
-export function themeAllowsSidebarArtwork(theme: ThemePreference): boolean {
-  const themeId = themeIdFromPreference(theme);
-  return (
-    BUILT_IN_THEME_DEFINITIONS.find((definition) => definition.id === themeId)?.sidebarArtwork ===
-    true
   );
 }
 

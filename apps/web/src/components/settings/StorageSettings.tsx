@@ -38,6 +38,7 @@ import { AdvancedSettings } from "./AdvancedSettings";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { SettingsScopeNotice } from "./SettingsScopeNotice";
 import { SettingsGroup } from "./SettingsGroup";
+import { worktreesDirectoryProblem } from "./worktreesDirectoryInput";
 import type { ScopedSettingsTarget } from "./scopedSettings";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { searchableSetting } from "./settingsSearch";
@@ -57,6 +58,7 @@ export function WorktreesDirectoryRow() {
   const edited = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const draft = useRef("");
+  const [problem, setProblem] = useState<string | null>(null);
   if (
     connectedEnvironments.some(
       (environment) =>
@@ -70,14 +72,23 @@ export function WorktreesDirectoryRow() {
     <SettingsRow
       {...searchableSetting("storage-worktrees-location")}
       title="Worktree location"
-      description="Relative to each project."
+      description={
+        problem ? (
+          <span role="alert">{problem}</span>
+        ) : (
+          "An absolute folder for new worktrees. Leave empty to use Houston's own folder."
+        )
+      }
       serverScoped
       settingKeys={["worktreesDirectory"]}
       resetAction={
         mixed || settings.worktreesDirectory !== "" ? (
           <SettingResetButton
             label="worktree location"
-            onClick={() => updateSettings({ worktreesDirectory: "" })}
+            onClick={() => {
+              setProblem(null);
+              updateSettings({ worktreesDirectory: "" });
+            }}
           />
         ) : null
       }
@@ -89,9 +100,10 @@ export function WorktreesDirectoryRow() {
             className="w-full sm:w-[190px]"
             font="mono"
             aria-label="Worktree location"
+            aria-invalid={problem !== null || undefined}
             autoCapitalize="none"
             spellCheck={false}
-            placeholder={mixed ? "Mixed" : ".houston/worktrees"}
+            placeholder={mixed ? "Mixed" : "/home/you/worktrees"}
             defaultValue={mixed ? "" : settings.worktreesDirectory}
             onFocus={(event) => {
               draft.current = event.target.value;
@@ -100,11 +112,16 @@ export function WorktreesDirectoryRow() {
               edited.current = true;
               draft.current = resolvePastedPath(draft.current, event.target.value);
               event.target.value = draft.current;
+              setProblem(null);
             }}
             onBlur={(event) => {
               const value = event.target.value.trim();
-              if (edited.current && (mixed || value !== settings.worktreesDirectory))
+              const refusal = worktreesDirectoryProblem(value);
+              if (refusal !== null) {
+                setProblem(refusal);
+              } else if (edited.current && (mixed || value !== settings.worktreesDirectory)) {
                 updateSettings({ worktreesDirectory: value });
+              }
               edited.current = false;
             }}
           />

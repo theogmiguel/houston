@@ -6,7 +6,6 @@ import {
   DEFAULT_UNIFIED_SETTINGS,
   type ChatWidth,
   type EffortDisplay,
-  type EnvironmentIdentificationMode,
   MAX_APPEARANCE_CONTRAST,
   MAX_GLASS_OPACITY,
   MAX_PANEL_ANIMATION_DURATION_MS,
@@ -14,11 +13,6 @@ import {
   MIN_GLASS_OPACITY,
   MIN_PANEL_ANIMATION_DURATION_MS,
 } from "@houston-app/contracts/settings";
-import {
-  resolveSidebarStageBackdropVariant,
-  type SidebarStageBackdropVariant,
-  useEnvironmentStageLabel,
-} from "../SidebarStageBackdrop";
 import { useCustomThemes } from "../../hooks/useCustomThemes";
 import { useTheme } from "../../hooks/useTheme";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
@@ -47,42 +41,6 @@ import { searchableSetting } from "./settingsSearch";
 import { AdvancedSettings } from "./AdvancedSettings";
 import { TypographySection, WordWrapRow } from "./TypographySettings";
 import { ThreadDetailsItemsRow } from "./ThreadDetailsItemsRow";
-
-const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
-  artwork: "Artwork",
-  "nightly-artwork": "Nightly artwork",
-  "dev-artwork": "Dev artwork",
-  pill: "Version pill",
-  none: "None",
-};
-
-// The default "artwork" follows the running channel, so it is labeled as that channel's art,
-// or as "None" on Latest. The other channel's art is offered as a fixed choice.
-function environmentIdentificationOptions(
-  stageVariant: SidebarStageBackdropVariant | null,
-): ReadonlyArray<readonly [EnvironmentIdentificationMode, string]> {
-  if (stageVariant === "dev") {
-    return [
-      ["artwork", "Dev artwork"],
-      ["nightly-artwork", "Nightly artwork"],
-      ["pill", "Version pill"],
-      ["none", "None"],
-    ];
-  }
-  if (stageVariant === "nightly") {
-    return [
-      ["artwork", "Nightly artwork"],
-      ["dev-artwork", "Dev artwork"],
-      ["pill", "Version pill"],
-      ["none", "None"],
-    ];
-  }
-  return [
-    ["artwork", "None"],
-    ["nightly-artwork", "Nightly artwork"],
-    ["dev-artwork", "Dev artwork"],
-  ];
-}
 
 const CHAT_WIDTH_LABELS: Record<ChatWidth, string> = {
   comfortable: "Comfortable",
@@ -116,14 +74,6 @@ export function AppearanceSettingsPanel() {
   const [isCustomThemesOpen, setIsCustomThemesOpen] = useState(false);
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
-  const environmentStageLabel = useEnvironmentStageLabel();
-  const environmentStageVariant = resolveSidebarStageBackdropVariant(environmentStageLabel);
-  const environmentIdentificationOptionList =
-    environmentIdentificationOptions(environmentStageVariant);
-  const environmentIdentificationLabel =
-    environmentIdentificationOptionList.find(
-      ([value]) => value === settings.environmentIdentificationMode,
-    )?.[1] ?? ENVIRONMENT_IDENTIFICATION_LABELS[settings.environmentIdentificationMode];
   const glassOpacityRatio =
     (settings.glassOpacity - MIN_GLASS_OPACITY) / (MAX_GLASS_OPACITY - MIN_GLASS_OPACITY);
   const glassOpacitySliderStyle = {
@@ -244,13 +194,9 @@ export function AppearanceSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("environment-identification")}
-          description={
-            environmentStageVariant
-              ? "Choose how the Dev environment is identified."
-              : "Show Dev artwork in the sidebar header."
-          }
+          description="Show a Dev or Nightly pill beside the name in the sidebar header. Release builds show none."
           resetAction={
-            settings.environmentIdentificationMode !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
+            settings.environmentIdentificationMode === "none" ? (
               <SettingResetButton
                 label="environment identification"
                 onClick={() =>
@@ -265,11 +211,7 @@ export function AppearanceSettingsPanel() {
             <Switch
               checked={settings.environmentIdentificationMode !== "none"}
               onCheckedChange={(checked) =>
-                updateSettings({
-                  environmentIdentificationMode: checked
-                    ? DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE
-                    : "none",
-                })
+                updateSettings({ environmentIdentificationMode: checked ? "pill" : "none" })
               }
               aria-label="Environment identification"
             />

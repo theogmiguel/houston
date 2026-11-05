@@ -2,6 +2,7 @@ import type { DesktopWslState } from "@houston-app/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
   applyWslEnableSelection,
+  isWslSettingsRowVisible,
   resolveShareablePairDeviceUrl,
   resolveTailscaleServeBaseUrl,
   selectQrEndpointOption,
@@ -153,5 +154,36 @@ describe("selectQrEndpointOption", () => {
     expect(selectQrEndpointOption(options, "tailscale-ip:gone", "nope")?.id).toBe(
       "tailscale-ip:http://100.84.12.7:4780",
     );
+  });
+});
+
+describe("isWslSettingsRowVisible", () => {
+  const state = (overrides: Partial<DesktopWslState>): DesktopWslState => ({
+    enabled: false,
+    distro: null,
+    available: false,
+    wslOnly: false,
+    distros: [],
+    preflightError: null,
+    ...overrides,
+  });
+
+  it("hides the rows without a WSL state (not Windows, or not loaded)", () => {
+    expect(isWslSettingsRowVisible({ state: null, error: null })).toBe(false);
+  });
+
+  it("hides the rows when WSL is unavailable and nothing is enabled", () => {
+    expect(isWslSettingsRowVisible({ state: state({}), error: null })).toBe(false);
+  });
+
+  it.each([{ available: true }, { enabled: true }, { wslOnly: true }])(
+    "shows the rows for %j",
+    (overrides) => {
+      expect(isWslSettingsRowVisible({ state: state(overrides), error: null })).toBe(true);
+    },
+  );
+
+  it("shows the rows so a failed state query stays visible", () => {
+    expect(isWslSettingsRowVisible({ state: null, error: "wsl.exe failed" })).toBe(true);
   });
 });

@@ -16,6 +16,7 @@ import { Lock as LockGlyph, LockOpen } from "lucide";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 import { Fragment, useState, type ReactElement, type ReactNode } from "react";
+import { useClientSettings } from "../../hooks/useSettings";
 import {
   isProviderDriverKind,
   resolveProviderInstanceEnabled,
@@ -725,13 +726,14 @@ export function ProviderInstanceCard({
   secretSources = NO_SECRET_SOURCES,
   projectOverride,
 }: ProviderInstanceCardProps) {
+  const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const enabled = projectOverride?.effectiveEnabled ?? resolveProviderInstanceEnabled(instance);
   const effectiveProvider = liveProvider && { ...liveProvider, enabled };
   const compatibility = enabled ? liveProvider?.compatibilityAdvisory : undefined;
   const statusKey = enabled ? getProviderStatusKey(effectiveProvider) : "disabled";
   const statusStyle = PROVIDER_STATUS_STYLES[statusKey];
   const summary = enabled
-    ? getProviderSummary(effectiveProvider)
+    ? getProviderSummary(effectiveProvider, timestampFormat)
     : { headline: "Disabled", detail: null };
   const authEmail = liveProvider?.auth.email?.trim();
   const isAuthenticated = enabled && liveProvider?.auth.status === "authenticated";

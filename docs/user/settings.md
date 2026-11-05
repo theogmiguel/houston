@@ -107,7 +107,8 @@ and pull request text, review guides (beta), automatic pull and the default merg
 
 ## Worktrees
 
-Worktree location, whether new worktrees start from the remote, submodule handling, branch
+Worktree location (an absolute folder; empty uses Houston's data folder), whether new
+worktrees start from the remote, submodule handling, branch
 naming, and cleanup of worktrees created by Houston.
 
 ## Environments
