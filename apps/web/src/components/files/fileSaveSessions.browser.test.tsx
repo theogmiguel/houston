@@ -70,7 +70,9 @@ describe("file save sessions in React", () => {
     );
     finishWrite();
     getUnsavedFile.mockReturnValue(null);
-    await vi.runAllTimersAsync();
+    // The connection runtime polls the primary environment every 3 s, so a fake clock never
+    // drains: advance past the debounce instead of running every pending timer.
+    await vi.advanceTimersByTimeAsync(500);
 
     expect(runAtomCommand.mock.calls.map(([, , request]) => request)).toEqual([
       {
