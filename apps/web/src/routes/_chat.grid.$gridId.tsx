@@ -382,7 +382,7 @@ function GridRoute() {
           <WorkspacePageHeader
             desktop={isDesktopHost}
             reserveNativeControls={!panelBesideGrid && isNativeDesktopHost()}
-            className={cn(panelBesideGrid && "pr-0")}
+            besidePanel={panelBesideGrid}
           >
             <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
               <span className="shrink-0">Houston</span>

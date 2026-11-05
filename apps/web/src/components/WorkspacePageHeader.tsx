@@ -6,11 +6,14 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../workspaceTitlebar";
 export function WorkspacePageHeader({
   desktop = false,
   reserveNativeControls = desktop,
+  besidePanel = false,
   className,
   ...props
 }: ComponentPropsWithoutRef<"header"> & {
   readonly desktop?: boolean;
   readonly reserveNativeControls?: boolean;
+  /** A panel's divider follows the header, so its controls keep a small inset from it. */
+  readonly besidePanel?: boolean;
 }) {
   return (
     <header
@@ -21,6 +24,7 @@ export function WorkspacePageHeader({
         reserveNativeControls &&
           "wco:pr-(--workspace-native-controls-inset) custom-chrome:pr-(--workspace-native-controls-inset)",
         COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+        besidePanel && "pr-2",
         className,
       )}
       {...props}
