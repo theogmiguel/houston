@@ -3411,7 +3411,6 @@ impl Daemon {
             .parent()
             .map(|p| p.join("scrollback"))
             .ok_or_else(|| anyhow!("db path {} has no parent dir", cfg.db_path.display()))?;
-        let mut dead: HashMap<u32, proto::SessionInfo> = HashMap::new();
         if adopted.is_none() {
             for ws in db.list_workspaces().unwrap_or_default() {
                 match crate::paths::migrate_legacy_project_dir(Path::new(&ws.path)) {
@@ -3459,45 +3458,46 @@ impl Daemon {
                     );
                 }
             }
-            dead = db
-                .list_interrupted()?
-                .into_iter()
-                .map(|i| (i.id, i))
-                .collect();
-            let mut used: HashSet<String> = dead
-                .values()
-                .map(|i| i.title.clone())
-                .filter(|t| !t.is_empty())
-                .collect();
-            for info in dead.values_mut() {
-                if info.title.is_empty() {
-                    let name = crate::pane_name::pick_codename(&used);
-                    used.insert(name.clone());
-                    if let Err(e) = db.update_session_title_with_source(
-                        info.id,
-                        &name,
-                        Some(TitleSource::Codename.as_str()),
-                    ) {
+        }
+        // Non-running tiles must survive a handoff too. list_interrupted()
+        // also returns an adopted sleeper, whose row stays `sleeping` while
+        // its PTY is transferred, so the adopted ids are filtered out.
+        let mut dead: HashMap<u32, proto::SessionInfo> = db
+            .list_interrupted()?
+            .into_iter()
+            .filter(|i| !adopted_ids.contains(&i.id))
+            .map(|i| (i.id, i))
+            .collect();
+        let mut used: HashSet<String> = dead
+            .values()
+            .map(|i| i.title.clone())
+            .filter(|t| !t.is_empty())
+            .collect();
+        for info in dead.values_mut() {
+            if info.title.is_empty() {
+                let name = crate::pane_name::pick_codename(&used);
+                used.insert(name.clone());
+                if let Err(e) = db.update_session_title_with_source(
+                    info.id,
+                    &name,
+                    Some(TitleSource::Codename.as_str()),
+                ) {
+                    tracing::warn!("persisting minted codename for session {}: {e}", info.id);
+                }
+                info.title = name.clone();
+                if info.codename.is_empty() {
+                    if let Err(e) = db.update_session_codename(info.id, &name) {
                         tracing::warn!("persisting minted codename for session {}: {e}", info.id);
                     }
-                    info.title = name.clone();
-                    if info.codename.is_empty() {
-                        if let Err(e) = db.update_session_codename(info.id, &name) {
-                            tracing::warn!(
-                                "persisting minted codename for session {}: {e}",
-                                info.id
-                            );
-                        }
-                        info.codename = name;
-                    }
+                    info.codename = name;
                 }
             }
-            if !dead.is_empty() {
-                tracing::info!(
-                    "restored {} interrupted session(s) from the previous run",
-                    dead.len()
-                );
-            }
+        }
+        if !dead.is_empty() {
+            tracing::info!(
+                "restored {} interrupted session(s) from the previous run",
+                dead.len()
+            );
         }
         let next_id = db.next_session_id()?;
         std::fs::create_dir_all(&scrollback_dir)

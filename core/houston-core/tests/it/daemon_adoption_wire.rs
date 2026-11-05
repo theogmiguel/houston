@@ -330,6 +330,173 @@ async fn handoff_transfers_a_live_session_to_a_new_generation() {
     });
 }
 
+fn dead_tile(id: u32, project: &std::path::Path, title: &str) -> proto::SessionInfo {
+    proto::SessionInfo {
+        note: None,
+        title_source: Default::default(),
+        checkout: None,
+        activity: None,
+        id,
+        agent: proto::AgentKind::Claude,
+        project_dir: project.display().to_string(),
+        cwd: project.display().to_string(),
+        state: proto::SessionState::Exited,
+        title: title.into(),
+        codename: title.into(),
+        detected_agent: None,
+        running_agent: None,
+        hidden: false,
+        ssh_host: None,
+        restore_deferred: None,
+        status: None,
+        status_since_ms: None,
+        context: None,
+        swarm_agent: None,
+        spawned_by: None,
+        acp: None,
+        live_children: 0,
+        profile_label: None,
+        children_waiting: 0,
+        delegation: None,
+        inbox_unread: 0,
+        tags: Vec::new(),
+        session_origin: None,
+        checkout_root: None,
+        worktree: None,
+        resumable: false,
+        resume_notice: None,
+        compactions: None,
+        task: None,
+        sleep_notice: None,
+        latest_prompt: None,
+        last_agent_message: None,
+        slept_at_ms: None,
+        limit: None,
+        transferred_at_ms: None,
+        transfer_fork: false,
+    }
+}
+
+#[tokio::test]
+async fn handoff_keeps_non_running_sessions_visible() {
+    let home = tempfile::tempdir().unwrap();
+    let channel_dir = home.path().join(".houston-dev");
+    let _channel_guard = ChannelGuard(channel_dir.clone());
+    let mut guard = spawn_supervised_daemon(home.path(), &channel_dir);
+
+    let cfg_path = channel_dir.join("daemon.json");
+    let before = poll_until(POLL_TIMEOUT, || read_daemon_json(&cfg_path));
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{}", before.port).parse().unwrap();
+    let mut ws = connect_when_ready(addr, &before.token).await;
+    let _ = common::next_control(&mut ws).await;
+    drop(ws);
+    manage_shutdown(before.port, &before.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
+
+    // The tiles a previous generation already recorded as not running: one
+    // exited root slot and one sleeping session, as its database holds them.
+    let project = tempfile::tempdir().unwrap();
+    let db = houston_core::db::Db::open(&channel_dir.join("houston.db")).unwrap();
+    let mut sleeping = dead_tile(12, project.path(), "Sleeping reporter");
+    sleeping.state = proto::SessionState::Sleeping;
+    db.insert_session(&dead_tile(11, project.path(), "Exited build watch"))
+        .unwrap();
+    db.insert_session(&sleeping).unwrap();
+    drop(db);
+
+    let mut guard = spawn_supervised_daemon(home.path(), &channel_dir);
+    let before = poll_until(POLL_TIMEOUT, || {
+        read_daemon_json(&cfg_path).filter(|file| file.pid != before.pid)
+    });
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{}", before.port).parse().unwrap();
+    let mut ws = connect_when_ready(addr, &before.token).await;
+    let _ = common::next_control(&mut ws).await;
+    ws.send(Message::text(
+        serde_json::to_string(&proto::ClientMsg::SessionList).unwrap(),
+    ))
+    .await
+    .unwrap();
+    let cold: (proto::SessionState, String, proto::SessionState, String) = loop {
+        if let proto::ServerMsg::SessionList { sessions } = common::next_control(&mut ws).await {
+            let exited = sessions.iter().find(|pane| pane.id == 11).unwrap();
+            let sleeping = sessions.iter().find(|pane| pane.id == 12).unwrap();
+            break (
+                exited.state,
+                exited.title.clone(),
+                sleeping.state,
+                sleeping.title.clone(),
+            );
+        }
+    };
+    assert_eq!(cold.0, proto::SessionState::Exited, "{cold:?}");
+    assert_eq!(cold.1, "Exited build watch");
+    assert_eq!(cold.2, proto::SessionState::Sleeping, "{cold:?}");
+    assert_eq!(cold.3, "Sleeping reporter");
+
+    ws.send(Message::text(create_custom_msg(
+        vec!["sh", "-c", "cat"],
+        project.path(),
+    )))
+    .await
+    .unwrap();
+    let live = expect_created(&mut ws).await.id;
+    drop(ws);
+
+    let result = daemon_handoff(before.port, &before.token).await;
+    assert!(
+        result.accepted,
+        "handoff must be accepted against a supervised, SSH-free daemon: {result:?}"
+    );
+    assert_eq!(result.sessions_transferred, Some(1));
+
+    let after = poll_until(POLL_TIMEOUT, || {
+        let f = read_daemon_json(&cfg_path)?;
+        (f.pid != before.pid).then_some(f)
+    });
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{}", after.port).parse().unwrap();
+    let mut ws = connect_when_ready(addr, &after.token).await;
+    let _ = common::next_control(&mut ws).await;
+    ws.send(Message::text(
+        serde_json::to_string(&proto::ClientMsg::SessionList).unwrap(),
+    ))
+    .await
+    .unwrap();
+    loop {
+        if let proto::ServerMsg::SessionList { sessions } = common::next_control(&mut ws).await {
+            let adopted = sessions.iter().find(|pane| pane.id == live).unwrap();
+            assert_eq!(adopted.state, proto::SessionState::Running);
+            let exited = sessions.iter().find(|pane| pane.id == 11).expect(
+                "an exited session recorded before the handoff must survive the adopting daemon",
+            );
+            assert_eq!(exited.state, proto::SessionState::Exited);
+            assert_eq!(exited.title, "Exited build watch");
+            let sleeping = sessions.iter().find(|pane| pane.id == 12).expect(
+                "a sleeping session recorded before the handoff must survive the adopting daemon",
+            );
+            assert_eq!(sleeping.state, proto::SessionState::Sleeping);
+            assert_eq!(sleeping.title, "Sleeping reporter");
+            assert_eq!(
+                sessions.iter().filter(|pane| pane.id == 11).count(),
+                1,
+                "the adopting generation must not duplicate a dead tile"
+            );
+            assert_eq!(
+                sessions.iter().filter(|pane| pane.id == live).count(),
+                1,
+                "the adopting generation must not list the transferred session twice"
+            );
+            break;
+        }
+    }
+
+    manage_shutdown(after.port, &after.token).await;
+    poll_until(POLL_TIMEOUT, || {
+        guard.0.try_wait().expect("poll supervisor exit")
+    });
+}
+
 #[tokio::test]
 async fn handoff_is_refused_without_a_supervisor() {
     let home = tempfile::tempdir().unwrap();
