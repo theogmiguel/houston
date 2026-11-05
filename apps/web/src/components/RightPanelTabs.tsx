@@ -36,17 +36,17 @@ import { restrictToFirstScrollableAncestor, restrictToHorizontalAxis } from "@dn
 import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  Smartphone,
+  TabletSmartphone,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  FileDiff,
-  Files,
-  Globe2,
+  MessageSquareText,
+  FolderTree,
+  GitCompareArrows,
+  Globe,
   ListChecks,
-  MessagesSquare,
   Plus,
-  TerminalSquare,
+  SquareTerminal,
 } from "lucide-react";
 import { Volume2, VolumeOff } from "lucide";
 import {
@@ -342,7 +342,7 @@ function RightPanelEmptyState(props: {
   const actions = [
     {
       label: "Browser",
-      icon: Globe2,
+      icon: Globe,
       shortcut: "B",
       available: props.browserAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.browser,
@@ -350,7 +350,7 @@ function RightPanelEmptyState(props: {
     },
     {
       label: "Terminal",
-      icon: TerminalSquare,
+      icon: SquareTerminal,
       shortcut: "T",
       available: props.terminalAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.terminal,
@@ -358,7 +358,7 @@ function RightPanelEmptyState(props: {
     },
     {
       label: "Files",
-      icon: Files,
+      icon: FolderTree,
       shortcut: "F",
       available: props.filesAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.files,
@@ -366,7 +366,7 @@ function RightPanelEmptyState(props: {
     },
     {
       label: "Diff",
-      icon: FileDiff,
+      icon: GitCompareArrows,
       shortcut: "D",
       available: props.diffAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.diff,
@@ -391,7 +391,7 @@ function RightPanelEmptyState(props: {
     {
       label: "Device",
       description: "Watch an iOS Simulator or Android Emulator.",
-      icon: Smartphone,
+      icon: TabletSmartphone,
       shortcut: "M",
       available: props.deviceAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.device,
@@ -402,7 +402,7 @@ function RightPanelEmptyState(props: {
           {
             label: "Side chat",
             description: "Ask a side question while this thread keeps working.",
-            icon: MessagesSquare,
+            icon: MessageSquareText,
             shortcut: "S",
             available: props.sideChatAvailable && !props.sideChatDisabledReason,
             disabledReason: props.sideChatDisabledReason ?? SURFACE_UNAVAILABLE_HINTS.sideChat,
@@ -617,7 +617,7 @@ function PreviewFavicon({ capturedUrl, url }: { capturedUrl: string | null; url:
   return (
     <FaviconImage
       sources={[capturedUrl, publicProviderUrl]}
-      fallback={<Globe2 className="size-3 shrink-0" />}
+      fallback={<Globe className="size-3 shrink-0" />}
       className="size-3 shrink-0 rounded-sm object-contain"
     />
   );
@@ -663,9 +663,9 @@ function SurfaceIcon({
     case "preview":
       return <PreviewFavicon capturedUrl={previewCapturedUrl} url={previewUrl} />;
     case "diff":
-      return <FileDiff className="size-3 shrink-0" />;
+      return <GitCompareArrows className="size-3 shrink-0" />;
     case "files":
-      return <Files className="size-3 shrink-0" />;
+      return <FolderTree className="size-3 shrink-0" />;
     case "file":
       return (
         <PierreEntryIcon
@@ -676,7 +676,7 @@ function SurfaceIcon({
         />
       );
     case "terminal":
-      return <TerminalSquare className="size-3 shrink-0" />;
+      return <SquareTerminal className="size-3 shrink-0" />;
     case "pull-request":
       return (
         <PullRequestSurfaceIcon
@@ -697,7 +697,7 @@ function SurfaceIcon({
       ) : surface.target?.platform === "android" ? (
         <AndroidIcon className="size-3 shrink-0" />
       ) : (
-        <Smartphone className="size-3 shrink-0" />
+        <TabletSmartphone className="size-3 shrink-0" />
       );
   }
 }
@@ -725,7 +725,7 @@ function SideChatTabIcon(props: { environmentId: EnvironmentId | null; threadId:
   );
   return (
     <>
-      <MessagesSquare className="size-3 shrink-0" />
+      <MessageSquareText className="size-3 shrink-0" />
       {state === null ? null : (
         <span
           className={cn("absolute -top-1 -right-1", threadStateTextClass(state.state))}
@@ -1104,7 +1104,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     {
       kind: "preview",
       label: "Browser",
-      icon: Globe2,
+      icon: Globe,
       shortcut: "B",
       available: props.browserAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.browser,
@@ -1113,7 +1113,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     {
       kind: "terminal",
       label: "Terminal",
-      icon: TerminalSquare,
+      icon: SquareTerminal,
       shortcut: "T",
       available: props.terminalAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.terminal,
@@ -1122,7 +1122,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     {
       kind: "files",
       label: "Files",
-      icon: Files,
+      icon: FolderTree,
       shortcut: "F",
       available: props.filesAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.files,
@@ -1131,7 +1131,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     {
       kind: "diff",
       label: "Diff",
-      icon: FileDiff,
+      icon: GitCompareArrows,
       shortcut: "D",
       available: props.diffAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.diff,
@@ -1158,7 +1158,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     {
       kind: "device",
       label: "Device",
-      icon: Smartphone,
+      icon: TabletSmartphone,
       shortcut: "M",
       available: props.deviceAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.device,
@@ -1169,7 +1169,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           {
             kind: "side-chat",
             label: "Side chat",
-            icon: MessagesSquare,
+            icon: MessageSquareText,
             shortcut: "S",
             available: props.sideChatAvailable === true && !props.sideChatDisabledReason,
             disabledReason: props.sideChatDisabledReason ?? SURFACE_DISABLED_REASONS.sideChat,
