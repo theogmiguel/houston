@@ -344,6 +344,10 @@ export const layerExecutor: Layer.Layer<
                         ),
                       ),
                     );
+                    // Notifications must be queued messages.
+                    const queued =
+                      message.delegatedCompletion !== undefined ||
+                      message.notification !== undefined;
                     // Reuse message ids and receipts so retries cannot duplicate messages or follow-ups.
                     yield* threads
                       .dispatch({
@@ -358,10 +362,7 @@ export const layerExecutor: Layer.Layer<
                           ? {}
                           : { modelSelection: run.modelSelection }),
                         dispatchMode: {
-                          type:
-                            message.delegatedCompletion === undefined
-                              ? "start_immediately"
-                              : "queue_after_active",
+                          type: queued ? "queue_after_active" : "start_immediately",
                         },
                         createdBy: message.createdBy,
                         creationSource: message.creationSource,
