@@ -1,4 +1,5 @@
 import type { EnvironmentId, SourceControlSignInPrompt } from "@houston-app/contracts";
+import type { TimestampFormat } from "@houston-app/contracts/settings";
 import {
   readHostCredentialSettings,
   type SourceControlAppSignIn,
@@ -13,9 +14,10 @@ import { useState, type ReactNode } from "react";
 import { MorphIcon } from "~/components/MorphIcon";
 import { HoustonAppIcon } from "~/components/HoustonAppIcon";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useEnvironmentSettings } from "../../hooks/useSettings";
+import { useClientSettings, useEnvironmentSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { serverEnvironment } from "../../state/server";
+import { formatShortTimestamp } from "../../timestampFormat";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button, InlineButton } from "../ui/button";
@@ -33,8 +35,8 @@ const failureMessage = (cause: Cause.Cause<unknown>) => {
   return error instanceof Error ? error.message : String(error);
 };
 
-const expiryTime = (expiresAt: number) =>
-  new Date(expiresAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+const expiryTime = (expiresAt: number, timestampFormat: TimestampFormat) =>
+  formatShortTimestamp(new Date(expiresAt).toISOString(), timestampFormat);
 
 function ExternalLink(props: { readonly href: string; readonly children: ReactNode }) {
   return (
@@ -97,6 +99,7 @@ export function SourceControlAppSignInSettings({
   readonly onChanged: () => void;
 }) {
   const host = appSignIn.hosts[0] ?? "";
+  const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const { signIns, tokens } = useEnvironmentSettings(environmentId, (settings) =>
     readHostCredentialSettings(settings, definition.kind),
   );
@@ -250,7 +253,8 @@ export function SourceControlAppSignInSettings({
             </Button>
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span aria-hidden className="size-1.5 rounded-full bg-warning" />
-              Waiting for approval · code expires at {expiryTime(waiting.expiresAt)}
+              Waiting for approval · code expires at{" "}
+              {expiryTime(waiting.expiresAt, timestampFormat)}
             </p>
           </div>
         </div>
