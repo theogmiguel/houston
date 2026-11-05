@@ -3599,7 +3599,6 @@ export default function ChatView(props: ChatViewProps) {
                 entriesInput={timelineEntriesInput}
                 draftEntries={isServerThread ? null : draftTimelineEntries}
                 activeThreadKey={activeThreadKey}
-                timelineDensity={paneDensity}
                 syncing={threadSyncPhase !== null}
                 detailLoading={threadDetailLoading}
                 citationRequest={citationRequest}

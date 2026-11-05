@@ -10,8 +10,6 @@ import {
   timelineHasEphemeralPreviewUrls,
 } from "../ChatView.logic";
 import { MessagesTimeline } from "./MessagesTimeline";
-import { trimTimelineForDensity } from "./paneTimeline";
-import type { PaneDensity } from "../../grid/density";
 
 /**
  * The timeline with the streamed text. ChatView reads the thread through its quiet
@@ -26,11 +24,8 @@ export function ThreadTimeline({
   activeThreadKey,
   syncing,
   detailLoading,
-  timelineDensity,
   ...timelineProps
 }: Omit<ComponentProps<typeof MessagesTimeline>, "timelineEntries"> & {
-  /** The grid pane's density; omitted outside a grid, which keeps the full timeline. */
-  timelineDensity?: PaneDensity | undefined;
   /** Null until the thread's detail may load; see resolveThreadDetailRef. */
   threadDetailRef: ScopedThreadRef | null;
   entriesInput: Omit<TimelineEntriesInput, "visibleTurnItems">;
@@ -59,14 +54,5 @@ export function ThreadTimeline({
     }
     rememberReadyThreadTimeline({ threadKey: activeThreadKey, entries });
   }, [activeThreadKey, detailLoading, entries]);
-  return (
-    <MessagesTimeline
-      {...timelineProps}
-      timelineEntries={
-        timelineDensity === undefined
-          ? displayedEntries
-          : trimTimelineForDensity(displayedEntries, timelineDensity)
-      }
-    />
-  );
+  return <MessagesTimeline {...timelineProps} timelineEntries={displayedEntries} />;
 }
