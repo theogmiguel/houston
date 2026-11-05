@@ -470,7 +470,10 @@ const layerUnusedRpcServices = Layer.mergeAll(
     streamChanges: Stream.make([]),
   }),
   Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({ resolveTargets: () => Effect.succeed([]) }),
-  Layer.mock(DirectEndpoints.DirectEndpoints)({ resolve: () => Effect.succeed([]) }),
+  Layer.mock(DirectEndpoints.DirectEndpoints)({
+    resolve: () => Effect.succeed([]),
+    resolveAvailable: () => Effect.succeed([]),
+  }),
   Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
     scratchRoot: Effect.succeedNone,
     namedProjectsRoot: process.cwd(),
