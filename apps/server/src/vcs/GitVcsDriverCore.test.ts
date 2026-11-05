@@ -2088,6 +2088,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const path = yield* Path.Path;
         const driver = yield* GitVcsDriver.GitVcsDriver;
         const nestedCwd = path.join(cwd, "nested");
+        const fileSystem = yield* FileSystem.FileSystem;
         const clone = path.join(nestedCwd, "clone");
         yield* fileSystem.makeDirectory(clone);
         yield* initRepoWithCommit(clone);
