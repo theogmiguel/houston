@@ -1,10 +1,12 @@
 import { assert, describe, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import {
   KEYCHAIN_PROFILE,
   bootstrapSecretServiceName,
   loadOrCreateDesktopBootstrapSecret,
+  makeBootstrapSecretResolver,
   type BootstrapSecretKeychain,
 } from "./DesktopBootstrapSecret.ts";
 
@@ -110,4 +112,60 @@ describe("loadOrCreateDesktopBootstrapSecret", () => {
     assert.strictEqual(value.secret, FALLBACK);
     assert.isTrue(Option.isSome(value.warning));
   });
+});
+
+describe("makeBootstrapSecretResolver", () => {
+  it.effect("reads the keychain once per launch after a successful read", () =>
+    Effect.gen(function* () {
+      let reads = 0;
+      const value = { secret: "a".repeat(64), warning: Option.none<string>() };
+      const resolve = yield* makeBootstrapSecretResolver({
+        load: async () => {
+          reads += 1;
+          return value;
+        },
+      });
+
+      for (let call = 0; call < 3; call += 1) {
+        assert.strictEqual(yield* resolve, value);
+      }
+      assert.strictEqual(reads, 1);
+    }),
+  );
+
+  it.effect("retries a failed read and caches the keychain once it answers", () =>
+    Effect.gen(function* () {
+      let reads = 0;
+      const fallback = { secret: "f".repeat(64), warning: Option.some("keychain locked") };
+      const recovered = { secret: "b".repeat(64), warning: Option.none<string>() };
+      const resolve = yield* makeBootstrapSecretResolver({
+        load: async () => {
+          reads += 1;
+          return reads === 1 ? fallback : recovered;
+        },
+      });
+
+      assert.deepStrictEqual(yield* resolve, fallback);
+      assert.strictEqual(yield* resolve, recovered);
+      assert.strictEqual(yield* resolve, recovered);
+      assert.strictEqual(reads, 2, "the unlocked keychain is picked up once");
+    }),
+  );
+
+  it.effect("does not cache a fallback that warns on every read", () =>
+    Effect.gen(function* () {
+      let reads = 0;
+      const fallback = { secret: "f".repeat(64), warning: Option.some("no Secret Service") };
+      const resolve = yield* makeBootstrapSecretResolver({
+        load: async () => {
+          reads += 1;
+          return fallback;
+        },
+      });
+
+      assert.deepStrictEqual(yield* resolve, fallback);
+      assert.deepStrictEqual(yield* resolve, fallback);
+      assert.strictEqual(reads, 2);
+    }),
+  );
 });

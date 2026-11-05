@@ -127,35 +127,52 @@ export class DesktopBootstrapSecret extends Context.Service<
   }
 >()("@houston-app/desktop/backend/DesktopBootstrapSecret") {}
 
+/**
+ * Caches one successful read for the launch. A failed read keeps the stable
+ * fallback and stays uncached, so a keychain unlocked later is picked up.
+ */
+export const makeBootstrapSecretResolver = Effect.fn("desktop.bootstrapSecret.makeResolver")(
+  function* (input: {
+    readonly load: () => Promise<DesktopBootstrapSecretValue>;
+  }): Effect.fn.Return<Effect.Effect<DesktopBootstrapSecretValue>> {
+    const cached = yield* Ref.make<Option.Option<DesktopBootstrapSecretValue>>(Option.none());
+    const mutex = yield* Semaphore.make(1);
+
+    return mutex
+      .withPermits(1)(
+        Effect.gen(function* () {
+          const current = yield* Ref.get(cached);
+          if (Option.isSome(current)) {
+            return current.value;
+          }
+          const value = yield* Effect.promise(input.load);
+          if (Option.isNone(value.warning)) {
+            yield* Ref.set(cached, Option.some(value));
+          }
+          return value;
+        }),
+      )
+      .pipe(Effect.withSpan("desktop.bootstrapSecret.resolve"));
+  },
+);
+
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
-  const cached = yield* Ref.make<Option.Option<DesktopBootstrapSecretValue>>(Option.none());
-  const mutex = yield* Semaphore.make(1);
   const fallbackSecret = newBootstrapSecret();
 
-  const resolve = mutex
-    .withPermits(1)(
-      Effect.gen(function* () {
-        const current = yield* Ref.get(cached);
-        if (Option.isSome(current)) {
-          return current.value;
-        }
-        const loaded = yield* Effect.promise(loadDesktopKeychain);
-        const value = yield* Effect.promise(() =>
-          loadOrCreateDesktopBootstrapSecret({
-            baseDir: environment.baseDir,
-            keychain: loaded.keychain,
-            fallbackSecret,
-            ...(loaded.unavailableReason === undefined
-              ? {}
-              : { unavailableReason: loaded.unavailableReason }),
-          }),
-        );
-        yield* Ref.set(cached, Option.some(value));
-        return value;
-      }),
-    )
-    .pipe(Effect.withSpan("desktop.bootstrapSecret.resolve"));
+  const resolve = yield* makeBootstrapSecretResolver({
+    load: async () => {
+      const loaded = await loadDesktopKeychain();
+      return loadOrCreateDesktopBootstrapSecret({
+        baseDir: environment.baseDir,
+        keychain: loaded.keychain,
+        fallbackSecret,
+        ...(loaded.unavailableReason === undefined
+          ? {}
+          : { unavailableReason: loaded.unavailableReason }),
+      });
+    },
+  });
 
   return DesktopBootstrapSecret.of({ resolve });
 });
