@@ -327,6 +327,8 @@ const SESSION = {
   endpoint: "http://127.0.0.1:43124/mcp",
   authorizationHeader: "Bearer planner-token",
   browserToolsAvailable: false,
+  // A planner's credential holds only the submit scope.
+  capabilities: new Set(["houston-task-submit"]),
 };
 
 describe("a planner's run loads no user MCP server", () => {

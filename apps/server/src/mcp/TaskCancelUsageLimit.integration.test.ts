@@ -291,11 +291,14 @@ it.effect.each([
           });
 
           const now = yield* DateTime.now;
-          const childFailed = yield* watch(
+          // A cancel racing the limit may settle the run as interrupted before the failure lands.
+          const childSettled = yield* watch(
             (event) =>
               event.type === "run.updated" &&
               event.payload.id === child.turn.runId &&
-              event.payload.status === "failed",
+              (event.payload.status === "failed" ||
+                event.payload.status === "interrupted" ||
+                event.payload.status === "cancelled"),
           );
           const hitLimit = Effect.forEach(
             [
@@ -332,7 +335,7 @@ it.effect.each([
           } else {
             yield* hitLimit;
           }
-          yield* Fiber.join(childFailed);
+          yield* Fiber.join(childSettled);
           yield* worker.drain();
 
           // The sweep runs every few seconds, so it arms the child before a parent reacts.

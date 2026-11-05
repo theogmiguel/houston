@@ -4,6 +4,7 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   type OrchestrationV2DomainEvent,
   OrchestrationV2ShellStreamItem,
+  ProjectId,
   ThreadId,
 } from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
@@ -156,7 +157,18 @@ const runShellSubscribers = (
           shell: yield* projections.getThreadShell(event.threadId),
         }),
       );
-      for (const item of yield* Queue.clear(referenceOutput)) expected.push(wire(item));
+      // A sentinel keeps the reference's asynchronous filter ahead of the collection, so its last
+      // item is not lost to a race with the batch loop.
+      yield* Queue.offer(referenceInput, {
+        kind: "project.removed",
+        sequence: stored.sequence,
+        projectId: ProjectId.make(SENTINEL_PROJECT),
+      });
+      for (;;) {
+        const item = yield* Queue.take(referenceOutput);
+        if (item.kind === "project.removed" && item.projectId === SENTINEL_PROJECT) break;
+        expected.push(wire(item));
+      }
     }
     return { reads, threadBatches: events.length, received, expected } satisfies ShellRun;
   }).pipe(

@@ -1399,6 +1399,16 @@ export function codexThreadRuntimeParams(input: {
             Authorization: mcpSession.authorizationHeader,
           },
         };
+  // A submit-only credential cannot call the orchestrator toolkit, so a direct wait server
+  // would advertise a tool every call refuses.
+  const directHoustonServer =
+    houstonServer === undefined || mcpSession?.capabilities?.has("orchestration") === false
+      ? undefined
+      : {
+          ...houstonServer,
+          enabled_tools: [CODEX_DIRECT_ONLY_HOUSTON_TOOL],
+          omit_tools_from: ["code_mode", "deferred"],
+        };
   return {
     ...(input.runtimePolicy?.cwd == null ? {} : { cwd: input.runtimePolicy.cwd }),
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
@@ -1420,11 +1430,9 @@ export function codexThreadRuntimeParams(input: {
                       ...houstonServer,
                       disabled_tools: [CODEX_DIRECT_ONLY_HOUSTON_TOOL],
                     },
-                    [CODEX_HOUSTON_DIRECT_MCP_SERVER]: {
-                      ...houstonServer,
-                      enabled_tools: [CODEX_DIRECT_ONLY_HOUSTON_TOOL],
-                      omit_tools_from: ["code_mode", "deferred"],
-                    },
+                    ...(directHoustonServer === undefined
+                      ? {}
+                      : { [CODEX_HOUSTON_DIRECT_MCP_SERVER]: directHoustonServer }),
                   },
           }
         : houstonServer === undefined
@@ -1437,11 +1445,9 @@ export function codexThreadRuntimeParams(input: {
               },
               // Code Mode runs a blocking wait as a nested call, and the model keeps working
               // around it. A second, direct-only registration makes it a plain tool call.
-              [`mcp_servers.${CODEX_HOUSTON_DIRECT_MCP_SERVER}`]: {
-                ...houstonServer,
-                enabled_tools: [CODEX_DIRECT_ONLY_HOUSTON_TOOL],
-                omit_tools_from: ["code_mode", "deferred"],
-              },
+              ...(directHoustonServer === undefined
+                ? {}
+                : { [`mcp_servers.${CODEX_HOUSTON_DIRECT_MCP_SERVER}`]: directHoustonServer }),
             }),
     },
   };
