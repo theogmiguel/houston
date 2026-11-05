@@ -1508,6 +1508,9 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           args: [
             "-c",
             "diff.relative=false",
+            // log.showSignature prints verification text into the path list.
+            "-c",
+            "log.showSignature=false",
             ...args,
             "--name-only",
             "-z",
