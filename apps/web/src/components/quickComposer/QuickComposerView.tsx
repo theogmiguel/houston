@@ -3,6 +3,7 @@ import { DEFAULT_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 import { EMPTY_COMPOSER_CONTEXT_RECORDS } from "../composerContextPresentation";
 import { prepareImageForAttachment } from "../../lib/imageCompression";
 import { randomUUID } from "../../lib/utils";
+import { useClientSettings } from "~/hooks/useSettings";
 import {
   type ClipboardEvent as ReactClipboardEvent,
   type KeyboardEvent,
@@ -28,6 +29,7 @@ import {
   QuickComposerPanel,
 } from "../ui/quick-composer";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { quickComposerEnterSubmits, quickComposerHint } from "./quickComposerKeys";
 import type {
   QuickComposerGridOption,
   QuickComposerImage,
@@ -58,6 +60,7 @@ export function QuickComposerView({
   const [projectKey, setProjectKey] = useState(initialProjectKey ?? projects[0]?.key ?? "");
   const [gridId, setGridId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
+  const sendShortcut = useClientSettings((settings) => settings.sendShortcut);
   const [cursor, setCursor] = useState(0);
   const [images, setImages] = useState<ReadonlyArray<QuickComposerImage>>([]);
   const [error, setError] = useState<string | null>(null);
@@ -169,7 +172,9 @@ export function QuickComposerView({
   };
 
   const onEditorKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+    if (event.nativeEvent.isComposing || !quickComposerEnterSubmits(event, sendShortcut, prompt)) {
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     void submit();
@@ -277,7 +282,7 @@ export function QuickComposerView({
       {error !== null ? <QuickComposerAlert>{error}</QuickComposerAlert> : null}
 
       <QuickComposerFooter>
-        <QuickComposerHint>Enter starts the thread. Shift+Enter adds a line.</QuickComposerHint>
+        <QuickComposerHint>{quickComposerHint(sendShortcut)}</QuickComposerHint>
         <Button type="button" size="sm" disabled={!canSubmit} onClick={() => void submit()}>
           {submitting ? "Starting…" : "Start thread"}
         </Button>
