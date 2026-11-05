@@ -4,6 +4,7 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   type OrchestrationV2DomainEvent,
   OrchestrationV2ShellStreamItem,
+  ProjectId,
   ThreadId,
 } from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
@@ -161,7 +162,7 @@ const runShellSubscribers = (
       yield* Queue.offer(referenceInput, {
         kind: "project.removed",
         sequence: stored.sequence,
-        projectId: SENTINEL_PROJECT,
+        projectId: ProjectId.make(SENTINEL_PROJECT),
       });
       for (;;) {
         const item = yield* Queue.take(referenceOutput);

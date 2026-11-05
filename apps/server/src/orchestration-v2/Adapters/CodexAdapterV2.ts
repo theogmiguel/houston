@@ -1402,8 +1402,7 @@ export function codexThreadRuntimeParams(input: {
   // A submit-only credential cannot call the orchestrator toolkit, so a direct wait server
   // would advertise a tool every call refuses.
   const directHoustonServer =
-    houstonServer === undefined ||
-    (mcpSession.capabilities !== undefined && !mcpSession.capabilities.has("orchestration"))
+    houstonServer === undefined || mcpSession?.capabilities?.has("orchestration") === false
       ? undefined
       : {
           ...houstonServer,
