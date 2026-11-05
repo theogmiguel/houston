@@ -18,7 +18,6 @@ import { resolveSpawnCommand } from "@houston-app/shared/shell";
 import {
   ServerCliBuildAssetMissingError,
   ServerCliCommandExitError,
-  ServerCliDevelopmentIconSourceMissingError,
   ServerCliDevelopmentIconTargetMissingError,
   ServerCliExecutableImportError,
 } from "./cliErrors.ts";

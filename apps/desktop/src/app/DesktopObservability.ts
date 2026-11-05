@@ -4,16 +4,11 @@ import {
   makeTraceSink,
   nodeProcessRuntimeAttributes,
   processServiceInstanceId,
-  type SignalExport,
 } from "@houston-app/shared/observability";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as SharedObservability from "@houston-app/shared/observability";
 import * as OtelEnvironment from "@houston-app/shared/otelEnvironment";
 import { releaseChannelOf, releaseResourceAttributes } from "@houston-app/shared/releaseResource";
-import {
-  parsePersistedServerObservabilitySettings,
-  type PersistedServerObservabilitySettings,
-} from "@houston-app/shared/serverSettings";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -326,25 +321,6 @@ export const makeRotatingLogFileWriter = Effect.fn("makeRotatingLogFileWriter")(
     writeBytes,
     writeText: (chunk) => writeBytes(textEncoder.encode(chunk)),
   } satisfies RotatingLogFileWriter;
-});
-
-const noPersistedObservabilitySettings: PersistedServerObservabilitySettings = {
-  otlpTracesUrl: undefined,
-  otlpMetricsUrl: undefined,
-  otlpLogsUrl: undefined,
-};
-
-const readPersistedObservabilitySettings: Effect.Effect<
-  PersistedServerObservabilitySettings,
-  never,
-  FileSystem.FileSystem | DesktopEnvironment.DesktopEnvironment
-> = Effect.gen(function* () {
-  const fileSystem = yield* FileSystem.FileSystem;
-  const environment = yield* DesktopEnvironment.DesktopEnvironment;
-  const raw = yield* fileSystem.readFileString(environment.serverSettingsPath).pipe(Effect.option);
-  return Option.isNone(raw)
-    ? noPersistedObservabilitySettings
-    : parsePersistedServerObservabilitySettings(raw.value);
 });
 
 const resolveOtlpEndpoints = Effect.gen(function* () {
