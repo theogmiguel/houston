@@ -321,6 +321,7 @@ describe("task tools read every project", () => {
                     resolve: () => Effect.succeed(undefined),
                   }),
                   NodeServices.layer,
+                  NodeCrypto.layer,
                 ),
               ),
             );
@@ -393,6 +394,7 @@ describe("a submit-only credential reaches only the two submit tools of the regi
                       ),
                   }),
                   NodeServices.layer,
+                  NodeCrypto.layer,
                 ),
               ),
             );

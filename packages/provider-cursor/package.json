@@ -49,7 +49,7 @@
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
-    "@cursor/sdk": "1.0.38",
+    "@cursor/sdk": "1.2.0",
     "@houston-app/contracts": "workspace:*",
     "@houston-app/provider-core": "workspace:*",
     "@houston-app/shared": "workspace:*",

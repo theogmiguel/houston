@@ -2953,6 +2953,7 @@ it.live.each([true, false])("opens an authenticated OpenCode session (external=%
     Effect.scoped,
     Effect.provide([
       NodeServices.layer,
+      NodeCrypto.layer,
       TestProviderHost.layer().pipe(
         Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
