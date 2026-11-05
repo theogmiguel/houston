@@ -27,7 +27,7 @@ import {
   ComposerEffortColumn,
   ComposerPickerFooter,
   describeComposerEffort,
-} from "./ComposerModelEffort";
+} from "../ui/composer-model-effort";
 import type { useComposerProviderModel } from "./useComposerProviderModel";
 import { resolveComposerControlsOwnership } from "./composerControlsOwnership";
 
@@ -233,14 +233,17 @@ export function ComposerControlsBar(props: {
         pickerOwnsModeShortcut ? "composer.effort composer.mode" : "composer.effort"
       }
       {...(traitsInput
-        ? { effortColumn: <ComposerEffortColumn traits={traitsInput} />, footer: (
-            <ComposerPickerFooter
-              traits={traitsInput}
-              runtimeMode={compatibleRuntimeMode}
-              runtimeModeOptions={compatibleRuntimeModeOptions}
-              onRuntimeModeChange={handleRuntimeModeChange}
-            />
-          ) }
+        ? {
+            effortColumn: <ComposerEffortColumn traits={traitsInput} />,
+            footer: (
+              <ComposerPickerFooter
+                traits={traitsInput}
+                runtimeMode={compatibleRuntimeMode}
+                runtimeModeOptions={compatibleRuntimeModeOptions}
+                onRuntimeModeChange={handleRuntimeModeChange}
+              />
+            ),
+          }
         : {
             menuAccessory: (
               <ComposerPermissionsPicker

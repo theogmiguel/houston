@@ -20,6 +20,12 @@ import { ComposerControl, type ComposerControlSize } from "./ComposerControl";
 import { takeOpenTarget, useComposerMenuProps } from "./composerEventScope";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { traitsSplitTriggerClassName, type TraitsSplitPart } from "./modelTraits";
+import {
+  DOCKED_EFFORT_COLUMN_CLASS,
+  DOCKED_PICKER_FRAME_CLASS,
+  DOCKED_PICKER_ROW_CLASS,
+  MODEL_TRIGGER_GROUP_CLASS,
+} from "../ui/composer-picker-recipes";
 
 /** Holds the page still behind the open picker; its lifetime is the popup element's. */
 function lockBackgroundScroll(popup: HTMLElement | null) {
@@ -310,7 +316,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               openTarget(target);
             }}
             className={cn(
-              "group/model-trigger min-w-0 shrink justify-between whitespace-nowrap",
+              MODEL_TRIGGER_GROUP_CLASS,
+              "min-w-0 shrink justify-between whitespace-nowrap",
               // A long model name truncates (its tooltip keeps the full name) instead of
               // stretching across the composer footer.
               props.compact
@@ -388,12 +395,12 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       >
         {props.effortColumn ? (
           <DockedPickerContext value={{ modelLabel: triggerTitle }}>
-            <div className="flex max-h-(--available-height) flex-col overflow-hidden rounded-lg border border-border bg-(--raised)">
-              <div className="flex min-h-0 flex-row max-sm:flex-col">
+            <div className={DOCKED_PICKER_FRAME_CLASS}>
+              <div className={DOCKED_PICKER_ROW_CLASS}>
                 {picker}
                 <div
                   data-model-picker-effort
-                  className="flex w-48 shrink-0 flex-col border-l border-border max-sm:max-h-60 max-sm:w-full max-sm:border-t max-sm:border-l-0"
+                  className={DOCKED_EFFORT_COLUMN_CLASS}
                   onKeyDown={(event) => {
                     if (
                       event.key !== "ArrowLeft" ||

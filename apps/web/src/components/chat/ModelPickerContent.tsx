@@ -52,6 +52,7 @@ import {
 } from "~/hooks/useSettings";
 import { announce } from "~/lib/announce";
 import { cn } from "~/lib/utils";
+import { MODEL_PICKER_DOCKED_CLASS } from "../ui/composer-picker-recipes";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { TooltipProvider } from "../ui/tooltip";
 import { Button, InlineButton } from "../ui/button";
@@ -831,9 +832,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         // or typing never moves the rail under the cursor.
         className={cn(
           "relative flex h-86.5 max-h-(--available-height) w-[26.75rem] max-w-[calc(100vw-2rem)] flex-row overflow-hidden bg-(--raised)",
-          props.docked
-            ? "border-0 max-sm:h-auto max-sm:max-h-56"
-            : "rounded-lg border border-border",
+          props.docked ? MODEL_PICKER_DOCKED_CLASS : "rounded-lg border border-border",
         )}
         data-model-picker-content="true"
       >

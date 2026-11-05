@@ -10,19 +10,22 @@ import { CheckIcon, ChevronUpIcon } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, use, useRef } from "react";
 
 import { cn } from "~/lib/utils";
-import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import type { ComposerControlSize } from "./ComposerControl";
-import { ComposerPermissionsSection, type RuntimeModeOption } from "./ComposerFooterControls";
-import { composerFloatingLayerProps, focusCheckedPermission } from "./composerEventScope";
-import { EffortGlyph, FastBolt, resolveEffortGlyph } from "./EffortGlyph";
-import { DockedPickerContext } from "./ProviderModelPicker";
+import { Menu, MenuPopup, MenuTrigger } from "./menu";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
+import type { ComposerControlSize } from "../chat/ComposerControl";
+import {
+  ComposerPermissionsSection,
+  type RuntimeModeOption,
+} from "../chat/ComposerFooterControls";
+import { composerFloatingLayerProps, focusCheckedPermission } from "../chat/composerEventScope";
+import { EffortGlyph, FastBolt, resolveEffortGlyph } from "../chat/EffortGlyph";
+import { DockedPickerContext } from "../chat/ProviderModelPicker";
 import {
   getTraitsSectionVisibility,
   type TraitsSelectionInput,
   ULTRATHINK_IN_BODY_NOTE,
   useTraitsSelection,
-} from "./TraitsPicker";
+} from "../chat/TraitsPicker";
 
 type SelectDescriptor = Extract<ProviderOptionDescriptor, { type: "select" }>;
 type BooleanDescriptor = Extract<ProviderOptionDescriptor, { type: "boolean" }>;
