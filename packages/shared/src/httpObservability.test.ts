@@ -30,4 +30,29 @@ describe("HttpObservability.layer", () => {
       );
     }).pipe(Effect.provide(HttpObservability.layer), Effect.withTracer(tracer));
   });
+
+  it.effect("redacts the Datadog API key header when request headers are recorded", () => {
+    const spans: Array<Tracer.NativeSpan> = [];
+    const tracer = Tracer.make({
+      span: (options) => {
+        const span = new Tracer.NativeSpan(options);
+        spans.push(span);
+        return span;
+      },
+    });
+    const client = HttpClient.make((request) =>
+      Effect.succeed(HttpClientResponse.fromWeb(request, new Response("ok"))),
+    );
+    return Effect.gen(function* () {
+      yield* client.post("https://otlp.datadoghq.com/v1/traces", {
+        headers: { "dd-api-key": "0123456789abcdef0123456789abcdef" },
+      });
+      const span = spans.find((candidate) => candidate.kind === "client")!;
+      expect(span.attributes.get("http.request.header.dd-api-key")).toBe("<redacted>");
+    }).pipe(
+      Effect.provide(HttpObservability.layer),
+      Effect.provideService(HttpClient.TracerHeaderFilter, () => true),
+      Effect.withTracer(tracer),
+    );
+  });
 });

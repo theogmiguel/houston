@@ -212,6 +212,56 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Datadog preset",
     }),
   );
 
+  it.effect(
+    "a signal the Datadog preset leaves off goes to its settings URL, without the key",
+    () =>
+      Effect.gen(function* () {
+        const config = yield* resolveWith({
+          observability: { otlpLogsUrl: "http://127.0.0.1:9/v1/logs", preset: DATADOG },
+        });
+        assert.strictEqual(config.otlpLogsUrl, "http://127.0.0.1:9/v1/logs");
+        const logs = yield* ObservabilityExport.resolve("logs").pipe(
+          Effect.provideService(ServerConfig.ServerConfig, config),
+          Effect.provide(withSecrets({ [DatadogKey.DATADOG_KEY_SECRET]: KEY }).layer),
+        );
+        assert.strictEqual(logs?.destination, "otlp");
+        assert.notInclude(JSON.stringify(logs), KEY);
+      }),
+  );
+
+  it.effect("removing or replacing the key applies to the next export without a restart", () =>
+    Effect.gen(function* () {
+      const sent: Array<{ readonly url: string; readonly key: string | undefined }> = [];
+      const client = HttpClient.make((request) =>
+        Effect.sync(() => {
+          sent.push({ url: request.url, key: request.headers["dd-api-key"] });
+          return HttpClientResponse.fromWeb(request, new Response(null, { status: 202 }));
+        }),
+      );
+      const { memory, layer } = withSecrets({ [DatadogKey.DATADOG_KEY_SECRET]: KEY });
+      const gated = yield* ObservabilityExport.datadogKeyGate.pipe(
+        Effect.provideService(HttpClient.HttpClient, client),
+        Effect.provide(layer),
+      );
+      const intake = "https://otlp.us5.datadoghq.com/v1/traces";
+      // The exporter was built with the key it had at start-up.
+      const post = (url: string) =>
+        gated.post(url, { headers: { "dd-api-key": KEY } }).pipe(Effect.map((r) => r.status));
+      assert.strictEqual(yield* post(intake), 202);
+      const replaced = "fedcba9876543210fedcba9876543210";
+      memory.entries.set(DatadogKey.DATADOG_KEY_SECRET, replaced);
+      yield* post(intake);
+      yield* DatadogKey.clear().pipe(Effect.provide(layer));
+      assert.isTrue((yield* post(intake)) < 300);
+      yield* post("http://127.0.0.1:9/v1/traces");
+      assert.deepStrictEqual(sent, [
+        { url: intake, key: KEY },
+        { url: intake, key: replaced },
+        { url: "http://127.0.0.1:9/v1/traces", key: KEY },
+      ]);
+    }),
+  );
+
   it.effect("the Test button sends the key to a Datadog intake only", () =>
     Effect.gen(function* () {
       const config = yield* resolveWith({});

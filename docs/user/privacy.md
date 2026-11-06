@@ -36,7 +36,23 @@ or credentials. The trace file on this machine keeps full detail.
 **Datadog** as the destination sends that export to the Datadog site you choose
 (`https://otlp.<site>`) with your Datadog API key. Traces are on by default; metrics and logs
 are off until you turn them on. The key is stored in the server's secret store on this machine,
-never in settings, and Houston sends it only to that site. Choosing **Off** or removing the key
-stops the export. **Datadog Agent on this machine** sends the same export to a local Agent
+never in settings, and Houston sends it only to that site. Removing the key stops the export
+from the next send, and a replaced key is used from the next send, without a restart; a key
+added while none was stored, and choosing **Off**, take effect after the server restarts. A
+signal you leave off for Datadog uses its own URL field, if you filled one in, and is sent there
+without the key. **Datadog Agent on this machine** sends the same export to a local Agent
 without a key; the Agent forwards it with its own. Houston ships no Datadog key and sends
 nothing to Datadog unless you configure it.
+
+For each signal, the first of these that is set decides where it goes:
+
+1. `HOUSTON_OTLP_TRACES_URL`, `HOUSTON_OTLP_METRICS_URL` or `HOUSTON_OTLP_LOGS_URL` in the
+   server's environment.
+2. The standard `OTEL_EXPORTER_OTLP_*` endpoint variables (`OTEL_SDK_DISABLED=true` or
+   `OTEL_<SIGNAL>_EXPORTER=none` turns the signal off).
+3. A URL the desktop app passes to the server at start.
+4. The Datadog destination, for the signals it sends.
+5. The URL fields in **Settings ▸ Diagnostics ▸ OpenTelemetry export**.
+
+An environment URL wins over a Datadog choice even when it points at a Datadog site, and it is
+sent with only the headers its own variables give: Houston never adds the stored key to it.
