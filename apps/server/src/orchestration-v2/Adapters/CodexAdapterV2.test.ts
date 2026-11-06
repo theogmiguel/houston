@@ -1421,22 +1421,14 @@ describe("CodexAdapterV2 post-settle continuation", () => {
   );
 
   it.effect(
-    "a session opened in one turn stamps no earlier run on a later turn's spans and logs",
+    "a session opened in one turn stamps each later turn's spans and logs with that turn",
     () => {
       const recording = RecordingTracer.make();
       const logged: Array<Readonly<Record<string, unknown>>> = [];
       return Effect.gen(function* () {
         const nativeThreadId = "trace-thread";
-        const first = codexReplayPreamble({
-          nativeThreadId,
-          nativeTurnId: "trace-1",
-          prompt: "work",
-        });
-        const second = codexReplayPreamble({
-          nativeThreadId,
-          nativeTurnId: "trace-2",
-          prompt: "work",
-        });
+        const preamble = (ordinal: number) =>
+          codexReplayPreamble({ nativeThreadId, nativeTurnId: `trace-${ordinal}`, prompt: "work" });
         const completed = (id: string): CodexReplay.CodexAppServerReplayEntry => ({
           type: "emit_inbound",
           label: `${id} completed`,
@@ -1448,19 +1440,28 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             },
           },
         });
-        const firstContext = { runId: "run-trace-1", commandId: "command-trace-1" };
+        const contextOf = (ordinal: number) => ({
+          runId: `run-trace-${ordinal}`,
+          commandId: `command-trace-${ordinal}`,
+        });
         // The session manager opens the session inside the first turn's context.
         const harness = yield* makeCodexReplayHarness(
           makeCodexReplayTranscript({
             scenario: "trace-context",
             entries: [
-              ...first,
+              ...preamble(1),
               completed("trace-1"),
-              ...second.slice(5, 7).map((entry) => withReplayRequestId(entry, 4)),
+              ...preamble(2)
+                .slice(5, 7)
+                .map((entry) => withReplayRequestId(entry, 4)),
               completed("trace-2"),
+              ...preamble(3)
+                .slice(5, 7)
+                .map((entry) => withReplayRequestId(entry, 5)),
+              completed("trace-3"),
             ],
           }),
-        ).pipe(TraceContext.withTraceContext(firstContext));
+        ).pipe(TraceContext.withTraceContext(contextOf(1)));
         const input = makeCodexTestTurnInput({
           threadId: harness.threadId,
           providerThread: harness.providerThread,
@@ -1468,41 +1469,45 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           attemptId: RunAttemptId.make("trace-1"),
           text: "work",
         });
-        yield* harness.runtime.startTurn(input).pipe(TraceContext.withTraceContext(firstContext));
-        yield* harness.awaitTerminal(1);
-        const spansBefore = recording.ended.length;
-        const logsBefore = logged.length;
-        yield* harness.runtime
-          .startTurn({
-            ...input,
-            runId: RunId.make("run-trace-2"),
-            attemptId: RunAttemptId.make("trace-2"),
-            rootNodeId: NodeId.make("trace-2"),
-            runOrdinal: 2,
-            providerTurnOrdinal: 2,
-          })
-          .pipe(
-            TraceContext.withTraceContext({ runId: "run-trace-2", commandId: "command-trace-2" }),
-          );
-        yield* harness.awaitTerminal(2);
 
-        const later = recording.ended.slice(spansBefore);
-        assert.isAbove(later.length, 0);
-        for (const span of later) {
-          assert.notStrictEqual(
-            span.attributes.get("houston.run.id"),
-            firstContext.runId,
-            span.name,
+        for (const ordinal of [1, 2, 3]) {
+          const context = contextOf(ordinal);
+          const spansBefore = recording.ended.length;
+          const logsBefore = logged.length;
+          yield* harness.runtime
+            .startTurn({
+              ...input,
+              runId: RunId.make(context.runId),
+              attemptId: RunAttemptId.make(`trace-${ordinal}`),
+              rootNodeId: NodeId.make(`trace-${ordinal}`),
+              runOrdinal: ordinal,
+              providerTurnOrdinal: ordinal,
+            })
+            .pipe(TraceContext.withTraceContext(context));
+          yield* harness.awaitTerminal(ordinal);
+
+          // Each span and log carries this turn's ids, or none: never an earlier turn's.
+          const spans = recording.ended.slice(spansBefore);
+          for (const span of spans) {
+            assert.oneOf(
+              span.attributes.get("houston.run.id"),
+              [context.runId, undefined],
+              span.name,
+            );
+            assert.oneOf(
+              span.attributes.get("houston.command.id"),
+              [context.commandId, undefined],
+              span.name,
+            );
+          }
+          assert.isTrue(
+            spans.some((span) => span.attributes.get("houston.run.id") === context.runId),
+            `a span of turn ${ordinal} carries its run`,
           );
-          assert.notStrictEqual(
-            span.attributes.get("houston.command.id"),
-            firstContext.commandId,
-            span.name,
-          );
-        }
-        for (const annotations of logged.slice(logsBefore)) {
-          assert.notStrictEqual(annotations["houston.run.id"], firstContext.runId);
-          assert.notStrictEqual(annotations["houston.command.id"], firstContext.commandId);
+          for (const annotations of logged.slice(logsBefore)) {
+            assert.oneOf(annotations["houston.run.id"], [context.runId, undefined]);
+            assert.oneOf(annotations["houston.command.id"], [context.commandId, undefined]);
+          }
         }
       }).pipe(
         Effect.scoped,
